@@ -2,16 +2,16 @@
 #
 # Applies into the `underpass-runtime` namespace (where vLLM runs)
 # and exercises the `agent-vllm` adapter against the public mTLS
-# endpoint `qwen35-9b.llm.underpassai.com`. Uses the in-cluster
+# endpoint `llm.underpassai.com`. Uses the in-cluster
 # `e2e-client-tls` Secret for the client certificate.
 #
-# Launch: `just e2e-provider-vllm` (applies this manifest, waits
+# Launch: `make e2e-provider-vllm` (applies this manifest, waits
 # for completion, tails logs, deletes the Job). Can also be
 # applied directly with `kubectl apply -f` against any namespace
 # that already holds an `e2e-client-tls` Secret.
 #
 # The container image must be built and pushed separately; see
-# `just build-provider-image` and update `spec.containers.image`
+# `make build-provider-image` and update `spec.containers.image`
 # for your registry.
 
 apiVersion: batch/v1
@@ -52,9 +52,9 @@ spec:
                 - ALL
           env:
             - name: CHOREO_VLLM_ENDPOINT
-              value: https://qwen35-9b.llm.underpassai.com
+              value: https://llm.underpassai.com
             - name: CHOREO_VLLM_MODEL
-              value: Qwen/Qwen3.5-9B
+              value: google/gemma-4-31B-it
             - name: CHOREO_VLLM_CLIENT_CERT_PATH
               value: /certs/tls.crt
             - name: CHOREO_VLLM_CLIENT_KEY_PATH

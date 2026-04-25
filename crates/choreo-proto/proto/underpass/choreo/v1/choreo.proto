@@ -103,14 +103,17 @@ service ChoreographerService {
 
 // A Task is the unit of work a council deliberates over.
 // `description` is a free-form prompt; `attributes` is an opaque bag
-// for use-case-specific structured data (alert payloads, records,
-// document refs, etc.).
+// for use-case-specific structured data. `external_context` is a
+// bounded, typed bundle of caller-materialized context that the
+// choreographer can pass through to councils without turning it into
+// one giant opaque blob.
 message Task {
   string task_id = 1;
   string description = 2;
   string specialty = 3;
   Constraints constraints = 4;
   google.protobuf.Struct attributes = 5;
+  ExternalContextBundle external_context = 6;
 }
 
 // Constraints shape how the council deliberates.
@@ -121,6 +124,61 @@ message Constraints {
   uint32 rounds = 2; // peer-review rounds; 0 means implementation default
   uint32 num_agents = 3; // requested parallelism; 0 means use council size
   uint64 deadline_ms = 4; // optional soft deadline; 0 means none
+  OutputContract output_contract = 5;
+}
+
+// Generic structured-output contract for one council invocation.
+// Presence of this block switches deliberation into structured-output
+// mode: callers require proposals to satisfy the declared format and
+// field rules instead of remaining free-form text only.
+message OutputContract {
+  string contract_id = 1;
+  OutputFormat format = 2;
+  map<string, OutputFieldRule> fields = 3;
+}
+
+enum OutputFormat {
+  OUTPUT_FORMAT_UNSPECIFIED = 0;
+  OUTPUT_FORMAT_JSON_OBJECT = 1;
+}
+
+message OutputFieldRule {
+  bool required = 1;
+  repeated string allowed_string_values = 2;
+}
+
+// Bounded, caller-materialized context bundle passed into a council.
+// The contract is intentionally generic: callers define `item.kind`
+// labels and attach machine-readable detail through `attributes`.
+message ExternalContextBundle {
+  string bundle_id = 1;
+  string schema_version = 2;
+  ContextSummary summary = 3;
+  repeated ContextItem items = 4;
+  repeated ContextReference references = 5;
+  google.protobuf.Struct metadata = 6;
+}
+
+message ContextSummary {
+  string text = 1;
+  google.protobuf.Struct attributes = 2;
+}
+
+message ContextItem {
+  string item_id = 1;
+  string kind = 2;
+  string title = 3;
+  string narrative = 4;
+  google.protobuf.Struct attributes = 5;
+  repeated string reference_ids = 6;
+}
+
+message ContextReference {
+  string reference_id = 1;
+  string uri = 2;
+  string title = 3;
+  string media_type = 4;
+  google.protobuf.Struct attributes = 5;
 }
 
 // A single agent's output from one step of deliberation.
@@ -229,10 +287,11 @@ message TriggerEvent {
   google.protobuf.Timestamp emitted_at = 4;
 
   repeated string requested_specialties = 5;
-  string task_description_template = 6; // optional; rendered with `payload`
+  string task_description_template = 6; // optional literal task description supplied by the producer
   Constraints constraints = 7;
 
   google.protobuf.Struct payload = 8; // opaque domain data
+  ExternalContextBundle external_context = 9;
 }
 
 message ProcessTriggerEventRequest {

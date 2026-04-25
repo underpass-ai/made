@@ -12,6 +12,8 @@ use time::OffsetDateTime;
 use uuid::Uuid;
 
 use super::attributes::{attributes_from_struct, rubric_from_struct};
+use super::context::external_context_from_proto;
+use super::output_contract::output_contract_from_proto;
 
 /// Convert a proto `TriggerEvent` to the domain aggregate, minting
 /// a fresh `EventId` on the fly if the wire carried an empty one and
@@ -42,35 +44,43 @@ pub fn trigger_event_from_proto(
 
     let constraints = match ev.constraints {
         None => TaskConstraints::default(),
-        Some(c) => TaskConstraints::new(
-            rubric_from_struct(c.rubric)?,
-            if c.rounds == 0 {
-                Rounds::default()
-            } else {
-                Rounds::new(c.rounds)?
-            },
-            if c.num_agents == 0 {
-                None
-            } else {
-                Some(NumAgents::new(c.num_agents)?)
-            },
-            if c.deadline_ms == 0 {
-                None
-            } else {
-                Some(DurationMs::from_millis(c.deadline_ms))
-            },
-        ),
+        Some(c) => {
+            let mut constraints = TaskConstraints::new(
+                rubric_from_struct(c.rubric)?,
+                if c.rounds == 0 {
+                    Rounds::default()
+                } else {
+                    Rounds::new(c.rounds)?
+                },
+                if c.num_agents == 0 {
+                    None
+                } else {
+                    Some(NumAgents::new(c.num_agents)?)
+                },
+                if c.deadline_ms == 0 {
+                    None
+                } else {
+                    Some(DurationMs::from_millis(c.deadline_ms))
+                },
+            );
+            if let Some(output_contract) = output_contract_from_proto(c.output_contract)? {
+                constraints = constraints.with_output_contract(output_contract);
+            }
+            constraints
+        }
     };
 
     let payload = attributes_from_struct(ev.payload)?;
+    let external_context = external_context_from_proto(ev.external_context)?;
 
-    TriggerEvent::new(
+    TriggerEvent::new_with_context(
         envelope,
         ev.kind,
         specialties,
         template,
         constraints,
         payload,
+        external_context,
     )
 }
 
@@ -99,6 +109,7 @@ mod tests {
             task_description_template: String::new(),
             constraints: None,
             payload: Some(PbStruct::default()),
+            external_context: None,
         }
     }
 

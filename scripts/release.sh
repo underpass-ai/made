@@ -18,7 +18,8 @@ set -euo pipefail
 #   just version 0.2.0
 #   just check                  # fast gates green
 #   just integration            # container-backed gates green
-#   just e2e-compose            # end-to-end sanity
+#   make e2e-compose            # end-to-end sanity
+#   make e2e-kubernetes         # kubernetes job sanity
 #   git commit -am "chore: v0.2.0"
 #   gh pr create --fill
 #   # merge via CI

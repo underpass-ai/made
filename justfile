@@ -22,6 +22,10 @@ provider_features := "--features choreo-adapters/agent-anthropic --features chor
 # fast per-PR gates — match quality-gate.yml
 # -----------------------------------------------------------------------------
 
+# Contract gate: proto + AsyncAPI validation + blocking proto breaking check.
+contract:
+    bash scripts/ci/contract-gate.sh
+
 # Format-check the whole workspace. Must pass before commit.
 fmt-check:
     cargo fmt --all -- --check
@@ -43,7 +47,7 @@ bench-compile:
     bash scripts/ci/bench-compile.sh
 
 # Walk the entire fast-gate cascade locally. Use before opening a PR.
-check: fmt-check clippy test bench-compile
+check: contract fmt-check clippy test bench-compile
 
 # -----------------------------------------------------------------------------
 # container-backed checks — need Docker or Podman running
@@ -60,23 +64,6 @@ integration-postgres:
 
 # Every container-backed integration test.
 integration: integration-nats integration-postgres
-
-# End-to-end on docker compose. `e2e.yml` is workflow_dispatch only
-# in CI; run locally before cutting a release.
-e2e-compose:
-    bash scripts/ci/e2e-compose.sh
-
-# End-to-end on kind. Local run needs kubectl + helm + kind.
-e2e-kubernetes:
-    bash scripts/ci/e2e-kubernetes.sh
-
-# Provider-level E2E: exercises the `agent-vllm` adapter against a
-# real vLLM endpoint via mTLS. Expects `e2e-client-tls` in the
-# target namespace (default `underpass-runtime`); override with
-# NAMESPACE=<ns>. Build the runner image first (`just
-# build-provider-image`) and make it reachable from the cluster.
-e2e-provider-vllm:
-    bash scripts/ci/e2e-provider-vllm.sh
 
 # -----------------------------------------------------------------------------
 # chart & image

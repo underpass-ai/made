@@ -1,0 +1,134 @@
+syntax = "proto3";
+
+package underpass.runtime.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+enum RuntimeKind {
+  RUNTIME_KIND_UNSPECIFIED = 0;
+  RUNTIME_KIND_LOCAL = 1;
+  RUNTIME_KIND_DOCKER = 2;
+  RUNTIME_KIND_KUBERNETES = 3;
+}
+
+enum InvocationStatus {
+  INVOCATION_STATUS_UNSPECIFIED = 0;
+  INVOCATION_STATUS_RUNNING = 1;
+  INVOCATION_STATUS_SUCCEEDED = 2;
+  INVOCATION_STATUS_FAILED = 3;
+  INVOCATION_STATUS_DENIED = 4;
+}
+
+message Principal {
+  string tenant_id = 1;
+  string actor_id = 2;
+  repeated string roles = 3;
+}
+
+message RuntimeRef {
+  RuntimeKind kind = 1;
+  string namespace = 2;
+  string pod_name = 3;
+  string container = 4;
+  string container_id = 5;
+  string workdir = 6;
+}
+
+message Session {
+  string id = 1;
+  string workspace_path = 2;
+  RuntimeRef runtime = 3;
+  string repo_url = 4;
+  string repo_ref = 5;
+  repeated string allowed_paths = 6;
+  Principal principal = 7;
+  map<string, string> metadata = 8;
+  google.protobuf.Timestamp created_at = 9;
+  google.protobuf.Timestamp expires_at = 10;
+}
+
+message Error {
+  string code = 1;
+  string message = 2;
+}
+
+message LogLine {
+  google.protobuf.Timestamp at = 1;
+  string channel = 2;
+  string message = 3;
+}
+
+message Artifact {
+  string id = 1;
+  string name = 2;
+  string path = 3;
+  string content_type = 4;
+  int64 size_bytes = 5;
+  string sha256 = 6;
+  google.protobuf.Timestamp created_at = 7;
+}
+
+message Invocation {
+  string id = 1;
+  string session_id = 2;
+  string tool_name = 3;
+  string correlation_id = 4;
+  InvocationStatus status = 5;
+  google.protobuf.Timestamp started_at = 6;
+  google.protobuf.Timestamp completed_at = 7;
+  int64 duration_ms = 8;
+  string trace_name = 9;
+  string span_name = 10;
+  int32 exit_code = 11;
+  google.protobuf.Value output = 12;
+  string output_ref = 13;
+  repeated LogLine logs = 14;
+  string logs_ref = 15;
+  repeated Artifact artifacts = 16;
+  Error error = 17;
+}
+
+message CreateSessionRequest {
+  string session_id = 1;
+  string repo_url = 2;
+  string repo_ref = 3;
+  string source_repo_path = 4;
+  repeated string allowed_paths = 5;
+  Principal principal = 6;
+  map<string, string> metadata = 7;
+  int32 expires_in_seconds = 8;
+}
+
+message CreateSessionResponse {
+  Session session = 1;
+}
+
+message CloseSessionRequest {
+  string session_id = 1;
+}
+
+message CloseSessionResponse {
+  bool closed = 1;
+}
+
+message InvokeToolRequest {
+  string session_id = 1;
+  string tool_name = 2;
+  string correlation_id = 3;
+  google.protobuf.Struct args = 4;
+  bool approved = 5;
+}
+
+message InvokeToolResponse {
+  Invocation invocation = 1;
+}
+
+service SessionService {
+  rpc CreateSession(CreateSessionRequest) returns (CreateSessionResponse);
+  rpc CloseSession(CloseSessionRequest) returns (CloseSessionResponse);
+}
+
+service InvocationService {
+  rpc InvokeTool(InvokeToolRequest) returns (InvokeToolResponse);
+}

@@ -11,7 +11,7 @@
 
 use std::sync::Arc;
 
-use choreo_core::entities::{Deliberation, Task, TaskConstraints};
+use choreo_core::entities::{Deliberation, ExternalContextBundle, Task, TaskConstraints};
 use choreo_core::error::DomainError;
 use choreo_core::events::TriggerEvent;
 use choreo_core::value_objects::{Attributes, Specialty, TaskDescription, TaskId};
@@ -99,6 +99,7 @@ impl AutoDispatchService {
                 description.clone(),
                 event.constraints().clone(),
                 event.payload().clone(),
+                event.external_context().cloned(),
             )?;
             match self.deliberate.execute(task).await {
                 Ok(out) => {
@@ -131,13 +132,15 @@ impl AutoDispatchService {
         description: TaskDescription,
         constraints: TaskConstraints,
         attributes: Attributes,
+        external_context: Option<ExternalContextBundle>,
     ) -> Result<Task, DomainError> {
-        Ok(Task::new(
+        Ok(Task::new_with_context(
             TaskId::new(Uuid::new_v4().to_string())?,
             specialty.clone(),
             description,
             constraints,
             attributes,
+            external_context,
         ))
     }
 }

@@ -64,4 +64,8 @@ pub enum DomainError {
     /// A domain entity with the same identity already exists.
     #[error("already exists: {what}")]
     AlreadyExists { what: &'static str },
+
+    /// No candidate satisfied the structured output contract.
+    #[error("no valid proposal satisfied output contract `{contract_id}`")]
+    NoValidProposal { contract_id: String },
 }

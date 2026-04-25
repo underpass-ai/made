@@ -106,7 +106,8 @@ product surface.
   enforced in CI.
 - Integration tests: **testcontainers-backed**, real services per run.
 - End-to-end: runner container via `docker compose` or as a Kubernetes
-  `Job` against a kind cluster with the Helm chart installed.
+  `Job` against a Helm-installed release on `kind` or an existing
+  cluster with a cluster-pullable image registry.
 - Clippy: `-D warnings`. Rustfmt: enforced. Contract gate: blocking.
 
 ## 10. What to do when tempted

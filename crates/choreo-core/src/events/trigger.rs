@@ -8,7 +8,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::entities::TaskConstraints;
+use crate::entities::{ExternalContextBundle, TaskConstraints};
 use crate::error::DomainError;
 use crate::events::envelope::EventEnvelope;
 use crate::value_objects::{Attributes, Specialty, TaskDescription};
@@ -23,8 +23,11 @@ pub struct TriggerEvent {
     kind: String,
     requested_specialties: Vec<Specialty>,
     task_description_template: Option<TaskDescription>,
+    #[serde(default)]
     constraints: TaskConstraints,
+    #[serde(default)]
     payload: Attributes,
+    external_context: Option<ExternalContextBundle>,
 }
 
 impl TriggerEvent {
@@ -42,6 +45,26 @@ impl TriggerEvent {
         task_description_template: Option<TaskDescription>,
         constraints: TaskConstraints,
         payload: Attributes,
+    ) -> Result<Self, DomainError> {
+        Self::new_with_context(
+            envelope,
+            kind,
+            requested_specialties,
+            task_description_template,
+            constraints,
+            payload,
+            None,
+        )
+    }
+
+    pub fn new_with_context(
+        envelope: EventEnvelope,
+        kind: impl Into<String>,
+        requested_specialties: impl IntoIterator<Item = Specialty>,
+        task_description_template: Option<TaskDescription>,
+        constraints: TaskConstraints,
+        payload: Attributes,
+        external_context: Option<ExternalContextBundle>,
     ) -> Result<Self, DomainError> {
         let kind = kind.into();
         let trimmed = kind.trim();
@@ -78,6 +101,7 @@ impl TriggerEvent {
             task_description_template,
             constraints,
             payload,
+            external_context,
         })
     }
 
@@ -104,6 +128,11 @@ impl TriggerEvent {
     #[must_use]
     pub fn payload(&self) -> &Attributes {
         &self.payload
+    }
+
+    #[must_use]
+    pub fn external_context(&self) -> Option<&ExternalContextBundle> {
+        self.external_context.as_ref()
     }
 }
 
@@ -241,5 +270,37 @@ mod tests {
             )
             .unwrap();
         }
+    }
+
+    #[test]
+    fn json_defaults_optional_constraints_and_payload() {
+        let json = serde_json::json!({
+            "event_id": "e1",
+            "kind": "alert.fired",
+            "source": "grafana",
+            "emitted_at": "2026-04-15T12:00:00Z",
+            "requested_specialties": ["triage"]
+        });
+
+        let ev: TriggerEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(ev.constraints(), &TaskConstraints::default());
+        assert_eq!(ev.payload(), &Attributes::empty());
+    }
+
+    #[test]
+    fn json_accepts_empty_constraints_object() {
+        let json = serde_json::json!({
+            "event_id": "e1",
+            "kind": "alert.fired",
+            "source": "grafana",
+            "emitted_at": "2026-04-15T12:00:00Z",
+            "requested_specialties": ["triage"],
+            "constraints": {},
+            "payload": {}
+        });
+
+        let ev: TriggerEvent = serde_json::from_value(json).unwrap();
+        assert_eq!(ev.constraints(), &TaskConstraints::default());
+        assert_eq!(ev.payload(), &Attributes::empty());
     }
 }

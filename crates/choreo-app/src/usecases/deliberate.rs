@@ -155,16 +155,13 @@ impl DeliberateUseCase {
             .await?; // Validating -> Scoring
 
         let completed_at = self.clock.now();
-        let ranked = deliberation.complete(completed_at)?;
+        let mut ranked = deliberation.complete(completed_at)?;
         observer
             .on_phase_changed(deliberation.task_id(), deliberation.phase(), completed_at)
             .await;
-        let winner = ranked
-            .first()
-            .ok_or(DomainError::EmptyCollection {
-                field: "deliberation.ranked",
-            })?
-            .clone();
+        if task.constraints().output_contract().is_some() {
+            ranked = Self::prioritize_valid_outputs(&mut deliberation, &ranked)?;
+        }
 
         self.repository.save(&deliberation).await?;
 
@@ -173,6 +170,8 @@ impl DeliberateUseCase {
         self.statistics
             .record_deliberation(deliberation.specialty(), duration)
             .await?;
+
+        let winner = Self::pick_winner(&ranked, task.constraints())?;
 
         let completion_event = DeliberationCompletedEvent::new(
             self.envelope(completed_at)?,
@@ -198,6 +197,41 @@ impl DeliberateUseCase {
         Ok(DeliberateOutput {
             winner_proposal_id: winner.proposal().id().clone(),
             deliberation,
+        })
+    }
+
+    fn prioritize_valid_outputs(
+        deliberation: &mut Deliberation,
+        ranked: &[choreo_core::entities::RankedOutcome],
+    ) -> Result<Vec<choreo_core::entities::RankedOutcome>, DomainError> {
+        let reordered = ranked
+            .iter()
+            .filter(|candidate| candidate.outcome().all_passed())
+            .chain(
+                ranked
+                    .iter()
+                    .filter(|candidate| !candidate.outcome().all_passed()),
+            )
+            .map(|candidate| candidate.proposal().id().clone())
+            .collect::<Vec<_>>();
+        deliberation.reprioritize(reordered)
+    }
+
+    fn pick_winner<'a>(
+        ranked: &'a [choreo_core::entities::RankedOutcome],
+        constraints: &TaskConstraints,
+    ) -> Result<&'a choreo_core::entities::RankedOutcome, DomainError> {
+        if let Some(contract) = constraints.output_contract() {
+            return ranked
+                .iter()
+                .find(|candidate| candidate.outcome().all_passed())
+                .ok_or(DomainError::NoValidProposal {
+                    contract_id: contract.contract_id().to_owned(),
+                });
+        }
+
+        ranked.first().ok_or(DomainError::EmptyCollection {
+            field: "deliberation.ranked",
         })
     }
 
@@ -256,6 +290,7 @@ impl DeliberateUseCase {
                     task: task.description().clone(),
                     constraints: task.constraints().clone(),
                     diverse: true,
+                    external_context: task.external_context().cloned(),
                 })
                 .await?;
             let proposal_id = new_proposal_id()?;
@@ -369,15 +404,21 @@ fn new_event_id() -> Result<EventId, DomainError> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
-    use choreo_core::entities::{DeliberationPhase, Task, TaskConstraints};
+    use choreo_core::entities::{
+        ContextItem, ContextReference, ContextSummary, DeliberationPhase, ExternalContextBundle,
+        Task, TaskConstraints,
+    };
     use choreo_core::events::{
         DeliberationCompletedEvent, PhaseChangedEvent, TaskCompletedEvent, TaskDispatchedEvent,
         TaskFailedEvent,
     };
     use choreo_core::ports::{Critique, Revision};
     use choreo_core::value_objects::{
-        Attributes, CouncilId, NumAgents, Rounds, Rubric, Score, Specialty, TaskDescription, TaskId,
+        Attributes, CouncilId, NumAgents, OutputContract, OutputFieldRule, Rounds, Rubric, Score,
+        Specialty, TaskDescription, TaskId,
     };
+    use serde_json::json;
+    use std::collections::BTreeMap;
     use std::sync::Mutex;
     use time::macros::datetime;
 
@@ -657,6 +698,57 @@ mod tests {
             constraints,
             Attributes::empty(),
         )
+    }
+
+    fn task_with_context(
+        constraints: TaskConstraints,
+        external_context: ExternalContextBundle,
+    ) -> Task {
+        Task::new_with_context(
+            TaskId::new("t1").unwrap(),
+            specialty(),
+            TaskDescription::new("describe the incident").unwrap(),
+            constraints,
+            Attributes::empty(),
+            Some(external_context),
+        )
+    }
+
+    fn sample_external_context() -> ExternalContextBundle {
+        ExternalContextBundle::new(
+            "ctx-1",
+            "v1",
+            Some(
+                ContextSummary::new(
+                    "Bounded caller-supplied context",
+                    Attributes::new(BTreeMap::from([(
+                        "origin".to_owned(),
+                        json!("external-system"),
+                    )]))
+                    .unwrap(),
+                )
+                .unwrap(),
+            ),
+            vec![ContextItem::new(
+                "item-1",
+                "finding",
+                "Primary observation",
+                Some("An upstream dependency changed shortly before the task".to_owned()),
+                Attributes::new(BTreeMap::from([("weight".to_owned(), json!(0.9))])).unwrap(),
+                vec!["ref-1".to_owned()],
+            )
+            .unwrap()],
+            vec![ContextReference::new(
+                "ref-1",
+                "s3://bucket/evidence.json",
+                Some("Evidence".to_owned()),
+                Some("application/json".to_owned()),
+                Attributes::empty(),
+            )
+            .unwrap()],
+            Attributes::empty(),
+        )
+        .unwrap()
     }
 
     fn fixture(
@@ -1013,5 +1105,215 @@ mod tests {
         ));
         usecase.execute(t).await.unwrap();
         assert_eq!(repo.saved.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn draft_request_preserves_external_context_bundle() {
+        #[derive(Debug)]
+        struct CapturingAgent {
+            id: AgentId,
+            specialty: Specialty,
+            seen_requests: Mutex<Vec<DraftRequest>>,
+        }
+
+        #[async_trait]
+        impl AgentPort for CapturingAgent {
+            fn id(&self) -> &AgentId {
+                &self.id
+            }
+
+            fn specialty(&self) -> &Specialty {
+                &self.specialty
+            }
+
+            async fn generate(&self, request: DraftRequest) -> Result<Revision, DomainError> {
+                self.seen_requests.lock().unwrap().push(request);
+                Ok(Revision {
+                    content: "captured".to_owned(),
+                })
+            }
+
+            async fn critique(
+                &self,
+                _peer_content: &str,
+                _constraints: &TaskConstraints,
+            ) -> Result<Critique, DomainError> {
+                Ok(Critique {
+                    feedback: "ok".to_owned(),
+                })
+            }
+
+            async fn revise(
+                &self,
+                own_content: &str,
+                _critique: &Critique,
+            ) -> Result<Revision, DomainError> {
+                Ok(Revision {
+                    content: own_content.to_owned(),
+                })
+            }
+        }
+
+        let agent = Arc::new(CapturingAgent {
+            id: AgentId::new("a1").unwrap(),
+            specialty: specialty(),
+            seen_requests: Mutex::new(Vec::new()),
+        });
+        let council = council_with(&["a1"]);
+        let (usecase, _repo, _bus) = fixture(vec![agent.clone() as Arc<dyn AgentPort>], council);
+
+        let external_context = sample_external_context();
+        let task = task_with_context(
+            TaskConstraints::new(Rubric::empty(), Rounds::new(0).unwrap(), None, None),
+            external_context.clone(),
+        );
+
+        usecase.execute(task).await.unwrap();
+
+        let seen = agent.seen_requests.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert_eq!(seen[0].external_context.as_ref(), Some(&external_context));
+    }
+
+    struct PreferInvalidScore;
+
+    #[async_trait]
+    impl ScoringPort for PreferInvalidScore {
+        async fn score(&self, reports: &[ValidatorReport]) -> Result<Score, DomainError> {
+            let all_passed = reports.iter().all(ValidatorReport::passed);
+            Score::new(if all_passed { 0.2 } else { 0.9 })
+        }
+    }
+
+    struct JsonObjectContractValidator;
+
+    #[async_trait]
+    impl ValidatorPort for JsonObjectContractValidator {
+        fn kind(&self) -> &'static str {
+            "json-object"
+        }
+
+        async fn validate(
+            &self,
+            content: &str,
+            constraints: &TaskConstraints,
+        ) -> Result<ValidatorReport, DomainError> {
+            if constraints.output_contract().is_none() {
+                return ValidatorReport::new(self.kind(), true, "no contract", Attributes::empty());
+            }
+            let passed = serde_json::from_str::<serde_json::Value>(content)
+                .ok()
+                .is_some_and(|value| value.is_object());
+            ValidatorReport::new(
+                self.kind(),
+                passed,
+                if passed {
+                    "valid object"
+                } else {
+                    "invalid object"
+                },
+                Attributes::empty(),
+            )
+        }
+    }
+
+    fn structured_constraints() -> TaskConstraints {
+        TaskConstraints::new(Rubric::empty(), Rounds::new(0).unwrap(), None, None)
+            .with_output_contract(
+                OutputContract::json_object(
+                    "decision-contract",
+                    BTreeMap::from([(
+                        "decision".to_owned(),
+                        OutputFieldRule::new(true, ["emit_event", "escalate"]).unwrap(),
+                    )]),
+                )
+                .unwrap(),
+            )
+    }
+
+    fn fixture_with_scoring(
+        agents: Vec<Arc<dyn AgentPort>>,
+        council: Council,
+        scoring: Arc<dyn ScoringPort>,
+        validators: Vec<Arc<dyn ValidatorPort>>,
+    ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
+        let clock = Arc::new(FrozenClock {
+            now: datetime!(2026-04-15 12:00:00 UTC),
+        });
+        let registry = Arc::new(FixedRegistry { council });
+        let resolver = Arc::new(StubResolver::new(agents));
+        let repo = Arc::new(InMemoryRepo::default());
+        let bus = Arc::new(NullBus::default());
+
+        let stats: Arc<dyn choreo_core::ports::StatisticsPort> = Arc::new(NullStats);
+        let usecase = DeliberateUseCase::new(
+            clock,
+            registry,
+            resolver,
+            validators,
+            scoring,
+            repo.clone(),
+            bus.clone(),
+            stats,
+            "choreographer",
+        );
+        (usecase, repo, bus)
+    }
+
+    #[tokio::test]
+    async fn structured_output_mode_prefers_valid_proposal_even_when_invalid_scores_higher() {
+        let council = council_with(&["a1", "a2"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> = vec![
+            StubAgent::new("a1", &sp, "plain text", vec![]) as Arc<dyn AgentPort>,
+            StubAgent::new("a2", &sp, r#"{"decision":"emit_event"}"#, vec![]) as Arc<dyn AgentPort>,
+        ];
+        let (usecase, _repo, bus) = fixture_with_scoring(
+            agents,
+            council,
+            Arc::new(PreferInvalidScore),
+            vec![Arc::new(JsonObjectContractValidator)],
+        );
+
+        let out = usecase
+            .execute(task(structured_constraints()))
+            .await
+            .unwrap();
+        let winner_id = out.winner_proposal_id.clone();
+        let winner = out.deliberation.proposals().get(&winner_id).unwrap();
+
+        assert_eq!(winner.author().as_str(), "a2");
+        assert_eq!(out.deliberation.ranking()[0].as_str(), winner_id.as_str());
+        assert_eq!(
+            bus.completed.lock().unwrap()[0]
+                .winner_proposal_id()
+                .as_str(),
+            winner_id.as_str()
+        );
+    }
+
+    #[tokio::test]
+    async fn structured_output_mode_fails_when_every_proposal_is_invalid() {
+        let council = council_with(&["a1"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> =
+            vec![StubAgent::new("a1", &sp, "plain text", vec![]) as Arc<dyn AgentPort>];
+        let (usecase, repo, bus) = fixture_with_scoring(
+            agents,
+            council,
+            Arc::new(PreferInvalidScore),
+            vec![Arc::new(JsonObjectContractValidator)],
+        );
+
+        let err = usecase
+            .execute(task(structured_constraints()))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::NoValidProposal { ref contract_id } if contract_id == "decision-contract"
+        ));
+        assert_eq!(repo.saved.lock().unwrap().len(), 1);
+        assert_eq!(bus.completed.lock().unwrap().len(), 0);
     }
 }

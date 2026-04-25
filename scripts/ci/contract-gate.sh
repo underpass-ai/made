@@ -20,11 +20,7 @@ buf lint
 
 echo ">>> [contract-gate] buf breaking (proto, against origin/main)"
 if git rev-parse --verify origin/main >/dev/null 2>&1; then
-  buf breaking --against ".git#branch=origin/main,subdir=${PROTO_DIR}" || {
-    echo "::warning::proto breaking change detected vs origin/main"
-    # Soft-fail window: keep hard fail commented out until first release.
-    # exit 1
-  }
+  buf breaking --against ".git#branch=origin/main,subdir=${PROTO_DIR}"
 else
   echo "::notice::no origin/main reference; skipping breaking check"
 fi

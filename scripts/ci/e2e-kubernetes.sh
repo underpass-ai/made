@@ -1,11 +1,16 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# End-to-end validation against a real Kubernetes cluster (kind).
+# End-to-end validation against Kubernetes.
 #
 # Flow:
-#   1. Build the Choreographer image and the E2E runner image, and
-#      load both into the kind node.
+#   1. Build the Choreographer image and the E2E runner image.
+#   2. Make those images reachable from the target cluster:
+#      - `kind` mode: `kind load docker-image`
+#      - existing-cluster mode: push to a cluster-accessible registry.
+#        The standard path is GHCR + `imagePullSecrets` (matching
+#        sibling repos); a local in-cluster registry is a cluster-
+#        specific fallback via `kubectl port-forward`.
 #   2. Deploy a tiny NATS (Deployment + Service).
 #   3. `helm install` the Choreographer chart pointed at the local
 #      images, with seeding enabled so `ListCouncils` returns a
@@ -20,9 +25,25 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CHART_PATH="${ROOT_DIR}/charts/choreographer"
 NATS_MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/nats.yaml"
 JOB_MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/runner-job.yaml"
-CHOREO_IMAGE="underpass-choreographer:e2e"
-RUNNER_IMAGE="underpass-choreographer-e2e-runner:e2e"
+IMAGE_TAG="${E2E_IMAGE_TAG:-e2e}"
+CHOREO_IMAGE="underpass-choreographer:${IMAGE_TAG}"
+RUNNER_IMAGE="underpass-choreographer-e2e-runner:${IMAGE_TAG}"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-choreographer-e2e}"
+CURRENT_NAMESPACE="$(kubectl config view --minify --output 'jsonpath={..namespace}')"
+NAMESPACE="${E2E_NAMESPACE:-${CURRENT_NAMESPACE:-default}}"
+CLUSTER_MODE="${E2E_CLUSTER_MODE:-auto}" # auto|kind|existing
+IMAGE_REPOSITORY_PREFIX="${E2E_IMAGE_REPOSITORY_PREFIX:-}"
+IMAGE_PULL_SECRET="${E2E_IMAGE_PULL_SECRET:-}"
+REGISTRY_NAMESPACE="${E2E_REGISTRY_NAMESPACE:-container-registry}"
+REGISTRY_SERVICE="${E2E_REGISTRY_SERVICE:-docker-registry}"
+REGISTRY_LOCAL_ADDR="${E2E_REGISTRY_LOCAL_ADDR:-127.0.0.1:5001}"
+REGISTRY_CLUSTER_ADDR="${E2E_REGISTRY_CLUSTER_ADDR:-docker-registry.container-registry.svc.cluster.local:5000}"
+CHOREO_IMAGE_REMOTE="${REGISTRY_CLUSTER_ADDR}/underpass-choreographer:${IMAGE_TAG}"
+RUNNER_IMAGE_REMOTE="${REGISTRY_CLUSTER_ADDR}/underpass-choreographer-e2e-runner:${IMAGE_TAG}"
+CHOREO_PULL_POLICY="Never"
+RUNNER_PULL_POLICY="Never"
+REGISTRY_PID=""
+RENDERED_JOB=""
 
 cd "${ROOT_DIR}"
 
@@ -36,19 +57,162 @@ on_error() {
   kubectl get all -A || true
   echo "::endgroup::"
   echo "::group::kubectl describe job"
-  kubectl describe job choreographer-e2e-runner || true
+  kubectl describe job choreographer-e2e-runner -n "${NAMESPACE}" || true
   echo "::endgroup::"
   echo "::group::runner logs"
-  kubectl logs job/choreographer-e2e-runner --tail=500 || true
+  kubectl logs job/choreographer-e2e-runner -n "${NAMESPACE}" --tail=500 || true
   echo "::endgroup::"
   echo "::group::choreographer logs"
-  kubectl logs -l app.kubernetes.io/name=choreographer --tail=500 || true
+  kubectl logs -n "${NAMESPACE}" -l app.kubernetes.io/name=choreographer --tail=500 || true
   echo "::endgroup::"
   echo "::group::nats logs"
-  kubectl logs -l app=nats --tail=200 || true
+  kubectl logs -n "${NAMESPACE}" -l app=nats --tail=200 || true
   echo "::endgroup::"
 }
 trap on_error ERR
+
+cleanup() {
+  if [ -n "${REGISTRY_PID}" ]; then
+    kill "${REGISTRY_PID}" >/dev/null 2>&1 || true
+  fi
+  if [ -n "${RENDERED_JOB}" ] && [ -f "${RENDERED_JOB}" ]; then
+    rm -f "${RENDERED_JOB}"
+  fi
+}
+trap cleanup EXIT
+
+select_container_cli() {
+  case "${CONTAINER_RUNTIME:-auto}" in
+    auto)
+      if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
+        echo "docker"
+        return 0
+      fi
+      if command -v podman >/dev/null 2>&1; then
+        echo "podman"
+        return 0
+      fi
+      echo "no supported container runtime found; install docker or podman" >&2
+      return 1
+      ;;
+    docker)
+      echo "docker"
+      ;;
+    podman)
+      echo "podman"
+      ;;
+    *)
+      echo "unsupported CONTAINER_RUNTIME=${CONTAINER_RUNTIME}" >&2
+      return 1
+      ;;
+  esac
+}
+
+detect_cluster_mode() {
+  case "${CLUSTER_MODE}" in
+    kind|existing)
+      echo "${CLUSTER_MODE}"
+      ;;
+    auto)
+      if command -v kind >/dev/null 2>&1; then
+        echo "kind"
+      else
+        echo "existing"
+      fi
+      ;;
+    *)
+      echo "unsupported E2E_CLUSTER_MODE=${CLUSTER_MODE}; expected auto, kind, or existing" >&2
+      return 1
+      ;;
+  esac
+}
+
+wait_for_registry() {
+  local url="http://${REGISTRY_LOCAL_ADDR}/v2/"
+  for _ in $(seq 1 30); do
+    if curl -fsS "${url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  echo "registry port-forward did not become ready at ${url}" >&2
+  return 1
+}
+
+push_images_to_cluster_registry() {
+  local container_cli="$1"
+  local local_choreo_ref="${REGISTRY_LOCAL_ADDR}/underpass-choreographer:${IMAGE_TAG}"
+  local local_runner_ref="${REGISTRY_LOCAL_ADDR}/underpass-choreographer-e2e-runner:${IMAGE_TAG}"
+
+  echo ">>> port-forwarding registry ${REGISTRY_SERVICE}.${REGISTRY_NAMESPACE}.svc:5000 to ${REGISTRY_LOCAL_ADDR}"
+  kubectl port-forward -n "${REGISTRY_NAMESPACE}" "svc/${REGISTRY_SERVICE}" "${REGISTRY_LOCAL_ADDR#*:}:5000" \
+    >/tmp/choreographer-e2e-registry-port-forward.log 2>&1 &
+  REGISTRY_PID=$!
+  wait_for_registry
+
+  echo ">>> tagging images for local registry push"
+  "${container_cli}" tag "${CHOREO_IMAGE}" "${local_choreo_ref}"
+  "${container_cli}" tag "${RUNNER_IMAGE}" "${local_runner_ref}"
+
+  echo ">>> pushing images to cluster registry via ${REGISTRY_LOCAL_ADDR}"
+  if [ "${container_cli}" = "podman" ]; then
+    "${container_cli}" push --tls-verify=false "${local_choreo_ref}"
+    "${container_cli}" push --tls-verify=false "${local_runner_ref}"
+  else
+    "${container_cli}" push "${local_choreo_ref}"
+    "${container_cli}" push "${local_runner_ref}"
+  fi
+
+  CHOREO_IMAGE="${CHOREO_IMAGE_REMOTE}"
+  RUNNER_IMAGE="${RUNNER_IMAGE_REMOTE}"
+  CHOREO_PULL_POLICY="Always"
+  RUNNER_PULL_POLICY="Always"
+}
+
+push_images_to_external_registry() {
+  local container_cli="$1"
+
+  echo ">>> pushing images to external registry"
+  "${container_cli}" push "${CHOREO_IMAGE}"
+  "${container_cli}" push "${RUNNER_IMAGE}"
+
+  CHOREO_PULL_POLICY="Always"
+  RUNNER_PULL_POLICY="Always"
+}
+
+render_runner_job() {
+  RENDERED_JOB="$(mktemp)"
+  awk \
+    -v image="${RUNNER_IMAGE}" \
+    -v pull="${RUNNER_PULL_POLICY}" \
+    -v pull_secret="${IMAGE_PULL_SECRET}" '
+      {
+        gsub("image: underpass-choreographer-e2e-runner:e2e", "image: " image);
+        gsub("imagePullPolicy: Never", "imagePullPolicy: " pull);
+      }
+      /restartPolicy: Never/ {
+        print;
+        if (pull_secret != "") {
+          print "      imagePullSecrets:";
+          print "        - name: " pull_secret;
+        }
+        next;
+      }
+      { print }
+    ' "${JOB_MANIFEST}" > "${RENDERED_JOB}"
+}
+
+CONTAINER_CLI="$(select_container_cli)"
+EFFECTIVE_CLUSTER_MODE="$(detect_cluster_mode)"
+
+if [ -z "${IMAGE_REPOSITORY_PREFIX}" ] && [ "${EFFECTIVE_CLUSTER_MODE}" = "existing" ]; then
+  echo "::notice::existing-cluster E2E defaults to the in-cluster registry fallback; for the sibling-repo path prefer E2E_IMAGE_REPOSITORY_PREFIX=ghcr.io/underpass-ai and E2E_IMAGE_PULL_SECRET=ghcr-pull"
+fi
+
+if [ -n "${IMAGE_REPOSITORY_PREFIX}" ]; then
+  CHOREO_IMAGE="${IMAGE_REPOSITORY_PREFIX}/underpass-choreographer:${IMAGE_TAG}"
+  RUNNER_IMAGE="${IMAGE_REPOSITORY_PREFIX}/underpass-choreographer-e2e-runner:${IMAGE_TAG}"
+fi
 
 echo ">>> building choreographer image"
 bash scripts/ci/container-image.sh "${CHOREO_IMAGE}" Dockerfile
@@ -56,32 +220,54 @@ bash scripts/ci/container-image.sh "${CHOREO_IMAGE}" Dockerfile
 echo ">>> building e2e runner image"
 bash scripts/ci/container-image.sh "${RUNNER_IMAGE}" tests/e2e/runner.Dockerfile
 
-echo ">>> loading images into kind cluster '${CLUSTER_NAME}'"
-kind load docker-image "${CHOREO_IMAGE}" --name "${CLUSTER_NAME}"
-kind load docker-image "${RUNNER_IMAGE}" --name "${CLUSTER_NAME}"
+if [ -n "${IMAGE_REPOSITORY_PREFIX}" ]; then
+  push_images_to_external_registry "${CONTAINER_CLI}"
+else
+  case "${EFFECTIVE_CLUSTER_MODE}" in
+    kind)
+      echo ">>> loading images into kind cluster '${CLUSTER_NAME}'"
+      kind load docker-image "${CHOREO_IMAGE}" --name "${CLUSTER_NAME}"
+      kind load docker-image "${RUNNER_IMAGE}" --name "${CLUSTER_NAME}"
+      ;;
+    existing)
+      push_images_to_cluster_registry "${CONTAINER_CLI}"
+      ;;
+  esac
+fi
 
 echo ">>> deploying NATS"
-kubectl apply -f "${NATS_MANIFEST}"
-kubectl wait --for=condition=available --timeout=2m deployment/nats
+kubectl apply -n "${NAMESPACE}" -f "${NATS_MANIFEST}"
+kubectl wait -n "${NAMESPACE}" --for=condition=available --timeout=2m deployment/nats
 
 echo ">>> installing Choreographer chart"
-helm upgrade --install choreographer "${CHART_PATH}" \
-  --values "${CHART_PATH}/values.dev.yaml" \
-  --set "image.repository=underpass-choreographer" \
-  --set "image.tag=e2e" \
-  --set "image.pullPolicy=Never" \
-  --set "config.seedSpecialties=triage" \
+HELM_ARGS=(
+  upgrade --install choreographer "${CHART_PATH}"
+  -n "${NAMESPACE}"
+  --create-namespace
+  --values "${CHART_PATH}/values.dev.yaml"
+  --set "image.repository=${CHOREO_IMAGE%:*}"
+  --set "image.tag=${IMAGE_TAG}"
+  --set "image.pullPolicy=${CHOREO_PULL_POLICY}"
+  --set "config.seedSpecialties=triage"
   --wait --timeout 3m
+)
+if [ -n "${IMAGE_PULL_SECRET}" ]; then
+  HELM_ARGS+=(--set "imagePullSecrets[0].name=${IMAGE_PULL_SECRET}")
+fi
+
+helm "${HELM_ARGS[@]}"
 
 echo ">>> submitting E2E runner Job"
-kubectl apply -f "${JOB_MANIFEST}"
+render_runner_job
+kubectl delete job choreographer-e2e-runner -n "${NAMESPACE}" --ignore-not-found
+kubectl apply -n "${NAMESPACE}" -f "${RENDERED_JOB}"
 
 echo ">>> waiting for Job to complete"
 # Use `kubectl wait` with both conditions so we fail fast on a
 # runner that bailed out (condition=failed) instead of sleeping
 # through the full timeout.
-if ! kubectl wait --for=condition=complete --timeout=5m job/choreographer-e2e-runner; then
-  if kubectl wait --for=condition=failed --timeout=10s job/choreographer-e2e-runner 2>/dev/null; then
+if ! kubectl wait -n "${NAMESPACE}" --for=condition=complete --timeout=5m job/choreographer-e2e-runner; then
+  if kubectl wait -n "${NAMESPACE}" --for=condition=failed --timeout=10s job/choreographer-e2e-runner 2>/dev/null; then
     echo "::error::e2e runner Job failed"
   else
     echo "::error::e2e runner Job did not complete within 5m"
@@ -91,6 +277,6 @@ if ! kubectl wait --for=condition=complete --timeout=5m job/choreographer-e2e-ru
 fi
 
 echo ">>> runner logs"
-kubectl logs job/choreographer-e2e-runner
+kubectl logs -n "${NAMESPACE}" job/choreographer-e2e-runner
 
 echo ">>> E2E kubernetes scenarios passed"

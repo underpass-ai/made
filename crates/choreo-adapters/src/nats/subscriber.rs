@@ -67,6 +67,20 @@ impl NatsTriggerSubscriber {
                 }
             })?;
 
+        // NATS subscriptions are fire-and-forget until the client flushes.
+        // Ack the SUB before returning so callers can safely publish a
+        // matching trigger immediately after `spawn()` completes.
+        self.client.flush().await.map_err(|err| {
+            error!(
+                error = %err,
+                subject = self.subjects.trigger.as_str(),
+                "nats subscribe flush failed"
+            );
+            DomainError::InvariantViolated {
+                reason: "nats: subscribe flush failed",
+            }
+        })?;
+
         info!(
             subject = self.subjects.trigger.as_str(),
             "nats trigger subscriber started"

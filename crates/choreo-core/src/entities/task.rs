@@ -2,8 +2,10 @@
 
 use serde::{Deserialize, Serialize};
 
+use crate::entities::ExternalContextBundle;
 use crate::value_objects::{
-    Attributes, DurationMs, NumAgents, Rounds, Rubric, Specialty, TaskDescription, TaskId,
+    Attributes, DurationMs, NumAgents, OutputContract, Rounds, Rubric, Specialty, TaskDescription,
+    TaskId,
 };
 
 /// The per-task configuration that shapes a deliberation.
@@ -11,11 +13,13 @@ use crate::value_objects::{
 /// Kept as a nested value object so a `Task` stays a small entity with
 /// clear ownership of its configuration.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
 pub struct TaskConstraints {
     rubric: Rubric,
     rounds: Rounds,
     num_agents: Option<NumAgents>,
     deadline: Option<DurationMs>,
+    output_contract: Option<OutputContract>,
 }
 
 impl TaskConstraints {
@@ -31,6 +35,7 @@ impl TaskConstraints {
             rounds,
             num_agents,
             deadline,
+            output_contract: None,
         }
     }
 
@@ -50,6 +55,17 @@ impl TaskConstraints {
     pub fn deadline(&self) -> Option<DurationMs> {
         self.deadline
     }
+
+    #[must_use]
+    pub fn output_contract(&self) -> Option<&OutputContract> {
+        self.output_contract.as_ref()
+    }
+
+    #[must_use]
+    pub fn with_output_contract(mut self, output_contract: OutputContract) -> Self {
+        self.output_contract = Some(output_contract);
+        self
+    }
 }
 
 impl Default for TaskConstraints {
@@ -59,6 +75,7 @@ impl Default for TaskConstraints {
             rounds: Rounds::default(),
             num_agents: None,
             deadline: None,
+            output_contract: None,
         }
     }
 }
@@ -76,6 +93,7 @@ pub struct Task {
     description: TaskDescription,
     constraints: TaskConstraints,
     attributes: Attributes,
+    external_context: Option<ExternalContextBundle>,
 }
 
 impl Task {
@@ -87,12 +105,25 @@ impl Task {
         constraints: TaskConstraints,
         attributes: Attributes,
     ) -> Self {
+        Self::new_with_context(id, specialty, description, constraints, attributes, None)
+    }
+
+    #[must_use]
+    pub fn new_with_context(
+        id: TaskId,
+        specialty: Specialty,
+        description: TaskDescription,
+        constraints: TaskConstraints,
+        attributes: Attributes,
+        external_context: Option<ExternalContextBundle>,
+    ) -> Self {
         Self {
             id,
             specialty,
             description,
             constraints,
             attributes,
+            external_context,
         }
     }
 
@@ -115,6 +146,11 @@ impl Task {
     #[must_use]
     pub fn attributes(&self) -> &Attributes {
         &self.attributes
+    }
+
+    #[must_use]
+    pub fn external_context(&self) -> Option<&ExternalContextBundle> {
+        self.external_context.as_ref()
     }
 }
 
@@ -148,6 +184,7 @@ mod tests {
         assert_eq!(t.specialty().as_str(), "triage");
         assert_eq!(t.description().as_str(), "investigate alert");
         assert!(t.attributes().is_empty());
+        assert!(t.external_context().is_none());
     }
 
     #[test]
@@ -161,6 +198,31 @@ mod tests {
         assert_eq!(c.rounds().get(), 3);
         assert_eq!(c.num_agents().unwrap().get(), 4);
         assert_eq!(c.deadline().unwrap().get(), 1500);
+    }
+
+    #[test]
+    fn constraints_can_enable_structured_output_contract() {
+        use crate::value_objects::{OutputFieldRule, OutputFormat};
+        use std::collections::BTreeMap;
+
+        let contract = OutputContract::new(
+            "decision-contract",
+            OutputFormat::JsonObject,
+            BTreeMap::from([(
+                "decision".to_owned(),
+                OutputFieldRule::new(true, ["emit_event", "escalate"]).unwrap(),
+            )]),
+        )
+        .unwrap();
+
+        let constraints = TaskConstraints::default().with_output_contract(contract.clone());
+        assert_eq!(constraints.output_contract(), Some(&contract));
+    }
+
+    #[test]
+    fn empty_json_object_deserializes_to_default_constraints() {
+        let c: TaskConstraints = serde_json::from_str("{}").unwrap();
+        assert_eq!(c, TaskConstraints::default());
     }
 
     #[test]

@@ -7,6 +7,9 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
+source "${ROOT_DIR}/scripts/ci/testcontainers-host.sh"
+
+ensure_testcontainers_host
 
 # Keep container-backed suites single-threaded to avoid parallel startup
 # spikes saturating the runner.

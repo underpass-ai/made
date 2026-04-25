@@ -14,8 +14,14 @@ use choreo_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresPoolError, PostgresStatistics,
 };
+use choreo_adapters::runtime::{
+    ExecutorBackendConfig, RuntimeExecutor, RuntimeExecutorConnectError,
+};
 use choreo_adapters::scoring::UniformScoring;
-use choreo_adapters::validators::ContentNonEmptyValidator;
+use choreo_adapters::validators::{
+    AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
+    RequiredFieldsValidator,
+};
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
@@ -67,28 +73,36 @@ pub enum ComposeError {
 
     #[error("seeding failed: {0}")]
     Seeding(#[from] SeedingError),
+
+    #[error("runtime executor setup failed: {0}")]
+    RuntimeExecutor(#[from] RuntimeExecutorConnectError),
 }
 
 /// Wire the full application.
 ///
 /// - Reads [`ServiceConfig`] from the environment.
-/// - Builds the in-memory registries and the no-op executor /
-///   validator / scoring defaults. Operators swap these for richer
-///   adapters through later slices (5d providers, real repos, …)
-///   without touching this function.
+/// - Builds the in-memory registries plus the configured execution
+///   backend. `noop` remains the default; richer executors are
+///   selected explicitly by deployment configuration.
 /// - When `nats_enabled`, connects to NATS and wires both the
 ///   outbound `NatsMessaging` and the inbound `NatsTriggerSubscriber`.
 ///   Otherwise uses [`NoopMessaging`].
 /// - Optionally seeds demo councils if `CHOREO_SEED_SPECIALTIES` is
 ///   set, so an empty deployment is immediately exercisable against
 ///   the AsyncAPI / gRPC contract.
+#[allow(clippy::too_many_lines)]
 pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load().await?;
 
     let clock = Arc::new(SystemClock::new());
-    let validators: Vec<Arc<dyn ValidatorPort>> = vec![Arc::new(ContentNonEmptyValidator::new())];
+    let validators: Vec<Arc<dyn ValidatorPort>> = vec![
+        Arc::new(ContentNonEmptyValidator::new()),
+        Arc::new(JsonObjectOutputValidator::new()),
+        Arc::new(RequiredFieldsValidator::new()),
+        Arc::new(AllowedStringValuesValidator::new()),
+    ];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
-    let executor: Arc<dyn ExecutorPort> = Arc::new(NoopExecutor::new());
+    let executor = wire_executor().await?;
     let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(NoopAgentFactory::new());
 
     // Pick the persistent backings together so the three registries
@@ -183,6 +197,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         grpc_port = service_config.grpc_port,
         http_port = service_config.http_port,
         nats_enabled = service_config.nats_enabled,
+        executor_backend = executor_backend_name(),
         trigger_subject = service_config.trigger_subject.as_str(),
         "choreographer wired"
     );
@@ -197,6 +212,21 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_subscriber,
         health_state,
     })
+}
+
+async fn wire_executor() -> Result<Arc<dyn ExecutorPort>, ComposeError> {
+    let executor: Arc<dyn ExecutorPort> = match ExecutorBackendConfig::from_env()? {
+        ExecutorBackendConfig::Noop => Arc::new(NoopExecutor::new()),
+        ExecutorBackendConfig::Runtime(config) => Arc::new(RuntimeExecutor::connect(config).await?),
+    };
+    Ok(executor)
+}
+
+fn executor_backend_name() -> &'static str {
+    match ExecutorBackendConfig::from_env() {
+        Ok(ExecutorBackendConfig::Runtime(_)) => "runtime",
+        _ => "noop",
+    }
 }
 
 /// Factory closure that produces a [`NatsTriggerSubscriber`] once the
@@ -324,6 +354,9 @@ async fn wire_persistence(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use async_trait::async_trait;
+    use choreo_proto::runtime_v1 as runtime_pb;
+    use tonic::{transport::Server, Request, Response, Status};
 
     #[tokio::test]
     async fn compose_builds_application_with_nats_disabled() {
@@ -350,5 +383,93 @@ mod tests {
         let _ = &app.grpc_service;
 
         std::env::remove_var("CHOREO_NATS_ENABLED");
+    }
+
+    #[derive(Debug, Clone, Default)]
+    struct StubRuntime;
+
+    #[async_trait]
+    impl runtime_pb::session_service_server::SessionService for StubRuntime {
+        async fn create_session(
+            &self,
+            _request: Request<runtime_pb::CreateSessionRequest>,
+        ) -> Result<Response<runtime_pb::CreateSessionResponse>, Status> {
+            Ok(Response::new(runtime_pb::CreateSessionResponse {
+                session: None,
+            }))
+        }
+
+        async fn close_session(
+            &self,
+            _request: Request<runtime_pb::CloseSessionRequest>,
+        ) -> Result<Response<runtime_pb::CloseSessionResponse>, Status> {
+            Ok(Response::new(runtime_pb::CloseSessionResponse {
+                closed: true,
+            }))
+        }
+    }
+
+    #[async_trait]
+    impl runtime_pb::invocation_service_server::InvocationService for StubRuntime {
+        async fn invoke_tool(
+            &self,
+            _request: Request<runtime_pb::InvokeToolRequest>,
+        ) -> Result<Response<runtime_pb::InvokeToolResponse>, Status> {
+            Ok(Response::new(runtime_pb::InvokeToolResponse {
+                invocation: None,
+            }))
+        }
+    }
+
+    async fn spawn_runtime_stub() -> (std::net::SocketAddr, tokio::sync::oneshot::Sender<()>) {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let addr = listener.local_addr().unwrap();
+        let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
+        let incoming = tokio_stream::wrappers::TcpListenerStream::new(listener);
+
+        tokio::spawn(async move {
+            Server::builder()
+                .add_service(
+                    runtime_pb::session_service_server::SessionServiceServer::new(StubRuntime),
+                )
+                .add_service(
+                    runtime_pb::invocation_service_server::InvocationServiceServer::new(
+                        StubRuntime,
+                    ),
+                )
+                .serve_with_incoming_shutdown(incoming, async move {
+                    let _ = shutdown_rx.await;
+                })
+                .await
+                .unwrap();
+        });
+
+        (addr, shutdown_tx)
+    }
+
+    #[tokio::test]
+    async fn compose_builds_application_with_runtime_executor_selected() {
+        static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+        let _guard = ENV_LOCK.lock().await;
+
+        for (k, _) in std::env::vars() {
+            if k.starts_with("CHOREO_") {
+                std::env::remove_var(k);
+            }
+        }
+
+        let (addr, shutdown) = spawn_runtime_stub().await;
+        std::env::set_var("CHOREO_NATS_ENABLED", "false");
+        std::env::set_var("CHOREO_EXECUTOR_KIND", "runtime");
+        std::env::set_var("CHOREO_RUNTIME_GRPC_ENDPOINT", format!("http://{addr}"));
+
+        let app = compose().await.expect("compose should succeed");
+        assert!(!app.service_config.nats_enabled);
+        assert!(app.nats_subscriber.is_none());
+
+        let _ = shutdown.send(());
+        std::env::remove_var("CHOREO_NATS_ENABLED");
+        std::env::remove_var("CHOREO_EXECUTOR_KIND");
+        std::env::remove_var("CHOREO_RUNTIME_GRPC_ENDPOINT");
     }
 }

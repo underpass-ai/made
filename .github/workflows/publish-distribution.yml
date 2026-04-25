@@ -10,6 +10,7 @@ on:
 
 env:
   IMAGE_NAME: ghcr.io/underpass-ai/underpass-choreographer
+  E2E_RUNNER_IMAGE_NAME: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner
   CHART_NAME: choreographer
   CHART_REGISTRY: oci://ghcr.io/underpass-ai/charts
   CHART_PATH: charts/choreographer
@@ -47,6 +48,17 @@ jobs:
             type=ref,event=tag
             type=sha,format=short,prefix=sha-
 
+      - name: Extract E2E runner image metadata
+        id: meta-e2e-runner
+        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f
+        with:
+          images: ${{ env.E2E_RUNNER_IMAGE_NAME }}
+          tags: |
+            type=raw,value=e2e-latest,enable={{is_default_branch}}
+            type=ref,event=branch
+            type=ref,event=tag
+            type=sha,format=short,prefix=sha-
+
       - name: Build and push image
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
@@ -55,6 +67,15 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+      - name: Build and push E2E runner image
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./tests/e2e/runner.Dockerfile
+          push: true
+          tags: ${{ steps.meta-e2e-runner.outputs.tags }}
+          labels: ${{ steps.meta-e2e-runner.outputs.labels }}
 
   publish-helm-chart:
     runs-on: ubuntu-24.04

@@ -8,6 +8,8 @@ use choreo_core::value_objects::{
 use choreo_proto::v1 as pb;
 
 use super::attributes::{attributes_from_struct, rubric_from_struct};
+use super::context::external_context_from_proto;
+use super::output_contract::output_contract_from_proto;
 
 /// Map a proto `Task` onto a domain [`Task`]. Validation failures
 /// surface as [`DomainError`].
@@ -17,12 +19,14 @@ pub fn task_from_proto(t: pb::Task) -> Result<Task, DomainError> {
     let description = TaskDescription::new(t.description)?;
     let constraints = constraints_from_proto(t.constraints)?;
     let attributes = attributes_from_struct(t.attributes)?;
-    Ok(Task::new(
+    let external_context = external_context_from_proto(t.external_context)?;
+    Ok(Task::new_with_context(
         id,
         specialty,
         description,
         constraints,
         attributes,
+        external_context,
     ))
 }
 
@@ -46,7 +50,11 @@ fn constraints_from_proto(c: Option<pb::Constraints>) -> Result<TaskConstraints,
         Some(DurationMs::from_millis(c.deadline_ms))
     };
     let rubric = rubric_from_struct(c.rubric)?;
-    Ok(TaskConstraints::new(rubric, rounds, num_agents, deadline))
+    let mut constraints = TaskConstraints::new(rubric, rounds, num_agents, deadline);
+    if let Some(output_contract) = output_contract_from_proto(c.output_contract)? {
+        constraints = constraints.with_output_contract(output_contract);
+    }
+    Ok(constraints)
 }
 
 #[cfg(test)]
@@ -64,8 +72,10 @@ mod tests {
                 rounds: 2,
                 num_agents: 3,
                 deadline_ms: 1000,
+                output_contract: None,
             }),
             attributes: Some(PbStruct::default()),
+            external_context: None,
         }
     }
 
@@ -103,8 +113,10 @@ mod tests {
                 rounds: 0,
                 num_agents: 0,
                 deadline_ms: 0,
+                output_contract: None,
             }),
             attributes: None,
+            external_context: None,
         };
         let task = task_from_proto(t).unwrap();
         assert_eq!(task.constraints().rounds(), Rounds::default());
@@ -120,6 +132,7 @@ mod tests {
             description: "d".to_owned(),
             constraints: None,
             attributes: None,
+            external_context: None,
         };
         let err = task_from_proto(t).unwrap_err();
         assert!(matches!(err, DomainError::EmptyField { field: "task_id" }));

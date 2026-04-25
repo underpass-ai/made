@@ -1,11 +1,10 @@
 ---
 # End-to-end runner as a Kubernetes Job.
 #
-# Launched after the Choreographer chart is `helm install`-ed in the
-# kind cluster. The Job drives the Choreographer over its public
-# gRPC contract and exits 0 on success; `kubectl wait
-# --for=condition=complete` in the CI script turns that exit code
-# into the job's result.
+# Launched after the Choreographer chart is installed in the target
+# Kubernetes namespace. The CI script rewrites the image reference and,
+# when needed, injects `imagePullSecrets` so the Job can pull from a
+# cluster-accessible registry such as GHCR.
 apiVersion: batch/v1
 kind: Job
 metadata:

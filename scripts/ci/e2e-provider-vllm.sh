@@ -6,23 +6,73 @@ set -euo pipefail
 # (where the e2e-client-tls secret lives); override with $NAMESPACE.
 #
 # The container image must already be built and pushed. Reuses the
-# E2E compose image tag by convention (see `just build-provider-image`).
+# Provider-E2E image tag by convention (see `make build-provider-image`).
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAMESPACE="${NAMESPACE:-underpass-runtime}"
 JOB_NAME="${JOB_NAME:-choreographer-e2e-provider-vllm}"
 MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/provider-vllm-job.yaml"
 TIMEOUT="${TIMEOUT:-180s}"
+PROVIDER_IMAGE="${PROVIDER_IMAGE:-ghcr.io/underpass-ai/underpass-choreographer-e2e-provider:latest}"
+VLLM_ENDPOINT="${CHOREO_VLLM_ENDPOINT:-https://llm.underpassai.com}"
+VLLM_MODEL="${CHOREO_VLLM_MODEL:-google/gemma-4-31B-it}"
+TLS_SECRET_NAME="${E2E_CLIENT_TLS_SECRET:-e2e-client-tls}"
+IMAGE_PULL_SECRET="${E2E_IMAGE_PULL_SECRET:-}"
+RENDERED_MANIFEST=""
 
 cleanup() {
     kubectl -n "${NAMESPACE}" delete job "${JOB_NAME}" --ignore-not-found --wait=false >/dev/null 2>&1 || true
+    if [ -n "${RENDERED_MANIFEST}" ] && [ -f "${RENDERED_MANIFEST}" ]; then
+        rm -f "${RENDERED_MANIFEST}"
+    fi
 }
 
 # Make the cleanup idempotent — a prior failed Job would block apply.
 cleanup
 trap cleanup EXIT
 
-kubectl apply -n "${NAMESPACE}" -f "${MANIFEST}"
+if ! kubectl get secret "${TLS_SECRET_NAME}" -n "${NAMESPACE}" >/dev/null 2>&1; then
+    echo "error: required TLS secret '${TLS_SECRET_NAME}' not found in namespace '${NAMESPACE}'" >&2
+    exit 1
+fi
+
+RENDERED_MANIFEST="$(mktemp)"
+awk \
+    -v image="${PROVIDER_IMAGE}" \
+    -v endpoint="${VLLM_ENDPOINT}" \
+    -v model="${VLLM_MODEL}" \
+    -v tls_secret="${TLS_SECRET_NAME}" \
+    -v pull_secret="${IMAGE_PULL_SECRET}" '
+      {
+        gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-provider:latest", "image: " image);
+        gsub("secretName: e2e-client-tls", "secretName: " tls_secret);
+      }
+      /- name: CHOREO_VLLM_ENDPOINT/ {
+        print;
+        getline;
+        sub(/value:.*/, "value: " endpoint);
+        print;
+        next;
+      }
+      /- name: CHOREO_VLLM_MODEL/ {
+        print;
+        getline;
+        sub(/value:.*/, "value: " model);
+        print;
+        next;
+      }
+      /restartPolicy: Never/ {
+        print;
+        if (pull_secret != "") {
+          print "      imagePullSecrets:";
+          print "        - name: " pull_secret;
+        }
+        next;
+      }
+      { print }
+    ' "${MANIFEST}" > "${RENDERED_MANIFEST}"
+
+kubectl apply -n "${NAMESPACE}" -f "${RENDERED_MANIFEST}"
 
 # Poll for the Job's pod to be scheduled, then tail its logs.
 echo ">>> waiting for pod"
