@@ -349,6 +349,7 @@ mod tests {
             task: TaskDescription::new("Investigate the incoming alert.").unwrap(),
             constraints: TaskConstraints::new(Rubric::empty(), Rounds::default(), None, None),
             diverse: true,
+            external_context: None,
         }
     }
 

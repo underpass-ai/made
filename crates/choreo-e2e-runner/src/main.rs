@@ -3,8 +3,8 @@
 //! Connects to a running Choreographer over gRPC and executes a
 //! sequence of scenarios that only pass if the entire stack
 //! (bin + in-memory adapters + gRPC surface + seeding) is wired
-//! correctly. Intended to run inside the docker-compose stack
-//! defined under `tests/e2e/`.
+//! correctly. Intended to run either inside the docker-compose stack
+//! or as a Kubernetes Job against a Helm-installed release.
 //!
 //! Exits 0 on success, non-zero on the first failed assertion.
 
@@ -63,6 +63,7 @@ async fn main() -> Result<()> {
                 description: "End-to-end test: describe the situation.".to_owned(),
                 constraints: None,
                 attributes: None,
+                external_context: None,
             }),
         })
         .await
@@ -108,7 +109,7 @@ async fn main() -> Result<()> {
         bail!("DeleteCouncil on an unknown specialty must return deleted=false");
     }
 
-    info!("E2E compose scenarios passed");
+    info!("E2E scenarios passed");
     Ok(())
 }
 

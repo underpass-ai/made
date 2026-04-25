@@ -39,6 +39,7 @@ pub mod clock;
 pub mod config;
 pub mod memory;
 pub mod noop;
+pub mod runtime;
 pub mod scoring;
 pub mod validators;
 

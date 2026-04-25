@@ -123,6 +123,7 @@ async fn main() -> Result<()> {
             task: task.clone(),
             constraints: constraints.clone(),
             diverse: true,
+            external_context: None,
         })
         .await
         .context("agent.generate failed")?;

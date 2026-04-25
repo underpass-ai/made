@@ -39,7 +39,7 @@ spec:
     spec:
       containers:
         - name: nats
-          image: nats:2
+          image: docker.io/library/nats:2
           args: ["-js"]
           ports:
             - name: client

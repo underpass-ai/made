@@ -1,7 +1,7 @@
 # Release process
 
-A release cuts a versioned container image + a Helm chart to
-`ghcr.io/underpass-ai/*`. Both are driven by
+A release cuts versioned container images + a Helm chart to
+`ghcr.io/underpass-ai/*`. All artefacts are driven by
 `.github/workflows/publish-distribution.yml`, which triggers on any
 `v*` tag pushed to the repository.
 
@@ -31,7 +31,7 @@ mirrors the CI gate.
    ```
 3. **Fast gates** green locally:
    ```bash
-   just check               # fmt-check + clippy + test + bench-compile
+   just check               # contract + fmt-check + clippy + test + bench-compile
    just helm-lint           # chart hardening assertions
    ```
 4. **Container-backed gates** green locally:
@@ -40,8 +40,20 @@ mirrors the CI gate.
    ```
 5. **End-to-end** (skipped on per-PR CI, run here):
    ```bash
-   just e2e-compose         # full stack
-   just e2e-kubernetes      # kind + chart + runner
+   make e2e-compose         # full stack
+   make e2e-kubernetes      # kubernetes + chart + runner
+   ```
+
+   For an existing cluster, mirror the sibling-repo pattern:
+   authenticate to `ghcr.io`, ensure an `imagePullSecrets` named
+   `ghcr-pull` exists in the release namespace, then run:
+
+   ```bash
+   E2E_NAMESPACE=<namespace> \
+   E2E_IMAGE_REPOSITORY_PREFIX=ghcr.io/underpass-ai \
+   E2E_IMAGE_PULL_SECRET=ghcr-pull \
+   E2E_IMAGE_TAG=release-$(git rev-parse --short HEAD) \
+   make e2e-kubernetes
    ```
 6. **Commit the version bump** and open a PR:
    ```bash
@@ -59,9 +71,10 @@ mirrors the CI gate.
    gh run watch $(gh run list --workflow publish-distribution.yml --json databaseId -q '.[0].databaseId')
    ```
 
-After step 8, both artefacts are live:
+After step 8, the release artefacts are live:
 
 - `ghcr.io/underpass-ai/underpass-choreographer:v0.2.0`
+- `ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:v0.2.0`
 - `oci://ghcr.io/underpass-ai/charts/choreographer:0.2.0`
 
 ## What `just release` does
@@ -75,9 +88,9 @@ After step 8, both artefacts are live:
 
 The script does **not** push the tag without every gate passing —
 the actual gates are your local `just check && just integration &&
-just e2e-compose` (step 5 of the checklist). Automating them on
-tag push would delay the signal; running them beforehand is fast
-and deterministic.
+make e2e-compose && make e2e-kubernetes` (step 5 of the checklist).
+Automating them on tag push would delay the signal; running them
+beforehand is fast and deterministic.
 
 ## Hotfix flow
 

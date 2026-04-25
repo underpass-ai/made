@@ -89,6 +89,7 @@ mod tests {
                 task: TaskDescription::new("hello").unwrap(),
                 constraints: TaskConstraints::default(),
                 diverse: true,
+                external_context: None,
             })
             .await
             .unwrap();

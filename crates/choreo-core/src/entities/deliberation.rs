@@ -253,20 +253,8 @@ impl Deliberation {
     pub fn complete(&mut self, now: OffsetDateTime) -> Result<Vec<RankedOutcome>, DomainError> {
         self.require_phase(DeliberationPhase::Scoring)?;
 
-        let mut ranked: Vec<(ProposalId, Proposal, ValidationOutcome)> = self
-            .proposals
-            .iter()
-            .map(|(id, proposal)| {
-                let outcome =
-                    self.outcomes
-                        .get(id)
-                        .cloned()
-                        .ok_or(DomainError::InvariantViolated {
-                            reason: "missing outcome at Scoring",
-                        })?;
-                Ok::<_, DomainError>((id.clone(), proposal.clone(), outcome))
-            })
-            .collect::<Result<_, _>>()?;
+        let mut ranked =
+            self.materialize_ranked_tuples(&self.proposals.keys().cloned().collect::<Vec<_>>())?;
 
         ranked.sort_by(|a, b| b.2.score().cmp(&a.2.score()).then_with(|| a.0.cmp(&b.0)));
 
@@ -274,6 +262,37 @@ impl Deliberation {
         self.phase = DeliberationPhase::Completed;
         self.completed_at = Some(now);
 
+        Ok(ranked
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, proposal, outcome))| RankedOutcome {
+                proposal,
+                outcome,
+                rank: u32::try_from(i).unwrap_or(u32::MAX),
+            })
+            .collect())
+    }
+
+    /// Reorder the final ranking after completion while preserving the
+    /// same proposal set. This lets the application layer impose a
+    /// deterministic post-scoring preference (for example, valid
+    /// structured outputs before invalid ones) without mutating
+    /// proposals or outcomes.
+    pub fn reprioritize(
+        &mut self,
+        ranking: Vec<ProposalId>,
+    ) -> Result<Vec<RankedOutcome>, DomainError> {
+        self.require_phase(DeliberationPhase::Completed)?;
+        let current: std::collections::BTreeSet<_> = self.ranking.iter().cloned().collect();
+        let proposed: std::collections::BTreeSet<_> = ranking.iter().cloned().collect();
+        if ranking.len() != self.ranking.len() || current != proposed {
+            return Err(DomainError::InvariantViolated {
+                reason: "reprioritized ranking must contain every completed proposal exactly once",
+            });
+        }
+
+        let ranked = self.materialize_ranked_tuples(&ranking)?;
+        self.ranking = ranking;
         Ok(ranked
             .into_iter()
             .enumerate()
@@ -310,6 +329,32 @@ impl Deliberation {
                 to: expected.name(),
             })
         }
+    }
+
+    fn materialize_ranked_tuples(
+        &self,
+        ranking: &[ProposalId],
+    ) -> Result<Vec<(ProposalId, Proposal, ValidationOutcome)>, DomainError> {
+        ranking
+            .iter()
+            .map(|id| {
+                let proposal =
+                    self.proposals
+                        .get(id)
+                        .cloned()
+                        .ok_or(DomainError::InvariantViolated {
+                            reason: "missing proposal in ranking",
+                        })?;
+                let outcome =
+                    self.outcomes
+                        .get(id)
+                        .cloned()
+                        .ok_or(DomainError::InvariantViolated {
+                            reason: "missing outcome at Scoring",
+                        })?;
+                Ok::<_, DomainError>((id.clone(), proposal, outcome))
+            })
+            .collect()
     }
 }
 
@@ -470,6 +515,32 @@ mod tests {
         assert_eq!(ranked[0].proposal().id().as_str(), "p2");
         assert_eq!(ranked[1].proposal().id().as_str(), "p3");
         assert_eq!(ranked[2].proposal().id().as_str(), "p1");
+    }
+
+    #[test]
+    fn reprioritize_reorders_completed_ranking() {
+        let mut d = start();
+        d.add_proposal(proposal("p1", "a")).unwrap();
+        d.add_proposal(proposal("p2", "b")).unwrap();
+        for _ in 0..2 {
+            d.advance().unwrap();
+        }
+        d.attach_outcome(&ProposalId::new("p1").unwrap(), outcome(0.9))
+            .unwrap();
+        d.attach_outcome(&ProposalId::new("p2").unwrap(), outcome(0.1))
+            .unwrap();
+        d.advance().unwrap();
+        d.complete(now()).unwrap();
+
+        let reprioritized = d
+            .reprioritize(vec![
+                ProposalId::new("p2").unwrap(),
+                ProposalId::new("p1").unwrap(),
+            ])
+            .unwrap();
+        assert_eq!(reprioritized[0].proposal().id().as_str(), "p2");
+        assert_eq!(reprioritized[1].proposal().id().as_str(), "p1");
+        assert_eq!(d.ranking()[0].as_str(), "p2");
     }
 
     #[test]

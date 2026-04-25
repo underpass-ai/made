@@ -91,11 +91,12 @@ This project follows the same discipline as its siblings
 - End-to-end tests: a runner container drives scenarios either via
   `docker compose` or as a Kubernetes `Job` against a kind cluster
   with the Helm chart installed (contract-true path). Both paths
-  are **manual-dispatch only** — the per-PR gates
+  are **manual only**, launched from the repository with
+  `make e2e-compose` or `make e2e-kubernetes` — the per-PR gates
   (`clippy`, `test`, `contract`, `integration-nats`,
   `integration-postgres`, `container-image`, `helm-chart`) already
   cover the compile-and-unit surface; E2E is reserved for pre-
-  release validation. Trigger via `gh workflow run e2e.yml`.
+  release validation.
 
 ## Status
 

@@ -11,7 +11,7 @@
 
 use async_trait::async_trait;
 
-use crate::entities::TaskConstraints;
+use crate::entities::{ExternalContextBundle, TaskConstraints};
 use crate::error::DomainError;
 use crate::value_objects::{AgentId, Specialty, TaskDescription};
 
@@ -21,6 +21,7 @@ pub struct DraftRequest {
     pub task: TaskDescription,
     pub constraints: TaskConstraints,
     pub diverse: bool,
+    pub external_context: Option<ExternalContextBundle>,
 }
 
 /// A critique is a piece of free-form feedback targeting a peer's

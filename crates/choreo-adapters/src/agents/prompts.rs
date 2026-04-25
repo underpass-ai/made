@@ -14,8 +14,11 @@
 //! All functions here are pure: given the same inputs they return
 //! the same `String`. No IO, no randomness.
 
-use choreo_core::entities::TaskConstraints;
+use std::fmt::Write;
+
+use choreo_core::entities::{ExternalContextBundle, TaskConstraints};
 use choreo_core::ports::{Critique, DraftRequest};
+use choreo_core::value_objects::OutputContract;
 
 pub(super) fn system_prompt_generate(id: &str, specialty: &str) -> String {
     format!(
@@ -68,22 +71,48 @@ pub(super) fn user_prompt_generate(request: &DraftRequest) -> String {
     } else {
         "Propose the option you judge best on the merits."
     };
-    format!(
+    let mut prompt = format!(
         "Task:\n{task}\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         {diverse_note}\n\n\
-         Produce your proposal now.",
+         Rubric (opaque constraints to apply):\n{rubric}",
         task = request.task.as_str(),
-    )
+    );
+
+    if let Some(external_context) = serialize_external_context(request.external_context.as_ref()) {
+        let _ = write!(
+            prompt,
+            "\n\nExternal context bundle (typed, caller-supplied evidence):\n{external_context}"
+        );
+    }
+
+    if let Some(output_contract) = serialize_output_contract(request.constraints.output_contract())
+    {
+        let _ = write!(
+            prompt,
+            "\n\nStructured output contract:\n{output_contract}\n\n\
+             Answer only with a JSON object that satisfies this contract. Do not wrap the object in markdown code fences."
+        );
+    }
+
+    let _ = write!(prompt, "\n\n{diverse_note}\n\nProduce your proposal now.");
+    prompt
 }
 
 pub(super) fn user_prompt_critique(peer_content: &str, constraints: &TaskConstraints) -> String {
     let rubric = serialize_rubric(constraints);
-    format!(
+    let mut prompt = format!(
         "Peer proposal to critique:\n---\n{peer_content}\n---\n\n\
-         Rubric (opaque constraints to apply):\n{rubric}\n\n\
-         Critique it now."
-    )
+         Rubric (opaque constraints to apply):\n{rubric}"
+    );
+
+    if let Some(output_contract) = serialize_output_contract(constraints.output_contract()) {
+        let _ = write!(
+            prompt,
+            "\n\nStructured output contract to enforce while critiquing:\n{output_contract}"
+        );
+    }
+
+    prompt.push_str("\n\nCritique it now.");
+    prompt
 }
 
 pub(super) fn user_prompt_revise(own_content: &str, critique: &Critique) -> String {
@@ -105,9 +134,27 @@ pub(super) fn serialize_rubric(constraints: &TaskConstraints) -> String {
     }
 }
 
+fn serialize_external_context(bundle: Option<&ExternalContextBundle>) -> Option<String> {
+    bundle.map(|bundle| {
+        serde_json::to_string_pretty(bundle).unwrap_or_else(|_| "(unrepresentable)".to_owned())
+    })
+}
+
+fn serialize_output_contract(contract: Option<&OutputContract>) -> Option<String> {
+    contract.map(|contract| {
+        serde_json::to_string_pretty(contract).unwrap_or_else(|_| "(unrepresentable)".to_owned())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use choreo_core::entities::{
+        ContextItem, ContextReference, ContextSummary, ExternalContextBundle,
+    };
+    use choreo_core::value_objects::Attributes;
+    use serde_json::json;
+    use std::collections::BTreeMap;
 
     #[test]
     fn system_prompt_generate_is_domain_agnostic() {
@@ -165,6 +212,7 @@ mod tests {
             task: TaskDescription::new("describe the alert").unwrap(),
             constraints: TaskConstraints::default(),
             diverse: true,
+            external_context: None,
         };
         let s = user_prompt_generate(&req);
         assert!(s.contains("describe the alert"));
@@ -172,9 +220,72 @@ mod tests {
     }
 
     #[test]
+    fn user_prompt_generate_embeds_external_context_bundle_when_present() {
+        use choreo_core::value_objects::TaskDescription;
+
+        let req = DraftRequest {
+            task: TaskDescription::new("describe the alert").unwrap(),
+            constraints: TaskConstraints::default(),
+            diverse: false,
+            external_context: Some(sample_external_context()),
+        };
+        let s = user_prompt_generate(&req);
+        assert!(s.contains("External context bundle"));
+        assert!(s.contains("Bounded caller-supplied context"));
+        assert!(s.contains("Primary observation"));
+        assert!(s.contains("s3://bucket/evidence.json"));
+    }
+
+    #[test]
+    fn user_prompt_generate_embeds_structured_output_contract_when_present() {
+        use choreo_core::value_objects::{OutputContract, OutputFieldRule, TaskDescription};
+
+        let constraints = TaskConstraints::default().with_output_contract(
+            OutputContract::json_object(
+                "decision-contract",
+                BTreeMap::from([(
+                    "decision".to_owned(),
+                    OutputFieldRule::new(true, ["emit_event", "escalate"]).unwrap(),
+                )]),
+            )
+            .unwrap(),
+        );
+        let req = DraftRequest {
+            task: TaskDescription::new("describe the alert").unwrap(),
+            constraints,
+            diverse: false,
+            external_context: None,
+        };
+        let s = user_prompt_generate(&req);
+        assert!(s.contains("Structured output contract"));
+        assert!(s.contains("decision-contract"));
+        assert!(s.contains("emit_event"));
+        assert!(s.contains("Answer only with a JSON object"));
+    }
+
+    #[test]
     fn user_prompt_critique_embeds_peer_content() {
         let s = user_prompt_critique("the peer's proposal body", &TaskConstraints::default());
         assert!(s.contains("the peer's proposal body"));
+    }
+
+    #[test]
+    fn user_prompt_critique_mentions_structured_output_contract() {
+        use choreo_core::value_objects::{OutputContract, OutputFieldRule};
+
+        let constraints = TaskConstraints::default().with_output_contract(
+            OutputContract::json_object(
+                "decision-contract",
+                BTreeMap::from([(
+                    "decision".to_owned(),
+                    OutputFieldRule::new(true, ["emit_event", "escalate"]).unwrap(),
+                )]),
+            )
+            .unwrap(),
+        );
+        let s = user_prompt_critique(r#"{"decision":"emit_event"}"#, &constraints);
+        assert!(s.contains("Structured output contract"));
+        assert!(s.contains("decision-contract"));
     }
 
     #[test]
@@ -187,5 +298,39 @@ mod tests {
         );
         assert!(s.contains("v1 body"));
         assert!(s.contains("tighten the rubric"));
+    }
+
+    fn sample_external_context() -> ExternalContextBundle {
+        ExternalContextBundle::new(
+            "ctx-1",
+            "v1",
+            Some(
+                ContextSummary::new(
+                    "Bounded caller-supplied context",
+                    Attributes::new(BTreeMap::from([("origin".to_owned(), json!("caller"))]))
+                        .unwrap(),
+                )
+                .unwrap(),
+            ),
+            vec![ContextItem::new(
+                "item-1",
+                "finding",
+                "Primary observation",
+                Some("A typed context item".to_owned()),
+                Attributes::new(BTreeMap::from([("weight".to_owned(), json!(0.9))])).unwrap(),
+                vec!["ref-1".to_owned()],
+            )
+            .unwrap()],
+            vec![ContextReference::new(
+                "ref-1",
+                "s3://bucket/evidence.json",
+                Some("Evidence".to_owned()),
+                Some("application/json".to_owned()),
+                Attributes::empty(),
+            )
+            .unwrap()],
+            Attributes::empty(),
+        )
+        .unwrap()
     }
 }

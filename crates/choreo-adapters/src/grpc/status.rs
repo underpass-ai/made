@@ -24,9 +24,9 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         | DomainError::OutOfRange { .. }
         | DomainError::MustBeNonZero { .. }
         | DomainError::EmptyCollection { .. } => Status::invalid_argument(msg),
-        DomainError::InvalidTransition { .. } | DomainError::InvariantViolated { .. } => {
-            Status::failed_precondition(msg)
-        }
+        DomainError::InvalidTransition { .. }
+        | DomainError::InvariantViolated { .. }
+        | DomainError::NoValidProposal { .. } => Status::failed_precondition(msg),
         DomainError::NotFound { .. } => Status::not_found(msg),
         DomainError::AlreadyExists { .. } => Status::already_exists(msg),
     }
@@ -69,6 +69,13 @@ mod tests {
         );
         assert_eq!(
             domain_error_to_status(DomainError::InvariantViolated { reason: "r" }).code(),
+            Code::FailedPrecondition
+        );
+        assert_eq!(
+            domain_error_to_status(DomainError::NoValidProposal {
+                contract_id: "decision-contract".to_owned(),
+            })
+            .code(),
             Code::FailedPrecondition
         );
     }

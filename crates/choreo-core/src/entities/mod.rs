@@ -6,6 +6,7 @@
 
 mod council;
 mod deliberation;
+mod external_context;
 mod proposal;
 mod statistics;
 mod task;
@@ -13,6 +14,7 @@ mod validation;
 
 pub use council::Council;
 pub use deliberation::{Deliberation, DeliberationPhase, RankedOutcome};
+pub use external_context::{ContextItem, ContextReference, ContextSummary, ExternalContextBundle};
 pub use proposal::Proposal;
 pub use statistics::Statistics;
 pub use task::{Task, TaskConstraints};

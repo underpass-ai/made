@@ -141,9 +141,6 @@ async fn trigger_event_over_nats_drives_full_pipeline() {
     let subscriber = NatsTriggerSubscriber::new(client.clone(), subjects.clone(), dispatch);
     let handle = subscriber.spawn().await.unwrap();
 
-    // Small settle so the subscription is in place before we publish.
-    tokio::time::sleep(Duration::from_millis(200)).await;
-
     // --- Publish a TriggerEvent matching the AsyncAPI contract.
     let event_id = uuid::Uuid::new_v4().to_string();
     let emitted_at = OffsetDateTime::now_utc().format(&Rfc3339).unwrap();

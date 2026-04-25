@@ -14,6 +14,10 @@ rustup default 1.90.0
 # Optional but recommended — installs command aliases from justfile.
 cargo install just --locked
 
+# Contract gate dependencies.
+bash scripts/ci/install-buf.sh
+bash scripts/ci/install-asyncapi.sh
+
 # Protoc for tonic code generation.
 # (Debian/Ubuntu: apt install protobuf-compiler; Fedora: dnf install protobuf-compiler)
 protoc --version
@@ -27,15 +31,34 @@ Podman users need the user-level socket running:
 
 ```bash
 systemctl --user start podman.socket
-export DOCKER_HOST=unix:///run/user/$(id -u)/podman/podman.sock
+export DOCKER_HOST=unix://$(podman info --format '{{.Host.RemoteSocket.Path}}')
+test -S "$(podman info --format '{{.Host.RemoteSocket.Path}}')"
 ```
+
+If that preflight check fails, `testcontainers` will not be able to
+start NATS or Postgres. In that case either:
+
+```bash
+# Preferred: bring up the user socket through systemd.
+systemctl --user start podman.socket
+
+# Fallback: run an explicit API service on a temporary Unix socket.
+mkdir -p "${TMPDIR:-/tmp}/podman"
+podman system service --time=0 unix://${TMPDIR:-/tmp}/podman/podman.sock
+export DOCKER_HOST=unix://${TMPDIR:-/tmp}/podman/podman.sock
+```
+
+The integration scripts fail fast with this guidance when no live
+Docker-compatible socket is available, instead of letting Rust tests die
+later with `SocketNotFoundError`.
 
 ## Daily commands
 
 ```bash
 just                 # list every recipe
-just check           # fmt-check + clippy + test + bench-compile
+just check           # contract + fmt-check + clippy + test + bench-compile
 just fmt             # apply rustfmt in-place
+just contract        # proto + AsyncAPI gate
 just clippy          # warnings-as-errors on the full provider matrix
 just test            # unit + in-process integration tests
 just helm-lint       # helm lint + chart hardening assertions
@@ -64,13 +87,38 @@ via the system container runtime.
 
 ## End-to-end (manual only)
 
-E2E workflows run on `workflow_dispatch` in CI (see
-`.github/workflows/e2e.yml`). Run locally before cutting a release:
+E2E is run manually from the repository before cutting a release:
 
 ```bash
-just e2e-compose     # full stack via docker compose + runner
-just e2e-kubernetes  # kind cluster + Helm chart + runner Job
+make e2e-compose     # full stack via docker compose + runner
+make e2e-kubernetes  # Kubernetes cluster + Helm chart + runner Job
 ```
+
+For an existing cluster, the standard path matches sibling repos:
+push the Choreographer image and runner image to `ghcr.io`, create
+an `imagePullSecrets` named `ghcr-pull` in the target namespace, and
+point the script at that registry.
+
+```bash
+podman login ghcr.io
+
+kubectl create secret docker-registry ghcr-pull \
+  --docker-server=ghcr.io \
+  --docker-username=<github-user> \
+  --docker-password=<github-pat> \
+  -n <namespace>
+
+E2E_NAMESPACE=<namespace> \
+E2E_IMAGE_REPOSITORY_PREFIX=ghcr.io/underpass-ai \
+E2E_IMAGE_PULL_SECRET=ghcr-pull \
+E2E_IMAGE_TAG=dev-$(git rev-parse --short HEAD) \
+make e2e-kubernetes
+```
+
+If `kind` is installed the script still supports `kind load
+docker-image`; otherwise it can fall back to a cluster-local
+registry, but that path is cluster-specific and not the default
+operator story.
 
 ### Provider-E2E (vLLM)
 
@@ -82,11 +130,11 @@ hits the endpoint via mTLS.
 ```bash
 # Build the runner image and push it where the cluster can pull it.
 IMAGE_TAG=<registry>/underpass-choreographer-e2e-provider:dev \
-    just build-provider-image
+    make build-provider-image
 
 # Edit tests/e2e/kubernetes/provider-vllm-job.yaml to use that tag,
 # then:
-NAMESPACE=<ns-holding-e2e-client-tls> just e2e-provider-vllm
+NAMESPACE=<ns-holding-e2e-client-tls> make e2e-provider-vllm
 ```
 
 Env vars consumed by the runner (set in the Job's `env` block,
@@ -94,8 +142,8 @@ edit the manifest for a different endpoint):
 
 | Var | Required | Notes |
 |---|---|---|
-| `CHOREO_VLLM_ENDPOINT` | yes | base URL, e.g. `https://qwen35-9b.llm.underpassai.com` |
-| `CHOREO_VLLM_MODEL` | yes | model id, e.g. `Qwen/Qwen3.5-9B` |
+| `CHOREO_VLLM_ENDPOINT` | yes | base URL, e.g. `https://llm.underpassai.com` |
+| `CHOREO_VLLM_MODEL` | yes | model id, e.g. `google/gemma-4-31B-it` |
 | `CHOREO_VLLM_CLIENT_CERT_PATH` | with key | PEM file for mTLS client cert |
 | `CHOREO_VLLM_CLIENT_KEY_PATH` | with cert | PEM file for mTLS client key |
 | `CHOREO_VLLM_BEARER_TOKEN` | optional | bearer auth |
@@ -182,7 +230,7 @@ See [`docs/release.md`](release.md).
 | Gate | Command | Runs on |
 |---|---|---|
 | `rustfmt` | `cargo fmt --all -- --check` | every PR |
-| `contract` | proto + AsyncAPI breaking-change check | every PR |
+| `contract` | proto + AsyncAPI validation + blocking proto breaking check | every PR |
 | `clippy` | `cargo clippy` with `-D warnings` on full provider matrix | every PR |
 | `test` | `cargo test` on full provider matrix | every PR |
 | `benches-compile` | `cargo bench --workspace --no-run` | every PR |
@@ -193,9 +241,8 @@ See [`docs/release.md`](release.md).
 | `dependency-review` | GitHub dependency-review-action | every PR |
 | `sonarcloud` | coverage + quality gate | every PR (if token set) |
 | `e2e-compose` | full stack via docker compose + runner | **manual** |
-| `e2e-kubernetes` | kind + chart + runner Job | **manual** |
+| `e2e-kubernetes` | kubernetes + chart + runner Job | **manual** |
 
-Every row except the last two gates a PR. E2E is on-demand via
-`gh workflow run e2e.yml` — the per-PR gates already cover the
-compile-and-unit surface, and E2E is reserved for pre-release
-validation.
+Every row except the last two gates a PR. E2E stays outside CI — the
+per-PR gates already cover the compile-and-unit surface, and E2E is
+reserved for manual pre-release validation via `make`.

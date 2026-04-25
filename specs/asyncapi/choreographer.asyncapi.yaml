@@ -160,7 +160,7 @@ components:
               minItems: 1
             task_description_template:
               type: string
-              description: "Optional templated description; receives `payload` on render."
+              description: "Optional literal task description supplied by the producer."
             constraints:
               $ref: '#/components/schemas/Constraints'
             payload:
