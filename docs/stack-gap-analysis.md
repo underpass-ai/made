@@ -129,22 +129,24 @@ Practical consequence: the repo exposes a deployment surface that is not
 backed by the binary yet. In a stack where Runtime and Kernel already
 lean on TLS/mTLS, this is a real operational gap.
 
-### 4. "JetStream" is named, but durable JetStream behavior is not wired
+### 4. Broker semantics declared honestly as plain NATS
 
-Docs and AsyncAPI describe the broker as NATS JetStream, but the current
-adapter uses plain publish/subscribe semantics. No stream, consumer,
-durable subscription, replay, or explicit ack model is wired in the
-service.
+As of 2026-05-11, AsyncAPI declares the broker as plain core NATS
+pub/sub. The adapter (`crates/choreo-adapters/src/nats`) is consistent:
+`client.publish_with_headers` for outbound events,
+`client.subscribe` for inbound triggers, no JetStream stream / durable
+consumer / acknowledgement / replay policy is used.
+
+PIR's first integration is expected to be direct gRPC, not the bus,
+so plain NATS is sufficient. If durable bus coupling becomes a
+requirement, the adapter will need to grow real JetStream semantics
+(stream + durable consumer + ack) and the spec re-declared accordingly.
 
 Relevant files:
 
 - [`specs/asyncapi/choreographer.asyncapi.yaml`](../specs/asyncapi/choreographer.asyncapi.yaml)
-- [`crates/choreo-adapters/src/lib.rs`](../crates/choreo-adapters/src/lib.rs)
 - [`crates/choreo-adapters/src/nats/messaging.rs`](../crates/choreo-adapters/src/nats/messaging.rs)
 - [`crates/choreo-adapters/src/nats/subscriber.rs`](../crates/choreo-adapters/src/nats/subscriber.rs)
-
-Practical consequence: either the wording should be narrowed to plain
-NATS, or the adapter must grow into actual JetStream semantics.
 
 ## Recommended Hardening Plan
 
@@ -170,8 +172,9 @@ Kernel.
 
 1. Either implement server TLS/mTLS in the binary and chart, or remove
    the TLS values until they are real.
-2. Decide whether the service is plain NATS or JetStream. Then align
-   docs, spec, and code to one answer.
+2. Service is plain NATS today (declared 2026-05-11). If durable bus
+   coupling becomes a requirement, implement JetStream stream +
+   durable consumer + ack and re-declare in AsyncAPI.
 3. Propagate `correlation_id` and `trigger_event_id` through the full
    event lifecycle.
 4. Add a container-backed test that exercises whichever NATS mode is
