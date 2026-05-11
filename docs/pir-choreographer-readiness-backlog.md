@@ -1,6 +1,6 @@
 # Choreographer Readiness Backlog For PIR
 
-Snapshot date: 2026-04-25
+Snapshot date: 2026-04-25; honest re-audit 2026-05-11.
 
 This document converts the PIR integration design into a concrete technical
 backlog for `underpass-choreographer`.
@@ -16,29 +16,34 @@ Choreographer for complex-incident reevaluation and human handoff synthesis.
 
 ## Executive summary
 
-PIR should not integrate with Choreographer yet.
+PIR still should not integrate with Choreographer yet, but the gap is
+smaller than the original snapshot suggested.
 
-Before PIR can safely depend on it, Choreographer needs to reach a
-stack-ready state in eight areas:
+As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 
-1. real Runtime execution
-2. real Kernel-fed context input
-3. structured, contract-validated council outputs
-4. complete incident / causality metadata propagation
-5. provider-backed council materialization
-6. honest and durable transport semantics
-7. real TLS / mTLS posture
-8. stack-level end-to-end proofs
+| # | Area | State |
+|---|---|---|
+| 1 | real Runtime execution | done (adapter + env-driven wiring) |
+| 2 | real Kernel-fed context input | done (typed `ExternalContextBundle` flowing trigger -> task -> deliberation) |
+| 3 | structured, contract-validated council outputs | done (structured-output mode + deterministic `NoValidProposal` failure) |
+| 4 | complete causal metadata propagation | done (Epic 5) |
+| 5 | provider-backed council materialization | partial (provider adapters exist behind features; dispatching factory not wired) |
+| 6 | honest and durable transport semantics | not started (code uses core NATS; AsyncAPI still says JetStream) |
+| 7 | real TLS / mTLS posture | not started (chart surface is dead config; server and client have no TLS wiring) |
+| 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
-The recommended execution order is:
+What is now genuinely blocking PIR integration: Epics 6, 7, 8, 9, 10
+plus the missing real-council / runtime legs of Epic 11. The execution
+and context foundations (Phases 1 and 2 in the original plan) are
+satisfied.
 
-- Phase 1: execution and context foundations
-- Phase 2: contract-shaped deliberation
-- Phase 3: transport and operational hardening
-- Phase 4: PIR-facing integration surface
-- Phase 5: stack E2E readiness proof
+The recommended remaining execution order is:
 
-No PIR integration work should begin before Phases 1 through 3 are complete.
+- Phase 3: provider composition + transport / TLS honesty
+- Phase 4: PIR-facing RPC surface and report artifact
+- Phase 5: stack E2E with a real council and the Runtime executor
+
+No PIR integration work should begin before Phase 3 is complete.
 
 ## Out of scope
 
@@ -66,26 +71,28 @@ Choreographer is "ready" when all of the following are true:
 
 ## Priorities
 
-### P0 — hard blockers
+### P0 — hard blockers (remaining)
 
-These items block PIR integration entirely.
+These items still block PIR integration.
 
-- real Runtime executor adapter
-- Kernel context boundary
-- structured council output contracts
-- causal metadata model
-- provider-backed agent factory wiring
-- truthful transport and TLS posture
-- stack E2E proof
+- provider-backed agent factory wiring (Epic 6)
+- truthful transport semantics (Epic 7)
+- TLS / mTLS server + client posture (Epic 8)
+- dedicated PIR-facing RPC surface (Epic 9)
+- structured report artifact support (Epic 10)
+- stack E2E proof with real council + runtime executor (Epic 11 leg)
+
+Already cleared: Runtime executor adapter (Epic 1), Kernel context
+boundary (Epic 2), structured council output contracts (Epic 3),
+causal metadata model (Epic 5).
 
 ### P1 — required before production
 
-These items may start slightly later but must be complete before production use.
-
-- dedicated PIR-facing RPC surface
-- contract-aware validators
-- structured report artifact support
+- contract-aware validators — JSON Schema and bounded-event-shape
+  variants still missing (Epic 4 has the format-level slice)
 - release-gate stack smoke
+- the basic four scenarios of the e2e-runner already exist; release-gate
+  hooks need to wire them in for cut tags
 
 ### P2 — useful after first integration
 
@@ -97,18 +104,29 @@ These items may start slightly later but must be complete before production use.
 
 ### Epic 1. Runtime executor adapter
 
-Status: not done
+Status: done
 
 Current state:
 
-- the binary wires `NoopExecutor` unconditionally
-- `OrchestrateUseCase` can publish lifecycle events but execution is not real
+- `RuntimeExecutor` adapter implements `ExecutorPort` against the
+  Underpass Runtime gRPC; creates ephemeral sessions, invokes tools,
+  closes sessions, maps `Succeeded`/`Failed`/`Denied`/transport errors
+  distinctly
+- `ExecutorBackendConfig` selected from `CHOREO_EXECUTOR_KIND=noop|runtime`
+  plus principal env vars; `NoopExecutor` stays as explicit fallback
+- adapter unit tests cover success, denial, transport error, env
+  loading, and option-vs-attributes precedence; compose-level test
+  wires the runtime adapter against a stub gRPC server
 
 Relevant code:
 
-- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
+- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs)
+- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs) (`wire_executor`)
 - [`crates/choreo-core/src/ports/executor.rs`](../crates/choreo-core/src/ports/executor.rs)
-- [`crates/choreo-app/src/usecases/orchestrate.rs`](../crates/choreo-app/src/usecases/orchestrate.rs)
+
+Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
+(PR #43). All four acceptance criteria + the three required tests
+listed below are present in the repo today.
 
 #### Deliverables
 
@@ -142,18 +160,33 @@ Relevant code:
 
 ### Epic 2. Kernel context boundary
 
-Status: not done
+Status: done (option A — caller-materialized context)
 
 Current state:
 
-- Choreographer has no Kernel adapter
-- tasks accept opaque `attributes`
-- no first-class rehydration path exists
+- typed `ExternalContextBundle` (with `ContextSummary`, `ContextItem`,
+  `ContextReference`, bounded sizes, and serde + roundtrip tests)
+  lives in the core
+- `Task` carries `Option<ExternalContextBundle>` through
+  `new_with_context` / `new_with_metadata`
+- proto exposes the bundle on `Task` and on `TriggerEvent`; gRPC mappers
+  consume it
+- `AutoDispatchService` propagates the trigger's bundle into the task;
+  `DeliberateUseCase` threads it into `DraftRequest.external_context`
+  with a covering test
 
 Relevant code:
 
+- [`crates/choreo-core/src/entities/external_context.rs`](../crates/choreo-core/src/entities/external_context.rs)
 - [`crates/choreo-core/src/entities/task.rs`](../crates/choreo-core/src/entities/task.rs)
-- [`docs/stack-gap-analysis.md`](./stack-gap-analysis.md)
+- [`crates/choreo-adapters/src/grpc/mappers/task.rs`](../crates/choreo-adapters/src/grpc/mappers/task.rs)
+- [`crates/choreo-adapters/src/grpc/mappers/event.rs`](../crates/choreo-adapters/src/grpc/mappers/event.rs)
+- [`crates/choreo-app/src/services/auto_dispatch.rs`](../crates/choreo-app/src/services/auto_dispatch.rs)
+- [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs)
+
+Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
+(PR #43). Option B (a Kernel adapter port owned by Choreographer)
+remains explicitly deferred — the backlog recommended option A.
 
 #### Deliverables
 
@@ -196,19 +229,31 @@ Kernel transport in v1.
 
 ### Epic 3. Structured council outputs
 
-Status: not done
+Status: done
 
 Current state:
 
-- proposals are free-form text
-- validators are generic
-- no typed winner schema exists
+- `OutputContract` value object with `OutputFieldRule` and
+  `OutputFormat::JsonObject`; serde + validation tests in place
+- `TaskConstraints::with_output_contract` carries the contract; the
+  proto contract surfaces it inside `Constraints`
+- `DeliberateUseCase` switches into structured-output mode when a
+  contract is set; valid proposals are reprioritized before any winner
+  selection so invalid outputs cannot leak as winners
+- deterministic failure: `DomainError::NoValidProposal { contract_id }`;
+  `OrchestrateUseCase` maps it to `TaskFailed` with
+  `error_kind = "deliberation.no_valid_proposal"`
+- regression tests prove invalid proposals lose to valid ones even at
+  higher score, and that an all-invalid run fails deterministically
 
 Relevant code:
 
+- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs)
 - [`crates/choreo-core/src/entities/proposal.rs`](../crates/choreo-core/src/entities/proposal.rs)
-- [`crates/choreo-core/src/ports/validator.rs`](../crates/choreo-core/src/ports/validator.rs)
-- [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs)
+- [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs) (`prioritize_valid_outputs`, `pick_winner`)
+
+Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
+(PR #43).
 
 #### Deliverables
 
@@ -243,24 +288,46 @@ Relevant code:
 
 ### Epic 4. Contract-aware validators
 
-Status: not done
+Status: mostly done
 
-#### Deliverables
+Current state:
 
-Add validators for:
+- four validators wired through `Vec<Arc<dyn ValidatorPort>>` in
+  `compose.rs`: `ContentNonEmptyValidator`, `JsonObjectOutputValidator`,
+  `RequiredFieldsValidator`, `AllowedStringValuesValidator`
+- `JsonObjectOutputValidator` enforces JSON-object root for
+  `OutputFormat::JsonObject`
+- `RequiredFieldsValidator` enforces required fields from
+  `OutputContract.fields`
+- `AllowedStringValuesValidator` enforces enum / allowed-decision
+  membership
+- unit tests cover happy path, missing fields, unknown allowed values,
+  and no-op behaviour when no contract is set
+- validator reports stay domain-agnostic (only `kind`/`passed`/`summary`/`Attributes`)
 
-- JSON schema
-- required fields
-- enum / allowed-decision membership
-- bounded event proposal shape
-- report artifact shape
+Relevant code:
+
+- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs)
+- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
+
+Progress as of 2026-05-11: format-level slice landed in `fab9bfb`.
+
+#### Deliverables (remaining)
+
+Still to add:
+
+- general JSON Schema validator (Cargo manifest has no `jsonschema`
+  crate today; current implementation only checks JSON-object format)
+- bounded event proposal shape validator
+- report artifact shape validator (depends on Epic 10)
 
 #### Acceptance criteria
 
-- validators are composable through the existing validation pipeline
-- validator reports remain domain-agnostic from Choreographer's perspective
+- validators are composable through the existing validation pipeline (done)
+- validator reports remain domain-agnostic from Choreographer's perspective (done)
 - PIR-facing council contracts can be enforced with no handwritten
-  post-processing hacks
+  post-processing hacks (depends on the JSON Schema + report-shape
+  validators above)
 
 ### Epic 5. Task / council metadata model
 
@@ -315,16 +382,25 @@ ids such as incidents, cases, claims, shipments, studies, or similar concepts.
 
 ### Epic 6. Provider-backed agent factory composition
 
-Status: not done
+Status: partial
 
 Current state:
 
-- `NoopAgentFactory` is wired in the binary
-- provider adapters exist but are not composed
+- provider agent adapters exist behind Cargo features
+  `agent-anthropic`, `agent-openai`, `agent-vllm`: `AnthropicAgent`,
+  `OpenAiAgent`, `VllmAgent` each implement `AgentPort`
+- the composition root still wires `Arc::new(NoopAgentFactory::new())`
+  only; no dispatching `AgentFactoryPort` exists in the workspace
+- `NoopAgentFactory::create` explicitly rejects any `kind` other than
+  `"noop"`
+- `RegisterAgentUseCase` already routes through `AgentFactoryPort.create`
+  correctly — the gap is purely the binary composition root
 
 Relevant code:
 
 - [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
+- [`crates/choreo-adapters/src/agents/`](../crates/choreo-adapters/src/agents/)
+- [`crates/choreo-adapters/src/noop/agent_factory.rs`](../crates/choreo-adapters/src/noop/agent_factory.rs)
 
 #### Deliverables
 
@@ -348,16 +424,23 @@ Relevant code:
 
 ### Epic 7. Honest broker semantics
 
-Status: not done
+Status: not started
 
 Current state:
 
-- docs and specs mention JetStream
-- current implementation behaves as plain NATS pub/sub
+- `NatsMessaging` uses `Client::publish_with_headers` (core NATS)
+- `NatsTriggerSubscriber` uses `client.subscribe` (core NATS,
+  fire-and-forget); no `jetstream::*`, no streams, no durable consumers,
+  no acks
+- AsyncAPI still labels the server as "NATS JetStream broker."; the
+  implementation–spec gap noted in the original audit is intact
+- the docker-compose stack starts `nats:2` with `-js` server-side, but
+  the client never opens the JetStream API
 
 Relevant code:
 
-- [`crates/choreo-adapters/src/nats`](../crates/choreo-adapters/src/nats)
+- [`crates/choreo-adapters/src/nats/messaging.rs`](../crates/choreo-adapters/src/nats/messaging.rs)
+- [`crates/choreo-adapters/src/nats/subscriber.rs`](../crates/choreo-adapters/src/nats/subscriber.rs)
 - [`specs/asyncapi/choreographer.asyncapi.yaml`](../specs/asyncapi/choreographer.asyncapi.yaml)
 
 #### Deliverables
@@ -384,12 +467,26 @@ integration on direct gRPC.
 
 ### Epic 8. TLS / mTLS parity
 
-Status: not done
+Status: not started
 
 Current state:
 
-- chart exposes TLS knobs
-- binary does not back them with real server TLS wiring
+- gRPC server in `crates/choreo/src/runtime.rs` is built with
+  `Server::builder().add_service(...)` only — no `ServerTlsConfig`,
+  no identity wiring
+- Runtime gRPC client in `RuntimeExecutor::connect` uses
+  `Endpoint::from_shared(...).connect()` only — no `.tls_config(...)`
+- chart still exposes `tls.mode` / `tls.existingSecret` in
+  `values.yaml`, but no template references those keys; they are dead
+  config
+- Cargo workspace has no `rustls` / `tokio-rustls` / `ServerTlsConfig`
+  usage in the binary or in the gRPC adapters
+
+Relevant code:
+
+- [`crates/choreo/src/runtime.rs`](../crates/choreo/src/runtime.rs)
+- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs)
+- [`charts/choreographer/values.yaml`](../charts/choreographer/values.yaml)
 
 #### Deliverables
 
@@ -406,11 +503,18 @@ Current state:
 
 ### Epic 9. Specialist-grade RPC surface
 
-Status: not done
+Status: not started
 
 Current state:
 
-- generic `TriggerEvent` is too weak for PIR integration
+- proto exposes `Deliberate`, `StreamDeliberation`,
+  `GetDeliberationResult`, `Orchestrate`, council/agent CRUD,
+  `ProcessTriggerEvent`, `GetStatus`/`GetMetrics` only
+- the contract-shaped surface today is "set
+  `Constraints.output_contract` on a generic `DeliberateRequest`"
+- no `RunCouncilDecision` or equivalent dedicated RPC; PIR would still
+  have to call `Deliberate` / `ProcessTriggerEvent` to obtain a
+  contract-validated decision
 
 Relevant code:
 
@@ -444,7 +548,22 @@ Response:
 
 ### Epic 10. Report artifact support
 
-Status: not done
+Status: not started
+
+Current state:
+
+- no `Report`, `HumanHandoffReport`, or `IncidentAnalysis` entity in
+  `choreo-core`
+- no report message in proto
+- no report-shape validator in `choreo-adapters`
+- closest path today is "structured `OutputContract` returning a JSON
+  object" — sufficient for a decision proposal, not for a typed report
+
+Relevant code (none yet — this epic adds new types):
+
+- [`crates/choreo-core/src/entities/`](../crates/choreo-core/src/entities/)
+- [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto)
+- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs)
 
 #### Deliverables
 
@@ -469,7 +588,28 @@ Minimum fields:
 
 ### Epic 11. Choreographer stack E2E
 
-Status: not done
+Status: partial
+
+Current state:
+
+- `crates/choreo-e2e-runner/src/main.rs` runs four scenarios against a
+  real gRPC + NATS stack:
+  1. seeded council is visible
+  2. `Deliberate` on the seeded specialty returns a winner
+  3. `DeleteCouncil` on an unknown specialty returns `deleted=false`
+  4. inbound `TriggerEvent` over NATS produces an outbound
+     `DeliberationCompleted` carrying the same `correlation_id` and
+     `causation_id` (scenario added 2026-05-11, PR #45)
+- the stack uses `CHOREO_SEED_SPECIALTIES=triage` with the `NoopAgent`,
+  so the council is real-shaped but not real-content
+- the docker-compose stack has no `CHOREO_EXECUTOR_KIND=runtime` and no
+  provider agent config, so the run does not exercise the runtime
+  executor or a provider-backed council
+
+Relevant code:
+
+- [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
+- [`tests/e2e/docker-compose.e2e.yaml`](../tests/e2e/docker-compose.e2e.yaml)
 
 #### Deliverables
 
@@ -488,7 +628,9 @@ will bring into PIR.
 
 ### Epic 12. PIR integration smoke prerequisites
 
-Status: not done
+Status: not started — blocked by Epic 6 (real agent factory composition),
+Epic 9 (dedicated council-decision RPC), Epic 10 (report artifact), and
+the missing real-council / runtime legs of Epic 11.
 
 #### Deliverables
 
@@ -525,6 +667,9 @@ Exit condition:
 
 - Choreographer is no longer an isolated deliberation prototype
 
+**Cleared 2026-05-11.** Runtime executor adapter, kernel context
+boundary (option A), and causal metadata model are all done.
+
 ### Milestone B — contract-grade councils
 
 Must finish:
@@ -536,6 +681,10 @@ Must finish:
 Exit condition:
 
 - Choreographer can return PIR-safe structured decisions
+
+**Partially cleared 2026-05-11.** Epic 3 done; Epic 4 has the
+format/required/allowed slice but still needs JSON Schema and
+report-shape validators; Epic 10 (report artifact) not started.
 
 ### Milestone C — production honesty
 
@@ -549,6 +698,9 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
+**Open.** Epic 6 partial (providers behind features, no dispatch
+factory); Epics 7 and 8 not started.
+
 ### Milestone D — PIR-facing surface
 
 Must finish:
@@ -560,6 +712,9 @@ Exit condition:
 
 - PIR has a clean RPC surface it can integrate with
 
+**Open.** Epic 9 not started; Epic 11 partial (4 scenarios but no real
+council and no runtime executor wired in the stack).
+
 ### Milestone E — integration-ready
 
 Must finish:
@@ -570,34 +725,48 @@ Exit condition:
 
 - it is reasonable to begin PIR implementation work
 
+**Open** — blocked by Milestones B (remaining), C, and D.
+
 ## Suggested issue breakdown
 
-### Wave 1
+### Cleared waves (2026-05-11)
 
-- add runtime gRPC executor adapter
-- wire runtime executor in composition root
-- add execution metadata model
+- runtime gRPC executor adapter — done
+- wire runtime executor in composition root — done
+- execution metadata model — done (`TaskMetadata.execution_profile`)
+- external context bundle type — done
+- structured output mode — done
+- incident / run / causation metadata propagation — done
 
-### Wave 2
+### Open waves
 
-- define external context bundle type
-- define structured output mode
-- add JSON schema validator
+#### Wave 4a — real provider factories
 
-### Wave 3
+- design a dispatching `AgentFactoryPort` that recognises
+  `noop`/`anthropic`/`openai`/`vllm`
+- wire it in `compose.rs` behind the existing Cargo features
+- persistence-rehydration test for at least one provider-backed
+  descriptor
 
-- add incident / run / causation metadata propagation
-- add dedicated council decision RPC
+#### Wave 4b — transport honesty
 
-### Wave 4
+- choose: implement JetStream (stream / durable consumer / ack) or
+  rewrite AsyncAPI and docs to declare plain NATS
+- exercise the chosen semantics in an integration test
 
-- wire real provider factories in the binary
-- resolve NATS vs JetStream honesty gap
-- resolve TLS server honesty gap
+#### Wave 4c — TLS honesty
 
-### Wave 5
+- wire `ServerTlsConfig` on the gRPC server (and Runtime client) or
+  remove the chart's `tls.*` keys; one integration test for the
+  enabled mode
 
-- add stack E2E for contract-shaped council execution
+#### Wave 5 — PIR-facing surface
+
+- add a dedicated `RunCouncilDecision` (or equivalent) RPC backed by
+  the structured-output mode
+- add JSON Schema validator and a report-shape validator
+- add `Report` / `HumanHandoffReport` entity + proto + persistence
+- extend the e2e-runner to drive a real council + the Runtime executor
 
 ## Gating rule
 
@@ -607,12 +776,16 @@ The following rule should be treated as hard policy:
 > `human-handoff-report` dependency on Choreographer until Milestones A, B,
 > and C are complete.
 
-Why:
+Status 2026-05-11: Milestone A is complete. Milestone B is one open
+epic away (10) plus a partial validator slice (4). Milestone C is the
+biggest remaining hurdle (Epics 6, 7, 8).
 
-- before A, Choreographer has no real execution / context posture
-- before B, it has no safe structured decision surface
-- before C, its transport and security claims are still weaker than the stack
-  it wants to join
+Why the rule still stands:
+
+- before B's remaining items, the contract-validated decision surface
+  exists but has no typed report and no JSON Schema enforcement
+- before C, provider composition, transport, and security claims are
+  still weaker than the stack it wants to join
 
 ## Final recommendation
 
