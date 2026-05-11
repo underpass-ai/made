@@ -3,8 +3,9 @@ set -euo pipefail
 
 # End-to-end validation via compose.
 #
-# Runtime-agnostic: autodetects `docker compose` or `podman compose`
-# in that order. Override with `CONTAINER_RUNTIME=podman|docker|auto`.
+# Runtime-agnostic: autodetects `docker compose`, `podman compose`,
+# or `podman-compose` in that order. Override with
+# `CONTAINER_RUNTIME=podman|podman-compose|docker|auto`.
 #
 # Brings up Choreographer + NATS + the e2e runner container and runs
 # the runner against the stack. The runner drives scenarios over the
@@ -32,7 +33,7 @@ select_compose() {
         echo "podman compose"
         return 0
       fi
-      if command -v podman-compose >/dev/null 2>&1; then
+      if command -v podman >/dev/null 2>&1 && command -v podman-compose >/dev/null 2>&1; then
         echo "podman-compose"
         return 0
       fi
@@ -46,14 +47,21 @@ select_compose() {
     podman)
       if command -v podman >/dev/null 2>&1 && podman compose --version >/dev/null 2>&1; then
         echo "podman compose"
-      elif command -v podman-compose >/dev/null 2>&1; then
+      elif command -v podman >/dev/null 2>&1 && command -v podman-compose >/dev/null 2>&1; then
         echo "podman-compose"
       else
         echo "podman compose support not found (need podman>=4.3 with compose, or podman-compose)" >&2
         return 1
       fi ;;
+    podman-compose)
+      if command -v podman >/dev/null 2>&1 && command -v podman-compose >/dev/null 2>&1; then
+        echo "podman-compose"
+      else
+        echo "podman-compose support not found (need both 'podman' and 'podman-compose')" >&2
+        return 1
+      fi ;;
     *)
-      echo "unsupported CONTAINER_RUNTIME=${CONTAINER_RUNTIME}; expected auto, docker, or podman" >&2
+      echo "unsupported CONTAINER_RUNTIME=${CONTAINER_RUNTIME}; expected auto, docker, podman, or podman-compose" >&2
       return 1 ;;
   esac
 }
@@ -63,8 +71,19 @@ select_compose() {
 read -r -a COMPOSE <<<"$(select_compose)"
 echo ">>> using compose runtime: ${COMPOSE[*]}" >&2
 
+compose_logs() {
+  local args=("${COMPOSE[@]}" -f "${COMPOSE_FILE}")
+
+  if [ "${COMPOSE[0]}" = "podman-compose" ]; then
+    "${args[@]}" logs
+    return 0
+  fi
+
+  "${args[@]}" logs --no-color
+}
+
 cleanup() {
-  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" logs --no-color > tests/e2e/compose.log 2>&1 || true
+  compose_logs > tests/e2e/compose.log 2>&1 || true
   "${COMPOSE[@]}" -f "${COMPOSE_FILE}" down --volumes --remove-orphans || true
 }
 trap cleanup EXIT
