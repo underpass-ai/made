@@ -179,3 +179,17 @@ gate in this repository):
   (no silent background connections).
 
 See `docs/experiments/` for anything beyond these bullet points.
+
+## Legal
+
+Copyright © 2026 Tirso García Ibáñez.
+
+This repository is part of the Underpass AI project.
+Licensed under the Apache License, Version 2.0, unless stated otherwise.
+
+Redistributions and derivative works must preserve applicable copyright,
+license, and NOTICE information.
+
+Original author: [Tirso García Ibáñez](https://github.com/tgarciai) ·
+[LinkedIn](https://www.linkedin.com/in/tirsogarcia/) ·
+[Underpass AI](https://github.com/underpass-ai)
