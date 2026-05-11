@@ -102,6 +102,59 @@ plain NATS), gRPC server TLS/mTLS posture (Epic 8 server side).
 - per-proposal streaming for expert councils
 - richer score explainability
 
+## Session log
+
+Append-only summary of which PRs advanced which epic per working
+session. Quick orientation for future sessions; per-epic progress
+notes still live in each epic block below.
+
+### 2026-05-12
+
+8 PRs merged, in order:
+
+- **#44** `feat(core): first-class causal task metadata` — Epic 5.
+  `TaskMetadata` value object on `Task` (source/causation/correlation
+  ids, council/output contract ids, execution profile) +
+  `EventEnvelope.causation_id`. Proto + AsyncAPI additive.
+- **#45** `test(e2e): assert causal metadata propagates over NATS` —
+  Epic 5 stack-E2E sub-gap. e2e-runner scenario 4 publishes a
+  `TriggerEvent` on NATS with known ids, asserts the outbound
+  `DeliberationCompleted` carries them. Validated with
+  `make e2e-compose`.
+- **#46** `docs(backlog): honest re-audit of PIR readiness epics` —
+  audited Epics 1–12 against actual code; corrected outdated "not
+  done" labels on epics already shipped in commit `fab9bfb` (PR #43).
+- **#47** `feat(adapters): provider-backed agent factory composition` —
+  Epic 6. `DispatchingAgentFactory` recognises `noop` / `anthropic` /
+  `openai` / `vllm` from env + per-descriptor overrides. Wired in
+  `compose.rs`.
+- **#48** `docs(spec): declare plain NATS broker semantics honestly` —
+  Epic 7 option A. AsyncAPI `servers.nats.description` retitled to
+  declare plain core pub/sub; JetStream deferred to a future epic
+  if bus coupling demand emerges.
+- **#49** `feat(transport): gRPC server TLS/mTLS wiring` — Epic 8
+  server side. `GrpcTlsConfig` on `ServiceConfig`, env-driven mode
+  selection (`none`/`server`/`mutual`), `ServerTlsConfig`
+  application in `runtime.rs`, chart template wires the secret +
+  env vars, helm-lint gate 4 added.
+- **#50** `feat(mcp): hand-rolled stdio MCP adapter for the
+  choreographer API` — Epic 13 foundation. Crate `choreo-mcp`
+  exposes the 12 RPCs of `underpass.choreo.v1` as MCP tools over
+  JSON-RPC/stdio. Hand-rolled (no SDK), fixture + gRPC backends,
+  field-for-field JSON↔proto mappers, TLS auto-detection, buffered
+  streaming.
+- **#51** `docs(mcp): distribution + UX for the choreo-mcp adapter` —
+  Epic 13 distribution slice. Install wrapper, smoke script, canonical
+  user-facing docs at `docs/operations/mcp-stdio.md`, per-client
+  snippets for Codex CLI and Claude Desktop, top-level README link.
+  Backlog reframed (this file): PIR framing dropped; Epic 13 added.
+
+State at session close: Milestones A (foundations) + B (mostly,
+report artifact pending) + C (Epic 6 + 7 done; Epic 8 server done,
+outbound client TLS open) substantially advanced. MCP adapter live
+end-to-end with `cargo install --git` UX (crates.io publication
+deferred — proto vendoring required).
+
 ## Phase 1 — Runtime And Context Foundations
 
 ### Epic 1. Runtime executor adapter
