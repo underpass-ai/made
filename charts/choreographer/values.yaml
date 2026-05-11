@@ -121,6 +121,18 @@ persistence:
 tls:
   # Transport security mode for the gRPC service.
   # One of: "none" | "server" | "mutual".
+  #   - "none":   plain HTTP/2 over TCP (private mesh only)
+  #   - "server": one-way TLS; the server presents an identity, the
+  #               client verifies it via a trust anchor it already has
+  #   - "mutual": both server and client present identities; the server
+  #               validates the client cert against the CA bundle
+  # When non-"none", `existingSecret` must reference a Kubernetes
+  # `kubernetes.io/tls` (or similar) secret containing:
+  #   tls.crt  — server certificate PEM
+  #   tls.key  — server private key PEM
+  #   ca.crt   — client CA bundle PEM (required only for `mutual`)
+  # The secret is mounted read-only at /etc/choreographer/tls and the
+  # binary picks up the paths via CHOREO_GRPC_TLS_* env vars.
   mode: none
   existingSecret: ""
 

@@ -5,7 +5,7 @@
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{ConfigurationPort, ServiceConfig};
+use choreo_core::ports::{ConfigurationPort, GrpcTlsConfig, ServiceConfig};
 use figment::{
     providers::{Env, Serialized},
     Figment,
@@ -17,14 +17,24 @@ use tracing::debug;
 ///
 /// Recognised variables (prefixed with `CHOREO_`):
 ///
-/// | Var                        | Default               |
-/// |----------------------------|-----------------------|
-/// | `CHOREO_GRPC_PORT`         | `50055`               |
-/// | `CHOREO_NATS_ENABLED`      | `true`                |
-/// | `CHOREO_NATS_URL`          | `nats://nats:4222`    |
-/// | `CHOREO_TRIGGER_SUBJECT`   | `choreo.trigger.>`    |
-/// | `CHOREO_PUBLISH_PREFIX`    | `choreo`              |
-/// | `CHOREO_POSTGRES_URL`      | (unset)               |
+/// | Var                              | Default               |
+/// |----------------------------------|-----------------------|
+/// | `CHOREO_GRPC_PORT`               | `50055`               |
+/// | `CHOREO_NATS_ENABLED`            | `true`                |
+/// | `CHOREO_NATS_URL`                | `nats://nats:4222`    |
+/// | `CHOREO_TRIGGER_SUBJECT`         | `choreo.trigger.>`    |
+/// | `CHOREO_PUBLISH_PREFIX`          | `choreo`              |
+/// | `CHOREO_POSTGRES_URL`            | (unset)               |
+/// | `CHOREO_GRPC_TLS_MODE`           | `none`                |
+/// | `CHOREO_GRPC_TLS_CERT_PATH`      | (unset)               |
+/// | `CHOREO_GRPC_TLS_KEY_PATH`       | (unset)               |
+/// | `CHOREO_GRPC_TLS_CLIENT_CA_PATH` | (unset)               |
+///
+/// `CHOREO_GRPC_TLS_MODE` accepts `none`, `server`, or `mutual`.
+/// `server` requires both `_CERT_PATH` and `_KEY_PATH`; `mutual`
+/// additionally requires `_CLIENT_CA_PATH`. Validation runs at load
+/// time so the adapter never produces an internally inconsistent
+/// snapshot.
 ///
 /// The adapter performs no IO at construction; `load` returns a
 /// snapshot of the current environment.
@@ -47,6 +57,10 @@ struct Defaults {
     trigger_subject: String,
     publish_prefix: String,
     postgres_url: String,
+    grpc_tls_mode: String,
+    grpc_tls_cert_path: String,
+    grpc_tls_key_path: String,
+    grpc_tls_client_ca_path: String,
 }
 
 impl Default for Defaults {
@@ -59,6 +73,10 @@ impl Default for Defaults {
             trigger_subject: "choreo.trigger.>".to_owned(),
             publish_prefix: "choreo".to_owned(),
             postgres_url: String::new(),
+            grpc_tls_mode: "none".to_owned(),
+            grpc_tls_cert_path: String::new(),
+            grpc_tls_key_path: String::new(),
+            grpc_tls_client_ca_path: String::new(),
         }
     }
 }
@@ -82,6 +100,13 @@ impl ConfigurationPort for EnvConfiguration {
             Some(loaded.postgres_url)
         };
 
+        let grpc_tls = build_grpc_tls(
+            &loaded.grpc_tls_mode,
+            &loaded.grpc_tls_cert_path,
+            &loaded.grpc_tls_key_path,
+            &loaded.grpc_tls_client_ca_path,
+        )?;
+
         Ok(ServiceConfig {
             grpc_port: loaded.grpc_port,
             http_port: loaded.http_port,
@@ -90,7 +115,60 @@ impl ConfigurationPort for EnvConfiguration {
             trigger_subject: loaded.trigger_subject,
             publish_prefix: loaded.publish_prefix,
             postgres_url,
+            grpc_tls,
         })
+    }
+}
+
+fn nonempty(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
+fn build_grpc_tls(
+    mode: &str,
+    cert_path: &str,
+    key_path: &str,
+    client_ca_path: &str,
+) -> Result<GrpcTlsConfig, DomainError> {
+    let mode = mode.trim().to_ascii_lowercase();
+    match mode.as_str() {
+        "" | "none" | "disabled" => Ok(GrpcTlsConfig::Disabled),
+        "server" => {
+            let cert = nonempty(cert_path).ok_or(DomainError::EmptyField {
+                field: "grpc_tls.cert_path",
+            })?;
+            let key = nonempty(key_path).ok_or(DomainError::EmptyField {
+                field: "grpc_tls.key_path",
+            })?;
+            Ok(GrpcTlsConfig::Server {
+                cert_path: cert,
+                key_path: key,
+            })
+        }
+        "mutual" | "mtls" => {
+            let cert = nonempty(cert_path).ok_or(DomainError::EmptyField {
+                field: "grpc_tls.cert_path",
+            })?;
+            let key = nonempty(key_path).ok_or(DomainError::EmptyField {
+                field: "grpc_tls.key_path",
+            })?;
+            let ca = nonempty(client_ca_path).ok_or(DomainError::EmptyField {
+                field: "grpc_tls.client_ca_path",
+            })?;
+            Ok(GrpcTlsConfig::Mutual {
+                cert_path: cert,
+                key_path: key,
+                client_ca_path: ca,
+            })
+        }
+        _ => Err(DomainError::InvariantViolated {
+            reason: "grpc_tls.mode must be one of: none, server, mutual",
+        }),
     }
 }
 
@@ -173,6 +251,109 @@ mod tests {
         let err = EnvConfiguration::new().load().await.unwrap_err();
         assert!(matches!(err, DomainError::InvariantViolated { .. }));
 
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_defaults_to_disabled() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert_eq!(cfg.grpc_tls, GrpcTlsConfig::Disabled);
+        assert_eq!(cfg.grpc_tls.mode_name(), "none");
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_server_mode_requires_cert_and_key() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("CHOREO_GRPC_TLS_MODE", "server");
+        // cert + key missing
+        let err = EnvConfiguration::new().load().await.unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "grpc_tls.cert_path"
+            }
+        ));
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_server_mode_loads_when_both_paths_set() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("CHOREO_GRPC_TLS_MODE", "server");
+        std::env::set_var("CHOREO_GRPC_TLS_CERT_PATH", "/etc/tls/tls.crt");
+        std::env::set_var("CHOREO_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
+
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert_eq!(
+            cfg.grpc_tls,
+            GrpcTlsConfig::Server {
+                cert_path: "/etc/tls/tls.crt".to_owned(),
+                key_path: "/etc/tls/tls.key".to_owned(),
+            }
+        );
+        assert_eq!(cfg.grpc_tls.mode_name(), "server");
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_mutual_mode_requires_client_ca() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("CHOREO_GRPC_TLS_MODE", "mutual");
+        std::env::set_var("CHOREO_GRPC_TLS_CERT_PATH", "/etc/tls/tls.crt");
+        std::env::set_var("CHOREO_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
+        // client CA missing
+
+        let err = EnvConfiguration::new().load().await.unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "grpc_tls.client_ca_path"
+            }
+        ));
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_mutual_mode_loads_when_all_three_paths_set() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("CHOREO_GRPC_TLS_MODE", "mutual");
+        std::env::set_var("CHOREO_GRPC_TLS_CERT_PATH", "/etc/tls/tls.crt");
+        std::env::set_var("CHOREO_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
+        std::env::set_var("CHOREO_GRPC_TLS_CLIENT_CA_PATH", "/etc/tls/ca.crt");
+
+        let cfg = EnvConfiguration::new().load().await.unwrap();
+        assert_eq!(
+            cfg.grpc_tls,
+            GrpcTlsConfig::Mutual {
+                cert_path: "/etc/tls/tls.crt".to_owned(),
+                key_path: "/etc/tls/tls.key".to_owned(),
+                client_ca_path: "/etc/tls/ca.crt".to_owned(),
+            }
+        );
+        assert_eq!(cfg.grpc_tls.mode_name(), "mutual");
+        clear_env();
+    }
+
+    #[tokio::test]
+    async fn grpc_tls_invalid_mode_is_rejected() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("CHOREO_GRPC_TLS_MODE", "weird");
+
+        let err = EnvConfiguration::new().load().await.unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "grpc_tls.mode must be one of: none, server, mutual"
+            }
+        ));
         clear_env();
     }
 }

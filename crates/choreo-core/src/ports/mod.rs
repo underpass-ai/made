@@ -34,7 +34,7 @@ pub use agent_factory::{AgentDescriptor, AgentFactoryPort};
 pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use clock::ClockPort;
-pub use configuration::{ConfigurationPort, ServiceConfig};
+pub use configuration::{ConfigurationPort, GrpcTlsConfig, ServiceConfig};
 pub use council_registry::CouncilRegistryPort;
 pub use deliberation_observer::{DeliberationObserverPort, NullObserver};
 pub use deliberation_repository::DeliberationRepositoryPort;

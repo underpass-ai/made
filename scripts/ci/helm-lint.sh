@@ -62,3 +62,70 @@ for marker in "${required_markers[@]}"; do
     exit 1
   fi
 done
+
+# --- Gate 4: TLS render. `tls.mode=server` with an existingSecret
+# must wire the env vars + volume mount; `tls.mode=mutual` must also
+# carry the client-CA env var; `tls.mode=server` without a secret
+# must fail loudly.
+
+TLS_SERVER_OUT="${TMP_DIR}/choreographer-helm-tls-server.yaml"
+TLS_MUTUAL_OUT="${TMP_DIR}/choreographer-helm-tls-mutual.yaml"
+TLS_MISSING_ERR="${TMP_DIR}/choreographer-helm-tls-missing.err"
+
+if helm template choreographer "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set tls.mode=server \
+  > /dev/null 2>"${TLS_MISSING_ERR}"; then
+  echo "tls.mode=server with no existingSecret render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "tls.mode is not 'none' but tls.existingSecret is empty" "${TLS_MISSING_ERR}"
+
+helm template choreographer "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set tls.mode=server \
+  --set tls.existingSecret=choreo-grpc-tls \
+  > "${TLS_SERVER_OUT}"
+
+tls_server_markers=(
+  'name: CHOREO_GRPC_TLS_MODE'
+  'value: "server"'
+  'name: CHOREO_GRPC_TLS_CERT_PATH'
+  'value: "/etc/choreographer/tls/tls.crt"'
+  'name: CHOREO_GRPC_TLS_KEY_PATH'
+  'value: "/etc/choreographer/tls/tls.key"'
+  'name: grpc-tls'
+  'secretName: "choreo-grpc-tls"'
+  'mountPath: /etc/choreographer/tls'
+)
+for marker in "${tls_server_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${TLS_SERVER_OUT}"; then
+    echo "tls=server chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+if grep -qF 'CHOREO_GRPC_TLS_CLIENT_CA_PATH' "${TLS_SERVER_OUT}"; then
+  echo "tls=server manifest must NOT carry CHOREO_GRPC_TLS_CLIENT_CA_PATH" >&2
+  exit 1
+fi
+
+helm template choreographer "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set tls.mode=mutual \
+  --set tls.existingSecret=choreo-grpc-mtls \
+  > "${TLS_MUTUAL_OUT}"
+
+tls_mutual_markers=(
+  'name: CHOREO_GRPC_TLS_MODE'
+  'value: "mutual"'
+  'name: CHOREO_GRPC_TLS_CLIENT_CA_PATH'
+  'value: "/etc/choreographer/tls/ca.crt"'
+  'secretName: "choreo-grpc-mtls"'
+)
+for marker in "${tls_mutual_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${TLS_MUTUAL_OUT}"; then
+    echo "tls=mutual chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done

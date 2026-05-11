@@ -21,6 +21,54 @@ pub struct ServiceConfig {
     /// in-memory repository is wired. Empty-string is treated as
     /// unset so the chart can carry a placeholder default.
     pub postgres_url: Option<String>,
+    /// Transport security for the gRPC server.
+    pub grpc_tls: GrpcTlsConfig,
+}
+
+/// Mode + paths for the gRPC server's transport security. Validated
+/// at load time so the adapter never sees an internally inconsistent
+/// state (e.g. mode=server with no cert path).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GrpcTlsConfig {
+    /// Plain HTTP/2 over TCP. Acceptable inside a private mesh; not
+    /// for cross-network deployments.
+    Disabled,
+    /// One-way TLS: the server presents an identity, the client
+    /// verifies it via a trust anchor it already has.
+    Server { cert_path: String, key_path: String },
+    /// Mutual TLS: client presents an identity that the server
+    /// validates against `client_ca_path`.
+    Mutual {
+        cert_path: String,
+        key_path: String,
+        client_ca_path: String,
+    },
+}
+
+impl GrpcTlsConfig {
+    /// Disabled by default — every other mode requires explicit
+    /// configuration with file paths the binary can actually read.
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self::Disabled
+    }
+
+    /// Operator-friendly name for the active mode. Useful for
+    /// startup-log honesty so deployments expose what they're doing.
+    #[must_use]
+    pub fn mode_name(&self) -> &'static str {
+        match self {
+            Self::Disabled => "none",
+            Self::Server { .. } => "server",
+            Self::Mutual { .. } => "mutual",
+        }
+    }
+}
+
+impl Default for GrpcTlsConfig {
+    fn default() -> Self {
+        Self::disabled()
+    }
 }
 
 #[async_trait]

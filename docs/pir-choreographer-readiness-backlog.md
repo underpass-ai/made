@@ -29,11 +29,12 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 4 | complete causal metadata propagation | done (Epic 5) |
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
-| 7 | real TLS / mTLS posture | not started (chart surface is dead config; server and client have no TLS wiring) |
+| 7 | real TLS / mTLS posture | mostly done (server-side TLS wired with `none`/`server`/`mutual`; chart honest; Runtime client TLS + handshake-level integration test deferred) |
 | 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
-What is now genuinely blocking PIR integration: Epics 8, 9, 10
-plus the missing real-council / runtime legs of Epic 11. The execution
+What is now genuinely blocking PIR integration: Epic 8 leg (Runtime
+client TLS), Epics 9 and 10, plus the missing real-council / runtime
+legs of Epic 11. The execution
 and context foundations (Phases 1 and 2 in the original plan) plus
 provider composition are satisfied.
 
@@ -75,7 +76,7 @@ Choreographer is "ready" when all of the following are true:
 
 These items still block PIR integration.
 
-- TLS / mTLS server + client posture (Epic 8)
+- Runtime gRPC client TLS in `RuntimeExecutor::connect` (Epic 8 leg)
 - dedicated PIR-facing RPC surface (Epic 9)
 - structured report artifact support (Epic 10)
 - stack E2E proof with real council + runtime executor (Epic 11 leg)
@@ -84,7 +85,7 @@ Already cleared: Runtime executor adapter (Epic 1), Kernel context
 boundary (Epic 2), structured council output contracts (Epic 3),
 causal metadata model (Epic 5), provider-backed agent factory
 composition (Epic 6), honest transport semantics (Epic 7 — declared
-plain NATS).
+plain NATS), gRPC server TLS/mTLS posture (Epic 8 server side).
 
 ### P1 — required before production
 
@@ -486,26 +487,52 @@ integration on direct gRPC.
 
 ### Epic 8. TLS / mTLS parity
 
-Status: not started
+Status: mostly done (gRPC server side); Runtime client TLS deferred.
 
-Current state:
+Current state (2026-05-11):
 
-- gRPC server in `crates/choreo/src/runtime.rs` is built with
-  `Server::builder().add_service(...)` only — no `ServerTlsConfig`,
-  no identity wiring
-- Runtime gRPC client in `RuntimeExecutor::connect` uses
-  `Endpoint::from_shared(...).connect()` only — no `.tls_config(...)`
-- chart still exposes `tls.mode` / `tls.existingSecret` in
-  `values.yaml`, but no template references those keys; they are dead
-  config
-- Cargo workspace has no `rustls` / `tokio-rustls` / `ServerTlsConfig`
-  usage in the binary or in the gRPC adapters
+- gRPC server in `crates/choreo/src/runtime.rs` builds with
+  `ServerTlsConfig::new().identity(...)` (server mode) or additionally
+  `client_ca_root(...)` (mutual mode), driven by the new
+  `GrpcTlsConfig` enum in `ServiceConfig`. PEM files are read at
+  startup; a misconfigured deployment fails fast.
+- `EnvConfiguration` reads `CHOREO_GRPC_TLS_MODE` (`none`/`server`/`mutual`),
+  `CHOREO_GRPC_TLS_CERT_PATH`, `CHOREO_GRPC_TLS_KEY_PATH`, and (for mutual)
+  `CHOREO_GRPC_TLS_CLIENT_CA_PATH`. Validation surfaces missing-path
+  combinations as `DomainError::EmptyField` and an invalid mode as
+  `InvariantViolated`.
+- Chart template (`charts/choreographer/templates/deployment.yaml`) mounts
+  `tls.existingSecret` read-only at `/etc/choreographer/tls` and passes
+  the matching env vars; rendering with `tls.mode != "none"` but no
+  `existingSecret` fails the helm template with an explicit message.
+- `scripts/ci/helm-lint.sh` gate 4 asserts the rendered manifest for
+  both `server` and `mutual` modes carries the expected env vars and
+  volume mount, and that `server` mode does NOT carry the client-CA
+  env var.
+- `values.yaml` `tls.mode` and `tls.existingSecret` are now honest
+  configuration with documented secret layout.
+
+Remaining work (deferred to a follow-up epic slice):
+
+- Runtime gRPC client TLS in `RuntimeExecutor::connect` — still uses
+  plain `Endpoint::from_shared(...).connect()`. Out-of-process mTLS
+  to the Runtime service requires a coordinated identity rollout with
+  the runtime team.
+- Rust integration test that performs an actual TLS handshake against
+  the choreographer (e.g. with `rcgen` to generate a self-signed cert
+  in the test). Today the wiring is exercised by helm-lint gate 4
+  plus the env-loading unit tests; the handshake itself is implicitly
+  validated by the tonic library's invariants but not asserted
+  end-to-end from this repo.
 
 Relevant code:
 
 - [`crates/choreo/src/runtime.rs`](../crates/choreo/src/runtime.rs)
-- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs)
-- [`charts/choreographer/values.yaml`](../charts/choreographer/values.yaml)
+- [`crates/choreo-adapters/src/config.rs`](../crates/choreo-adapters/src/config.rs)
+- [`crates/choreo-core/src/ports/configuration.rs`](../crates/choreo-core/src/ports/configuration.rs)
+- [`charts/choreographer/templates/deployment.yaml`](../charts/choreographer/templates/deployment.yaml)
+- [`scripts/ci/helm-lint.sh`](../scripts/ci/helm-lint.sh)
+- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs) (Runtime client — still no TLS)
 
 #### Deliverables
 
@@ -717,8 +744,8 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
-**Mostly cleared 2026-05-11.** Epics 6 and 7 done; Epic 8 still not
-started.
+**Mostly cleared 2026-05-11.** Epics 6 and 7 done; Epic 8 server side
+done, Runtime client TLS leg deferred.
 
 ### Milestone D — PIR-facing surface
 
@@ -780,11 +807,19 @@ tests via `NoopAgentFactory`).
   retitled accordingly. JetStream remains the upgrade path if the
   bus-coupling requirement later demands durability.
 
-#### Wave 4c — TLS honesty
+#### Wave 4c — TLS honesty — partially done
 
-- wire `ServerTlsConfig` on the gRPC server (and Runtime client) or
-  remove the chart's `tls.*` keys; one integration test for the
-  enabled mode
+- gRPC server: `GrpcTlsConfig` wired through `ServiceConfig`,
+  `EnvConfiguration` validates the mode combinations, `runtime.rs`
+  applies `ServerTlsConfig` (server or mutual). Chart template now
+  mounts the secret and passes env vars; helm-lint gate 4 asserts
+  the rendered manifest for both modes; 6 env-loading unit tests
+  pin the validation paths.
+- Open follow-up: Runtime gRPC client TLS in `RuntimeExecutor::connect`
+  (requires coordinated identity rollout with the runtime team) and
+  a Rust integration test that performs a real TLS handshake against
+  the choreographer (likely with `rcgen` to generate a self-signed
+  cert in-test).
 
 #### Wave 5 — PIR-facing surface
 
