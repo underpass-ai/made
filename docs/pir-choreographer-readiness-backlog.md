@@ -27,15 +27,15 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 2 | real Kernel-fed context input | done (typed `ExternalContextBundle` flowing trigger -> task -> deliberation) |
 | 3 | structured, contract-validated council outputs | done (structured-output mode + deterministic `NoValidProposal` failure) |
 | 4 | complete causal metadata propagation | done (Epic 5) |
-| 5 | provider-backed council materialization | partial (provider adapters exist behind features; dispatching factory not wired) |
+| 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | not started (code uses core NATS; AsyncAPI still says JetStream) |
 | 7 | real TLS / mTLS posture | not started (chart surface is dead config; server and client have no TLS wiring) |
 | 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
-What is now genuinely blocking PIR integration: Epics 6, 7, 8, 9, 10
+What is now genuinely blocking PIR integration: Epics 7, 8, 9, 10
 plus the missing real-council / runtime legs of Epic 11. The execution
-and context foundations (Phases 1 and 2 in the original plan) are
-satisfied.
+and context foundations (Phases 1 and 2 in the original plan) plus
+provider composition are satisfied.
 
 The recommended remaining execution order is:
 
@@ -75,7 +75,6 @@ Choreographer is "ready" when all of the following are true:
 
 These items still block PIR integration.
 
-- provider-backed agent factory wiring (Epic 6)
 - truthful transport semantics (Epic 7)
 - TLS / mTLS server + client posture (Epic 8)
 - dedicated PIR-facing RPC surface (Epic 9)
@@ -84,7 +83,8 @@ These items still block PIR integration.
 
 Already cleared: Runtime executor adapter (Epic 1), Kernel context
 boundary (Epic 2), structured council output contracts (Epic 3),
-causal metadata model (Epic 5).
+causal metadata model (Epic 5), provider-backed agent factory
+composition (Epic 6).
 
 ### P1 — required before production
 
@@ -382,25 +382,34 @@ ids such as incidents, cases, claims, shipments, studies, or similar concepts.
 
 ### Epic 6. Provider-backed agent factory composition
 
-Status: partial
+Status: done
 
 Current state:
 
-- provider agent adapters exist behind Cargo features
-  `agent-anthropic`, `agent-openai`, `agent-vllm`: `AnthropicAgent`,
-  `OpenAiAgent`, `VllmAgent` each implement `AgentPort`
-- the composition root still wires `Arc::new(NoopAgentFactory::new())`
-  only; no dispatching `AgentFactoryPort` exists in the workspace
-- `NoopAgentFactory::create` explicitly rejects any `kind` other than
-  `"noop"`
-- `RegisterAgentUseCase` already routes through `AgentFactoryPort.create`
-  correctly — the gap is purely the binary composition root
+- `DispatchingAgentFactory` (in `crates/choreo-adapters/src/agents/factory.rs`)
+  implements `AgentFactoryPort` and dispatches on `descriptor.kind`:
+  - `"noop"` — always available
+  - `"anthropic"` — gated on `agent-anthropic` feature + `CHOREO_ANTHROPIC_API_KEY`
+  - `"openai"` — gated on `agent-openai` feature + `CHOREO_OPENAI_API_KEY`
+  - `"vllm"` — gated on `agent-vllm` feature + `CHOREO_VLLM_MODEL` + `CHOREO_VLLM_ENDPOINT`
+- per-descriptor overrides: `provider.model`, `provider.endpoint`,
+  `provider.max_tokens` on the descriptor's `attributes`
+- credentials live ONLY in env (descriptors are persisted in Postgres,
+  so secrets must not flow through them)
+- the binary wires `DispatchingAgentFactory::from_env()` unconditionally;
+  startup log emits `agent_kinds=...` listing the supported set
+- `supported_kinds()` accessor returns the live list so operators can
+  see which kinds the deployment will accept on `RegisterAgent`
 
 Relevant code:
 
+- [`crates/choreo-adapters/src/agents/factory.rs`](../crates/choreo-adapters/src/agents/factory.rs)
 - [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
 - [`crates/choreo-adapters/src/agents/`](../crates/choreo-adapters/src/agents/)
-- [`crates/choreo-adapters/src/noop/agent_factory.rs`](../crates/choreo-adapters/src/noop/agent_factory.rs)
+
+Progress as of 2026-05-11: implementation landed in the next PR.
+`NoopAgentFactory` remains available as a single-kind factory for
+tests; the production binary uses `DispatchingAgentFactory` only.
 
 #### Deliverables
 
@@ -698,8 +707,8 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
-**Open.** Epic 6 partial (providers behind features, no dispatch
-factory); Epics 7 and 8 not started.
+**Partially cleared 2026-05-11.** Epic 6 done; Epics 7 and 8 still
+not started.
 
 ### Milestone D — PIR-facing surface
 
@@ -740,13 +749,19 @@ Exit condition:
 
 ### Open waves
 
-#### Wave 4a — real provider factories
+#### Wave 4a — real provider factories — done
 
-- design a dispatching `AgentFactoryPort` that recognises
-  `noop`/`anthropic`/`openai`/`vllm`
-- wire it in `compose.rs` behind the existing Cargo features
-- persistence-rehydration test for at least one provider-backed
-  descriptor
+- dispatching `AgentFactoryPort` recognising
+  `noop`/`anthropic`/`openai`/`vllm` shipped as `DispatchingAgentFactory`
+- wired in `compose.rs` behind the existing Cargo features
+- env-driven config + per-descriptor `provider.*` overrides
+- 10 unit tests in `agents/factory.rs`
+
+Open follow-up: explicit Postgres persistence-rehydration test for a
+non-noop descriptor (would require provider credentials in CI; not
+strictly required by Epic 6's acceptance, since the dispatcher uses
+the existing `RegisterAgentUseCase` path that already has rehydration
+tests via `NoopAgentFactory`).
 
 #### Wave 4b — transport honesty
 

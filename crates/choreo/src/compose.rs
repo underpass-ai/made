@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use choreo_adapters::agents::DispatchingAgentFactory;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
@@ -9,7 +10,7 @@ use choreo_adapters::memory::{
     InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
-use choreo_adapters::noop::{NoopAgentFactory, NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresPoolError, PostgresStatistics,
@@ -103,7 +104,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let executor = wire_executor().await?;
-    let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(NoopAgentFactory::new());
+    let dispatching_factory = DispatchingAgentFactory::from_env()?;
+    let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
+    let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(dispatching_factory);
 
     // Pick the persistent backings together so the three registries
     // and the deliberation repository always live on the same pool
@@ -198,6 +201,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         http_port = service_config.http_port,
         nats_enabled = service_config.nats_enabled,
         executor_backend = executor_backend_name(),
+        agent_kinds = supported_agent_kinds.as_str(),
         trigger_subject = service_config.trigger_subject.as_str(),
         "choreographer wired"
     );
