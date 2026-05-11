@@ -17,5 +17,5 @@ pub use deliberation::{Deliberation, DeliberationPhase, RankedOutcome};
 pub use external_context::{ContextItem, ContextReference, ContextSummary, ExternalContextBundle};
 pub use proposal::Proposal;
 pub use statistics::Statistics;
-pub use task::{Task, TaskConstraints};
+pub use task::{Task, TaskConstraints, TaskMetadata};
 pub use validation::{ValidationOutcome, ValidatorReport};

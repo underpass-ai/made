@@ -94,12 +94,13 @@ plane.
 
 ## Medium-Severity Gaps
 
-### 2. Event correlation is only partially modeled
+### 2. Event correlation is partially improved
 
-`EventEnvelope` carries `correlation_id`, but outbound events created by
-the use cases currently mint a fresh envelope with `correlation_id =
-None`. `TaskDispatchedEvent` also leaves `trigger_event_id` empty in the
-orchestration path.
+As of 2026-04-26, `EventEnvelope` carries both `correlation_id` and
+`causation_id`, and `TaskMetadata` preserves causal ids from inbound
+triggers through deliberation and orchestration lifecycle events.
+`TaskDispatchedEvent` now records the source trigger id when the task
+was built from an inbound trigger.
 
 Relevant files:
 
@@ -108,8 +109,8 @@ Relevant files:
 - [`crates/choreo-app/src/usecases/orchestrate.rs`](../crates/choreo-app/src/usecases/orchestrate.rs)
 - [`crates/choreo-adapters/src/grpc/mappers/event.rs`](../crates/choreo-adapters/src/grpc/mappers/event.rs)
 
-Practical consequence: traces can be stitched via `traceparent`, but
-domain-level causal chains remain weak for downstream consumers.
+Remaining gap: stack E2E coverage should assert causal metadata on the
+event bus.
 
 ### 3. TLS appears in the chart surface but not in the server wiring
 

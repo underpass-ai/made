@@ -64,6 +64,7 @@ async fn main() -> Result<()> {
                 constraints: None,
                 attributes: None,
                 external_context: None,
+                metadata: None,
             }),
         })
         .await

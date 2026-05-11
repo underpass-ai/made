@@ -1,9 +1,9 @@
 //! Task & constraints proto → domain conversion.
 
-use choreo_core::entities::{Task, TaskConstraints};
+use choreo_core::entities::{Task, TaskConstraints, TaskMetadata};
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    DurationMs, NumAgents, Rounds, Specialty, TaskDescription, TaskId,
+    DurationMs, EventId, NumAgents, Rounds, Specialty, TaskDescription, TaskId,
 };
 use choreo_proto::v1 as pb;
 
@@ -20,13 +20,15 @@ pub fn task_from_proto(t: pb::Task) -> Result<Task, DomainError> {
     let constraints = constraints_from_proto(t.constraints)?;
     let attributes = attributes_from_struct(t.attributes)?;
     let external_context = external_context_from_proto(t.external_context)?;
-    Ok(Task::new_with_context(
+    let metadata = metadata_from_proto(t.metadata)?;
+    Ok(Task::new_with_metadata(
         id,
         specialty,
         description,
         constraints,
         attributes,
         external_context,
+        metadata,
     ))
 }
 
@@ -57,6 +59,36 @@ fn constraints_from_proto(c: Option<pb::Constraints>) -> Result<TaskConstraints,
     Ok(constraints)
 }
 
+pub(crate) fn metadata_from_proto(
+    metadata: Option<pb::TaskMetadata>,
+) -> Result<TaskMetadata, DomainError> {
+    let Some(metadata) = metadata else {
+        return Ok(TaskMetadata::default());
+    };
+
+    TaskMetadata::new(
+        optional_event_id(&metadata.source_event_id)?,
+        optional_event_id(&metadata.causation_id)?,
+        optional_event_id(&metadata.correlation_id)?,
+        optional_text(&metadata.council_contract_id),
+        optional_text(&metadata.output_contract_id),
+        attributes_from_struct(metadata.execution_profile)?,
+    )
+}
+
+fn optional_event_id(value: &str) -> Result<Option<EventId>, DomainError> {
+    optional_text(value).map(EventId::new).transpose()
+}
+
+fn optional_text(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_owned())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -76,6 +108,7 @@ mod tests {
             }),
             attributes: Some(PbStruct::default()),
             external_context: None,
+            metadata: None,
         }
     }
 
@@ -117,6 +150,7 @@ mod tests {
             }),
             attributes: None,
             external_context: None,
+            metadata: None,
         };
         let task = task_from_proto(t).unwrap();
         assert_eq!(task.constraints().rounds(), Rounds::default());
@@ -133,6 +167,7 @@ mod tests {
             constraints: None,
             attributes: None,
             external_context: None,
+            metadata: None,
         };
         let err = task_from_proto(t).unwrap_err();
         assert!(matches!(err, DomainError::EmptyField { field: "task_id" }));
@@ -174,5 +209,35 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn task_metadata_maps_to_domain() {
+        let mut t = sample_proto("t1", "triage", "describe alert");
+        t.metadata = Some(pb::TaskMetadata {
+            source_event_id: "source-1".to_owned(),
+            causation_id: "cause-1".to_owned(),
+            correlation_id: "corr-1".to_owned(),
+            council_contract_id: "council-contract".to_owned(),
+            output_contract_id: "output-contract".to_owned(),
+            execution_profile: Some(PbStruct::default()),
+        });
+
+        let task = task_from_proto(t).unwrap();
+
+        assert_eq!(
+            task.metadata().source_event_id().unwrap().as_str(),
+            "source-1"
+        );
+        assert_eq!(task.metadata().causation_id().unwrap().as_str(), "cause-1");
+        assert_eq!(task.metadata().correlation_id().unwrap().as_str(), "corr-1");
+        assert_eq!(
+            task.metadata().council_contract_id(),
+            Some("council-contract")
+        );
+        assert_eq!(
+            task.metadata().output_contract_id(),
+            Some("output-contract")
+        );
     }
 }

@@ -264,12 +264,26 @@ Add validators for:
 
 ### Epic 5. Task / council metadata model
 
-Status: not done
+Status: done for the domain-agnostic core slice
 
 Current state:
 
-- `Task` has only `specialty`, `description`, `constraints`, `attributes`
-- `EventEnvelope` only carries `event_id`, `source`, `correlation_id`
+- `Task` now has integration-neutral `TaskMetadata`
+- `EventEnvelope` carries both `correlation_id` and `causation_id`
+- inbound trigger metadata is converted into task metadata
+- lifecycle events preserve causal metadata through deliberation and orchestration
+
+Progress as of 2026-04-26:
+
+- added first-class `TaskMetadata`
+- added `source_event_id`, `causation_id`, and `correlation_id` propagation
+- added proto and gRPC mapper support for task metadata
+- kept application-owned identifiers out of the core; product/domain ids remain
+  in `Task.attributes` or `ExternalContextBundle.metadata`
+- added tests proving causal metadata reaches deliberation, dispatch, completion,
+  and failure events
+- wired `execution_profile` into executor options, with explicit call options
+  taking precedence
 
 Relevant code:
 
@@ -280,8 +294,6 @@ Relevant code:
 
 Introduce a first-class metadata surface that can carry:
 
-- external incident id
-- external incident run id
 - source event id
 - causation id
 - correlation id
@@ -289,15 +301,15 @@ Introduce a first-class metadata surface that can carry:
 - output contract id
 - execution profile metadata
 
-This can be either:
-
-- dedicated fields, or
-- a typed metadata object with helper accessors
+Application-specific identifiers must remain outside the core metadata model.
+Use `Task.attributes` or `ExternalContextBundle.metadata` for product/domain
+ids such as incidents, cases, claims, shipments, studies, or similar concepts.
 
 #### Acceptance criteria
 
 - metadata survives trigger -> task -> deliberation -> orchestration -> outbound event
 - metadata can be inspected in tests without parsing arbitrary blobs
+- execution-profile metadata is wired into the executor path where applicable
 
 ## Phase 3 — Provider And Composition Readiness
 
