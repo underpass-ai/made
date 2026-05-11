@@ -35,3 +35,8 @@ pub mod openai;
 
 #[cfg(feature = "agent-vllm")]
 pub mod vllm;
+
+pub mod factory;
+pub use factory::{
+    DispatchingAgentFactory, ANTHROPIC_AGENT_KIND, OPENAI_AGENT_KIND, VLLM_AGENT_KIND,
+};

@@ -143,13 +143,22 @@ gate in this repository):
   same row without a read-modify-write race — verified by a 50-
   concurrent-record integration test.
 
+**Agent factory** (provider-backed materialization):
+
+- The binary wires `DispatchingAgentFactory`, which materializes
+  `kind == "noop"` unconditionally plus any provider whose Cargo
+  feature is compiled in AND whose credentials are present at boot:
+  - `agent-anthropic` + `CHOREO_ANTHROPIC_API_KEY` → `kind=anthropic`
+  - `agent-openai` + `CHOREO_OPENAI_API_KEY` → `kind=openai`
+  - `agent-vllm` + `CHOREO_VLLM_MODEL` + `CHOREO_VLLM_ENDPOINT` (+ optional
+    `CHOREO_VLLM_BEARER_TOKEN`) → `kind=vllm`
+  Per-descriptor overrides via `provider.model`, `provider.endpoint`,
+  `provider.max_tokens` attributes on the registered descriptor.
+  Startup log emits `agent_kinds=` listing every kind the binary will
+  accept on `RegisterAgent`.
+
 **What is *not* wired yet**:
 
-- The wired `AgentFactoryPort` today only recognises `kind == "noop"`.
-  Provider-specific factories (vLLM, Anthropic, OpenAI, …) exist as
-  standalone adapters behind their Cargo features but are not yet
-  composed into the binary's factory dispatch — that lands in a later
-  slice.
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.
 - Distributed tracing: the core use cases, gRPC handlers, NATS
