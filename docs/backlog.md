@@ -1,83 +1,84 @@
-# Choreographer Readiness Backlog For PIR
+# Choreographer Backlog
 
-Snapshot date: 2026-04-25; honest re-audit 2026-05-11.
-
-This document converts the PIR integration design into a concrete technical
-backlog for `underpass-choreographer`.
+Snapshot date: 2026-04-25; honest re-audit 2026-05-11; PIR framing
+dropped 2026-05-12 (PIR is owned by a separate project — this backlog
+tracks Choreographer's own stack-readiness, not any one downstream
+consumer).
 
 Companion documents:
 
-- [`pir-choreographer-integration-design.md`](./pir-choreographer-integration-design.md)
 - [`stack-gap-analysis.md`](./stack-gap-analysis.md)
+- [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) — installable
+  stdio MCP adapter UX.
 
-The goal is not to list every desirable improvement in Choreographer.
-The goal is to define the minimum work required before PIR can depend on
-Choreographer for complex-incident reevaluation and human handoff synthesis.
+The goal is to keep Choreographer trustworthy as a stack peer:
+real execution, real context, structured council outputs, causal
+metadata, provider-backed councils, honest transport, TLS, an
+agent-facing surface (gRPC + MCP), and reproducible stack E2E.
 
 ## Executive summary
-
-PIR still should not integrate with Choreographer yet, but the gap is
-smaller than the original snapshot suggested.
 
 As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 
 | # | Area | State |
 |---|---|---|
 | 1 | real Runtime execution | done (adapter + env-driven wiring) |
-| 2 | real Kernel-fed context input | done (typed `ExternalContextBundle` flowing trigger -> task -> deliberation) |
+| 2 | typed external context input | done (typed `ExternalContextBundle` flowing trigger -> task -> deliberation) |
 | 3 | structured, contract-validated council outputs | done (structured-output mode + deterministic `NoValidProposal` failure) |
 | 4 | complete causal metadata propagation | done (Epic 5) |
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
-| 7 | real TLS / mTLS posture | mostly done (server-side TLS wired with `none`/`server`/`mutual`; chart honest; Runtime client TLS + handshake-level integration test deferred) |
+| 7 | real TLS / mTLS posture | mostly done (server-side TLS wired with `none`/`server`/`mutual`; chart honest; outbound client TLS + handshake-level integration test deferred) |
 | 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
-What is now genuinely blocking PIR integration: Epic 8 leg (Runtime
-client TLS), Epics 9 and 10, plus the missing real-council / runtime
-legs of Epic 11. The execution
-and context foundations (Phases 1 and 2 in the original plan) plus
-provider composition are satisfied.
+Two surfaces beyond the eight areas:
+
+- **MCP stdio adapter** — `crates/choreo-mcp` ships a hand-rolled
+  stdio MCP server that exposes every RPC of `underpass.choreo.v1`
+  as a `choreo_*` tool. End-user docs live at
+  [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md); per-
+  client snippets for Codex CLI and Claude Desktop live under
+  `docs/operations/mcp/`. Foundation merged 2026-05-12; the
+  distribution slice ships install + smoke scripts and a top-README
+  link.
+- **Downstream product integrations (PIR, payments incident response,
+  custom agentic flows)** are **out of scope for this repo**. The
+  product owns its own deliberation surface; Choreographer's job is to
+  expose a clean, fully-typed gRPC API plus the MCP wrapping so any
+  agentic consumer can drive it.
+
+Genuinely open work: the outbound-TLS leg of Epic 8, the crates.io
+distribution debt for `choreo-mcp` (needs the proto tree vendored
+into a separate crate before `cargo install` from a registry will
+work), Epic 9 (a dedicated council-decision RPC if and when a
+consumer asks for more than the generic `Deliberate` / `Orchestrate`),
+Epic 10 (report artifact), and the missing real-council / runtime
+legs of Epic 11.
 
 The recommended remaining execution order is:
 
-- Phase 3: provider composition + transport / TLS honesty
-- Phase 4: PIR-facing RPC surface and report artifact
+- Phase 3: outbound client TLS + `choreo-mcp` crates.io distribution
+- Phase 4: dedicated agent-facing RPC + report artifact (only if a
+  consumer asks for them)
 - Phase 5: stack E2E with a real council and the Runtime executor
-
-No PIR integration work should begin before Phase 3 is complete.
 
 ## Out of scope
 
 This backlog does not include:
 
-- replacing PIR's event catalog
-- replacing PIR's specialist catalog
 - moving kernel graph semantics into Choreographer
-- making Choreographer domain-specific to payments incidents
-- implementing PIR itself in this repository
-
-## Readiness definition
-
-For the PIR integration described in
-[`pir-choreographer-integration-design.md`](./pir-choreographer-integration-design.md),
-Choreographer is "ready" when all of the following are true:
-
-- it can consume bounded incident context produced upstream
-- it can run real provider-backed expert councils
-- it can return structured, validated outcomes with deterministic failure modes
-- it can hand off execution to Runtime through a real adapter
-- it preserves causal metadata across its full lifecycle
-- it operates with honest transport and TLS semantics
-- it has at least one reproducible stack E2E against Runtime and Kernel surfaces
+- making Choreographer domain-specific (payments, incidents, …)
+- implementing any downstream product (PIR, payments incident
+  response, etc.) in this repository
 
 ## Priorities
 
 ### P0 — hard blockers (remaining)
 
-These items still block PIR integration.
+These items still block downstream consumer integration.
 
 - Runtime gRPC client TLS in `RuntimeExecutor::connect` (Epic 8 leg)
-- dedicated PIR-facing RPC surface (Epic 9)
+- dedicated consumer-facing RPC surface (Epic 9)
 - structured report artifact support (Epic 10)
 - stack E2E proof with real council + runtime executor (Epic 11 leg)
 
@@ -97,7 +98,7 @@ plain NATS), gRPC server TLS/mTLS posture (Epic 8 server side).
 
 ### P2 — useful after first integration
 
-- bus-native PIR ↔ Choreographer coupling
+- bus-native downstream coupling
 - per-proposal streaming for expert councils
 - richer score explainability
 
@@ -192,9 +193,9 @@ remains explicitly deferred — the backlog recommended option A.
 #### Deliverables
 
 1. define one explicit context ingestion boundary:
-   - option A: PIR / caller fetches kernel context and passes it to Choreographer
+   - option A: caller fetches kernel context and passes it to Choreographer
    - option B: Choreographer can fetch context itself through a new port
-2. choose one as the production path for the first PIR integration
+2. choose one as the production path for the first downstream integration
 3. define a stable structured bundle shape for expert councils:
    - incident summary
    - prior findings
@@ -207,7 +208,7 @@ remains explicitly deferred — the backlog recommended option A.
 
 For the first slice, prefer caller-materialized context:
 
-- PIR remains the kernel-first owner
+- the consumer remains the kernel-first owner
 - Choreographer remains domain-agnostic
 - the integration boundary is cleaner
 
@@ -326,7 +327,7 @@ Still to add:
 
 - validators are composable through the existing validation pipeline (done)
 - validator reports remain domain-agnostic from Choreographer's perspective (done)
-- PIR-facing council contracts can be enforced with no handwritten
+- downstream council contracts can be enforced with no handwritten
   post-processing hacks (depends on the JSON Schema + report-shape
   validators above)
 
@@ -452,7 +453,7 @@ Current state:
   capability is independent of whether the client opens it) and
   preserves an upgrade path if option 2 is chosen later.
 
-Decision rationale: PIR's first integration is expected to use direct
+Decision rationale: the expected first downstream integration uses direct
 gRPC (Epic 9), not the bus. Plain NATS is sufficient. Implementing
 real JetStream semantics (stream + durable consumer + ack + replay)
 is deferred to a future epic gated on actual bus-coupling demand.
@@ -476,8 +477,8 @@ Choose one:
 
 #### Recommendation
 
-For a critical PIR integration, prefer real JetStream semantics if bus coupling
-is expected later. If not, document plain NATS honestly and keep PIR's first
+For a critical downstream integration, prefer real JetStream semantics if bus coupling
+is expected later. If not, document plain NATS honestly and keep the first downstream
 integration on direct gRPC.
 
 #### Acceptance criteria
@@ -545,7 +546,7 @@ Relevant code:
 - every declared TLS value has a code path behind it
 - there is at least one integration test for enabled TLS mode
 
-## Phase 5 — PIR-Facing Integration Surface
+## Phase 5 — Consumer-Facing Integration Surface
 
 ### Epic 9. Specialist-grade RPC surface
 
@@ -558,7 +559,7 @@ Current state:
   `ProcessTriggerEvent`, `GetStatus`/`GetMetrics` only
 - the contract-shaped surface today is "set
   `Constraints.output_contract` on a generic `DeliberateRequest`"
-- no `RunCouncilDecision` or equivalent dedicated RPC; PIR would still
+- no `RunCouncilDecision` or equivalent dedicated RPC; consumers would still
   have to call `Deliberate` / `ProcessTriggerEvent` to obtain a
   contract-validated decision
 
@@ -589,7 +590,7 @@ Response:
 
 #### Acceptance criteria
 
-- PIR can call a dedicated RPC without abusing generic trigger fan-out
+- consumers can call a dedicated RPC without abusing generic trigger fan-out
 - council result is already validated when returned
 
 ### Epic 10. Report artifact support
@@ -669,10 +670,10 @@ bounded external trigger
         -> runtime execution or bounded output
 ```
 
-This E2E does not need PIR yet, but it must prove the stack assumptions Choreographer
-will bring into PIR.
+This E2E does not need a downstream consumer yet, but it must prove the stack assumptions Choreographer
+will bring into any consumer integration.
 
-### Epic 12. PIR integration smoke prerequisites
+### Epic 12. Consumer integration smoke prerequisites
 
 Status: not started — blocked by Epic 6 (real agent factory composition),
 Epic 9 (dedicated council-decision RPC), Epic 10 (report artifact), and
@@ -683,7 +684,7 @@ the missing real-council / runtime legs of Epic 11.
 A test harness that can later prove:
 
 ```text
-PIR specialist escalation
+<consumer> specialist escalation
   -> kernel bundle
     -> choreographer reevaluation
       -> validated remedy proposal or human-escalation decision
@@ -692,12 +693,61 @@ PIR specialist escalation
 and:
 
 ```text
-PIR escalation decision
+<consumer> escalation decision
   -> choreographer handoff report
     -> final human escalation
 ```
 
 This can begin only once the earlier epics are green.
+
+### Epic 13. MCP stdio adapter
+
+Status: foundation done (2026-05-12); distribution slice in flight.
+
+Current state:
+
+- `crates/choreo-mcp` exposes every RPC of `underpass.choreo.v1` as
+  a `choreo_*` MCP tool (12 tools 1:1 with the gRPC service).
+- JSON-RPC 2.0 over stdin/stdout, no MCP SDK — the wire protocol is
+  hand-rolled so it stays in lock-step with the proto contract.
+- `ChoreoMcpToolBackend` trait has two impls: fixture (canned
+  responses for client wiring) and gRPC (live tonic client with
+  optional TLS).
+- Field-for-field JSON ↔ proto mappers in `src/grpc/{json_to_proto,
+  proto_to_json}.rs` — 100% API respected.
+- `StreamDeliberation` buffered into one response (frames array +
+  winner extracted from the last `result`-typed frame). MCP stdio is
+  sync.
+- 6 env vars (`CHOREO_MCP_BACKEND` + 5 `CHOREO_MCP_GRPC_TLS_*`) with
+  the same auto-detection pattern as the sibling rehydration-mcp.
+- 21 unit tests + workspace clippy clean.
+
+Distribution slice (in flight):
+
+- `scripts/mcp/install-choreo-mcp.sh` — `cargo install --git` wrapper
+  with pinned `CHOREO_MCP_BRANCH/TAG/REV` (mutually exclusive).
+- `scripts/mcp/choreo-stdio-smoke.sh` — one `tools/call` + grep marker
+  for both fixture and live modes.
+- `docs/operations/mcp-stdio.md` — canonical user-facing UX.
+- `docs/operations/mcp/codex.md`, `docs/operations/mcp/claude-desktop.md`
+  — per-client config snippets.
+- `crates/choreo-mcp/README.md` — developer-oriented twin.
+- top-level `README.md` link to `docs/operations/mcp-stdio.md`.
+
+Relevant code:
+
+- [`crates/choreo-mcp/`](../crates/choreo-mcp/)
+- [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md)
+
+#### Deliverables (open)
+
+1. `crates.io` publication. Blocked by the proto tree being path-deped
+   from `choreo-mcp`. Needs the proto package vendored into a
+   standalone crate (or `choreo-proto` itself published) before
+   `cargo install` from a registry will work.
+2. Real-kernel integration test that boots a choreographer in a
+   container and exercises every tool through MCP (separate from the
+   existing e2e-runner gRPC scenarios).
 
 ## Proposed execution order
 
@@ -726,7 +776,7 @@ Must finish:
 
 Exit condition:
 
-- Choreographer can return PIR-safe structured decisions
+- Choreographer can return consumer-safe structured decisions
 
 **Partially cleared 2026-05-11.** Epic 3 done; Epic 4 has the
 format/required/allowed slice but still needs JSON Schema and
@@ -747,7 +797,7 @@ Exit condition:
 **Mostly cleared 2026-05-11.** Epics 6 and 7 done; Epic 8 server side
 done, Runtime client TLS leg deferred.
 
-### Milestone D — PIR-facing surface
+### Milestone D — Consumer-facing surface
 
 Must finish:
 
@@ -756,7 +806,7 @@ Must finish:
 
 Exit condition:
 
-- PIR has a clean RPC surface it can integrate with
+- consumers have a clean RPC surface to integrate with
 
 **Open.** Epic 9 not started; Epic 11 partial (4 scenarios but no real
 council and no runtime executor wired in the stack).
@@ -769,7 +819,7 @@ Must finish:
 
 Exit condition:
 
-- it is reasonable to begin PIR implementation work
+- it is reasonable to begin consumer integration work
 
 **Open** — blocked by Milestones B (remaining), C, and D.
 
@@ -821,7 +871,7 @@ tests via `NoopAgentFactory`).
   the choreographer (likely with `rcgen` to generate a self-signed
   cert in-test).
 
-#### Wave 5 — PIR-facing surface
+#### Wave 5 — Consumer-facing surface
 
 - add a dedicated `RunCouncilDecision` (or equivalent) RPC backed by
   the structured-output mode
@@ -833,28 +883,27 @@ tests via `NoopAgentFactory`).
 
 The following rule should be treated as hard policy:
 
-> Do not start implementing PIR's `complex-incident-reevaluation` or
-> `human-handoff-report` dependency on Choreographer until Milestones A, B,
-> and C are complete.
+> No downstream product that requires structured, audited deliberation
+> output should depend on Choreographer until Milestones A, B, and C
+> are complete.
 
-Status 2026-05-11: Milestone A is complete. Milestone B is one open
-epic away (10) plus a partial validator slice (4). Milestone C is the
-biggest remaining hurdle (Epics 6, 7, 8).
+Status 2026-05-12: Milestone A is complete. Milestone B is one open
+epic away (10) plus a partial validator slice (4). Milestone C is
+mostly complete (Epics 6 and 7 done, Epic 8 server-side done; the
+outbound client TLS leg remains).
 
 Why the rule still stands:
 
 - before B's remaining items, the contract-validated decision surface
-  exists but has no typed report and no JSON Schema enforcement
-- before C, provider composition, transport, and security claims are
-  still weaker than the stack it wants to join
+  exists but has no typed report and no JSON Schema enforcement;
+- before C is fully closed, the outbound TLS posture is asymmetric
+  (server is hardened, the Runtime client still uses plain TCP).
 
 ## Final recommendation
 
 If only one sentence is carried forward from this document, it should be:
 
-> The first job is not to wire PIR into Choreographer; the first job is to make
-> Choreographer a trustworthy stack peer with real Runtime, real context,
-> structured outputs, honest transport, and stack E2E.
-
-Only after that should PIR depend on it for complex pre-human incident
-reevaluation and human handoff synthesis.
+> Choreographer's job is to be a trustworthy stack peer — real Runtime,
+> real context, structured outputs, honest transport, agent-callable
+> through gRPC and MCP, with stack E2E — and nothing more. Downstream
+> products integrate; they are not implemented here.
