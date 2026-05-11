@@ -94,13 +94,17 @@ plane.
 
 ## Medium-Severity Gaps
 
-### 2. Event correlation is partially improved
+### 2. Event correlation is closed end-to-end
 
-As of 2026-04-26, `EventEnvelope` carries both `correlation_id` and
+As of 2026-05-11, `EventEnvelope` carries both `correlation_id` and
 `causation_id`, and `TaskMetadata` preserves causal ids from inbound
 triggers through deliberation and orchestration lifecycle events.
 `TaskDispatchedEvent` now records the source trigger id when the task
-was built from an inbound trigger.
+was built from an inbound trigger. The e2e-runner publishes a
+`TriggerEvent` on NATS with known causal ids and asserts the resulting
+`DeliberationCompleted` envelope on the outbound bus carries the same
+ids, proving the loop closes over a real stack (not only in unit
+tests).
 
 Relevant files:
 
@@ -108,9 +112,7 @@ Relevant files:
 - [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs)
 - [`crates/choreo-app/src/usecases/orchestrate.rs`](../crates/choreo-app/src/usecases/orchestrate.rs)
 - [`crates/choreo-adapters/src/grpc/mappers/event.rs`](../crates/choreo-adapters/src/grpc/mappers/event.rs)
-
-Remaining gap: stack E2E coverage should assert causal metadata on the
-event bus.
+- [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
 
 ### 3. TLS appears in the chart surface but not in the server wiring
 
