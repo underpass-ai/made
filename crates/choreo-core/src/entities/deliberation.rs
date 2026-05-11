@@ -219,6 +219,7 @@ impl Deliberation {
     /// - `Proposing -> Revising`: at least one proposal present.
     /// - `Validating -> Scoring`: every proposal has an outcome.
     /// - Other transitions are unconditional.
+    #[allow(unknown_lints, clippy::collapsible_match)] // collapsible_match added in clippy 1.95; rust 1.90 toolchain doesn't know it
     pub fn advance(&mut self) -> Result<DeliberationPhase, DomainError> {
         let next = self.phase.next().ok_or(DomainError::InvalidTransition {
             from: "Completed",
