@@ -1,0 +1,33 @@
+[package]
+name = "choreo-mcp"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Stdio MCP (Model Context Protocol) adapter that exposes the Underpass Choreographer gRPC API to coding agents (Codex, Claude Desktop, …)."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "choreo-mcp"
+path = "src/main.rs"
+
+[dependencies]
+choreo-proto = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true }
+prost-types = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }
