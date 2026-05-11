@@ -29,12 +29,24 @@ spec:
       {{- end }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
-      {{- if .Values.tmpVolume.enabled }}
+      {{- $tlsMode := .Values.tls.mode | default "none" }}
+      {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") }}
       volumes:
+        {{- if .Values.tmpVolume.enabled }}
         - name: tmp
           emptyDir:
             medium: Memory
             sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
+        {{- end }}
+        {{- if ne $tlsMode "none" }}
+        {{- if not .Values.tls.existingSecret }}
+        {{- fail "tls.mode is not 'none' but tls.existingSecret is empty; provide a Kubernetes secret with tls.crt and tls.key (plus ca.crt for mutual mode)" }}
+        {{- end }}
+        - name: grpc-tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret | quote }}
+            defaultMode: 0400
+        {{- end }}
       {{- end }}
       containers:
         - name: choreo
@@ -42,10 +54,17 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if .Values.tmpVolume.enabled }}
+          {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") }}
           volumeMounts:
+            {{- if .Values.tmpVolume.enabled }}
             - name: tmp
               mountPath: /tmp
+            {{- end }}
+            {{- if ne $tlsMode "none" }}
+            - name: grpc-tls
+              mountPath: /etc/choreographer/tls
+              readOnly: true
+            {{- end }}
           {{- end }}
           ports:
             - name: grpc
@@ -77,6 +96,18 @@ spec:
             {{- if .Values.config.seedSpecialties }}
             - name: CHOREO_SEED_SPECIALTIES
               value: {{ .Values.config.seedSpecialties | quote }}
+            {{- end }}
+            {{- if ne $tlsMode "none" }}
+            - name: CHOREO_GRPC_TLS_MODE
+              value: {{ $tlsMode | quote }}
+            - name: CHOREO_GRPC_TLS_CERT_PATH
+              value: "/etc/choreographer/tls/tls.crt"
+            - name: CHOREO_GRPC_TLS_KEY_PATH
+              value: "/etc/choreographer/tls/tls.key"
+            {{- if eq $tlsMode "mutual" }}
+            - name: CHOREO_GRPC_TLS_CLIENT_CA_PATH
+              value: "/etc/choreographer/tls/ca.crt"
+            {{- end }}
             {{- end }}
             {{- if .Values.persistence.postgres.enabled }}
             {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}

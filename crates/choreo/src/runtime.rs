@@ -15,8 +15,10 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
+use choreo_core::ports::GrpcTlsConfig;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
+use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tracing::{error, info};
 
 use crate::compose::Application;
@@ -62,7 +64,15 @@ pub async fn serve(app: Application) -> Result<()> {
             )
         })?;
 
-    info!(grpc = %grpc_addr, http = %http_addr, "servers starting");
+    let mut server_builder = grpc_server_builder(&service_config.grpc_tls)
+        .context("failed to build grpc server with the configured TLS posture")?;
+
+    info!(
+        grpc = %grpc_addr,
+        http = %http_addr,
+        grpc_tls = service_config.grpc_tls.mode_name(),
+        "servers starting"
+    );
 
     // Driver: one task waits for the OS signal and flips the watch.
     tokio::spawn(async move {
@@ -72,7 +82,7 @@ pub async fn serve(app: Application) -> Result<()> {
 
     let grpc_shutdown = wait_for_shutdown(shutdown_rx.clone());
     let grpc_task = tokio::spawn(async move {
-        tonic::transport::Server::builder()
+        server_builder
             .add_service(grpc_service.into_server())
             .serve_with_shutdown(grpc_addr, grpc_shutdown)
             .await
@@ -117,6 +127,52 @@ async fn wait_for_shutdown(mut rx: watch::Receiver<bool>) {
             break;
         }
     }
+}
+
+/// Build a `Server` builder honouring the operator's TLS posture.
+///
+/// Returns a configured builder ready to receive services. `Disabled`
+/// produces the plain HTTP/2 builder; `Server` attaches a one-way
+/// identity; `Mutual` additionally enforces a client CA. File reads
+/// happen here so a misconfigured deployment fails fast at startup
+/// rather than at the first request.
+fn grpc_server_builder(tls: &GrpcTlsConfig) -> Result<Server> {
+    match tls {
+        GrpcTlsConfig::Disabled => Ok(Server::builder()),
+        GrpcTlsConfig::Server {
+            cert_path,
+            key_path,
+        } => {
+            let identity = load_identity(cert_path, key_path)?;
+            let config = ServerTlsConfig::new().identity(identity);
+            Server::builder()
+                .tls_config(config)
+                .context("failed to apply server TLS configuration")
+        }
+        GrpcTlsConfig::Mutual {
+            cert_path,
+            key_path,
+            client_ca_path,
+        } => {
+            let identity = load_identity(cert_path, key_path)?;
+            let client_ca_pem = std::fs::read(client_ca_path)
+                .with_context(|| format!("failed to read client CA bundle at {client_ca_path}"))?;
+            let config = ServerTlsConfig::new()
+                .identity(identity)
+                .client_ca_root(Certificate::from_pem(client_ca_pem));
+            Server::builder()
+                .tls_config(config)
+                .context("failed to apply mutual TLS configuration")
+        }
+    }
+}
+
+fn load_identity(cert_path: &str, key_path: &str) -> Result<Identity> {
+    let cert = std::fs::read(cert_path)
+        .with_context(|| format!("failed to read server cert at {cert_path}"))?;
+    let key = std::fs::read(key_path)
+        .with_context(|| format!("failed to read server key at {key_path}"))?;
+    Ok(Identity::from_pem(cert, key))
 }
 
 async fn shutdown_signal() {
