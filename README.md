@@ -23,6 +23,9 @@ via configuration and proto messages.
 - [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) — honesty discipline.
 - [`docs/experiments/`](docs/experiments/) — append-only lab
   notebook (baselines, scale sweeps, null results).
+- [`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) —
+  installable stdio MCP adapter exposing the gRPC API to coding
+  agents (Codex CLI, Claude Desktop).
 - `justfile` at the repo root — `just` lists every recipe.
 
 ## Workspace
@@ -34,6 +37,7 @@ via configuration and proto messages.
 | `choreo-adapters` | NATS, gRPC clients, config, external integrations. |
 | `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |
+| `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. |
 
 ## Principles
 
