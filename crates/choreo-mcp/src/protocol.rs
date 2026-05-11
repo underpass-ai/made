@@ -1,0 +1,575 @@
+//! MCP wire-protocol helpers and tool catalog.
+//!
+//! Hand-rolled JSON-RPC 2.0 + MCP `tools/*` shapes — no SDK, the
+//! adapter owns every byte that crosses stdio so it never drifts from
+//! the gRPC contract it wraps.
+//!
+//! Tool definitions are 1:1 with the `underpass.choreo.v1` gRPC
+//! service: 12 tools, one per RPC. The choreographer's API is
+//! respected verbatim — these schemas describe the same fields the
+//! caller would have passed over gRPC, only flattened into JSON shape
+//! suitable for an MCP `tools/call.arguments` object.
+
+use serde_json::{json, Value};
+
+/// MCP protocol version we advertise.
+pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
+/// `serverInfo.name` returned by `initialize`.
+pub(crate) const SERVER_NAME: &str = "underpass-choreo-mcp";
+/// `serverInfo.version` — pulled from the crate version at build time.
+pub(crate) const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// Build the `initialize` result. Includes adapter-side metadata so
+/// the client can record which backend + TLS posture it negotiated
+/// without an extra round-trip.
+pub(crate) fn initialize_result(backend: &str, grpc_tls: &str) -> Value {
+    json!({
+        "protocolVersion": PROTOCOL_VERSION,
+        "capabilities": {
+            "tools": {}
+        },
+        "serverInfo": {
+            "name": SERVER_NAME,
+            "version": SERVER_VERSION,
+        },
+        "metadata": {
+            "backend": backend,
+            "grpc_tls": grpc_tls,
+        }
+    })
+}
+
+/// `tools/list` result. Every choreographer RPC has exactly one tool.
+pub(crate) fn tools_list_result() -> Value {
+    json!({ "tools": tool_catalog() })
+}
+
+#[allow(clippy::too_many_lines)] // 12 tool definitions; splitting just for the line count loses readability
+fn tool_catalog() -> Vec<Value> {
+    vec![
+        tool_def(
+            "choreo_deliberate",
+            "Run a deliberation on the council for the task's specialty. Returns ranked proposals once the council finishes.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["task"],
+                "properties": { "task": task_schema() }
+            }),
+        ),
+        tool_def(
+            "choreo_stream_deliberation",
+            "Run a deliberation and return every phase-transition / result frame buffered into a single response array (no live streaming over MCP stdio).",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["task"],
+                "properties": { "task": task_schema() }
+            }),
+        ),
+        tool_def(
+            "choreo_get_deliberation_result",
+            "Fetch a previously-executed deliberation by task id.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["task_id"],
+                "properties": { "task_id": string_schema("Stable task id used at deliberation time.") }
+            }),
+        ),
+        tool_def(
+            "choreo_orchestrate",
+            "Deliberate AND execute the winning proposal through the wired executor port. Returns the winner plus an execution id.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["task"],
+                "properties": {
+                    "task": task_schema(),
+                    "execution_options": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Opaque executor options. Forwarded verbatim to the configured ExecutorPort."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_create_council",
+            "Create or replace the council for a specialty. `agent_config` is opaque and passed to the agent factory.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["specialty", "num_agents"],
+                "properties": {
+                    "specialty": string_schema("Free-form specialty label, e.g. \"triage\"."),
+                    "num_agents": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "description": "Number of agents to seat on the council."
+                    },
+                    "agent_config": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Opaque config forwarded to the agent factory."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_list_councils",
+            "List the councils registered on the choreographer.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "include_agents": {
+                        "type": "boolean",
+                        "description": "When true, return each council's agent roster."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_delete_council",
+            "Delete the council registered for a specialty. Idempotent: `deleted=false` means the council did not exist.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["specialty"],
+                "properties": { "specialty": string_schema("Specialty whose council to delete.") }
+            }),
+        ),
+        tool_def(
+            "choreo_register_agent",
+            "Register an agent on a council. `agent.kind` must be one supported by the wired AgentFactoryPort (e.g. noop, anthropic, openai, vllm).",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["specialty", "agent"],
+                "properties": {
+                    "specialty": string_schema("Specialty the agent belongs to."),
+                    "agent": agent_summary_schema(),
+                    "agent_config": {
+                        "type": "object",
+                        "additionalProperties": true,
+                        "description": "Opaque per-agent factory config."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_unregister_agent",
+            "Unregister a previously-registered agent by id.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["agent_id"],
+                "properties": { "agent_id": string_schema("Agent id returned by choreo_register_agent.") }
+            }),
+        ),
+        tool_def(
+            "choreo_process_trigger_event",
+            "Submit a domain event that should fan out to one or more deliberations. Returns a TriggerAck reporting the dispatched task ids.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["event"],
+                "properties": { "event": trigger_event_schema() }
+            }),
+        ),
+        tool_def(
+            "choreo_get_status",
+            "Return service health, version, uptime, and optionally statistics.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "include_stats": {
+                        "type": "boolean",
+                        "description": "When true, include the full Statistics snapshot in the response."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_get_metrics",
+            "Return the current statistics snapshot.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+            }),
+        ),
+    ]
+}
+
+// ---------------------------------------------------------------------------
+// Composite schema fragments (kept in sync with `choreo.proto`)
+// ---------------------------------------------------------------------------
+
+fn task_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["task_id", "description", "specialty"],
+        "properties": {
+            "task_id": string_schema("Stable task identifier."),
+            "description": string_schema("Free-form prompt the council deliberates over."),
+            "specialty": string_schema("Specialty label of the council to dispatch to."),
+            "constraints": constraints_schema(),
+            "attributes": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque per-task attributes. Forwarded to agents and validators."
+            },
+            "external_context": external_context_bundle_schema(),
+            "metadata": task_metadata_schema()
+        }
+    })
+}
+
+fn constraints_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "rubric": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque rubric forwarded to agents and validators."
+            },
+            "rounds": { "type": "integer", "minimum": 0, "description": "Peer-review rounds (0 = adapter default)." },
+            "num_agents": { "type": "integer", "minimum": 0, "description": "Requested parallelism (0 = use council size)." },
+            "deadline_ms": { "type": "integer", "minimum": 0, "description": "Optional soft deadline in ms (0 = none)." },
+            "output_contract": output_contract_schema()
+        }
+    })
+}
+
+fn output_contract_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract_id", "format"],
+        "properties": {
+            "contract_id": string_schema("Stable contract identifier."),
+            "format": {
+                "type": "string",
+                "enum": ["json_object"],
+                "description": "Wire format. Only `json_object` is implemented today."
+            },
+            "fields": {
+                "type": "object",
+                "additionalProperties": output_field_rule_schema(),
+                "description": "Map from field name to its rule."
+            }
+        }
+    })
+}
+
+fn output_field_rule_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "required": { "type": "boolean" },
+            "allowed_string_values": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        }
+    })
+}
+
+fn external_context_bundle_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "bundle_id": string_schema("Caller-supplied bundle id."),
+            "schema_version": string_schema("Bundle schema version label."),
+            "summary": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "text": string_schema("Human-facing summary."),
+                    "attributes": {
+                        "type": "object",
+                        "additionalProperties": true
+                    }
+                }
+            },
+            "items": {
+                "type": "array",
+                "items": context_item_schema()
+            },
+            "references": {
+                "type": "array",
+                "items": context_reference_schema()
+            },
+            "metadata": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Application-owned bundle metadata. Choreographer treats this as opaque."
+            }
+        }
+    })
+}
+
+fn context_item_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["item_id", "kind"],
+        "properties": {
+            "item_id": string_schema("Stable item id within the bundle."),
+            "kind": string_schema("Caller-defined kind label."),
+            "title": { "type": "string" },
+            "narrative": { "type": "string" },
+            "attributes": { "type": "object", "additionalProperties": true },
+            "reference_ids": {
+                "type": "array",
+                "items": { "type": "string" }
+            }
+        }
+    })
+}
+
+fn context_reference_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference_id", "uri"],
+        "properties": {
+            "reference_id": string_schema("Stable reference id within the bundle."),
+            "uri": string_schema("Pointer to the referenced artifact."),
+            "title": { "type": "string" },
+            "media_type": { "type": "string" },
+            "attributes": { "type": "object", "additionalProperties": true }
+        }
+    })
+}
+
+fn task_metadata_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "source_event_id": { "type": "string" },
+            "causation_id": { "type": "string" },
+            "correlation_id": { "type": "string" },
+            "council_contract_id": { "type": "string" },
+            "output_contract_id": { "type": "string" },
+            "execution_profile": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque executor hints. Explicit Orchestrate options take precedence on overlap."
+            }
+        }
+    })
+}
+
+fn agent_summary_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["agent_id", "specialty", "kind"],
+        "properties": {
+            "agent_id": string_schema("Stable agent id."),
+            "specialty": string_schema("Specialty the agent serves."),
+            "kind": string_schema("Adapter-defined agent kind (e.g. noop, vllm, anthropic, openai)."),
+            "attributes": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Per-agent factory hints (provider.model, provider.endpoint, …)."
+            }
+        }
+    })
+}
+
+fn trigger_event_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event_id", "kind", "source", "requested_specialties"],
+        "properties": {
+            "event_id": string_schema("Stable producer-side event id."),
+            "kind": string_schema("Free-form event kind (e.g. alert.fired, case.opened)."),
+            "source": string_schema("Producer identifier."),
+            "emitted_at": string_schema("RFC3339 emit timestamp. Server fills in `now` when absent."),
+            "requested_specialties": {
+                "type": "array",
+                "minItems": 1,
+                "items": { "type": "string" }
+            },
+            "task_description_template": { "type": "string" },
+            "constraints": constraints_schema(),
+            "payload": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque domain payload."
+            },
+            "external_context": external_context_bundle_schema(),
+            "correlation_id": { "type": "string" },
+            "causation_id": { "type": "string" }
+        }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Primitive helpers
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::needless_pass_by_value)] // json! consumes via macro clone — clippy can't see that
+fn tool_def(name: &str, description: &str, input_schema: Value) -> Value {
+    json!({
+        "name": name,
+        "description": description,
+        "inputSchema": input_schema,
+    })
+}
+
+fn string_schema(description: &str) -> Value {
+    json!({
+        "type": "string",
+        "minLength": 1,
+        "description": description,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Tool-call result shape (MCP spec)
+// ---------------------------------------------------------------------------
+
+/// MCP success result: `content[].text` for human consumers +
+/// `structuredContent` for machine consumers + `isError: false`.
+#[allow(clippy::needless_pass_by_value)] // structured is used twice; consumed by json!
+pub(crate) fn tool_success_result(structured: Value) -> Value {
+    let text = serde_json::to_string_pretty(&structured).expect("structured JSON should serialize");
+    json!({
+        "content": [{ "type": "text", "text": text }],
+        "structuredContent": structured,
+        "isError": false,
+    })
+}
+
+/// MCP tool error: spec says `isError: true` in the *tool result*,
+/// **not** as a JSON-RPC `error`.
+pub(crate) fn tool_error_result(message: &str) -> Value {
+    json!({
+        "content": [{ "type": "text", "text": message }],
+        "isError": true,
+    })
+}
+
+// ---------------------------------------------------------------------------
+// JSON-RPC framing
+// ---------------------------------------------------------------------------
+
+#[allow(clippy::needless_pass_by_value)] // both args consumed by json!
+pub(crate) fn jsonrpc_result(id: Value, result: Value) -> String {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "result": result,
+    })
+    .to_string()
+}
+
+#[allow(clippy::needless_pass_by_value)] // id consumed by json!
+pub(crate) fn jsonrpc_error(id: Value, code: i64, message: &str) -> String {
+    json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "error": { "code": code, "message": message },
+    })
+    .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn initialize_advertises_protocol_version_and_metadata() {
+        let r = initialize_result("grpc", "server");
+        assert_eq!(r["protocolVersion"], PROTOCOL_VERSION);
+        assert_eq!(r["serverInfo"]["name"], SERVER_NAME);
+        assert_eq!(r["metadata"]["backend"], "grpc");
+        assert_eq!(r["metadata"]["grpc_tls"], "server");
+    }
+
+    #[test]
+    fn tools_catalog_is_one_for_one_with_grpc_service() {
+        let tools = tools_list_result();
+        let arr = tools["tools"].as_array().unwrap();
+        let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
+        assert_eq!(
+            names,
+            vec![
+                "choreo_deliberate",
+                "choreo_stream_deliberation",
+                "choreo_get_deliberation_result",
+                "choreo_orchestrate",
+                "choreo_create_council",
+                "choreo_list_councils",
+                "choreo_delete_council",
+                "choreo_register_agent",
+                "choreo_unregister_agent",
+                "choreo_process_trigger_event",
+                "choreo_get_status",
+                "choreo_get_metrics",
+            ]
+        );
+        assert_eq!(arr.len(), 12);
+    }
+
+    #[test]
+    fn task_schema_includes_metadata_and_external_context() {
+        let s = task_schema();
+        let props = &s["properties"];
+        assert!(props.get("task_id").is_some());
+        assert!(props.get("description").is_some());
+        assert!(props.get("specialty").is_some());
+        assert!(props.get("constraints").is_some());
+        assert!(props.get("attributes").is_some());
+        assert!(props.get("external_context").is_some());
+        assert!(props.get("metadata").is_some());
+    }
+
+    #[test]
+    fn output_contract_format_enum_pins_implemented_modes() {
+        let s = output_contract_schema();
+        let formats = s["properties"]["format"]["enum"].as_array().unwrap();
+        assert_eq!(formats.len(), 1);
+        assert_eq!(formats[0], "json_object");
+    }
+
+    #[test]
+    fn tool_results_carry_both_text_and_structured() {
+        let success = tool_success_result(json!({"answer": "yes"}));
+        assert_eq!(success["isError"], false);
+        assert_eq!(success["structuredContent"]["answer"], "yes");
+        assert!(success["content"][0]["text"]
+            .as_str()
+            .unwrap()
+            .contains("yes"));
+
+        let error = tool_error_result("nope");
+        assert_eq!(error["isError"], true);
+        assert_eq!(error["content"][0]["text"], "nope");
+    }
+
+    #[test]
+    fn jsonrpc_helpers_wrap_results_and_errors() {
+        let r = serde_json::from_str::<Value>(&jsonrpc_result(json!(1), json!({"x": 2}))).unwrap();
+        assert_eq!(r["jsonrpc"], "2.0");
+        assert_eq!(r["id"], 1);
+        assert_eq!(r["result"]["x"], 2);
+
+        let e = serde_json::from_str::<Value>(&jsonrpc_error(json!(2), -32601, "no")).unwrap();
+        assert_eq!(e["error"]["code"], -32601);
+        assert_eq!(e["error"]["message"], "no");
+    }
+}

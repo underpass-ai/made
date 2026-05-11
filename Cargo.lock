@@ -474,6 +474,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "choreo-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "choreo-proto",
+ "futures",
+ "opentelemetry",
+ "prost-types",
+ "serde_json",
+ "sha2",
+ "time",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
 name = "choreo-proto"
 version = "0.1.0"
 dependencies = [
