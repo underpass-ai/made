@@ -460,9 +460,13 @@ name = "choreo-e2e-runner"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-nats",
  "choreo-adapters",
  "choreo-core",
  "choreo-proto",
+ "futures",
+ "serde_json",
+ "time",
  "tokio",
  "tonic",
  "tracing",

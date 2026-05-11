@@ -13,6 +13,9 @@ use std::time::Duration;
 use anyhow::{anyhow, bail, Context, Result};
 use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
 use choreo_proto::v1::{DeleteCouncilRequest, DeliberateRequest, ListCouncilsRequest, Task};
+use futures::StreamExt;
+use time::format_description::well_known::Rfc3339;
+use time::OffsetDateTime;
 use tonic::transport::{Channel, Endpoint};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
@@ -110,8 +113,95 @@ async fn main() -> Result<()> {
         bail!("DeleteCouncil on an unknown specialty must return deleted=false");
     }
 
+    info!("scenario 4: causal metadata propagates from inbound trigger to outbound bus event");
+    verify_causal_metadata_propagates_over_nats(&seed_specialty)
+        .await
+        .context("scenario 4 failed")?;
+
     info!("E2E scenarios passed");
     Ok(())
+}
+
+/// Publishes a `TriggerEvent` on NATS with known `correlation_id` and
+/// `causation_id`, then asserts that the resulting
+/// `DeliberationCompleted` envelope on the outbound bus carries the
+/// same causal ids. Closes the stack-E2E loose end of Epic 5.
+async fn verify_causal_metadata_propagates_over_nats(specialty: &str) -> Result<()> {
+    let nats_url =
+        std::env::var("CHOREO_NATS_URL").unwrap_or_else(|_| "nats://nats:4222".to_owned());
+    let client = async_nats::connect(&nats_url)
+        .await
+        .with_context(|| format!("connect NATS at {nats_url}"))?;
+    info!(nats_url, "connected to NATS for causal metadata assertion");
+
+    let mut subscription = client
+        .subscribe("choreo.deliberation.completed".to_owned())
+        .await
+        .context("subscribe choreo.deliberation.completed")?;
+    // Flush so the SUB is acked by the server before we publish the
+    // trigger that should fan out into the event we're waiting for.
+    client.flush().await.context("flush NATS subscribe")?;
+
+    let event_id = "stack-e2e-trigger-1";
+    let correlation_id = "stack-e2e-corr";
+    let causation_id = "stack-e2e-cause";
+    let emitted_at = OffsetDateTime::now_utc()
+        .format(&Rfc3339)
+        .context("format emitted_at as RFC 3339")?;
+    let trigger = serde_json::json!({
+        "event_id": event_id,
+        "emitted_at": emitted_at,
+        "source": "stack-e2e-runner",
+        "correlation_id": correlation_id,
+        "causation_id": causation_id,
+        "kind": "stack.e2e.trigger",
+        "requested_specialties": [specialty],
+    });
+    let subject = format!("choreo.trigger.{specialty}");
+    let payload = serde_json::to_vec(&trigger).context("serialize trigger payload")?;
+    client
+        .publish(subject.clone(), payload.into())
+        .await
+        .with_context(|| format!("publish trigger to {subject}"))?;
+    client.flush().await.context("flush NATS publish")?;
+    info!(subject, correlation_id, causation_id, "trigger published");
+
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        let remaining = deadline.saturating_duration_since(std::time::Instant::now());
+        let chunk = remaining.min(Duration::from_secs(2));
+        match tokio::time::timeout(chunk, subscription.next()).await {
+            Ok(Some(msg)) => {
+                let payload: serde_json::Value = serde_json::from_slice(&msg.payload)
+                    .context("DeliberationCompleted payload not JSON")?;
+                let got_corr = payload.get("correlation_id").and_then(|v| v.as_str());
+                let got_cause = payload.get("causation_id").and_then(|v| v.as_str());
+                if got_corr == Some(correlation_id) && got_cause == Some(causation_id) {
+                    info!(
+                        out_event_id = payload
+                            .get("event_id")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or(""),
+                        correlation_id,
+                        causation_id,
+                        "DeliberationCompleted carried our causal ids"
+                    );
+                    return Ok(());
+                }
+                warn!(
+                    ?got_corr,
+                    ?got_cause,
+                    "DeliberationCompleted seen but causal ids did not match; continuing"
+                );
+            }
+            Ok(None) => {
+                bail!("NATS subscription closed before a matching DeliberationCompleted arrived");
+            }
+            Err(_) => {}
+        }
+    }
+
+    bail!("no DeliberationCompleted with the expected causal ids arrived within 15s")
 }
 
 async fn connect_with_retry(
