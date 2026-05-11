@@ -195,9 +195,7 @@ async fn verify_causal_metadata_propagates_over_nats(specialty: &str) -> Result<
                 );
             }
             Ok(None) => {
-                bail!(
-                    "NATS subscription closed before a matching DeliberationCompleted arrived"
-                );
+                bail!("NATS subscription closed before a matching DeliberationCompleted arrived");
             }
             Err(_) => {}
         }
