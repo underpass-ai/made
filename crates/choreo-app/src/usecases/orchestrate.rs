@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use choreo_core::entities::{Deliberation, Proposal, Task};
+use choreo_core::entities::{Deliberation, Proposal, Task, TaskMetadata};
 use choreo_core::error::DomainError;
 use choreo_core::events::{
     EventEnvelope, TaskCompletedEvent, TaskDispatchedEvent, TaskFailedEvent,
@@ -79,12 +79,13 @@ impl OrchestrateUseCase {
     ) -> Result<OrchestrateOutput, DomainError> {
         let task_id = task.id().clone();
         let specialty = task.specialty().clone();
+        let metadata = task.metadata().clone();
 
         let out = match self.deliberate.execute(task).await {
             Ok(out) => out,
             Err(err) => {
                 let event = TaskFailedEvent::new(
-                    self.envelope(self.clock.now())?,
+                    self.envelope(self.clock.now(), &metadata)?,
                     task_id.clone(),
                     specialty.clone(),
                     deliberation_error_kind(&err),
@@ -110,12 +111,15 @@ impl OrchestrateUseCase {
 
         self.messaging
             .publish_task_dispatched(&TaskDispatchedEvent::new(
-                self.envelope(self.clock.now())?,
+                self.envelope(self.clock.now(), &metadata)?,
                 task_id.clone(),
                 specialty.clone(),
-                None,
+                metadata.source_event_id().cloned(),
             ))
             .await?;
+
+        let execution_options =
+            merge_execution_options(metadata.execution_profile(), execution_options)?;
 
         match self.executor.execute(&winner, &execution_options).await {
             Ok(execution) => {
@@ -131,7 +135,7 @@ impl OrchestrateUseCase {
                 if execution.succeeded {
                     self.messaging
                         .publish_task_completed(&TaskCompletedEvent::new(
-                            self.envelope(self.clock.now())?,
+                            self.envelope(self.clock.now(), &metadata)?,
                             task_id.clone(),
                             specialty.clone(),
                             Some(winner.author().clone()),
@@ -145,7 +149,7 @@ impl OrchestrateUseCase {
                     );
                 } else {
                     let event = TaskFailedEvent::new(
-                        self.envelope(self.clock.now())?,
+                        self.envelope(self.clock.now(), &metadata)?,
                         task_id.clone(),
                         specialty.clone(),
                         "executor.unsuccessful",
@@ -166,7 +170,7 @@ impl OrchestrateUseCase {
             }
             Err(err) => {
                 let event = TaskFailedEvent::new(
-                    self.envelope(self.clock.now())?,
+                    self.envelope(self.clock.now(), &metadata)?,
                     task_id.clone(),
                     specialty,
                     "executor.error",
@@ -179,12 +183,17 @@ impl OrchestrateUseCase {
         }
     }
 
-    fn envelope(&self, emitted_at: OffsetDateTime) -> Result<EventEnvelope, DomainError> {
-        EventEnvelope::new(
+    fn envelope(
+        &self,
+        emitted_at: OffsetDateTime,
+        metadata: &TaskMetadata,
+    ) -> Result<EventEnvelope, DomainError> {
+        EventEnvelope::new_with_causation(
             EventId::new(Uuid::new_v4().to_string())?,
             emitted_at,
             self.source.clone(),
-            None,
+            metadata.correlation_id().cloned(),
+            metadata.causation_id().cloned(),
         )
     }
 }
@@ -196,6 +205,15 @@ fn deliberation_error_kind(err: &DomainError) -> &'static str {
     }
 }
 
+fn merge_execution_options(
+    profile: &Attributes,
+    explicit: Attributes,
+) -> Result<Attributes, DomainError> {
+    let mut merged = profile.as_map().clone();
+    merged.extend(explicit.into_inner());
+    Attributes::new(merged)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -203,7 +221,8 @@ mod tests {
 
     use async_trait::async_trait;
     use choreo_core::entities::{
-        Council, Deliberation, DeliberationPhase, Task, TaskConstraints, ValidatorReport,
+        Council, Deliberation, DeliberationPhase, Task, TaskConstraints, TaskMetadata,
+        ValidatorReport,
     };
     use choreo_core::events::{DeliberationCompletedEvent, PhaseChangedEvent, TaskDispatchedEvent};
     use choreo_core::ports::{
@@ -211,8 +230,8 @@ mod tests {
         DraftRequest, Revision, ScoringPort, ValidatorPort,
     };
     use choreo_core::value_objects::{
-        AgentId, Attributes, CouncilId, DurationMs, OutputContract, OutputFieldRule, Rounds,
-        Rubric, Score, Specialty, TaskDescription, TaskId,
+        AgentId, Attributes, CouncilId, DurationMs, EventId, OutputContract, OutputFieldRule,
+        Rounds, Rubric, Score, Specialty, TaskDescription, TaskId,
     };
     use time::macros::datetime;
 
@@ -512,6 +531,23 @@ mod tests {
         }
     }
 
+    struct RecordingExecutor {
+        outcome: ExecutionOutcome,
+        seen_options: Mutex<Vec<Attributes>>,
+    }
+
+    #[async_trait]
+    impl ExecutorPort for RecordingExecutor {
+        async fn execute(
+            &self,
+            _winner: &Proposal,
+            options: &Attributes,
+        ) -> Result<ExecutionOutcome, DomainError> {
+            self.seen_options.lock().unwrap().push(options.clone());
+            Ok(self.outcome.clone())
+        }
+    }
+
     fn specialty() -> Specialty {
         Specialty::new("triage").unwrap()
     }
@@ -523,6 +559,18 @@ mod tests {
             TaskDescription::new("decide a remediation").unwrap(),
             TaskConstraints::new(Rubric::empty(), Rounds::new(0).unwrap(), None, None),
             Attributes::empty(),
+        )
+    }
+
+    fn task_with_metadata(metadata: TaskMetadata) -> Task {
+        Task::new_with_metadata(
+            TaskId::new("task-1").unwrap(),
+            specialty(),
+            TaskDescription::new("decide a remediation").unwrap(),
+            TaskConstraints::new(Rubric::empty(), Rounds::new(0).unwrap(), None, None),
+            Attributes::empty(),
+            None,
+            metadata,
         )
     }
 
@@ -660,6 +708,151 @@ mod tests {
         assert_eq!(bus.failed.lock().unwrap().len(), 1);
         assert_eq!(out.deliberation.phase(), DeliberationPhase::Completed);
         assert_eq!(out.winner.author(), &AgentId::new("agent-1").unwrap());
+    }
+
+    #[tokio::test]
+    async fn lifecycle_events_preserve_task_causal_metadata() {
+        let (deliberate, bus) = deliberate_fixture();
+        let executor = Arc::new(StubExecutor {
+            outcome: ExecutionOutcome {
+                execution_id: "exec-1".to_owned(),
+                succeeded: true,
+                duration: DurationMs::from_millis(50),
+                output: Attributes::empty(),
+            },
+        });
+        let clock = Arc::new(FrozenClock {
+            now: datetime!(2026-04-25 12:00:01 UTC),
+        });
+        let stats: Arc<dyn choreo_core::ports::StatisticsPort> = Arc::new(NullStats);
+        let usecase = OrchestrateUseCase::new(
+            deliberate,
+            executor,
+            bus.clone(),
+            clock,
+            stats,
+            "choreographer",
+        );
+        let metadata = TaskMetadata::new(
+            Some(EventId::new("source-1").unwrap()),
+            Some(EventId::new("cause-1").unwrap()),
+            Some(EventId::new("corr-1").unwrap()),
+            None,
+            None,
+            Attributes::empty(),
+        )
+        .unwrap();
+
+        usecase
+            .execute(task_with_metadata(metadata), Attributes::empty())
+            .await
+            .unwrap();
+
+        let dispatched = bus.dispatched.lock().unwrap();
+        assert_eq!(
+            dispatched[0].trigger_event_id().unwrap().as_str(),
+            "source-1"
+        );
+        assert_eq!(
+            dispatched[0].envelope().correlation_id().unwrap().as_str(),
+            "corr-1"
+        );
+        assert_eq!(
+            dispatched[0].envelope().causation_id().unwrap().as_str(),
+            "cause-1"
+        );
+        drop(dispatched);
+
+        let deliberation_completed = bus.deliberation_completed.lock().unwrap();
+        assert_eq!(
+            deliberation_completed[0]
+                .envelope()
+                .correlation_id()
+                .unwrap()
+                .as_str(),
+            "corr-1"
+        );
+        assert_eq!(
+            deliberation_completed[0]
+                .envelope()
+                .causation_id()
+                .unwrap()
+                .as_str(),
+            "cause-1"
+        );
+        drop(deliberation_completed);
+
+        let completed = bus.completed.lock().unwrap();
+        assert_eq!(
+            completed[0].envelope().correlation_id().unwrap().as_str(),
+            "corr-1"
+        );
+        assert_eq!(
+            completed[0].envelope().causation_id().unwrap().as_str(),
+            "cause-1"
+        );
+    }
+
+    #[tokio::test]
+    async fn execution_profile_is_merged_with_explicit_execution_options() {
+        let (deliberate, bus) = deliberate_fixture();
+        let executor = Arc::new(RecordingExecutor {
+            outcome: ExecutionOutcome {
+                execution_id: "exec-1".to_owned(),
+                succeeded: true,
+                duration: DurationMs::from_millis(50),
+                output: Attributes::empty(),
+            },
+            seen_options: Mutex::new(Vec::new()),
+        });
+        let clock = Arc::new(FrozenClock {
+            now: datetime!(2026-04-25 12:00:01 UTC),
+        });
+        let stats: Arc<dyn choreo_core::ports::StatisticsPort> = Arc::new(NullStats);
+        let usecase = OrchestrateUseCase::new(
+            deliberate,
+            executor.clone(),
+            bus,
+            clock,
+            stats,
+            "choreographer",
+        );
+        let metadata = TaskMetadata::new(
+            None,
+            None,
+            None,
+            None,
+            None,
+            Attributes::new(std::collections::BTreeMap::from([
+                (
+                    "runtime.tool_name".to_owned(),
+                    serde_json::json!("profile-tool"),
+                ),
+                ("runtime.approved".to_owned(), serde_json::json!(false)),
+            ]))
+            .unwrap(),
+        )
+        .unwrap();
+        let explicit = Attributes::new(std::collections::BTreeMap::from([(
+            "runtime.approved".to_owned(),
+            serde_json::json!(true),
+        )]))
+        .unwrap();
+
+        usecase
+            .execute(task_with_metadata(metadata), explicit)
+            .await
+            .unwrap();
+
+        let seen = executor.seen_options.lock().unwrap();
+        assert_eq!(
+            seen[0].get("runtime.tool_name"),
+            Some(&serde_json::json!("profile-tool"))
+        );
+        assert_eq!(
+            seen[0].get("runtime.approved"),
+            Some(&serde_json::json!(true))
+        );
     }
 
     #[tokio::test]

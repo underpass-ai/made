@@ -114,6 +114,7 @@ message Task {
   Constraints constraints = 4;
   google.protobuf.Struct attributes = 5;
   ExternalContextBundle external_context = 6;
+  TaskMetadata metadata = 7;
 }
 
 // Constraints shape how the council deliberates.
@@ -179,6 +180,19 @@ message ContextReference {
   string title = 3;
   string media_type = 4;
   google.protobuf.Struct attributes = 5;
+}
+
+// Integration-neutral task metadata. Product/domain identifiers
+// belong in Task.attributes or ExternalContextBundle.metadata; the
+// choreographer only interprets causal ids and its own contract /
+// execution hints.
+message TaskMetadata {
+  string source_event_id = 1;
+  string causation_id = 2;
+  string correlation_id = 3;
+  string council_contract_id = 4;
+  string output_contract_id = 5;
+  google.protobuf.Struct execution_profile = 6;
 }
 
 // A single agent's output from one step of deliberation.
@@ -292,6 +306,8 @@ message TriggerEvent {
 
   google.protobuf.Struct payload = 8; // opaque domain data
   ExternalContextBundle external_context = 9;
+  string correlation_id = 10;
+  string causation_id = 11;
 }
 
 message ProcessTriggerEventRequest {

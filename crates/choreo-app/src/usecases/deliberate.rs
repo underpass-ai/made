@@ -23,7 +23,8 @@
 use std::sync::Arc;
 
 use choreo_core::entities::{
-    Council, Deliberation, Proposal, Task, TaskConstraints, ValidationOutcome, ValidatorReport,
+    Council, Deliberation, Proposal, Task, TaskConstraints, TaskMetadata, ValidationOutcome,
+    ValidatorReport,
 };
 use choreo_core::error::DomainError;
 use choreo_core::events::{DeliberationCompletedEvent, EventEnvelope};
@@ -174,7 +175,7 @@ impl DeliberateUseCase {
         let winner = Self::pick_winner(&ranked, task.constraints())?;
 
         let completion_event = DeliberationCompletedEvent::new(
-            self.envelope(completed_at)?,
+            self.envelope(completed_at, task.metadata())?,
             deliberation.task_id().clone(),
             deliberation.specialty().clone(),
             winner.proposal().id().clone(),
@@ -384,8 +385,18 @@ impl DeliberateUseCase {
         Ok(reports)
     }
 
-    fn envelope(&self, emitted_at: OffsetDateTime) -> Result<EventEnvelope, DomainError> {
-        EventEnvelope::new(new_event_id()?, emitted_at, self.source.clone(), None)
+    fn envelope(
+        &self,
+        emitted_at: OffsetDateTime,
+        metadata: &TaskMetadata,
+    ) -> Result<EventEnvelope, DomainError> {
+        EventEnvelope::new_with_causation(
+            new_event_id()?,
+            emitted_at,
+            self.source.clone(),
+            metadata.correlation_id().cloned(),
+            metadata.causation_id().cloned(),
+        )
     }
 }
 

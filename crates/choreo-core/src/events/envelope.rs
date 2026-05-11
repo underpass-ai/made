@@ -18,6 +18,8 @@ pub struct EventEnvelope {
     source: String,
     #[serde(default)]
     correlation_id: Option<EventId>,
+    #[serde(default)]
+    causation_id: Option<EventId>,
 }
 
 impl EventEnvelope {
@@ -26,6 +28,16 @@ impl EventEnvelope {
         emitted_at: OffsetDateTime,
         source: impl Into<String>,
         correlation_id: Option<EventId>,
+    ) -> Result<Self, DomainError> {
+        Self::new_with_causation(event_id, emitted_at, source, correlation_id, None)
+    }
+
+    pub fn new_with_causation(
+        event_id: EventId,
+        emitted_at: OffsetDateTime,
+        source: impl Into<String>,
+        correlation_id: Option<EventId>,
+        causation_id: Option<EventId>,
     ) -> Result<Self, DomainError> {
         let source = source.into();
         let trimmed = source.trim();
@@ -46,6 +58,7 @@ impl EventEnvelope {
             emitted_at,
             source: trimmed.to_owned(),
             correlation_id,
+            causation_id,
         })
     }
 
@@ -64,6 +77,11 @@ impl EventEnvelope {
     #[must_use]
     pub fn correlation_id(&self) -> Option<&EventId> {
         self.correlation_id.as_ref()
+    }
+
+    #[must_use]
+    pub fn causation_id(&self) -> Option<&EventId> {
+        self.causation_id.as_ref()
     }
 }
 
@@ -110,16 +128,25 @@ mod tests {
     fn correlation_id_is_optional() {
         let env = EventEnvelope::new(EventId::new("e").unwrap(), at(), "s", None).unwrap();
         assert!(env.correlation_id().is_none());
+        assert!(env.causation_id().is_none());
     }
 
     #[test]
     fn accessors_return_fields() {
         let corr = EventId::new("c").unwrap();
-        let env = EventEnvelope::new(EventId::new("e").unwrap(), at(), "src", Some(corr.clone()))
-            .unwrap();
+        let cause = EventId::new("cause").unwrap();
+        let env = EventEnvelope::new_with_causation(
+            EventId::new("e").unwrap(),
+            at(),
+            "src",
+            Some(corr.clone()),
+            Some(cause.clone()),
+        )
+        .unwrap();
         assert_eq!(env.event_id().as_str(), "e");
         assert_eq!(env.emitted_at(), at());
         assert_eq!(env.correlation_id(), Some(&corr));
+        assert_eq!(env.causation_id(), Some(&cause));
     }
 
     #[test]
@@ -143,5 +170,6 @@ mod tests {
         assert!(obj.contains_key("emitted_at"));
         assert!(obj.contains_key("source"));
         assert!(obj.contains_key("correlation_id"));
+        assert!(obj.contains_key("causation_id"));
     }
 }

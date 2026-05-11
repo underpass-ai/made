@@ -144,6 +144,7 @@ components:
         emitted_at: { type: string, format: date-time }
         source: { type: string, description: "Logical producer identifier." }
         correlation_id: { type: string, description: "Optional causal chain id." }
+        causation_id: { type: string, description: "Optional direct parent event id." }
 
     TriggerEvent:
       allOf:

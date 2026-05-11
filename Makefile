@@ -20,7 +20,7 @@ help:
 		'Available targets:' \
 		'  make check                  # contract + fmt-check + clippy + test + bench-compile' \
 		'  make integration            # integration-nats + integration-postgres' \
-		'  make e2e-compose            # manual E2E via docker/podman compose' \
+		'  make e2e-compose            # manual E2E via docker/podman compose or podman-compose' \
 		'  make e2e-kubernetes         # manual E2E via Kubernetes Job' \
 		'  make e2e-provider-vllm      # provider-level vLLM E2E' \
 		'  make helm-lint              # helm lint + hardened render assertions' \

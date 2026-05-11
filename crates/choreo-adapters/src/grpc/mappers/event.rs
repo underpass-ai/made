@@ -28,7 +28,15 @@ pub fn trigger_event_from_proto(
         EventId::new(ev.event_id)?
     };
     let emitted_at = ev.emitted_at.map_or(fallback_now, timestamp_to_offset);
-    let envelope = EventEnvelope::new(event_id, emitted_at, ev.source, None)?;
+    let correlation_id = optional_event_id(&ev.correlation_id)?;
+    let causation_id = optional_event_id(&ev.causation_id)?;
+    let envelope = EventEnvelope::new_with_causation(
+        event_id,
+        emitted_at,
+        ev.source,
+        correlation_id,
+        causation_id,
+    )?;
 
     let specialties: Vec<Specialty> = ev
         .requested_specialties
@@ -89,6 +97,15 @@ fn timestamp_to_offset(ts: Timestamp) -> OffsetDateTime {
     OffsetDateTime::from_unix_timestamp_nanos(nanos).unwrap_or(OffsetDateTime::UNIX_EPOCH)
 }
 
+fn optional_event_id(value: &str) -> Result<Option<EventId>, DomainError> {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        EventId::new(trimmed.to_owned()).map(Some)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -110,6 +127,8 @@ mod tests {
             constraints: None,
             payload: Some(PbStruct::default()),
             external_context: None,
+            correlation_id: String::new(),
+            causation_id: String::new(),
         }
     }
 
@@ -125,6 +144,18 @@ mod tests {
         assert_eq!(ev.envelope().source(), "grafana");
         assert_eq!(ev.envelope().emitted_at(), now());
         assert!(!ev.envelope().event_id().as_str().is_empty());
+    }
+
+    #[test]
+    fn supplied_causal_ids_are_preserved() {
+        let mut t = proto_trigger("k", vec!["s"]);
+        t.correlation_id = "corr-1".to_owned();
+        t.causation_id = "cause-1".to_owned();
+
+        let ev = trigger_event_from_proto(t, now()).unwrap();
+
+        assert_eq!(ev.envelope().correlation_id().unwrap().as_str(), "corr-1");
+        assert_eq!(ev.envelope().causation_id().unwrap().as_str(), "cause-1");
     }
 
     #[test]
