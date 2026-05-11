@@ -22,7 +22,14 @@ servers:
   nats:
     host: nats:4222
     protocol: nats
-    description: NATS JetStream broker.
+    description: |
+      NATS broker with **plain core pub/sub** semantics. The
+      choreographer adapter (`crates/choreo-adapters/src/nats`) uses
+      `client.publish_with_headers` for outbound events and
+      `client.subscribe` for inbound triggers — no JetStream stream,
+      durable consumer, acknowledgement, or replay policy is used.
+      Server-side JetStream may be enabled by the operator
+      (`nats -js`) but its API is not consumed by this service.
 
 channels:
   trigger:

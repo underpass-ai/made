@@ -28,11 +28,11 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 3 | structured, contract-validated council outputs | done (structured-output mode + deterministic `NoValidProposal` failure) |
 | 4 | complete causal metadata propagation | done (Epic 5) |
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
-| 6 | honest and durable transport semantics | not started (code uses core NATS; AsyncAPI still says JetStream) |
+| 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
 | 7 | real TLS / mTLS posture | not started (chart surface is dead config; server and client have no TLS wiring) |
 | 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
-What is now genuinely blocking PIR integration: Epics 7, 8, 9, 10
+What is now genuinely blocking PIR integration: Epics 8, 9, 10
 plus the missing real-council / runtime legs of Epic 11. The execution
 and context foundations (Phases 1 and 2 in the original plan) plus
 provider composition are satisfied.
@@ -75,7 +75,6 @@ Choreographer is "ready" when all of the following are true:
 
 These items still block PIR integration.
 
-- truthful transport semantics (Epic 7)
 - TLS / mTLS server + client posture (Epic 8)
 - dedicated PIR-facing RPC surface (Epic 9)
 - structured report artifact support (Epic 10)
@@ -84,7 +83,8 @@ These items still block PIR integration.
 Already cleared: Runtime executor adapter (Epic 1), Kernel context
 boundary (Epic 2), structured council output contracts (Epic 3),
 causal metadata model (Epic 5), provider-backed agent factory
-composition (Epic 6).
+composition (Epic 6), honest transport semantics (Epic 7 — declared
+plain NATS).
 
 ### P1 — required before production
 
@@ -433,18 +433,28 @@ tests; the production binary uses `DispatchingAgentFactory` only.
 
 ### Epic 7. Honest broker semantics
 
-Status: not started
+Status: done (option 1 — declared plain NATS)
 
 Current state:
 
-- `NatsMessaging` uses `Client::publish_with_headers` (core NATS)
-- `NatsTriggerSubscriber` uses `client.subscribe` (core NATS,
-  fire-and-forget); no `jetstream::*`, no streams, no durable consumers,
-  no acks
-- AsyncAPI still labels the server as "NATS JetStream broker."; the
-  implementation–spec gap noted in the original audit is intact
-- the docker-compose stack starts `nats:2` with `-js` server-side, but
-  the client never opens the JetStream API
+- `NatsMessaging` uses `Client::publish_with_headers` (core NATS);
+  `NatsTriggerSubscriber` uses `client.subscribe` (core NATS,
+  fire-and-forget). No JetStream stream / durable consumer / ack /
+  replay policy is used by the adapter.
+- AsyncAPI now declares the broker as **plain core NATS pub/sub**
+  with the matching disclaimer in the `servers.nats.description`
+  field; the implementation–spec gap from the original audit is closed.
+- `docs/stack-gap-analysis.md` §4 retitled "Broker semantics declared
+  honestly as plain NATS".
+- The docker-compose / kubernetes test fixtures may still start the
+  NATS server with `-js`; this is harmless (server-side JetStream
+  capability is independent of whether the client opens it) and
+  preserves an upgrade path if option 2 is chosen later.
+
+Decision rationale: PIR's first integration is expected to use direct
+gRPC (Epic 9), not the bus. Plain NATS is sufficient. Implementing
+real JetStream semantics (stream + durable consumer + ack + replay)
+is deferred to a future epic gated on actual bus-coupling demand.
 
 Relevant code:
 
@@ -707,8 +717,8 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
-**Partially cleared 2026-05-11.** Epic 6 done; Epics 7 and 8 still
-not started.
+**Mostly cleared 2026-05-11.** Epics 6 and 7 done; Epic 8 still not
+started.
 
 ### Milestone D — PIR-facing surface
 
@@ -763,11 +773,12 @@ strictly required by Epic 6's acceptance, since the dispatcher uses
 the existing `RegisterAgentUseCase` path that already has rehydration
 tests via `NoopAgentFactory`).
 
-#### Wave 4b — transport honesty
+#### Wave 4b — transport honesty — done
 
-- choose: implement JetStream (stream / durable consumer / ack) or
-  rewrite AsyncAPI and docs to declare plain NATS
-- exercise the chosen semantics in an integration test
+- AsyncAPI rewritten to declare plain core NATS pub/sub semantics
+  consistent with the current adapter; `stack-gap-analysis.md` §4
+  retitled accordingly. JetStream remains the upgrade path if the
+  bus-coupling requirement later demands durability.
 
 #### Wave 4c — TLS honesty
 
