@@ -1,4 +1,5 @@
 /target
+/target-*/
 **/*.rs.bk
 Cargo.lock.bak
 .env
@@ -9,3 +10,5 @@ Cargo.lock.bak
 *.swo
 .DS_Store
 .claude/
+.codex
+tests/e2e/compose.log
