@@ -132,10 +132,28 @@ message Constraints {
 // Presence of this block switches deliberation into structured-output
 // mode: callers require proposals to satisfy the declared format and
 // field rules instead of remaining free-form text only.
+//
+// `json_schema`, when non-empty, is a JSON Schema document (draft
+// 2020-12 or earlier, autodetected) that proposal outputs must
+// satisfy. Field-level rules (`fields`) keep working alongside — they
+// are the lightweight predecessor and remain useful for the simple
+// "required + enum" case without a full schema. Concrete behaviour:
+//
+//  - empty `json_schema` + non-empty `fields` -> legacy field-rule
+//    validators run (RequiredFieldsValidator, AllowedStringValuesValidator).
+//  - non-empty `json_schema` -> the schema is parsed at validator wiring
+//    time; every proposal output is validated against it as one extra
+//    `ValidatorReport` ("json_schema" kind).
+//  - both populated -> both run. Failure of either fails the proposal.
+//
+// Application-owned domain shapes (incident report, decision record,
+// inspection finding, ...) are expressed as JSON Schemas in
+// `api/examples/output-contracts/` and bound here by the caller.
 message OutputContract {
   string contract_id = 1;
   OutputFormat format = 2;
   map<string, OutputFieldRule> fields = 3;
+  string json_schema = 4;
 }
 
 enum OutputFormat {

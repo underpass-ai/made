@@ -1,0 +1,149 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://underpass.ai/choreographer/output-contracts/report.schema.json",
+  "title": "Choreographer Report Output Contract",
+  "description": "Canonical Report-shape JSON Schema for `OutputContract.json_schema`. Use this when a council should return a structured report (incident analysis, design review, post-action learning, escalation handoff, ...). Application-specific identifiers stay outside this schema — bind them via `Task.attributes` or `ExternalContextBundle.metadata`.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "report_id",
+    "executive_summary",
+    "findings",
+    "recommended_actions"
+  ],
+  "properties": {
+    "report_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "Stable identifier for this report instance."
+    },
+    "executive_summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "description": "One-paragraph human-readable summary."
+    },
+    "timeline": {
+      "type": "array",
+      "maxItems": 256,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["at", "what"],
+        "properties": {
+          "at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "RFC 3339 timestamp."
+          },
+          "what": { "type": "string", "minLength": 1, "maxLength": 512 },
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 32,
+            "items": { "type": "string", "maxLength": 256 }
+          }
+        }
+      }
+    },
+    "findings": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary", "confidence"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "detail": { "type": "string", "maxLength": 4096 },
+          "confidence": {
+            "type": "string",
+            "enum": ["high", "medium", "low", "unknown"]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 32,
+            "items": { "type": "string", "maxLength": 256 }
+          }
+        }
+      }
+    },
+    "remediations_attempted": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary", "outcome"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "outcome": {
+            "type": "string",
+            "enum": ["succeeded", "failed", "denied", "skipped"]
+          },
+          "evidence_refs": {
+            "type": "array",
+            "maxItems": 32,
+            "items": { "type": "string", "maxLength": 256 }
+          }
+        }
+      }
+    },
+    "open_risks": {
+      "type": "array",
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "severity": {
+            "type": "string",
+            "enum": ["critical", "high", "medium", "low"]
+          }
+        }
+      }
+    },
+    "recommended_actions": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "summary"],
+        "properties": {
+          "id": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "summary": { "type": "string", "minLength": 1, "maxLength": 1024 },
+          "owner": { "type": "string", "maxLength": 128 },
+          "approval_required": { "type": "boolean" },
+          "rollback_plan_ref": { "type": "string", "maxLength": 256 }
+        }
+      }
+    },
+    "evidence_references": {
+      "type": "array",
+      "maxItems": 128,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["reference_id"],
+        "properties": {
+          "reference_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 128
+          },
+          "uri": { "type": "string", "maxLength": 1024 },
+          "title": { "type": "string", "maxLength": 256 },
+          "media_type": { "type": "string", "maxLength": 64 }
+        }
+      }
+    }
+  }
+}

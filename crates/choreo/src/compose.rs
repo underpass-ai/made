@@ -21,7 +21,7 @@ use choreo_adapters::runtime::{
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
-    RequiredFieldsValidator,
+    JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
@@ -101,6 +101,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(JsonObjectOutputValidator::new()),
         Arc::new(RequiredFieldsValidator::new()),
         Arc::new(AllowedStringValuesValidator::new()),
+        Arc::new(JsonSchemaValidator::new()),
     ];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let executor = wire_executor().await?;

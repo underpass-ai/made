@@ -30,10 +30,11 @@ pub fn output_contract_from_proto(
         })
         .collect::<Result<BTreeMap<_, _>, _>>()?;
 
-    Ok(Some(OutputContract::new(
+    Ok(Some(OutputContract::new_with_schema(
         contract.contract_id,
         format,
         fields,
+        contract.json_schema,
     )?))
 }
 
@@ -58,6 +59,7 @@ mod tests {
                     allowed_string_values: vec!["emit_event".to_owned(), "escalate".to_owned()],
                 },
             )]),
+            json_schema: String::new(),
         }))
         .unwrap()
         .unwrap();
@@ -65,5 +67,23 @@ mod tests {
         assert_eq!(contract.contract_id(), "decision-contract");
         assert_eq!(contract.format(), OutputFormat::JsonObject);
         assert!(contract.fields()["decision"].required());
+        assert!(contract.json_schema().is_empty());
+    }
+
+    #[test]
+    fn embedded_json_schema_maps_through() {
+        let contract = output_contract_from_proto(Some(pb::OutputContract {
+            contract_id: "decision-contract".to_owned(),
+            format: pb::OutputFormat::JsonObject as i32,
+            fields: std::collections::HashMap::new(),
+            json_schema: r#"{"type":"object","required":["decision"]}"#.to_owned(),
+        }))
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(
+            contract.json_schema(),
+            r#"{"type":"object","required":["decision"]}"#
+        );
     }
 }
