@@ -3,19 +3,26 @@
 Event-driven coordination plane for specialist agents. Domain-agnostic port of
 the `swe-ai-fleet` orchestrator service to Rust.
 
-Role in the Underpass platform:
+## The Underpass platform
 
-- **Rehydration Kernel** — memory plane (context graph)
-- **Choreographer** — event-driven coordination (this repo)
-- **Underpass Runtime** — execution plane (governed tools)
+Three planes, three repos:
 
-The choreographer reacts to domain events, composes councils of agents,
-runs deliberations, and publishes outcome events. It does **not** embed any
-domain vocabulary (no stories, plans, roles hardcoded) — all that is injected
-via configuration and proto messages.
+| Plane | Repo | Brand name | Role |
+|---|---|---|---|
+| Memory + context | [`rehydration-kernel`](https://github.com/underpass-ai/rehydration-kernel) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | Renders LLM-ready context bundles from a typed knowledge graph. |
+| Coordination | this repo | **Underpass Choreographer** | Composes councils, runs deliberations, validates outputs, hands winners to an executor. |
+| Execution + governed tools | [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime) | **Underpass Runtime** | Sessions, governed tool invocations, artifacts, policy decisions. |
+
+The choreographer talks to KMP through caller-supplied
+`ExternalContextBundle`s, and to the Runtime through the
+`RuntimeExecutor` adapter. It does **not** embed any product
+vocabulary (no stories, plans, incidents, claims hardcoded) — all that
+is injected via configuration and proto messages.
 
 ## Start here
 
+- [`docs/index.md`](docs/index.md) — full navigation hub for every
+  doc in this repo, grouped by audience.
 - [`docs/dev-loop.md`](docs/dev-loop.md) — local iteration loop,
   every command mirrors a CI gate.
 - [`docs/release.md`](docs/release.md) — versioning + cut-a-release
@@ -26,6 +33,8 @@ via configuration and proto messages.
 - [`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) —
   installable stdio MCP adapter exposing the gRPC API to coding
   agents (Codex CLI, Claude Desktop).
+- [`docs/backlog.md`](docs/backlog.md) — epic-by-epic readiness
+  status + session log.
 - `justfile` at the repo root — `just` lists every recipe.
 
 ## Workspace

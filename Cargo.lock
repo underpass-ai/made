@@ -501,6 +501,7 @@ dependencies = [
  "choreo-core",
  "choreo-proto",
  "futures",
+ "prost-types",
  "serde_json",
  "time",
  "tokio",
