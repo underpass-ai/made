@@ -40,7 +40,8 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 LABEL org.opencontainers.image.title="underpass-choreographer-stub-runtime" \
       org.opencontainers.image.description="Canned-response stub of underpass.runtime.v1 for stack E2E. Not shipped." \
       org.opencontainers.image.vendor="Underpass AI" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/underpass-ai/underpass-choreographer"
 
 COPY --from=builder /out/stub-runtime /usr/local/bin/choreo-stub-runtime
 
