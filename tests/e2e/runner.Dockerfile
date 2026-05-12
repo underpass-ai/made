@@ -38,7 +38,8 @@ FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 LABEL org.opencontainers.image.title="underpass-choreographer-e2e-runner" \
       org.opencontainers.image.description="Drives the Choreographer over gRPC for E2E tests. Not shipped." \
       org.opencontainers.image.vendor="Underpass AI" \
-      org.opencontainers.image.licenses="Apache-2.0"
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.source="https://github.com/underpass-ai/underpass-choreographer"
 
 COPY --from=builder /out/runner /usr/local/bin/choreo-e2e-runner
 
