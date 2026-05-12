@@ -76,14 +76,10 @@ impl ContractRegistryPort for InMemoryContractRegistry {
 mod tests {
     use super::*;
     use choreo_core::value_objects::OutputFormat;
+    use std::collections::BTreeMap;
 
     fn contract(id: &str) -> OutputContract {
-        OutputContract::new(
-            id,
-            OutputFormat::JsonObject,
-            Default::default(),
-        )
-        .unwrap()
+        OutputContract::new(id, OutputFormat::JsonObject, BTreeMap::new()).unwrap()
     }
 
     #[tokio::test]
@@ -99,7 +95,10 @@ mod tests {
         let reg = InMemoryContractRegistry::new();
         reg.register(contract("x")).await.unwrap();
         let err = reg.register(contract("x")).await.unwrap_err();
-        assert!(matches!(err, DomainError::AlreadyExists { what: "contract" }));
+        assert!(matches!(
+            err,
+            DomainError::AlreadyExists { what: "contract" }
+        ));
     }
 
     #[tokio::test]

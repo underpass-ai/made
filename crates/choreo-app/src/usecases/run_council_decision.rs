@@ -104,10 +104,11 @@ impl RunCouncilDecisionUseCase {
         let specialty = self.resolve_specialty(&input.council_selector).await?;
         let contract = self.contracts.get(&input.contract_id).await?;
 
-        let task_id =
-            TaskId::new(Uuid::new_v4().to_string()).map_err(|_| DomainError::InvariantViolated {
+        let task_id = TaskId::new(Uuid::new_v4().to_string()).map_err(|_| {
+            DomainError::InvariantViolated {
                 reason: "generated task id failed validation",
-            })?;
+            }
+        })?;
 
         let constraints = TaskConstraints::default().with_output_contract(contract);
         let task = Task::new_with_metadata(
@@ -154,9 +155,12 @@ impl RunCouncilDecisionUseCase {
             {
                 let deliberation = self.repository.get(&task_id).await?;
                 let candidates = deliberation.ranked_outcomes()?;
-                let winner = candidates.first().cloned().ok_or(DomainError::EmptyCollection {
-                    field: "deliberation.ranked",
-                })?;
+                let winner = candidates
+                    .first()
+                    .cloned()
+                    .ok_or(DomainError::EmptyCollection {
+                        field: "deliberation.ranked",
+                    })?;
                 let duration_ms = elapsed_ms(started);
                 info!(
                     task_id = task_id.as_str(),
