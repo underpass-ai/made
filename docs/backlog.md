@@ -748,7 +748,7 @@ stack) remains, and is covered separately by `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` runs five scenarios against
+- `crates/choreo-e2e-runner/src/main.rs` runs six scenarios against
   a real gRPC + NATS stack with a stub-runtime sidecar:
   1. seeded council is visible
   2. `Deliberate` on the seeded specialty returns a winner
@@ -761,6 +761,13 @@ Current state:
      (added 2026-05-12). Asserts the response carries the
      stub's canned `execution_id` and that the winner proposal
      is non-empty.
+  6. `Orchestrate` with a strict JSON-Schema output contract rejects
+     `NoopAgent`'s free-form text. Asserts the gRPC call returns
+     `FailedPrecondition`, AND that the outbound bus carries a
+     `TaskFailed` envelope with `error_kind =
+     "deliberation.no_valid_proposal"` (added 2026-05-12). Proves
+     the JsonSchemaValidator wired by Epic 4 is in the stack's
+     validator chain.
 - the `stub-runtime` sidecar ships in this repo as
   `crates/choreo-e2e-runner/src/bin/stub_runtime.rs` +
   `tests/e2e/stub-runtime.Dockerfile`. It serves the canonical
@@ -803,21 +810,25 @@ Status of the chain:
 
 - bounded external trigger → ✅ scenario 4 (NATS) + scenario 5 (gRPC).
 - context bundle → covered at the proto / value-object level (Epic 2);
-  not yet asserted end-to-end as part of scenarios 1–5 (open).
+  not yet asserted end-to-end as part of scenarios 1–6 (open —
+  scenario 7 follow-up).
 - real council → ✅ via `make e2e-provider-vllm` (provider runner).
-- validated structured result → ✅ Epic 4 JsonSchemaValidator wired in
-  compose; scenarios 2 / 5 currently skip a structured contract so
-  NoopAgent's free-form output passes. A scenario 6 that requests a
-  Report-shape contract and asserts schema validation is a clean
-  follow-up.
+- validated structured result → ✅ scenario 6 asserts the
+  JsonSchemaValidator fires in the stack and rejects free-form text
+  with `error_kind = "deliberation.no_valid_proposal"` on the bus +
+  `FailedPrecondition` on gRPC. A positive structured-output scenario
+  (valid JSON output passing the schema + Orchestrate succeeding)
+  still requires an agent that emits structured JSON; that lands once
+  a stub-LLM provider sidecar ships or once the provider-runner E2E
+  merges into this compose stack.
 - runtime execution → ✅ scenario 5 (stub-runtime).
 
 #### Remaining follow-ups (out of Milestone D's critical path)
 
-- scenario 6: orchestrate with an embedded JSON Schema contract +
-  assert the validator stamps pass / fail on the structured output.
 - scenario 7: orchestrate with an `ExternalContextBundle` attached
   + assert the bundle survives through the chain.
+- positive structured-output scenario: requires a stub-LLM sidecar
+  that emits a JSON object satisfying a known schema.
 - merge the provider-runner E2E (vLLM) into the same compose stack
   so a single `make e2e-compose` exercises real provider council +
   real (stub) runtime in one shot. Today they are two manual gates.
