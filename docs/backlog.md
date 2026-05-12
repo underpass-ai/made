@@ -28,7 +28,7 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 4 | complete causal metadata propagation | done (Epic 5) |
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
-| 7 | real TLS / mTLS posture | mostly done (server-side TLS wired with `none`/`server`/`mutual`; chart honest; outbound client TLS + handshake-level integration test deferred) |
+| 7 | real TLS / mTLS posture | done (gRPC server TLS in `none`/`server`/`mutual` modes; chart honest; Runtime client TLS shipped 2026-05-12; handshake-level integration test still deferred) |
 | 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
 
 Two surfaces beyond the eight areas:
@@ -47,17 +47,18 @@ Two surfaces beyond the eight areas:
   expose a clean, fully-typed gRPC API plus the MCP wrapping so any
   agentic consumer can drive it.
 
-Genuinely open work: the outbound-TLS leg of Epic 8, the crates.io
-distribution debt for `choreo-mcp` (needs the proto tree vendored
-into a separate crate before `cargo install` from a registry will
-work), Epic 9 (a dedicated council-decision RPC if and when a
-consumer asks for more than the generic `Deliberate` / `Orchestrate`),
-Epic 10 (report artifact), and the missing real-council / runtime
-legs of Epic 11.
+Genuinely open work: the crates.io distribution debt for `choreo-mcp`
+(needs the proto tree vendored into a separate crate before
+`cargo install` from a registry will work), Epic 9 (a dedicated
+council-decision RPC if and when a consumer asks for more than the
+generic `Deliberate` / `Orchestrate`), Epic 10 (report artifact), the
+handshake-level TLS integration test (currently the wiring is
+exercised by env-loading unit tests + helm-lint, not a real cert
+handshake), and the missing real-council / runtime legs of Epic 11.
 
 The recommended remaining execution order is:
 
-- Phase 3: outbound client TLS + `choreo-mcp` crates.io distribution
+- Phase 3: `choreo-mcp` crates.io distribution + handshake-level TLS test
 - Phase 4: dedicated agent-facing RPC + report artifact (only if a
   consumer asks for them)
 - Phase 5: stack E2E with a real council and the Runtime executor
@@ -77,7 +78,6 @@ This backlog does not include:
 
 These items still block downstream consumer integration.
 
-- Runtime gRPC client TLS in `RuntimeExecutor::connect` (Epic 8 leg)
 - dedicated consumer-facing RPC surface (Epic 9)
 - structured report artifact support (Epic 10)
 - stack E2E proof with real council + runtime executor (Epic 11 leg)
@@ -541,7 +541,8 @@ integration on direct gRPC.
 
 ### Epic 8. TLS / mTLS parity
 
-Status: mostly done (gRPC server side); Runtime client TLS deferred.
+Status: done end-to-end (server + client); only the handshake-level
+integration test remains deferred.
 
 Current state (2026-05-11):
 
@@ -566,16 +567,32 @@ Current state (2026-05-11):
 - `values.yaml` `tls.mode` and `tls.existingSecret` are now honest
   configuration with documented secret layout.
 
+Progress as of 2026-05-12: Runtime client TLS shipped. The adapter
+now:
+
+- carries a `RuntimeClientTlsConfig` (variants `Disabled`/`Server`/
+  `Mutual`) on `RuntimeExecutorConfig`, mirroring the env-driven
+  auto-detection used by `crates/choreo-mcp` (`https://` endpoint
+  → server; `_CERT_PATH`/`_KEY_PATH` → mutual; explicit
+  `CHOREO_RUNTIME_TLS_MODE` wins);
+- rewrites `http://` to `https://` at connect time when TLS is on so
+  callers can flip a single env var;
+- reads PEM files at startup and applies `ClientTlsConfig` on the
+  tonic `Endpoint` (with `ca_certificate`, `identity`, and
+  `domain_name` per mode);
+- surfaces PEM-read errors as a dedicated `TlsReadFailed { path,
+  source }` variant of `RuntimeExecutorConnectError`;
+- ships 7 env-loading + URI-upgrade unit tests covering disabled,
+  server auto-upgrade on `https://`, mutual auto-upgrade on
+  client-paths, explicit-mode override, mutual requiring both paths,
+  invalid-mode rejection, and the URI rewriter.
+
 Remaining work (deferred to a follow-up epic slice):
 
-- Runtime gRPC client TLS in `RuntimeExecutor::connect` — still uses
-  plain `Endpoint::from_shared(...).connect()`. Out-of-process mTLS
-  to the Runtime service requires a coordinated identity rollout with
-  the runtime team.
 - Rust integration test that performs an actual TLS handshake against
   the choreographer (e.g. with `rcgen` to generate a self-signed cert
-  in the test). Today the wiring is exercised by helm-lint gate 4
-  plus the env-loading unit tests; the handshake itself is implicitly
+  in-test). Today the wiring is exercised by helm-lint gate 4 plus
+  the env-loading unit tests; the handshake itself is implicitly
   validated by the tonic library's invariants but not asserted
   end-to-end from this repo.
 
@@ -586,7 +603,7 @@ Relevant code:
 - [`crates/choreo-core/src/ports/configuration.rs`](../crates/choreo-core/src/ports/configuration.rs)
 - [`charts/choreographer/templates/deployment.yaml`](../charts/choreographer/templates/deployment.yaml)
 - [`scripts/ci/helm-lint.sh`](../scripts/ci/helm-lint.sh)
-- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs) (Runtime client — still no TLS)
+- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs) (Runtime client — TLS shipped 2026-05-12)
 
 #### Deliverables
 
@@ -847,8 +864,9 @@ Exit condition:
 
 - composition, transport, and security claims match reality
 
-**Mostly cleared 2026-05-11.** Epics 6 and 7 done; Epic 8 server side
-done, Runtime client TLS leg deferred.
+**Cleared 2026-05-12.** Epics 6, 7, 8 all done end-to-end. Handshake-
+level integration test remains as an Epic 8 follow-up but is not on
+the milestone-C critical path.
 
 ### Milestone D — Consumer-facing surface
 
@@ -910,7 +928,7 @@ tests via `NoopAgentFactory`).
   retitled accordingly. JetStream remains the upgrade path if the
   bus-coupling requirement later demands durability.
 
-#### Wave 4c — TLS honesty — partially done
+#### Wave 4c — TLS honesty — done
 
 - gRPC server: `GrpcTlsConfig` wired through `ServiceConfig`,
   `EnvConfiguration` validates the mode combinations, `runtime.rs`
@@ -918,11 +936,13 @@ tests via `NoopAgentFactory`).
   mounts the secret and passes env vars; helm-lint gate 4 asserts
   the rendered manifest for both modes; 6 env-loading unit tests
   pin the validation paths.
-- Open follow-up: Runtime gRPC client TLS in `RuntimeExecutor::connect`
-  (requires coordinated identity rollout with the runtime team) and
-  a Rust integration test that performs a real TLS handshake against
-  the choreographer (likely with `rcgen` to generate a self-signed
-  cert in-test).
+- Runtime gRPC client TLS in `RuntimeExecutor::connect` (shipped
+  2026-05-12): mirrors the MCP adapter's pattern with auto-detection
+  + 7 env-loading / URI-upgrade unit tests + explicit
+  `TlsReadFailed { path, source }` error variant.
+- Open follow-up: handshake-level integration test against a
+  choreographer instance with a self-signed cert (likely with
+  `rcgen` as a dev-dep).
 
 #### Wave 5 — Consumer-facing surface
 

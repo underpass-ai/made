@@ -5,6 +5,7 @@
 //! `underpass-runtime` gRPC stays here at the edge.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 
 use async_trait::async_trait;
 use choreo_core::entities::Proposal;
@@ -15,13 +16,24 @@ use choreo_proto::runtime_v1 as runtime_pb;
 use prost_types::{value::Kind as PbKind, ListValue, Struct as PbStruct, Value as PbValue};
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use thiserror::Error;
-use tonic::transport::{Channel, Endpoint};
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tracing::{debug, warn};
 
 const DEFAULT_RUNTIME_GRPC_ENDPOINT: &str = "http://underpass-runtime:50053";
 const DEFAULT_RUNTIME_TENANT_ID: &str = "choreographer";
 const DEFAULT_RUNTIME_ACTOR_ID: &str = "choreographer";
 const DEFAULT_RUNTIME_ROLE: &str = "developer";
+
+/// TLS-mode override for the Runtime gRPC client.
+pub const RUNTIME_TLS_MODE_ENV: &str = "CHOREO_RUNTIME_TLS_MODE";
+/// CA bundle the client should trust when verifying the Runtime server.
+pub const RUNTIME_TLS_CA_PATH_ENV: &str = "CHOREO_RUNTIME_TLS_CA_PATH";
+/// Client certificate PEM (mutual TLS).
+pub const RUNTIME_TLS_CERT_PATH_ENV: &str = "CHOREO_RUNTIME_TLS_CERT_PATH";
+/// Client private key PEM (mutual TLS).
+pub const RUNTIME_TLS_KEY_PATH_ENV: &str = "CHOREO_RUNTIME_TLS_KEY_PATH";
+/// Optional TLS SNI/domain override when URL host differs from cert CN/SAN.
+pub const RUNTIME_TLS_DOMAIN_NAME_ENV: &str = "CHOREO_RUNTIME_TLS_DOMAIN_NAME";
 
 const KEY_TOOL_NAME: &str = "runtime.tool_name";
 const KEY_ARGS: &str = "runtime.args";
@@ -93,6 +105,7 @@ impl RuntimePrincipal {
 pub struct RuntimeExecutorConfig {
     pub grpc_endpoint: String,
     pub principal: RuntimePrincipal,
+    pub tls: RuntimeClientTlsConfig,
 }
 
 impl RuntimeExecutorConfig {
@@ -110,6 +123,7 @@ impl RuntimeExecutorConfig {
             DEFAULT_RUNTIME_ACTOR_ID,
         )?;
         let roles = parse_roles(std::env::var("CHOREO_RUNTIME_PRINCIPAL_ROLES").ok())?;
+        let tls = RuntimeClientTlsConfig::from_env_for_endpoint(Some(&grpc_endpoint))?;
 
         Ok(Self {
             grpc_endpoint,
@@ -118,8 +132,175 @@ impl RuntimeExecutorConfig {
                 actor_id,
                 roles,
             },
+            tls,
         })
     }
+}
+
+/// TLS posture for the outbound gRPC client to underpass-runtime.
+///
+/// Mirrors the shape used by the MCP adapter: `Disabled` (plain
+/// HTTP/2), `Server` (one-way TLS), or `Mutual` (mTLS). Auto-detected
+/// from environment but every variant is also constructable directly
+/// so tests stay independent of process env.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RuntimeClientTlsConfig {
+    pub mode: RuntimeClientTlsMode,
+    pub ca_path: Option<PathBuf>,
+    pub cert_path: Option<PathBuf>,
+    pub key_path: Option<PathBuf>,
+    pub domain_name: Option<String>,
+}
+
+/// Operator-visible TLS posture options for the Runtime client.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RuntimeClientTlsMode {
+    Disabled,
+    Server,
+    Mutual,
+}
+
+impl RuntimeClientTlsMode {
+    /// Stable label for logs/metadata.
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Disabled => "disabled",
+            Self::Server => "server",
+            Self::Mutual => "mutual",
+        }
+    }
+}
+
+impl Default for RuntimeClientTlsConfig {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
+impl RuntimeClientTlsConfig {
+    /// Explicitly disabled TLS — plain HTTP/2 over TCP.
+    #[must_use]
+    pub fn disabled() -> Self {
+        Self {
+            mode: RuntimeClientTlsMode::Disabled,
+            ca_path: None,
+            cert_path: None,
+            key_path: None,
+            domain_name: None,
+        }
+    }
+
+    /// One-way TLS with a caller-supplied CA bundle.
+    #[must_use]
+    pub fn server(ca_path: impl Into<PathBuf>, domain_name: Option<String>) -> Self {
+        Self {
+            mode: RuntimeClientTlsMode::Server,
+            ca_path: Some(ca_path.into()),
+            cert_path: None,
+            key_path: None,
+            domain_name,
+        }
+    }
+
+    /// Mutual TLS: client presents identity alongside verifying server.
+    #[must_use]
+    pub fn mutual(
+        ca_path: impl Into<PathBuf>,
+        cert_path: impl Into<PathBuf>,
+        key_path: impl Into<PathBuf>,
+        domain_name: Option<String>,
+    ) -> Self {
+        Self {
+            mode: RuntimeClientTlsMode::Mutual,
+            ca_path: Some(ca_path.into()),
+            cert_path: Some(cert_path.into()),
+            key_path: Some(key_path.into()),
+            domain_name,
+        }
+    }
+
+    /// Resolve the TLS posture from env with the same auto-detection
+    /// the MCP adapter uses: `https://` endpoint OR `_CA_PATH` set OR
+    /// `_DOMAIN_NAME` set → `Server`; presence of `_CERT_PATH` /
+    /// `_KEY_PATH` → `Mutual`; explicit `_TLS_MODE` always wins.
+    pub fn from_env_for_endpoint(endpoint: Option<&str>) -> Result<Self, DomainError> {
+        let ca_path = optional_env_path(RUNTIME_TLS_CA_PATH_ENV);
+        let cert_path = optional_env_path(RUNTIME_TLS_CERT_PATH_ENV);
+        let key_path = optional_env_path(RUNTIME_TLS_KEY_PATH_ENV);
+        let domain_name = optional_env_string(RUNTIME_TLS_DOMAIN_NAME_ENV);
+        let server_tls_requested = ca_path.is_some()
+            || domain_name.is_some()
+            || endpoint.is_some_and(|endpoint| endpoint.trim().starts_with("https://"));
+
+        let explicit_mode = optional_env_string(RUNTIME_TLS_MODE_ENV);
+        let mode = match explicit_mode.as_deref() {
+            Some(value) => parse_runtime_tls_mode(value).ok_or(DomainError::InvariantViolated {
+                reason: "CHOREO_RUNTIME_TLS_MODE must be one of: disabled, server, mutual",
+            })?,
+            None => {
+                if cert_path.is_some() || key_path.is_some() {
+                    RuntimeClientTlsMode::Mutual
+                } else if server_tls_requested {
+                    RuntimeClientTlsMode::Server
+                } else {
+                    RuntimeClientTlsMode::Disabled
+                }
+            }
+        };
+
+        if mode == RuntimeClientTlsMode::Mutual && (cert_path.is_none() || key_path.is_none()) {
+            return Err(DomainError::InvariantViolated {
+                reason: "CHOREO_RUNTIME_TLS_MODE=mutual requires both _CERT_PATH and _KEY_PATH",
+            });
+        }
+
+        Ok(Self {
+            mode,
+            ca_path,
+            cert_path,
+            key_path,
+            domain_name,
+        })
+    }
+
+    /// Stable label for startup logs and `Debug`-style output.
+    #[must_use]
+    pub fn mode_name(&self) -> &'static str {
+        self.mode.as_str()
+    }
+}
+
+fn parse_runtime_tls_mode(value: &str) -> Option<RuntimeClientTlsMode> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "disabled" | "disable" | "off" | "false" | "none" => Some(RuntimeClientTlsMode::Disabled),
+        "server" | "tls" => Some(RuntimeClientTlsMode::Server),
+        "mutual" | "mtls" | "m-tls" => Some(RuntimeClientTlsMode::Mutual),
+        _ => None,
+    }
+}
+
+fn optional_env_path(name: &str) -> Option<PathBuf> {
+    optional_env_string(name).map(PathBuf::from)
+}
+
+fn optional_env_string(name: &str) -> Option<String> {
+    std::env::var(name)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
+/// When TLS is enabled, rewrite an `http://` endpoint to `https://`
+/// so callers can flip the TLS knob with a single env change.
+fn endpoint_uri_for_tls_mode(endpoint: &str, mode: RuntimeClientTlsMode) -> String {
+    if mode == RuntimeClientTlsMode::Disabled {
+        return endpoint.to_string();
+    }
+    endpoint.strip_prefix("http://").map_or_else(
+        || endpoint.to_string(),
+        |without_scheme| format!("https://{without_scheme}"),
+    )
 }
 
 #[derive(Debug, Error)]
@@ -129,6 +310,13 @@ pub enum RuntimeExecutorConnectError {
 
     #[error("runtime gRPC connection failed: {0}")]
     Transport(#[from] tonic::transport::Error),
+
+    #[error("failed to read runtime TLS material at {path}: {source}")]
+    TlsReadFailed {
+        path: String,
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 /// Runtime-backed executor.
@@ -142,11 +330,68 @@ impl RuntimeExecutor {
     pub async fn connect(
         config: RuntimeExecutorConfig,
     ) -> Result<Self, RuntimeExecutorConnectError> {
-        let endpoint = Endpoint::from_shared(config.grpc_endpoint.clone())
+        let endpoint_uri = endpoint_uri_for_tls_mode(&config.grpc_endpoint, config.tls.mode);
+        let mut endpoint = Endpoint::from_shared(endpoint_uri)
             .map_err(|_| RuntimeExecutorConnectError::InvalidEndpoint)?;
+
+        if config.tls.mode != RuntimeClientTlsMode::Disabled {
+            let tls_config = build_runtime_client_tls(&config.tls).await?;
+            endpoint = endpoint.tls_config(tls_config)?;
+        }
+
         let channel = endpoint.connect().await?;
+        debug!(
+            grpc_endpoint = config.grpc_endpoint.as_str(),
+            tls_mode = config.tls.mode_name(),
+            "runtime executor connected"
+        );
         Ok(Self { channel, config })
     }
+}
+
+async fn build_runtime_client_tls(
+    tls: &RuntimeClientTlsConfig,
+) -> Result<ClientTlsConfig, RuntimeExecutorConnectError> {
+    let mut config = ClientTlsConfig::new();
+
+    if let Some(domain) = tls.domain_name.as_deref() {
+        config = config.domain_name(domain.to_string());
+    }
+
+    if let Some(ca_path) = tls.ca_path.as_ref() {
+        let pem = tokio::fs::read(ca_path).await.map_err(|source| {
+            RuntimeExecutorConnectError::TlsReadFailed {
+                path: ca_path.display().to_string(),
+                source,
+            }
+        })?;
+        config = config.ca_certificate(Certificate::from_pem(pem));
+    }
+
+    if tls.mode == RuntimeClientTlsMode::Mutual {
+        // `from_env_for_endpoint` already enforced that both paths are set;
+        // direct constructors land here too because `mutual(...)` requires them.
+        let cert_path = tls
+            .cert_path
+            .as_ref()
+            .expect("mutual TLS without cert_path");
+        let key_path = tls.key_path.as_ref().expect("mutual TLS without key_path");
+        let cert = tokio::fs::read(cert_path).await.map_err(|source| {
+            RuntimeExecutorConnectError::TlsReadFailed {
+                path: cert_path.display().to_string(),
+                source,
+            }
+        })?;
+        let key = tokio::fs::read(key_path).await.map_err(|source| {
+            RuntimeExecutorConnectError::TlsReadFailed {
+                path: key_path.display().to_string(),
+                source,
+            }
+        })?;
+        config = config.identity(Identity::from_pem(cert, key));
+    }
+
+    Ok(config)
 }
 
 #[async_trait]
@@ -822,6 +1067,7 @@ mod tests {
                 actor_id: "choreographer".to_owned(),
                 roles: vec!["developer".to_owned()],
             },
+            tls: RuntimeClientTlsConfig::disabled(),
         }
     }
 
@@ -832,6 +1078,11 @@ mod tests {
                 || key == "CHOREO_RUNTIME_PRINCIPAL_TENANT_ID"
                 || key == "CHOREO_RUNTIME_PRINCIPAL_ACTOR_ID"
                 || key == "CHOREO_RUNTIME_PRINCIPAL_ROLES"
+                || key == RUNTIME_TLS_MODE_ENV
+                || key == RUNTIME_TLS_CA_PATH_ENV
+                || key == RUNTIME_TLS_CERT_PATH_ENV
+                || key == RUNTIME_TLS_KEY_PATH_ENV
+                || key == RUNTIME_TLS_DOMAIN_NAME_ENV
             {
                 std::env::remove_var(key);
             }
@@ -870,6 +1121,7 @@ mod tests {
                     actor_id: "actor-y".to_owned(),
                     roles: vec!["developer".to_owned(), "ops".to_owned()],
                 },
+                tls: RuntimeClientTlsConfig::disabled(),
             })
         );
 
@@ -1006,5 +1258,107 @@ mod tests {
         assert_eq!(request.tool_name, "k8s.restart_workload");
         assert!(request.approved);
         assert_eq!(request.session_id.as_deref(), Some("sess-existing"));
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_defaults_to_disabled_on_http_endpoint() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        let tls =
+            RuntimeClientTlsConfig::from_env_for_endpoint(Some("http://runtime.example:50053"))
+                .unwrap();
+        assert_eq!(tls.mode, RuntimeClientTlsMode::Disabled);
+        assert_eq!(tls.mode_name(), "disabled");
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_auto_upgrades_to_server_on_https_endpoint() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        let tls =
+            RuntimeClientTlsConfig::from_env_for_endpoint(Some("https://runtime.example.com"))
+                .unwrap();
+        assert_eq!(tls.mode, RuntimeClientTlsMode::Server);
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_auto_upgrades_to_mutual_when_client_paths_set() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        std::env::set_var(RUNTIME_TLS_CERT_PATH_ENV, "/tmp/client.crt");
+        std::env::set_var(RUNTIME_TLS_KEY_PATH_ENV, "/tmp/client.key");
+
+        let tls =
+            RuntimeClientTlsConfig::from_env_for_endpoint(Some("http://runtime.example:50053"))
+                .unwrap();
+        assert_eq!(tls.mode, RuntimeClientTlsMode::Mutual);
+        assert_eq!(
+            tls.cert_path.as_deref(),
+            Some(std::path::Path::new("/tmp/client.crt"))
+        );
+
+        clear_runtime_env();
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_explicit_mode_wins_over_auto_detection() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        std::env::set_var(RUNTIME_TLS_MODE_ENV, "disabled");
+        // https endpoint would otherwise auto-upgrade to server.
+        let tls =
+            RuntimeClientTlsConfig::from_env_for_endpoint(Some("https://runtime.example.com"))
+                .unwrap();
+        assert_eq!(tls.mode, RuntimeClientTlsMode::Disabled);
+        clear_runtime_env();
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_mutual_mode_requires_cert_and_key() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        std::env::set_var(RUNTIME_TLS_MODE_ENV, "mutual");
+        // cert and key missing.
+        let err =
+            RuntimeClientTlsConfig::from_env_for_endpoint(Some("https://runtime.example.com"))
+                .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "CHOREO_RUNTIME_TLS_MODE=mutual requires both _CERT_PATH and _KEY_PATH"
+            }
+        ));
+        clear_runtime_env();
+    }
+
+    #[tokio::test]
+    async fn runtime_tls_invalid_mode_is_rejected() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_runtime_env();
+        std::env::set_var(RUNTIME_TLS_MODE_ENV, "weird");
+        let err = RuntimeClientTlsConfig::from_env_for_endpoint(None).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "CHOREO_RUNTIME_TLS_MODE must be one of: disabled, server, mutual"
+            }
+        ));
+        clear_runtime_env();
+    }
+
+    #[test]
+    fn endpoint_uri_for_tls_mode_rewrites_http_to_https() {
+        assert_eq!(
+            endpoint_uri_for_tls_mode("http://x.example:50053", RuntimeClientTlsMode::Server),
+            "https://x.example:50053"
+        );
+        assert_eq!(
+            endpoint_uri_for_tls_mode("https://x.example", RuntimeClientTlsMode::Mutual),
+            "https://x.example"
+        );
+        assert_eq!(
+            endpoint_uri_for_tls_mode("http://x.example", RuntimeClientTlsMode::Disabled),
+            "http://x.example"
+        );
     }
 }
