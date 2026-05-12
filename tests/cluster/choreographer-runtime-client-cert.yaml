@@ -1,0 +1,28 @@
+# cert-manager Certificate that mints the client cert the choreographer
+# uses to call `underpass-runtime`'s gRPC service over mutual TLS.
+#
+# Apply BEFORE deploying the choreographer chart against a cluster that
+# runs `underpass-runtime` with `tls.mode=mutual` — the chart resolves
+# `executor.runtime.tls.existingSecret` against the resulting Secret.
+#
+# Issuer assumption: `rehydration-kernel-internal-issuer` is the
+# in-namespace CA used by both planes (it already signs runtime's
+# server cert). Adjust if your cluster names the issuer differently.
+
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: choreographer-runtime-client-cert
+  namespace: underpass-runtime
+  labels:
+    app.kubernetes.io/part-of: underpass
+    app.kubernetes.io/component: choreographer-mtls
+spec:
+  commonName: choreographer
+  duration: 8760h
+  issuerRef:
+    kind: Issuer
+    name: rehydration-kernel-internal-issuer
+  secretName: choreographer-runtime-client-tls
+  usages:
+    - client auth

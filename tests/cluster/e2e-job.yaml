@@ -1,0 +1,60 @@
+# Runs the `choreo-e2e-runner` binary as a Kubernetes Job against a
+# choreographer deployed in-cluster. Useful as a smoke test after a
+# `helm upgrade --install`: the same scenarios that compose runs
+# locally, now driven through real DNS, real network, and a real
+# `RuntimeExecutor` connection.
+#
+# Caveats:
+#
+# - Scenarios 1–4 cover gRPC + NATS + causal metadata against the
+#   real deploy. They pass when the choreographer is wired correctly
+#   to its own NATS bus.
+#
+# - Scenarios 5–6 in the current e2e-runner are written for the
+#   compose stub-runtime (they expect a tool named `stub.echo` to
+#   succeed and free-form proposals to be rejected by a strict
+#   JSON Schema). Against the real `underpass-runtime`, the
+#   stub.echo tool is not in the catalog, so scenario 5 surfaces a
+#   `NotFound: runtime resource` from the runtime — proving the
+#   gRPC mTLS path is wired, but failing the assertion. Treat 5–6
+#   as design-for-stub when reading the Job's exit code.
+#
+# Apply after `helm upgrade --install`. The Job's TTL cleans the
+# resource after 10 min.
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: choreographer-e2e
+  namespace: underpass-runtime
+  labels:
+    app.kubernetes.io/part-of: underpass
+    app.kubernetes.io/component: e2e
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/part-of: underpass
+        app.kubernetes.io/component: e2e
+    spec:
+      restartPolicy: Never
+      imagePullSecrets:
+        - name: ghcr-pull
+      containers:
+        - name: e2e-runner
+          # Pin to the same commit as the choreographer image; both
+          # come from the same workspace and rolling them together
+          # avoids API skew between client and server.
+          image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:sha-23b3af0
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: CHOREOGRAPHER_ENDPOINT
+              value: "http://choreographer:50055"
+            - name: CHOREO_NATS_URL
+              value: "nats://choreographer-nats:4222"
+            - name: CHOREO_SEED_SPECIALTY
+              value: "triage"
+            - name: RUST_LOG
+              value: "info"

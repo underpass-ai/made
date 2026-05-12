@@ -1,0 +1,84 @@
+# Deployment profile for the `underpass-runtime` namespace on the
+# main cluster. Mirrors the sibling pattern used by
+# `rehydration-kernel` and `underpass-runtime` (one `values-<ns>.yaml`
+# per target environment).
+#
+# Apply with:
+#
+#   NAMESPACE=underpass-runtime \
+#   RELEASE_NAME=choreographer \
+#   VALUES_FILE=charts/choreographer/values.underpass-runtime.yaml \
+#   IMAGE_TAG=sha-<commit> \
+#   ./scripts/ci/deploy-kubernetes.sh
+
+image:
+  # Image tag is supplied at deploy time by the script (via
+  # `--set image.tag=sha-<commit>`); see `scripts/ci/deploy-kubernetes.sh`.
+  pullPolicy: Always
+
+imagePullSecrets:
+  - name: ghcr-pull
+
+# Each Underpass plane owns its own NATS bus — KMP, runtime, and
+# choreographer publish on disjoint subject namespaces and there is no
+# cross-plane subscription, so collocating them would only couple
+# deployments without sharing data. The chart-managed embedded NATS
+# keeps the deploy self-contained.
+messaging:
+  nats:
+    enabled: true
+    # Empty `url` + `embedded.enabled: true` resolves at template time
+    # to `nats://<release>-nats:4222`.
+    url: ""
+    publishPrefix: choreo
+    triggerSubject: choreo.trigger.>
+    embedded:
+      enabled: true
+      jetstream:
+        enabled: false
+
+# Production posture: hand winning proposals to the real
+# `underpass-runtime` service in this namespace. The runtime presents
+# a server cert signed by `rehydration-kernel-internal-issuer` and
+# expects client authentication (mTLS mutual). The choreographer
+# carries its own client cert minted from the same issuer (see
+# `tests/cluster/choreographer-runtime-client-cert.yaml`).
+executor:
+  kind: runtime
+  runtime:
+    endpoint: https://underpass-runtime:50053
+    principal:
+      tenantId: underpass
+      actorId: choreographer
+      roles: orchestrator
+    tls:
+      mode: mutual
+      domainName: underpass-runtime
+      existingSecret: choreographer-runtime-client-tls
+
+# Seed a single `triage` council with a NoopAgent so the deployment
+# is exercisable from the get-go via gRPC. Real specialists land
+# through the API.
+config:
+  seedSpecialties: triage
+  logLevel: info
+
+# Persistence stays off in this first rollout; the deliberation
+# registries default to in-memory adapters, which is fine for the
+# smoke + E2E pass. Flip on when a Postgres CR exists in-namespace.
+persistence:
+  postgres:
+    enabled: false
+
+# Plain HTTP/2 inside the cluster — ingress / mesh handles edge TLS.
+tls:
+  mode: none
+
+# Single replica; bump to 2 once we want PDB + rolling tolerance.
+replicaCount: 1
+
+# Allow `sha-<short>` image tags from CI — they are immutable per
+# commit, but the chart's default refuses any non-digest reference
+# unless this development knob opts in.
+development:
+  allowMutableImageTags: true
