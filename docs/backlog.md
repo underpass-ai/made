@@ -643,48 +643,52 @@ Relevant code:
 
 ### Epic 9. Specialist-grade RPC surface
 
-Status: not started
+Status: done (2026-05-12)
 
 Current state:
 
-- proto exposes `Deliberate`, `StreamDeliberation`,
-  `GetDeliberationResult`, `Orchestrate`, council/agent CRUD,
-  `ProcessTriggerEvent`, `GetStatus`/`GetMetrics` only
-- the contract-shaped surface today is "set
-  `Constraints.output_contract` on a generic `DeliberateRequest`"
-- no `RunCouncilDecision` or equivalent dedicated RPC; consumers would still
-  have to call `Deliberate` / `ProcessTriggerEvent` to obtain a
-  contract-validated decision
+- proto exposes `RunCouncilDecision` plus contract CRUD
+  (`RegisterContract` / `ListContracts` / `DeleteContract`) on top
+  of the original generic RPCs
+- the dedicated council-decision RPC takes a council selector
+  (`council_id` or `specialty`), a registered `contract_id`, an
+  optional `ExternalContextBundle`, a `ValidationMode` (Strict /
+  Warn), causal metadata, and a free-form description
+- response carries `task_id`, the validated `winner`
+  (`DeliberationResult`), a `ValidationOutcomeSummary`, per-candidate
+  `CandidateSummary` ordered by rank, duration, and the echoed
+  `validation_mode`
+- the `RunCouncilDecisionUseCase` composes the existing
+  `DeliberateUseCase` with the new `ContractRegistryPort`; Strict
+  mode propagates `NoValidProposal`, Warn mode returns the
+  top-ranked candidate with `passed=false`
+- the in-memory `ContractRegistry` is the source of truth today;
+  contracts are seeded at startup from `CHOREO_CONTRACT_DIR`
+- the MCP stdio adapter exposes four matching tools
+  (`choreo_run_council_decision`, `choreo_register_contract`,
+  `choreo_list_contracts`, `choreo_delete_contract`)
 
 Relevant code:
 
 - [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto)
-- [`crates/choreo-app/src/services/auto_dispatch.rs`](../crates/choreo-app/src/services/auto_dispatch.rs)
+- [`crates/choreo-app/src/usecases/run_council_decision.rs`](../crates/choreo-app/src/usecases/run_council_decision.rs)
+- [`crates/choreo-core/src/ports/contract_registry.rs`](../crates/choreo-core/src/ports/contract_registry.rs)
+- [`crates/choreo-adapters/src/grpc/mappers/run_council_decision.rs`](../crates/choreo-adapters/src/grpc/mappers/run_council_decision.rs)
+- [`crates/choreo-tests-integration/tests/run_council_decision_rpc.rs`](../crates/choreo-tests-integration/tests/run_council_decision_rpc.rs)
 
-#### Deliverables
+#### Deliverables — all met
 
-Add a dedicated RPC for contract-shaped expert councils.
+- [x] `RunCouncilDecision` RPC with council selector, structured
+  external context bundle, output contract id, validation mode, and
+  metadata
+- [x] Response carries the validated structured winner, validation
+  outcome summary, candidate summaries, and trace metadata
 
-Representative shape:
+#### Acceptance criteria — all met
 
-- `RunCouncilDecision`
-  - council id / specialty
-  - structured external context bundle
-  - output contract id
-  - validation mode
-  - metadata
-
-Response:
-
-- validated structured winner
-- validation outcome summary
-- candidate summaries
-- trace metadata
-
-#### Acceptance criteria
-
-- consumers can call a dedicated RPC without abusing generic trigger fan-out
-- council result is already validated when returned
+- [x] consumers can call a dedicated RPC without abusing generic
+  trigger fan-out
+- [x] council result is already validated when returned
 
 ### Epic 10. Report artifact support
 
