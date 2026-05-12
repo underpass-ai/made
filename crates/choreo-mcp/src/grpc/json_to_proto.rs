@@ -158,7 +158,11 @@ fn optional_output_contract(value: Option<&Value>) -> Result<Option<pb::OutputCo
     if value.is_null() {
         return Ok(None);
     }
-    let obj = require_object(value, "task.constraints.output_contract")?;
+    Ok(Some(output_contract_from_json(value)?))
+}
+
+pub(crate) fn output_contract_from_json(value: &Value) -> Result<pb::OutputContract, String> {
+    let obj = require_object(value, "output_contract")?;
     let format = match optional_str(obj, "format") {
         Some("json_object") | None => pb::OutputFormat::JsonObject as i32,
         Some(other) => {
@@ -191,12 +195,49 @@ fn optional_output_contract(value: Option<&Value>) -> Result<Option<pb::OutputCo
         }
     }
     let json_schema = optional_str(obj, "json_schema").unwrap_or("").to_string();
-    Ok(Some(pb::OutputContract {
+    Ok(pb::OutputContract {
         contract_id: optional_str(obj, "contract_id").unwrap_or("").to_string(),
         format,
         fields: fields.into_iter().collect(),
         json_schema,
-    }))
+    })
+}
+
+pub(crate) fn run_council_decision_request_from_json(
+    value: &Value,
+) -> Result<pb::RunCouncilDecisionRequest, String> {
+    let obj = require_object(value, "tools/call.arguments")?;
+    let contract_id = require_str(obj, "contract_id")?.to_string();
+    let description = require_str(obj, "description")?.to_string();
+
+    let council_id = optional_str(obj, "council_id").map(str::to_string);
+    let specialty = optional_str(obj, "specialty").map(str::to_string);
+    let selector = match (council_id, specialty) {
+        (Some(_), Some(_)) => {
+            return Err("exactly one of `council_id` or `specialty` must be set, not both".into());
+        }
+        (None, None) => {
+            return Err("missing required selector: set `council_id` or `specialty`".into());
+        }
+        (Some(id), None) => Some(pb::run_council_decision_request::Selector::CouncilId(id)),
+        (None, Some(s)) => Some(pb::run_council_decision_request::Selector::Specialty(s)),
+    };
+
+    let validation_mode = match optional_str(obj, "validation_mode") {
+        None | Some("" | "VALIDATION_MODE_UNSPECIFIED") => pb::ValidationMode::Unspecified as i32,
+        Some("VALIDATION_MODE_STRICT") => pb::ValidationMode::Strict as i32,
+        Some("VALIDATION_MODE_WARN") => pb::ValidationMode::Warn as i32,
+        Some(other) => return Err(format!("unknown validation_mode `{other}`")),
+    };
+
+    Ok(pb::RunCouncilDecisionRequest {
+        contract_id,
+        external_context: optional_external_context(obj.get("external_context"))?,
+        validation_mode,
+        metadata: optional_task_metadata(obj.get("metadata"))?,
+        description,
+        selector,
+    })
 }
 
 fn optional_external_context(

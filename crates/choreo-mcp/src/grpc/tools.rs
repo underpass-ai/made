@@ -17,7 +17,7 @@ use super::streaming;
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
 /// `tool_success_result`).
-#[allow(clippy::too_many_lines)] // 12 tool arms; splitting fragments the dispatch table
+#[allow(clippy::too_many_lines)] // 16 tool arms; splitting fragments the dispatch table
 pub(crate) async fn dispatch(
     channel: Channel,
     name: &str,
@@ -166,6 +166,51 @@ pub(crate) async fn dispatch(
             }))
         }
 
+        "choreo_run_council_decision" => {
+            let request = build_run_council_decision_request(arguments)?;
+            let response = client
+                .run_council_decision(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            Ok(p2j::run_council_decision_response_to_json(
+                response.into_inner(),
+            ))
+        }
+
+        "choreo_register_contract" => {
+            let request = build_register_contract_request(arguments)?;
+            let response = client
+                .register_contract(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::RegisterContractResponse { contract_id } = response.into_inner();
+            Ok(json!({ "contract_id": contract_id }))
+        }
+
+        "choreo_list_contracts" => {
+            let response = client
+                .list_contracts(pb::ListContractsRequest {})
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::ListContractsResponse { contracts } = response.into_inner();
+            Ok(json!({
+                "contracts": contracts
+                    .into_iter()
+                    .map(p2j::output_contract_to_json)
+                    .collect::<Vec<_>>(),
+            }))
+        }
+
+        "choreo_delete_contract" => {
+            let request = build_delete_contract_request(arguments)?;
+            let response = client
+                .delete_contract(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::DeleteContractResponse { deleted } = response.into_inner();
+            Ok(json!({ "deleted": deleted }))
+        }
+
         other => Err(format!("unknown choreo MCP tool `{other}`")),
     }
 }
@@ -281,4 +326,27 @@ fn build_get_status_request(args: &Value) -> pb::GetStatusRequest {
         .as_object()
         .is_some_and(|obj| j2p::optional_bool(obj, "include_stats"));
     pb::GetStatusRequest { include_stats }
+}
+
+fn build_run_council_decision_request(
+    args: &Value,
+) -> Result<pb::RunCouncilDecisionRequest, String> {
+    j2p::run_council_decision_request_from_json(args)
+}
+
+fn build_register_contract_request(args: &Value) -> Result<pb::RegisterContractRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    let contract_value = obj
+        .get("contract")
+        .ok_or_else(|| "missing required `contract` object".to_string())?;
+    Ok(pb::RegisterContractRequest {
+        contract: Some(j2p::output_contract_from_json(contract_value)?),
+    })
+}
+
+fn build_delete_contract_request(args: &Value) -> Result<pb::DeleteContractRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::DeleteContractRequest {
+        contract_id: j2p::require_str(obj, "contract_id")?.to_string(),
+    })
 }

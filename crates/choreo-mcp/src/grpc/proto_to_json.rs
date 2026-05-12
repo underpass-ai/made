@@ -214,6 +214,85 @@ pub(crate) fn trigger_ack_to_json(a: &pb::TriggerAck) -> Value {
     })
 }
 
+pub(crate) fn output_contract_to_json(c: pb::OutputContract) -> Value {
+    let format = match pb::OutputFormat::try_from(c.format).unwrap_or(pb::OutputFormat::Unspecified)
+    {
+        pb::OutputFormat::Unspecified | pb::OutputFormat::JsonObject => "json_object",
+    };
+    let fields: Map<String, Value> = c
+        .fields
+        .into_iter()
+        .map(|(name, rule)| {
+            (
+                name,
+                json!({
+                    "required": rule.required,
+                    "allowed_string_values": rule.allowed_string_values,
+                }),
+            )
+        })
+        .collect();
+    json!({
+        "contract_id": c.contract_id,
+        "format": format,
+        "fields": Value::Object(fields),
+        "json_schema": c.json_schema,
+    })
+}
+
+fn validation_mode_name(value: i32) -> &'static str {
+    match pb::ValidationMode::try_from(value).unwrap_or(pb::ValidationMode::Unspecified) {
+        pb::ValidationMode::Unspecified => "VALIDATION_MODE_UNSPECIFIED",
+        pb::ValidationMode::Strict => "VALIDATION_MODE_STRICT",
+        pb::ValidationMode::Warn => "VALIDATION_MODE_WARN",
+    }
+}
+
+fn candidate_summary_to_json(c: pb::CandidateSummary) -> Value {
+    json!({
+        "proposal_id": c.proposal_id,
+        "author_agent_id": c.author_agent_id,
+        "score": c.score,
+        "reports": c
+            .reports
+            .into_iter()
+            .map(|r| json!({
+                "kind": r.kind,
+                "passed": r.passed,
+                "summary": r.summary,
+                "details": optional_pb_struct_to_json(r.details),
+            }))
+            .collect::<Vec<_>>(),
+        "rank": c.rank,
+        "passed": c.passed,
+    })
+}
+
+fn validation_outcome_summary_to_json(v: pb::ValidationOutcomeSummary) -> Value {
+    json!({
+        "passed": v.passed,
+        "candidates_passed": v.candidates_passed,
+        "candidates_total": v.candidates_total,
+    })
+}
+
+pub(crate) fn run_council_decision_response_to_json(r: pb::RunCouncilDecisionResponse) -> Value {
+    json!({
+        "task_id": r.task_id,
+        "winner": r.winner.map_or(Value::Null, deliberation_result_to_json),
+        "validation": r
+            .validation
+            .map_or(Value::Null, validation_outcome_summary_to_json),
+        "candidates": r
+            .candidates
+            .into_iter()
+            .map(candidate_summary_to_json)
+            .collect::<Vec<_>>(),
+        "duration_ms": r.duration_ms,
+        "validation_mode": validation_mode_name(r.validation_mode),
+    })
+}
+
 pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
     let per_specialty: Map<String, Value> = s
         .per_specialty_counts
