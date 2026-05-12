@@ -96,11 +96,89 @@ config:
 messaging:
   nats:
     enabled: true
+    # Endpoint the binary connects to. The placeholder
+    # `nats://nats:4222` works out of the box against compose-shaped
+    # deployments. To use the chart's own embedded NATS, set this to
+    # an empty string and flip `embedded.enabled: true`; the chart
+    # then resolves the URL to the release-local Service
+    # (`<release>-nats:4222`). An explicit URL always wins over the
+    # embedded one.
     url: nats://nats:4222
     # Subject prefix used for Choreographer-published events.
     publishPrefix: choreo
     # Wildcard of inbound trigger subjects consumed by the service.
     triggerSubject: choreo.trigger.>
+    # Optional in-release NATS server. Off by default to match the
+    # chart's "external dependencies" posture and to keep `helm install`
+    # cheap; flip to `true` in deployment-target values files (e.g.
+    # `values.underpass-runtime.yaml`) so the choreographer ships with
+    # its own bus and does not collide with sibling Underpass planes.
+    embedded:
+      enabled: false
+      image:
+        repository: docker.io/library/nats
+        tag: "2.10-alpine"
+        pullPolicy: IfNotPresent
+      # JetStream + persistence are off by default. Core NATS is enough
+      # for the choreographer's fire-and-forget event surface; opt in
+      # only when a stream-bound consumer needs it.
+      jetstream:
+        enabled: false
+        persistence:
+          enabled: false
+          size: 1Gi
+          storageClass: ""
+      monitoring:
+        enabled: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+# Executor — what handles winning proposals after a council reaches a
+# decision. `noop` returns synthetic invocation IDs (good for smoke
+# testing the gRPC + bus surface without a runtime). `runtime` calls
+# `underpass-runtime`'s `SessionService` + `InvocationService` over
+# gRPC, which is the production posture.
+executor:
+  kind: noop  # one of: "noop" | "runtime"
+  runtime:
+    # gRPC endpoint of the sibling underpass-runtime service. Required
+    # when `kind: runtime`. Use `http://...` for plain HTTP/2 or
+    # `https://...` when the runtime presents TLS.
+    endpoint: ""
+    # Principal stamped on every `CreateSession` call. The runtime
+    # uses this to authorize tool invocations and to scope side-effects
+    # in its audit trail.
+    principal:
+      tenantId: ""
+      actorId: ""
+      # Comma-separated list, e.g. "developer,ops".
+      roles: ""
+    # Client TLS posture against the runtime. Independent of the
+    # server-side TLS (`tls.mode`) that this service presents to its
+    # own callers. Mirrors the runtime adapter's env-driven config.
+    tls:
+      # One of: "disabled" | "server" | "mutual".
+      #   - "disabled": plain HTTP/2 over TCP
+      #   - "server":   verify the runtime's server cert against a CA
+      #                 bundle this side already has
+      #   - "mutual":   in addition, present a client cert+key so the
+      #                 runtime can authenticate this caller
+      mode: disabled
+      # SAN/CN to expect on the runtime's server certificate. Optional;
+      # when empty the host portion of `endpoint` is used.
+      domainName: ""
+      # Kubernetes secret mounted read-only at
+      # /etc/choreographer/runtime-tls. Required when `mode != disabled`.
+      # Expected keys:
+      #   ca.crt   — trust bundle for the runtime's server identity
+      #   tls.crt  — client cert PEM        (mutual only)
+      #   tls.key  — client private key PEM (mutual only)
+      existingSecret: ""
 
 # Persistent storage for deliberations, councils, agents, and
 # statistics. When `enabled: true`, every registry that has a

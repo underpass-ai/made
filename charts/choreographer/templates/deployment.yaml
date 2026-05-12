@@ -30,7 +30,16 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- $tlsMode := .Values.tls.mode | default "none" }}
-      {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") }}
+      {{- $executorKind := .Values.executor.kind | default "noop" }}
+      {{- $runtimeTlsMode := .Values.executor.runtime.tls.mode | default "disabled" }}
+      {{- if and (eq $executorKind "runtime") (not .Values.executor.runtime.endpoint) }}
+      {{- fail "executor.kind=runtime but executor.runtime.endpoint is empty; set the runtime gRPC URL" }}
+      {{- end }}
+      {{- if and (eq $executorKind "runtime") (ne $runtimeTlsMode "disabled") (not .Values.executor.runtime.tls.existingSecret) }}
+      {{- fail "executor.runtime.tls.mode != disabled but executor.runtime.tls.existingSecret is empty; provide a secret with ca.crt (plus tls.crt + tls.key for mutual)" }}
+      {{- end }}
+      {{- $runtimeTlsMounted := and (eq $executorKind "runtime") (ne $runtimeTlsMode "disabled") }}
+      {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
       volumes:
         {{- if .Values.tmpVolume.enabled }}
         - name: tmp
@@ -47,6 +56,12 @@ spec:
             secretName: {{ .Values.tls.existingSecret | quote }}
             defaultMode: 0400
         {{- end }}
+        {{- if $runtimeTlsMounted }}
+        - name: runtime-tls
+          secret:
+            secretName: {{ .Values.executor.runtime.tls.existingSecret | quote }}
+            defaultMode: 0400
+        {{- end }}
       {{- end }}
       containers:
         - name: choreo
@@ -54,7 +69,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") }}
+          {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
           volumeMounts:
             {{- if .Values.tmpVolume.enabled }}
             - name: tmp
@@ -63,6 +78,11 @@ spec:
             {{- if ne $tlsMode "none" }}
             - name: grpc-tls
               mountPath: /etc/choreographer/tls
+              readOnly: true
+            {{- end }}
+            {{- if $runtimeTlsMounted }}
+            - name: runtime-tls
+              mountPath: /etc/choreographer/runtime-tls
               readOnly: true
             {{- end }}
           {{- end }}
@@ -84,7 +104,7 @@ spec:
             - name: CHOREO_NATS_ENABLED
               value: "true"
             - name: CHOREO_NATS_URL
-              value: {{ .Values.messaging.nats.url | quote }}
+              value: {{ include "choreographer.natsUrl" . | quote }}
             - name: CHOREO_TRIGGER_SUBJECT
               value: {{ .Values.messaging.nats.triggerSubject | quote }}
             - name: CHOREO_PUBLISH_PREFIX
@@ -107,6 +127,40 @@ spec:
             {{- if eq $tlsMode "mutual" }}
             - name: CHOREO_GRPC_TLS_CLIENT_CA_PATH
               value: "/etc/choreographer/tls/ca.crt"
+            {{- end }}
+            {{- end }}
+            - name: CHOREO_EXECUTOR_KIND
+              value: {{ $executorKind | quote }}
+            {{- if eq $executorKind "runtime" }}
+            - name: CHOREO_RUNTIME_GRPC_ENDPOINT
+              value: {{ .Values.executor.runtime.endpoint | quote }}
+            {{- with .Values.executor.runtime.principal.tenantId }}
+            - name: CHOREO_RUNTIME_PRINCIPAL_TENANT_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.executor.runtime.principal.actorId }}
+            - name: CHOREO_RUNTIME_PRINCIPAL_ACTOR_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.executor.runtime.principal.roles }}
+            - name: CHOREO_RUNTIME_PRINCIPAL_ROLES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if ne $runtimeTlsMode "disabled" }}
+            - name: CHOREO_RUNTIME_TLS_MODE
+              value: {{ $runtimeTlsMode | quote }}
+            - name: CHOREO_RUNTIME_TLS_CA_PATH
+              value: "/etc/choreographer/runtime-tls/ca.crt"
+            {{- if eq $runtimeTlsMode "mutual" }}
+            - name: CHOREO_RUNTIME_TLS_CERT_PATH
+              value: "/etc/choreographer/runtime-tls/tls.crt"
+            - name: CHOREO_RUNTIME_TLS_KEY_PATH
+              value: "/etc/choreographer/runtime-tls/tls.key"
+            {{- end }}
+            {{- with .Values.executor.runtime.tls.domainName }}
+            - name: CHOREO_RUNTIME_TLS_DOMAIN_NAME
+              value: {{ . | quote }}
+            {{- end }}
             {{- end }}
             {{- end }}
             {{- if .Values.persistence.postgres.enabled }}
