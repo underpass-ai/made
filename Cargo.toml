@@ -100,6 +100,9 @@ criterion = { version = "0.5", features = ["async_tokio"] }
 # crypto / hashing
 sha2 = "0.10"
 
+# schema validation
+jsonschema = { version = "0.17", default-features = false }
+
 # internal
 choreo-core = { path = "crates/choreo-core" }
 choreo-app = { path = "crates/choreo-app" }

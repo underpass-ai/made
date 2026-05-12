@@ -263,6 +263,10 @@ fn output_contract_schema() -> Value {
                 "type": "object",
                 "additionalProperties": output_field_rule_schema(),
                 "description": "Map from field name to its rule."
+            },
+            "json_schema": {
+                "type": "string",
+                "description": "Optional embedded JSON Schema (draft 2020-12 or earlier). When non-empty, every proposal output is validated against it via the JsonSchemaValidator. Canonical Report-shape schema lives at api/examples/output-contracts/report.schema.json."
             }
         }
     })

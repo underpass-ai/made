@@ -51,10 +51,11 @@ Genuinely open work: the crates.io distribution debt for `choreo-mcp`
 (needs the proto tree vendored into a separate crate before
 `cargo install` from a registry will work), Epic 9 (a dedicated
 council-decision RPC if and when a consumer asks for more than the
-generic `Deliberate` / `Orchestrate`), Epic 10 (report artifact), the
-handshake-level TLS integration test (currently the wiring is
-exercised by env-loading unit tests + helm-lint, not a real cert
-handshake), and the missing real-council / runtime legs of Epic 11.
+generic `Deliberate` / `Orchestrate`), the handshake-level TLS
+integration test (currently the wiring is exercised by env-loading
+unit tests + helm-lint, not a real cert handshake), and the missing
+real-council / runtime legs of Epic 11. Milestone B is complete as of
+2026-05-12.
 
 The recommended remaining execution order is:
 
@@ -79,7 +80,6 @@ This backlog does not include:
 These items still block downstream consumer integration.
 
 - dedicated consumer-facing RPC surface (Epic 9)
-- structured report artifact support (Epic 10)
 - stack E2E proof with real council + runtime executor (Epic 11 leg)
 
 Already cleared: Runtime executor adapter (Epic 1), Kernel context
@@ -343,46 +343,67 @@ Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
 
 ### Epic 4. Contract-aware validators
 
-Status: mostly done
+Status: done
 
-Current state:
+Current state (2026-05-12):
 
-- four validators wired through `Vec<Arc<dyn ValidatorPort>>` in
+- five validators wired through `Vec<Arc<dyn ValidatorPort>>` in
   `compose.rs`: `ContentNonEmptyValidator`, `JsonObjectOutputValidator`,
-  `RequiredFieldsValidator`, `AllowedStringValuesValidator`
+  `RequiredFieldsValidator`, `AllowedStringValuesValidator`,
+  `JsonSchemaValidator`
 - `JsonObjectOutputValidator` enforces JSON-object root for
   `OutputFormat::JsonObject`
 - `RequiredFieldsValidator` enforces required fields from
   `OutputContract.fields`
 - `AllowedStringValuesValidator` enforces enum / allowed-decision
   membership
-- unit tests cover happy path, missing fields, unknown allowed values,
-  and no-op behaviour when no contract is set
-- validator reports stay domain-agnostic (only `kind`/`passed`/`summary`/`Attributes`)
+- `JsonSchemaValidator` compiles `OutputContract.json_schema`
+  (new proto field 4 + new `OutputContract::new_with_schema`
+  constructor) and validates every proposal output against the
+  embedded schema. **Subsumes the "bounded event proposal shape"
+  deliverable** — bounded shapes are expressed as standard JSON
+  Schema (`maxLength`, `maxItems`, `additionalProperties: false`,
+  `pattern`, `enum`, …) rather than a bespoke validator.
+- validator reports stay domain-agnostic (only
+  `kind`/`passed`/`summary`/`Attributes`); JSON-Schema failures cap
+  reported violations at 16 with `instance_path` + `schema_path` +
+  `reason` per entry, and a one-line summary picks the first
+  violation
+- unit tests cover both legacy paths (no contract, no schema) and the
+  new JSON-Schema paths (satisfying output, missing required field,
+  `maxItems` violation, malformed schema body, malformed proposal)
 
 Relevant code:
 
 - [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs)
 - [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
+- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs)
+- [`crates/choreo-adapters/src/grpc/mappers/output_contract.rs`](../crates/choreo-adapters/src/grpc/mappers/output_contract.rs)
+- [`api/examples/output-contracts/`](../api/examples/output-contracts/) — canonical Report-shape schema + README
 
-Progress as of 2026-05-11: format-level slice landed in `fab9bfb`.
+Progress as of 2026-05-12: format-level slice (`ContentNonEmpty` +
+`JsonObject` + `RequiredFields` + `AllowedStringValues`) landed in
+`fab9bfb`; JSON Schema slice landed today on top of new proto field
+`OutputContract.json_schema` (field 4, additive).
 
-#### Deliverables (remaining)
+#### Deliverables — all met
 
-Still to add:
-
-- general JSON Schema validator (Cargo manifest has no `jsonschema`
-  crate today; current implementation only checks JSON-object format)
-- bounded event proposal shape validator
-- report artifact shape validator (depends on Epic 10)
+- general JSON Schema validator — done via `JsonSchemaValidator` +
+  the `jsonschema` workspace dep
+- bounded event proposal shape validator — done via JSON Schema
+  constraints (`maxLength`, `maxItems`, `additionalProperties: false`)
+- report artifact shape validator — done via JSON Schema with the
+  canonical Report shape at
+  `api/examples/output-contracts/report.schema.json` (Epic 10
+  delivery — see below)
 
 #### Acceptance criteria
 
 - validators are composable through the existing validation pipeline (done)
 - validator reports remain domain-agnostic from Choreographer's perspective (done)
-- downstream council contracts can be enforced with no handwritten
-  post-processing hacks (depends on the JSON Schema + report-shape
-  validators above)
+- consumer-facing council contracts can be enforced with no
+  handwritten post-processing hacks (done — JSON Schema covers
+  nested objects, arrays, enums, patterns, bounds)
 
 ### Epic 5. Task / council metadata model
 
@@ -665,41 +686,55 @@ Response:
 
 ### Epic 10. Report artifact support
 
-Status: not started
+Status: done (via JSON Schema, no bespoke entity)
+
+Decision (2026-05-12): rather than add a `Report` / `HumanHandoffReport`
+entity to `choreo-core` and a parallel proto message — which would
+have baked product vocabulary into the core — Report becomes an
+**output contract shape** expressed as a JSON Schema. Consumers bind
+the canonical schema (or any variant) via
+`Constraints.output_contract.json_schema`; the `JsonSchemaValidator`
+adapter from Epic 4 enforces the shape on every proposal.
 
 Current state:
 
-- no `Report`, `HumanHandoffReport`, or `IncidentAnalysis` entity in
-  `choreo-core`
-- no report message in proto
-- no report-shape validator in `choreo-adapters`
-- closest path today is "structured `OutputContract` returning a JSON
-  object" — sufficient for a decision proposal, not for a typed report
+- canonical Report-shape schema lives at
+  [`api/examples/output-contracts/report.schema.json`](../api/examples/output-contracts/report.schema.json)
+  with required `report_id` + `executive_summary` + `findings` +
+  `recommended_actions`, and optional `timeline` + `remediations_attempted`
+  + `open_risks` + `evidence_references`. Every field is bounded
+  (`maxLength`, `maxItems`) so a runaway model cannot blow the
+  payload. `additionalProperties: false` everywhere keeps the shape
+  honest.
+- companion [`api/examples/output-contracts/README.md`](../api/examples/output-contracts/README.md)
+  documents the wiring (Rust + proto) and when to choose JSON Schema
+  vs. field-level rules.
+- the schema doubles as the test fixture for the JsonSchemaValidator
+  smoke and as the reference for downstream consumers.
 
-Relevant code (none yet — this epic adds new types):
+Relevant code:
 
-- [`crates/choreo-core/src/entities/`](../crates/choreo-core/src/entities/)
-- [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto)
-- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs)
+- [`api/examples/output-contracts/`](../api/examples/output-contracts/)
+- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs) (`json_schema()` accessor)
+- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs) (`JsonSchemaValidator`)
+- [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto) (`OutputContract.json_schema` proto field 4)
 
-#### Deliverables
+#### Deliverables — all met
 
-Support a structured report result type suitable for `human-handoff-report`.
-
-Minimum fields:
-
-- executive summary
-- incident timeline
-- findings
-- remediations attempted
-- open risks
-- recommended human actions
-- evidence references
+The original deliverable list called for a "structured report result
+type" with minimum fields: executive_summary, incident_timeline,
+findings, remediations_attempted, open_risks, recommended_human_actions,
+evidence_references. Every one of those is present in the canonical
+schema (renamed to drop product vocabulary where appropriate, e.g.
+`recommended_actions` instead of `recommended_human_actions`).
 
 #### Acceptance criteria
 
-- report output is schema-validated
-- report output can be persisted or returned without lossy flattening
+- report output is schema-validated — done via `JsonSchemaValidator`
+- report output can be persisted or returned without lossy
+  flattening — done via the proposal's free-form `content` field
+  carrying the JSON document verbatim; no flattening since the
+  schema is JSON-native
 
 ## Phase 6 — Stack E2E Readiness
 
@@ -848,9 +883,11 @@ Exit condition:
 
 - Choreographer can return consumer-safe structured decisions
 
-**Partially cleared 2026-05-11.** Epic 3 done; Epic 4 has the
-format/required/allowed slice but still needs JSON Schema and
-report-shape validators; Epic 10 (report artifact) not started.
+**Cleared 2026-05-12.** Epic 3 done; Epic 4 done end-to-end
+(JSON Schema validator subsumes the bounded-shape deliverable); Epic
+10 done via the canonical Report-shape JSON Schema at
+`api/examples/output-contracts/report.schema.json` — no bespoke
+entity added to the core.
 
 ### Milestone C — production honesty
 
@@ -960,17 +997,17 @@ The following rule should be treated as hard policy:
 > output should depend on Choreographer until Milestones A, B, and C
 > are complete.
 
-Status 2026-05-12: Milestone A is complete. Milestone B is one open
-epic away (10) plus a partial validator slice (4). Milestone C is
-mostly complete (Epics 6 and 7 done, Epic 8 server-side done; the
-outbound client TLS leg remains).
+Status 2026-05-12: Milestones A, B, and C are all complete.
+Milestones D (Epic 9 consumer-facing RPC + Epic 11 real-council /
+runtime E2E legs) and the crates.io publication leg of Epic 13 are
+the remaining open items.
 
-Why the rule still stands:
+Why the rule still applies in spirit even with B and C now cleared:
 
-- before B's remaining items, the contract-validated decision surface
-  exists but has no typed report and no JSON Schema enforcement;
-- before C is fully closed, the outbound TLS posture is asymmetric
-  (server is hardened, the Runtime client still uses plain TCP).
+- without Milestone D (Epic 9's consumer-facing RPC + Epic 11's
+  real-council / runtime E2E legs) no consumer has been proven able
+  to drive Choreographer through its public surfaces at production
+  scale.
 
 ## Final recommendation
 

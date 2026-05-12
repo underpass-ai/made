@@ -16,6 +16,11 @@ const MAX_FIELDS: usize = 128;
 const MAX_FIELD_NAME_LEN: usize = 128;
 const MAX_ALLOWED_VALUES_PER_FIELD: usize = 128;
 const MAX_ALLOWED_VALUE_LEN: usize = 256;
+/// Cap on the embedded JSON Schema body. 256 KiB is enough for an
+/// elaborate Report-shape schema with nested objects and several
+/// dozen enums; anything larger should live behind a `$ref` and be
+/// fetched by the validator if/when remote schemas are supported.
+const MAX_JSON_SCHEMA_LEN: usize = 256 * 1024;
 
 /// Wire- and storage-stable structured output format selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -90,6 +95,13 @@ pub struct OutputContract {
     format: OutputFormat,
     #[serde(default)]
     fields: BTreeMap<String, OutputFieldRule>,
+    /// Optional embedded JSON Schema. When non-empty, the adapter
+    /// JSON-schema validator parses it once and validates every
+    /// proposal output against it in addition to the field-level
+    /// rules. Kept as a `String` here so the core stays free of any
+    /// schema-engine dependency.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    json_schema: String,
 }
 
 impl OutputContract {
@@ -97,6 +109,21 @@ impl OutputContract {
         contract_id: impl Into<String>,
         format: OutputFormat,
         fields: BTreeMap<String, OutputFieldRule>,
+    ) -> Result<Self, DomainError> {
+        Self::new_with_schema(contract_id, format, fields, String::new())
+    }
+
+    /// Build a contract that also carries an embedded JSON Schema
+    /// body. The schema text is whitespace-trimmed and length-bounded
+    /// (`MAX_JSON_SCHEMA_LEN = 256 KiB`); validation that the body is
+    /// itself well-formed JSON / a valid JSON Schema document happens
+    /// at adapter wiring time (the core does not pull a schema
+    /// engine in).
+    pub fn new_with_schema(
+        contract_id: impl Into<String>,
+        format: OutputFormat,
+        fields: BTreeMap<String, OutputFieldRule>,
+        json_schema: impl Into<String>,
     ) -> Result<Self, DomainError> {
         let contract_id = contract_id.into();
         let contract_id = validate_text(
@@ -120,10 +147,13 @@ impl OutputContract {
             normalized.insert(field_name, rule);
         }
 
+        let json_schema = normalize_optional_schema(&json_schema.into())?;
+
         Ok(Self {
             contract_id,
             format,
             fields: normalized,
+            json_schema,
         })
     }
 
@@ -148,6 +178,29 @@ impl OutputContract {
     pub fn fields(&self) -> &BTreeMap<String, OutputFieldRule> {
         &self.fields
     }
+
+    /// Embedded JSON Schema body. Empty string means "no schema —
+    /// only field-level rules apply"; the JSON Schema validator
+    /// adapter treats empty as a no-op.
+    #[must_use]
+    pub fn json_schema(&self) -> &str {
+        &self.json_schema
+    }
+}
+
+fn normalize_optional_schema(raw: &str) -> Result<String, DomainError> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return Ok(String::new());
+    }
+    if trimmed.len() > MAX_JSON_SCHEMA_LEN {
+        return Err(DomainError::FieldTooLong {
+            field: "output_contract.json_schema",
+            actual: trimmed.len(),
+            max: MAX_JSON_SCHEMA_LEN,
+        });
+    }
+    Ok(trimmed.to_owned())
 }
 
 fn validate_text(value: &str, field: &'static str, max_len: usize) -> Result<String, DomainError> {
@@ -236,5 +289,54 @@ mod tests {
         let serialized = serde_json::to_string(&contract).unwrap();
         let back: OutputContract = serde_json::from_str(&serialized).unwrap();
         assert_eq!(back, contract);
+    }
+
+    #[test]
+    fn json_schema_is_empty_by_default() {
+        let contract = OutputContract::json_object("c1", BTreeMap::new()).unwrap();
+        assert!(contract.json_schema().is_empty());
+    }
+
+    #[test]
+    fn new_with_schema_carries_trimmed_body() {
+        let raw = "  { \"type\": \"object\" }  ";
+        let contract = OutputContract::new_with_schema(
+            "decision-contract",
+            OutputFormat::JsonObject,
+            BTreeMap::new(),
+            raw,
+        )
+        .unwrap();
+        assert_eq!(contract.json_schema(), "{ \"type\": \"object\" }");
+    }
+
+    #[test]
+    fn overlong_schema_is_rejected() {
+        let body = "x".repeat(MAX_JSON_SCHEMA_LEN + 1);
+        let err =
+            OutputContract::new_with_schema("c1", OutputFormat::JsonObject, BTreeMap::new(), body)
+                .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::FieldTooLong {
+                field: "output_contract.json_schema",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn schema_serde_roundtrip_preserves_body() {
+        let contract = OutputContract::new_with_schema(
+            "c1",
+            OutputFormat::JsonObject,
+            BTreeMap::new(),
+            "{\"type\":\"object\"}",
+        )
+        .unwrap();
+        let serialized = serde_json::to_string(&contract).unwrap();
+        let back: OutputContract = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(back, contract);
+        assert_eq!(back.json_schema(), "{\"type\":\"object\"}");
     }
 }

@@ -190,10 +190,12 @@ fn optional_output_contract(value: Option<&Value>) -> Result<Option<pb::OutputCo
             );
         }
     }
+    let json_schema = optional_str(obj, "json_schema").unwrap_or("").to_string();
     Ok(Some(pb::OutputContract {
         contract_id: optional_str(obj, "contract_id").unwrap_or("").to_string(),
         format,
         fields: fields.into_iter().collect(),
+        json_schema,
     }))
 }
 

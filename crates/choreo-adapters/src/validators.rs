@@ -258,6 +258,158 @@ impl ValidatorPort for AllowedStringValuesValidator {
     }
 }
 
+/// A validator that runs a full JSON Schema document (embedded in
+/// `OutputContract::json_schema`) against the proposal output.
+///
+/// Subsumes both the "JSON Schema" and the "bounded event proposal
+/// shape" deliverables from Epic 4 of the backlog: bounded shapes
+/// (`maxLength`, `maxItems`, `additionalProperties: false`, …) are
+/// expressed as JSON Schema constraints rather than a bespoke
+/// validator.
+///
+/// Implementation notes:
+///
+/// - empty schema body → no-op (passes). Tasks without a schema keep
+///   using the field-rule validators above.
+/// - schema body must be a valid JSON document; malformed JSON or an
+///   unsupported schema fails the proposal with a clear summary.
+/// - compilation happens per-call. Schemas are small in practice and
+///   compilation cost is dwarfed by an LLM-generated proposal — if
+///   profiling later says otherwise, the validator can grow a
+///   schema-text cache without changing the port surface.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct JsonSchemaValidator;
+
+impl JsonSchemaValidator {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+#[async_trait]
+impl ValidatorPort for JsonSchemaValidator {
+    fn kind(&self) -> &'static str {
+        "output-json-schema"
+    }
+
+    async fn validate(
+        &self,
+        proposal_content: &str,
+        constraints: &TaskConstraints,
+    ) -> Result<ValidatorReport, DomainError> {
+        // Cap on the number of violations reported per failed
+        // proposal. A pathological schema can produce hundreds of
+        // sub-errors; the caller can re-validate locally for the full
+        // list if needed.
+        const MAX_REPORTED_VIOLATIONS: usize = 16;
+
+        let Some(contract) = constraints.output_contract() else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no structured output contract configured",
+                Attributes::empty(),
+            );
+        };
+        let schema_body = contract.json_schema();
+        if schema_body.is_empty() {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "contract has no embedded JSON Schema",
+                Attributes::empty(),
+            );
+        }
+
+        let schema_value: Value = match serde_json::from_str(schema_body) {
+            Ok(v) => v,
+            Err(err) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    format!("output_contract.json_schema is not valid JSON: {err}"),
+                    attributes(json!({ "contract_id": contract.contract_id() }))?,
+                );
+            }
+        };
+
+        let compiled = match jsonschema::JSONSchema::compile(&schema_value) {
+            Ok(c) => c,
+            Err(err) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    format!("output_contract.json_schema is not a valid JSON Schema: {err}"),
+                    attributes(json!({ "contract_id": contract.contract_id() }))?,
+                );
+            }
+        };
+
+        let instance: Value = match serde_json::from_str(proposal_content.trim()) {
+            Ok(v) => v,
+            Err(err) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    format!("proposal is not valid JSON: {err}"),
+                    attributes(json!({ "contract_id": contract.contract_id() }))?,
+                );
+            }
+        };
+
+        // Collect violations into owned `Vec<Value>` immediately so
+        // the iterator's borrow of `compiled` + `instance` ends before
+        // we cross the function return.
+        let violations: Vec<Value> = match compiled.validate(&instance) {
+            Ok(()) => Vec::new(),
+            Err(errors) => errors
+                .take(MAX_REPORTED_VIOLATIONS)
+                .map(|err| {
+                    json!({
+                        "instance_path": err.instance_path.to_string(),
+                        "schema_path": err.schema_path.to_string(),
+                        "reason": err.to_string(),
+                    })
+                })
+                .collect(),
+        };
+
+        if violations.is_empty() {
+            ValidatorReport::new(
+                self.kind(),
+                true,
+                "output satisfies the embedded JSON Schema",
+                Attributes::empty(),
+            )
+        } else {
+            let summary = if let Some(first) = violations.first() {
+                let path = first
+                    .get("instance_path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("");
+                let reason = first.get("reason").and_then(Value::as_str).unwrap_or("");
+                if path.is_empty() {
+                    format!("schema violation: {reason}")
+                } else {
+                    format!("schema violation at `{path}`: {reason}")
+                }
+            } else {
+                "schema validation failed".to_owned()
+            };
+            ValidatorReport::new(
+                self.kind(),
+                false,
+                summary,
+                attributes(json!({
+                    "contract_id": contract.contract_id(),
+                    "violations": violations,
+                }))?,
+            )
+        }
+    }
+}
+
 fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, String> {
     let trimmed = proposal_content.trim();
     let value: Value = serde_json::from_str(trimmed)
@@ -406,8 +558,129 @@ mod tests {
                 .validate("plain text", &constraints)
                 .await
                 .unwrap(),
+            JsonSchemaValidator::new()
+                .validate("plain text", &constraints)
+                .await
+                .unwrap(),
         ] {
             assert!(report.passed());
         }
+    }
+
+    fn schema_constraints(schema_body: &str) -> TaskConstraints {
+        TaskConstraints::default().with_output_contract(
+            OutputContract::new_with_schema(
+                "schema-contract",
+                choreo_core::value_objects::OutputFormat::JsonObject,
+                BTreeMap::new(),
+                schema_body,
+            )
+            .unwrap(),
+        )
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_is_noop_without_embedded_schema() {
+        // structured_constraints has no JSON Schema attached.
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(r#"{"any": "shape"}"#, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(r.passed());
+        assert_eq!(r.kind(), "output-json-schema");
+        assert!(r.summary().contains("no embedded JSON Schema"));
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_accepts_satisfying_output() {
+        let schema = r#"{
+            "type": "object",
+            "required": ["decision", "reason"],
+            "properties": {
+                "decision": { "type": "string", "enum": ["emit_event", "escalate"] },
+                "reason": { "type": "string", "minLength": 1 }
+            },
+            "additionalProperties": false
+        }"#;
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(
+                r#"{"decision":"emit_event","reason":"clear signal"}"#,
+                &schema_constraints(schema),
+            )
+            .await
+            .unwrap();
+        assert!(r.passed(), "summary: {}", r.summary());
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_rejects_missing_required_field() {
+        let schema = r#"{
+            "type": "object",
+            "required": ["decision", "reason"],
+            "properties": {
+                "decision": { "type": "string" },
+                "reason": { "type": "string" }
+            }
+        }"#;
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(r#"{"decision":"emit_event"}"#, &schema_constraints(schema))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("schema violation"));
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_rejects_violation_of_max_items() {
+        // bounded shape: maxItems on findings. Subsumes the
+        // "bounded event proposal shape" deliverable.
+        let schema = r#"{
+            "type": "object",
+            "properties": {
+                "findings": {
+                    "type": "array",
+                    "maxItems": 2,
+                    "items": { "type": "string", "maxLength": 64 }
+                }
+            }
+        }"#;
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(r#"{"findings":["a","b","c"]}"#, &schema_constraints(schema))
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("schema violation"));
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_reports_malformed_schema() {
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(
+                r#"{"decision":"emit_event"}"#,
+                &schema_constraints("not a json schema"),
+            )
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("not valid JSON"));
+    }
+
+    #[tokio::test]
+    async fn json_schema_validator_reports_malformed_proposal() {
+        let v = JsonSchemaValidator::new();
+        let r = v
+            .validate(
+                "not json at all",
+                &schema_constraints(r#"{"type":"object"}"#),
+            )
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("proposal is not valid JSON"));
     }
 }
