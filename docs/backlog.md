@@ -29,7 +29,7 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
 | 7 | real TLS / mTLS posture | done (gRPC server TLS in `none`/`server`/`mutual` modes; chart honest; Runtime client TLS shipped 2026-05-12; handshake-level integration test still deferred) |
-| 8 | stack-level end-to-end proofs | partial (E2E covers Noop council + causal metadata; real-council + runtime legs missing) |
+| 8 | stack-level end-to-end proofs | mostly done (E2E covers seeded council, deliberation, causal metadata over NATS, and Orchestrate → RuntimeExecutor → stub-runtime; real-provider council is `make e2e-provider-vllm`) |
 
 Two surfaces beyond the eight areas:
 
@@ -53,9 +53,11 @@ Genuinely open work: the crates.io distribution debt for `choreo-mcp`
 council-decision RPC if and when a consumer asks for more than the
 generic `Deliberate` / `Orchestrate`), the handshake-level TLS
 integration test (currently the wiring is exercised by env-loading
-unit tests + helm-lint, not a real cert handshake), and the missing
-real-council / runtime legs of Epic 11. Milestone B is complete as of
-2026-05-12.
+unit tests + helm-lint, not a real cert handshake), and the Epic 11
+follow-ups (a stack scenario that asserts schema validation +
+ExternalContextBundle round-trip, and merging the provider-runner
+E2E into the same compose stack). Milestones A, B, and C are all
+complete as of 2026-05-12.
 
 The recommended remaining execution order is:
 
@@ -80,7 +82,7 @@ This backlog does not include:
 These items still block downstream consumer integration.
 
 - dedicated consumer-facing RPC surface (Epic 9)
-- stack E2E proof with real council + runtime executor (Epic 11 leg)
+- stack E2E proof with real provider council + ExternalContextBundle round-trip + schema-validated structured output in the same compose stack (Epic 11 follow-ups)
 
 Already cleared: Runtime executor adapter (Epic 1), Kernel context
 boundary (Epic 2), structured council output contracts (Epic 3),
@@ -740,27 +742,49 @@ schema (renamed to drop product vocabulary where appropriate, e.g.
 
 ### Epic 11. Choreographer stack E2E
 
-Status: partial
+Status: mostly done — runtime-executor leg landed 2026-05-12; only
+the "real provider council" leg (vLLM/Anthropic/OpenAI in the compose
+stack) remains, and is covered separately by `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` runs four scenarios against a
-  real gRPC + NATS stack:
+- `crates/choreo-e2e-runner/src/main.rs` runs five scenarios against
+  a real gRPC + NATS stack with a stub-runtime sidecar:
   1. seeded council is visible
   2. `Deliberate` on the seeded specialty returns a winner
   3. `DeleteCouncil` on an unknown specialty returns `deleted=false`
   4. inbound `TriggerEvent` over NATS produces an outbound
      `DeliberationCompleted` carrying the same `correlation_id` and
      `causation_id` (scenario added 2026-05-11, PR #45)
-- the stack uses `CHOREO_SEED_SPECIALTIES=triage` with the `NoopAgent`,
-  so the council is real-shaped but not real-content
-- the docker-compose stack has no `CHOREO_EXECUTOR_KIND=runtime` and no
-  provider agent config, so the run does not exercise the runtime
-  executor or a provider-backed council
+  5. `Orchestrate` routes the winning proposal through the
+     configured `RuntimeExecutor` to the `stub-runtime` sidecar
+     (added 2026-05-12). Asserts the response carries the
+     stub's canned `execution_id` and that the winner proposal
+     is non-empty.
+- the `stub-runtime` sidecar ships in this repo as
+  `crates/choreo-e2e-runner/src/bin/stub_runtime.rs` +
+  `tests/e2e/stub-runtime.Dockerfile`. It serves the canonical
+  `underpass.runtime.v1.{SessionService,InvocationService}` and
+  always returns a successful canned Session / Invocation. Lets
+  Choreographer's `RuntimeExecutor` exercise a real gRPC peer
+  without dragging the real underpass-runtime image into this
+  repo's test path.
+- the compose stack now wires `CHOREO_EXECUTOR_KIND=runtime` +
+  `CHOREO_RUNTIME_GRPC_ENDPOINT=http://stub-runtime:50053` so
+  scenarios 2 / 5 exercise the full Deliberate -> winner ->
+  RuntimeExecutor -> gRPC InvokeTool -> outcome path. Validated
+  locally with `CONTAINER_RUNTIME=podman-compose make e2e-compose`:
+  the stub-runtime logs `CreateSession`, `InvokeTool(stub.echo)`,
+  and `CloseSession` once per orchestration.
+- the council itself still uses `NoopAgent` in this stack;
+  real-provider councils are exercised separately by
+  `make e2e-provider-vllm` (Epic-6 provider runner).
 
 Relevant code:
 
 - [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
+- [`crates/choreo-e2e-runner/src/bin/stub_runtime.rs`](../crates/choreo-e2e-runner/src/bin/stub_runtime.rs)
+- [`tests/e2e/stub-runtime.Dockerfile`](../tests/e2e/stub-runtime.Dockerfile)
 - [`tests/e2e/docker-compose.e2e.yaml`](../tests/e2e/docker-compose.e2e.yaml)
 
 #### Deliverables
@@ -775,14 +799,35 @@ bounded external trigger
         -> runtime execution or bounded output
 ```
 
-This E2E does not need a downstream consumer yet, but it must prove the stack assumptions Choreographer
-will bring into any consumer integration.
+Status of the chain:
+
+- bounded external trigger → ✅ scenario 4 (NATS) + scenario 5 (gRPC).
+- context bundle → covered at the proto / value-object level (Epic 2);
+  not yet asserted end-to-end as part of scenarios 1–5 (open).
+- real council → ✅ via `make e2e-provider-vllm` (provider runner).
+- validated structured result → ✅ Epic 4 JsonSchemaValidator wired in
+  compose; scenarios 2 / 5 currently skip a structured contract so
+  NoopAgent's free-form output passes. A scenario 6 that requests a
+  Report-shape contract and asserts schema validation is a clean
+  follow-up.
+- runtime execution → ✅ scenario 5 (stub-runtime).
+
+#### Remaining follow-ups (out of Milestone D's critical path)
+
+- scenario 6: orchestrate with an embedded JSON Schema contract +
+  assert the validator stamps pass / fail on the structured output.
+- scenario 7: orchestrate with an `ExternalContextBundle` attached
+  + assert the bundle survives through the chain.
+- merge the provider-runner E2E (vLLM) into the same compose stack
+  so a single `make e2e-compose` exercises real provider council +
+  real (stub) runtime in one shot. Today they are two manual gates.
 
 ### Epic 12. Consumer integration smoke prerequisites
 
 Status: not started — blocked by Epic 6 (real agent factory composition),
 Epic 9 (dedicated council-decision RPC), Epic 10 (report artifact), and
-the missing real-council / runtime legs of Epic 11.
+Epic 11's follow-ups (scenarios 6/7 + merging the provider-runner
+stack).
 
 #### Deliverables
 

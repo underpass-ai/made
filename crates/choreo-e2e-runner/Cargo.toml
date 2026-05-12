@@ -24,12 +24,20 @@ path = "src/main.rs"
 name = "choreo-e2e-provider"
 path = "src/bin/provider.rs"
 
+# Stub-runtime sidecar for the stack E2E. Serves the choreographer's
+# RuntimeExecutor a real gRPC peer to talk to without dragging the
+# real underpass-runtime image into this repo's test path.
+[[bin]]
+name = "choreo-stub-runtime"
+path = "src/bin/stub_runtime.rs"
+
 [dependencies]
 choreo-proto = { workspace = true }
 choreo-core = { workspace = true }
 choreo-adapters = { workspace = true, features = ["agent-vllm"] }
 tokio = { workspace = true }
 tonic = { workspace = true }
+prost-types = { workspace = true }
 anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

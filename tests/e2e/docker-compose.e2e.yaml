@@ -22,6 +22,19 @@ services:
     # on startup (see `compose::wire_messaging`), which is the real
     # invariant we care about.
 
+  # Canned-response stub of underpass.runtime.v1 — gives the
+  # choreographer's `RuntimeExecutor` a real gRPC peer to talk to so
+  # the stack E2E can exercise the full Orchestrate path
+  # (Deliberate -> winner -> RuntimeExecutor::execute) without pulling
+  # the real underpass-runtime image into this repo.
+  stub-runtime:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/stub-runtime.Dockerfile
+    environment:
+      STUB_RUNTIME_GRPC_ADDR: "0.0.0.0:50053"
+      RUST_LOG: "info"
+
   choreographer:
     build:
       context: ../..
@@ -33,9 +46,12 @@ services:
       CHOREO_PUBLISH_PREFIX: "choreo"
       CHOREO_TRIGGER_SUBJECT: "choreo.trigger.>"
       CHOREO_SEED_SPECIALTIES: "triage"
+      CHOREO_EXECUTOR_KIND: "runtime"
+      CHOREO_RUNTIME_GRPC_ENDPOINT: "http://stub-runtime:50053"
       RUST_LOG: "info"
     depends_on:
       - nats
+      - stub-runtime
 
   e2e-runner:
     build:
