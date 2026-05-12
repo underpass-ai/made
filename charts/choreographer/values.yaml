@@ -96,12 +96,14 @@ config:
 messaging:
   nats:
     enabled: true
-    # Endpoint the binary connects to. When `embedded.enabled: true`,
-    # leave this empty and the chart wires it to the release-local
-    # NATS Service (`<release>-nats:4222`); when running against an
-    # external bus (other namespace, managed cluster, etc.) set this
-    # explicitly and turn the embedded one off.
-    url: ""
+    # Endpoint the binary connects to. The placeholder
+    # `nats://nats:4222` works out of the box against compose-shaped
+    # deployments. To use the chart's own embedded NATS, set this to
+    # an empty string and flip `embedded.enabled: true`; the chart
+    # then resolves the URL to the release-local Service
+    # (`<release>-nats:4222`). An explicit URL always wins over the
+    # embedded one.
+    url: nats://nats:4222
     # Subject prefix used for Choreographer-published events.
     publishPrefix: choreo
     # Wildcard of inbound trigger subjects consumed by the service.
