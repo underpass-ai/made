@@ -321,6 +321,28 @@ impl Deliberation {
         &self.ranking
     }
 
+    /// Reconstruct [`RankedOutcome`]s from the persisted ranking + the
+    /// stored proposals and outcomes. Useful when an upstream caller
+    /// (e.g. `RunCouncilDecisionUseCase` in Warn mode) needs to read a
+    /// completed deliberation back from a repository without re-running
+    /// the algorithm.
+    ///
+    /// Fails with [`DomainError::InvalidTransition`] if the deliberation
+    /// is not yet in the `Completed` phase.
+    pub fn ranked_outcomes(&self) -> Result<Vec<RankedOutcome>, DomainError> {
+        self.require_phase(DeliberationPhase::Completed)?;
+        Ok(self
+            .materialize_ranked_tuples(&self.ranking)?
+            .into_iter()
+            .enumerate()
+            .map(|(i, (_, proposal, outcome))| RankedOutcome {
+                proposal,
+                outcome,
+                rank: u32::try_from(i).unwrap_or(u32::MAX),
+            })
+            .collect())
+    }
+
     fn require_phase(&self, expected: DeliberationPhase) -> Result<(), DomainError> {
         if self.phase == expected {
             Ok(())
