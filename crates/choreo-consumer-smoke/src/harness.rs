@@ -67,6 +67,18 @@ impl Harness {
         };
         Ok(Self { grpc, nats })
     }
+
+    /// Build a [`Harness`] from already-constructed parts. Used by the
+    /// in-process integration tests that share a `tonic::Channel` from
+    /// `GrpcFixture` (the retry loop in [`Harness::connect`] only
+    /// makes sense against a real listener).
+    #[must_use]
+    pub fn from_parts(channel: Channel, nats: Option<async_nats::Client>) -> Self {
+        Self {
+            grpc: ChoreographerServiceClient::new(channel),
+            nats,
+        }
+    }
 }
 
 async fn connect_with_retry(
