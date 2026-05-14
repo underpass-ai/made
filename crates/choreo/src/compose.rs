@@ -20,8 +20,8 @@ use choreo_adapters::runtime::{
 };
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::{
-    AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
-    JsonSchemaValidator, RequiredFieldsValidator,
+    AllowedStringValuesValidator, BoundedEventShapeValidator, ContentNonEmptyValidator,
+    JsonObjectOutputValidator, JsonSchemaValidator, RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
@@ -104,6 +104,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(RequiredFieldsValidator::new()),
         Arc::new(AllowedStringValuesValidator::new()),
         Arc::new(JsonSchemaValidator::new()),
+        // Final shape-budget guard: defends downstream bus consumers
+        // against pathological JSON (deeply nested, huge arrays,
+        // bloated strings). Uses the validator's conservative
+        // defaults; tune with the `with_*` builders when a deploy
+        // needs different bounds.
+        Arc::new(BoundedEventShapeValidator::new()),
     ];
     let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
     let executor = wire_executor().await?;
@@ -383,13 +389,17 @@ mod tests {
     use choreo_proto::runtime_v1 as runtime_pb;
     use tonic::{transport::Server, Request, Response, Status};
 
+    // Shared across every test in this module so concurrent CHOREO_*
+    // env mutations cannot race each other. Previously each test held
+    // its own per-fn static, which serialised the test against itself
+    // but did nothing across tests — under cargo's default parallel
+    // runner the two `compose_builds_application_*` tests then
+    // clobbered each other's vars, producing flaky NATS DNS lookups
+    // in CI.
+    static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     #[tokio::test]
     async fn compose_builds_application_with_nats_disabled() {
-        // Serialize env mutations to avoid races with other tests
-        // that touch `CHOREO_*` vars (see `config::tests` for the
-        // same pattern — we keep a local mutex here so we do not
-        // depend on another crate's private state).
-        static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         let _guard = ENV_LOCK.lock().await;
 
         // Clear CHOREO_* so the defaults apply, then disable NATS
@@ -474,7 +484,6 @@ mod tests {
 
     #[tokio::test]
     async fn compose_builds_application_with_runtime_executor_selected() {
-        static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
         let _guard = ENV_LOCK.lock().await;
 
         for (k, _) in std::env::vars() {

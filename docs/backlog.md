@@ -92,8 +92,10 @@ plain NATS), gRPC server TLS/mTLS posture (Epic 8 server side).
 
 ### P1 — required before production
 
-- contract-aware validators — JSON Schema and bounded-event-shape
-  variants still missing (Epic 4 has the format-level slice)
+- contract-aware validators — JSON Schema variant landed in PR #54;
+  bounded-event-shape variant landed 2026-05-14 (size + depth +
+  object-keys + array-len + string-len caps, wired into the default
+  validator chain in `compose.rs`).
 - release-gate stack smoke
 - the basic four scenarios of the e2e-runner already exist; release-gate
   hooks need to wire them in for cut tags
