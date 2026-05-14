@@ -29,7 +29,7 @@ As of 2026-05-11 the eight stack-readiness areas resolve as follows:
 | 5 | provider-backed council materialization | done (`DispatchingAgentFactory` wired with `noop`/`anthropic`/`openai`/`vllm` arms) |
 | 6 | honest and durable transport semantics | done (AsyncAPI now declares plain core NATS; JetStream deferred) |
 | 7 | real TLS / mTLS posture | done (gRPC server TLS in `none`/`server`/`mutual` modes; chart honest; Runtime client TLS shipped 2026-05-12; handshake-level integration test still deferred) |
-| 8 | stack-level end-to-end proofs | mostly done (E2E covers seeded council, deliberation, causal metadata over NATS, and Orchestrate → RuntimeExecutor → stub-runtime; real-provider council is `make e2e-provider-vllm`) |
+| 8 | stack-level end-to-end proofs | done (E2E covers seeded council, deliberation, causal metadata over NATS, `Orchestrate → RuntimeExecutor → stub-runtime`, `ExternalContextBundle` round-trip, and the positive structured-output `RunCouncilDecision` path via the `stub-llm` sidecar; real-provider vLLM council remains `make e2e-provider-vllm`) |
 
 Two surfaces beyond the eight areas:
 
@@ -746,14 +746,15 @@ schema (renamed to drop product vocabulary where appropriate, e.g.
 
 ### Epic 11. Choreographer stack E2E
 
-Status: mostly done — runtime-executor leg landed 2026-05-12; only
-the "real provider council" leg (vLLM/Anthropic/OpenAI in the compose
-stack) remains, and is covered separately by `make e2e-provider-vllm`.
+Status: positive structured-output leg landed 2026-05-14 (stub-LLM
+sidecar + scenario 8); the "real provider council" leg
+(vLLM/Anthropic/OpenAI in the compose stack) remains optional and is
+still covered separately by `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` runs six scenarios against
-  a real gRPC + NATS stack with a stub-runtime sidecar:
+- `crates/choreo-e2e-runner/src/main.rs` runs eight scenarios against
+  a real gRPC + NATS stack with stub-runtime + stub-llm sidecars:
   1. seeded council is visible
   2. `Deliberate` on the seeded specialty returns a winner
   3. `DeleteCouncil` on an unknown specialty returns `deleted=false`
@@ -772,6 +773,14 @@ Current state:
      "deliberation.no_valid_proposal"` (added 2026-05-12). Proves
      the JsonSchemaValidator wired by Epic 4 is in the stack's
      validator chain.
+  7. `Deliberate` with an `ExternalContextBundle` attached round-trips
+     the bundle id into the outbound `DeliberationCompleted` envelope.
+  8. `RunCouncilDecision` in Strict mode against the canonical Report
+     contract passes with a winner whose proposal content validates
+     against `api/examples/output-contracts/report.schema.json`. The
+     agent is an `openai`-kind descriptor pointing at the `stub-llm`
+     sidecar (added 2026-05-14); the outbound envelope omits
+     `external_context_bundle_id` (no bundle was sent).
 - the `stub-runtime` sidecar ships in this repo as
   `crates/choreo-e2e-runner/src/bin/stub_runtime.rs` +
   `tests/e2e/stub-runtime.Dockerfile`. It serves the canonical
@@ -787,15 +796,20 @@ Current state:
   locally with `CONTAINER_RUNTIME=podman-compose make e2e-compose`:
   the stub-runtime logs `CreateSession`, `InvokeTool(stub.echo)`,
   and `CloseSession` once per orchestration.
-- the council itself still uses `NoopAgent` in this stack;
-  real-provider councils are exercised separately by
-  `make e2e-provider-vllm` (Epic-6 provider runner).
+- the seed council still uses `NoopAgent`; scenarios 1–7 stay on
+  that path. Scenario 8 dynamically registers an `openai`-kind agent
+  pointing at the `stub-llm` sidecar so the positive structured-
+  output path is exercised without a real provider in the compose
+  stack. Real-provider councils against vLLM remain exercised
+  separately by `make e2e-provider-vllm` (Epic-6 provider runner).
 
 Relevant code:
 
 - [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
 - [`crates/choreo-e2e-runner/src/bin/stub_runtime.rs`](../crates/choreo-e2e-runner/src/bin/stub_runtime.rs)
+- [`crates/choreo-e2e-runner/src/bin/stub_llm.rs`](../crates/choreo-e2e-runner/src/bin/stub_llm.rs)
 - [`tests/e2e/stub-runtime.Dockerfile`](../tests/e2e/stub-runtime.Dockerfile)
+- [`tests/e2e/stub-llm.Dockerfile`](../tests/e2e/stub-llm.Dockerfile)
 - [`tests/e2e/docker-compose.e2e.yaml`](../tests/e2e/docker-compose.e2e.yaml)
 
 #### Deliverables
@@ -813,18 +827,16 @@ bounded external trigger
 Status of the chain:
 
 - bounded external trigger → ✅ scenario 4 (NATS) + scenario 5 (gRPC).
-- context bundle → covered at the proto / value-object level (Epic 2);
-  not yet asserted end-to-end as part of scenarios 1–6 (open —
-  scenario 7 follow-up).
+- context bundle → ✅ scenario 7 round-trips the bundle id into the
+  outbound `DeliberationCompleted` envelope (2026-05-14).
 - real council → ✅ via `make e2e-provider-vllm` (provider runner).
-- validated structured result → ✅ scenario 6 asserts the
-  JsonSchemaValidator fires in the stack and rejects free-form text
-  with `error_kind = "deliberation.no_valid_proposal"` on the bus +
-  `FailedPrecondition` on gRPC. A positive structured-output scenario
-  (valid JSON output passing the schema + Orchestrate succeeding)
-  still requires an agent that emits structured JSON; that lands once
-  a stub-LLM provider sidecar ships or once the provider-runner E2E
-  merges into this compose stack.
+- validated structured result → ✅ scenario 6 covers the rejection
+  path (JsonSchemaValidator fires, `error_kind =
+  "deliberation.no_valid_proposal"` on the bus, `FailedPrecondition`
+  on gRPC); scenario 8 (2026-05-14) covers the positive path via the
+  `stub-llm` sidecar — `RunCouncilDecision` in Strict mode returns
+  a Report-shaped winner that validates against the canonical
+  schema.
 - runtime execution → ✅ scenario 5 (stub-runtime).
 
 #### Remaining follow-ups (out of Milestone D's critical path)
@@ -833,11 +845,19 @@ Status of the chain:
   → ✅ done (2026-05-14). `DeliberationCompletedEvent` now carries
   the optional `external_context_bundle_id` and the e2e-runner asserts
   the bundle id round-trips to the outbound bus envelope.
-- positive structured-output scenario: requires a stub-LLM sidecar
-  that emits a JSON object satisfying a known schema.
+- positive structured-output scenario → ✅ done (2026-05-14).
+  Scenario 8 brings up a `stub-llm` sidecar (OpenAI Chat Completions
+  shape, always returns a JSON Report payload that satisfies the
+  canonical schema) and asserts the positive path through
+  `RunCouncilDecision` in Strict mode.
 - merge the provider-runner E2E (vLLM) into the same compose stack
   so a single `make e2e-compose` exercises real provider council +
   real (stub) runtime in one shot. Today they are two manual gates.
+- compose-level operations doc (`docs/operations/compose-e2e.md`):
+  the stub-llm sidecar, its OpenAI-compat surface, the hard-coded
+  Report payload, and the `STUB_LLM_LISTEN` override all need a
+  prose home. The doc itself does not exist yet — leaving as a
+  follow-up so this slice stays additive.
 
 ### Epic 12. Consumer integration smoke prerequisites
 
@@ -883,9 +903,12 @@ Deliverables:
 - **Bundle round-trip** (`bundle_seam_documented` Skipped). Owned by
   Epic 11 scenario 7. Once that lands the assertion flips to Passed.
 - **Chain 2 positive path** (`report_payload_validates` Skipped on
-  today's stack). Needs a stub-LLM provider sidecar that emits JSON
-  satisfying the schema. Tracked under Epic 11's structured-output
-  follow-up.
+  today's stack). The stub-LLM sidecar shipped under Epic 11
+  scenario 8 (2026-05-14) — follow-up consumers can now register an
+  `openai`-kind agent against `http://stub-llm:8000` to exercise the
+  positive path. Wiring `choreo-consumer-smoke` chain 2 to that
+  sidecar (so the harness flips Skipped → Passed) is the remaining
+  work; the underlying capability is in place.
 - **Provider-runner E2E merged into `make e2e-compose`** so a single
   command exercises real provider council + real (stub) runtime in
   one shot — also Epic 11.
