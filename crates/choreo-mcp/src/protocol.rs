@@ -5,7 +5,7 @@
 //! the gRPC contract it wraps.
 //!
 //! Tool definitions are 1:1 with the `underpass.choreo.v1` gRPC
-//! service: 12 tools, one per RPC. The choreographer's API is
+//! service: 16 tools, one per RPC. The choreographer's API is
 //! respected verbatim — these schemas describe the same fields the
 //! caller would have passed over gRPC, only flattened into JSON shape
 //! suitable for an MCP `tools/call.arguments` object.
@@ -44,7 +44,7 @@ pub(crate) fn tools_list_result() -> Value {
     json!({ "tools": tool_catalog() })
 }
 
-#[allow(clippy::too_many_lines)] // 12 tool definitions; splitting just for the line count loses readability
+#[allow(clippy::too_many_lines)] // 16 tool definitions; splitting just for the line count loses readability
 fn tool_catalog() -> Vec<Value> {
     vec![
         tool_def(
@@ -201,7 +201,70 @@ fn tool_catalog() -> Vec<Value> {
                 "properties": {}
             }),
         ),
+        tool_def(
+            "choreo_run_council_decision",
+            "Run a council deliberation against a registered output contract and return the validated winner plus candidate breakdown.",
+            run_council_decision_schema(),
+        ),
+        tool_def(
+            "choreo_register_contract",
+            "Register an `OutputContract` in the in-memory contract registry.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["contract"],
+                "properties": { "contract": output_contract_schema() }
+            }),
+        ),
+        tool_def(
+            "choreo_list_contracts",
+            "List every contract registered in the choreographer.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
+            }),
+        ),
+        tool_def(
+            "choreo_delete_contract",
+            "Delete a registered contract by id.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["contract_id"],
+                "properties": { "contract_id": string_schema("Contract id previously returned by register_contract.") }
+            }),
+        ),
     ]
+}
+
+fn run_council_decision_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["contract_id", "description"],
+        "properties": {
+            "council_id": string_schema("Stable council id. Exactly one of council_id / specialty must be set."),
+            "specialty": string_schema("Council specialty. Exactly one of council_id / specialty must be set."),
+            "contract_id": string_schema("Registered contract id the deliberation winner must satisfy."),
+            "description": string_schema("Free-form task description the council reads."),
+            "external_context": external_context_bundle_schema(),
+            "validation_mode": {
+                "type": "string",
+                "enum": [
+                    "VALIDATION_MODE_UNSPECIFIED",
+                    "VALIDATION_MODE_STRICT",
+                    "VALIDATION_MODE_WARN"
+                ],
+                "description": "STRICT (default) fails when no candidate passes; WARN returns the top-ranked candidate even on failure."
+            },
+            "metadata": task_metadata_schema()
+        },
+        "oneOf": [
+            { "required": ["council_id"], "not": { "required": ["specialty"] } },
+            { "required": ["specialty"], "not": { "required": ["council_id"] } }
+        ]
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -524,9 +587,13 @@ mod tests {
                 "choreo_process_trigger_event",
                 "choreo_get_status",
                 "choreo_get_metrics",
+                "choreo_run_council_decision",
+                "choreo_register_contract",
+                "choreo_list_contracts",
+                "choreo_delete_contract",
             ]
         );
-        assert_eq!(arr.len(), 12);
+        assert_eq!(arr.len(), 16);
     }
 
     #[test]

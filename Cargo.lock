@@ -547,11 +547,14 @@ dependencies = [
  "choreo-adapters",
  "choreo-app",
  "choreo-core",
+ "choreo-proto",
  "futures",
  "serde_json",
  "testcontainers",
  "time",
  "tokio",
+ "tokio-stream",
+ "tonic",
  "uuid",
 ]
 

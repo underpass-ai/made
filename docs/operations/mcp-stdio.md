@@ -15,7 +15,7 @@ Companion docs:
 
 ## Tools
 
-The 12 MCP tools are 1:1 with the choreographer's gRPC service:
+The 16 MCP tools are 1:1 with the choreographer's gRPC service:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
@@ -31,6 +31,10 @@ The 12 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
 | `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
+| `choreo_run_council_decision`     | `RunCouncilDecision`                  | Epic 9: run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
+| `choreo_register_contract`        | `RegisterContract`                    | Epic 9: register an `OutputContract` in the contract registry. |
+| `choreo_list_contracts`           | `ListContracts`                       | Epic 9: enumerate registered contracts. |
+| `choreo_delete_contract`          | `DeleteContract`                      | Epic 9: idempotent contract delete. |
 
 The choreographer API is **respected at 100%** — every proto field has
 an explicit JSON key in both the tool input schema and the response.

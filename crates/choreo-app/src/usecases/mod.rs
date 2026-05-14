@@ -11,6 +11,7 @@ mod get_deliberation;
 mod list_councils;
 mod orchestrate;
 mod register_agent;
+mod run_council_decision;
 mod unregister_agent;
 
 pub use create_council::{CreateCouncilInput, CreateCouncilUseCase};
@@ -20,4 +21,7 @@ pub use get_deliberation::GetDeliberationUseCase;
 pub use list_councils::ListCouncilsUseCase;
 pub use orchestrate::{OrchestrateOutput, OrchestrateUseCase};
 pub use register_agent::RegisterAgentUseCase;
+pub use run_council_decision::{
+    RunCouncilDecisionInput, RunCouncilDecisionOutput, RunCouncilDecisionUseCase,
+};
 pub use unregister_agent::UnregisterAgentUseCase;

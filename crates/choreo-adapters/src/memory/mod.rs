@@ -6,11 +6,13 @@
 //! multi-replica use cases, swap them for a persistent adapter.
 
 mod agent_registry;
+mod contract_registry;
 mod council_registry;
 mod deliberation_repository;
 mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
+pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
 pub use deliberation_repository::InMemoryDeliberationRepository;
 pub use statistics::InMemoryStatistics;

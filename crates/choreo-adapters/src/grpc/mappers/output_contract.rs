@@ -1,10 +1,41 @@
-//! Structured output contract: proto → domain.
+//! Structured output contract: proto ↔ domain.
 
 use std::collections::BTreeMap;
 
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{OutputContract, OutputFieldRule, OutputFormat};
 use choreo_proto::v1 as pb;
+
+/// Project a domain [`OutputContract`] onto its proto representation.
+///
+/// Used by the contract CRUD RPCs (`ListContracts`, `RegisterContract`
+/// echo-back) so consumers see exactly what was stored in the
+/// registry.
+#[must_use]
+pub fn output_contract_to_proto(contract: &OutputContract) -> pb::OutputContract {
+    let fields = contract
+        .fields()
+        .iter()
+        .map(|(name, rule)| {
+            (
+                name.clone(),
+                pb::OutputFieldRule {
+                    required: rule.required(),
+                    allowed_string_values: rule.allowed_string_values().iter().cloned().collect(),
+                },
+            )
+        })
+        .collect();
+    let format = match contract.format() {
+        OutputFormat::JsonObject => pb::OutputFormat::JsonObject as i32,
+    };
+    pb::OutputContract {
+        contract_id: contract.contract_id().to_owned(),
+        format,
+        fields,
+        json_schema: contract.json_schema().to_owned(),
+    }
+}
 
 pub fn output_contract_from_proto(
     contract: Option<pb::OutputContract>,

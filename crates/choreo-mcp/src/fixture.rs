@@ -40,6 +40,10 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_process_trigger_event" => process_trigger_fixture(),
                 "choreo_get_status" => get_status_fixture(),
                 "choreo_get_metrics" => get_metrics_fixture(),
+                "choreo_run_council_decision" => run_council_decision_fixture(),
+                "choreo_register_contract" => register_contract_fixture(),
+                "choreo_list_contracts" => list_contracts_fixture(),
+                "choreo_delete_contract" => delete_contract_fixture(),
                 other => {
                     return Err(format!(
                         "fixture backend: unknown tool `{other}` (this is a client-side typo, not a backend error)"
@@ -182,6 +186,53 @@ fn get_metrics_fixture() -> Value {
     })
 }
 
+fn run_council_decision_fixture() -> Value {
+    json!({
+        "task_id": "task-fixture-1",
+        "winner": deliberate_fixture()["results"][0].clone(),
+        "validation": {
+            "passed": true,
+            "candidates_passed": 1,
+            "candidates_total": 1
+        },
+        "candidates": [
+            {
+                "proposal_id": "proposal-fixture-a",
+                "author_agent_id": "agent-fixture-1",
+                "score": 1.0,
+                "reports": [
+                    { "kind": "content-non-empty", "passed": true, "summary": "ok", "details": {} }
+                ],
+                "rank": 0,
+                "passed": true
+            }
+        ],
+        "duration_ms": 42,
+        "validation_mode": "VALIDATION_MODE_STRICT"
+    })
+}
+
+fn register_contract_fixture() -> Value {
+    json!({ "contract_id": "contract-fixture-1" })
+}
+
+fn list_contracts_fixture() -> Value {
+    json!({
+        "contracts": [
+            {
+                "contract_id": "contract-fixture-1",
+                "format": "json_object",
+                "fields": {},
+                "json_schema": ""
+            }
+        ]
+    })
+}
+
+fn delete_contract_fixture() -> Value {
+    json!({ "deleted": true })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -224,6 +275,10 @@ mod tests {
             "choreo_process_trigger_event",
             "choreo_get_status",
             "choreo_get_metrics",
+            "choreo_run_council_decision",
+            "choreo_register_contract",
+            "choreo_list_contracts",
+            "choreo_delete_contract",
         ] {
             let v = backend.call_tool(tool, &json!({})).await.unwrap();
             assert_eq!(v["isError"], false, "{tool} fixture must be a success");

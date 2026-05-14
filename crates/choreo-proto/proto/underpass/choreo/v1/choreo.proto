@@ -91,6 +91,23 @@ service ChoreographerService {
   // but exposed as a synchronous RPC for callers without a broker.
   rpc ProcessTriggerEvent(ProcessTriggerEventRequest) returns (ProcessTriggerEventResponse);
 
+  // ---- Council decision (Epic 9) --------------------------------------
+  //
+  // Consumer-facing surface that hands the council a contract and
+  // an external-context bundle and returns the *validated* winner.
+  // Decoupled from any executor — consumers integrate the runtime
+  // separately if they need to act on the decision.
+
+  rpc RunCouncilDecision(RunCouncilDecisionRequest) returns (RunCouncilDecisionResponse);
+
+  // CRUD over the contract registry. Without these the
+  // RunCouncilDecision RPC would only accept contracts seeded via
+  // CHOREO_CONTRACT_DIR.
+
+  rpc RegisterContract(RegisterContractRequest) returns (RegisterContractResponse);
+  rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
+  rpc DeleteContract(DeleteContractRequest) returns (DeleteContractResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -457,4 +474,90 @@ message Statistics {
   uint64 total_duration_ms = 3;
   double average_duration_ms = 4;
   map<string, uint64> per_specialty_counts = 5;
+}
+
+// ============================================================================
+// Council decision (Epic 9) — consumer-facing, contract-aware,
+// no executor coupling.
+// ============================================================================
+
+message RunCouncilDecisionRequest {
+  // Caller picks one of two ways to identify the council.
+  oneof selector {
+    string council_id = 1;
+    string specialty = 2;
+  }
+  // Slug previously registered through RegisterContract or seeded
+  // from CHOREO_CONTRACT_DIR. Must match an existing contract.
+  string contract_id = 3;
+  // Optional bundle the council can read during deliberation
+  // (kernel rehydration output, retrieval results, etc.).
+  ExternalContextBundle external_context = 4;
+  // How strictly the response honours the contract. Defaults to
+  // STRICT when UNSPECIFIED.
+  ValidationMode validation_mode = 5;
+  // Causal metadata the choreographer copies into the outbound
+  // bus event when the deliberation completes.
+  TaskMetadata metadata = 6;
+  // Free-form task description the council reads as context. The
+  // choreographer itself does not parse it.
+  string description = 7;
+}
+
+enum ValidationMode {
+  VALIDATION_MODE_UNSPECIFIED = 0;
+  VALIDATION_MODE_STRICT = 1;
+  VALIDATION_MODE_WARN = 2;
+}
+
+message CandidateSummary {
+  string proposal_id = 1;
+  string author_agent_id = 2;
+  double score = 3;
+  repeated ValidatorReport reports = 4;
+  uint32 rank = 5;
+  bool passed = 6;
+}
+
+message ValidationOutcomeSummary {
+  // True iff the winning proposal passed every validator.
+  bool passed = 1;
+  // Number of candidates that passed every validator.
+  uint32 candidates_passed = 2;
+  // Total candidates considered for ranking.
+  uint32 candidates_total = 3;
+}
+
+message RunCouncilDecisionResponse {
+  string task_id = 1;
+  // Winning proposal already validated when this message is built.
+  DeliberationResult winner = 2;
+  ValidationOutcomeSummary validation = 3;
+  // Per-candidate breakdown, ordered by rank ascending.
+  repeated CandidateSummary candidates = 4;
+  uint64 duration_ms = 5;
+  // Effective validation mode (echoed back so warned-but-returned
+  // responses are unambiguous).
+  ValidationMode validation_mode = 6;
+}
+
+// CRUD over the contract registry.
+
+message RegisterContractRequest {
+  OutputContract contract = 1;
+}
+message RegisterContractResponse {
+  string contract_id = 1;
+}
+
+message ListContractsRequest {}
+message ListContractsResponse {
+  repeated OutputContract contracts = 1;
+}
+
+message DeleteContractRequest {
+  string contract_id = 1;
+}
+message DeleteContractResponse {
+  bool deleted = 1;
 }

@@ -6,6 +6,7 @@
 
 mod agent_kind;
 mod attributes;
+mod council_selector;
 mod duration;
 mod ids;
 mod num_agents;
@@ -16,9 +17,11 @@ mod score;
 mod specialty;
 mod task_description;
 mod trace_context;
+mod validation_mode;
 
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
+pub use council_selector::CouncilSelector;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use num_agents::NumAgents;
@@ -29,3 +32,4 @@ pub use score::Score;
 pub use specialty::Specialty;
 pub use task_description::TaskDescription;
 pub use trace_context::TraceContext;
+pub use validation_mode::ValidationMode;

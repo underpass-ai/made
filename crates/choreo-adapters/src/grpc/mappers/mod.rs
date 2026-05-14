@@ -17,6 +17,7 @@ mod event;
 mod output_contract;
 mod phase;
 mod proposal;
+mod run_council_decision;
 mod task;
 mod timestamp;
 mod validation;
@@ -26,6 +27,10 @@ pub(super) use attributes::attributes_from_struct;
 pub(super) use council::council_summary_from;
 pub(super) use deliberation::{deliberate_response_from, orchestrate_response_from};
 pub(super) use event::trigger_event_from_proto;
+pub(super) use output_contract::{output_contract_from_proto, output_contract_to_proto};
 pub(super) use phase::proto_phase_from_domain;
+pub(super) use run_council_decision::{
+    run_council_decision_input_from_proto, run_council_decision_response_from,
+};
 pub(super) use task::task_from_proto;
 pub(super) use timestamp::offset_to_timestamp;

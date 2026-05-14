@@ -1,9 +1,13 @@
 //! Integration tests for the Choreographer's adapters.
 //!
-//! The actual scenarios live under `tests/` and are gated by the
-//! `container-tests` feature. This `lib.rs` also exposes shared
-//! fixture helpers (e.g. `postgres_fixture::start`) that multiple
-//! test files would otherwise duplicate.
+//! The actual scenarios live under `tests/`. The
+//! `postgres_fixture` module is feature-gated behind
+//! `container-tests` because spinning Postgres up requires Docker
+//! and is expensive; the `grpc_fixture` module is always available
+//! because it stands up an in-process gRPC server with in-memory
+//! adapters and adds no external dependencies.
 
 #[cfg(feature = "container-tests")]
 pub mod postgres_fixture;
+
+pub mod grpc_fixture;

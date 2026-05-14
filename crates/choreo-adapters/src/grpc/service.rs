@@ -8,10 +8,10 @@ use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase,
-    UnregisterAgentUseCase,
+    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AgentDescriptor, StatisticsPort};
+use choreo_core::ports::{AgentDescriptor, ContractRegistryPort, StatisticsPort};
 use choreo_core::value_objects::{AgentId, AgentKind, Specialty, TaskId};
 use choreo_proto::v1 as pb;
 use choreo_proto::v1::choreographer_service_server::{
@@ -21,8 +21,9 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    council_summary_from, deliberate_response_from, orchestrate_response_from, task_from_proto,
-    trigger_event_from_proto,
+    council_summary_from, deliberate_response_from, orchestrate_response_from,
+    output_contract_from_proto, output_contract_to_proto, run_council_decision_input_from_proto,
+    run_council_decision_response_from, task_from_proto, trigger_event_from_proto,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
@@ -39,6 +40,8 @@ pub struct ChoreographerGrpcService {
     get_deliberation: Arc<GetDeliberationUseCase>,
     register_agent: Arc<RegisterAgentUseCase>,
     unregister_agent: Arc<UnregisterAgentUseCase>,
+    run_council_decision: Arc<RunCouncilDecisionUseCase>,
+    contract_registry: Arc<dyn ContractRegistryPort>,
     auto_dispatch: Arc<AutoDispatchService>,
     statistics: Arc<dyn StatisticsPort>,
     started_at: std::time::Instant,
@@ -76,6 +79,8 @@ pub struct ChoreographerGrpcServiceBuilder {
     get_deliberation: Option<Arc<GetDeliberationUseCase>>,
     register_agent: Option<Arc<RegisterAgentUseCase>>,
     unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
+    run_council_decision: Option<Arc<RunCouncilDecisionUseCase>>,
+    contract_registry: Option<Arc<dyn ContractRegistryPort>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
     service_version: Option<&'static str>,
@@ -106,11 +111,22 @@ impl ChoreographerGrpcServiceBuilder {
     setter!(get_deliberation, GetDeliberationUseCase, get_deliberation);
     setter!(register_agent, RegisterAgentUseCase, register_agent);
     setter!(unregister_agent, UnregisterAgentUseCase, unregister_agent);
+    setter!(
+        run_council_decision,
+        RunCouncilDecisionUseCase,
+        run_council_decision
+    );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
 
     #[must_use]
     pub fn statistics(mut self, value: Arc<dyn StatisticsPort>) -> Self {
         self.statistics = Some(value);
+        self
+    }
+
+    #[must_use]
+    pub fn contract_registry(mut self, value: Arc<dyn ContractRegistryPort>) -> Self {
+        self.contract_registry = Some(value);
         self
     }
 
@@ -152,6 +168,16 @@ impl ChoreographerGrpcServiceBuilder {
                 .unregister_agent
                 .ok_or(DomainError::InvariantViolated {
                     reason: "grpc: unregister_agent use case is required",
+                })?,
+            run_council_decision: self.run_council_decision.ok_or(
+                DomainError::InvariantViolated {
+                    reason: "grpc: run_council_decision use case is required",
+                },
+            )?,
+            contract_registry: self
+                .contract_registry
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "grpc: contract_registry port is required",
                 })?,
             auto_dispatch: self.auto_dispatch.ok_or(DomainError::InvariantViolated {
                 reason: "grpc: auto_dispatch service is required",
@@ -416,6 +442,82 @@ impl ChoreographerService for ChoreographerGrpcService {
             Err(DomainError::NotFound { .. }) => Ok(Response::new(pb::UnregisterAgentResponse {
                 unregistered: false,
             })),
+            Err(err) => Err(domain_error_to_status(err)),
+        }
+    }
+
+    #[tracing::instrument(name = "rpc.run_council_decision", skip_all)]
+    async fn run_council_decision(
+        &self,
+        request: Request<pb::RunCouncilDecisionRequest>,
+    ) -> GrpcResult<pb::RunCouncilDecisionResponse> {
+        link_span_to_metadata(&request);
+        let input =
+            run_council_decision_input_from_proto(request.into_inner()).map_err(Status::from)?;
+        let output = self
+            .run_council_decision
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        debug!(
+            task_id = output.task_id.as_str(),
+            passed = output.passed,
+            duration_ms = output.duration_ms.get(),
+            "run_council_decision rpc ok"
+        );
+        Ok(Response::new(run_council_decision_response_from(&output)))
+    }
+
+    #[tracing::instrument(name = "rpc.register_contract", skip_all)]
+    async fn register_contract(
+        &self,
+        request: Request<pb::RegisterContractRequest>,
+    ) -> GrpcResult<pb::RegisterContractResponse> {
+        link_span_to_metadata(&request);
+        let proto = request
+            .into_inner()
+            .contract
+            .ok_or_else(|| Status::invalid_argument("contract is required"))?;
+        let contract = output_contract_from_proto(Some(proto))
+            .map_err(domain_error_to_status)?
+            .ok_or_else(|| Status::invalid_argument("contract is required"))?;
+        let contract_id = contract.contract_id().to_owned();
+        self.contract_registry
+            .register(contract)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::RegisterContractResponse { contract_id }))
+    }
+
+    #[tracing::instrument(name = "rpc.list_contracts", skip_all)]
+    async fn list_contracts(
+        &self,
+        request: Request<pb::ListContractsRequest>,
+    ) -> GrpcResult<pb::ListContractsResponse> {
+        link_span_to_metadata(&request);
+        let _ = request;
+        let contracts = self
+            .contract_registry
+            .list()
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::ListContractsResponse {
+            contracts: contracts.iter().map(output_contract_to_proto).collect(),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.delete_contract", skip_all)]
+    async fn delete_contract(
+        &self,
+        request: Request<pb::DeleteContractRequest>,
+    ) -> GrpcResult<pb::DeleteContractResponse> {
+        link_span_to_metadata(&request);
+        let contract_id = request.into_inner().contract_id;
+        match self.contract_registry.delete(&contract_id).await {
+            Ok(()) => Ok(Response::new(pb::DeleteContractResponse { deleted: true })),
+            Err(DomainError::NotFound { .. }) => {
+                Ok(Response::new(pb::DeleteContractResponse { deleted: false }))
+            }
             Err(err) => Err(domain_error_to_status(err)),
         }
     }

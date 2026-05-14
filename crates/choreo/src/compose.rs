@@ -6,8 +6,8 @@ use choreo_adapters::agents::DispatchingAgentFactory;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
-    InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
@@ -26,13 +26,14 @@ use choreo_adapters::validators::{
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, UnregisterAgentUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCouncilDecisionUseCase,
+    UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ConfigurationPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutorPort, MessagingPort, ScoringPort, ServiceConfig,
-    StatisticsPort, ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ConfigurationPort,
+    ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort,
+    MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -45,6 +46,7 @@ pub struct Application {
     pub agent_registry: Arc<dyn AgentRegistryPort>,
     pub agent_resolver: Arc<dyn AgentResolverPort>,
     pub council_registry: Arc<dyn CouncilRegistryPort>,
+    pub contract_registry: Arc<dyn ContractRegistryPort>,
     pub repository: Arc<dyn DeliberationRepositoryPort>,
     pub grpc_service: choreo_adapters::grpc::ChoreographerGrpcService,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
@@ -121,6 +123,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         statistics,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
 
+    // The contract registry is in-memory only today: contracts are
+    // small, stable, and seeded from `CHOREO_CONTRACT_DIR` so the
+    // operator's source of truth lives on disk. When Postgres-backed
+    // contracts land it joins `Persistence` above.
+    let contract_registry: Arc<dyn ContractRegistryPort> =
+        Arc::new(InMemoryContractRegistry::new());
+
     let MessagingWiring {
         port: messaging,
         subscriber_factory: nats_subscriber_factory,
@@ -146,6 +155,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         statistics.clone(),
         "choreographer",
+    ));
+
+    let run_council_decision = Arc::new(RunCouncilDecisionUseCase::new(
+        contract_registry.clone(),
+        council_registry.clone(),
+        deliberate.clone(),
+        repository.clone(),
     ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -175,6 +191,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         council_registry.as_ref(),
     )
     .await?;
+    crate::seeding::apply_contract_seeding(contract_registry.as_ref()).await?;
 
     // Now that the auto-dispatch service exists, the subscriber
     // factory can finish wiring.
@@ -189,6 +206,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .get_deliberation(get_deliberation)
         .register_agent(register_agent)
         .unregister_agent(unregister_agent)
+        .run_council_decision(run_council_decision)
+        .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
@@ -212,6 +231,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         agent_registry,
         agent_resolver,
         council_registry,
+        contract_registry,
         repository,
         grpc_service,
         nats_subscriber,
