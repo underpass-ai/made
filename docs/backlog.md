@@ -839,31 +839,59 @@ Status of the chain:
 
 ### Epic 12. Consumer integration smoke prerequisites
 
-Status: not started — blocked by Epic 6 (real agent factory composition),
-Epic 9 (dedicated council-decision RPC), Epic 10 (report artifact), and
-Epic 11's follow-ups (scenarios 6/7 + merging the provider-runner
-stack).
+Status: done (2026-05-14).
 
-#### Deliverables
+#### What shipped
 
-A test harness that can later prove:
+A consumer-shaped smoke harness — `crates/choreo-consumer-smoke` —
+that drives the choreographer's public surface (gRPC over `tonic` +
+optional core NATS over `async-nats`) the way a real downstream
+consumer would. Distributed as a library the choreographer's own
+integration tests reuse and a CLI a consumer can point at a live
+cluster.
 
-```text
-<consumer> specialist escalation
-  -> kernel bundle
-    -> choreographer reevaluation
-      -> validated remedy proposal or human-escalation decision
-```
+Two chains:
 
-and:
+- **Chain 1** (Warn-mode reevaluation): trigger-style envelope
+  publish on `choreo.trigger.<specialty>`, `RunCouncilDecision` in
+  Warn mode with a deterministic kernel-rehydration-shaped bundle,
+  then six typed assertions including correlation / causation
+  propagation on the outbound `choreo.deliberation.completed`.
+- **Chain 2** (Strict-mode handoff report): registers the canonical
+  Report `OutputContract`
+  (`api/examples/output-contracts/report.schema.json`), runs Strict
+  mode, asserts the rejection path against the NoopAgent stack
+  (free-form text fails the JSON Schema → `FailedPrecondition`
+  mentioning the contract id).
 
-```text
-<consumer> escalation decision
-  -> choreographer handoff report
-    -> final human escalation
-```
+Deliverables:
 
-This can begin only once the earlier epics are green.
+- New crate `crates/choreo-consumer-smoke` (lib + bin).
+- 11 lib unit tests + 2 binary unit tests + 2 integration tests
+  (`tests/chain1_warn_against_fixture.rs`,
+  `tests/chain2_strict_rejection_against_fixture.rs`) that reuse
+  `choreo_tests_integration::grpc_fixture::GrpcFixture`.
+- `Harness::from_parts(channel, nats)` helper so the integration
+  tests can share the fixture's `tonic::Channel`.
+- Operations doc: `docs/operations/consumer-smoke.md`.
+- `make consumer-smoke` Makefile target.
+
+#### Remaining gaps (out of Epic 12's scope, tracked under Epic 11)
+
+- **Bundle round-trip** (`bundle_seam_documented` Skipped). Owned by
+  Epic 11 scenario 7. Once that lands the assertion flips to Passed.
+- **Chain 2 positive path** (`report_payload_validates` Skipped on
+  today's stack). Needs a stub-LLM provider sidecar that emits JSON
+  satisfying the schema. Tracked under Epic 11's structured-output
+  follow-up.
+- **Provider-runner E2E merged into `make e2e-compose`** so a single
+  command exercises real provider council + real (stub) runtime in
+  one shot — also Epic 11.
+
+#### Relevant code
+
+- [`crates/choreo-consumer-smoke/`](../crates/choreo-consumer-smoke/)
+- [`docs/operations/consumer-smoke.md`](./operations/consumer-smoke.md)
 
 ### Epic 13. MCP stdio adapter
 
@@ -989,7 +1017,13 @@ Exit condition:
 
 - it is reasonable to begin consumer integration work
 
-**Open** — blocked by Milestones B (remaining), C, and D.
+**Cleared 2026-05-14.** Epic 12 done — consumer-smoke harness lives
+at `crates/choreo-consumer-smoke` with two chains, a CLI, and two
+integration tests against the in-process `GrpcFixture`. The
+remaining "open" assertions (`bundle_seam_documented` and Chain 2's
+positive `report_payload_validates`) are intentionally `Skipped`
+with explicit reasons that point at Epic 11's pending scenarios; they
+are not on Epic 12's critical path.
 
 ## Suggested issue breakdown
 

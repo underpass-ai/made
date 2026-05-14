@@ -9,6 +9,7 @@ members = [
     "crates/choreo-tests-integration",
     "crates/choreo-e2e-runner",
     "crates/choreo-mcp",
+    "crates/choreo-consumer-smoke",
 ]
 
 [workspace.package]
@@ -108,6 +109,7 @@ choreo-core = { path = "crates/choreo-core" }
 choreo-app = { path = "crates/choreo-app" }
 choreo-adapters = { path = "crates/choreo-adapters" }
 choreo-proto = { path = "crates/choreo-proto" }
+choreo-tests-integration = { path = "crates/choreo-tests-integration" }
 
 [profile.release]
 lto = "thin"
