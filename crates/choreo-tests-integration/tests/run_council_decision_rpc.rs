@@ -20,6 +20,7 @@
 //! * Selector unset → `Code::InvalidArgument` (mapper rejects before
 //!   the use case runs).
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use choreo_core::entities::Council;
@@ -69,7 +70,7 @@ async fn seed_one_council(fixture: &GrpcFixture, agent_id: AgentId) {
 }
 
 async fn seed_contract(fixture: &GrpcFixture) {
-    let contract = OutputContract::new(CONTRACT_ID, OutputFormat::JsonObject, Default::default())
+    let contract = OutputContract::new(CONTRACT_ID, OutputFormat::JsonObject, BTreeMap::new())
         .expect("contract construction should succeed");
     fixture
         .contracts

@@ -60,6 +60,7 @@ pub struct GrpcFixture {
 impl GrpcFixture {
     /// Wire and start a fresh fixture. Returns once the server is
     /// accepting connections.
+    #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start() -> Self {
         let clock = Arc::new(SystemClock::new());
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
