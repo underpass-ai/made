@@ -15,6 +15,12 @@ pub struct DeliberationCompletedEvent {
     winner_score: Score,
     num_candidates: u32,
     duration: DurationMs,
+    /// `bundle_id` of the [`ExternalContextBundle`] the task carried,
+    /// when present. Lets a downstream consumer correlate this
+    /// completion back to the context payload it (or the kernel)
+    /// fed in. Omitted from the serialized envelope when `None`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    external_context_bundle_id: Option<String>,
 }
 
 impl DeliberationCompletedEvent {
@@ -28,6 +34,33 @@ impl DeliberationCompletedEvent {
         num_candidates: u32,
         duration: DurationMs,
     ) -> Self {
+        Self::new_with_context(
+            envelope,
+            task_id,
+            specialty,
+            winner_proposal_id,
+            winner_score,
+            num_candidates,
+            duration,
+            None,
+        )
+    }
+
+    /// Variant that captures the `bundle_id` of the task's
+    /// [`ExternalContextBundle`] (when present). Use this from
+    /// `DeliberateUseCase` so consumers can correlate the completion
+    /// envelope back to the bundle that fed it.
+    #[must_use]
+    pub fn new_with_context(
+        envelope: EventEnvelope,
+        task_id: TaskId,
+        specialty: Specialty,
+        winner_proposal_id: ProposalId,
+        winner_score: Score,
+        num_candidates: u32,
+        duration: DurationMs,
+        external_context_bundle_id: Option<String>,
+    ) -> Self {
         Self {
             envelope,
             task_id,
@@ -36,6 +69,7 @@ impl DeliberationCompletedEvent {
             winner_score,
             num_candidates,
             duration,
+            external_context_bundle_id,
         }
     }
 
@@ -66,6 +100,10 @@ impl DeliberationCompletedEvent {
     #[must_use]
     pub fn duration(&self) -> DurationMs {
         self.duration
+    }
+    #[must_use]
+    pub fn external_context_bundle_id(&self) -> Option<&str> {
+        self.external_context_bundle_id.as_deref()
     }
 }
 
