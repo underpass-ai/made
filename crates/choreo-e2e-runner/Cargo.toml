@@ -31,6 +31,16 @@ path = "src/bin/provider.rs"
 name = "choreo-stub-runtime"
 path = "src/bin/stub_runtime.rs"
 
+# Stub-LLM sidecar for the stack E2E. Serves the choreographer's
+# OpenAiAgent adapter an OpenAI-shaped Chat Completions endpoint
+# that always returns a JSON Report payload, so the positive
+# structured-output path can be exercised against
+# `api/examples/output-contracts/report.schema.json` without a real
+# provider in the test path.
+[[bin]]
+name = "choreo-stub-llm"
+path = "src/bin/stub_llm.rs"
+
 [dependencies]
 choreo-proto = { workspace = true }
 choreo-core = { workspace = true }
@@ -42,6 +52,12 @@ anyhow = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 async-nats = { workspace = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 futures = { workspace = true }
+jsonschema = { workspace = true }
+axum = "0.7"
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
