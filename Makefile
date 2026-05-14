@@ -10,6 +10,7 @@ VERSION ?=
 	contract fmt-check fmt clippy test bench-compile check \
 	integration-nats integration-postgres integration \
 	e2e-compose e2e-kubernetes e2e-provider-vllm \
+	consumer-smoke \
 	helm-lint build-image build-provider-image \
 	run run-otel \
 	bench-trace bench-deliberate bench-experiment-001 bench-experiment-002 \
@@ -23,6 +24,7 @@ help:
 		'  make e2e-compose            # manual E2E via docker/podman compose or podman-compose' \
 		'  make e2e-kubernetes         # manual E2E via Kubernetes Job' \
 		'  make e2e-provider-vllm      # provider-level vLLM E2E' \
+		'  make consumer-smoke         # drive the public RPC + bus surface as a consumer would' \
 		'  make helm-lint              # helm lint + hardened render assertions' \
 		'  make build-image            # production container image' \
 		'  make build-provider-image   # provider E2E runner image' \
@@ -67,6 +69,11 @@ e2e-kubernetes:
 
 e2e-provider-vllm:
 	bash scripts/ci/e2e-provider-vllm.sh
+
+consumer-smoke:
+	cargo run -p choreo-consumer-smoke -- \
+		--endpoint $${CHOREOGRAPHER_ENDPOINT:-http://localhost:50055} \
+		--chain $${CONSUMER_SMOKE_CHAIN:-all}
 
 helm-lint:
 	bash scripts/ci/helm-lint.sh
