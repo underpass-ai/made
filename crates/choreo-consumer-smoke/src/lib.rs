@@ -29,6 +29,6 @@ pub mod harness;
 pub mod outcome;
 
 pub use chain1::run_chain_1;
-pub use chain2::run_chain_2;
+pub use chain2::{run_chain_2, run_chain_2_with_schema};
 pub use harness::{Harness, HarnessConfig};
 pub use outcome::{AssertionRecord, AssertionStatus, BusEnvelopeRecord, ChainOutcome};
