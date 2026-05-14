@@ -410,6 +410,245 @@ impl ValidatorPort for JsonSchemaValidator {
     }
 }
 
+/// Defends downstream consumers against pathological structured
+/// outputs: payloads that nest too deep, carry too many keys, or
+/// blow up an array. A consumer that trusts the choreographer's
+/// `OutputContract` chain should never have to second-guess these
+/// limits; a `JsonSchema` can constrain shape but not raw size.
+///
+/// The validator runs **only** when the task has an `OutputContract`
+/// — without one there is no structured-output expectation to bound.
+/// In that case it short-circuits with a pass and a `not applicable`
+/// note, mirroring the JsonSchemaValidator's posture.
+///
+/// Limits are conservative by default and tunable through the
+/// `with_*` builder methods. Each one is an inclusive upper bound;
+/// the validator counts at most one violation per dimension so a
+/// huge payload that breaks several limits still produces a small,
+/// human-readable report.
+#[derive(Debug, Clone, Copy)]
+#[allow(clippy::struct_field_names)] // every limit IS a "max_*" budget; renaming muddies intent
+pub struct BoundedEventShapeValidator {
+    /// Total UTF-8 byte length of the proposal content. Caps the
+    /// envelope size a single deliberation can place on the bus.
+    max_total_size_bytes: usize,
+    /// Maximum nesting depth of objects + arrays combined.
+    max_depth: usize,
+    /// Maximum number of keys in any single object.
+    max_object_keys: usize,
+    /// Maximum number of elements in any single array.
+    max_array_len: usize,
+    /// Maximum UTF-8 byte length of any single string value.
+    max_string_len: usize,
+}
+
+impl BoundedEventShapeValidator {
+    /// Defaults chosen for use cases where the output is fed into a
+    /// downstream event bus or audit log:
+    ///
+    /// - 256 KiB total — matches the `OutputContract.json_schema`
+    ///   cap so the schema and the validated instance share a budget.
+    /// - 32 levels of nesting — deeper than any realistic Report.
+    /// - 256 object keys — Report fields plus generous extension room.
+    /// - 1024 array elements — caps repeated-findings explosions.
+    /// - 64 KiB per string — a single field cannot dominate the
+    ///   envelope.
+    #[must_use]
+    pub const fn new() -> Self {
+        Self {
+            max_total_size_bytes: 256 * 1024,
+            max_depth: 32,
+            max_object_keys: 256,
+            max_array_len: 1024,
+            max_string_len: 64 * 1024,
+        }
+    }
+
+    #[must_use]
+    pub const fn with_max_total_size_bytes(mut self, bytes: usize) -> Self {
+        self.max_total_size_bytes = bytes;
+        self
+    }
+    #[must_use]
+    pub const fn with_max_depth(mut self, depth: usize) -> Self {
+        self.max_depth = depth;
+        self
+    }
+    #[must_use]
+    pub const fn with_max_object_keys(mut self, keys: usize) -> Self {
+        self.max_object_keys = keys;
+        self
+    }
+    #[must_use]
+    pub const fn with_max_array_len(mut self, len: usize) -> Self {
+        self.max_array_len = len;
+        self
+    }
+    #[must_use]
+    pub const fn with_max_string_len(mut self, len: usize) -> Self {
+        self.max_string_len = len;
+        self
+    }
+}
+
+impl Default for BoundedEventShapeValidator {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[async_trait]
+impl ValidatorPort for BoundedEventShapeValidator {
+    fn kind(&self) -> &'static str {
+        "output-bounded-event-shape"
+    }
+
+    async fn validate(
+        &self,
+        proposal_content: &str,
+        constraints: &TaskConstraints,
+    ) -> Result<ValidatorReport, DomainError> {
+        let Some(contract) = constraints.output_contract() else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no structured output contract configured",
+                Attributes::empty(),
+            );
+        };
+
+        let trimmed = proposal_content.trim();
+        let total_bytes = trimmed.len();
+        if total_bytes > self.max_total_size_bytes {
+            return ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "proposal is {total_bytes} bytes; limit is {} bytes",
+                    self.max_total_size_bytes
+                ),
+                attributes(json!({
+                    "contract_id": contract.contract_id(),
+                    "violation": "max_total_size_bytes",
+                    "limit": self.max_total_size_bytes,
+                    "actual": total_bytes,
+                }))?,
+            );
+        }
+
+        let instance: Value = match serde_json::from_str(trimmed) {
+            Ok(v) => v,
+            Err(err) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    format!("proposal is not valid JSON: {err}"),
+                    attributes(json!({ "contract_id": contract.contract_id() }))?,
+                );
+            }
+        };
+
+        if let Some(violation) = self.walk(&instance, "$", 0) {
+            return ValidatorReport::new(
+                self.kind(),
+                false,
+                violation.summary(),
+                attributes(json!({
+                    "contract_id": contract.contract_id(),
+                    "violation": violation.kind,
+                    "path": violation.path,
+                    "limit": violation.limit,
+                    "actual": violation.actual,
+                }))?,
+            );
+        }
+
+        ValidatorReport::new(
+            self.kind(),
+            true,
+            "proposal satisfies the event-shape budget",
+            attributes(json!({ "contract_id": contract.contract_id() }))?,
+        )
+    }
+}
+
+impl BoundedEventShapeValidator {
+    fn walk(&self, value: &Value, path: &str, depth: usize) -> Option<ShapeViolation> {
+        if depth > self.max_depth {
+            return Some(ShapeViolation {
+                kind: "max_depth",
+                path: path.to_owned(),
+                limit: self.max_depth,
+                actual: depth,
+            });
+        }
+        match value {
+            Value::Null | Value::Bool(_) | Value::Number(_) => None,
+            Value::String(s) => {
+                if s.len() > self.max_string_len {
+                    Some(ShapeViolation {
+                        kind: "max_string_len",
+                        path: path.to_owned(),
+                        limit: self.max_string_len,
+                        actual: s.len(),
+                    })
+                } else {
+                    None
+                }
+            }
+            Value::Array(items) => {
+                if items.len() > self.max_array_len {
+                    return Some(ShapeViolation {
+                        kind: "max_array_len",
+                        path: path.to_owned(),
+                        limit: self.max_array_len,
+                        actual: items.len(),
+                    });
+                }
+                for (i, item) in items.iter().enumerate() {
+                    if let Some(v) = self.walk(item, &format!("{path}[{i}]"), depth + 1) {
+                        return Some(v);
+                    }
+                }
+                None
+            }
+            Value::Object(map) => {
+                if map.len() > self.max_object_keys {
+                    return Some(ShapeViolation {
+                        kind: "max_object_keys",
+                        path: path.to_owned(),
+                        limit: self.max_object_keys,
+                        actual: map.len(),
+                    });
+                }
+                for (key, child) in map {
+                    if let Some(v) = self.walk(child, &format!("{path}.{key}"), depth + 1) {
+                        return Some(v);
+                    }
+                }
+                None
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
+struct ShapeViolation {
+    kind: &'static str,
+    path: String,
+    limit: usize,
+    actual: usize,
+}
+
+impl ShapeViolation {
+    fn summary(&self) -> String {
+        format!(
+            "{} at `{}`: {} exceeds limit {}",
+            self.kind, self.path, self.actual, self.limit
+        )
+    }
+}
+
 fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, String> {
     let trimmed = proposal_content.trim();
     let value: Value = serde_json::from_str(trimmed)
@@ -682,5 +921,116 @@ mod tests {
             .unwrap();
         assert!(!r.passed());
         assert!(r.summary().contains("proposal is not valid JSON"));
+    }
+
+    // ---- BoundedEventShapeValidator -----------------------------------
+
+    fn unconstrained() -> TaskConstraints {
+        TaskConstraints::default()
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_is_noop_without_contract() {
+        let v = BoundedEventShapeValidator::new();
+        let r = v.validate(r#"{"k":"v"}"#, &unconstrained()).await.unwrap();
+        assert!(r.passed());
+        assert!(r.summary().contains("no structured output contract"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_accepts_modest_payloads() {
+        let v = BoundedEventShapeValidator::new();
+        let r = v
+            .validate(
+                r#"{"decision":"emit_event","reason":"clear"}"#,
+                &structured_constraints(),
+            )
+            .await
+            .unwrap();
+        assert!(r.passed(), "summary: {}", r.summary());
+        assert_eq!(r.kind(), "output-bounded-event-shape");
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_oversized_payloads() {
+        let mut bloated = String::from("{\"k\":\"");
+        bloated.push_str(&"a".repeat(2048));
+        bloated.push_str("\"}");
+        let v = BoundedEventShapeValidator::new().with_max_total_size_bytes(512);
+        let r = v
+            .validate(&bloated, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("limit is 512"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_too_many_object_keys() {
+        use std::fmt::Write as _;
+        let mut payload = String::from("{");
+        for i in 0..40 {
+            if i > 0 {
+                payload.push(',');
+            }
+            write!(payload, r#""k{i}":{i}"#).unwrap();
+        }
+        payload.push('}');
+        let v = BoundedEventShapeValidator::new().with_max_object_keys(32);
+        let r = v
+            .validate(&payload, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("max_object_keys"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_too_deep_nesting() {
+        // 6 levels of nesting around a literal.
+        let payload = r#"{"a":{"b":{"c":{"d":{"e":{"f":1}}}}}}"#;
+        let v = BoundedEventShapeValidator::new().with_max_depth(4);
+        let r = v
+            .validate(payload, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("max_depth"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_long_strings() {
+        let payload = format!(r#"{{"reason":"{}"}}"#, "x".repeat(200));
+        let v = BoundedEventShapeValidator::new().with_max_string_len(64);
+        let r = v
+            .validate(&payload, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("max_string_len"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_huge_arrays() {
+        let nums = (0..50).map(|i| i.to_string()).collect::<Vec<_>>().join(",");
+        let payload = format!(r#"{{"items":[{nums}]}}"#);
+        let v = BoundedEventShapeValidator::new().with_max_array_len(10);
+        let r = v
+            .validate(&payload, &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("max_array_len"));
+    }
+
+    #[tokio::test]
+    async fn bounded_event_shape_rejects_invalid_json() {
+        let v = BoundedEventShapeValidator::new();
+        let r = v
+            .validate("not json", &structured_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("not valid JSON"));
     }
 }
