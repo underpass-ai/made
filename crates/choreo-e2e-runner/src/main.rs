@@ -595,7 +595,10 @@ async fn verify_structured_output_against_stub_llm(
     client: &mut ChoreographerServiceClient<Channel>,
 ) -> Result<()> {
     const CONTRACT_ID: &str = "scenario-8-report";
-    const AGENT_ID: &str = "scenario-8-agent";
+    // Must match the id pattern the CreateCouncil handler mints
+    // (`agent-{specialty}-{i}`); without that pairing the council
+    // create step fails resolving the agent.
+    const AGENT_ID: &str = "agent-report-0";
     const SPECIALTY: &str = "report";
     const STUB_ENDPOINT: &str = "http://stub-llm:8000";
 
@@ -666,9 +669,15 @@ async fn verify_structured_output_against_stub_llm(
                 agent_id: AGENT_ID.to_owned(),
                 specialty: SPECIALTY.to_owned(),
                 kind: "openai".to_owned(),
-                attributes: Some(agent_attrs),
+                // The RegisterAgent mapper reads `agent_config`
+                // (NOT this nested attributes field) to feed the
+                // descriptor passed to the factory. Carrying the
+                // attributes here would silently drop them.
+                attributes: None,
             }),
-            agent_config: None,
+            // `provider.endpoint` + `provider.model` must travel here
+            // for the factory to apply them as overrides.
+            agent_config: Some(agent_attrs),
         })
         .await;
     match register_agent {
