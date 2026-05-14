@@ -829,8 +829,10 @@ Status of the chain:
 
 #### Remaining follow-ups (out of Milestone D's critical path)
 
-- scenario 7: orchestrate with an `ExternalContextBundle` attached
-  + assert the bundle survives through the chain.
+- scenario 7: `Deliberate` with an `ExternalContextBundle` attached
+  → ✅ done (2026-05-14). `DeliberationCompletedEvent` now carries
+  the optional `external_context_bundle_id` and the e2e-runner asserts
+  the bundle id round-trips to the outbound bus envelope.
 - positive structured-output scenario: requires a stub-LLM sidecar
   that emits a JSON object satisfying a known schema.
 - merge the provider-runner E2E (vLLM) into the same compose stack

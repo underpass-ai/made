@@ -174,7 +174,7 @@ impl DeliberateUseCase {
 
         let winner = Self::pick_winner(&ranked, task.constraints())?;
 
-        let completion_event = DeliberationCompletedEvent::new(
+        let completion_event = DeliberationCompletedEvent::new_with_context(
             self.envelope(completed_at, task.metadata())?,
             deliberation.task_id().clone(),
             deliberation.specialty().clone(),
@@ -182,6 +182,8 @@ impl DeliberateUseCase {
             winner.outcome().score(),
             u32::try_from(ranked.len()).unwrap_or(u32::MAX),
             duration,
+            task.external_context()
+                .map(|bundle| bundle.bundle_id().to_owned()),
         );
         self.messaging
             .publish_deliberation_completed(&completion_event)
