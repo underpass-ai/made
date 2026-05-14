@@ -35,6 +35,19 @@ services:
       STUB_RUNTIME_GRPC_ADDR: "0.0.0.0:50053"
       RUST_LOG: "info"
 
+  # OpenAI-shaped stub LLM. Always returns a JSON Report payload that
+  # satisfies `api/examples/output-contracts/report.schema.json`,
+  # giving the choreographer's `OpenAiAgent` adapter a deterministic
+  # peer so scenario 8 can prove the positive structured-output path
+  # end-to-end without a real provider in the test path.
+  stub-llm:
+    build:
+      context: ../..
+      dockerfile: tests/e2e/stub-llm.Dockerfile
+    environment:
+      STUB_LLM_LISTEN: "0.0.0.0:8000"
+      RUST_LOG: "info"
+
   choreographer:
     build:
       context: ../..
@@ -48,10 +61,17 @@ services:
       CHOREO_SEED_SPECIALTIES: "triage"
       CHOREO_EXECUTOR_KIND: "runtime"
       CHOREO_RUNTIME_GRPC_ENDPOINT: "http://stub-runtime:50053"
+      # Required for `DispatchingAgentFactory::from_env` to enable the
+      # `openai` kind so scenario 8 can register an OpenAI-backed agent
+      # dynamically. The stub-llm sidecar ignores the bearer token, so
+      # any non-empty value works — keep this dummy-typed and obvious
+      # to operators reading compose logs.
+      CHOREO_OPENAI_API_KEY: "stub-key-not-used"
       RUST_LOG: "info"
     depends_on:
       - nats
       - stub-runtime
+      - stub-llm
 
   e2e-runner:
     build:
@@ -60,6 +80,12 @@ services:
     environment:
       CHOREOGRAPHER_ENDPOINT: "http://choreographer:50055"
       CHOREO_SEED_SPECIALTY: "triage"
+      # Pinned to the path that runner.Dockerfile copies into the
+      # image. Scenario 8 reads the canonical Report schema from
+      # here; failing back to an env-overridable path keeps the
+      # runner robust against operators who run the binary outside
+      # the container.
+      CHOREO_REPORT_SCHEMA_PATH: "/etc/choreo/report.schema.json"
       RUST_LOG: "info"
     depends_on:
       - choreographer

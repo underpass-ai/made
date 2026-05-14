@@ -27,6 +27,11 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
 COPY crates ./crates
+# Ship the canonical Report JSON Schema alongside the runner binary
+# so scenario 8 can read it inside the container. Pinned to a stable
+# path; compose sets `CHOREO_REPORT_SCHEMA_PATH=/etc/choreo/report.schema.json`
+# so the runner discovers it without baking the path into the binary.
+COPY api/examples/output-contracts/report.schema.json /etc/choreo/report.schema.json
 
 RUN --mount=type=cache,id=cargo-registry-e2e-runner,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-e2e-runner,target=/src/target \
@@ -42,6 +47,7 @@ LABEL org.opencontainers.image.title="underpass-choreographer-e2e-runner" \
       org.opencontainers.image.source="https://github.com/underpass-ai/underpass-choreographer"
 
 COPY --from=builder /out/runner /usr/local/bin/choreo-e2e-runner
+COPY --from=builder /etc/choreo/report.schema.json /etc/choreo/report.schema.json
 
 USER nonroot:nonroot
 
