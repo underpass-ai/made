@@ -67,6 +67,14 @@ services:
       # any non-empty value works — keep this dummy-typed and obvious
       # to operators reading compose logs.
       CHOREO_OPENAI_API_KEY: "stub-key-not-used"
+      # Activates the `vllm` kind in the agent factory so scenario 9
+      # can register a vLLM-backed agent against the same stub-llm
+      # sidecar (both adapters speak `POST /v1/chat/completions`). The
+      # factory needs both env vars present at boot before it accepts
+      # the kind; per-descriptor `provider.endpoint` and
+      # `provider.model` override at register time.
+      CHOREO_VLLM_MODEL: "stub-report-vllm-v1"
+      CHOREO_VLLM_ENDPOINT: "http://stub-llm:8000"
       RUST_LOG: "info"
     depends_on:
       - nats

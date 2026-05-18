@@ -96,9 +96,12 @@ plain NATS), gRPC server TLS/mTLS posture (Epic 8 server side).
   bounded-event-shape variant landed 2026-05-14 (size + depth +
   object-keys + array-len + string-len caps, wired into the default
   validator chain in `compose.rs`).
-- release-gate stack smoke
-- the basic four scenarios of the e2e-runner already exist; release-gate
-  hooks need to wire them in for cut tags
+- release-gate stack smoke — done 2026-05-14 (Bundle A): a new
+  `compose-smoke` job in `publish-distribution.yml` runs the
+  9-scenario `make e2e-compose` end-to-end on every `v*` tag push
+  and gates both `publish-image` and `publish-helm-chart` behind
+  it. Plain `main` pushes skip the smoke so the `latest`/`main`
+  image rolls keep working.
 
 ### P2 — useful after first integration
 
@@ -612,14 +615,18 @@ now:
   client-paths, explicit-mode override, mutual requiring both paths,
   invalid-mode rejection, and the URI rewriter.
 
-Remaining work (deferred to a follow-up epic slice):
+Remaining work — **all done 2026-05-14 (Bundle A)**:
 
-- Rust integration test that performs an actual TLS handshake against
-  the choreographer (e.g. with `rcgen` to generate a self-signed cert
-  in-test). Today the wiring is exercised by helm-lint gate 4 plus
-  the env-loading unit tests; the handshake itself is implicitly
-  validated by the tonic library's invariants but not asserted
-  end-to-end from this repo.
+- Rust integration test that performs an actual TLS handshake
+  against the choreographer using `rcgen` to mint a self-signed
+  CA + server + client leaves in memory. Lives in
+  `crates/choreo-tests-integration/tests/tls_server_handshake.rs`
+  (server mode) and `tls_mutual_handshake.rs` (mutual mode: a
+  client with identity is accepted, a client without identity
+  is rejected). The fixture
+  `crates/choreo-tests-integration/src/tls_fixture.rs` exports
+  `mint_tls(server_san)`; `GrpcFixture::start_with_tls(setup)`
+  serves over TLS without process-env mutation.
 
 Relevant code:
 
@@ -853,8 +860,12 @@ Status of the chain:
   canonical schema) and asserts the positive path through
   `RunCouncilDecision` in Strict mode.
 - merge the provider-runner E2E (vLLM) into the same compose stack
-  so a single `make e2e-compose` exercises real provider council +
-  real (stub) runtime in one shot. Today they are two manual gates.
+  → ✅ done 2026-05-14 (Bundle A). Scenario 9 registers a
+  `kind=vllm` agent pointing at the existing `stub-llm` sidecar
+  (both adapters speak `POST /v1/chat/completions`), so a single
+  `make e2e-compose` now covers both the openai-shaped and the
+  vllm-shaped paths. `make e2e-provider-vllm` stays for operators
+  who want to validate against a REAL vLLM endpoint.
 - compose-level operations doc (`docs/operations/compose-e2e.md`):
   the stub-llm sidecar, its OpenAI-compat surface, the hard-coded
   Report payload, and the `STUB_LLM_LISTEN` override all need a
