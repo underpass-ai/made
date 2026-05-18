@@ -29,16 +29,19 @@ COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
 COPY crates ./crates
 
-# `agent-openai` is enabled so the `DispatchingAgentFactory` can
-# materialise `kind=openai` agents that the compose E2E registers
-# dynamically against the stub-llm sidecar. Without this feature flag
-# the factory rejects `openai` with "unsupported agent kind". Other
-# provider features stay disabled here to keep the production image
-# minimal — operators that want anthropic or vllm must build a
-# downstream image that flips the corresponding flag.
+# `agent-openai` and `agent-vllm` are enabled so the
+# `DispatchingAgentFactory` can materialise both kinds. The compose
+# E2E registers an OpenAI-kind agent in scenario 8 and a vLLM-kind
+# agent in scenario 9, both pointing at the same `stub-llm` sidecar
+# (which speaks `POST /v1/chat/completions` — a body shape both
+# adapters use). `agent-anthropic` stays off to keep the production
+# image minimal; operators that need it build a downstream image
+# that flips the corresponding flag.
 RUN --mount=type=cache,id=cargo-registry-choreo,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-choreo,target=/src/target \
-    cargo build --release --locked --bin choreo --features choreo-adapters/agent-openai \
+    cargo build --release --locked --bin choreo \
+        --features choreo-adapters/agent-openai \
+        --features choreo-adapters/agent-vllm \
  && install -Dm 0755 target/release/choreo /out/choreo
 
 # ---------------------------------------------------------------------------

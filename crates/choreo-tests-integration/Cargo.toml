@@ -32,6 +32,14 @@ async-nats = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true }
 testcontainers = { version = "0.23", optional = true }
+# Used by `tls_fixture` to mint in-memory CA + server + client
+# certificates for the TLS handshake integration tests. Lives in
+# `[dependencies]` (not dev-dependencies) because `tls_fixture` is
+# a `pub mod` re-used by `tests/` files and `publish = false` on
+# this crate keeps it out of the production dep graph anyway.
+# Default features include the `crypto` provider (ring-backed),
+# which is what `KeyPair::generate()` needs.
+rcgen = { version = "0.13", features = ["pem"] }
 
 [dev-dependencies]
 async-nats = { workspace = true }
