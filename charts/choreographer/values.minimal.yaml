@@ -1,0 +1,34 @@
+# Minimal standalone install profile.
+#
+# This profile is intentionally dependency-free: no NATS, no Postgres,
+# no Runtime executor, and no gRPC TLS. It is meant for first install,
+# smoke testing, and demos where the operator only needs the public
+# gRPC/HTTP surface running inside Kubernetes.
+
+config:
+  # Seed one NoopAgent + one single-agent council so a fresh install
+  # can answer RunCouncilDecision immediately.
+  seedSpecialties: triage
+
+messaging:
+  nats:
+    enabled: false
+    embedded:
+      enabled: false
+
+executor:
+  kind: noop
+
+persistence:
+  postgres:
+    enabled: false
+
+tls:
+  mode: none
+  existingSecret: ""
+
+pdb:
+  enabled: false
+
+networkPolicy:
+  enabled: false

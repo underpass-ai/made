@@ -177,6 +177,13 @@ spec:
             {{- fail "persistence.postgres.enabled=true requires either persistence.postgres.url or persistence.postgres.urlFromSecret.{name,key}" }}
             {{- end }}
             {{- end }}
+            {{- with .Values.providerEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.providerEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           {{- if .Values.probes.liveness.enabled }}
           livenessProbe:
             httpGet:

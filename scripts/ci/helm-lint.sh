@@ -3,12 +3,22 @@ set -euo pipefail
 
 CHART_PATH="${1:-charts/choreographer}"
 DEV_VALUES="${CHART_PATH}/values.dev.yaml"
+MINIMAL_VALUES="${CHART_PATH}/values.minimal.yaml"
+EMBEDDED_NATS_VALUES="${CHART_PATH}/values.embedded-nats.yaml"
+POSTGRES_SECRET_VALUES="${CHART_PATH}/values.postgres-secret.yaml"
+PROVIDER_ENV_VALUES="${CHART_PATH}/values.provider-env-secrets.yaml"
+UNDERPASS_RUNTIME_VALUES="${CHART_PATH}/values.underpass-runtime.yaml"
 TMP_DIR="${TMPDIR:-/tmp}"
 DEFAULT_ERR="${TMP_DIR}/choreographer-helm-default.err"
 HARDENED_OUT="${TMP_DIR}/choreographer-helm-hardened.yaml"
 HARDENED_ERR="${TMP_DIR}/choreographer-helm-hardened.err"
 
 helm lint "${CHART_PATH}" -f "${DEV_VALUES}"
+helm lint "${CHART_PATH}" -f "${MINIMAL_VALUES}" --set image.tag=v0
+helm lint "${CHART_PATH}" -f "${EMBEDDED_NATS_VALUES}" --set image.tag=v0
+helm lint "${CHART_PATH}" -f "${POSTGRES_SECRET_VALUES}" --set image.tag=v0
+helm lint "${CHART_PATH}" -f "${EMBEDDED_NATS_VALUES}" -f "${PROVIDER_ENV_VALUES}" --set image.tag=v0
+helm lint "${CHART_PATH}" -f "${UNDERPASS_RUNTIME_VALUES}" --set image.tag=v0
 helm template choreographer "${CHART_PATH}" -f "${DEV_VALUES}" >/tmp/choreographer-helm-template.yaml
 
 # --- Gate 1: default render refuses to produce a manifest without a
@@ -126,6 +136,182 @@ tls_mutual_markers=(
 for marker in "${tls_mutual_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${TLS_MUTUAL_OUT}"; then
     echo "tls=mutual chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+# --- Gate 5: embedded NATS profile. The standalone bus profile must
+# render a release-local NATS deployment and point the choreographer at
+# that service.
+
+EMBEDDED_NATS_OUT="${TMP_DIR}/choreographer-helm-embedded-nats.yaml"
+
+helm template choreographer "${CHART_PATH}" \
+  -f "${EMBEDDED_NATS_VALUES}" \
+  --set image.tag=v0 \
+  > "${EMBEDDED_NATS_OUT}"
+
+embedded_nats_markers=(
+  'name: choreographer-nats'
+  'app.kubernetes.io/component: nats'
+  'image: "docker.io/library/nats:2.10-alpine"'
+  'name: CHOREO_NATS_ENABLED'
+  'value: "true"'
+  'name: CHOREO_NATS_URL'
+  'value: "nats://choreographer-nats:4222"'
+  'name: CHOREO_TRIGGER_SUBJECT'
+  'value: "choreo.trigger.>"'
+  'name: CHOREO_PUBLISH_PREFIX'
+  'value: "choreo"'
+)
+for marker in "${embedded_nats_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${EMBEDDED_NATS_OUT}"; then
+    echo "embedded NATS chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+# --- Gate 6: Runtime executor render. Runtime mode must fail without
+# an endpoint, must fail when TLS is requested without a secret, and
+# the checked-in underpass-runtime profile must wire endpoint,
+# principal, mTLS paths, and the runtime TLS secret mount.
+
+RUNTIME_MISSING_ENDPOINT_ERR="${TMP_DIR}/choreographer-helm-runtime-missing-endpoint.err"
+RUNTIME_MISSING_TLS_ERR="${TMP_DIR}/choreographer-helm-runtime-missing-tls.err"
+RUNTIME_OUT="${TMP_DIR}/choreographer-helm-runtime.yaml"
+
+if helm template choreographer "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set executor.kind=runtime \
+  > /dev/null 2>"${RUNTIME_MISSING_ENDPOINT_ERR}"; then
+  echo "executor.kind=runtime without endpoint render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "executor.kind=runtime but executor.runtime.endpoint is empty" "${RUNTIME_MISSING_ENDPOINT_ERR}"
+
+if helm template choreographer "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set executor.kind=runtime \
+  --set executor.runtime.endpoint=https://underpass-runtime:50053 \
+  --set executor.runtime.tls.mode=server \
+  > /dev/null 2>"${RUNTIME_MISSING_TLS_ERR}"; then
+  echo "runtime TLS without existingSecret render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "executor.runtime.tls.mode != disabled but executor.runtime.tls.existingSecret is empty" "${RUNTIME_MISSING_TLS_ERR}"
+
+helm template choreographer "${CHART_PATH}" \
+  -f "${UNDERPASS_RUNTIME_VALUES}" \
+  --set image.tag=v0 \
+  > "${RUNTIME_OUT}"
+
+runtime_markers=(
+  'name: CHOREO_EXECUTOR_KIND'
+  'value: "runtime"'
+  'name: CHOREO_RUNTIME_GRPC_ENDPOINT'
+  'value: "https://underpass-runtime:50053"'
+  'name: CHOREO_RUNTIME_PRINCIPAL_TENANT_ID'
+  'value: "underpass"'
+  'name: CHOREO_RUNTIME_PRINCIPAL_ACTOR_ID'
+  'value: "choreographer"'
+  'name: CHOREO_RUNTIME_PRINCIPAL_ROLES'
+  'value: "orchestrator"'
+  'name: CHOREO_RUNTIME_TLS_MODE'
+  'value: "mutual"'
+  'name: CHOREO_RUNTIME_TLS_CA_PATH'
+  'value: "/etc/choreographer/runtime-tls/ca.crt"'
+  'name: CHOREO_RUNTIME_TLS_CERT_PATH'
+  'value: "/etc/choreographer/runtime-tls/tls.crt"'
+  'name: CHOREO_RUNTIME_TLS_KEY_PATH'
+  'value: "/etc/choreographer/runtime-tls/tls.key"'
+  'name: CHOREO_RUNTIME_TLS_DOMAIN_NAME'
+  'value: "underpass-runtime"'
+  'name: runtime-tls'
+  'secretName: "choreographer-runtime-client-tls"'
+  'mountPath: /etc/choreographer/runtime-tls'
+)
+for marker in "${runtime_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${RUNTIME_OUT}"; then
+    echo "runtime executor chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+# --- Gate 7: Postgres secret profile. Persistence must be sourced
+# through valueFrom.secretKeyRef, not through a literal DSN in the
+# rendered Deployment.
+
+POSTGRES_SECRET_OUT="${TMP_DIR}/choreographer-helm-postgres-secret.yaml"
+
+helm template choreographer "${CHART_PATH}" \
+  -f "${POSTGRES_SECRET_VALUES}" \
+  --set image.tag=v0 \
+  > "${POSTGRES_SECRET_OUT}"
+
+postgres_secret_markers=(
+  'name: CHOREO_POSTGRES_URL'
+  'valueFrom:'
+  'secretKeyRef:'
+  'name: "choreographer-postgres-dsn"'
+  'key: "url"'
+)
+for marker in "${postgres_secret_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${POSTGRES_SECRET_OUT}"; then
+    echo "postgres secret chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+if grep -qF 'postgres://' "${POSTGRES_SECRET_OUT}"; then
+  echo "postgres secret profile rendered a literal Postgres DSN" >&2
+  exit 1
+fi
+
+# --- Gate 8: provider env secret wiring. Provider configuration must
+# support envFrom Secret overlays and per-key secretKeyRef env entries.
+
+PROVIDER_ENVFROM_OUT="${TMP_DIR}/choreographer-helm-provider-envfrom.yaml"
+PROVIDER_ENV_OUT="${TMP_DIR}/choreographer-helm-provider-env.yaml"
+
+helm template choreographer "${CHART_PATH}" \
+  -f "${EMBEDDED_NATS_VALUES}" \
+  -f "${PROVIDER_ENV_VALUES}" \
+  --set image.tag=v0 \
+  > "${PROVIDER_ENVFROM_OUT}"
+
+provider_envfrom_markers=(
+  'envFrom:'
+  'secretRef:'
+  'name: choreographer-provider-env'
+)
+for marker in "${provider_envfrom_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${PROVIDER_ENVFROM_OUT}"; then
+    echo "provider envFrom chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+helm template choreographer "${CHART_PATH}" \
+  -f "${EMBEDDED_NATS_VALUES}" \
+  --set image.tag=v0 \
+  --set 'providerEnv[0].name=CHOREO_OPENAI_API_KEY' \
+  --set 'providerEnv[0].valueFrom.secretKeyRef.name=choreographer-openai' \
+  --set 'providerEnv[0].valueFrom.secretKeyRef.key=api-key' \
+  --set 'providerEnv[1].name=CHOREO_OPENAI_MODEL' \
+  --set 'providerEnv[1].value=gpt-4o-mini' \
+  > "${PROVIDER_ENV_OUT}"
+
+provider_env_markers=(
+  'name: CHOREO_OPENAI_API_KEY'
+  'secretKeyRef:'
+  'name: choreographer-openai'
+  'key: api-key'
+  'name: CHOREO_OPENAI_MODEL'
+  'value: gpt-4o-mini'
+)
+for marker in "${provider_env_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${PROVIDER_ENV_OUT}"; then
+    echo "provider env chart manifest missing required marker: ${marker}" >&2
     exit 1
   fi
 done

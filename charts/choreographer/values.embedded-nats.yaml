@@ -1,0 +1,44 @@
+# Standalone install profile with a release-local NATS bus.
+#
+# Use this when the Choreographer should publish/consume its event
+# surface but you do not want to provision an external NATS first.
+# Runtime, Postgres, provider secrets, and gRPC TLS stay off.
+
+config:
+  # Seed one NoopAgent + one single-agent council so a fresh install
+  # can answer RunCouncilDecision immediately.
+  seedSpecialties: triage
+
+messaging:
+  nats:
+    enabled: true
+    # Empty URL + embedded.enabled=true resolves to
+    # nats://<release-fullname>-nats:4222 at template time.
+    url: ""
+    publishPrefix: choreo
+    triggerSubject: choreo.trigger.>
+    embedded:
+      enabled: true
+      jetstream:
+        # Core NATS is enough for Choreographer's current fire-and-
+        # forget event surface.
+        enabled: false
+      monitoring:
+        enabled: false
+
+executor:
+  kind: noop
+
+persistence:
+  postgres:
+    enabled: false
+
+tls:
+  mode: none
+  existingSecret: ""
+
+pdb:
+  enabled: false
+
+networkPolicy:
+  enabled: false
