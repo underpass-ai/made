@@ -16,6 +16,7 @@ pub(crate) enum E2eScenario {
     OpenAiStructuredOutput,
     VllmStructuredOutput,
     VllmRealMultiAgent,
+    CeremonyDiagram,
 }
 
 impl E2eScenario {
@@ -34,6 +35,8 @@ impl E2eScenario {
     ];
 
     const VLLM_REAL: [Self; 1] = [Self::VllmRealMultiAgent];
+
+    const CEREMONY: [Self; 1] = [Self::CeremonyDiagram];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -63,6 +66,7 @@ impl E2eScenario {
             Self::OpenAiStructuredOutput => 8,
             Self::VllmStructuredOutput => 9,
             Self::VllmRealMultiAgent => 10,
+            Self::CeremonyDiagram => 11,
         }
     }
 }
@@ -108,6 +112,10 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::VLLM_REAL);
             return Ok(());
         }
+        "ceremony" | "ceremony-diagram" | "meeting-ceremony" => {
+            selected.extend(E2eScenario::CEREMONY);
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -149,7 +157,8 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         8 => Ok(E2eScenario::OpenAiStructuredOutput),
         9 => Ok(E2eScenario::VllmStructuredOutput),
         10 => Ok(E2eScenario::VllmRealMultiAgent),
-        _ => bail!("scenario number {number} is out of range; expected 1-10"),
+        11 => Ok(E2eScenario::CeremonyDiagram),
+        _ => bail!("scenario number {number} is out of range; expected 1-11"),
     }
 }
 
@@ -191,6 +200,7 @@ mod tests {
         assert_eq!(numbers(Some("structured-output")), vec![6, 7, 8, 9]);
         assert_eq!(numbers(Some("vllm-real-multi-agent")), vec![10]);
         assert_eq!(numbers(Some("council-vllm")), vec![10]);
+        assert_eq!(numbers(Some("ceremony-diagram")), vec![11]);
     }
 
     #[test]
@@ -201,11 +211,12 @@ mod tests {
             vec![1, 2, 3, 4, 6, 7, 8, 9]
         );
         assert_eq!(numbers(Some("s10")), vec![10]);
+        assert_eq!(numbers(Some("s11")), vec![11]);
     }
 
     #[test]
     fn invalid_selection_is_rejected() {
-        assert!(parse_scenario_selection(Some("11")).is_err());
+        assert!(parse_scenario_selection(Some("12")).is_err());
         assert!(parse_scenario_selection(Some("4-1")).is_err());
         assert!(parse_scenario_selection(Some("unknown")).is_err());
     }

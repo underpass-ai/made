@@ -38,6 +38,7 @@
 pub mod clock;
 pub mod config;
 pub mod memory;
+pub mod mermaid;
 pub mod noop;
 pub mod runtime;
 pub mod scoring;

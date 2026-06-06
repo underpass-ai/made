@@ -16,8 +16,8 @@ use scenario_selection::{
 use scenarios::{
     connect_with_retry, verify_causal_metadata_propagates_over_nats,
     verify_delete_missing_council_returns_false, verify_deliberate_returns_winner,
-    verify_external_context_bundle_round_trips, verify_multi_agent_council_against_real_vllm,
-    verify_orchestrate_invokes_runtime_executor,
+    verify_editorial_meeting_ceremony_diagram, verify_external_context_bundle_round_trips,
+    verify_multi_agent_council_against_real_vllm, verify_orchestrate_invokes_runtime_executor,
     verify_orchestrate_rejects_proposal_violating_json_schema, verify_seeded_council_visible,
     verify_structured_output_against_stub_llm, verify_structured_output_against_vllm_kind,
 };
@@ -125,6 +125,11 @@ async fn main() -> Result<()> {
         verify_multi_agent_council_against_real_vllm(&mut client)
             .await
             .context("scenario 10 failed")?;
+    }
+
+    if selected_scenarios.contains(&E2eScenario::CeremonyDiagram) {
+        info!("scenario 11: four-role ceremony YAML renders a Mermaid conversation diagram");
+        verify_editorial_meeting_ceremony_diagram().context("scenario 11 failed")?;
     }
 
     info!("E2E scenarios passed");
