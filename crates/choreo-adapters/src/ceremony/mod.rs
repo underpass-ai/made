@@ -1,5 +1,7 @@
+mod ceremony_participant_plan_adapter;
 mod deliberating_ceremony_step_handler;
 mod deliberation_step_config;
 
+pub use ceremony_participant_plan_adapter::CeremonyParticipantPlanAdapter;
 pub use deliberating_ceremony_step_handler::DeliberatingCeremonyStepHandler;
 pub use deliberation_step_config::DeliberationStepConfig;
