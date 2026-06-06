@@ -179,29 +179,6 @@ fn tool_catalog() -> Vec<Value> {
             }),
         ),
         tool_def(
-            "choreo_get_status",
-            "Return service health, version, uptime, and optionally statistics.",
-            json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {
-                    "include_stats": {
-                        "type": "boolean",
-                        "description": "When true, include the full Statistics snapshot in the response."
-                    }
-                }
-            }),
-        ),
-        tool_def(
-            "choreo_get_metrics",
-            "Return the current statistics snapshot.",
-            json!({
-                "type": "object",
-                "additionalProperties": false,
-                "properties": {}
-            }),
-        ),
-        tool_def(
             "choreo_run_council_decision",
             "Run a council deliberation against a registered output contract and return the validated winner plus candidate breakdown.",
             run_council_decision_schema(),
@@ -233,6 +210,29 @@ fn tool_catalog() -> Vec<Value> {
                 "additionalProperties": false,
                 "required": ["contract_id"],
                 "properties": { "contract_id": string_schema("Contract id previously returned by register_contract.") }
+            }),
+        ),
+        tool_def(
+            "choreo_get_status",
+            "Return service health, version, uptime, and optionally statistics.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "include_stats": {
+                        "type": "boolean",
+                        "description": "When true, include the full Statistics snapshot in the response."
+                    }
+                }
+            }),
+        ),
+        tool_def(
+            "choreo_get_metrics",
+            "Return the current statistics snapshot.",
+            json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {}
             }),
         ),
     ]
@@ -568,32 +568,35 @@ mod tests {
     }
 
     #[test]
-    fn tools_catalog_is_one_for_one_with_grpc_service() {
-        let tools = tools_list_result();
-        let arr = tools["tools"].as_array().unwrap();
-        let names: Vec<&str> = arr.iter().map(|t| t["name"].as_str().unwrap()).collect();
+    fn tools_catalog_is_derived_one_for_one_from_grpc_service() {
+        let catalog_names = catalog_tool_names();
+        let proto_tool_names: Vec<String> = proto_rpc_names()
+            .into_iter()
+            .map(rpc_name_to_tool_name)
+            .collect();
+
         assert_eq!(
-            names,
-            vec![
-                "choreo_deliberate",
-                "choreo_stream_deliberation",
-                "choreo_get_deliberation_result",
-                "choreo_orchestrate",
-                "choreo_create_council",
-                "choreo_list_councils",
-                "choreo_delete_council",
-                "choreo_register_agent",
-                "choreo_unregister_agent",
-                "choreo_process_trigger_event",
-                "choreo_get_status",
-                "choreo_get_metrics",
-                "choreo_run_council_decision",
-                "choreo_register_contract",
-                "choreo_list_contracts",
-                "choreo_delete_contract",
-            ]
+            catalog_names, proto_tool_names,
+            "every underpass.choreo.v1 gRPC RPC must have exactly one MCP tool"
         );
-        assert_eq!(arr.len(), 16);
+    }
+
+    #[test]
+    fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
+        let grpc_dispatch_source = include_str!("grpc/tools.rs");
+        let fixture_source = include_str!("fixture.rs");
+
+        for tool in catalog_tool_names() {
+            let dispatch_arm = format!("\"{tool}\" =>");
+            assert!(
+                grpc_dispatch_source.contains(&dispatch_arm),
+                "live gRPC backend is missing a dispatch arm for {tool}"
+            );
+            assert!(
+                fixture_source.contains(&dispatch_arm),
+                "fixture backend is missing a canned response for {tool}"
+            );
+        }
     }
 
     #[test]
@@ -642,5 +645,44 @@ mod tests {
         let e = serde_json::from_str::<Value>(&jsonrpc_error(json!(2), -32601, "no")).unwrap();
         assert_eq!(e["error"]["code"], -32601);
         assert_eq!(e["error"]["message"], "no");
+    }
+
+    fn catalog_tool_names() -> Vec<String> {
+        let tools = tools_list_result();
+        tools["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|t| t["name"].as_str().unwrap().to_owned())
+            .collect()
+    }
+
+    fn proto_rpc_names() -> Vec<&'static str> {
+        const CHOREO_PROTO: &str =
+            include_str!("../../choreo-mcp-proto/proto/underpass/choreo/v1/choreo.proto");
+
+        CHOREO_PROTO
+            .lines()
+            .filter_map(|line| {
+                let trimmed = line.trim();
+                let rest = trimmed.strip_prefix("rpc ")?;
+                rest.split_once('(').map(|(rpc, _)| rpc.trim())
+            })
+            .collect()
+    }
+
+    fn rpc_name_to_tool_name(rpc: &str) -> String {
+        let mut snake = String::new();
+        for (idx, ch) in rpc.chars().enumerate() {
+            if ch.is_uppercase() {
+                if idx > 0 {
+                    snake.push('_');
+                }
+                snake.extend(ch.to_lowercase());
+            } else {
+                snake.push(ch);
+            }
+        }
+        format!("choreo_{snake}")
     }
 }

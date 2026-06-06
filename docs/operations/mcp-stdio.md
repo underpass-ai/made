@@ -13,6 +13,336 @@ Companion docs:
 - [Codex CLI configuration](./mcp/codex.md)
 - [Claude Desktop configuration](./mcp/claude-desktop.md)
 
+## Quickstart — fixture mode
+
+After installing `choreo-mcp`, the fastest client-wiring check needs
+no running Choreographer and no gRPC endpoint:
+
+```bash
+CHOREO_MCP_BACKEND=fixture choreo-mcp
+```
+
+That starts the stdio MCP server and waits for JSON-RPC on stdin. For
+a terminal smoke that exits immediately:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | CHOREO_MCP_BACKEND=fixture choreo-mcp
+```
+
+From a checkout, without installing the binary first:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Fixture mode returns deterministic canned responses for every tool. It
+is for MCP client setup, tool-choice validation, and demos; it is not a
+live Choreographer integration test.
+
+## Quickstart — live local gRPC
+
+To test the MCP adapter against a real local Choreographer, use two
+terminals.
+
+Terminal 1 starts Choreographer with no external services and seeds one
+demo council:
+
+```bash
+CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage just run
+```
+
+If `just` is not installed, use the equivalent Cargo command:
+
+```bash
+CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage \
+  cargo run --locked -p choreo
+```
+
+Terminal 2 starts the MCP stdio adapter against the local gRPC endpoint:
+
+```bash
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
+```
+
+For a one-shot terminal smoke from a checkout:
+
+```bash
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+CHOREO_MCP_BIN=target/debug/choreo-mcp \
+  bash scripts/mcp/choreo-stdio-smoke.sh
+```
+
+The smoke calls `choreo_list_councils` and expects the seeded `triage`
+council. If `choreo-mcp` is already installed on PATH, omit
+`CHOREO_MCP_BIN`.
+
+## Tool Call Examples
+
+### CreateCouncil
+
+`choreo_create_council` creates a council for a specialty and asks the
+server to seat `num_agents` agents. In live mode those agents must
+already be resolvable. The gRPC handler mints ids in the form
+`agent-<specialty>-<index>`, so `{"specialty":"triage","num_agents":1}`
+expects `agent-triage-0` to exist.
+
+Fixture-mode terminal check:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_create_council","arguments":{"specialty":"triage","num_agents":1}}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Expected response shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "structuredContent": {
+      "council": {
+        "specialty": "triage",
+        "num_agents": 1,
+        "agents": []
+      }
+    }
+  }
+}
+```
+
+The fixture response is deterministic and does not mutate state. For a
+live local call, first ensure the matching agent exists through seeding
+or `choreo_register_agent`, then set
+`CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055` instead of
+`CHOREO_MCP_BACKEND=fixture`.
+
+### RegisterAgent
+
+`choreo_register_agent` registers an agent descriptor so later calls can
+resolve that agent by id. It does not attach the agent to a council by
+itself; `CreateCouncil` still controls council membership.
+
+Fixture-mode terminal check:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_register_agent","arguments":{"specialty":"review","agent":{"agent_id":"agent-review-0","specialty":"review","kind":"noop"},"agent_config":{"label":"local noop reviewer"}}}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Expected response shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "structuredContent": {
+      "agent_id": "agent-fixture-1"
+    }
+  }
+}
+```
+
+For a live local call, use `kind: "noop"` when you want a provider-free
+agent. Provider-backed kinds such as `openai` or `vllm` require the
+corresponding adapter and environment to be configured. Per-agent
+factory options belong in top-level `agent_config`; the nested `agent`
+object is only the public summary (`agent_id`, `specialty`, `kind`,
+optional `attributes`). If the next step is `CreateCouncil`, keep the id
+pattern `agent-<specialty>-<index>`; for the example above that means
+creating a `review` council with `num_agents: 1`.
+
+### RegisterContract
+
+`choreo_register_contract` stores an `OutputContract` in the contract
+registry. Later `RunCouncilDecision` calls reference it by
+`contract_id` and validate the council winner against its field rules
+and optional embedded JSON Schema.
+
+Fixture-mode terminal check:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_register_contract","arguments":{"contract":{"contract_id":"contract-review-v1","format":"json_object","fields":{"status":{"required":true,"allowed_string_values":["accepted","needs_changes"]},"summary":{"required":true},"rationale":{"required":false}}}}}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Expected response shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "structuredContent": {
+      "contract_id": "contract-fixture-1"
+    }
+  }
+}
+```
+
+For a live local call, keep the returned or requested `contract_id` and
+pass it to `choreo_run_council_decision`. `format` is currently
+`json_object`. Field rules can require named fields and constrain string
+values; for stricter validation, include a `json_schema` string. The
+canonical Report-shape example lives at
+[`api/examples/output-contracts/report.schema.json`](../../api/examples/output-contracts/report.schema.json).
+
+### RunCouncilDecision
+
+`choreo_run_council_decision` runs a council and validates the winning
+proposal against a previously registered contract. The call must include
+`contract_id`, `description`, and exactly one selector:
+`specialty` or `council_id`.
+
+Fixture-mode terminal check:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_run_council_decision","arguments":{"specialty":"review","contract_id":"contract-review-v1","description":"Review the candidate change and return status, summary, and rationale.","validation_mode":"VALIDATION_MODE_STRICT"}}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Expected response shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "structuredContent": {
+      "task_id": "task-fixture-1",
+      "winner": {
+        "rank": 0,
+        "proposal": {
+          "proposal_id": "proposal-fixture-a",
+          "author_agent_id": "agent-fixture-1",
+          "content": "fixture answer",
+          "metadata": {},
+          "revision_count": 0
+        },
+        "validation": {
+          "score": 1.0,
+          "reports": [
+            {
+              "kind": "content-non-empty",
+              "passed": true,
+              "summary": "ok",
+              "details": {}
+            }
+          ]
+        }
+      },
+      "validation": {
+        "passed": true,
+        "candidates_passed": 1,
+        "candidates_total": 1
+      },
+      "candidates": [
+        {
+          "proposal_id": "proposal-fixture-a",
+          "author_agent_id": "agent-fixture-1",
+          "score": 1.0,
+          "reports": [
+            {
+              "kind": "content-non-empty",
+              "passed": true,
+              "summary": "ok",
+              "details": {}
+            }
+          ],
+          "rank": 0,
+          "passed": true,
+          "revision_count": 0
+        }
+      ],
+      "duration_ms": 42,
+      "validation_mode": "VALIDATION_MODE_STRICT"
+    }
+  }
+}
+```
+
+For a live local call, the selected council must exist and the
+`contract_id` must already be registered. `VALIDATION_MODE_STRICT`
+fails the call when no candidate satisfies the contract; use
+`VALIDATION_MODE_WARN` when the caller wants the best-ranked candidate
+returned even if validation fails.
+
+### Orchestrate
+
+`choreo_orchestrate` runs the full path: deliberate on the task's
+specialty, pick the winning proposal, and pass that winner to the
+configured `ExecutorPort`. The call takes a `task` object and optional
+opaque `execution_options`.
+
+Fixture-mode terminal check:
+
+```bash
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_orchestrate","arguments":{"task":{"task_id":"task-review-orchestrate-1","description":"Review the candidate change and execute the accepted plan.","specialty":"review","constraints":{"rounds":1,"num_agents":1}},"execution_options":{"executor":"noop","trace_label":"mcp-orchestrate-demo"}}}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Expected response shape:
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "isError": false,
+    "structuredContent": {
+      "task_id": "task-fixture-1",
+      "execution_id": "exec-fixture-1",
+      "duration_ms": 73,
+      "winner": {
+        "rank": 0,
+        "proposal": {
+          "proposal_id": "proposal-fixture-a",
+          "author_agent_id": "agent-fixture-1",
+          "content": "fixture answer",
+          "metadata": {},
+          "revision_count": 0
+        },
+        "validation": {
+          "score": 1.0,
+          "reports": [
+            {
+              "kind": "content-non-empty",
+              "passed": true,
+              "summary": "ok",
+              "details": {}
+            }
+          ]
+        }
+      },
+      "candidates": [],
+      "metadata": {
+        "fixture": true
+      }
+    }
+  }
+}
+```
+
+For a live local call, `task.specialty` must point to an existing
+council. The default local executor is `noop`; set the Runtime executor
+environment only when you want the winner sent to an external Runtime
+service. `execution_options` is forwarded to the configured executor and
+takes precedence over overlapping execution-profile metadata.
+
 ## Tools
 
 The 16 MCP tools are 1:1 with the choreographer's gRPC service:
@@ -26,15 +356,15 @@ The 16 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_create_council`           | `CreateCouncil`                       | Create / replace a council for a specialty. |
 | `choreo_list_councils`            | `ListCouncils`                        | Enumerate registered councils. |
 | `choreo_delete_council`           | `DeleteCouncil`                       | Idempotent delete. |
-| `choreo_register_agent`           | `RegisterAgent`                       | Add an agent to a council (`noop` / `anthropic` / `openai` / `vllm`). |
+| `choreo_register_agent`           | `RegisterAgent`                       | Register an agent descriptor (`noop` / `anthropic` / `openai` / `vllm`). |
 | `choreo_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
 | `choreo_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
-| `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
-| `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 | `choreo_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
 | `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
+| `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
+| `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
 The choreographer API is **respected at 100%** — every proto field has
 an explicit JSON key in both the tool input schema and the response.
@@ -57,19 +387,26 @@ CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
 
 ## Installation
 
-For users outside the repo, install as a Cargo binary from Git:
+For users outside the repo, install as a Cargo binary from crates.io
+after the first release has published the package:
 
 ```bash
-cargo install --git https://github.com/underpass-ai/underpass-choreographer choreo-mcp --locked
+cargo install choreo-mcp --locked
 ```
 
-The repo helper wraps the same path and supports pinned refs:
+The repo helper uses the registry path by default:
 
 ```bash
 bash scripts/mcp/install-choreo-mcp.sh
+```
 
-CHOREO_MCP_TAG=v0.1.0 bash scripts/mcp/install-choreo-mcp.sh
-CHOREO_MCP_REV=<git-sha> bash scripts/mcp/install-choreo-mcp.sh
+For unreleased changes, switch the helper to Git mode and pin a ref:
+
+```bash
+CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh
+
+CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_TAG=v0.1.0 bash scripts/mcp/install-choreo-mcp.sh
+CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_REV=<git-sha> bash scripts/mcp/install-choreo-mcp.sh
 ```
 
 After install, the adapter is just `choreo-mcp` on PATH:
@@ -78,13 +415,12 @@ After install, the adapter is just `choreo-mcp` on PATH:
 CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com choreo-mcp
 ```
 
-### Distribution debt — crates.io
+### Distribution model
 
-The crate is **not** on crates.io. The generated gRPC client builds
-from the repository's checked-in proto tree, which `cargo install`
-needs at build time. Vendoring the proto tree into a dedicated crate
-is tracked as a follow-up in [`docs/backlog.md`](../backlog.md). The
-supported external path for this phase is `cargo install --git`.
+`choreo-mcp` depends on `choreo-mcp-proto`, a small vendored proto
+crate that carries only the public `underpass.choreo.v1` API needed by
+the MCP adapter. Release tags publish `choreo-mcp-proto` first, wait
+for crates.io index propagation, and then publish `choreo-mcp`.
 
 ## Live gRPC mode
 
