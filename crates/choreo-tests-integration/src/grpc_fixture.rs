@@ -20,6 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use choreo_adapters::agents::DispatchingAgentFactory;
+use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::{
@@ -27,7 +28,7 @@ use choreo_adapters::memory::{
     InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
-use choreo_adapters::noop::{NoopCeremonyStepHandler, NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -107,8 +108,6 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
             Arc::new(InMemoryCeremonyInstanceRepository::new());
-        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-            Arc::new(NoopCeremonyStepHandler::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         // `new()` yields a factory that supports only the always-on
@@ -126,6 +125,8 @@ impl GrpcFixture {
             statistics.clone(),
             "choreographer-tests",
         ));
+        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
         let orchestrate = Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
             executor,
@@ -259,8 +260,6 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
             Arc::new(InMemoryCeremonyInstanceRepository::new());
-        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-            Arc::new(NoopCeremonyStepHandler::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         let agent_factory = Arc::new(DispatchingAgentFactory::new());
@@ -276,6 +275,8 @@ impl GrpcFixture {
             statistics.clone(),
             "choreographer-tests",
         ));
+        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
         let orchestrate = Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
             executor,

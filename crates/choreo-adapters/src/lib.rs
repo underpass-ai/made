@@ -35,6 +35,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod ceremony;
 pub mod clock;
 pub mod config;
 pub mod memory;
