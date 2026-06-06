@@ -483,6 +483,37 @@ The script issues one `tools/call`, asserts `"jsonrpc":"2.0"` is
 present, `"isError":true` is absent, and an expected marker is
 present.
 
+## Multi-Agent vLLM E2E
+
+`make e2e-mcp-council-vllm` proves the same real-provider council
+ceremony through MCP stdio instead of direct gRPC. It builds
+`choreo-mcp` from the checkout when `CHOREO_MCP_BIN` is not set, then
+uses `tools/call` requests for:
+
+- `choreo_register_contract`
+- `choreo_register_agent`, once per vLLM agent
+- `choreo_create_council`
+- `choreo_run_council_decision`
+
+The final response must contain multiple candidates, at least one
+schema-valid candidate, a schema-valid Report winner, distinct agent
+authors, and `revision_count > 0` on the winner and every candidate.
+
+```bash
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
+CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
+CHOREO_VLLM_AGENT_COUNT=3 \
+  make e2e-mcp-council-vllm
+```
+
+Use the same TLS env vars as live mode when the Choreographer endpoint
+requires server TLS or mTLS. The Choreographer target must be built
+with `agent-vllm` and booted with `CHOREO_VLLM_MODEL` plus
+`CHOREO_VLLM_ENDPOINT` so `kind=vllm` is available; the E2E also sends
+per-agent `provider.endpoint`, `provider.model`, and
+`provider.max_tokens` overrides through MCP.
+
 ## Manual JSON-RPC check
 
 ```bash

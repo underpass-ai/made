@@ -233,12 +233,35 @@ For a real vLLM endpoint, use the operator-run flow:
 make e2e-provider-vllm
 ```
 
+For a full Choreographer council against real vLLM, use:
+
+```sh
+make e2e-council-vllm
+```
+
+That path uses the gRPC E2E runner. The MCP parity path uses the same
+contract and assertions but enters through the `choreo-mcp` stdio
+adapter:
+
+```sh
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
+CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
+  make e2e-mcp-council-vllm
+```
+
+Use it when the claim being tested is "MCP can drive the same
+multi-agent ceremony as gRPC", not just "the vLLM adapter can reach a
+provider".
+
 ## When To Use Which E2E
 
 | Command | Use For | External Dependencies |
 |---|---|---|
 | `make e2e-compose` | Repo-owned stack proof with deterministic fixtures. | Local container runtime only. |
 | `make e2e-provider-vllm` | Adapter-level validation against a real vLLM endpoint. | Kubernetes access plus real vLLM endpoint configuration. |
+| `make e2e-council-vllm` | gRPC council validation against multiple real vLLM agents. | Deployed Choreographer with `kind=vllm`, plus real vLLM endpoint configuration. |
+| `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM ceremony. | Deployed Choreographer reachable from `choreo-mcp`, plus real vLLM endpoint configuration. |
 | Kubernetes smoke job | Connectivity smoke after Helm install. | Cluster, deployed Choreographer, and matching runtime/provider fixtures if running compose-shaped scenarios. |
 
 Do not present `make e2e-compose` as proof of real provider

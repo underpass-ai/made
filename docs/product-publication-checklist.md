@@ -170,17 +170,25 @@ desde gRPC. MCP debe demostrar paridad de ejecución: registrar contrato,
 registrar agentes, crear council, ejecutar decisión y recibir evidencia
 de interacción (`revision_count`) en la respuesta.
 
-- [ ] Añadir test/runner MCP live contra Choreographer real usando
-  `choreo-mcp` como backend stdio.
-- [ ] Ejecutar por MCP `choreo_register_contract`,
+- [x] Añadir test/runner MCP live contra Choreographer real usando
+  `choreo-mcp` como backend stdio. Referencia:
+  `scripts/mcp/choreo-mcp-council-vllm.py`.
+- [x] Ejecutar por MCP `choreo_register_contract`,
   `choreo_register_agent`, `choreo_create_council` y
-  `choreo_run_council_decision`.
-- [ ] Asertar desde la respuesta MCP: `candidates_total > 1`,
+  `choreo_run_council_decision`. Referencia:
+  `scripts/mcp/choreo-mcp-council-vllm.py`.
+- [x] Asertar desde la respuesta MCP: `candidates_total > 1`,
   `candidates_passed >= 1`, winner JSON válido y
-  `revision_count > 0`.
-- [ ] Añadir Make/script separado, por ejemplo
+  `revision_count > 0`. Referencia:
+  `scripts/mcp/choreo-mcp-council-vllm.py`.
+- [x] Añadir Make/script separado:
   `make e2e-mcp-council-vllm`, para no mezclarlo con el runner gRPC.
-- [ ] Documentar el flujo MCP live y su relación con el E2E gRPC.
+  Referencia: `Makefile` y `scripts/ci/e2e-mcp-council-vllm.sh`.
+- [x] Documentar el flujo MCP live y su relación con el E2E gRPC.
+  Referencia: `docs/operations/mcp-stdio.md`,
+  `docs/operations/compose-e2e.md` y `docs/dev-loop.md`.
+- [ ] Ejecutar `make e2e-mcp-council-vllm` contra Choreographer +
+  vLLM real y registrar la evidencia del Job/smoke.
 
 ## Fase 3 - Consumer Smoke Integrable
 
@@ -543,3 +551,14 @@ Añadir entradas breves aquí cuando se completen bloques grandes.
   y `cargo test` sobre `choreo-e2e-runner`, `choreo-adapters` y
   `choreo-mcp`. Queda pendiente build/push de imagen y ejecución real
   del Job, más el E2E equivalente entrando por MCP.
+- 2026-06-06: runner MCP live añadido para la misma ceremonia
+  multiagente real vLLM: `make e2e-mcp-council-vllm` usa
+  `choreo-mcp` por stdio para registrar contrato, agentes, council y
+  ejecutar `RunCouncilDecision` en Strict. El runner valida múltiples
+  candidatos, autores distintos, Report JSON válido y
+  `revision_count > 0`. Validado sin endpoint real con
+  `python3 scripts/mcp/choreo-mcp-council-vllm.py --self-test`,
+  `python3 -m py_compile scripts/mcp/choreo-mcp-council-vllm.py`
+  con `PYTHONPYCACHEPREFIX=/tmp/choreo-mcp-pycache`, y
+  `bash -n scripts/ci/e2e-mcp-council-vllm.sh`; queda pendiente
+  ejecución contra Choreographer + vLLM real.

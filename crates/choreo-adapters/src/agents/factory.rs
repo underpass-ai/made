@@ -27,7 +27,13 @@
 //! - `provider.max_tokens` (number, ≤ `u32::MAX`)
 //! - `provider.timeout_secs` (number, ≤ `u32::MAX`; vLLM only)
 
-use std::{sync::Arc, time::Duration};
+use std::sync::Arc;
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
+use std::time::Duration;
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;

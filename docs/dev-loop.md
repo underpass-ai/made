@@ -240,6 +240,20 @@ CHOREO_MCP_BIN=target/debug/choreo-mcp \
 The canonical end-user guide is
 [`docs/operations/mcp-stdio.md`](operations/mcp-stdio.md).
 
+For MCP parity against the real multi-agent vLLM council ceremony,
+point MCP at a Choreographer that has `kind=vllm` enabled and provide
+the provider endpoint/model:
+
+```bash
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
+CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
+  make e2e-mcp-council-vllm
+```
+
+This path intentionally enters through `choreo-mcp` stdio. Use
+`make e2e-council-vllm` when validating the direct gRPC runner instead.
+
 ## Adding a new port
 
 1. Define the trait in `choreo-core/src/ports/<name>.rs` and

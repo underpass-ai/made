@@ -9,7 +9,7 @@ VERSION ?=
 	help \
 	contract fmt-check fmt clippy test bench-compile check \
 	integration-nats integration-postgres integration \
-	e2e-compose e2e-kubernetes e2e-provider-vllm e2e-council-vllm \
+	e2e-compose e2e-kubernetes e2e-provider-vllm e2e-council-vllm e2e-mcp-council-vllm \
 	consumer-smoke \
 	helm-lint build-image build-provider-image \
 	run run-otel \
@@ -25,6 +25,7 @@ help:
 		'  make e2e-kubernetes         # manual E2E via Kubernetes Job' \
 		'  make e2e-provider-vllm      # provider-level vLLM E2E' \
 		'  make e2e-council-vllm       # Choreographer council E2E against real vLLM' \
+		'  make e2e-mcp-council-vllm   # MCP stdio council E2E against real vLLM' \
 		'  make consumer-smoke         # drive the public RPC + bus surface as a consumer would' \
 		'  make helm-lint              # helm lint + hardened render assertions' \
 		'  make build-image            # production container image' \
@@ -73,6 +74,9 @@ e2e-provider-vllm:
 
 e2e-council-vllm:
 	bash scripts/ci/e2e-council-vllm.sh
+
+e2e-mcp-council-vllm:
+	bash scripts/ci/e2e-mcp-council-vllm.sh
 
 consumer-smoke:
 	cargo run -p choreo-consumer-smoke -- \
