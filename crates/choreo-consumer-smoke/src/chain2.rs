@@ -30,7 +30,8 @@ use crate::bundle::deterministic_bundle;
 use crate::outcome::{AssertionRecord, ChainOutcome};
 use crate::{Harness, HarnessConfig};
 
-const DEFAULT_REPORT_SCHEMA_PATH: &str = "api/examples/output-contracts/report.schema.json";
+pub(crate) const DEFAULT_REPORT_SCHEMA_PATH: &str =
+    "api/examples/output-contracts/report.schema.json";
 
 /// Read the Report schema from the path given by
 /// `CHOREO_REPORT_SCHEMA_PATH` (falling back to the in-repo default)
@@ -259,7 +260,7 @@ pub async fn run_chain_2_with_schema(
 /// scope; that keeps the API of this helper simple (just `&str` in,
 /// `AssertionRecord` out) at the cost of a slightly nested control
 /// flow.
-fn validate_payload_against_schema(
+pub(crate) fn validate_payload_against_schema(
     schema_json: &str,
     content: &str,
     duration: Duration,

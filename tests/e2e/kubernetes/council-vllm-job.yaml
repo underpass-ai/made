@@ -1,0 +1,77 @@
+# Choreographer E2E Job: multi-agent council against real vLLM.
+#
+# Applies into the namespace that already runs Choreographer and vLLM.
+# The Job drives Choreographer over gRPC, registers multiple `kind=vllm`
+# agents, creates a council, and runs `RunCouncilDecision` in Strict mode.
+#
+# Launch: `make e2e-council-vllm` (applies this manifest, waits for
+# completion, tails logs, deletes the Job).
+
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: choreographer-e2e-council-vllm
+  labels:
+    app.kubernetes.io/name: choreographer-e2e-council-vllm
+    app.kubernetes.io/part-of: underpass
+    provider: vllm
+spec:
+  backoffLimit: 0
+  ttlSecondsAfterFinished: 3600
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: choreographer-e2e-council-vllm
+        provider: vllm
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: runner
+          image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:latest
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          env:
+            - name: CHOREO_E2E_SCENARIOS
+              value: vllm-real-multi-agent
+            - name: CHOREOGRAPHER_ENDPOINT
+              value: http://choreographer:50055
+            - name: CHOREO_VLLM_ENDPOINT
+              value: http://underpass-llm-gemma-4-31b-structured:8000
+            - name: CHOREO_VLLM_MODEL
+              value: google/gemma-4-31B-it
+            - name: CHOREO_VLLM_AGENT_COUNT
+              value: "3"
+            - name: CHOREO_VLLM_MAX_TOKENS
+              value: "512"
+            - name: CHOREO_VLLM_TIMEOUT_SECS
+              value: "300"
+            - name: RUST_LOG
+              value: info
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 32Mi

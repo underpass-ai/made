@@ -180,6 +180,17 @@ impl VllmConfig {
         Ok(self)
     }
 
+    pub fn with_model(mut self, model: impl Into<String>) -> Result<Self, DomainError> {
+        let value = model.into().trim().to_owned();
+        if value.is_empty() {
+            return Err(DomainError::EmptyField {
+                field: "vllm.model",
+            });
+        }
+        self.model = value;
+        Ok(self)
+    }
+
     #[must_use]
     pub fn with_bearer(mut self, bearer: VllmBearerToken) -> Self {
         self.bearer = Some(bearer);
@@ -468,6 +479,17 @@ mod tests {
     }
 
     #[test]
+    fn empty_model_override_is_rejected() {
+        let cfg = VllmConfig::new("m").unwrap();
+        assert!(matches!(
+            cfg.with_model("  ").unwrap_err(),
+            DomainError::EmptyField {
+                field: "vllm.model"
+            }
+        ));
+    }
+
+    #[test]
     fn zero_max_tokens_is_rejected() {
         let cfg = VllmConfig::new("m").unwrap();
         assert!(matches!(
@@ -670,6 +692,35 @@ mod tests {
             .await;
 
         test_agent(&server).generate(draft()).await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn request_body_honors_model_override() {
+        use wiremock::matchers::body_string_contains;
+
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .and(body_string_contains(r#""model":"google/gemma-4-31B-it""#))
+            .respond_with(ResponseTemplate::new(200).set_body_json(chat_response("ok")))
+            .expect(1)
+            .mount(&server)
+            .await;
+
+        let config = VllmConfig::new("base-model")
+            .unwrap()
+            .with_model("google/gemma-4-31B-it")
+            .unwrap()
+            .with_endpoint(server.uri())
+            .unwrap();
+        let agent = VllmAgent::new(
+            AgentId::new("vllm-1").unwrap(),
+            Specialty::new("triage").unwrap(),
+            config,
+        )
+        .unwrap();
+
+        agent.generate(draft()).await.unwrap();
     }
 
     // --- error handling -------------------------------------------------

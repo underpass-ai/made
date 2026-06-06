@@ -18,19 +18,25 @@
 //!   `CHOREO_OPENAI_MAX_TOKENS` (optional)
 //! - `CHOREO_VLLM_MODEL` and `CHOREO_VLLM_ENDPOINT` (both required to
 //!   enable kind=`vllm`); `CHOREO_VLLM_BEARER_TOKEN`,
-//!   `CHOREO_VLLM_MAX_TOKENS` (optional)
+//!   `CHOREO_VLLM_MAX_TOKENS`, `CHOREO_VLLM_TIMEOUT_SECS` (optional)
 //!
 //! Per-descriptor attributes recognised on `create`:
 //!
 //! - `provider.model` (string)
 //! - `provider.endpoint` (string)
 //! - `provider.max_tokens` (number, ≤ `u32::MAX`)
+//! - `provider.timeout_secs` (number, ≤ `u32::MAX`; vLLM only)
 
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{AgentDescriptor, AgentFactoryPort, AgentPort};
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 use choreo_core::value_objects::Attributes;
 
 use crate::noop::{NoopAgent, NOOP_AGENT_KIND};
@@ -48,9 +54,26 @@ pub const ANTHROPIC_AGENT_KIND: &str = "anthropic";
 pub const OPENAI_AGENT_KIND: &str = "openai";
 pub const VLLM_AGENT_KIND: &str = "vllm";
 
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 const ATTR_MODEL: &str = "provider.model";
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 const ATTR_ENDPOINT: &str = "provider.endpoint";
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 const ATTR_MAX_TOKENS: &str = "provider.max_tokens";
+#[cfg(feature = "agent-vllm")]
+const ATTR_TIMEOUT_SECS: &str = "provider.timeout_secs";
 
 /// Composes provider-specific factories behind a single
 /// [`AgentFactoryPort`].
@@ -81,22 +104,38 @@ impl DispatchingAgentFactory {
     /// strings count as unset so operators can clear a variable without
     /// deleting it.
     pub fn from_env() -> Result<Self, DomainError> {
-        let mut factory = Self::new();
-
-        #[cfg(feature = "agent-anthropic")]
+        #[cfg(not(any(
+            feature = "agent-anthropic",
+            feature = "agent-openai",
+            feature = "agent-vllm"
+        )))]
         {
-            factory.anthropic = load_anthropic_from_env()?;
-        }
-        #[cfg(feature = "agent-openai")]
-        {
-            factory.openai = load_openai_from_env()?;
-        }
-        #[cfg(feature = "agent-vllm")]
-        {
-            factory.vllm = load_vllm_from_env()?;
+            Ok(Self::new())
         }
 
-        Ok(factory)
+        #[cfg(any(
+            feature = "agent-anthropic",
+            feature = "agent-openai",
+            feature = "agent-vllm"
+        ))]
+        {
+            let mut factory = Self::new();
+
+            #[cfg(feature = "agent-anthropic")]
+            {
+                factory.anthropic = load_anthropic_from_env()?;
+            }
+            #[cfg(feature = "agent-openai")]
+            {
+                factory.openai = load_openai_from_env()?;
+            }
+            #[cfg(feature = "agent-vllm")]
+            {
+                factory.vllm = load_vllm_from_env()?;
+            }
+
+            Ok(factory)
+        }
     }
 
     #[cfg(feature = "agent-anthropic")]
@@ -127,20 +166,36 @@ impl DispatchingAgentFactory {
     /// env or builder). Useful for honest startup logging.
     #[must_use]
     pub fn supported_kinds(&self) -> Vec<&'static str> {
-        let mut kinds = vec![NOOP_AGENT_KIND];
-        #[cfg(feature = "agent-anthropic")]
-        if self.anthropic.is_some() {
-            kinds.push(ANTHROPIC_AGENT_KIND);
+        #[cfg(not(any(
+            feature = "agent-anthropic",
+            feature = "agent-openai",
+            feature = "agent-vllm"
+        )))]
+        {
+            vec![NOOP_AGENT_KIND]
         }
-        #[cfg(feature = "agent-openai")]
-        if self.openai.is_some() {
-            kinds.push(OPENAI_AGENT_KIND);
+
+        #[cfg(any(
+            feature = "agent-anthropic",
+            feature = "agent-openai",
+            feature = "agent-vllm"
+        ))]
+        {
+            let mut kinds = vec![NOOP_AGENT_KIND];
+            #[cfg(feature = "agent-anthropic")]
+            if self.anthropic.is_some() {
+                kinds.push(ANTHROPIC_AGENT_KIND);
+            }
+            #[cfg(feature = "agent-openai")]
+            if self.openai.is_some() {
+                kinds.push(OPENAI_AGENT_KIND);
+            }
+            #[cfg(feature = "agent-vllm")]
+            if self.vllm.is_some() {
+                kinds.push(VLLM_AGENT_KIND);
+            }
+            kinds
         }
-        #[cfg(feature = "agent-vllm")]
-        if self.vllm.is_some() {
-            kinds.push(VLLM_AGENT_KIND);
-        }
-        kinds
     }
 }
 
@@ -206,6 +261,11 @@ impl AgentFactoryPort for DispatchingAgentFactory {
 // Env helpers
 // ---------------------------------------------------------------------------
 
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 fn env_nonempty(key: &str) -> Option<String> {
     std::env::var(key).ok().and_then(|value| {
         let trimmed = value.trim();
@@ -217,6 +277,11 @@ fn env_nonempty(key: &str) -> Option<String> {
     })
 }
 
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 fn env_u32(key: &str, field: &'static str) -> Result<Option<u32>, DomainError> {
     let Some(raw) = env_nonempty(key) else {
         return Ok(None);
@@ -224,6 +289,24 @@ fn env_u32(key: &str, field: &'static str) -> Result<Option<u32>, DomainError> {
     raw.parse::<u32>()
         .map(Some)
         .map_err(|_| DomainError::InvariantViolated { reason: field })
+}
+
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
+fn env_duration_secs(key: &str, field: &'static str) -> Result<Option<Duration>, DomainError> {
+    let Some(raw) = env_nonempty(key) else {
+        return Ok(None);
+    };
+    let secs = raw
+        .parse::<u64>()
+        .map_err(|_| DomainError::InvariantViolated { reason: field })?;
+    if secs == 0 {
+        return Err(DomainError::MustBeNonZero { field });
+    }
+    Ok(Some(Duration::from_secs(secs)))
 }
 
 #[cfg(feature = "agent-anthropic")]
@@ -279,6 +362,9 @@ fn load_vllm_from_env() -> Result<Option<VllmConfig>, DomainError> {
     if let Some(max_tokens) = env_u32("CHOREO_VLLM_MAX_TOKENS", "vllm.max_tokens")? {
         config = config.with_max_tokens(max_tokens)?;
     }
+    if let Some(timeout) = env_duration_secs("CHOREO_VLLM_TIMEOUT_SECS", "vllm.timeout_secs")? {
+        config = config.with_timeout(timeout);
+    }
     Ok(Some(config))
 }
 
@@ -286,6 +372,11 @@ fn load_vllm_from_env() -> Result<Option<VllmConfig>, DomainError> {
 // Per-descriptor attribute overrides
 // ---------------------------------------------------------------------------
 
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 fn attr_string<'a>(
     attrs: &'a Attributes,
     key: &'static str,
@@ -307,6 +398,11 @@ fn attr_string<'a>(
     }
 }
 
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 fn attr_u32(attrs: &Attributes, key: &'static str) -> Result<Option<u32>, DomainError> {
     let Some(value) = attrs.get(key) else {
         return Ok(None);
@@ -314,11 +410,21 @@ fn attr_u32(attrs: &Attributes, key: &'static str) -> Result<Option<u32>, Domain
     if value.is_null() {
         return Ok(None);
     }
-    let n = value.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or(
-        DomainError::InvariantViolated {
-            reason: "agent factory: provider.max_tokens must be a non-negative u32",
-        },
-    )?;
+    let n = value
+        .as_u64()
+        .and_then(|n| u32::try_from(n).ok())
+        .or_else(|| {
+            value.as_f64().and_then(|n| {
+                if n.is_finite() && n >= 0.0 && n.fract() == 0.0 && n <= u32::MAX as f64 {
+                    Some(n as u32)
+                } else {
+                    None
+                }
+            })
+        })
+        .ok_or(DomainError::InvariantViolated {
+            reason: "agent factory: provider numeric override must be a non-negative u32",
+        })?;
     Ok(Some(n))
 }
 
@@ -361,15 +467,23 @@ fn apply_vllm_attributes(
     mut config: VllmConfig,
     attrs: &Attributes,
 ) -> Result<VllmConfig, DomainError> {
+    if let Some(model) = attr_string(attrs, ATTR_MODEL)? {
+        config = config.with_model(model)?;
+    }
     if let Some(endpoint) = attr_string(attrs, ATTR_ENDPOINT)? {
         config = config.with_endpoint(endpoint)?;
     }
     if let Some(max_tokens) = attr_u32(attrs, ATTR_MAX_TOKENS)? {
         config = config.with_max_tokens(max_tokens)?;
     }
-    // VllmConfig has no `with_model`; the model is baked into the
-    // base config at boot. Descriptor overrides for model would
-    // require an explicit setter — out of scope for this slice.
+    if let Some(timeout_secs) = attr_u32(attrs, ATTR_TIMEOUT_SECS)? {
+        if timeout_secs == 0 {
+            return Err(DomainError::MustBeNonZero {
+                field: "vllm.timeout_secs",
+            });
+        }
+        config = config.with_timeout(Duration::from_secs(timeout_secs.into()));
+    }
     Ok(config)
 }
 
@@ -377,8 +491,10 @@ fn apply_vllm_attributes(
 mod tests {
     use super::*;
 
-    use choreo_core::value_objects::{AgentId, AgentKind, Specialty};
+    use choreo_core::value_objects::{AgentId, AgentKind, Attributes, Specialty};
+    #[cfg(any(feature = "agent-anthropic", feature = "agent-vllm"))]
     use serde_json::json;
+    #[cfg(any(feature = "agent-anthropic", feature = "agent-vllm"))]
     use std::collections::BTreeMap;
 
     // Tests touch process-wide env vars. Serialize them with a local
@@ -408,6 +524,7 @@ mod tests {
             "CHOREO_VLLM_ENDPOINT",
             "CHOREO_VLLM_BEARER_TOKEN",
             "CHOREO_VLLM_MAX_TOKENS",
+            "CHOREO_VLLM_TIMEOUT_SECS",
         ] {
             std::env::remove_var(key);
         }
@@ -552,6 +669,69 @@ mod tests {
         std::env::set_var("CHOREO_VLLM_ENDPOINT", "https://vllm.example/v1");
         let factory = DispatchingAgentFactory::from_env().unwrap();
         assert!(factory.supported_kinds().contains(&"vllm"));
+        clear_provider_env();
+    }
+
+    #[cfg(feature = "agent-vllm")]
+    #[tokio::test]
+    async fn vllm_kind_accepts_protobuf_numeric_overrides() {
+        let factory = DispatchingAgentFactory::new().with_vllm(
+            VllmConfig::new("Qwen3.5-9B")
+                .unwrap()
+                .with_endpoint("https://vllm.example")
+                .unwrap(),
+        );
+        let attrs = Attributes::new(BTreeMap::from([
+            (ATTR_MAX_TOKENS.to_owned(), json!(512.0)),
+            (ATTR_TIMEOUT_SECS.to_owned(), json!(300.0)),
+        ]))
+        .unwrap();
+
+        factory
+            .create(descriptor("a-vllm", "vllm", attrs))
+            .await
+            .unwrap();
+    }
+
+    #[cfg(feature = "agent-vllm")]
+    #[tokio::test]
+    async fn vllm_kind_rejects_fractional_numeric_override() {
+        let factory = DispatchingAgentFactory::new().with_vllm(
+            VllmConfig::new("Qwen3.5-9B")
+                .unwrap()
+                .with_endpoint("https://vllm.example")
+                .unwrap(),
+        );
+        let attrs =
+            Attributes::new(BTreeMap::from([(ATTR_MAX_TOKENS.to_owned(), json!(512.5))])).unwrap();
+
+        let err = factory
+            .create(descriptor("a-vllm", "vllm", attrs))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "agent factory: provider numeric override must be a non-negative u32"
+            }
+        ));
+    }
+
+    #[cfg(feature = "agent-vllm")]
+    #[tokio::test]
+    async fn vllm_kind_rejects_invalid_timeout_env() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_provider_env();
+        std::env::set_var("CHOREO_VLLM_MODEL", "Qwen3.5-9B");
+        std::env::set_var("CHOREO_VLLM_ENDPOINT", "https://vllm.example/v1");
+        std::env::set_var("CHOREO_VLLM_TIMEOUT_SECS", "slow");
+        let err = DispatchingAgentFactory::from_env().unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "vllm.timeout_secs"
+            }
+        ));
         clear_provider_env();
     }
 }

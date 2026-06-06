@@ -60,7 +60,9 @@ pub(super) fn system_prompt_revise(id: &str, specialty: &str) -> String {
          - Address the concrete points raised; keep what already works.\n\
          \n\
          Output contract:\n\
-         - Answer only with the revised proposal body. No preamble."
+         - Answer only with the revised proposal body. No preamble.\n\
+         - If the previous proposal is a JSON object, answer only with a revised JSON object.\n\
+         - Do not wrap JSON in markdown fences, and do not add prose outside the JSON object."
     )
 }
 
@@ -107,7 +109,9 @@ pub(super) fn user_prompt_critique(peer_content: &str, constraints: &TaskConstra
     if let Some(output_contract) = serialize_output_contract(constraints.output_contract()) {
         let _ = write!(
             prompt,
-            "\n\nStructured output contract to enforce while critiquing:\n{output_contract}"
+            "\n\nStructured output contract to enforce while critiquing:\n{output_contract}\n\n\
+             In your critique, explicitly tell the peer to keep the revision as a JSON object only, \
+             preserve required fields, remove fields not allowed by the contract, and avoid markdown fences."
         );
     }
 
@@ -119,6 +123,9 @@ pub(super) fn user_prompt_revise(own_content: &str, critique: &Critique) -> Stri
     format!(
         "Your previous proposal:\n---\n{own_content}\n---\n\n\
          Critique to address:\n---\n{feedback}\n---\n\n\
+         Formatting rule:\n\
+         If the previous proposal is JSON, produce only the revised JSON object. \
+         Do not include analysis, markdown, or text before or after the JSON.\n\n\
          Produce the revised proposal now.",
         feedback = critique.feedback,
     )
@@ -286,6 +293,7 @@ mod tests {
         let s = user_prompt_critique(r#"{"decision":"emit_event"}"#, &constraints);
         assert!(s.contains("Structured output contract"));
         assert!(s.contains("decision-contract"));
+        assert!(s.contains("JSON object only"));
     }
 
     #[test]
@@ -298,6 +306,7 @@ mod tests {
         );
         assert!(s.contains("v1 body"));
         assert!(s.contains("tighten the rubric"));
+        assert!(s.contains("produce only the revised JSON object"));
     }
 
     fn sample_external_context() -> ExternalContextBundle {

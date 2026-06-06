@@ -12,6 +12,7 @@ pub fn proposal_to_proto(p: &Proposal) -> pb::Proposal {
         author_agent_id: p.author().as_str().to_owned(),
         content: p.content().to_owned(),
         metadata: Some(attributes_to_struct(p.attributes())),
+        revision_count: p.revision_count(),
     }
 }
 
@@ -37,5 +38,6 @@ mod tests {
         assert_eq!(pb.author_agent_id, "a1");
         assert_eq!(pb.content, "hello");
         assert!(pb.metadata.is_some());
+        assert_eq!(pb.revision_count, 0);
     }
 }

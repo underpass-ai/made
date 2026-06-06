@@ -15,7 +15,10 @@
 use std::time::Duration;
 
 use choreo_consumer_smoke::outcome::AssertionStatus;
-use choreo_consumer_smoke::{run_chain_1, run_chain_2, ChainOutcome, Harness, HarnessConfig};
+use choreo_consumer_smoke::{
+    run_chain_1, run_chain_2, run_positive_path, ChainOutcome, Harness, HarnessConfig,
+    PositivePathConfig,
+};
 use clap::{Parser, ValueEnum};
 use tracing_subscriber::EnvFilter;
 
@@ -39,6 +42,23 @@ struct Args {
     contract_id: String,
     #[arg(long, value_enum, default_value_t = ChainSelector::All)]
     chain: ChainSelector,
+    #[arg(
+        long,
+        value_enum,
+        default_value_t = ProviderKind::Openai,
+        env = "CONSUMER_SMOKE_PROVIDER_KIND"
+    )]
+    provider_kind: ProviderKind,
+    #[arg(long, env = "CONSUMER_SMOKE_PROVIDER_ENDPOINT")]
+    provider_endpoint: Option<String>,
+    #[arg(
+        long,
+        env = "CONSUMER_SMOKE_PROVIDER_MODEL",
+        default_value = "stub-report-v1"
+    )]
+    provider_model: String,
+    #[arg(long, env = "CONSUMER_SMOKE_POSITIVE_SPECIALTY")]
+    positive_specialty: Option<String>,
     #[arg(long, default_value_t = 30)]
     connect_budget_secs: u64,
 }
@@ -47,7 +67,24 @@ struct Args {
 enum ChainSelector {
     One,
     Two,
+    #[value(name = "positive-path", alias = "positive", alias = "three")]
+    PositivePath,
     All,
+}
+
+#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
+enum ProviderKind {
+    Openai,
+    Vllm,
+}
+
+impl ProviderKind {
+    const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Openai => "openai",
+            Self::Vllm => "vllm",
+        }
+    }
 }
 
 #[tokio::main]
@@ -83,21 +120,57 @@ async fn run() -> i32 {
     };
 
     let mut outcomes: Vec<ChainOutcome> = Vec::new();
-    if args.chain == ChainSelector::One || args.chain == ChainSelector::All {
-        match run_chain_1(&mut harness, &cfg).await {
-            Ok(o) => outcomes.push(o),
-            Err(err) => {
-                eprintln!("error: chain1 failed to run: {err:#}");
+    match args.chain {
+        ChainSelector::One => {
+            if run_chain_one(&mut harness, &cfg, &mut outcomes)
+                .await
+                .is_err()
+            {
                 return 2;
             }
         }
-    }
-    if args.chain == ChainSelector::Two || args.chain == ChainSelector::All {
-        match run_chain_2(&mut harness, &cfg).await {
-            Ok(o) => outcomes.push(o),
-            Err(err) => {
-                eprintln!("error: chain2 failed to run: {err:#}");
+        ChainSelector::Two => {
+            if run_chain_two(&mut harness, &cfg, &mut outcomes)
+                .await
+                .is_err()
+            {
                 return 2;
+            }
+        }
+        ChainSelector::All => {
+            // Chain 2 registers the Report contract. Running it first
+            // makes the default smoke usable against a fresh registry
+            // before Chain 1 consumes the same contract in Warn mode.
+            if run_chain_two(&mut harness, &cfg, &mut outcomes)
+                .await
+                .is_err()
+            {
+                return 2;
+            }
+            if run_chain_one(&mut harness, &cfg, &mut outcomes)
+                .await
+                .is_err()
+            {
+                return 2;
+            }
+        }
+        ChainSelector::PositivePath => {
+            let provider_kind = args.provider_kind.as_str().to_owned();
+            let positive_cfg = PositivePathConfig {
+                specialty: args
+                    .positive_specialty
+                    .clone()
+                    .unwrap_or_else(|| format!("consumer-smoke-report-{provider_kind}")),
+                agent_kind: provider_kind,
+                agent_endpoint: args.provider_endpoint.clone(),
+                agent_model: args.provider_model.clone(),
+            };
+            match run_positive_path(&mut harness, &cfg, &positive_cfg).await {
+                Ok(o) => outcomes.push(o),
+                Err(err) => {
+                    eprintln!("error: positive-path failed to run: {err:#}");
+                    return 2;
+                }
             }
         }
     }
@@ -106,6 +179,40 @@ async fn run() -> i32 {
     print_summary(&outcomes);
 
     i32::from(outcomes.iter().any(|o| o.failed_count() > 0))
+}
+
+async fn run_chain_one(
+    harness: &mut Harness,
+    cfg: &HarnessConfig,
+    outcomes: &mut Vec<ChainOutcome>,
+) -> Result<(), ()> {
+    match run_chain_1(harness, cfg).await {
+        Ok(o) => {
+            outcomes.push(o);
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("error: chain1 failed to run: {err:#}");
+            Err(())
+        }
+    }
+}
+
+async fn run_chain_two(
+    harness: &mut Harness,
+    cfg: &HarnessConfig,
+    outcomes: &mut Vec<ChainOutcome>,
+) -> Result<(), ()> {
+    match run_chain_2(harness, cfg).await {
+        Ok(o) => {
+            outcomes.push(o);
+            Ok(())
+        }
+        Err(err) => {
+            eprintln!("error: chain2 failed to run: {err:#}");
+            Err(())
+        }
+    }
 }
 
 fn print_table(outcomes: &[ChainOutcome]) {
@@ -187,5 +294,31 @@ mod tests {
     fn args_parse_chain_two() {
         let args = Args::try_parse_from(["choreo-consumer-smoke", "--chain", "two"]).unwrap();
         assert_eq!(args.chain, ChainSelector::Two);
+    }
+
+    #[test]
+    fn args_parse_positive_path_provider_options() {
+        let args = Args::try_parse_from([
+            "choreo-consumer-smoke",
+            "--chain",
+            "positive-path",
+            "--provider-kind",
+            "vllm",
+            "--provider-endpoint",
+            "http://stub-llm:8000",
+            "--provider-model",
+            "stub-report-vllm-v1",
+            "--positive-specialty",
+            "report-vllm",
+        ])
+        .unwrap();
+        assert_eq!(args.chain, ChainSelector::PositivePath);
+        assert_eq!(args.provider_kind, ProviderKind::Vllm);
+        assert_eq!(
+            args.provider_endpoint.as_deref(),
+            Some("http://stub-llm:8000")
+        );
+        assert_eq!(args.provider_model, "stub-report-vllm-v1");
+        assert_eq!(args.positive_specialty.as_deref(), Some("report-vllm"));
     }
 }

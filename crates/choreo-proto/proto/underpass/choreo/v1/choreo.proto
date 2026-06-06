@@ -237,6 +237,7 @@ message Proposal {
   string author_agent_id = 2;
   string content = 3; // free-form solution artifact
   google.protobuf.Struct metadata = 4; // opaque per-agent annotations
+  uint32 revision_count = 5; // peer-review revisions applied to this proposal
 }
 
 // Outcome of validating and scoring a proposal.
@@ -518,6 +519,7 @@ message CandidateSummary {
   repeated ValidatorReport reports = 4;
   uint32 rank = 5;
   bool passed = 6;
+  uint32 revision_count = 7;
 }
 
 message ValidationOutcomeSummary {
