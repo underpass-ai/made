@@ -27,6 +27,7 @@ WORKDIR /src
 COPY Cargo.toml Cargo.lock ./
 COPY rust-toolchain.toml ./
 COPY crates ./crates
+COPY tests/e2e/ceremonies ./tests/e2e/ceremonies
 # Ship the canonical Report JSON Schema alongside the runner binary
 # so scenario 8 can read it inside the container. Pinned to a stable
 # path; compose sets `CHOREO_REPORT_SCHEMA_PATH=/etc/choreo/report.schema.json`

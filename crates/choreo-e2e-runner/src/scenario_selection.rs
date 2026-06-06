@@ -17,6 +17,7 @@ pub(crate) enum E2eScenario {
     VllmStructuredOutput,
     VllmRealMultiAgent,
     CeremonyDiagram,
+    CeremonyVllm,
 }
 
 impl E2eScenario {
@@ -37,6 +38,8 @@ impl E2eScenario {
     const VLLM_REAL: [Self; 1] = [Self::VllmRealMultiAgent];
 
     const CEREMONY: [Self; 1] = [Self::CeremonyDiagram];
+
+    const CEREMONY_VLLM: [Self; 1] = [Self::CeremonyVllm];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -67,6 +70,7 @@ impl E2eScenario {
             Self::VllmStructuredOutput => 9,
             Self::VllmRealMultiAgent => 10,
             Self::CeremonyDiagram => 11,
+            Self::CeremonyVllm => 12,
         }
     }
 }
@@ -116,6 +120,10 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::CEREMONY);
             return Ok(());
         }
+        "ceremony-vllm" | "meeting-ceremony-vllm" | "gemma-ceremony" => {
+            selected.extend(E2eScenario::CEREMONY_VLLM);
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -141,7 +149,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
     }
 
     bail!(
-        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, 1-10, or a range like 1-4"
+        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, 1-12, or a range like 1-4"
     )
 }
 
@@ -158,7 +166,8 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         9 => Ok(E2eScenario::VllmStructuredOutput),
         10 => Ok(E2eScenario::VllmRealMultiAgent),
         11 => Ok(E2eScenario::CeremonyDiagram),
-        _ => bail!("scenario number {number} is out of range; expected 1-11"),
+        12 => Ok(E2eScenario::CeremonyVllm),
+        _ => bail!("scenario number {number} is out of range; expected 1-12"),
     }
 }
 
@@ -201,6 +210,8 @@ mod tests {
         assert_eq!(numbers(Some("vllm-real-multi-agent")), vec![10]);
         assert_eq!(numbers(Some("council-vllm")), vec![10]);
         assert_eq!(numbers(Some("ceremony-diagram")), vec![11]);
+        assert_eq!(numbers(Some("ceremony-vllm")), vec![12]);
+        assert_eq!(numbers(Some("gemma-ceremony")), vec![12]);
     }
 
     #[test]
@@ -212,11 +223,12 @@ mod tests {
         );
         assert_eq!(numbers(Some("s10")), vec![10]);
         assert_eq!(numbers(Some("s11")), vec![11]);
+        assert_eq!(numbers(Some("s12")), vec![12]);
     }
 
     #[test]
     fn invalid_selection_is_rejected() {
-        assert!(parse_scenario_selection(Some("12")).is_err());
+        assert!(parse_scenario_selection(Some("13")).is_err());
         assert!(parse_scenario_selection(Some("4-1")).is_err());
         assert!(parse_scenario_selection(Some("unknown")).is_err());
     }

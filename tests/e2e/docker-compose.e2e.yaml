@@ -97,6 +97,13 @@ services:
       # runner robust against operators who run the binary outside
       # the container.
       CHOREO_REPORT_SCHEMA_PATH: "/etc/choreo/report.schema.json"
+      # Allows opt-in `CHOREO_E2E_SCENARIOS=ceremony-vllm make
+      # e2e-compose` to render the vLLM-backed ceremony against the
+      # deterministic stub-llm sidecar.
+      CHOREO_VLLM_MODEL: "stub-report-vllm-v1"
+      CHOREO_VLLM_ENDPOINT: "http://stub-llm:8000"
+      CHOREO_VLLM_MAX_TOKENS: "512"
+      CHOREO_VLLM_TIMEOUT_SECS: "30"
       RUST_LOG: "info"
     depends_on:
       - choreographer
