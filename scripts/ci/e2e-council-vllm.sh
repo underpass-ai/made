@@ -11,7 +11,7 @@ NAMESPACE="${NAMESPACE:-underpass-runtime}"
 JOB_NAME="${JOB_NAME:-choreographer-e2e-council-vllm}"
 MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/council-vllm-job.yaml"
 TIMEOUT="${TIMEOUT:-600s}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:latest}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:e2e-latest}"
 CHOREOGRAPHER_ENDPOINT="${CHOREOGRAPHER_ENDPOINT:-http://choreographer:50055}"
 VLLM_ENDPOINT="${CHOREO_VLLM_ENDPOINT:-http://underpass-llm-gemma-4-31b-structured:8000}"
 VLLM_MODEL="${CHOREO_VLLM_MODEL:-google/gemma-4-31B-it}"
@@ -44,7 +44,7 @@ awk \
     -v scenarios="${SCENARIOS}" \
     -v pull_secret="${IMAGE_PULL_SECRET}" '
       {
-        gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:latest", "image: " image);
+        gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:e2e-latest", "image: " image);
       }
       /- name: CHOREO_E2E_SCENARIOS/ {
         print;
