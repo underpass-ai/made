@@ -28,6 +28,7 @@ const RUN_ID_ENV: &str = "CHOREO_E2E_RUN_ID";
 /// council, then runs `RunCouncilDecision` in Strict mode and asserts
 /// that more than one candidate was considered and revised by the
 /// peer-review ceremony.
+#[allow(clippy::too_many_lines)] // single real-provider E2E scenario; splitting fragments the assertion
 pub(crate) async fn verify_multi_agent_council_against_real_vllm(
     client: &mut ChoreographerServiceClient<Channel>,
 ) -> Result<()> {
@@ -432,7 +433,6 @@ fn env_u32(name: &str, default: u32) -> Result<u32> {
 fn default_run_id() -> String {
     let millis = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_millis())
-        .unwrap_or(0);
+        .map_or(0, |duration| duration.as_millis());
     format!("{}-{millis}", std::process::id())
 }

@@ -415,7 +415,7 @@ fn attr_u32(attrs: &Attributes, key: &'static str) -> Result<Option<u32>, Domain
         .and_then(|n| u32::try_from(n).ok())
         .or_else(|| {
             value.as_f64().and_then(|n| {
-                if n.is_finite() && n >= 0.0 && n.fract() == 0.0 && n <= u32::MAX as f64 {
+                if n.is_finite() && n >= 0.0 && n.fract() == 0.0 && n <= f64::from(u32::MAX) {
                     Some(n as u32)
                 } else {
                     None
