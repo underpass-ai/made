@@ -52,7 +52,8 @@ current implementation state of sibling repositories.
   `Orchestrate -> RuntimeExecutor -> stub-runtime`, strict schema
   rejection, `ExternalContextBundle` round-trip, positive structured
   output through a stub OpenAI-compatible agent, and the same Report
-  contract through the vLLM adapter shape.
+  contract through the vLLM adapter shape. The operator-facing map
+  lives in [`operations/compose-e2e.md`](./operations/compose-e2e.md).
 - The stdio MCP adapter exposes all 16 gRPC RPCs as `choreo_*` tools
   and has fixture + live gRPC backends.
 
@@ -80,31 +81,20 @@ That is sufficient for repository CI, but a product deployment still
 needs to run its own provider smoke with its model, credentials,
 network policy, TLS posture, and latency budget.
 
-### 3. Consumer-smoke positive path is not the default path
+### 3. Consumer-smoke positive path is opt-in
 
 `choreo-consumer-smoke` exercises the public gRPC + optional NATS
 surface and proves the strict rejection path against a NoopAgent stack.
-The positive structured-output path exists in compose scenario 8, but
-the smoke harness does not yet ship a first-class mode that registers
-the stub-LLM-backed structured JSON agent and flips
-`report_payload_validates` to `Passed`.
+The positive structured-output path now ships as
+`--chain positive-path`: it registers an `openai` or `vllm` agent
+against an OpenAI-compatible endpoint, runs `RunCouncilDecision` in
+Strict mode, and flips `report_payload_validates` to `Passed`.
 
-This is a harness ergonomics gap, not a missing Choreographer feature.
+It intentionally remains opt-in because a real deployment must choose
+its provider endpoint, model, credentials, network policy, TLS posture,
+and latency budget.
 
-### 4. Compose E2E operations doc is missing
-
-The compose stack now includes both `stub-runtime` and `stub-llm`, but
-there is no dedicated operations document for:
-
-- the nine scenarios and what each proves
-- the stub-LLM OpenAI-compatible surface
-- the hard-coded Report payload
-- `STUB_LLM_LISTEN`
-- when to use `make e2e-compose` versus `make e2e-provider-vllm`
-
-The backlog tracks this as `docs/operations/compose-e2e.md`.
-
-### 5. Streaming remains phase-level
+### 4. Streaming remains phase-level
 
 `StreamDeliberation` emits phase transitions and a final winner frame.
 The proto shape reserves payload variants for proposal, critique, and
@@ -115,18 +105,16 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 
 ## Recommended Hardening Plan
 
-1. Add `docs/operations/compose-e2e.md` so operators can interpret the
-   repo-owned E2E stack without reading the runner source.
-2. Add a consumer-smoke positive-path mode that registers an
-   OpenAI-compatible structured JSON agent when a stub or provider
-   endpoint is available.
-3. Keep `make e2e-provider-vllm` as the explicit external-provider
+1. Keep the consumer-smoke positive-path mode opt-in and require
+   downstream deployments to supply their own OpenAI-compatible stub or
+   provider endpoint.
+2. Keep `make e2e-provider-vllm` as the explicit external-provider
    validation path and require downstream deployments to run it, or an
    equivalent provider smoke, before claiming provider readiness.
-4. Only add a Choreographer-owned context adapter if a concrete product
+3. Only add a Choreographer-owned context adapter if a concrete product
    needs that ownership boundary. Otherwise keep caller-materialized
    context as the documented contract.
-5. Treat per-proposal/per-critique/per-revision streaming as a separate
+4. Treat per-proposal/per-critique/per-revision streaming as a separate
    additive feature, with tests that prove frame ordering and backpressure.
 
 ## Honest Current Position

@@ -170,9 +170,24 @@ lab-notebook contract).
 
 ## Running the binary
 
+The smallest local run does not need NATS, Postgres, Runtime, KMP,
+PIR, or provider credentials. It uses in-memory persistence, noop
+messaging, and the default noop executor:
+
 ```bash
 # With no external services.
 CHOREO_NATS_ENABLED=false just run
+
+# Same command without just.
+CHOREO_NATS_ENABLED=false cargo run --locked -p choreo
+
+# Optional: seed a demo council so ListCouncils/Deliberate are
+# immediately exercisable after boot.
+CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage just run
+
+# Same seeded run without just.
+CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage \
+  cargo run --locked -p choreo
 
 # With defaults, the binary expects NATS at nats://nats:4222 and uses
 # in-memory persistence unless CHOREO_POSTGRES_URL is set.
@@ -187,6 +202,43 @@ Full configuration surface — see the table in
 [`crates/choreo-adapters/src/config.rs`](../crates/choreo-adapters/src/config.rs)
 and
 [`charts/choreographer/values.yaml`](../charts/choreographer/values.yaml).
+
+## Running the MCP adapter
+
+Fixture mode is the quickest MCP client-wiring path because it needs no
+running Choreographer:
+
+```bash
+# Installed binary.
+CHOREO_MCP_BACKEND=fixture choreo-mcp
+
+# Same mode from a checkout.
+CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
+
+# One-shot terminal smoke.
+printf '%s\n' \
+  '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
+  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+```
+
+Live mode points at a running Choreographer:
+
+```bash
+# Installed binary against the local server from `just run`.
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
+
+# Same mode from a checkout.
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+  cargo run -p choreo-mcp --locked
+
+# One-shot smoke against the local server.
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+CHOREO_MCP_BIN=target/debug/choreo-mcp \
+  bash scripts/mcp/choreo-stdio-smoke.sh
+```
+
+The canonical end-user guide is
+[`docs/operations/mcp-stdio.md`](operations/mcp-stdio.md).
 
 ## Adding a new port
 

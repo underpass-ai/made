@@ -52,21 +52,19 @@ Two surfaces beyond the eight areas:
   expose a clean, fully-typed gRPC API plus the MCP wrapping so any
   agentic consumer can drive it.
 
-Genuinely open work after the 2026-05-14 bundles is narrower:
-document the compose E2E stub-LLM surface, optionally teach
-`choreo-consumer-smoke` to drive the positive structured-output
-sidecar path, and keep the operator-facing `make e2e-provider-vllm`
-flow for real external vLLM endpoints. Milestones A, B, C, D, and E
-are all complete as of 2026-05-14. The `choreo-mcp` crates.io
-distribution debt is also cleared: vendored proto crate + tag-gated
-publish jobs + per-PR publish-dry-run + real-kernel container
-integration test.
+Genuinely open work after the 2026-05-18 compose-E2E and consumer-smoke
+positive-path work is narrower: keep the operator-facing
+`make e2e-provider-vllm` flow for real external vLLM endpoints and
+finish the release-candidate publication gates.
+Milestones A, B, C, D, and E are all complete as of 2026-05-14. The
+`choreo-mcp` Git-install UX and fixture/live smoke path are present;
+crates.io publication remains release-candidate work tracked in
+`docs/product-publication-checklist.md`.
 
 The recommended remaining execution order is:
 
-- compose-level operations doc for the stub-runtime / stub-LLM E2E path
-- optional consumer-smoke positive-path mode against a structured JSON agent
 - real-provider validation as an operator-run E2E (`make e2e-provider-vllm`)
+- release-candidate publication gates
 
 ## Out of scope
 
@@ -151,7 +149,7 @@ notes still live in each epic block below.
   env vars, helm-lint gate 4 added.
 - **#50** `feat(mcp): hand-rolled stdio MCP adapter for the
   choreographer API` — Epic 13 foundation. Crate `choreo-mcp`
-  exposes the 12 RPCs of `underpass.choreo.v1` as MCP tools over
+  exposes every RPC of `underpass.choreo.v1` as MCP tools over
   JSON-RPC/stdio. Hand-rolled (no SDK), fixture + gRPC backends,
   field-for-field JSON↔proto mappers, TLS auto-detection, buffered
   streaming.
@@ -164,8 +162,8 @@ notes still live in each epic block below.
 State at session close: Milestones A (foundations) + B (mostly,
 report artifact pending) + C (Epic 6 + 7 done; Epic 8 server done,
 outbound client TLS open) substantially advanced. MCP adapter live
-end-to-end with `cargo install --git` UX (crates.io publication
-deferred — proto vendoring required).
+end-to-end with Git-install UX; crates.io publication required the
+later vendored-proto distribution slice.
 
 ## Phase 1 — Runtime And Context Foundations
 
@@ -770,8 +768,10 @@ remains an operator-run validation through `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` runs nine scenarios against
-  a real gRPC + NATS stack with stub-runtime + stub-llm sidecars:
+- `crates/choreo-e2e-runner/src/main.rs` dispatches the selected
+  scenarios; `crates/choreo-e2e-runner/src/scenarios/` contains the
+  assertions against a real gRPC + NATS stack with stub-runtime +
+  stub-llm sidecars:
   1. seeded council is visible
   2. `Deliberate` on the seeded specialty returns a winner
   3. `DeleteCouncil` on an unknown specialty returns `deleted=false`
@@ -828,6 +828,8 @@ Current state:
 Relevant code:
 
 - [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
+- [`crates/choreo-e2e-runner/src/scenario_selection.rs`](../crates/choreo-e2e-runner/src/scenario_selection.rs)
+- [`crates/choreo-e2e-runner/src/scenarios/`](../crates/choreo-e2e-runner/src/scenarios/)
 - [`crates/choreo-e2e-runner/src/bin/stub_runtime.rs`](../crates/choreo-e2e-runner/src/bin/stub_runtime.rs)
 - [`crates/choreo-e2e-runner/src/bin/stub_llm.rs`](../crates/choreo-e2e-runner/src/bin/stub_llm.rs)
 - [`tests/e2e/stub-runtime.Dockerfile`](../tests/e2e/stub-runtime.Dockerfile)
@@ -866,14 +868,13 @@ Status of the chain:
 #### Remaining follow-ups
 
 - compose-level operations doc (`docs/operations/compose-e2e.md`):
-  the stub-llm sidecar, its OpenAI-compat surface, the hard-coded
-  Report payload, and the `STUB_LLM_LISTEN` override all need a
-  prose home. The doc itself does not exist yet — leaving as a
-  follow-up so this slice stays additive.
-- optional consumer-smoke positive-path mode: the underlying stub-LLM
-  capability exists, but `choreo-consumer-smoke` still defaults to
-  the NoopAgent rejection path unless a consumer wires a structured
-  JSON agent.
+  done 2026-05-18. It documents the nine scenarios, `stub-runtime`,
+  `stub-llm`, Report schema, provider-shaped OpenAI/vLLM paths, and
+  when to use `make e2e-compose` versus `make e2e-provider-vllm`.
+- optional consumer-smoke positive-path mode: done 2026-05-18.
+  `--chain positive-path` registers an `openai` or `vllm` agent
+  against an OpenAI-compatible endpoint and validates a strict Report
+  winner. The default smoke still targets the NoopAgent rejection path.
 
 ### Epic 12. Consumer integration smoke prerequisites
 
@@ -919,12 +920,11 @@ Deliverables:
 - **Bundle round-trip** (`bundle_seam_documented`) remains `Skipped`
   in the consumer-smoke harness by design; Epic 11 scenario 7 already
   proves the stack-level round-trip in `make e2e-compose`.
-- **Chain 2 positive path** (`report_payload_validates`) remains
-  `Skipped` against the default NoopAgent stack. The stub-LLM sidecar
-  shipped under Epic 11 scenario 8, so consumers can now register an
-  `openai`-kind agent against `http://stub-llm:8000` to exercise the
-  positive path; teaching the smoke harness to run that variant is a
-  follow-up.
+- **Positive structured-output path** is opt-in. Chain 2 still proves
+  rejection against the default NoopAgent stack, and
+  `--chain positive-path` registers an `openai` or `vllm` agent
+  against a consumer-supplied OpenAI-compatible endpoint so
+  `report_payload_validates` can pass.
 - **Provider-runner E2E merged into `make e2e-compose`** is done via
   scenario 9. `make e2e-provider-vllm` remains for validating a real
   external vLLM endpoint.
@@ -957,11 +957,13 @@ Current state:
   the sibling rehydration-mcp.
 - 21 unit tests + workspace clippy clean.
 
-Distribution slice (done 2026-05-14):
+Distribution UX slice (done 2026-05-14; registry-readiness extended
+2026-05-18):
 
-- `scripts/mcp/install-choreo-mcp.sh` — registry mode by default
-  (`cargo install choreo-mcp`); `CHOREO_MCP_INSTALL_MODE=git` falls
-  back to the `--git`/`--branch`/`--tag`/`--rev` source path.
+- `scripts/mcp/install-choreo-mcp.sh` — registry install wrapper by
+  default (`cargo install choreo-mcp`), with
+  `CHOREO_MCP_INSTALL_MODE=git` fallback for unreleased branches,
+  tags, and revisions.
 - `scripts/mcp/choreo-stdio-smoke.sh` — one `tools/call` + grep marker
   for both fixture and live modes.
 - `docs/operations/mcp-stdio.md` — canonical user-facing UX.
@@ -969,19 +971,32 @@ Distribution slice (done 2026-05-14):
   — per-client config snippets.
 - `crates/choreo-mcp/README.md` — developer-oriented twin.
 - top-level `README.md` link to `docs/operations/mcp-stdio.md`.
+- `crates/choreo-mcp-proto` — vendored proto crate so `choreo-mcp`
+  can publish without depending on the internal `choreo-proto` crate.
+- `scripts/ci/publish-dry-run.sh` and tag-gated publish jobs in
+  `.github/workflows/publish-distribution.yml`.
 
 Relevant code:
 
 - [`crates/choreo-mcp/`](../crates/choreo-mcp/)
 - [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md)
 
-#### Deliverables (met)
+#### Deliverables
 
-1. `crates.io` publication readiness: vendored proto crate,
-   tag-gated publish jobs, and per-PR publish dry-run.
-2. Real-kernel integration test that boots a choreographer in a
-   container and exercises every tool through MCP (separate from the
-   existing e2e-runner gRPC scenarios).
+Met:
+
+1. Git fallback install path for unreleased `choreo-mcp` builds.
+2. Fixture and live stdio smoke script.
+3. End-user docs plus Codex CLI and Claude Desktop snippets.
+4. crates.io publication readiness: vendored proto crate, tag-gated
+   publish jobs, and per-PR publish dry-run.
+
+Open release-candidate work:
+
+1. Publish `choreo-mcp-proto` and then `choreo-mcp` from the first
+   `v*` tag.
+2. Verify registry install path (`cargo install choreo-mcp`) after the
+   crates.io publish jobs complete.
 
 ## Proposed execution order
 
@@ -1136,8 +1151,9 @@ The following rule should be treated as hard policy:
 > output should depend on Choreographer until Milestones A, B, and C
 > are complete.
 
-Status 2026-05-14: Milestones A, B, C, D, and E are complete. The
-crates.io publication leg of Epic 13 also cleared in Bundle B.
+Status 2026-05-18: Milestones A, B, C, D, and E are complete.
+`choreo-mcp` has a Git-install UX and smoke coverage; crates.io
+publication remains release-candidate work.
 
 Why the rule still applies in spirit even with B and C now cleared:
 
