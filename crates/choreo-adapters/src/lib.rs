@@ -42,6 +42,7 @@ pub mod noop;
 pub mod runtime;
 pub mod scoring;
 pub mod validators;
+pub mod yaml;
 
 #[cfg(feature = "grpc")]
 pub mod grpc;

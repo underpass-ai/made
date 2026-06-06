@@ -1,0 +1,619 @@
+//! [`CeremonyDefinition`] aggregate.
+//!
+//! A ceremony definition is the declarative state machine extracted
+//! from the original laboratory ceremony engine. It is intentionally
+//! pure domain: no YAML, no transport, no handler registry.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+
+use crate::error::DomainError;
+use crate::value_objects::{
+    CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
+    CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
+    CeremonyVersion, GuardName, InputName, OutputName, RoleAction, RoleId, StateId,
+    StepExecutionRecord, StepId, TransitionTrigger,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CeremonyDefinition {
+    name: CeremonyName,
+    version: CeremonyVersion,
+    description: Option<CeremonyDescription>,
+    inputs: BTreeMap<InputName, CeremonyInputDefinition>,
+    outputs: BTreeMap<OutputName, CeremonyOutputDefinition>,
+    states: BTreeMap<StateId, CeremonyState>,
+    transitions: Vec<CeremonyTransition>,
+    steps: BTreeMap<StepId, CeremonyStep>,
+    guards: BTreeMap<GuardName, CeremonyGuard>,
+    roles: BTreeMap<RoleId, CeremonyRole>,
+}
+
+impl CeremonyDefinition {
+    pub fn new(
+        name: CeremonyName,
+        version: CeremonyVersion,
+        description: Option<CeremonyDescription>,
+        inputs: impl IntoIterator<Item = CeremonyInputDefinition>,
+        outputs: impl IntoIterator<Item = CeremonyOutputDefinition>,
+        states: impl IntoIterator<Item = CeremonyState>,
+        transitions: impl IntoIterator<Item = CeremonyTransition>,
+        steps: impl IntoIterator<Item = CeremonyStep>,
+        guards: impl IntoIterator<Item = CeremonyGuard>,
+        roles: impl IntoIterator<Item = CeremonyRole>,
+    ) -> Result<Self, DomainError> {
+        let inputs = collect_inputs(inputs)?;
+        let outputs = collect_outputs(outputs)?;
+        let states = collect_states(states)?;
+        let transitions = transitions.into_iter().collect::<Vec<_>>();
+        let steps = collect_steps(steps)?;
+        let guards = collect_guards(guards)?;
+        let roles = collect_roles(roles)?;
+
+        let definition = Self {
+            name,
+            version,
+            description,
+            inputs,
+            outputs,
+            states,
+            transitions,
+            steps,
+            guards,
+            roles,
+        };
+        definition.validate()?;
+        Ok(definition)
+    }
+
+    #[must_use]
+    pub fn name(&self) -> &CeremonyName {
+        &self.name
+    }
+
+    #[must_use]
+    pub fn version(&self) -> &CeremonyVersion {
+        &self.version
+    }
+
+    #[must_use]
+    pub fn description(&self) -> Option<&CeremonyDescription> {
+        self.description.as_ref()
+    }
+
+    #[must_use]
+    pub fn inputs(&self) -> &BTreeMap<InputName, CeremonyInputDefinition> {
+        &self.inputs
+    }
+
+    #[must_use]
+    pub fn outputs(&self) -> &BTreeMap<OutputName, CeremonyOutputDefinition> {
+        &self.outputs
+    }
+
+    #[must_use]
+    pub fn states(&self) -> &BTreeMap<StateId, CeremonyState> {
+        &self.states
+    }
+
+    #[must_use]
+    pub fn transitions(&self) -> &[CeremonyTransition] {
+        &self.transitions
+    }
+
+    #[must_use]
+    pub fn steps(&self) -> &BTreeMap<StepId, CeremonyStep> {
+        &self.steps
+    }
+
+    #[must_use]
+    pub fn guards(&self) -> &BTreeMap<GuardName, CeremonyGuard> {
+        &self.guards
+    }
+
+    #[must_use]
+    pub fn roles(&self) -> &BTreeMap<RoleId, CeremonyRole> {
+        &self.roles
+    }
+
+    #[must_use]
+    pub fn initial_state_id(&self) -> &StateId {
+        self.states
+            .values()
+            .find(|state| state.is_initial())
+            .map(CeremonyState::id)
+            .expect("ceremony definition invariant requires one initial state")
+    }
+
+    #[must_use]
+    pub fn state(&self, state_id: &StateId) -> Option<&CeremonyState> {
+        self.states.get(state_id)
+    }
+
+    #[must_use]
+    pub fn step(&self, step_id: &StepId) -> Option<&CeremonyStep> {
+        self.steps.get(step_id)
+    }
+
+    #[must_use]
+    pub fn role(&self, role_id: &RoleId) -> Option<&CeremonyRole> {
+        self.roles.get(role_id)
+    }
+
+    pub fn steps_for_state(&self, state_id: &StateId) -> impl Iterator<Item = &CeremonyStep> + '_ {
+        let state_id = state_id.clone();
+        self.steps
+            .values()
+            .filter(move |step| step.state_id() == &state_id)
+    }
+
+    #[must_use]
+    pub fn is_terminal_state(&self, state_id: &StateId) -> bool {
+        self.states
+            .get(state_id)
+            .is_some_and(CeremonyState::is_terminal)
+    }
+
+    #[must_use]
+    pub fn transition_for_trigger(
+        &self,
+        state_id: &StateId,
+        trigger: &TransitionTrigger,
+    ) -> Option<&CeremonyTransition> {
+        self.transitions
+            .iter()
+            .find(|transition| transition.from() == state_id && transition.trigger() == trigger)
+    }
+
+    pub fn available_transitions(
+        &self,
+        state_id: &StateId,
+    ) -> impl Iterator<Item = &CeremonyTransition> + '_ {
+        let state_id = state_id.clone();
+        self.transitions
+            .iter()
+            .filter(move |transition| transition.from() == &state_id)
+    }
+
+    #[must_use]
+    pub fn role_allows(&self, role_id: &RoleId, action: &RoleAction) -> bool {
+        self.roles
+            .get(role_id)
+            .is_some_and(|role| role.allows(action))
+    }
+
+    #[must_use]
+    pub fn guards_are_satisfied(
+        &self,
+        transition: &CeremonyTransition,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+        context: &CeremonyContext,
+    ) -> bool {
+        transition.required_guards().iter().all(|guard_name| {
+            self.guards
+                .get(guard_name)
+                .is_some_and(|guard| guard.is_satisfied(records, context))
+        })
+    }
+
+    fn validate(&self) -> Result<(), DomainError> {
+        self.require_exactly_one_initial_state()?;
+        self.require_valid_transition_graph()?;
+        self.require_valid_steps()?;
+        self.require_valid_guards()?;
+        self.require_valid_roles()?;
+        Ok(())
+    }
+
+    fn require_exactly_one_initial_state(&self) -> Result<(), DomainError> {
+        if self.states.is_empty() {
+            return Err(DomainError::EmptyCollection {
+                field: "ceremony_definition.states",
+            });
+        }
+
+        let initial_count = self
+            .states
+            .values()
+            .filter(|state| state.is_initial())
+            .count();
+        if initial_count != 1 {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony definition must have exactly one initial state",
+            });
+        }
+        Ok(())
+    }
+
+    fn require_valid_transition_graph(&self) -> Result<(), DomainError> {
+        let mut state_trigger_pairs = BTreeSet::new();
+        for transition in &self.transitions {
+            let from = self
+                .states
+                .get(transition.from())
+                .ok_or(DomainError::NotFound {
+                    what: "ceremony_transition.from_state",
+                })?;
+            if !self.states.contains_key(transition.to()) {
+                return Err(DomainError::NotFound {
+                    what: "ceremony_transition.to_state",
+                });
+            }
+            if from.is_terminal() {
+                return Err(DomainError::InvariantViolated {
+                    reason: "terminal ceremony states cannot have outgoing transitions",
+                });
+            }
+            if !state_trigger_pairs
+                .insert((transition.from().clone(), transition.trigger().clone()))
+            {
+                return Err(DomainError::AlreadyExists {
+                    what: "ceremony_transition.state_trigger",
+                });
+            }
+            for guard_name in transition.required_guards() {
+                if !self.guards.contains_key(guard_name) {
+                    return Err(DomainError::NotFound {
+                        what: "ceremony_transition.guard",
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn require_valid_steps(&self) -> Result<(), DomainError> {
+        for step in self.steps.values() {
+            let state = self
+                .states
+                .get(step.state_id())
+                .ok_or(DomainError::NotFound {
+                    what: "ceremony_step.state",
+                })?;
+            if state.is_terminal() {
+                return Err(DomainError::InvariantViolated {
+                    reason: "terminal ceremony states cannot own executable steps",
+                });
+            }
+        }
+        Ok(())
+    }
+
+    fn require_valid_guards(&self) -> Result<(), DomainError> {
+        for guard in self.guards.values() {
+            if let Some(step_id) = guard.condition().referenced_step_id() {
+                if !self.steps.contains_key(step_id) {
+                    return Err(DomainError::NotFound {
+                        what: "ceremony_guard.step",
+                    });
+                }
+            }
+        }
+        Ok(())
+    }
+
+    fn require_valid_roles(&self) -> Result<(), DomainError> {
+        let transition_triggers = self
+            .transitions
+            .iter()
+            .map(|transition| transition.trigger().clone())
+            .collect::<BTreeSet<_>>();
+
+        for role in self.roles.values() {
+            for action in role.allowed_actions() {
+                if let Some(step_id) = action.step_id() {
+                    if !self.steps.contains_key(step_id) {
+                        return Err(DomainError::NotFound {
+                            what: "ceremony_role.step_action",
+                        });
+                    }
+                }
+                if let Some(trigger) = action.transition_trigger() {
+                    if !transition_triggers.contains(trigger) {
+                        return Err(DomainError::NotFound {
+                            what: "ceremony_role.transition_action",
+                        });
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+fn collect_inputs(
+    inputs: impl IntoIterator<Item = CeremonyInputDefinition>,
+) -> Result<BTreeMap<InputName, CeremonyInputDefinition>, DomainError> {
+    let mut map = BTreeMap::new();
+    for input in inputs {
+        if map.insert(input.name().clone(), input).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_input",
+            });
+        }
+    }
+    Ok(map)
+}
+
+fn collect_outputs(
+    outputs: impl IntoIterator<Item = CeremonyOutputDefinition>,
+) -> Result<BTreeMap<OutputName, CeremonyOutputDefinition>, DomainError> {
+    let mut map = BTreeMap::new();
+    for output in outputs {
+        if map.insert(output.name().clone(), output).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_output",
+            });
+        }
+    }
+    Ok(map)
+}
+
+fn collect_states(
+    states: impl IntoIterator<Item = CeremonyState>,
+) -> Result<BTreeMap<StateId, CeremonyState>, DomainError> {
+    let mut map = BTreeMap::new();
+    for state in states {
+        if map.insert(state.id().clone(), state).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_state",
+            });
+        }
+    }
+    Ok(map)
+}
+
+fn collect_steps(
+    steps: impl IntoIterator<Item = CeremonyStep>,
+) -> Result<BTreeMap<StepId, CeremonyStep>, DomainError> {
+    let mut map = BTreeMap::new();
+    for step in steps {
+        if map.insert(step.id().clone(), step).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_step",
+            });
+        }
+    }
+    Ok(map)
+}
+
+fn collect_guards(
+    guards: impl IntoIterator<Item = CeremonyGuard>,
+) -> Result<BTreeMap<GuardName, CeremonyGuard>, DomainError> {
+    let mut map = BTreeMap::new();
+    for guard in guards {
+        if map.insert(guard.name().clone(), guard).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_guard",
+            });
+        }
+    }
+    Ok(map)
+}
+
+fn collect_roles(
+    roles: impl IntoIterator<Item = CeremonyRole>,
+) -> Result<BTreeMap<RoleId, CeremonyRole>, DomainError> {
+    let mut map = BTreeMap::new();
+    for role in roles {
+        if map.insert(role.id().clone(), role).is_some() {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_role",
+            });
+        }
+    }
+    Ok(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value_objects::{
+        CeremonyStateKind, GuardCondition, RetryPolicy, StepHandlerConfig, StepHandlerKind,
+        StepStatus,
+    };
+
+    fn name() -> CeremonyName {
+        CeremonyName::new("planning_ceremony").unwrap()
+    }
+
+    fn state_id(raw: &str) -> StateId {
+        StateId::new(raw).unwrap()
+    }
+
+    fn step_id(raw: &str) -> StepId {
+        StepId::new(raw).unwrap()
+    }
+
+    fn guard_name(raw: &str) -> GuardName {
+        GuardName::new(raw).unwrap()
+    }
+
+    fn trigger(raw: &str) -> TransitionTrigger {
+        TransitionTrigger::new(raw).unwrap()
+    }
+
+    fn handler_kind() -> StepHandlerKind {
+        StepHandlerKind::new("manual_review").unwrap()
+    }
+
+    fn step(raw_step_id: &str, raw_state_id: &str) -> CeremonyStep {
+        CeremonyStep::new(
+            step_id(raw_step_id),
+            state_id(raw_state_id),
+            handler_kind(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::single_attempt(),
+            None,
+        )
+    }
+
+    fn role(actions: Vec<RoleAction>) -> CeremonyRole {
+        CeremonyRole::new(RoleId::new("facilitator").unwrap(), actions).unwrap()
+    }
+
+    fn definition(
+        states: Vec<CeremonyState>,
+        transitions: Vec<CeremonyTransition>,
+        steps: Vec<CeremonyStep>,
+        guards: Vec<CeremonyGuard>,
+        roles: Vec<CeremonyRole>,
+    ) -> Result<CeremonyDefinition, DomainError> {
+        CeremonyDefinition::new(
+            name(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            states,
+            transitions,
+            steps,
+            guards,
+            roles,
+        )
+    }
+
+    fn valid_definition() -> CeremonyDefinition {
+        let plan_step = step("plan", "drafting");
+        let guard = CeremonyGuard::new(
+            guard_name("plan_done"),
+            GuardCondition::StepStatus {
+                step_id: plan_step.id().clone(),
+                status: StepStatus::Completed,
+            },
+        );
+        let transition = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("finish"),
+            vec![guard.name().clone()],
+        )
+        .unwrap();
+        let role = role(vec![
+            RoleAction::step(plan_step.id().clone()),
+            RoleAction::transition(transition.trigger().clone()),
+        ]);
+
+        definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![transition],
+            vec![plan_step],
+            vec![guard],
+            vec![role],
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn accepts_valid_declarative_state_machine() {
+        let definition = valid_definition();
+
+        assert_eq!(definition.initial_state_id(), &state_id("drafting"));
+        assert_eq!(definition.steps_for_state(&state_id("drafting")).count(), 1);
+        assert!(definition.role_allows(
+            &RoleId::new("facilitator").unwrap(),
+            &RoleAction::transition(trigger("finish"))
+        ));
+    }
+
+    #[test]
+    fn rejects_definitions_without_exactly_one_initial_state() {
+        let err = definition(
+            vec![
+                CeremonyState::new(state_id("one"), CeremonyStateKind::Initial),
+                CeremonyState::new(state_id("two"), CeremonyStateKind::Initial),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[test]
+    fn rejects_terminal_states_with_outgoing_transitions() {
+        let transition = CeremonyTransition::new(
+            state_id("done"),
+            state_id("drafting"),
+            trigger("restart"),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![transition],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[test]
+    fn rejects_roles_that_reference_unknown_steps() {
+        let role = role(vec![RoleAction::step(step_id("missing"))]);
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![role],
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_role.step_action"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_guards_that_reference_unknown_steps() {
+        let guard = CeremonyGuard::new(
+            guard_name("unknown_step_done"),
+            GuardCondition::StepStatus {
+                step_id: step_id("missing"),
+                status: StepStatus::Completed,
+            },
+        );
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            Vec::new(),
+            vec![guard],
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_guard.step"
+            }
+        ));
+    }
+}

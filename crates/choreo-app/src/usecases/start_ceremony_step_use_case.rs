@@ -1,0 +1,208 @@
+//! [`StartCeremonyStepUseCase`] — acquire a lease for a ceremony step.
+
+use std::sync::Arc;
+
+use choreo_core::error::DomainError;
+use choreo_core::ports::{
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
+};
+use choreo_core::value_objects::{StepAttempt, StepLease};
+use time::Duration;
+
+use super::start_ceremony_step_input::StartCeremonyStepInput;
+
+pub struct StartCeremonyStepUseCase {
+    definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+    clock: Arc<dyn ClockPort>,
+}
+
+impl std::fmt::Debug for StartCeremonyStepUseCase {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("StartCeremonyStepUseCase").finish()
+    }
+}
+
+impl StartCeremonyStepUseCase {
+    #[must_use]
+    pub fn new(
+        definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+        instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
+        Self {
+            definitions,
+            instances,
+            clock,
+        }
+    }
+
+    #[tracing::instrument(
+        name = "start_ceremony_step",
+        skip_all,
+        fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
+    )]
+    pub async fn execute(&self, input: StartCeremonyStepInput) -> Result<StepAttempt, DomainError> {
+        let definition = self
+            .definitions
+            .get(&input.definition_name, &input.definition_version)
+            .await?;
+        let mut instance = self.instances.get(&input.instance_id).await?;
+        let now = self.clock.now();
+        let lease = StepLease::new(
+            input.lease_owner_id,
+            input.idempotency_key,
+            now,
+            now + Duration::milliseconds(i64::try_from(input.lease_ttl.get()).unwrap_or(i64::MAX)),
+        )?;
+        let attempt =
+            instance.start_step_as(&definition, &input.role_id, &input.step_id, lease, now)?;
+        self.instances.save(&instance).await?;
+        Ok(attempt)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use choreo_core::error::DomainError;
+    use choreo_core::ports::CeremonyInstanceRepositoryPort;
+    use choreo_core::value_objects::StepStatus;
+    use time::Duration;
+
+    use super::*;
+    use crate::usecases::ceremony_test_support::{
+        ceremony_id, definition, definition_name, idempotency_key, lease_owner, lease_ttl, now,
+        role_id, started_instance, step_id, version, DefinitionRepositoryFake, FixedClock,
+        InstanceRepositoryFake,
+    };
+
+    #[tokio::test]
+    async fn acquires_step_lease_and_persists_in_progress_record() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let usecase = StartCeremonyStepUseCase::new(
+            definitions,
+            instances.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let attempt = usecase
+            .execute(StartCeremonyStepInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("lease-1"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(attempt, StepAttempt::FIRST);
+        let saved = instances.saved(&ceremony_id()).await;
+        let record = saved.step_record(&step_id()).unwrap();
+        assert_eq!(record.status(), StepStatus::InProgress);
+        assert_eq!(record.lease().unwrap().owner_id().as_str(), "runner-1");
+    }
+
+    #[tokio::test]
+    async fn active_lease_blocks_second_runner() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let usecase =
+            StartCeremonyStepUseCase::new(definitions, instances, Arc::new(FixedClock::new(now())));
+        usecase
+            .execute(StartCeremonyStepInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("lease-1"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+
+        let err = usecase
+            .execute(StartCeremonyStepInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("lease-2"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+    }
+
+    #[tokio::test]
+    async fn expired_lease_allows_failover_attempt() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let first = StartCeremonyStepUseCase::new(
+            definitions.clone(),
+            instances.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+        first
+            .execute(StartCeremonyStepInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("lease-1"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+        let second = StartCeremonyStepUseCase::new(
+            definitions,
+            instances,
+            Arc::new(FixedClock::new(now() + Duration::seconds(61))),
+        );
+
+        let attempt = second
+            .execute(StartCeremonyStepInput::new(
+                ceremony_id(),
+                definition_name(),
+                version(),
+                role_id(),
+                step_id(),
+                lease_owner(),
+                idempotency_key("lease-2"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(attempt, StepAttempt::new(2).unwrap());
+    }
+}
