@@ -17,7 +17,7 @@ use super::streaming;
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
 /// `tool_success_result`).
-#[allow(clippy::too_many_lines)] // 16 tool arms; splitting fragments the dispatch table
+#[allow(clippy::too_many_lines)] // 17 tool arms; splitting fragments the dispatch table
 pub(crate) async fn dispatch(
     channel: Channel,
     name: &str,
@@ -180,6 +180,15 @@ pub(crate) async fn dispatch(
             Ok(json!({ "deleted": deleted }))
         }
 
+        "choreo_run_ceremony" => {
+            let request = build_run_ceremony_request(arguments)?;
+            let response = client
+                .run_ceremony(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            Ok(p2j::run_ceremony_response_to_json(response.into_inner()))
+        }
+
         "choreo_get_status" => {
             let request = build_get_status_request(arguments);
             let response = client
@@ -332,6 +341,10 @@ fn build_run_council_decision_request(
     args: &Value,
 ) -> Result<pb::RunCouncilDecisionRequest, String> {
     j2p::run_council_decision_request_from_json(args)
+}
+
+fn build_run_ceremony_request(args: &Value) -> Result<pb::RunCeremonyRequest, String> {
+    j2p::run_ceremony_request_from_json(args)
 }
 
 fn build_register_contract_request(args: &Value) -> Result<pb::RegisterContractRequest, String> {

@@ -5,7 +5,7 @@
 //! the gRPC contract it wraps.
 //!
 //! Tool definitions are 1:1 with the `underpass.choreo.v1` gRPC
-//! service: 16 tools, one per RPC. The choreographer's API is
+//! service: 17 tools, one per RPC. The choreographer's API is
 //! respected verbatim — these schemas describe the same fields the
 //! caller would have passed over gRPC, only flattened into JSON shape
 //! suitable for an MCP `tools/call.arguments` object.
@@ -44,7 +44,7 @@ pub(crate) fn tools_list_result() -> Value {
     json!({ "tools": tool_catalog() })
 }
 
-#[allow(clippy::too_many_lines)] // 16 tool definitions; splitting just for the line count loses readability
+#[allow(clippy::too_many_lines)] // 17 tool definitions; splitting just for the line count loses readability
 fn tool_catalog() -> Vec<Value> {
     vec![
         tool_def(
@@ -213,6 +213,11 @@ fn tool_catalog() -> Vec<Value> {
             }),
         ),
         tool_def(
+            "choreo_run_ceremony",
+            "Execute a declarative ceremony YAML definition and return final state, step trace, and Mermaid sequence diagram.",
+            run_ceremony_schema(),
+        ),
+        tool_def(
             "choreo_get_status",
             "Return service health, version, uptime, and optionally statistics.",
             json!({
@@ -264,6 +269,29 @@ fn run_council_decision_schema() -> Value {
             { "required": ["council_id"], "not": { "required": ["specialty"] } },
             { "required": ["specialty"], "not": { "required": ["council_id"] } }
         ]
+    })
+}
+
+fn run_ceremony_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["definition_yaml"],
+        "properties": {
+            "ceremony_id": string_schema("Optional stable ceremony instance id. The server mints one when omitted."),
+            "definition_yaml": string_schema("Declarative ceremony YAML definition."),
+            "context": {
+                "type": "object",
+                "additionalProperties": true,
+                "description": "Opaque initial ceremony context forwarded to guards and handlers."
+            },
+            "lease_owner_id": string_schema("Optional logical runner acquiring step leases. The server applies a default when omitted."),
+            "lease_ttl_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+            }
+        }
     })
 }
 

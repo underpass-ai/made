@@ -233,7 +233,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_lists_sixteen_tools() {
+    async fn tools_list_lists_seventeen_tools() {
         let server = ChoreoMcpServer::fixture();
         let response = server
             .handle_json_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
@@ -241,7 +241,7 @@ mod tests {
             .unwrap();
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        assert_eq!(tools.len(), 16);
+        assert_eq!(tools.len(), 17);
     }
 
     #[tokio::test]

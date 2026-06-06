@@ -240,6 +240,21 @@ pub(crate) fn run_council_decision_request_from_json(
     })
 }
 
+pub(crate) fn run_ceremony_request_from_json(
+    value: &Value,
+) -> Result<pb::RunCeremonyRequest, String> {
+    let obj = require_object(value, "tools/call.arguments")?;
+    Ok(pb::RunCeremonyRequest {
+        ceremony_id: optional_str(obj, "ceremony_id").unwrap_or("").to_string(),
+        definition_yaml: require_str(obj, "definition_yaml")?.to_string(),
+        context: optional_pb_struct(obj, "context")?,
+        lease_owner_id: optional_str(obj, "lease_owner_id")
+            .unwrap_or("")
+            .to_string(),
+        lease_ttl_ms: optional_u64(obj, "lease_ttl_ms")?,
+    })
+}
+
 fn optional_external_context(
     value: Option<&Value>,
 ) -> Result<Option<pb::ExternalContextBundle>, String> {
