@@ -3,6 +3,7 @@
 use std::sync::Arc;
 
 use choreo_adapters::agents::DispatchingAgentFactory;
+use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
@@ -11,7 +12,7 @@ use choreo_adapters::memory::{
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
-use choreo_adapters::noop::{NoopCeremonyStepHandler, NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresPoolError, PostgresStatistics,
@@ -141,8 +142,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
         Arc::new(InMemoryCeremonyInstanceRepository::new());
-    let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-        Arc::new(NoopCeremonyStepHandler::new());
 
     let MessagingWiring {
         port: messaging,
@@ -161,6 +160,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         statistics.clone(),
         "choreographer",
     ));
+
+    let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+        Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
 
     let orchestrate = Arc::new(OrchestrateUseCase::new(
         deliberate.clone(),
