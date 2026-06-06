@@ -1,10 +1,7 @@
 use anyhow::{bail, Context, Result};
 use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
-use choreo_proto::v1::{
-    AgentSummary, CreateCouncilRequest, RegisterAgentRequest, RunCeremonyRequest,
-};
+use choreo_proto::v1::RunCeremonyRequest;
 use tonic::transport::Channel;
-use tonic::Code;
 use tracing::info;
 
 const EDITORIAL_MEETING_CEREMONY: &str =
@@ -13,15 +10,6 @@ const EDITORIAL_MEETING_CEREMONY: &str =
 pub(crate) async fn verify_editorial_meeting_ceremony_diagram(
     client: &mut ChoreographerServiceClient<Channel>,
 ) -> Result<()> {
-    for specialty in [
-        "facilitation_prompt",
-        "persona_prompt",
-        "challenge_prompt",
-        "synthesis_prompt",
-    ] {
-        seed_single_noop_agent_council(client, specialty).await?;
-    }
-
     let response = client
         .run_ceremony(RunCeremonyRequest {
             ceremony_id: "e2e-editorial-planning-meeting".to_owned(),
@@ -82,41 +70,4 @@ pub(crate) async fn verify_editorial_meeting_ceremony_diagram(
         "editorial planning ceremony executed and rendered"
     );
     Ok(())
-}
-
-async fn seed_single_noop_agent_council(
-    client: &mut ChoreographerServiceClient<Channel>,
-    specialty: &str,
-) -> Result<()> {
-    let agent_id = format!("agent-{specialty}-0");
-    let register_agent = client
-        .register_agent(RegisterAgentRequest {
-            specialty: specialty.to_owned(),
-            agent: Some(AgentSummary {
-                agent_id,
-                specialty: specialty.to_owned(),
-                kind: "noop".to_owned(),
-                attributes: None,
-            }),
-            agent_config: None,
-        })
-        .await;
-    match register_agent {
-        Ok(_) => {}
-        Err(status) if status.code() == Code::AlreadyExists => {}
-        Err(status) => return Err(status).context("RegisterAgent failed for ceremony step"),
-    }
-
-    let create_council = client
-        .create_council(CreateCouncilRequest {
-            specialty: specialty.to_owned(),
-            num_agents: 1,
-            agent_config: None,
-        })
-        .await;
-    match create_council {
-        Ok(_) => Ok(()),
-        Err(status) if status.code() == Code::AlreadyExists => Ok(()),
-        Err(status) => Err(status).context("CreateCouncil failed for ceremony step"),
-    }
 }

@@ -7,8 +7,9 @@ use async_trait::async_trait;
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{AgentDescriptor, ContractRegistryPort, StatisticsPort};
@@ -28,6 +29,7 @@ use super::mappers::{
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
+use crate::ceremony::CeremonyParticipantPlanAdapter;
 
 /// The gRPC service struct. Clone-friendly: every dependency is an
 /// `Arc` so multiple request tasks can share state without locking.
@@ -43,6 +45,7 @@ pub struct ChoreographerGrpcService {
     unregister_agent: Arc<UnregisterAgentUseCase>,
     run_council_decision: Arc<RunCouncilDecisionUseCase>,
     run_ceremony: Arc<RunCeremonyUseCase>,
+    prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
     contract_registry: Arc<dyn ContractRegistryPort>,
     auto_dispatch: Arc<AutoDispatchService>,
     statistics: Arc<dyn StatisticsPort>,
@@ -83,6 +86,7 @@ pub struct ChoreographerGrpcServiceBuilder {
     unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
     run_council_decision: Option<Arc<RunCouncilDecisionUseCase>>,
     run_ceremony: Option<Arc<RunCeremonyUseCase>>,
+    prepare_ceremony_participants: Option<Arc<PrepareCeremonyParticipantsUseCase>>,
     contract_registry: Option<Arc<dyn ContractRegistryPort>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
@@ -120,6 +124,11 @@ impl ChoreographerGrpcServiceBuilder {
         run_council_decision
     );
     setter!(run_ceremony, RunCeremonyUseCase, run_ceremony);
+    setter!(
+        prepare_ceremony_participants,
+        PrepareCeremonyParticipantsUseCase,
+        prepare_ceremony_participants
+    );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
 
     #[must_use]
@@ -181,6 +190,11 @@ impl ChoreographerGrpcServiceBuilder {
             run_ceremony: self.run_ceremony.ok_or(DomainError::InvariantViolated {
                 reason: "grpc: run_ceremony use case is required",
             })?,
+            prepare_ceremony_participants: self.prepare_ceremony_participants.ok_or(
+                DomainError::InvariantViolated {
+                    reason: "grpc: prepare_ceremony_participants use case is required",
+                },
+            )?,
             contract_registry: self
                 .contract_registry
                 .ok_or(DomainError::InvariantViolated {
@@ -574,6 +588,12 @@ impl ChoreographerService for ChoreographerGrpcService {
         link_span_to_metadata(&request);
         let input =
             run_ceremony_input_from_proto(request.into_inner()).map_err(domain_error_to_status)?;
+        let participant_input = CeremonyParticipantPlanAdapter::from_definition(input.definition())
+            .map_err(domain_error_to_status)?;
+        self.prepare_ceremony_participants
+            .execute(participant_input)
+            .await
+            .map_err(domain_error_to_status)?;
         let output = self
             .run_ceremony
             .execute(input)

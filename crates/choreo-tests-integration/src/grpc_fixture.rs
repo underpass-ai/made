@@ -37,8 +37,8 @@ use choreo_adapters::validators::{
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    RegisterAgentUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
@@ -152,6 +152,12 @@ impl GrpcFixture {
             council_registry.clone(),
             agent_resolver.clone(),
         ));
+        let prepare_ceremony_participants = Arc::new(PrepareCeremonyParticipantsUseCase::new(
+            clock.clone(),
+            agent_factory.clone(),
+            agent_registry.clone(),
+            council_registry.clone(),
+        ));
         let delete_council = Arc::new(DeleteCouncilUseCase::new(council_registry.clone()));
         let list_councils = Arc::new(ListCouncilsUseCase::new(council_registry.clone()));
         let get_deliberation = Arc::new(GetDeliberationUseCase::new(repository.clone()));
@@ -179,6 +185,7 @@ impl GrpcFixture {
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
             .run_ceremony(run_ceremony)
+            .prepare_ceremony_participants(prepare_ceremony_participants)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
@@ -302,6 +309,12 @@ impl GrpcFixture {
             council_registry.clone(),
             agent_resolver.clone(),
         ));
+        let prepare_ceremony_participants = Arc::new(PrepareCeremonyParticipantsUseCase::new(
+            clock.clone(),
+            agent_factory.clone(),
+            agent_registry.clone(),
+            council_registry.clone(),
+        ));
         let delete_council = Arc::new(DeleteCouncilUseCase::new(council_registry.clone()));
         let list_councils = Arc::new(ListCouncilsUseCase::new(council_registry.clone()));
         let get_deliberation = Arc::new(GetDeliberationUseCase::new(repository.clone()));
@@ -329,6 +342,7 @@ impl GrpcFixture {
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
             .run_ceremony(run_ceremony)
+            .prepare_ceremony_participants(prepare_ceremony_participants)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())

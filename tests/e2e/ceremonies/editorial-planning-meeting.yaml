@@ -43,21 +43,29 @@ steps:
     state: OPENING
     handler: facilitation_prompt
     config:
+      participants:
+        - facilitator
       prompt: "Open the meeting, restate the brief, and invite perspectives."
   - id: customer_story
     state: DIVERGING
     handler: persona_prompt
     config:
+      participants:
+        - customer_advocate
       prompt: "Describe what the audience needs to understand and remember."
   - id: risk_check
     state: REVIEWING
     handler: challenge_prompt
     config:
+      participants:
+        - risk_reviewer
       prompt: "Challenge weak assumptions and name risks in the plan."
   - id: decision_summary
     state: SYNTHESIZING
     handler: synthesis_prompt
     config:
+      participants:
+        - synthesizer
       prompt: "Summarize the decision, owner, and next action."
 guards:
   open_room_completed:

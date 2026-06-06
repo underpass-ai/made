@@ -1,7 +1,5 @@
 use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
-use choreo_proto::v1::{
-    AgentSummary, CreateCouncilRequest, RegisterAgentRequest, RunCeremonyRequest,
-};
+use choreo_proto::v1::RunCeremonyRequest;
 use choreo_tests_integration::grpc_fixture::GrpcFixture;
 
 const EDITORIAL_MEETING_CEREMONY: &str =
@@ -11,14 +9,6 @@ const EDITORIAL_MEETING_CEREMONY: &str =
 async fn run_ceremony_executes_yaml_and_returns_trace_diagram() {
     let fixture = GrpcFixture::start().await;
     let mut client = ChoreographerServiceClient::new(fixture.channel);
-    for specialty in [
-        "facilitation_prompt",
-        "persona_prompt",
-        "challenge_prompt",
-        "synthesis_prompt",
-    ] {
-        seed_single_noop_agent_council(&mut client, specialty).await;
-    }
 
     let response = client
         .run_ceremony(RunCeremonyRequest {
@@ -59,32 +49,4 @@ async fn run_ceremony_executes_yaml_and_returns_trace_diagram() {
     assert!(response
         .mermaid_sequence
         .contains("decision_summary [synthesis_prompt]"));
-}
-
-async fn seed_single_noop_agent_council(
-    client: &mut ChoreographerServiceClient<tonic::transport::Channel>,
-    specialty: &str,
-) {
-    let agent_id = format!("agent-{specialty}-0");
-    client
-        .register_agent(RegisterAgentRequest {
-            specialty: specialty.to_owned(),
-            agent: Some(AgentSummary {
-                agent_id,
-                specialty: specialty.to_owned(),
-                kind: "noop".to_owned(),
-                attributes: None,
-            }),
-            agent_config: None,
-        })
-        .await
-        .expect("RegisterAgent should seed ceremony agent");
-    client
-        .create_council(CreateCouncilRequest {
-            specialty: specialty.to_owned(),
-            num_agents: 1,
-            agent_config: None,
-        })
-        .await
-        .expect("CreateCouncil should seed ceremony council");
 }
