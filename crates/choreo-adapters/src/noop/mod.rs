@@ -7,10 +7,12 @@
 
 mod agent;
 mod agent_factory;
+mod ceremony_step_handler;
 mod executor;
 mod messaging;
 
 pub use agent::NoopAgent;
 pub use agent_factory::{NoopAgentFactory, NOOP_AGENT_KIND};
+pub use ceremony_step_handler::NoopCeremonyStepHandler;
 pub use executor::NoopExecutor;
 pub use messaging::NoopMessaging;

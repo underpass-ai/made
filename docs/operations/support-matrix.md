@@ -183,7 +183,7 @@ descriptors may be persisted and must not carry credentials.
 |---|---|---:|---|---|---|---|
 | `noop` | none | yes | none | none | unit tests, local smoke, minimal Helm smoke | Always supported. |
 | `openai` | `choreo-adapters/agent-openai` | yes | `CHOREO_OPENAI_API_KEY` | `CHOREO_OPENAI_MODEL`, `CHOREO_OPENAI_ENDPOINT`, `CHOREO_OPENAI_MAX_TOKENS` | CI compile/test, compose scenario with OpenAI-compatible stub, consumer positive-path | Supported adapter shape. Real provider credentials, quotas, endpoint policy, and model behavior are operator-owned. |
-| `vllm` | `choreo-adapters/agent-vllm` | yes | `CHOREO_VLLM_MODEL`, `CHOREO_VLLM_ENDPOINT` | `CHOREO_VLLM_BEARER_TOKEN`, `CHOREO_VLLM_MAX_TOKENS` | CI compile/test, compose scenario with OpenAI-compatible stub, provider-E2E runner for real vLLM | Supported adapter shape. Service factory Helm path supports endpoint/model/bearer; vLLM client cert envs are provider-E2E runner only today. |
+| `vllm` | `choreo-adapters/agent-vllm` | yes | `CHOREO_VLLM_MODEL`, `CHOREO_VLLM_ENDPOINT` | `CHOREO_VLLM_BEARER_TOKEN`, `CHOREO_VLLM_MAX_TOKENS` | CI compile/test, compose scenario with OpenAI-compatible stub, provider-E2E runner for real vLLM, gRPC council runner, MCP council runner (operator-run real execution pending) | Supported adapter shape. Service factory Helm path supports endpoint/model/bearer; vLLM client cert envs are provider-E2E runner only today. |
 | `anthropic` | `choreo-adapters/agent-anthropic` | no | `CHOREO_ANTHROPIC_API_KEY` | `CHOREO_ANTHROPIC_MODEL`, `CHOREO_ANTHROPIC_ENDPOINT`, `CHOREO_ANTHROPIC_MAX_TOKENS` | CI compile/test | Implemented feature, not included in the default Dockerfile, and not covered by repo-owned E2E yet. Operators need a downstream image that enables the feature. |
 
 Per-agent descriptor attributes supported by provider adapters:
@@ -202,6 +202,7 @@ Per-agent descriptor attributes supported by provider adapters:
 | `just check` / `scripts/ci/quality-gate.sh` | `agent-anthropic`, `agent-openai`, `agent-vllm` |
 | Compose E2E stack | OpenAI-compatible and vLLM-compatible stub paths |
 | Provider-E2E runner image | real `agent-vllm` runner path |
+| MCP council runner | real `agent-vllm` path through `choreo-mcp` stdio; operator-run execution pending |
 
 ### Change Rule
 

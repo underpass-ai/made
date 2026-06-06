@@ -1,0 +1,681 @@
+//! [`CeremonyInstance`] aggregate.
+//!
+//! Runtime state for a single ceremony execution. The aggregate owns
+//! step leases, retry attempts, idempotency keys and state transitions,
+//! so failover remains a domain rule instead of adapter glue.
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
+
+use super::ceremony_definition::CeremonyDefinition;
+use crate::error::DomainError;
+use crate::value_objects::{
+    CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, IdempotencyKey, RoleAction, RoleId,
+    StateId, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, StepStatus,
+    TransitionTrigger,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct CeremonyInstance {
+    id: CeremonyId,
+    definition_name: CeremonyName,
+    definition_version: CeremonyVersion,
+    current_state: StateId,
+    step_records: BTreeMap<StepId, StepExecutionRecord>,
+    context: CeremonyContext,
+    idempotency_keys: BTreeSet<IdempotencyKey>,
+    #[serde(with = "time::serde::rfc3339")]
+    created_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339")]
+    updated_at: OffsetDateTime,
+    #[serde(with = "time::serde::rfc3339::option")]
+    completed_at: Option<OffsetDateTime>,
+}
+
+impl CeremonyInstance {
+    #[must_use]
+    pub fn start(
+        id: CeremonyId,
+        definition: &CeremonyDefinition,
+        context: CeremonyContext,
+        now: OffsetDateTime,
+    ) -> Self {
+        let step_records = definition
+            .steps()
+            .keys()
+            .map(|step_id| (step_id.clone(), StepExecutionRecord::pending()))
+            .collect();
+
+        Self {
+            id,
+            definition_name: definition.name().clone(),
+            definition_version: definition.version().clone(),
+            current_state: definition.initial_state_id().clone(),
+            step_records,
+            context,
+            idempotency_keys: BTreeSet::new(),
+            created_at: now,
+            updated_at: now,
+            completed_at: None,
+        }
+    }
+
+    #[must_use]
+    pub fn id(&self) -> &CeremonyId {
+        &self.id
+    }
+
+    #[must_use]
+    pub fn definition_name(&self) -> &CeremonyName {
+        &self.definition_name
+    }
+
+    #[must_use]
+    pub fn definition_version(&self) -> &CeremonyVersion {
+        &self.definition_version
+    }
+
+    #[must_use]
+    pub fn current_state(&self) -> &StateId {
+        &self.current_state
+    }
+
+    #[must_use]
+    pub fn step_records(&self) -> &BTreeMap<StepId, StepExecutionRecord> {
+        &self.step_records
+    }
+
+    #[must_use]
+    pub fn step_record(&self, step_id: &StepId) -> Option<&StepExecutionRecord> {
+        self.step_records.get(step_id)
+    }
+
+    #[must_use]
+    pub fn context(&self) -> &CeremonyContext {
+        &self.context
+    }
+
+    #[must_use]
+    pub fn idempotency_keys(&self) -> &BTreeSet<IdempotencyKey> {
+        &self.idempotency_keys
+    }
+
+    #[must_use]
+    pub fn created_at(&self) -> OffsetDateTime {
+        self.created_at
+    }
+
+    #[must_use]
+    pub fn updated_at(&self) -> OffsetDateTime {
+        self.updated_at
+    }
+
+    #[must_use]
+    pub fn completed_at(&self) -> Option<OffsetDateTime> {
+        self.completed_at
+    }
+
+    #[must_use]
+    pub fn is_terminal(&self, definition: &CeremonyDefinition) -> bool {
+        self.matches_definition(definition) && definition.is_terminal_state(&self.current_state)
+    }
+
+    #[must_use]
+    pub fn is_completed(&self, definition: &CeremonyDefinition) -> bool {
+        self.is_terminal(definition) && self.completed_at.is_some()
+    }
+
+    pub fn start_step_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        role_id: &RoleId,
+        step_id: &StepId,
+        lease: StepLease,
+        now: OffsetDateTime,
+    ) -> Result<StepAttempt, DomainError> {
+        self.require_role(definition, role_id, &RoleAction::step(step_id.clone()))?;
+        self.start_step(definition, step_id, lease, now)
+    }
+
+    pub fn start_step(
+        &mut self,
+        definition: &CeremonyDefinition,
+        step_id: &StepId,
+        lease: StepLease,
+        now: OffsetDateTime,
+    ) -> Result<StepAttempt, DomainError> {
+        self.require_definition(definition)?;
+        if self.is_terminal(definition) {
+            return Err(DomainError::InvariantViolated {
+                reason: "terminal ceremony instances cannot start steps",
+            });
+        }
+
+        let step = definition.step(step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_instance.step",
+        })?;
+        if step.state_id() != &self.current_state {
+            return Err(DomainError::InvalidTransition {
+                from: "ceremony_instance.current_state",
+                to: "ceremony_step.state",
+            });
+        }
+
+        let record = self
+            .step_records
+            .get(step_id)
+            .cloned()
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance.step_record",
+            })?;
+        if !record.can_be_started_at(now) {
+            return Err(DomainError::InvariantViolated {
+                reason: "step lease is still active",
+            });
+        }
+
+        let next_attempt = next_attempt_for_start(&record)?;
+        if !step.retry_policy().allows_attempt(next_attempt) {
+            return Err(DomainError::InvariantViolated {
+                reason: "step retry policy exhausted",
+            });
+        }
+        if !self
+            .idempotency_keys
+            .insert(lease.idempotency_key().clone())
+        {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_instance.idempotency_key",
+            });
+        }
+
+        self.step_records
+            .insert(step_id.clone(), record.with_started(lease, next_attempt));
+        self.updated_at = now;
+        Ok(next_attempt)
+    }
+
+    pub fn apply_step_result(
+        &mut self,
+        definition: &CeremonyDefinition,
+        step_id: &StepId,
+        result: StepResult,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.require_definition(definition)?;
+        let step = definition.step(step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_instance.step",
+        })?;
+        if step.state_id() != &self.current_state {
+            return Err(DomainError::InvalidTransition {
+                from: "ceremony_instance.current_state",
+                to: "ceremony_step.state",
+            });
+        }
+
+        let record = self
+            .step_records
+            .get(step_id)
+            .cloned()
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance.step_record",
+            })?;
+        if record.status() != StepStatus::InProgress {
+            return Err(DomainError::InvariantViolated {
+                reason: "step result requires an in-progress step",
+            });
+        }
+
+        self.step_records
+            .insert(step_id.clone(), record.with_result(result));
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn approve_guard(
+        &mut self,
+        guard_name: &crate::value_objects::GuardName,
+        now: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        self.context = self.context.clone().with_guard_approval(guard_name)?;
+        self.updated_at = now;
+        Ok(())
+    }
+
+    pub fn apply_transition_as(
+        &mut self,
+        definition: &CeremonyDefinition,
+        role_id: &RoleId,
+        trigger: &TransitionTrigger,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        self.require_role(
+            definition,
+            role_id,
+            &RoleAction::transition(trigger.clone()),
+        )?;
+        self.apply_transition(definition, trigger, now)
+    }
+
+    pub fn apply_transition(
+        &mut self,
+        definition: &CeremonyDefinition,
+        trigger: &TransitionTrigger,
+        now: OffsetDateTime,
+    ) -> Result<StateId, DomainError> {
+        self.require_definition(definition)?;
+        if self.is_terminal(definition) {
+            return Err(DomainError::InvariantViolated {
+                reason: "terminal ceremony instances cannot transition",
+            });
+        }
+
+        let transition = definition
+            .transition_for_trigger(&self.current_state, trigger)
+            .ok_or(DomainError::InvalidTransition {
+                from: "ceremony_instance.current_state",
+                to: "transition_trigger",
+            })?;
+        if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony transition guards are not satisfied",
+            });
+        }
+
+        self.current_state = transition.to().clone();
+        self.updated_at = now;
+        if definition.is_terminal_state(&self.current_state) {
+            self.completed_at = Some(now);
+        }
+        Ok(self.current_state.clone())
+    }
+
+    fn matches_definition(&self, definition: &CeremonyDefinition) -> bool {
+        self.definition_name == *definition.name()
+            && self.definition_version == *definition.version()
+    }
+
+    fn require_definition(&self, definition: &CeremonyDefinition) -> Result<(), DomainError> {
+        if self.matches_definition(definition) {
+            Ok(())
+        } else {
+            Err(DomainError::InvariantViolated {
+                reason: "ceremony instance definition mismatch",
+            })
+        }
+    }
+
+    fn require_role(
+        &self,
+        definition: &CeremonyDefinition,
+        role_id: &RoleId,
+        action: &RoleAction,
+    ) -> Result<(), DomainError> {
+        self.require_definition(definition)?;
+        if definition.role_allows(role_id, action) {
+            Ok(())
+        } else {
+            Err(DomainError::InvariantViolated {
+                reason: "ceremony role is not allowed to perform action",
+            })
+        }
+    }
+}
+
+fn next_attempt_for_start(record: &StepExecutionRecord) -> Result<StepAttempt, DomainError> {
+    if matches!(record.status(), StepStatus::Failed | StepStatus::InProgress) {
+        record.attempt().next()
+    } else {
+        Ok(record.attempt())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value_objects::{
+        CeremonyGuard, CeremonyState, CeremonyStep, CeremonyTransition, GuardCondition, GuardName,
+        LeaseOwnerId, RetryPolicy, StepHandlerConfig, StepHandlerKind, StepOutput,
+    };
+    use time::macros::datetime;
+
+    fn now() -> OffsetDateTime {
+        datetime!(2026-06-06 12:00:00 UTC)
+    }
+
+    fn state_id(raw: &str) -> StateId {
+        StateId::new(raw).unwrap()
+    }
+
+    fn step_id(raw: &str) -> StepId {
+        StepId::new(raw).unwrap()
+    }
+
+    fn trigger(raw: &str) -> TransitionTrigger {
+        TransitionTrigger::new(raw).unwrap()
+    }
+
+    fn role_id(raw: &str) -> RoleId {
+        RoleId::new(raw).unwrap()
+    }
+
+    fn guard_name(raw: &str) -> GuardName {
+        GuardName::new(raw).unwrap()
+    }
+
+    fn handler_kind() -> StepHandlerKind {
+        StepHandlerKind::new("multiagent_round").unwrap()
+    }
+
+    fn retrying_step(raw_step_id: &str, raw_state_id: &str) -> CeremonyStep {
+        CeremonyStep::new(
+            step_id(raw_step_id),
+            state_id(raw_state_id),
+            handler_kind(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::new(
+                StepAttempt::new(3).unwrap(),
+                crate::value_objects::DurationMs::ZERO,
+            ),
+            None,
+        )
+    }
+
+    fn single_attempt_step(raw_step_id: &str, raw_state_id: &str) -> CeremonyStep {
+        CeremonyStep::new(
+            step_id(raw_step_id),
+            state_id(raw_state_id),
+            handler_kind(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::single_attempt(),
+            None,
+        )
+    }
+
+    fn lease(
+        raw_owner_id: &str,
+        raw_key: &str,
+        acquired_at: OffsetDateTime,
+        expires_at: OffsetDateTime,
+    ) -> StepLease {
+        StepLease::new(
+            LeaseOwnerId::new(raw_owner_id).unwrap(),
+            IdempotencyKey::new(raw_key).unwrap(),
+            acquired_at,
+            expires_at,
+        )
+        .unwrap()
+    }
+
+    fn role(actions: Vec<RoleAction>) -> crate::value_objects::CeremonyRole {
+        crate::value_objects::CeremonyRole::new(role_id("facilitator"), actions).unwrap()
+    }
+
+    fn definition_with_steps(steps: Vec<CeremonyStep>) -> CeremonyDefinition {
+        let plan_done = CeremonyGuard::new(
+            guard_name("plan_done"),
+            GuardCondition::StepStatus {
+                step_id: step_id("plan"),
+                status: StepStatus::Completed,
+            },
+        );
+        let finish = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("finish"),
+            vec![plan_done.name().clone()],
+        )
+        .unwrap();
+        let role = role(vec![
+            RoleAction::step(step_id("plan")),
+            RoleAction::transition(finish.trigger().clone()),
+        ]);
+
+        CeremonyDefinition::new(
+            crate::value_objects::CeremonyName::new("planning_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::intermediate(state_id("review")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![finish],
+            steps,
+            vec![plan_done],
+            vec![role],
+        )
+        .unwrap()
+    }
+
+    fn definition() -> CeremonyDefinition {
+        definition_with_steps(vec![
+            retrying_step("plan", "drafting"),
+            single_attempt_step("review_step", "review"),
+        ])
+    }
+
+    fn instance(definition: &CeremonyDefinition) -> CeremonyInstance {
+        CeremonyInstance::start(
+            CeremonyId::new("ceremony-1").unwrap(),
+            definition,
+            CeremonyContext::empty(),
+            now(),
+        )
+    }
+
+    #[test]
+    fn starts_in_initial_state_with_pending_records() {
+        let definition = definition();
+        let instance = instance(&definition);
+
+        assert_eq!(instance.current_state(), &state_id("drafting"));
+        assert_eq!(
+            instance.step_record(&step_id("plan")).unwrap().status(),
+            StepStatus::Pending
+        );
+        assert_eq!(
+            instance
+                .step_record(&step_id("review_step"))
+                .unwrap()
+                .status(),
+            StepStatus::Pending
+        );
+    }
+
+    #[test]
+    fn rejects_step_execution_outside_current_state() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+
+        let err = instance
+            .start_step(
+                &definition,
+                &step_id("review_step"),
+                lease(
+                    "runner-1",
+                    "key-1",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, DomainError::InvalidTransition { .. }));
+    }
+
+    #[test]
+    fn completed_step_unlocks_guarded_transition() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+
+        instance
+            .start_step_as(
+                &definition,
+                &role_id("facilitator"),
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "key-1",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .unwrap();
+        instance
+            .apply_step_result(
+                &definition,
+                &step_id("plan"),
+                StepResult::completed(StepOutput::empty()).unwrap(),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
+            .unwrap();
+        let state = instance
+            .apply_transition_as(
+                &definition,
+                &role_id("facilitator"),
+                &trigger("finish"),
+                datetime!(2026-06-06 12:02:00 UTC),
+            )
+            .unwrap();
+
+        assert_eq!(state, state_id("done"));
+        assert!(instance.is_completed(&definition));
+    }
+
+    #[test]
+    fn active_lease_blocks_failover_takeover() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+
+        instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "key-1",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .unwrap();
+        let err = instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-2",
+                    "key-2",
+                    datetime!(2026-06-06 12:01:00 UTC),
+                    datetime!(2026-06-06 12:06:00 UTC),
+                ),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
+            .unwrap_err();
+
+        assert!(matches!(err, DomainError::InvariantViolated { .. }));
+        assert_eq!(
+            instance
+                .step_record(&step_id("plan"))
+                .unwrap()
+                .lease()
+                .unwrap()
+                .owner_id()
+                .as_str(),
+            "runner-1"
+        );
+    }
+
+    #[test]
+    fn expired_lease_allows_failover_takeover_with_next_attempt() {
+        let definition = definition();
+        let mut instance = instance(&definition);
+
+        instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "key-1",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .unwrap();
+        let attempt = instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-2",
+                    "key-2",
+                    datetime!(2026-06-06 12:06:00 UTC),
+                    datetime!(2026-06-06 12:11:00 UTC),
+                ),
+                datetime!(2026-06-06 12:06:00 UTC),
+            )
+            .unwrap();
+
+        assert_eq!(attempt, StepAttempt::new(2).unwrap());
+        let record = instance.step_record(&step_id("plan")).unwrap();
+        assert_eq!(record.attempt(), StepAttempt::new(2).unwrap());
+        assert_eq!(record.lease().unwrap().owner_id().as_str(), "runner-2");
+    }
+
+    #[test]
+    fn human_approval_guard_uses_typed_context() {
+        let approval =
+            CeremonyGuard::new(guard_name("human_approved"), GuardCondition::HumanApproval);
+        let finish = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("approve"),
+            vec![approval.name().clone()],
+        )
+        .unwrap();
+        let definition = CeremonyDefinition::new(
+            crate::value_objects::CeremonyName::new("approval_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![finish.clone()],
+            Vec::new(),
+            vec![approval.clone()],
+            vec![role(vec![RoleAction::transition(finish.trigger().clone())])],
+        )
+        .unwrap();
+        let mut instance = instance(&definition);
+
+        assert!(matches!(
+            instance.apply_transition(&definition, &trigger("approve"), now()),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+        instance
+            .approve_guard(approval.name(), datetime!(2026-06-06 12:01:00 UTC))
+            .unwrap();
+        instance
+            .apply_transition(
+                &definition,
+                &trigger("approve"),
+                datetime!(2026-06-06 12:02:00 UTC),
+            )
+            .unwrap();
+
+        assert!(instance.is_completed(&definition));
+    }
+}

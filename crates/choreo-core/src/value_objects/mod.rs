@@ -6,6 +6,7 @@
 
 mod agent_kind;
 mod attributes;
+mod ceremony;
 mod council_selector;
 mod duration;
 mod ids;
@@ -21,6 +22,15 @@ mod validation_mode;
 
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
+pub use ceremony::{
+    CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyId, CeremonyInputDefinition,
+    CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStateKind,
+    CeremonyStep, CeremonyTransition, CeremonyVersion, GuardCondition, GuardName, IdempotencyKey,
+    InputName, InputRequirement, LeaseOwnerId, OutputName, RetryPolicy, RoleAction, RoleId,
+    StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, StepStatus, StepTimeout,
+    TransitionTrigger,
+};
 pub use council_selector::CouncilSelector;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
