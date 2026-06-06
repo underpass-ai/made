@@ -45,6 +45,7 @@ keeps `make e2e-compose` on the full 1-9 suite. To run a subset:
 ```sh
 CHOREO_E2E_SCENARIOS=cluster-connectivity make e2e-compose
 CHOREO_E2E_SCENARIOS=structured-output make e2e-compose
+CHOREO_E2E_SCENARIOS=ceremony-vllm make e2e-compose
 CHOREO_E2E_SCENARIOS=1-4,8 make e2e-compose
 ```
 
@@ -56,6 +57,8 @@ Supported selectors:
 | `cluster-connectivity` | 1-4 | gRPC, seeded council, delete-idempotence, NATS trigger/envelope smoke. |
 | `runtime-stub` | 5 | Runtime executor adapter against `stub-runtime`. |
 | `structured-output` | 6-9 | Strict schema rejection plus positive Report contracts through `stub-llm`. |
+| `ceremony` / `ceremony-diagram` | 11 | YAML ceremony execution and Mermaid trace with deterministic agents. |
+| `ceremony-vllm` / `gemma-ceremony` | 12 | YAML ceremony execution through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses the configured real vLLM/Gemma endpoint. |
 | `1`, `scenario-5`, `s8`, `1-4` | selected numbers | Targeted debugging. |
 
 The script writes compose logs to `tests/e2e/compose.log` during
@@ -233,7 +236,8 @@ For a real vLLM endpoint, use the operator-run flow:
 make e2e-provider-vllm
 ```
 
-For a full Choreographer council against real vLLM, use:
+For a full Choreographer council plus YAML-mounted ceremony against real
+vLLM, use:
 
 ```sh
 make e2e-council-vllm
@@ -260,7 +264,7 @@ provider".
 |---|---|---|
 | `make e2e-compose` | Repo-owned stack proof with deterministic fixtures. | Local container runtime only. |
 | `make e2e-provider-vllm` | Adapter-level validation against a real vLLM endpoint. | Kubernetes access plus real vLLM endpoint configuration. |
-| `make e2e-council-vllm` | gRPC council validation against multiple real vLLM agents. | Deployed Choreographer with `kind=vllm`, plus real vLLM endpoint configuration. |
+| `make e2e-council-vllm` | gRPC council validation and YAML ceremony execution against multiple real vLLM agents. | Deployed Choreographer with `kind=vllm`, plus real vLLM endpoint configuration. |
 | `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM ceremony. | Deployed Choreographer reachable from `choreo-mcp`, plus real vLLM endpoint configuration. |
 | Kubernetes smoke job | Connectivity smoke after Helm install. | Cluster, deployed Choreographer, and matching runtime/provider fixtures if running compose-shaped scenarios. |
 

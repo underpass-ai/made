@@ -18,6 +18,7 @@ VLLM_MODEL="${CHOREO_VLLM_MODEL:-google/gemma-4-31B-it}"
 VLLM_AGENT_COUNT="${CHOREO_VLLM_AGENT_COUNT:-3}"
 VLLM_MAX_TOKENS="${CHOREO_VLLM_MAX_TOKENS:-512}"
 VLLM_TIMEOUT_SECS="${CHOREO_VLLM_TIMEOUT_SECS:-300}"
+SCENARIOS="${CHOREO_E2E_SCENARIOS:-vllm-real-multi-agent,ceremony-vllm}"
 IMAGE_PULL_SECRET="${E2E_IMAGE_PULL_SECRET:-}"
 RENDERED_MANIFEST=""
 
@@ -40,9 +41,17 @@ awk \
     -v agent_count="${VLLM_AGENT_COUNT}" \
     -v max_tokens="${VLLM_MAX_TOKENS}" \
     -v timeout_secs="${VLLM_TIMEOUT_SECS}" \
+    -v scenarios="${SCENARIOS}" \
     -v pull_secret="${IMAGE_PULL_SECRET}" '
       {
         gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:latest", "image: " image);
+      }
+      /- name: CHOREO_E2E_SCENARIOS/ {
+        print;
+        getline;
+        sub(/value:.*/, "value: " scenarios);
+        print;
+        next;
       }
       /- name: CHOREOGRAPHER_ENDPOINT/ {
         print;

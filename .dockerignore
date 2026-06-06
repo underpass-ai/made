@@ -8,5 +8,9 @@ docs/
 scripts/
 specs/
 tests/
+!tests/
+!tests/e2e/
+!tests/e2e/ceremonies/
+!tests/e2e/ceremonies/**
 *.md
 !README.md

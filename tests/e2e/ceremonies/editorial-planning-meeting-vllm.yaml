@@ -1,0 +1,137 @@
+version: "1.0"
+name: "editorial_planning_meeting_vllm"
+description: "Non-technical four-agent editorial planning ceremony backed by vLLM"
+inputs:
+  required:
+    - meeting_brief
+  optional:
+    - audience_notes
+outputs:
+  decision_summary:
+    type: object
+states:
+  - id: OPENING
+    initial: true
+  - id: DIVERGING
+  - id: REVIEWING
+  - id: SYNTHESIZING
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: OPENING
+    to: DIVERGING
+    trigger: context_shared
+    guards:
+      - open_room_completed
+  - from: DIVERGING
+    to: REVIEWING
+    trigger: options_collected
+    guards:
+      - customer_story_completed
+  - from: REVIEWING
+    to: SYNTHESIZING
+    trigger: risks_reviewed
+    guards:
+      - risk_check_completed
+  - from: SYNTHESIZING
+    to: CLOSED
+    trigger: decision_written
+    guards:
+      - decision_summary_completed
+steps:
+  - id: open_room
+    state: OPENING
+    handler: facilitation_prompt
+    config:
+      specialty: editorial_meeting_vllm
+      agent_kind: vllm
+      participants: &editorial_meeting_participants
+        - facilitator
+        - customer_advocate
+        - risk_reviewer
+        - synthesizer
+      rounds: 0
+      num_agents: 4
+      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
+      provider.model: __CHOREO_VLLM_MODEL__
+      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      prompt: "Open the meeting, restate the brief, and invite perspectives."
+  - id: customer_story
+    state: DIVERGING
+    handler: persona_prompt
+    config:
+      specialty: editorial_meeting_vllm
+      agent_kind: vllm
+      participants: *editorial_meeting_participants
+      rounds: 0
+      num_agents: 4
+      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
+      provider.model: __CHOREO_VLLM_MODEL__
+      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      prompt: "Describe what the audience needs to understand and remember."
+  - id: risk_check
+    state: REVIEWING
+    handler: challenge_prompt
+    config:
+      specialty: editorial_meeting_vllm
+      agent_kind: vllm
+      participants: *editorial_meeting_participants
+      rounds: 0
+      num_agents: 4
+      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
+      provider.model: __CHOREO_VLLM_MODEL__
+      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      prompt: "Challenge weak assumptions and name risks in the plan."
+  - id: decision_summary
+    state: SYNTHESIZING
+    handler: synthesis_prompt
+    config:
+      specialty: editorial_meeting_vllm
+      agent_kind: vllm
+      participants: *editorial_meeting_participants
+      rounds: 0
+      num_agents: 4
+      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
+      provider.model: __CHOREO_VLLM_MODEL__
+      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      prompt: "Summarize the decision, owner, and next action."
+guards:
+  open_room_completed:
+    type: automated
+    check: "step_status:open_room:COMPLETED"
+  customer_story_completed:
+    type: automated
+    check: "step_status:customer_story:COMPLETED"
+  risk_check_completed:
+    type: automated
+    check: "step_status:risk_check:COMPLETED"
+  decision_summary_completed:
+    type: automated
+    check: "step_status:decision_summary:COMPLETED"
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - open_room
+      - context_shared
+  - id: CUSTOMER_ADVOCATE
+    allowed_actions:
+      - customer_story
+      - options_collected
+  - id: RISK_REVIEWER
+    allowed_actions:
+      - risk_check
+      - risks_reviewed
+  - id: SYNTHESIZER
+    allowed_actions:
+      - decision_summary
+      - decision_written
+timeouts:
+  step_default: 120
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

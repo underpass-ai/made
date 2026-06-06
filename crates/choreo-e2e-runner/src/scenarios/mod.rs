@@ -1,4 +1,7 @@
 mod ceremony_diagram;
+mod ceremony_vllm;
+mod ceremony_vllm_definition;
+mod ceremony_vllm_provider_config;
 mod connectivity;
 mod runtime;
 mod structured_output;
@@ -12,6 +15,7 @@ use tonic::transport::{Channel, Endpoint};
 use tracing::{info, warn};
 
 pub(crate) use ceremony_diagram::verify_editorial_meeting_ceremony_diagram;
+pub(crate) use ceremony_vllm::verify_editorial_meeting_ceremony_against_vllm_kind;
 pub(crate) use connectivity::{
     verify_causal_metadata_propagates_over_nats, verify_delete_missing_council_returns_false,
     verify_deliberate_returns_winner, verify_seeded_council_visible,
