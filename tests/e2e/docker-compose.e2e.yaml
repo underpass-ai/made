@@ -88,6 +88,9 @@ services:
     environment:
       CHOREOGRAPHER_ENDPOINT: "http://choreographer:50055"
       CHOREO_SEED_SPECIALTY: "triage"
+      # Full 1-9 suite by default. Override from the host with, e.g.,
+      # `CHOREO_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
+      CHOREO_E2E_SCENARIOS: "${CHOREO_E2E_SCENARIOS:-compose}"
       # Pinned to the path that runner.Dockerfile copies into the
       # image. Scenario 8 reads the canonical Report schema from
       # here; failing back to an env-overridable path keeps the

@@ -5,6 +5,7 @@ members = [
     "crates/choreo-app",
     "crates/choreo-adapters",
     "crates/choreo-proto",
+    "crates/choreo-mcp-proto",
     "crates/choreo",
     "crates/choreo-tests-integration",
     "crates/choreo-e2e-runner",
@@ -105,11 +106,12 @@ sha2 = "0.10"
 jsonschema = { version = "0.17", default-features = false }
 
 # internal
-choreo-core = { path = "crates/choreo-core" }
-choreo-app = { path = "crates/choreo-app" }
-choreo-adapters = { path = "crates/choreo-adapters" }
-choreo-proto = { path = "crates/choreo-proto" }
-choreo-tests-integration = { path = "crates/choreo-tests-integration" }
+choreo-core = { path = "crates/choreo-core", version = "0.1.0" }
+choreo-app = { path = "crates/choreo-app", version = "0.1.0" }
+choreo-adapters = { path = "crates/choreo-adapters", version = "0.1.0" }
+choreo-proto = { path = "crates/choreo-proto", version = "0.1.0" }
+choreo-mcp-proto = { path = "crates/choreo-mcp-proto", version = "0.1.0" }
+choreo-tests-integration = { path = "crates/choreo-tests-integration", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"

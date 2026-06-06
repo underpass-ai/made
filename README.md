@@ -31,6 +31,18 @@ all that is injected via configuration and proto messages.
   every command mirrors a CI gate.
 - [`docs/release.md`](docs/release.md) — versioning + cut-a-release
   checklist.
+- [`CHANGELOG.md`](CHANGELOG.md) — unreleased changes and release-note
+  discipline.
+- [`CONTRIBUTING.md`](CONTRIBUTING.md) — contribution workflow,
+  required gates, contract rules, and PR expectations.
+- [`SECURITY.md`](SECURITY.md) — supported security scope,
+  vulnerability reporting, and deployment hardening baseline.
+- [`docs/operations/deploy-kubernetes.md`](docs/operations/deploy-kubernetes.md)
+  — Helm install guide, including minimal standalone install and
+  embedded NATS, TLS/mTLS, Postgres secret, provider env secrets,
+  and Runtime executor options.
+- [`docs/operations/support-matrix.md`](docs/operations/support-matrix.md)
+  — supported Rust toolchain and release-support rules.
 - [`docs/PRINCIPLES.md`](docs/PRINCIPLES.md) — honesty discipline.
 - [`docs/experiments/`](docs/experiments/) — append-only lab
   notebook (baselines, scale sweeps, null results).
@@ -41,6 +53,40 @@ all that is injected via configuration and proto messages.
   status + session log.
 - `justfile` at the repo root — `just` lists every recipe.
 
+## Run Locally Without External Services
+
+```sh
+CHOREO_NATS_ENABLED=false just run
+```
+
+This starts the Choreographer binary with in-memory persistence,
+noop messaging, and the default noop executor. It serves the gRPC API
+on `localhost:50055` without requiring NATS, Postgres, Runtime, KMP,
+PIR, or provider credentials. For an immediately exercisable local
+council, add `CHOREO_SEED_SPECIALTIES=triage`.
+
+If `just` is not installed:
+
+```sh
+CHOREO_NATS_ENABLED=false cargo run --locked -p choreo
+```
+
+For MCP client wiring without a running Choreographer:
+
+```sh
+CHOREO_MCP_BACKEND=fixture choreo-mcp
+```
+
+That starts the stdio MCP adapter in fixture mode. See
+[`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) for
+terminal smoke commands and live gRPC configuration.
+
+To point MCP at the local Choreographer from a second terminal:
+
+```sh
+CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
+```
+
 ## Workspace
 
 | Crate | Purpose |
@@ -49,6 +95,7 @@ all that is injected via configuration and proto messages.
 | `choreo-app` | Use cases / application services. |
 | `choreo-adapters` | NATS, gRPC clients, config, external integrations. |
 | `choreo-proto` | Tonic-generated gRPC code (`underpass.choreo.v1`). |
+| `choreo-mcp-proto` | Vendored `underpass.choreo.v1` proto crate used to publish `choreo-mcp` independently. |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |
 | `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. |
 

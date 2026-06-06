@@ -8,12 +8,12 @@
 #   NAMESPACE=underpass-runtime \
 #   RELEASE_NAME=choreographer \
 #   VALUES_FILE=charts/choreographer/values.underpass-runtime.yaml \
-#   IMAGE_TAG=sha-<commit> \
+#   IMAGE_TAG=sha-COMMIT \
 #   ./scripts/ci/deploy-kubernetes.sh
 
 image:
   # Image tag is supplied at deploy time by the script (via
-  # `--set image.tag=sha-<commit>`); see `scripts/ci/deploy-kubernetes.sh`.
+  # `--set image.tag=sha-COMMIT`); see `scripts/ci/deploy-kubernetes.sh`.
   pullPolicy: Always
 
 imagePullSecrets:
@@ -77,7 +77,7 @@ tls:
 # Single replica; bump to 2 once we want PDB + rolling tolerance.
 replicaCount: 1
 
-# Allow `sha-<short>` image tags from CI — they are immutable per
+# Allow `sha-SHORT` image tags from CI — they are immutable per
 # commit, but the chart's default refuses any non-digest reference
 # unless this development knob opts in.
 development:

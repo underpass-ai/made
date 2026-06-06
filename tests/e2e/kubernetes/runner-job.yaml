@@ -32,6 +32,8 @@ spec:
               value: http://choreographer:50055
             - name: CHOREO_SEED_SPECIALTY
               value: triage
+            - name: CHOREO_E2E_SCENARIOS
+              value: cluster-connectivity
             - name: RUST_LOG
               value: info
           resources:

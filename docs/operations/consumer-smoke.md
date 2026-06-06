@@ -7,7 +7,9 @@ only talks gRPC over `tonic` and (optionally) core NATS over
 `async-nats`. That makes it a faithful smoke test of the integration
 contract a real consumer commits to.
 
-Two chains run, both shipped today:
+The default smoke runs two provider-free chains. An opt-in positive
+path is available when the target Choreographer has a provider-backed
+agent kind enabled and a compatible endpoint is reachable:
 
 - **Chain 1** — Warn-mode reevaluation. Mirrors what a consumer
   triggers after observing an incident or domain event: optionally
@@ -16,14 +18,18 @@ Two chains run, both shipped today:
   typed response + the outbound `choreo.deliberation.completed`
   envelope (correlation / causation propagation).
 
-- **Chain 2** — Strict-mode handoff report. Registers the canonical
+- **Chain 2** — Strict-mode handoff report / rejection path. Registers the canonical
   Report `OutputContract` (JSON Schema body bound in
   `OutputContract.json_schema`), invokes `RunCouncilDecision` in
-  Strict mode, and asserts that the choreographer either accepts a
-  schema-conformant response (positive path) or rejects free-form
-  text with `Code::FailedPrecondition` whose message mentions the
-  contract id (rejection path — the path today's NoopAgent stack
-  reaches).
+  Strict mode, and asserts that the choreographer rejects free-form
+  NoopAgent text with `Code::FailedPrecondition` whose message
+  mentions the contract id.
+
+- **Positive path** — Provider-backed strict Report. Registers the
+  canonical Report contract, registers an `openai` or `vllm` agent
+  against an OpenAI-compatible endpoint, creates a one-agent council,
+  runs `RunCouncilDecision` in Strict mode, and validates that
+  `report_payload_validates` is `Passed`.
 
 ## Prerequisites
 
@@ -37,6 +43,12 @@ Two chains run, both shipped today:
   `RegisterContract` and tolerates `AlreadyExists` /
   `FailedPrecondition` (already seeded) as a pass — but the registry
   must accept new contracts when starting from empty.
+- For `positive-path`: the Choreographer binary must be built with
+  the provider feature and booted with the provider's base config:
+  `agent-openai` plus `CHOREO_OPENAI_API_KEY` for `openai`, or
+  `agent-vllm` plus `CHOREO_VLLM_MODEL` and `CHOREO_VLLM_ENDPOINT`
+  for `vllm`. Per-run `provider.endpoint` and `provider.model`
+  overrides are sent through `RegisterAgent.agent_config`.
 
 For the canonical bus subjects (Chain 1's NATS-coupled assertions):
 
@@ -47,15 +59,23 @@ If `--nats-url` is omitted, those assertions are recorded as
 `Skipped` (never silently dropped) and the rest of the chain still
 runs.
 
+`--chain all` runs Chain 2 before Chain 1. That lets a fresh registry
+receive the Report contract before Chain 1 consumes the same contract
+in Warn mode.
+
 ## Invocation
 
 ```bash
 cargo run -p choreo-consumer-smoke -- \
     --endpoint http://localhost:50055 \
     [--nats-url nats://localhost:4222] \
-    [--chain {one,two,all}] \
+    [--chain {one,two,all,positive-path}] \
     [--specialty triage] \
-    [--contract-id consumer-smoke-report-v1]
+    [--contract-id consumer-smoke-report-v1] \
+    [--provider-kind {openai,vllm}] \
+    [--provider-endpoint http://localhost:8000] \
+    [--provider-model stub-report-v1] \
+    [--positive-specialty consumer-smoke-report-openai]
 ```
 
 Environment overrides:
@@ -67,6 +87,15 @@ Environment overrides:
 - `CHOREO_REPORT_SCHEMA_PATH` — Chain 2 reads the schema from this
   path. Default `api/examples/output-contracts/report.schema.json`
   (relative to the binary's cwd).
+- `CONSUMER_SMOKE_PROVIDER_KIND` — provider kind for
+  `positive-path`; `openai` or `vllm`. Default `openai`.
+- `CONSUMER_SMOKE_PROVIDER_ENDPOINT` — OpenAI-compatible endpoint
+  used by `positive-path`. Required for that chain.
+- `CONSUMER_SMOKE_PROVIDER_MODEL` — model override sent in
+  `RegisterAgent.agent_config`. Default `stub-report-v1`.
+- `CONSUMER_SMOKE_POSITIVE_SPECIALTY` — optional specialty for the
+  positive council. If omitted, the CLI uses
+  `consumer-smoke-report-<provider-kind>`.
 - `RUST_LOG` — standard tracing filter. Default `info`.
 
 A `make consumer-smoke` target wraps the same call:
@@ -76,6 +105,66 @@ make consumer-smoke
 CONSUMER_SMOKE_CHAIN=two CHOREOGRAPHER_ENDPOINT=https://staging:50055 \
     make consumer-smoke
 ```
+
+Positive path against a local OpenAI-compatible stub/provider:
+
+```bash
+cargo run -p choreo-consumer-smoke -- \
+    --endpoint http://localhost:50055 \
+    --chain positive-path \
+    --provider-kind openai \
+    --provider-endpoint http://localhost:8000 \
+    --provider-model stub-report-v1
+```
+
+## CI Example
+
+A downstream consumer can gate a staging deploy with two smoke steps:
+the default provider-free chain set, then the provider-backed positive
+path. The first step checks that the public API is alive, that strict
+schema rejection works, and, when `CHOREO_NATS_URL` is set, that
+correlation/causation propagate on the bus. The second step checks
+that a structured Report JSON winner is accepted.
+
+```yaml
+name: choreographer-consumer-smoke
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    env:
+      CHOREOGRAPHER_ENDPOINT: ${{ secrets.CHOREOGRAPHER_ENDPOINT }}
+      CHOREO_NATS_URL: ${{ secrets.CHOREO_NATS_URL }}
+      CONSUMER_SMOKE_PROVIDER_KIND: openai
+      CONSUMER_SMOKE_PROVIDER_ENDPOINT: ${{ secrets.CONSUMER_SMOKE_PROVIDER_ENDPOINT }}
+      CONSUMER_SMOKE_PROVIDER_MODEL: ${{ vars.CONSUMER_SMOKE_PROVIDER_MODEL }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: underpass-ai/underpass-choreographer
+          ref: <pinned-tag-or-sha>
+          path: choreographer-smoke
+
+      - name: Provider-free API and rejection smoke
+        working-directory: choreographer-smoke
+        run: |
+          cargo run -p choreo-consumer-smoke --locked -- \
+            --chain all
+
+      - name: Positive Report smoke
+        working-directory: choreographer-smoke
+        run: |
+          cargo run -p choreo-consumer-smoke --locked -- \
+            --chain positive-path
+```
+
+The job relies on exit codes only: `0` passes, `1` means a consumer
+assertion failed, and `2` means the smoke could not run.
 
 ## What each chain asserts
 
@@ -89,7 +178,15 @@ CONSUMER_SMOKE_CHAIN=two CHOREOGRAPHER_ENDPOINT=https://staging:50055 \
 | chain1 | `causal_metadata_propagated` | that envelope's `causation_id` matches the one the harness sent |
 | chain2 | `report_schema_registered` | `RegisterContract` succeeds or the contract already exists |
 | chain2 | `report_contract_rejects_freeform_text` | `RunCouncilDecision` returns `FailedPrecondition` mentioning the contract id |
-| chain2 | `report_payload_validates` | the winner's content satisfies the schema (positive path) |
+| chain2 | `report_payload_validates` | `Skipped` on rejection path; positive validation belongs to `positive-path` |
+| positive-path | `positive_provider_endpoint_configured` | `--provider-endpoint` / `CONSUMER_SMOKE_PROVIDER_ENDPOINT` is present |
+| positive-path | `report_schema_registered` | `RegisterContract` succeeds or the contract already exists |
+| positive-path | `positive_agent_registered` | `RegisterAgent` accepts the `openai`/`vllm` descriptor and endpoint/model overrides |
+| positive-path | `positive_council_created` | `CreateCouncil` succeeds or the council already exists |
+| positive-path | `run_council_decision_strict` | Strict `RunCouncilDecision` returns a winner proposal |
+| positive-path | `report_payload_validates` | the winner's content parses as JSON and satisfies the Report schema |
+| positive-path | `report_validation_summary_passed` | `response.validation.passed == true` |
+| positive-path | `positive_completion_envelope_observed` | optional: with NATS configured, the completion envelope for the task arrives |
 
 Each assertion is also typed (`Passed` / `Skipped { reason }` /
 `Failed { detail }`), so callers that embed the library can assert on
@@ -102,11 +199,11 @@ the typed shape without parsing the printed table.
   `make e2e-compose` scenario 7; this consumer harness keeps that
   assertion as a documented out-of-scope seam rather than duplicating
   the stack E2E.
-- **Chain 2's positive path needs a structured-JSON agent.** The
-  default smoke path targets a NoopAgent stack and proves strict
-  schema rejection. The compose stack also ships a `stub-llm` sidecar
-  that emits Report-shaped JSON; wiring the consumer smoke harness to
-  register that agent is a follow-up positive-path mode.
+- **Positive path is opt-in.** The default smoke path targets a
+  provider-free NoopAgent stack and proves strict schema rejection.
+  Run `--chain positive-path` only when the target deployment has
+  `openai` or `vllm` enabled and an OpenAI-compatible endpoint is
+  reachable.
 - The trigger publish in Chain 1 is informational only —
   `RunCouncilDecision` is invoked directly, so the trigger path does
   not gate the run. Pinning the trigger-driven path end-to-end is

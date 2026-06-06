@@ -38,12 +38,12 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_register_agent" => register_agent_fixture(),
                 "choreo_unregister_agent" => unregister_agent_fixture(),
                 "choreo_process_trigger_event" => process_trigger_fixture(),
-                "choreo_get_status" => get_status_fixture(),
-                "choreo_get_metrics" => get_metrics_fixture(),
                 "choreo_run_council_decision" => run_council_decision_fixture(),
                 "choreo_register_contract" => register_contract_fixture(),
                 "choreo_list_contracts" => list_contracts_fixture(),
                 "choreo_delete_contract" => delete_contract_fixture(),
+                "choreo_get_status" => get_status_fixture(),
+                "choreo_get_metrics" => get_metrics_fixture(),
                 other => {
                     return Err(format!(
                         "fixture backend: unknown tool `{other}` (this is a client-side typo, not a backend error)"
@@ -73,7 +73,8 @@ fn deliberate_fixture() -> Value {
                     "proposal_id": "proposal-fixture-a",
                     "author_agent_id": "agent-fixture-1",
                     "content": "fixture answer",
-                    "metadata": {}
+                    "metadata": {},
+                    "revision_count": 0
                 },
                 "validation": {
                     "score": 1.0,
@@ -204,7 +205,8 @@ fn run_council_decision_fixture() -> Value {
                     { "kind": "content-non-empty", "passed": true, "summary": "ok", "details": {} }
                 ],
                 "rank": 0,
-                "passed": true
+                "passed": true,
+                "revision_count": 0
             }
         ],
         "duration_ms": 42,
@@ -262,24 +264,13 @@ mod tests {
     #[tokio::test]
     async fn every_tool_has_a_fixture() {
         let backend = FixtureChoreoMcpBackend;
-        for tool in [
-            "choreo_deliberate",
-            "choreo_stream_deliberation",
-            "choreo_get_deliberation_result",
-            "choreo_orchestrate",
-            "choreo_create_council",
-            "choreo_list_councils",
-            "choreo_delete_council",
-            "choreo_register_agent",
-            "choreo_unregister_agent",
-            "choreo_process_trigger_event",
-            "choreo_get_status",
-            "choreo_get_metrics",
-            "choreo_run_council_decision",
-            "choreo_register_contract",
-            "choreo_list_contracts",
-            "choreo_delete_contract",
-        ] {
+        let catalog = crate::protocol::tools_list_result();
+        for tool in catalog["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+        {
             let v = backend.call_tool(tool, &json!({})).await.unwrap();
             assert_eq!(v["isError"], false, "{tool} fixture must be a success");
         }

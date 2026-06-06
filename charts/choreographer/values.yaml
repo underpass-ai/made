@@ -93,6 +93,16 @@ config:
   # deployments register agents through other channels.
   seedSpecialties: ""
 
+# Extra env wiring for provider adapters. These fields are intentionally
+# generic because provider enablement is feature-gated in the binary
+# and env-gated at boot.
+#
+# Use `providerEnv` for individual vars, preferably with
+# `valueFrom.secretKeyRef` for credentials. Use `providerEnvFrom` when
+# an existing Secret or ConfigMap already exposes CHOREO_* keys.
+providerEnv: []
+providerEnvFrom: []
+
 messaging:
   nats:
     enabled: true

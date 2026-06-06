@@ -165,6 +165,7 @@ fn candidate_summary_from_ranked(outcome: &RankedOutcome) -> pb::CandidateSummar
             .collect(),
         rank: outcome.rank(),
         passed: outcome.outcome().all_passed(),
+        revision_count: outcome.proposal().revision_count(),
     }
 }
 

@@ -5,8 +5,8 @@
 //! generated tonic client, and converts the response back via
 //! `proto_to_json`. tonic `Status` errors collapse to plain strings.
 
-use choreo_proto::v1 as pb;
-use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
+use choreo_mcp_proto::v1 as pb;
+use choreo_mcp_proto::v1::choreographer_service_client::ChoreographerServiceClient;
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
@@ -135,37 +135,6 @@ pub(crate) async fn dispatch(
             }))
         }
 
-        "choreo_get_status" => {
-            let request = build_get_status_request(arguments);
-            let response = client
-                .get_status(request)
-                .await
-                .map_err(|s| status_error(&s))?;
-            let pb::GetStatusResponse {
-                version,
-                uptime_seconds,
-                health,
-                stats,
-            } = response.into_inner();
-            Ok(json!({
-                "version": version,
-                "uptime_seconds": uptime_seconds,
-                "health": health,
-                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
-            }))
-        }
-
-        "choreo_get_metrics" => {
-            let response = client
-                .get_metrics(pb::GetMetricsRequest {})
-                .await
-                .map_err(|s| status_error(&s))?;
-            let pb::GetMetricsResponse { stats } = response.into_inner();
-            Ok(json!({
-                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
-            }))
-        }
-
         "choreo_run_council_decision" => {
             let request = build_run_council_decision_request(arguments)?;
             let response = client
@@ -209,6 +178,37 @@ pub(crate) async fn dispatch(
                 .map_err(|s| status_error(&s))?;
             let pb::DeleteContractResponse { deleted } = response.into_inner();
             Ok(json!({ "deleted": deleted }))
+        }
+
+        "choreo_get_status" => {
+            let request = build_get_status_request(arguments);
+            let response = client
+                .get_status(request)
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::GetStatusResponse {
+                version,
+                uptime_seconds,
+                health,
+                stats,
+            } = response.into_inner();
+            Ok(json!({
+                "version": version,
+                "uptime_seconds": uptime_seconds,
+                "health": health,
+                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
+            }))
+        }
+
+        "choreo_get_metrics" => {
+            let response = client
+                .get_metrics(pb::GetMetricsRequest {})
+                .await
+                .map_err(|s| status_error(&s))?;
+            let pb::GetMetricsResponse { stats } = response.into_inner();
+            Ok(json!({
+                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
+            }))
         }
 
         other => Err(format!("unknown choreo MCP tool `{other}`")),

@@ -60,6 +60,7 @@ spec:
             capabilities:
               drop:
                 - ALL
+          {{- if or .Values.messaging.nats.embedded.jetstream.enabled .Values.messaging.nats.embedded.monitoring.enabled }}
           args:
             {{- if .Values.messaging.nats.embedded.jetstream.enabled }}
             - "-js"
@@ -69,6 +70,7 @@ spec:
             - "-m"
             - "8222"
             {{- end }}
+          {{- end }}
           ports:
             - name: client
               containerPort: 4222

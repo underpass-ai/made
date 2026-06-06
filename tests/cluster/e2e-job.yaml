@@ -1,25 +1,19 @@
 # Runs the `choreo-e2e-runner` binary as a Kubernetes Job against a
 # choreographer deployed in-cluster. Useful as a smoke test after a
-# `helm upgrade --install`: the same scenarios that compose runs
-# locally, now driven through real DNS, real network, and a real
-# `RuntimeExecutor` connection.
+# `helm upgrade --install`: scenarios 1-4 are driven through real DNS,
+# real network, and the cluster's NATS connection.
 #
 # Caveats:
 #
-# - Scenarios 1–4 cover gRPC + NATS + causal metadata against the
+# - Scenarios 1-4 cover gRPC + NATS + causal metadata against the
 #   real deploy. They pass when the choreographer is wired correctly
 #   to its own NATS bus.
 #
-# - Scenarios 5-9 in the current e2e-runner are compose-shaped:
-#   scenario 5 expects a Runtime tool named `stub.echo`, scenarios
-#   8-9 expect the `stub-llm` OpenAI-compatible sidecar, and
-#   scenario 6 asserts strict rejection of free-form NoopAgent
-#   output. Against a real `underpass-runtime`, `stub.echo` is not
-#   normally in the catalog, so scenario 5 can surface
-#   `NotFound: runtime resource` — proving the gRPC mTLS path was
-#   reached, but failing the assertion. Treat this Job as a targeted
-#   connectivity smoke unless the namespace also provides equivalent
-#   test fixtures.
+# - Scenarios 5-9 are fixture-shaped and stay opt-in: scenario 5
+#   expects a Runtime tool named `stub.echo`, and scenarios 8-9 expect
+#   the `stub-llm` OpenAI-compatible sidecar. Run `runtime-stub`,
+#   `structured-output`, or `compose` only in clusters that provide
+#   equivalent fixtures or real matching services.
 #
 # Apply after `helm upgrade --install`. The Job's TTL cleans the
 # resource after 10 min.
@@ -58,5 +52,7 @@ spec:
               value: "nats://choreographer-nats:4222"
             - name: CHOREO_SEED_SPECIALTY
               value: "triage"
+            - name: CHOREO_E2E_SCENARIOS
+              value: "cluster-connectivity"
             - name: RUST_LOG
               value: "info"

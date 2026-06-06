@@ -4,7 +4,7 @@
 //! key explicitly so the wire schema is documented in the code and
 //! reviewers can spot accidental drops at PR time.
 
-use choreo_proto::v1 as pb;
+use choreo_mcp_proto::v1 as pb;
 use prost_types::{
     value::Kind as PbKind, ListValue, Struct as PbStruct, Timestamp, Value as PbValue,
 };
@@ -76,6 +76,7 @@ pub(crate) fn proposal_to_json(p: pb::Proposal) -> Value {
         "author_agent_id": p.author_agent_id,
         "content": p.content,
         "metadata": optional_pb_struct_to_json(p.metadata),
+        "revision_count": p.revision_count,
     })
 }
 
@@ -265,6 +266,7 @@ fn candidate_summary_to_json(c: pb::CandidateSummary) -> Value {
             .collect::<Vec<_>>(),
         "rank": c.rank,
         "passed": c.passed,
+        "revision_count": c.revision_count,
     })
 }
 
