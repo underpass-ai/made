@@ -295,6 +295,39 @@ pub(crate) fn run_council_decision_response_to_json(r: pb::RunCouncilDecisionRes
     })
 }
 
+fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
+    let pb::CeremonyStepExecution {
+        state_id,
+        step_id,
+        role_id,
+        status,
+        attempt,
+    } = step;
+    json!({
+        "state_id": state_id,
+        "step_id": step_id,
+        "role_id": role_id,
+        "status": status,
+        "attempt": attempt,
+    })
+}
+
+pub(crate) fn run_ceremony_response_to_json(r: pb::RunCeremonyResponse) -> Value {
+    json!({
+        "ceremony_id": r.ceremony_id,
+        "definition_name": r.definition_name,
+        "definition_version": r.definition_version,
+        "final_state": r.final_state,
+        "completed": r.completed,
+        "steps": r
+            .steps
+            .into_iter()
+            .map(ceremony_step_execution_to_json)
+            .collect::<Vec<_>>(),
+        "mermaid_sequence": r.mermaid_sequence,
+    })
+}
+
 pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
     let per_specialty: Map<String, Value> = s
         .per_specialty_counts

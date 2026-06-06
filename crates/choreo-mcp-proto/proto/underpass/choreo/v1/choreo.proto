@@ -109,6 +109,15 @@ service ChoreographerService {
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
   rpc DeleteContract(DeleteContractRequest) returns (DeleteContractResponse);
 
+  // ---- Declarative ceremonies ----------------------------------------
+
+  // Execute a declarative ceremony definition supplied as YAML.
+  // This is the public surface for the extracted ceremony engine:
+  // the YAML is parsed into the domain definition, the application
+  // use case runs the guarded state machine, and the response carries
+  // both execution trace and a Mermaid sequence diagram.
+  rpc RunCeremony(RunCeremonyRequest) returns (RunCeremonyResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -563,4 +572,41 @@ message DeleteContractRequest {
 }
 message DeleteContractResponse {
   bool deleted = 1;
+}
+
+// ============================================================================
+// Declarative ceremony execution
+// ============================================================================
+
+message RunCeremonyRequest {
+  // Optional. When empty the server mints a ceremony id.
+  string ceremony_id = 1;
+  // Declarative ceremony definition in the YAML format accepted by
+  // Choreographer's ceremony YAML adapter.
+  string definition_yaml = 2;
+  // Initial ceremony context. Guard approvals and use-case specific
+  // structured data live here.
+  google.protobuf.Struct context = 3;
+  // Optional. Defaults to a server-owned runner id when empty.
+  string lease_owner_id = 4;
+  // Optional. Defaults to 60000ms when zero.
+  uint64 lease_ttl_ms = 5;
+}
+
+message CeremonyStepExecution {
+  string state_id = 1;
+  string step_id = 2;
+  string role_id = 3;
+  string status = 4;
+  uint32 attempt = 5;
+}
+
+message RunCeremonyResponse {
+  string ceremony_id = 1;
+  string definition_name = 2;
+  string definition_version = 3;
+  string final_state = 4;
+  bool completed = 5;
+  repeated CeremonyStepExecution steps = 6;
+  string mermaid_sequence = 7;
 }

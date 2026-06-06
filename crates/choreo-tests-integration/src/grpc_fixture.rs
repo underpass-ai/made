@@ -23,10 +23,11 @@ use choreo_adapters::agents::DispatchingAgentFactory;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
-use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopCeremonyStepHandler, NoopExecutor, NoopMessaging};
 use choreo_adapters::scoring::UniformScoring;
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -35,11 +36,13 @@ use choreo_adapters::validators::{
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCouncilDecisionUseCase,
-    UnregisterAgentUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::ports::{
-    AgentRegistryPort, AgentResolverPort, ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
+    AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ContractRegistryPort,
+    CouncilRegistryPort, ValidatorPort,
 };
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
@@ -100,6 +103,12 @@ impl GrpcFixture {
             Arc::new(InMemoryCouncilRegistry::new());
         let contract_registry: Arc<dyn ContractRegistryPort> =
             Arc::new(InMemoryContractRegistry::new());
+        let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
+            Arc::new(InMemoryCeremonyDefinitionRepository::new());
+        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
+            Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+            Arc::new(NoopCeremonyStepHandler::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         // `new()` yields a factory that supports only the always-on
@@ -130,6 +139,12 @@ impl GrpcFixture {
             council_registry.clone(),
             deliberate.clone(),
             repository.clone(),
+        ));
+        let run_ceremony = Arc::new(RunCeremonyUseCase::new(
+            ceremony_definitions,
+            ceremony_instances,
+            ceremony_step_handler,
+            clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
             clock.clone(),
@@ -162,6 +177,7 @@ impl GrpcFixture {
             .register_agent(register_agent)
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
+            .run_ceremony(run_ceremony)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
@@ -239,6 +255,12 @@ impl GrpcFixture {
             Arc::new(InMemoryCouncilRegistry::new());
         let contract_registry: Arc<dyn ContractRegistryPort> =
             Arc::new(InMemoryContractRegistry::new());
+        let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
+            Arc::new(InMemoryCeremonyDefinitionRepository::new());
+        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
+            Arc::new(InMemoryCeremonyInstanceRepository::new());
+        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+            Arc::new(NoopCeremonyStepHandler::new());
         let agent_registry = Arc::new(InMemoryAgentRegistry::new());
         let agent_resolver: Arc<dyn AgentResolverPort> = agent_registry.clone();
         let agent_factory = Arc::new(DispatchingAgentFactory::new());
@@ -267,6 +289,12 @@ impl GrpcFixture {
             council_registry.clone(),
             deliberate.clone(),
             repository.clone(),
+        ));
+        let run_ceremony = Arc::new(RunCeremonyUseCase::new(
+            ceremony_definitions,
+            ceremony_instances,
+            ceremony_step_handler,
+            clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
             clock.clone(),
@@ -299,6 +327,7 @@ impl GrpcFixture {
             .register_agent(register_agent)
             .unregister_agent(unregister_agent)
             .run_council_decision(run_council_decision)
+            .run_ceremony(run_ceremony)
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())

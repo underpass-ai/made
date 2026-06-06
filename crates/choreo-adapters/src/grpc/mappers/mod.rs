@@ -17,6 +17,7 @@ mod event;
 mod output_contract;
 mod phase;
 mod proposal;
+mod run_ceremony;
 mod run_council_decision;
 mod task;
 mod timestamp;
@@ -29,6 +30,7 @@ pub(super) use deliberation::{deliberate_response_from, orchestrate_response_fro
 pub(super) use event::trigger_event_from_proto;
 pub(super) use output_contract::{output_contract_from_proto, output_contract_to_proto};
 pub(super) use phase::proto_phase_from_domain;
+pub(super) use run_ceremony::{run_ceremony_input_from_proto, run_ceremony_response_from};
 pub(super) use run_council_decision::{
     run_council_decision_input_from_proto, run_council_decision_response_from,
 };

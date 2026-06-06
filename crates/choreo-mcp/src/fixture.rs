@@ -42,6 +42,7 @@ impl ChoreoMcpToolBackend for FixtureChoreoMcpBackend {
                 "choreo_register_contract" => register_contract_fixture(),
                 "choreo_list_contracts" => list_contracts_fixture(),
                 "choreo_delete_contract" => delete_contract_fixture(),
+                "choreo_run_ceremony" => run_ceremony_fixture(),
                 "choreo_get_status" => get_status_fixture(),
                 "choreo_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -233,6 +234,26 @@ fn list_contracts_fixture() -> Value {
 
 fn delete_contract_fixture() -> Value {
     json!({ "deleted": true })
+}
+
+fn run_ceremony_fixture() -> Value {
+    json!({
+        "ceremony_id": "ceremony-fixture-1",
+        "definition_name": "fixture_ceremony",
+        "definition_version": "1.0",
+        "final_state": "CLOSED",
+        "completed": true,
+        "steps": [
+            {
+                "state_id": "OPEN",
+                "step_id": "collect_context",
+                "role_id": "FACILITATOR",
+                "status": "COMPLETED",
+                "attempt": 1
+            }
+        ],
+        "mermaid_sequence": "sequenceDiagram\n    FACILITATOR->>FACILITATOR: collect_context [noop_step]"
+    })
 }
 
 #[cfg(test)]

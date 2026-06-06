@@ -1,3 +1,4 @@
+mod ceremony_diagram;
 mod connectivity;
 mod runtime;
 mod structured_output;
@@ -10,6 +11,7 @@ use prost_types::{value::Kind as PbKind, Struct as PbStruct, Value as PbValue};
 use tonic::transport::{Channel, Endpoint};
 use tracing::{info, warn};
 
+pub(crate) use ceremony_diagram::verify_editorial_meeting_ceremony_diagram;
 pub(crate) use connectivity::{
     verify_causal_metadata_propagates_over_nats, verify_delete_missing_council_returns_false,
     verify_deliberate_returns_winner, verify_seeded_council_visible,

@@ -8,7 +8,7 @@ use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilInput, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase,
-    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{AgentDescriptor, ContractRegistryPort, StatisticsPort};
@@ -22,7 +22,8 @@ use tracing::debug;
 
 use super::mappers::{
     council_summary_from, deliberate_response_from, orchestrate_response_from,
-    output_contract_from_proto, output_contract_to_proto, run_council_decision_input_from_proto,
+    output_contract_from_proto, output_contract_to_proto, run_ceremony_input_from_proto,
+    run_ceremony_response_from, run_council_decision_input_from_proto,
     run_council_decision_response_from, task_from_proto, trigger_event_from_proto,
 };
 use super::status::domain_error_to_status;
@@ -41,6 +42,7 @@ pub struct ChoreographerGrpcService {
     register_agent: Arc<RegisterAgentUseCase>,
     unregister_agent: Arc<UnregisterAgentUseCase>,
     run_council_decision: Arc<RunCouncilDecisionUseCase>,
+    run_ceremony: Arc<RunCeremonyUseCase>,
     contract_registry: Arc<dyn ContractRegistryPort>,
     auto_dispatch: Arc<AutoDispatchService>,
     statistics: Arc<dyn StatisticsPort>,
@@ -80,6 +82,7 @@ pub struct ChoreographerGrpcServiceBuilder {
     register_agent: Option<Arc<RegisterAgentUseCase>>,
     unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
     run_council_decision: Option<Arc<RunCouncilDecisionUseCase>>,
+    run_ceremony: Option<Arc<RunCeremonyUseCase>>,
     contract_registry: Option<Arc<dyn ContractRegistryPort>>,
     auto_dispatch: Option<Arc<AutoDispatchService>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
@@ -116,6 +119,7 @@ impl ChoreographerGrpcServiceBuilder {
         RunCouncilDecisionUseCase,
         run_council_decision
     );
+    setter!(run_ceremony, RunCeremonyUseCase, run_ceremony);
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
 
     #[must_use]
@@ -174,6 +178,9 @@ impl ChoreographerGrpcServiceBuilder {
                     reason: "grpc: run_council_decision use case is required",
                 },
             )?,
+            run_ceremony: self.run_ceremony.ok_or(DomainError::InvariantViolated {
+                reason: "grpc: run_ceremony use case is required",
+            })?,
             contract_registry: self
                 .contract_registry
                 .ok_or(DomainError::InvariantViolated {
@@ -557,6 +564,28 @@ impl ChoreographerService for ChoreographerGrpcService {
                 },
             }),
         }))
+    }
+
+    #[tracing::instrument(name = "rpc.run_ceremony", skip_all)]
+    async fn run_ceremony(
+        &self,
+        request: Request<pb::RunCeremonyRequest>,
+    ) -> GrpcResult<pb::RunCeremonyResponse> {
+        link_span_to_metadata(&request);
+        let input =
+            run_ceremony_input_from_proto(request.into_inner()).map_err(domain_error_to_status)?;
+        let output = self
+            .run_ceremony
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        debug!(
+            ceremony_id = output.instance().id().as_str(),
+            final_state = output.instance().current_state().as_str(),
+            completed = output.instance().is_completed(output.definition()),
+            "run_ceremony rpc ok"
+        );
+        Ok(Response::new(run_ceremony_response_from(&output)))
     }
 
     #[tracing::instrument(name = "rpc.get_status", skip_all)]
