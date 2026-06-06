@@ -6,11 +6,12 @@ use choreo_adapters::agents::DispatchingAgentFactory;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
-use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
+use choreo_adapters::noop::{NoopCeremonyStepHandler, NoopExecutor, NoopMessaging};
 use choreo_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresPoolError, PostgresStatistics,
@@ -26,12 +27,13 @@ use choreo_adapters::validators::{
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCouncilDecisionUseCase,
-    UnregisterAgentUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, UnregisterAgentUseCase,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ConfigurationPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
+    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ConfigurationPort,
     ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort,
     MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
@@ -135,6 +137,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // contracts land it joins `Persistence` above.
     let contract_registry: Arc<dyn ContractRegistryPort> =
         Arc::new(InMemoryContractRegistry::new());
+    let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
+        Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
+        Arc::new(InMemoryCeremonyInstanceRepository::new());
+    let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
+        Arc::new(NoopCeremonyStepHandler::new());
 
     let MessagingWiring {
         port: messaging,
@@ -168,6 +176,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         council_registry.clone(),
         deliberate.clone(),
         repository.clone(),
+    ));
+    let run_ceremony = Arc::new(RunCeremonyUseCase::new(
+        ceremony_definitions,
+        ceremony_instances,
+        ceremony_step_handler,
+        clock.clone(),
     ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -213,6 +227,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .register_agent(register_agent)
         .unregister_agent(unregister_agent)
         .run_council_decision(run_council_decision)
+        .run_ceremony(run_ceremony)
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())

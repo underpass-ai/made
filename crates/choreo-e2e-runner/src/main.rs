@@ -129,7 +129,9 @@ async fn main() -> Result<()> {
 
     if selected_scenarios.contains(&E2eScenario::CeremonyDiagram) {
         info!("scenario 11: four-role ceremony YAML renders a Mermaid conversation diagram");
-        verify_editorial_meeting_ceremony_diagram().context("scenario 11 failed")?;
+        verify_editorial_meeting_ceremony_diagram(&mut client)
+            .await
+            .context("scenario 11 failed")?;
     }
 
     info!("E2E scenarios passed");
