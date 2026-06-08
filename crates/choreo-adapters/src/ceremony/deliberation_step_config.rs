@@ -1,7 +1,8 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::CeremonyStepHandlerRequest;
 use choreo_core::value_objects::{NumAgents, Rounds, Specialty, TaskDescription};
-use serde_json::Value;
+
+use super::CeremonyStepConfig;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliberationStepConfig {
@@ -13,30 +14,16 @@ pub struct DeliberationStepConfig {
 
 impl DeliberationStepConfig {
     pub fn from_request(request: &CeremonyStepHandlerRequest) -> Result<Self, DomainError> {
-        let attributes = request.handler_config().attributes();
-        let task_description = TaskDescription::new(required_string(
-            attributes.get("prompt"),
-            "ceremony_step.config.prompt",
-        )?)?;
-        let specialty = Specialty::new(
-            optional_string(attributes.get("specialty")).unwrap_or(request.handler_kind().as_str()),
-        )?;
-        let rounds = optional_u32(attributes.get("rounds"), "ceremony_step.config.rounds")?
-            .map(Rounds::new)
-            .transpose()?
-            .unwrap_or_default();
-        let num_agents = optional_u32(
-            attributes.get("num_agents"),
-            "ceremony_step.config.num_agents",
-        )?
-        .map(NumAgents::new)
-        .transpose()?;
+        let config = CeremonyStepConfig::new(
+            request.handler_config().attributes(),
+            request.handler_kind(),
+        );
 
         Ok(Self {
-            specialty,
-            task_description,
-            rounds,
-            num_agents,
+            task_description: config.prompt()?,
+            specialty: config.specialty()?,
+            rounds: config.rounds()?,
+            num_agents: config.num_agents()?,
         })
     }
 
@@ -61,43 +48,6 @@ impl DeliberationStepConfig {
     }
 }
 
-fn required_string(value: Option<&Value>, field: &'static str) -> Result<String, DomainError> {
-    let Some(value) = value else {
-        return Err(DomainError::EmptyField { field });
-    };
-    let Some(raw) = value.as_str() else {
-        return Err(DomainError::InvalidCharacters { field });
-    };
-    if raw.trim().is_empty() {
-        return Err(DomainError::EmptyField { field });
-    }
-    Ok(raw.to_owned())
-}
-
-fn optional_string(value: Option<&Value>) -> Option<&str> {
-    value
-        .and_then(Value::as_str)
-        .filter(|raw| !raw.trim().is_empty())
-}
-
-fn optional_u32(value: Option<&Value>, field: &'static str) -> Result<Option<u32>, DomainError> {
-    let Some(value) = value else { return Ok(None) };
-    if value.is_null() {
-        return Ok(None);
-    }
-    let Some(raw) = value.as_u64() else {
-        return Err(DomainError::InvalidCharacters { field });
-    };
-    u32::try_from(raw)
-        .map(Some)
-        .map_err(|_| DomainError::OutOfRange {
-            field,
-            value: raw as f64,
-            min: 0.0,
-            max: f64::from(u32::MAX),
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -106,7 +56,7 @@ mod tests {
         Attributes, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, StateId,
         StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
     };
-    use serde_json::json;
+    use serde_json::{json, Value};
 
     use super::*;
 
