@@ -39,6 +39,24 @@ spec:
       {{- fail "executor.runtime.tls.mode != disabled but executor.runtime.tls.existingSecret is empty; provide a secret with ca.crt (plus tls.crt + tls.key for mutual)" }}
       {{- end }}
       {{- $runtimeTlsMounted := and (eq $executorKind "runtime") (ne $runtimeTlsMode "disabled") }}
+      {{- /*
+        LLM-judge fail-fast guard. The judge (CHOREO_JUDGE_ENABLED) reuses the
+        vLLM endpoint/model and the binary fails fast — crash-looping the pod —
+        when enabled without them. Refuse to render a judge-on-without-vLLM
+        config, mirroring the binary's truthiness ("1"/"true"/"yes"). Skipped
+        when providerEnvFrom is set, since a Secret/ConfigMap may carry the
+        vLLM vars and the template cannot introspect it.
+      */}}
+      {{- $penv := dict }}
+      {{- range (.Values.providerEnv | default list) }}
+      {{- $penv = set $penv .name ((.value | default "") | toString) }}
+      {{- end }}
+      {{- $judgeOn := has (lower (trim (get $penv "CHOREO_JUDGE_ENABLED"))) (list "1" "true" "yes") }}
+      {{- if and $judgeOn (not .Values.providerEnvFrom) }}
+      {{- if or (eq (get $penv "CHOREO_VLLM_ENDPOINT") "") (eq (get $penv "CHOREO_VLLM_MODEL") "") }}
+      {{- fail "CHOREO_JUDGE_ENABLED is set but providerEnv lacks CHOREO_VLLM_ENDPOINT/CHOREO_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
+      {{- end }}
+      {{- end }}
       {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
       volumes:
         {{- if .Values.tmpVolume.enabled }}
