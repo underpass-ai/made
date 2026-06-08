@@ -1,0 +1,110 @@
+version: "1.0"
+name: "sprint_planning"
+description: "Four-role sprint planning; each turn builds on the prior transcript to converge on a committed, achievable scope"
+inputs:
+  required:
+    - sprint_goal
+  optional:
+    - backlog_url
+outputs:
+  sprint_commitment:
+    type: object
+states:
+  - id: SPRINT_PLANNING_OPEN
+    initial: true
+  - id: TASK_BREAKDOWN
+  - id: CAPACITY_CHECK
+  - id: COMMITMENT
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: SPRINT_PLANNING_OPEN
+    to: TASK_BREAKDOWN
+    trigger: priorities_presented
+    guards:
+      - present_priorities_completed
+  - from: TASK_BREAKDOWN
+    to: CAPACITY_CHECK
+    trigger: tasks_estimated
+    guards:
+      - task_breakdown_completed
+  - from: CAPACITY_CHECK
+    to: COMMITMENT
+    trigger: capacity_checked
+    guards:
+      - capacity_review_completed
+  - from: COMMITMENT
+    to: CLOSED
+    trigger: scope_committed
+    guards:
+      - scope_commitment_completed
+steps:
+  - id: present_priorities
+    state: SPRINT_PLANNING_OPEN
+    handler: facilitation_prompt
+    config:
+      see_prior: false
+      participants:
+        - product_owner
+      prompt: "Open the sprint planning. Restate the sprint goal in one sentence, then present the ranked priorities for this sprint and the concrete business outcomes each must deliver. For each top item, state why it matters now and what 'done' looks like from a user's perspective. Be explicit about the ordering so the engineer knows exactly which items to break down first."
+  - id: task_breakdown
+    state: TASK_BREAKDOWN
+    handler: progress_prompt
+    config:
+      see_prior: true
+      rounds: 1
+      participants:
+        - engineer
+      prompt: "Take the ranked priorities and desired outcomes the product owner just presented and break the top items, in their stated order, into concrete engineering tasks. For each item give a rough estimate (S/M/L or points) and explicitly surface the unknowns, technical risks, and open questions that could change that estimate. In your second pass, refine the estimates against the unknowns you raised and flag any item that looks too large to finish this sprint. Do not re-list the priorities; react to them directly."
+  - id: capacity_review
+    state: CAPACITY_CHECK
+    handler: challenge_prompt
+    config:
+      see_prior: true
+      participants:
+        - scrum_master
+      prompt: "Using the engineer's task breakdown and estimates, check the proposed work against real team capacity for this sprint. Sum the estimates against available capacity, then name the cross-task dependencies and sequencing constraints, the delivery risks, and any item whose unknowns make it unsafe to commit. Directly challenge any priority that no longer fits, and propose what should be deferred or split so the plan is achievable. Tie every concern back to a specific item the product owner or engineer named."
+  - id: scope_commitment
+    state: COMMITMENT
+    handler: synthesis_prompt
+    config:
+      see_prior: true
+      participants:
+        - delivery_lead
+      prompt: "Synthesize the whole discussion into the final committed sprint scope. List the items the team commits to, each with an owner and the outcome it delivers, honoring the priority order and respecting the capacity, dependency, and risk findings raised. Then state the explicit out-of-scope: the items deferred or split, and the one-line reason for each, drawn from the concerns already surfaced. End with the single biggest risk to this commitment and who watches it."
+guards:
+  present_priorities_completed:
+    type: automated
+    check: "step_status:present_priorities:COMPLETED"
+  task_breakdown_completed:
+    type: automated
+    check: "step_status:task_breakdown:COMPLETED"
+  capacity_review_completed:
+    type: automated
+    check: "step_status:capacity_review:COMPLETED"
+  scope_commitment_completed:
+    type: automated
+    check: "step_status:scope_commitment:COMPLETED"
+roles:
+  - id: PRODUCT_OWNER
+    allowed_actions:
+      - present_priorities
+      - priorities_presented
+  - id: ENGINEER
+    allowed_actions:
+      - task_breakdown
+      - tasks_estimated
+  - id: SCRUM_MASTER
+    allowed_actions:
+      - capacity_review
+      - capacity_checked
+  - id: DELIVERY_LEAD
+    allowed_actions:
+      - scope_commitment
+      - scope_committed
+timeouts:
+  step_default: 120
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

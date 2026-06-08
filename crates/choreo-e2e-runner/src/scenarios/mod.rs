@@ -5,7 +5,10 @@ mod ceremony_vllm_provider_config;
 mod connectivity;
 mod daily_standup;
 mod runtime;
+mod speaker_talk_qa;
+mod sprint_planning;
 mod structured_output;
+mod technical_debate;
 
 use std::time::Duration;
 
@@ -23,11 +26,14 @@ pub(crate) use connectivity::{
 };
 pub(crate) use daily_standup::verify_daily_standup_ceremony;
 pub(crate) use runtime::verify_orchestrate_invokes_runtime_executor;
+pub(crate) use speaker_talk_qa::verify_speaker_talk_qa_ceremony;
+pub(crate) use sprint_planning::verify_sprint_planning_ceremony;
 pub(crate) use structured_output::{
     verify_external_context_bundle_round_trips, verify_multi_agent_council_against_real_vllm,
     verify_orchestrate_rejects_proposal_violating_json_schema,
     verify_structured_output_against_stub_llm, verify_structured_output_against_vllm_kind,
 };
+pub(crate) use technical_debate::verify_technical_debate_ceremony;
 
 pub(crate) async fn connect_with_retry(
     endpoint: &str,
