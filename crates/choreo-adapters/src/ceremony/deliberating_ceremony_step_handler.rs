@@ -1,23 +1,23 @@
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use choreo_app::usecases::DeliberateUseCase;
-use choreo_core::entities::{
-    ContextItem, ContextSummary, ExternalContextBundle, Task, TaskConstraints,
-};
+use choreo_core::entities::{Task, TaskConstraints};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
-use choreo_core::value_objects::{Attributes, StepOutput, StepResult, TaskId};
+use choreo_core::value_objects::{Attributes, StepOutput, StepResult, TaskDescription, TaskId};
 use serde_json::{json, Value};
 use tracing::info;
 
 use super::DeliberationStepConfig;
 
-/// `ContextItem.kind` used for prior ceremony interventions.
-const CONTRIBUTION_KIND: &str = "ceremony.contribution";
 /// Attribute key under which a deliberation winner's content is stored.
 const WINNER_CONTENT_KEY: &str = "winner_content";
+/// Defensive per-turn cap when rendering a prior contribution into the
+/// prompt, so one runaway turn cannot dominate the brief.
+const MAX_RENDERED_CONTRIBUTION_LEN: usize = 4000;
 
 #[derive(Debug, Clone)]
 pub struct DeliberatingCeremonyStepHandler {
@@ -38,12 +38,7 @@ impl CeremonyStepHandlerPort for DeliberatingCeremonyStepHandler {
         request: CeremonyStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         let config = DeliberationStepConfig::from_request(&request)?;
-        let external_context = if config.see_prior() {
-            external_context_from_transcript(&request)?
-        } else {
-            None
-        };
-        let task = task_from(&request, &config, external_context)?;
+        let task = task_from(&request, &config)?;
         let output = self.deliberate.execute(task).await?;
         let ranked = output.deliberation.ranked_outcomes()?;
         let winner = ranked
@@ -73,12 +68,11 @@ impl CeremonyStepHandlerPort for DeliberatingCeremonyStepHandler {
 fn task_from(
     request: &CeremonyStepHandlerRequest,
     config: &DeliberationStepConfig,
-    external_context: Option<ExternalContextBundle>,
 ) -> Result<Task, DomainError> {
-    Ok(Task::new_with_context(
+    Ok(Task::new(
         task_id_from(request)?,
         config.specialty().clone(),
-        config.task_description().clone(),
+        build_description(request, config)?,
         TaskConstraints::new(
             choreo_core::value_objects::Rubric::empty(),
             config.rounds(),
@@ -86,64 +80,76 @@ fn task_from(
             None,
         ),
         Attributes::new(task_attributes(request, config))?,
-        external_context,
     ))
 }
 
-/// Render the prior-step transcript into an [`ExternalContextBundle`] so
-/// the deliberating agents see what earlier steps decided. Returns `None`
-/// when the transcript is empty.
-fn external_context_from_transcript(
+/// Build the brief an agent deliberates on: the ceremony role and meeting
+/// frame, the prior interventions rendered as prose (when the step opts
+/// into the transcript via `see_prior`), and finally the step's own
+/// instruction. Framing it as a natural, role-aware brief — rather than a
+/// raw JSON context bundle — is what lets the agents speak in character
+/// and answer what came before.
+fn build_description(
     request: &CeremonyStepHandlerRequest,
-) -> Result<Option<ExternalContextBundle>, DomainError> {
-    let transcript = request.transcript();
-    if transcript.is_empty() {
-        return Ok(None);
+    config: &DeliberationStepConfig,
+) -> Result<TaskDescription, DomainError> {
+    let mut text = String::new();
+    let ceremony = request.definition_name().as_str();
+    let stage = request.current_state().as_str();
+
+    match request.role_id() {
+        Some(role) => {
+            let _ = writeln!(
+                text,
+                "You are acting as {role} in the \"{ceremony}\" ceremony (current stage: {stage}).",
+                role = role.as_str(),
+            );
+        }
+        None => {
+            let _ = writeln!(
+                text,
+                "You are a participant in the \"{ceremony}\" ceremony (current stage: {stage}).",
+            );
+        }
     }
 
-    let items = transcript
-        .contributions()
-        .iter()
-        .enumerate()
-        .map(|(index, contribution)| {
-            let narrative = contribution
+    if config.see_prior() && !request.transcript().is_empty() {
+        text.push_str("\nThe meeting so far:\n");
+        for contribution in request.transcript().contributions() {
+            let said = contribution
                 .output()
                 .attributes()
                 .get(WINNER_CONTENT_KEY)
                 .and_then(Value::as_str)
-                .map(str::to_owned);
-            ContextItem::new(
-                format!("contribution-{index}"),
-                CONTRIBUTION_KIND,
-                format!(
-                    "{} · {}",
-                    contribution.role_id().as_str(),
-                    contribution.step_id().as_str()
-                ),
-                narrative,
-                Attributes::empty(),
-                Vec::new(),
-            )
-        })
-        .collect::<Result<Vec<_>, _>>()?;
+                .unwrap_or("(no content recorded)");
+            let _ = writeln!(
+                text,
+                "- {role} ({step}): {said}",
+                role = contribution.role_id().as_str(),
+                step = contribution.step_id().as_str(),
+                said = truncate(said, MAX_RENDERED_CONTRIBUTION_LEN),
+            );
+        }
+    }
 
-    let summary = ContextSummary::new(
-        format!(
-            "Prior interventions in this ceremony ({} so far).",
-            transcript.len()
-        ),
-        Attributes::empty(),
-    )?;
+    let _ = write!(
+        text,
+        "\nYour task now: {}",
+        config.task_description().as_str()
+    );
 
-    ExternalContextBundle::new(
-        "ceremony-transcript",
-        "ceremony.transcript.v1",
-        Some(summary),
-        items,
-        Vec::new(),
-        Attributes::empty(),
-    )
-    .map(Some)
+    TaskDescription::new(text)
+}
+
+/// Cap a rendered prior turn so a single runaway contribution cannot
+/// dominate the brief; appends an ellipsis when truncated.
+fn truncate(text: &str, max: usize) -> String {
+    if text.chars().count() <= max {
+        return text.to_owned();
+    }
+    let mut out: String = text.chars().take(max).collect();
+    out.push('…');
+    out
 }
 
 fn task_id_from(request: &CeremonyStepHandlerRequest) -> Result<TaskId, DomainError> {
@@ -325,16 +331,20 @@ mod tests {
     }
 
     #[test]
-    fn empty_transcript_yields_no_external_context() {
+    fn description_without_role_or_transcript_is_well_formed() {
         let request = request_with_prompt();
+        let config = DeliberationStepConfig::from_request(&request).unwrap();
 
-        assert!(external_context_from_transcript(&request)
-            .unwrap()
-            .is_none());
+        let text = build_description(&request, &config).unwrap();
+        let text = text.as_str();
+
+        assert!(text.contains("participant in the \"editorial\" ceremony"));
+        assert!(!text.contains("The meeting so far"));
+        assert!(text.contains("Your task now: Open the meeting"));
     }
 
     #[test]
-    fn transcript_renders_each_contribution_as_a_context_item() {
+    fn description_frames_the_role_and_renders_prior_turns_as_prose() {
         let contribution = CeremonyStepContribution::new(
             StepId::new("open_room").unwrap(),
             RoleId::new("FACILITATOR").unwrap(),
@@ -347,19 +357,18 @@ mod tests {
             ),
         );
         let request = request_with_prompt()
+            .with_role(RoleId::new("CUSTOMER_ADVOCATE").unwrap())
             .with_transcript(CeremonyTranscript::empty().appended(contribution));
+        let config = DeliberationStepConfig::from_request(&request).unwrap();
 
-        let bundle = external_context_from_transcript(&request)
-            .unwrap()
-            .expect("a non-empty transcript renders a bundle");
+        let text = build_description(&request, &config).unwrap();
+        let text = text.as_str();
 
-        assert_eq!(bundle.items().len(), 1);
-        assert_eq!(bundle.items()[0].kind(), "ceremony.contribution");
-        assert!(bundle.items()[0].title().contains("FACILITATOR"));
-        assert_eq!(
-            bundle.items()[0].narrative(),
-            Some("Restating the brief and inviting perspectives.")
-        );
+        assert!(text.contains("acting as CUSTOMER_ADVOCATE in the \"editorial\" ceremony"));
+        assert!(text.contains("The meeting so far:"));
+        assert!(text
+            .contains("FACILITATOR (open_room): Restating the brief and inviting perspectives."));
+        assert!(text.contains("Your task now: Open the meeting"));
     }
 
     fn request_with_prompt() -> CeremonyStepHandlerRequest {
