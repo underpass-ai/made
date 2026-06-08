@@ -7,7 +7,6 @@ use choreo_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, ClockPort,
 };
 use choreo_core::value_objects::{StepAttempt, StepLease};
-use time::Duration;
 
 use super::start_ceremony_step_input::StartCeremonyStepInput;
 
@@ -49,11 +48,11 @@ impl StartCeremonyStepUseCase {
             .await?;
         let mut instance = self.instances.get(&input.instance_id).await?;
         let now = self.clock.now();
-        let lease = StepLease::new(
+        let lease = StepLease::acquire(
             input.lease_owner_id,
             input.idempotency_key,
             now,
-            now + Duration::milliseconds(i64::try_from(input.lease_ttl.get()).unwrap_or(i64::MAX)),
+            input.lease_ttl,
         )?;
         let attempt =
             instance.start_step_as(&definition, &input.role_id, &input.step_id, lease, now)?;
