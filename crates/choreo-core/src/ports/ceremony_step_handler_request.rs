@@ -1,8 +1,8 @@
 //! Request passed to ceremony step handler adapters.
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StateId,
-    StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+    CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, RoleId,
+    StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +17,7 @@ pub struct CeremonyStepHandlerRequest {
     context: CeremonyContext,
     attempt: StepAttempt,
     transcript: CeremonyTranscript,
+    role_id: Option<RoleId>,
 }
 
 impl CeremonyStepHandlerRequest {
@@ -43,6 +44,7 @@ impl CeremonyStepHandlerRequest {
             context,
             attempt,
             transcript: CeremonyTranscript::empty(),
+            role_id: None,
         }
     }
 
@@ -52,6 +54,14 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn with_transcript(mut self, transcript: CeremonyTranscript) -> Self {
         self.transcript = transcript;
+        self
+    }
+
+    /// Attach the ceremony role this step is executed as, so the handler
+    /// can frame the agent's persona. Defaults to none when not set.
+    #[must_use]
+    pub fn with_role(mut self, role_id: RoleId) -> Self {
+        self.role_id = Some(role_id);
         self
     }
 
@@ -105,5 +115,11 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn transcript(&self) -> &CeremonyTranscript {
         &self.transcript
+    }
+
+    /// The ceremony role this step is executed as, if set.
+    #[must_use]
+    pub fn role_id(&self) -> Option<&RoleId> {
+        self.role_id.as_ref()
     }
 }
