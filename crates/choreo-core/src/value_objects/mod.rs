@@ -25,11 +25,11 @@ pub use attributes::Attributes;
 pub use ceremony::{
     CeremonyContext, CeremonyDescription, CeremonyGuard, CeremonyId, CeremonyInputDefinition,
     CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStateKind,
-    CeremonyStep, CeremonyTransition, CeremonyVersion, GuardCondition, GuardName, IdempotencyKey,
-    InputName, InputRequirement, LeaseOwnerId, OutputName, RetryPolicy, RoleAction, RoleId,
-    StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
-    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, StepStatus, StepTimeout,
-    TransitionTrigger,
+    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
+    CeremonyVersion, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,
+    LeaseOwnerId, OutputName, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
+    StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepLease,
+    StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use council_selector::CouncilSelector;
 pub use duration::DurationMs;
