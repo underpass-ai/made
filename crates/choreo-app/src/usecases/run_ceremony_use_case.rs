@@ -9,8 +9,8 @@ use choreo_core::ports::{
     CeremonyStepHandlerRequest, ClockPort,
 };
 use choreo_core::value_objects::{
-    DurationMs, IdempotencyKey, LeaseOwnerId, RoleAction, RoleId, StepAttempt, StepErrorMessage,
-    StepId, StepLease, StepResult, TransitionTrigger,
+    DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt, StepErrorMessage, StepId,
+    StepLease, StepResult,
 };
 
 use super::ceremony_step_trace::CeremonyStepTrace;
@@ -87,7 +87,7 @@ impl RunCeremonyUseCase {
                 {
                     continue;
                 }
-                let role_id = role_for_step(&definition, &step_id)?;
+                let role_id = definition.role_id_for_step(&step_id)?;
                 let (attempt, step_result) = self
                     .run_step(
                         &definition,
@@ -117,18 +117,11 @@ impl RunCeremonyUseCase {
                 return Ok(RunCeremonyOutput::new(definition, instance, step_traces));
             }
             let transition = definition
-                .available_transitions(&state_id)
-                .find(|transition| {
-                    definition.guards_are_satisfied(
-                        transition,
-                        instance.step_records(),
-                        instance.context(),
-                    )
-                })
+                .next_satisfied_transition(&state_id, instance.step_records(), instance.context())
                 .ok_or(DomainError::InvariantViolated {
                     reason: "no satisfied ceremony transition is available",
                 })?;
-            let role_id = role_for_transition(&definition, transition.trigger())?;
+            let role_id = definition.role_id_for_transition(transition.trigger())?;
             instance.apply_transition_as(
                 &definition,
                 &role_id,
@@ -207,33 +200,6 @@ impl RunCeremonyUseCase {
             }
         }
     }
-}
-
-fn role_for_step(definition: &CeremonyDefinition, step_id: &StepId) -> Result<RoleId, DomainError> {
-    let action = RoleAction::step(step_id.clone());
-    definition
-        .roles()
-        .values()
-        .find(|role| role.allows(&action))
-        .map(|role| role.id().clone())
-        .ok_or(DomainError::InvariantViolated {
-            reason: "no ceremony role can execute step",
-        })
-}
-
-fn role_for_transition(
-    definition: &CeremonyDefinition,
-    trigger: &TransitionTrigger,
-) -> Result<RoleId, DomainError> {
-    let action = RoleAction::transition(trigger.clone());
-    definition
-        .roles()
-        .values()
-        .find(|role| role.allows(&action))
-        .map(|role| role.id().clone())
-        .ok_or(DomainError::InvariantViolated {
-            reason: "no ceremony role can apply transition",
-        })
 }
 
 #[cfg(test)]

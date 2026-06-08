@@ -197,6 +197,65 @@ impl CeremonyDefinition {
         })
     }
 
+    /// Find the role authorised to perform `action`, if any.
+    ///
+    /// Roles are scanned in id order and the first whose action set
+    /// permits `action` is returned. Yields `None` when no declared role
+    /// is allowed to perform it.
+    #[must_use]
+    pub fn role_for_action(&self, action: &RoleAction) -> Option<&CeremonyRole> {
+        self.roles.values().find(|role| role.allows(action))
+    }
+
+    /// Resolve the role authorised to execute `step_id`.
+    ///
+    /// Fails fast with [`DomainError::InvariantViolated`] when no role is
+    /// allowed to run the step — a ceremony cannot execute a step nobody
+    /// owns.
+    pub fn role_id_for_step(&self, step_id: &StepId) -> Result<RoleId, DomainError> {
+        self.role_for_action(&RoleAction::step(step_id.clone()))
+            .map(|role| role.id().clone())
+            .ok_or(DomainError::InvariantViolated {
+                reason: "no ceremony role can execute step",
+            })
+    }
+
+    /// Resolve the role authorised to apply the transition fired by
+    /// `trigger`.
+    ///
+    /// Fails fast with [`DomainError::InvariantViolated`] when no role is
+    /// allowed to apply it — a ceremony cannot advance through a
+    /// transition nobody owns.
+    pub fn role_id_for_transition(
+        &self,
+        trigger: &TransitionTrigger,
+    ) -> Result<RoleId, DomainError> {
+        self.role_for_action(&RoleAction::transition(trigger.clone()))
+            .map(|role| role.id().clone())
+            .ok_or(DomainError::InvariantViolated {
+                reason: "no ceremony role can apply transition",
+            })
+    }
+
+    /// Select the next transition out of `state_id` whose guards are all
+    /// currently satisfied by `records` and `context`.
+    ///
+    /// Outgoing transitions are evaluated in declaration order and the
+    /// first one that is fully enabled is returned. Yields `None` when
+    /// the state has no outgoing transition whose guards hold — either
+    /// because the state is terminal or because the ceremony is not yet
+    /// ready to advance.
+    #[must_use]
+    pub fn next_satisfied_transition(
+        &self,
+        state_id: &StateId,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+        context: &CeremonyContext,
+    ) -> Option<&CeremonyTransition> {
+        self.available_transitions(state_id)
+            .find(|transition| self.guards_are_satisfied(transition, records, context))
+    }
+
     fn validate(&self) -> Result<(), DomainError> {
         self.require_exactly_one_initial_state()?;
         self.require_valid_transition_graph()?;
@@ -585,6 +644,118 @@ mod tests {
                 what: "ceremony_role.step_action"
             }
         ));
+    }
+
+    #[test]
+    fn resolves_role_authorised_for_a_step() {
+        let definition = valid_definition();
+
+        assert_eq!(
+            definition.role_id_for_step(&step_id("plan")).unwrap(),
+            RoleId::new("facilitator").unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_step_with_no_authorised_role() {
+        let definition = valid_definition();
+
+        let err = definition
+            .role_id_for_step(&step_id("unowned"))
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "no ceremony role can execute step"
+            }
+        ));
+    }
+
+    #[test]
+    fn resolves_role_authorised_for_a_transition() {
+        let definition = valid_definition();
+
+        assert_eq!(
+            definition
+                .role_id_for_transition(&trigger("finish"))
+                .unwrap(),
+            RoleId::new("facilitator").unwrap()
+        );
+    }
+
+    #[test]
+    fn rejects_transition_with_no_authorised_role() {
+        let definition = valid_definition();
+
+        let err = definition
+            .role_id_for_transition(&trigger("unowned"))
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "no ceremony role can apply transition"
+            }
+        ));
+    }
+
+    #[test]
+    fn selects_guardless_transition_as_immediately_enabled() {
+        let transition = CeremonyTransition::new(
+            state_id("open"),
+            state_id("closed"),
+            trigger("go"),
+            Vec::new(),
+        )
+        .unwrap();
+        let definition = definition(
+            vec![
+                CeremonyState::initial(state_id("open")),
+                CeremonyState::terminal(state_id("closed")),
+            ],
+            vec![transition],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let selected = definition
+            .next_satisfied_transition(
+                &state_id("open"),
+                &BTreeMap::new(),
+                &CeremonyContext::empty(),
+            )
+            .expect("guardless transition is always enabled");
+
+        assert_eq!(selected.trigger(), &trigger("go"));
+    }
+
+    #[test]
+    fn skips_transition_whose_guards_are_unsatisfied() {
+        let definition = valid_definition();
+
+        assert!(definition
+            .next_satisfied_transition(
+                &state_id("drafting"),
+                &BTreeMap::new(),
+                &CeremonyContext::empty(),
+            )
+            .is_none());
+    }
+
+    #[test]
+    fn yields_no_transition_out_of_a_terminal_state() {
+        let definition = valid_definition();
+
+        assert!(definition
+            .next_satisfied_transition(
+                &state_id("done"),
+                &BTreeMap::new(),
+                &CeremonyContext::empty(),
+            )
+            .is_none());
     }
 
     #[test]
