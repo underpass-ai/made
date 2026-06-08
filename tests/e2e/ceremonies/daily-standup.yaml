@@ -1,0 +1,110 @@
+version: "1.0"
+name: "daily_standup"
+description: "Four-role daily standup; each turn builds on the prior transcript"
+inputs:
+  required:
+    - sprint_goal
+  optional:
+    - board_url
+outputs:
+  standup_summary:
+    type: object
+states:
+  - id: STANDUP_OPEN
+    initial: true
+  - id: SHARING
+  - id: IMPEDIMENTS
+  - id: COMMITMENTS
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: STANDUP_OPEN
+    to: SHARING
+    trigger: standup_opened
+    guards:
+      - open_standup_completed
+  - from: SHARING
+    to: IMPEDIMENTS
+    trigger: progress_shared
+    guards:
+      - progress_round_completed
+  - from: IMPEDIMENTS
+    to: COMMITMENTS
+    trigger: impediments_reviewed
+    guards:
+      - impediment_review_completed
+  - from: COMMITMENTS
+    to: CLOSED
+    trigger: commitments_made
+    guards:
+      - commitment_summary_completed
+steps:
+  - id: open_standup
+    state: STANDUP_OPEN
+    handler: facilitation_prompt
+    config:
+      see_prior: false
+      participants:
+        - scrum_master
+      prompt: "Open the standup. Restate the sprint goal and what 'done' means for today."
+  - id: progress_round
+    state: SHARING
+    handler: progress_prompt
+    config:
+      see_prior: true
+      rounds: 1
+      participants:
+        - engineer
+      prompt: "Report yesterday's progress and today's plan. Build on what has already been shared; do not repeat it."
+  - id: impediment_review
+    state: IMPEDIMENTS
+    handler: challenge_prompt
+    config:
+      see_prior: true
+      participants:
+        - qa_lead
+      prompt: "Given the progress shared, name the blockers, risks, and cross-dependencies, and who owns each."
+  - id: commitment_summary
+    state: COMMITMENTS
+    handler: synthesis_prompt
+    config:
+      see_prior: true
+      participants:
+        - delivery_lead
+      prompt: "Summarize the standup into commitments for today: owner, outcome, and the single most important unblock."
+guards:
+  open_standup_completed:
+    type: automated
+    check: "step_status:open_standup:COMPLETED"
+  progress_round_completed:
+    type: automated
+    check: "step_status:progress_round:COMPLETED"
+  impediment_review_completed:
+    type: automated
+    check: "step_status:impediment_review:COMPLETED"
+  commitment_summary_completed:
+    type: automated
+    check: "step_status:commitment_summary:COMPLETED"
+roles:
+  - id: SCRUM_MASTER
+    allowed_actions:
+      - open_standup
+      - standup_opened
+  - id: ENGINEER
+    allowed_actions:
+      - progress_round
+      - progress_shared
+  - id: QA_LEAD
+    allowed_actions:
+      - impediment_review
+      - impediments_reviewed
+  - id: DELIVERY_LEAD
+    allowed_actions:
+      - commitment_summary
+      - commitments_made
+timeouts:
+  step_default: 120
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

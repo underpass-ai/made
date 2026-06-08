@@ -7,14 +7,16 @@
 //!
 //! Exits 0 on success, non-zero on the first failed assertion.
 
+use std::collections::BTreeSet;
 use std::time::Duration;
 
 use anyhow::{Context, Result};
+use choreo_proto::v1::choreographer_service_client::ChoreographerServiceClient;
 use scenario_selection::{
     parse_scenario_selection, scenario_selection_summary, E2eScenario, SCENARIO_SELECTION_ENV,
 };
 use scenarios::{
-    connect_with_retry, verify_causal_metadata_propagates_over_nats,
+    connect_with_retry, verify_causal_metadata_propagates_over_nats, verify_daily_standup_ceremony,
     verify_delete_missing_council_returns_false, verify_deliberate_returns_winner,
     verify_editorial_meeting_ceremony_against_vllm_kind, verify_editorial_meeting_ceremony_diagram,
     verify_external_context_bundle_round_trips, verify_multi_agent_council_against_real_vllm,
@@ -22,6 +24,7 @@ use scenarios::{
     verify_orchestrate_rejects_proposal_violating_json_schema, verify_seeded_council_visible,
     verify_structured_output_against_stub_llm, verify_structured_output_against_vllm_kind,
 };
+use tonic::transport::Channel;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
@@ -52,44 +55,57 @@ async fn main() -> Result<()> {
 
     let mut client = connect_with_retry(&endpoint, Duration::from_secs(30)).await?;
 
+    run_selected_scenarios(&mut client, &selected_scenarios, &seed_specialty).await?;
+
+    info!("E2E scenarios passed");
+    Ok(())
+}
+
+/// Run each selected scenario in order, failing on the first assertion
+/// that does not hold.
+async fn run_selected_scenarios(
+    client: &mut ChoreographerServiceClient<Channel>,
+    selected_scenarios: &BTreeSet<E2eScenario>,
+    seed_specialty: &str,
+) -> Result<()> {
     if selected_scenarios.contains(&E2eScenario::SeededCouncil) {
         info!("scenario 1: seeded council is visible");
-        verify_seeded_council_visible(&mut client, &seed_specialty)
+        verify_seeded_council_visible(client, seed_specialty)
             .await
             .context("scenario 1 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::Deliberate) {
         info!("scenario 2: Deliberate on the seeded specialty returns a winner");
-        verify_deliberate_returns_winner(&mut client, &seed_specialty)
+        verify_deliberate_returns_winner(client, seed_specialty)
             .await
             .context("scenario 2 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::DeleteMissingCouncil) {
         info!("scenario 3: DeleteCouncil on a missing specialty returns deleted=false");
-        verify_delete_missing_council_returns_false(&mut client)
+        verify_delete_missing_council_returns_false(client)
             .await
             .context("scenario 3 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::CausalMetadata) {
         info!("scenario 4: causal metadata propagates from inbound trigger to outbound bus event");
-        verify_causal_metadata_propagates_over_nats(&seed_specialty)
+        verify_causal_metadata_propagates_over_nats(seed_specialty)
             .await
             .context("scenario 4 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::RuntimeExecutor) {
         info!("scenario 5: Orchestrate routes the winner through the configured Runtime executor");
-        verify_orchestrate_invokes_runtime_executor(&mut client, &seed_specialty)
+        verify_orchestrate_invokes_runtime_executor(client, seed_specialty)
             .await
             .context("scenario 5 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::StrictSchemaRejection) {
         info!("scenario 6: Orchestrate with a strict JSON Schema output contract rejects free-form proposals");
-        verify_orchestrate_rejects_proposal_violating_json_schema(&mut client, &seed_specialty)
+        verify_orchestrate_rejects_proposal_violating_json_schema(client, seed_specialty)
             .await
             .context("scenario 6 failed")?;
     }
@@ -98,7 +114,7 @@ async fn main() -> Result<()> {
         info!(
             "scenario 7: ExternalContextBundle round-trips to the outbound DeliberationCompleted envelope"
         );
-        verify_external_context_bundle_round_trips(&mut client, &seed_specialty)
+        verify_external_context_bundle_round_trips(client, seed_specialty)
             .await
             .context("scenario 7 failed")?;
     }
@@ -107,7 +123,7 @@ async fn main() -> Result<()> {
         info!(
             "scenario 8: structured-output Report contract passes against a stub OpenAI-shaped agent"
         );
-        verify_structured_output_against_stub_llm(&mut client)
+        verify_structured_output_against_stub_llm(client)
             .await
             .context("scenario 8 failed")?;
     }
@@ -116,32 +132,38 @@ async fn main() -> Result<()> {
         info!(
             "scenario 9: structured-output Report contract passes against the stub-llm via the vllm adapter"
         );
-        verify_structured_output_against_vllm_kind(&mut client)
+        verify_structured_output_against_vllm_kind(client)
             .await
             .context("scenario 9 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::VllmRealMultiAgent) {
         info!("scenario 10: real vLLM multi-agent council returns a schema-valid Report winner");
-        verify_multi_agent_council_against_real_vllm(&mut client)
+        verify_multi_agent_council_against_real_vllm(client)
             .await
             .context("scenario 10 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::CeremonyDiagram) {
         info!("scenario 11: four-role ceremony YAML renders a Mermaid conversation diagram");
-        verify_editorial_meeting_ceremony_diagram(&mut client)
+        verify_editorial_meeting_ceremony_diagram(client)
             .await
             .context("scenario 11 failed")?;
     }
 
     if selected_scenarios.contains(&E2eScenario::CeremonyVllm) {
         info!("scenario 12: four-agent ceremony YAML executes through the vLLM adapter");
-        verify_editorial_meeting_ceremony_against_vllm_kind(&mut client)
+        verify_editorial_meeting_ceremony_against_vllm_kind(client)
             .await
             .context("scenario 12 failed")?;
     }
 
-    info!("E2E scenarios passed");
+    if selected_scenarios.contains(&E2eScenario::DailyStandup) {
+        info!("scenario 13: four-role daily standup threads each turn through the transcript");
+        verify_daily_standup_ceremony(client)
+            .await
+            .context("scenario 13 failed")?;
+    }
+
     Ok(())
 }
