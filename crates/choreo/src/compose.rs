@@ -7,7 +7,7 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::config::EnvConfiguration;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryAgentRegistry, InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
     InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
@@ -33,10 +33,10 @@ use choreo_app::usecases::{
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, ConfigurationPort,
-    ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort,
-    MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyContextStorePort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
+    ConfigurationPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
+    ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -142,6 +142,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> =
         Arc::new(InMemoryCeremonyInstanceRepository::new());
+    let ceremony_context_store: Arc<dyn CeremonyContextStorePort> =
+        Arc::new(InMemoryCeremonyContextStore::new());
 
     let MessagingWiring {
         port: messaging,
@@ -183,6 +185,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_definitions,
         ceremony_instances,
         ceremony_step_handler,
+        ceremony_context_store,
         clock.clone(),
     ));
 

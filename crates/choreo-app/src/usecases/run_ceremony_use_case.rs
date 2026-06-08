@@ -5,12 +5,12 @@ use std::sync::Arc;
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort,
+    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
 };
 use choreo_core::value_objects::{
-    DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt, StepErrorMessage, StepId,
-    StepLease, StepResult,
+    CeremonyStepContribution, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
 
 use super::ceremony_step_trace::CeremonyStepTrace;
@@ -21,6 +21,7 @@ pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
+    context_store: Arc<dyn CeremonyContextStorePort>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -36,12 +37,14 @@ impl RunCeremonyUseCase {
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
+        context_store: Arc<dyn CeremonyContextStorePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
             instances,
             handler,
+            context_store,
             clock,
         }
     }
@@ -88,6 +91,7 @@ impl RunCeremonyUseCase {
                     continue;
                 }
                 let role_id = definition.role_id_for_step(&step_id)?;
+                let transcript = self.context_store.transcript(&id).await?;
                 let (attempt, step_result) = self
                     .run_step(
                         &definition,
@@ -97,8 +101,21 @@ impl RunCeremonyUseCase {
                         &lease_owner_id,
                         lease_ttl,
                         step_traces.len(),
+                        transcript,
                     )
                     .await?;
+                if step_result.is_success() {
+                    self.context_store
+                        .append(
+                            &id,
+                            CeremonyStepContribution::new(
+                                step_id.clone(),
+                                role_id.clone(),
+                                step_result.output().clone(),
+                            ),
+                        )
+                        .await?;
+                }
                 step_traces.push(CeremonyStepTrace::new(
                     state_id.clone(),
                     step_id,
@@ -145,6 +162,7 @@ impl RunCeremonyUseCase {
         lease_owner_id: &LeaseOwnerId,
         lease_ttl: DurationMs,
         trace_index: usize,
+        transcript: CeremonyTranscript,
     ) -> Result<(StepAttempt, StepResult), DomainError> {
         let step = definition
             .step(step_id)
@@ -177,7 +195,8 @@ impl RunCeremonyUseCase {
             step.handler_config().clone(),
             instance.context().clone(),
             attempt,
-        );
+        )
+        .with_transcript(transcript);
         let step_result = self.execute_handler(request).await?;
 
         let mut refreshed = self.instances.get(instance.id()).await?;
@@ -213,8 +232,8 @@ mod tests {
     use super::*;
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, lease_owner, lease_ttl, now,
-        started_instance, step_id, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
-        StepHandlerFake,
+        started_instance, step_id, two_step_definition, ContextStoreFake, DefinitionRepositoryFake,
+        FixedClock, InstanceRepositoryFake, StepHandlerFake,
     };
 
     #[tokio::test]
@@ -229,6 +248,7 @@ mod tests {
             definitions,
             instances.clone(),
             handler.clone(),
+            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -266,6 +286,7 @@ mod tests {
             definitions,
             instances.clone(),
             handler,
+            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -309,6 +330,7 @@ mod tests {
             definitions,
             instances,
             handler.clone(),
+            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -346,6 +368,7 @@ mod tests {
             definitions,
             instances,
             handler,
+            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
         let input = || {
@@ -385,6 +408,7 @@ mod tests {
             definitions.clone(),
             instances,
             handler.clone(),
+            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -407,5 +431,46 @@ mod tests {
         ));
         assert!(definitions.list().await.unwrap().is_empty());
         assert!(handler.requests().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn threads_prior_step_output_into_the_next_step() {
+        let definition = two_step_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(StepOutput::empty()).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            instances,
+            handler.clone(),
+            Arc::new(ContextStoreFake::default()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+
+        let requests = handler.requests().await;
+        assert_eq!(requests.len(), 2);
+        // The first step opens the meeting with an empty transcript.
+        assert!(requests[0].transcript().is_empty());
+        // The second step receives the first step's contribution.
+        let transcript = requests[1].transcript();
+        assert_eq!(transcript.len(), 1);
+        assert_eq!(transcript.contributions()[0].step_id().as_str(), "open");
+        assert_eq!(
+            transcript.contributions()[0].role_id().as_str(),
+            "FACILITATOR"
+        );
     }
 }

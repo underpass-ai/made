@@ -30,6 +30,8 @@ mod key {
     /// Legacy agent-kind key, still accepted for backwards compatibility.
     pub(super) const AGENT_KIND_LEGACY: &str = "agent.kind";
     pub(super) const PARTICIPANTS: &str = "participants";
+    /// Whether the step deliberates with the prior transcript in view.
+    pub(super) const SEE_PRIOR: &str = "see_prior";
 }
 
 /// Stable `DomainError` field names surfaced when a value is malformed.
@@ -38,6 +40,7 @@ mod field {
     pub(super) const ROUNDS: &str = "ceremony_step.config.rounds";
     pub(super) const NUM_AGENTS: &str = "ceremony_step.config.num_agents";
     pub(super) const PARTICIPANTS: &str = "ceremony_step.config.participants";
+    pub(super) const SEE_PRIOR: &str = "ceremony_step.config.see_prior";
 }
 
 /// A validated, typed view over one ceremony step's handler configuration.
@@ -124,6 +127,14 @@ impl<'a> CeremonyStepConfig<'a> {
             })
             .collect()
     }
+
+    /// Whether the step should deliberate with the prior transcript in
+    /// view. Defaults to `true`: a ceremony is a conversation, so a step
+    /// builds on what came before unless it is explicitly made blind
+    /// (for example, independent estimates before a reveal).
+    pub(crate) fn see_prior_steps(&self) -> Result<bool, DomainError> {
+        Ok(optional_bool(self.attributes.get(key::SEE_PRIOR), field::SEE_PRIOR)?.unwrap_or(true))
+    }
 }
 
 fn required_string(value: Option<&Value>, field: &'static str) -> Result<String, DomainError> {
@@ -144,6 +155,17 @@ fn optional_string(value: Option<&Value>) -> Option<&str> {
         .and_then(Value::as_str)
         .map(str::trim)
         .filter(|raw| !raw.is_empty())
+}
+
+fn optional_bool(value: Option<&Value>, field: &'static str) -> Result<Option<bool>, DomainError> {
+    match value {
+        None => Ok(None),
+        Some(value) if value.is_null() => Ok(None),
+        Some(value) => value
+            .as_bool()
+            .map(Some)
+            .ok_or(DomainError::InvalidCharacters { field }),
+    }
 }
 
 fn optional_u32(value: Option<&Value>, field: &'static str) -> Result<Option<u32>, DomainError> {
@@ -259,6 +281,37 @@ mod tests {
             step.participant_labels().unwrap_err(),
             DomainError::InvalidCharacters {
                 field: "ceremony_step.config.participants"
+            }
+        ));
+    }
+
+    #[test]
+    fn see_prior_defaults_to_true() {
+        let (attributes, handler_kind) = config(BTreeMap::new());
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(step.see_prior_steps().unwrap());
+    }
+
+    #[test]
+    fn see_prior_can_be_disabled() {
+        let (attributes, handler_kind) =
+            config(BTreeMap::from([("see_prior".to_owned(), json!(false))]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(!step.see_prior_steps().unwrap());
+    }
+
+    #[test]
+    fn non_bool_see_prior_is_rejected() {
+        let (attributes, handler_kind) =
+            config(BTreeMap::from([("see_prior".to_owned(), json!("yes"))]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.see_prior_steps().unwrap_err(),
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.see_prior"
             }
         ));
     }

@@ -24,7 +24,7 @@ use choreo_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use choreo_adapters::clock::SystemClock;
 use choreo_adapters::grpc::ChoreographerGrpcService;
 use choreo_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository,
+    InMemoryAgentRegistry, InMemoryCeremonyContextStore, InMemoryCeremonyDefinitionRepository,
     InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
@@ -145,6 +145,7 @@ impl GrpcFixture {
             ceremony_definitions,
             ceremony_instances,
             ceremony_step_handler,
+            Arc::new(InMemoryCeremonyContextStore::new()),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -302,6 +303,7 @@ impl GrpcFixture {
             ceremony_definitions,
             ceremony_instances,
             ceremony_step_handler,
+            Arc::new(InMemoryCeremonyContextStore::new()),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(

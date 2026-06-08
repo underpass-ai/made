@@ -10,6 +10,7 @@ pub struct DeliberationStepConfig {
     task_description: TaskDescription,
     rounds: Rounds,
     num_agents: Option<NumAgents>,
+    see_prior: bool,
 }
 
 impl DeliberationStepConfig {
@@ -24,6 +25,7 @@ impl DeliberationStepConfig {
             specialty: config.specialty()?,
             rounds: config.rounds()?,
             num_agents: config.num_agents()?,
+            see_prior: config.see_prior_steps()?,
         })
     }
 
@@ -45,6 +47,13 @@ impl DeliberationStepConfig {
     #[must_use]
     pub fn num_agents(&self) -> Option<NumAgents> {
         self.num_agents
+    }
+
+    /// Whether the step deliberates with the prior ceremony transcript in
+    /// view (defaults to `true`).
+    #[must_use]
+    pub fn see_prior(&self) -> bool {
+        self.see_prior
     }
 }
 
