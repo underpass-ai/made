@@ -1,8 +1,8 @@
 //! Request passed to ceremony step handler adapters.
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId,
+    CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, StateId,
+    StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -16,6 +16,7 @@ pub struct CeremonyStepHandlerRequest {
     handler_config: StepHandlerConfig,
     context: CeremonyContext,
     attempt: StepAttempt,
+    transcript: CeremonyTranscript,
 }
 
 impl CeremonyStepHandlerRequest {
@@ -41,7 +42,17 @@ impl CeremonyStepHandlerRequest {
             handler_config,
             context,
             attempt,
+            transcript: CeremonyTranscript::empty(),
         }
+    }
+
+    /// Attach the prior-step transcript the engine accumulated for this
+    /// ceremony, so the handler can deliberate with earlier interventions
+    /// in view. Defaults to an empty transcript when not set.
+    #[must_use]
+    pub fn with_transcript(mut self, transcript: CeremonyTranscript) -> Self {
+        self.transcript = transcript;
+        self
     }
 
     #[must_use]
@@ -87,5 +98,12 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn attempt(&self) -> StepAttempt {
         self.attempt
+    }
+
+    /// The transcript of interventions produced by earlier steps of this
+    /// ceremony.
+    #[must_use]
+    pub fn transcript(&self) -> &CeremonyTranscript {
+        &self.transcript
     }
 }

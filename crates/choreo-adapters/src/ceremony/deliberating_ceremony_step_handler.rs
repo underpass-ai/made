@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use choreo_app::usecases::DeliberateUseCase;
-use choreo_core::entities::{Task, TaskConstraints};
+use choreo_core::entities::{
+    ContextItem, ContextSummary, ExternalContextBundle, Task, TaskConstraints,
+};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
 use choreo_core::value_objects::{Attributes, StepOutput, StepResult, TaskId};
@@ -11,6 +13,11 @@ use serde_json::{json, Value};
 use tracing::info;
 
 use super::DeliberationStepConfig;
+
+/// `ContextItem.kind` used for prior ceremony interventions.
+const CONTRIBUTION_KIND: &str = "ceremony.contribution";
+/// Attribute key under which a deliberation winner's content is stored.
+const WINNER_CONTENT_KEY: &str = "winner_content";
 
 #[derive(Debug, Clone)]
 pub struct DeliberatingCeremonyStepHandler {
@@ -31,7 +38,12 @@ impl CeremonyStepHandlerPort for DeliberatingCeremonyStepHandler {
         request: CeremonyStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
         let config = DeliberationStepConfig::from_request(&request)?;
-        let task = task_from(&request, &config)?;
+        let external_context = if config.see_prior() {
+            external_context_from_transcript(&request)?
+        } else {
+            None
+        };
+        let task = task_from(&request, &config, external_context)?;
         let output = self.deliberate.execute(task).await?;
         let ranked = output.deliberation.ranked_outcomes()?;
         let winner = ranked
@@ -61,8 +73,9 @@ impl CeremonyStepHandlerPort for DeliberatingCeremonyStepHandler {
 fn task_from(
     request: &CeremonyStepHandlerRequest,
     config: &DeliberationStepConfig,
+    external_context: Option<ExternalContextBundle>,
 ) -> Result<Task, DomainError> {
-    Ok(Task::new(
+    Ok(Task::new_with_context(
         task_id_from(request)?,
         config.specialty().clone(),
         config.task_description().clone(),
@@ -73,7 +86,64 @@ fn task_from(
             None,
         ),
         Attributes::new(task_attributes(request, config))?,
+        external_context,
     ))
+}
+
+/// Render the prior-step transcript into an [`ExternalContextBundle`] so
+/// the deliberating agents see what earlier steps decided. Returns `None`
+/// when the transcript is empty.
+fn external_context_from_transcript(
+    request: &CeremonyStepHandlerRequest,
+) -> Result<Option<ExternalContextBundle>, DomainError> {
+    let transcript = request.transcript();
+    if transcript.is_empty() {
+        return Ok(None);
+    }
+
+    let items = transcript
+        .contributions()
+        .iter()
+        .enumerate()
+        .map(|(index, contribution)| {
+            let narrative = contribution
+                .output()
+                .attributes()
+                .get(WINNER_CONTENT_KEY)
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            ContextItem::new(
+                format!("contribution-{index}"),
+                CONTRIBUTION_KIND,
+                format!(
+                    "{} · {}",
+                    contribution.role_id().as_str(),
+                    contribution.step_id().as_str()
+                ),
+                narrative,
+                Attributes::empty(),
+                Vec::new(),
+            )
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let summary = ContextSummary::new(
+        format!(
+            "Prior interventions in this ceremony ({} so far).",
+            transcript.len()
+        ),
+        Attributes::empty(),
+    )?;
+
+    ExternalContextBundle::new(
+        "ceremony-transcript",
+        "ceremony.transcript.v1",
+        Some(summary),
+        items,
+        Vec::new(),
+        Attributes::empty(),
+    )
+    .map(Some)
 }
 
 fn task_id_from(request: &CeremonyStepHandlerRequest) -> Result<TaskId, DomainError> {
@@ -162,8 +232,9 @@ mod tests {
     use choreo_core::entities::Council;
     use choreo_core::ports::{ClockPort, CouncilRegistryPort, StatisticsPort};
     use choreo_core::value_objects::{
-        AgentId, Attributes, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, CouncilId,
-        Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepStatus,
+        AgentId, Attributes, CeremonyContext, CeremonyId, CeremonyName, CeremonyStepContribution,
+        CeremonyTranscript, CeremonyVersion, CouncilId, RoleId, Specialty, StateId, StepAttempt,
+        StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepStatus,
     };
     use serde_json::json;
 
@@ -250,6 +321,44 @@ mod tests {
                 .get(&specialty)
                 .copied(),
             Some(1)
+        );
+    }
+
+    #[test]
+    fn empty_transcript_yields_no_external_context() {
+        let request = request_with_prompt();
+
+        assert!(external_context_from_transcript(&request)
+            .unwrap()
+            .is_none());
+    }
+
+    #[test]
+    fn transcript_renders_each_contribution_as_a_context_item() {
+        let contribution = CeremonyStepContribution::new(
+            StepId::new("open_room").unwrap(),
+            RoleId::new("FACILITATOR").unwrap(),
+            StepOutput::new(
+                Attributes::new(BTreeMap::from([(
+                    "winner_content".to_owned(),
+                    json!("Restating the brief and inviting perspectives."),
+                )]))
+                .unwrap(),
+            ),
+        );
+        let request = request_with_prompt()
+            .with_transcript(CeremonyTranscript::empty().appended(contribution));
+
+        let bundle = external_context_from_transcript(&request)
+            .unwrap()
+            .expect("a non-empty transcript renders a bundle");
+
+        assert_eq!(bundle.items().len(), 1);
+        assert_eq!(bundle.items()[0].kind(), "ceremony.contribution");
+        assert!(bundle.items()[0].title().contains("FACILITATOR"));
+        assert_eq!(
+            bundle.items()[0].narrative(),
+            Some("Restating the brief and inviting perspectives.")
         );
     }
 

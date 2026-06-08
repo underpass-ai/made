@@ -4,14 +4,15 @@ use async_trait::async_trait;
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort,
+    CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
 };
 use choreo_core::value_objects::{
     CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
-    CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition, GuardName,
-    IdempotencyKey, LeaseOwnerId, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId, StepResult, StepStatus, TransitionTrigger,
+    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
+    CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
+    RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepId, StepResult, StepStatus, TransitionTrigger,
 };
 use time::macros::datetime;
 use time::OffsetDateTime;
@@ -156,6 +157,42 @@ impl CeremonyStepHandlerPort for StepHandlerFake {
     }
 }
 
+#[derive(Debug, Default)]
+pub(super) struct ContextStoreFake {
+    inner: RwLock<BTreeMap<CeremonyId, Vec<CeremonyStepContribution>>>,
+}
+
+#[async_trait]
+impl CeremonyContextStorePort for ContextStoreFake {
+    async fn append(
+        &self,
+        instance_id: &CeremonyId,
+        contribution: CeremonyStepContribution,
+    ) -> Result<(), DomainError> {
+        self.inner
+            .write()
+            .await
+            .entry(instance_id.clone())
+            .or_default()
+            .push(contribution);
+        Ok(())
+    }
+
+    async fn transcript(
+        &self,
+        instance_id: &CeremonyId,
+    ) -> Result<CeremonyTranscript, DomainError> {
+        Ok(CeremonyTranscript::new(
+            self.inner
+                .read()
+                .await
+                .get(instance_id)
+                .cloned()
+                .unwrap_or_default(),
+        ))
+    }
+}
+
 pub(super) fn now() -> OffsetDateTime {
     datetime!(2026-06-06 12:00:00 UTC)
 }
@@ -245,6 +282,84 @@ pub(super) fn definition() -> CeremonyDefinition {
         vec![transition],
         vec![step],
         vec![guard],
+        vec![role],
+    )
+    .unwrap()
+}
+
+/// A two-step linear ceremony (`open` in OPENING, `respond` in
+/// RESPONDING) used to prove that step outputs thread forward into the
+/// transcript the next step receives.
+pub(super) fn two_step_definition() -> CeremonyDefinition {
+    let open = CeremonyStep::new(
+        StepId::new("open").unwrap(),
+        StateId::new("OPENING").unwrap(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::single_attempt(),
+        None,
+    );
+    let respond = CeremonyStep::new(
+        StepId::new("respond").unwrap(),
+        StateId::new("RESPONDING").unwrap(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::single_attempt(),
+        None,
+    );
+    let open_done = CeremonyGuard::new(
+        GuardName::new("open_done").unwrap(),
+        GuardCondition::StepStatus {
+            step_id: open.id().clone(),
+            status: StepStatus::Completed,
+        },
+    );
+    let respond_done = CeremonyGuard::new(
+        GuardName::new("respond_done").unwrap(),
+        GuardCondition::StepStatus {
+            step_id: respond.id().clone(),
+            status: StepStatus::Completed,
+        },
+    );
+    let opened = CeremonyTransition::new(
+        StateId::new("OPENING").unwrap(),
+        StateId::new("RESPONDING").unwrap(),
+        TransitionTrigger::new("opened").unwrap(),
+        vec![open_done.name().clone()],
+    )
+    .unwrap();
+    let responded = CeremonyTransition::new(
+        StateId::new("RESPONDING").unwrap(),
+        StateId::new("CLOSED").unwrap(),
+        TransitionTrigger::new("responded").unwrap(),
+        vec![respond_done.name().clone()],
+    )
+    .unwrap();
+    let role = CeremonyRole::new(
+        role_id(),
+        vec![
+            RoleAction::step(open.id().clone()),
+            RoleAction::step(respond.id().clone()),
+            RoleAction::transition(opened.trigger().clone()),
+            RoleAction::transition(responded.trigger().clone()),
+        ],
+    )
+    .unwrap();
+
+    CeremonyDefinition::new(
+        CeremonyName::new("two_step_meeting").unwrap(),
+        version(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(StateId::new("OPENING").unwrap()),
+            CeremonyState::intermediate(StateId::new("RESPONDING").unwrap()),
+            CeremonyState::terminal(StateId::new("CLOSED").unwrap()),
+        ],
+        vec![opened, responded],
+        vec![open, respond],
+        vec![open_done, respond_done],
         vec![role],
     )
     .unwrap()
