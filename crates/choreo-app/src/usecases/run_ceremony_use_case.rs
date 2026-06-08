@@ -12,7 +12,6 @@ use choreo_core::value_objects::{
     DurationMs, IdempotencyKey, LeaseOwnerId, RoleAction, RoleId, StepAttempt, StepErrorMessage,
     StepId, StepLease, StepResult, TransitionTrigger,
 };
-use time::Duration;
 
 use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
@@ -161,7 +160,7 @@ impl RunCeremonyUseCase {
                 what: "ceremony_step",
             })?;
         let now = self.clock.now();
-        let lease = StepLease::new(
+        let lease = StepLease::acquire(
             lease_owner_id.clone(),
             IdempotencyKey::new(format!(
                 "{}:{}:{}",
@@ -170,7 +169,7 @@ impl RunCeremonyUseCase {
                 trace_index + 1
             ))?,
             now,
-            now + Duration::milliseconds(i64::try_from(lease_ttl.get()).unwrap_or(i64::MAX)),
+            lease_ttl,
         )?;
         let attempt = instance.start_step_as(definition, role_id, step_id, lease, now)?;
         self.instances.save(instance).await?;
