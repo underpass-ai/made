@@ -19,6 +19,9 @@ pub(crate) enum E2eScenario {
     CeremonyDiagram,
     CeremonyVllm,
     DailyStandup,
+    TechnicalDebate,
+    SprintPlanning,
+    SpeakerTalkQa,
 }
 
 impl E2eScenario {
@@ -43,6 +46,12 @@ impl E2eScenario {
     const CEREMONY_VLLM: [Self; 1] = [Self::CeremonyVllm];
 
     const DAILY_STANDUP: [Self; 1] = [Self::DailyStandup];
+
+    const TECHNICAL_DEBATE: [Self; 1] = [Self::TechnicalDebate];
+
+    const SPRINT_PLANNING: [Self; 1] = [Self::SprintPlanning];
+
+    const SPEAKER_TALK_QA: [Self; 1] = [Self::SpeakerTalkQa];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -75,6 +84,9 @@ impl E2eScenario {
             Self::CeremonyDiagram => 11,
             Self::CeremonyVllm => 12,
             Self::DailyStandup => 13,
+            Self::TechnicalDebate => 14,
+            Self::SprintPlanning => 15,
+            Self::SpeakerTalkQa => 16,
         }
     }
 }
@@ -132,6 +144,18 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::DAILY_STANDUP);
             return Ok(());
         }
+        "technical-debate" | "debate" | "tech-debate" => {
+            selected.extend(E2eScenario::TECHNICAL_DEBATE);
+            return Ok(());
+        }
+        "sprint-planning" | "sprint-plan" | "planning" => {
+            selected.extend(E2eScenario::SPRINT_PLANNING);
+            return Ok(());
+        }
+        "speaker-talk-qa" | "talk-qa" | "speaker-qa" => {
+            selected.extend(E2eScenario::SPEAKER_TALK_QA);
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -157,7 +181,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
     }
 
     bail!(
-        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, 1-13, or a range like 1-4"
+        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, technical-debate, sprint-planning, speaker-talk-qa, 1-16, or a range like 1-4"
     )
 }
 
@@ -176,7 +200,10 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         11 => Ok(E2eScenario::CeremonyDiagram),
         12 => Ok(E2eScenario::CeremonyVllm),
         13 => Ok(E2eScenario::DailyStandup),
-        _ => bail!("scenario number {number} is out of range; expected 1-13"),
+        14 => Ok(E2eScenario::TechnicalDebate),
+        15 => Ok(E2eScenario::SprintPlanning),
+        16 => Ok(E2eScenario::SpeakerTalkQa),
+        _ => bail!("scenario number {number} is out of range; expected 1-16"),
     }
 }
 
@@ -224,6 +251,12 @@ mod tests {
         assert_eq!(numbers(Some("daily-standup")), vec![13]);
         assert_eq!(numbers(Some("daily")), vec![13]);
         assert_eq!(numbers(Some("standup")), vec![13]);
+        assert_eq!(numbers(Some("technical-debate")), vec![14]);
+        assert_eq!(numbers(Some("debate")), vec![14]);
+        assert_eq!(numbers(Some("sprint-planning")), vec![15]);
+        assert_eq!(numbers(Some("planning")), vec![15]);
+        assert_eq!(numbers(Some("speaker-talk-qa")), vec![16]);
+        assert_eq!(numbers(Some("speaker-qa")), vec![16]);
     }
 
     #[test]
@@ -237,11 +270,12 @@ mod tests {
         assert_eq!(numbers(Some("s11")), vec![11]);
         assert_eq!(numbers(Some("s12")), vec![12]);
         assert_eq!(numbers(Some("s13")), vec![13]);
+        assert_eq!(numbers(Some("s16")), vec![16]);
     }
 
     #[test]
     fn invalid_selection_is_rejected() {
-        assert!(parse_scenario_selection(Some("14")).is_err());
+        assert!(parse_scenario_selection(Some("17")).is_err());
         assert!(parse_scenario_selection(Some("4-1")).is_err());
         assert!(parse_scenario_selection(Some("unknown")).is_err());
     }
