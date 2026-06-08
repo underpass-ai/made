@@ -229,6 +229,19 @@ runtime_markers=(
   'name: runtime-tls'
   'secretName: "choreographer-runtime-client-tls"'
   'mountPath: /etc/choreographer/runtime-tls'
+  # vLLM provider + LLM-judge scoring (persisted in providerEnv so a
+  # `helm upgrade` reproduces the working pod). If a future edit drops
+  # this block, these markers fail CI before the drift reaches a cluster.
+  # `toYaml` renders the URL/model scalars bare and the rest quoted.
+  'name: CHOREO_VLLM_ENDPOINT'
+  'value: http://underpass-llm-gemma-4-31b-structured:8000'
+  'name: CHOREO_VLLM_MODEL'
+  'value: google/gemma-4-31B-it'
+  'name: CHOREO_VLLM_MAX_TOKENS'
+  'name: CHOREO_VLLM_TIMEOUT_SECS'
+  'name: CHOREO_JUDGE_ENABLED'
+  'name: CHOREO_JUDGE_THRESHOLD'
+  'value: "0.5"'
 )
 for marker in "${runtime_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${RUNTIME_OUT}"; then

@@ -791,6 +791,34 @@ curl -s localhost:8080/healthz
 curl -s localhost:8080/readyz   # {"checks":[{"name":"nats","healthy":true,...}]}
 ```
 
+### LLM-as-judge scoring
+
+This profile enables the **LLM-as-judge** scorer. By default a deliberation's
+winner is whichever proposal clears the most validators (uniform
+pass-fraction), so among several valid proposals the winner is effectively
+arbitrary. With the judge on, an LLM rates each proposal's intrinsic quality
+and that score picks the winner instead.
+
+It is configured through `providerEnv` in
+[`values.underpass-runtime.yaml`](../../charts/choreographer/values.underpass-runtime.yaml):
+
+| Var | Meaning |
+| --- | --- |
+| `CHOREO_JUDGE_ENABLED` | `true` turns the judge on (opt-in; default off). |
+| `CHOREO_JUDGE_THRESHOLD` | Pass/quality gate `0.0–1.0` (default `0.5`). The *score*, not the gate, drives ranking. |
+
+The judge **reuses the vLLM endpoint/model** (`CHOREO_VLLM_ENDPOINT`,
+`CHOREO_VLLM_MODEL`) and the binary fails fast when enabled without them —
+so the two blocks are kept together in `providerEnv`, and the chart refuses
+to render a judge-on-without-vLLM config — a `fail` guard in
+`templates/deployment.yaml` — unless the vLLM vars come from a Secret via
+`providerEnvFrom`.
+
+Cost: the judge adds **one extra vLLM call per proposal**, run serially
+against the single-stream in-cluster gemma — expect deliberations to take
+proportionally longer. Turn it off by removing the two `CHOREO_JUDGE_*`
+entries (the vLLM agents keep working without it).
+
 ## End-to-end against the deploy
 
 `tests/e2e/kubernetes/runner-job.yaml` runs the `choreo-e2e-runner`

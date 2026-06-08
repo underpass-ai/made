@@ -63,6 +63,30 @@ config:
   seedSpecialties: triage
   logLevel: info
 
+# Provider + scoring configuration for the in-namespace vLLM (gemma).
+# Captured here so `helm upgrade` reproduces the working pod instead of
+# depending on imperative `kubectl set env` drift. The endpoint/model are
+# the in-cluster gemma Service (not secrets), so they live in plain
+# values; a bearer token, if ever needed, belongs in a Secret wired via
+# `providerEnvFrom`.
+providerEnv:
+  - name: CHOREO_VLLM_ENDPOINT
+    value: "http://underpass-llm-gemma-4-31b-structured:8000"
+  - name: CHOREO_VLLM_MODEL
+    value: "google/gemma-4-31B-it"
+  - name: CHOREO_VLLM_MAX_TOKENS
+    value: "512"
+  - name: CHOREO_VLLM_TIMEOUT_SECS
+    value: "300"
+  # LLM-as-judge scoring (PR #89): ranks deliberation proposals by quality
+  # instead of uniform pass-fraction. It reuses the vLLM endpoint/model
+  # above and fails fast when they are absent, which is why both blocks
+  # are kept together — never enable the judge without the vLLM config.
+  - name: CHOREO_JUDGE_ENABLED
+    value: "true"
+  - name: CHOREO_JUDGE_THRESHOLD
+    value: "0.5"
+
 # Persistence stays off in this first rollout; the deliberation
 # registries default to in-memory adapters, which is fine for the
 # smoke + E2E pass. Flip on when a Postgres CR exists in-namespace.
