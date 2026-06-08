@@ -1,0 +1,103 @@
+version: "1.0"
+name: "engineering_planning"
+description: "Generic four-role engineering planning; the mission is supplied at run time via the context brief"
+inputs:
+  required:
+    - mission_brief
+outputs:
+  build_plan:
+    type: object
+states:
+  - id: BRIEFING
+    initial: true
+  - id: DESIGN
+  - id: RISK_REVIEW
+  - id: BUILD_PLAN
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: BRIEFING
+    to: DESIGN
+    trigger: mission_framed
+    guards:
+      - frame_mission_completed
+  - from: DESIGN
+    to: RISK_REVIEW
+    trigger: approach_proposed
+    guards:
+      - design_approach_completed
+  - from: RISK_REVIEW
+    to: BUILD_PLAN
+    trigger: risks_reviewed
+    guards:
+      - review_risks_completed
+  - from: BUILD_PLAN
+    to: CLOSED
+    trigger: plan_committed
+    guards:
+      - build_plan_completed
+steps:
+  - id: frame_mission
+    state: BRIEFING
+    handler: facilitation_prompt
+    config:
+      see_prior: false
+      num_agents: 3
+      prompt: "Read the mission brief above and frame it for the engineering team. State the concrete objectives, the measurable success criteria, and the hard operating constraints implied by the mission. Keep it crisp so the architect can design against it."
+  - id: design_approach
+    state: DESIGN
+    handler: progress_prompt
+    config:
+      see_prior: true
+      num_agents: 3
+      prompt: "Given the framed mission, propose the end-to-end technical approach and system architecture. Be concrete about the major subsystems and the key component or technology choices, and justify each against the stated objectives and constraints."
+  - id: review_risks
+    state: RISK_REVIEW
+    handler: challenge_prompt
+    config:
+      see_prior: true
+      num_agents: 3
+      prompt: "Stress-test the proposed approach against the mission. Name the safety, regulatory, and technical risks and the failure modes it must survive. For every risk give a concrete mitigation and who owns it, and be specific about any design choice you would change."
+  - id: build_plan
+    state: BUILD_PLAN
+    handler: synthesis_prompt
+    config:
+      see_prior: true
+      num_agents: 3
+      prompt: "Synthesise the whole discussion into a phased build plan: milestones from a minimum-viable prototype to a mission-capable system, the single biggest technical risk to retire first, and the go/no-go criteria for each phase."
+guards:
+  frame_mission_completed:
+    type: automated
+    check: "step_status:frame_mission:COMPLETED"
+  design_approach_completed:
+    type: automated
+    check: "step_status:design_approach:COMPLETED"
+  review_risks_completed:
+    type: automated
+    check: "step_status:review_risks:COMPLETED"
+  build_plan_completed:
+    type: automated
+    check: "step_status:build_plan:COMPLETED"
+roles:
+  - id: MISSION_OWNER
+    allowed_actions:
+      - frame_mission
+      - mission_framed
+  - id: SYSTEMS_ARCHITECT
+    allowed_actions:
+      - design_approach
+      - approach_proposed
+  - id: SAFETY_REVIEWER
+    allowed_actions:
+      - review_risks
+      - risks_reviewed
+  - id: PROGRAM_LEAD
+    allowed_actions:
+      - build_plan
+      - plan_committed
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

@@ -113,6 +113,12 @@ fn build_description(
         }
     }
 
+    let brief = render_brief(request.context().attributes());
+    if !brief.is_empty() {
+        text.push_str("\nMission brief:\n");
+        text.push_str(&brief);
+    }
+
     if config.see_prior() && !request.transcript().is_empty() {
         text.push_str("\nThe meeting so far:\n");
         for contribution in request.transcript().contributions() {
@@ -139,6 +145,28 @@ fn build_description(
     );
 
     TaskDescription::new(text)
+}
+
+/// Render the ceremony context as the mission brief shown to every
+/// agent. Boolean entries (such as human-approval guard flags) are
+/// skipped — only the caller-supplied inputs make it into the brief.
+fn render_brief(attributes: &Attributes) -> String {
+    let mut out = String::new();
+    for (key, value) in attributes.as_map() {
+        if value.is_boolean() {
+            continue;
+        }
+        let rendered = match value.as_str() {
+            Some(text) => text.to_owned(),
+            None => value.to_string(),
+        };
+        let _ = writeln!(
+            out,
+            "- {key}: {}",
+            truncate(&rendered, MAX_RENDERED_CONTRIBUTION_LEN)
+        );
+    }
+    out
 }
 
 /// Cap a rendered prior turn so a single runaway contribution cannot
@@ -369,6 +397,25 @@ mod tests {
         assert!(text
             .contains("FACILITATOR (open_room): Restating the brief and inviting perspectives."));
         assert!(text.contains("Your task now: Open the meeting"));
+    }
+
+    #[test]
+    fn render_brief_lists_inputs_and_skips_boolean_flags() {
+        let attributes = Attributes::new(BTreeMap::from([
+            (
+                "mission_brief".to_owned(),
+                json!("Photograph trees that show signs of disease."),
+            ),
+            ("audience_notes".to_owned(), json!("Field foresters")),
+            ("human_approved".to_owned(), json!(true)),
+        ]))
+        .unwrap();
+
+        let brief = render_brief(&attributes);
+
+        assert!(brief.contains("- mission_brief: Photograph trees that show signs of disease."));
+        assert!(brief.contains("- audience_notes: Field foresters"));
+        assert!(!brief.contains("human_approved"));
     }
 
     fn request_with_prompt() -> CeremonyStepHandlerRequest {
