@@ -33,7 +33,7 @@ spec:
             - name: CHOREO_SEED_SPECIALTY
               value: triage
             - name: CHOREO_E2E_SCENARIOS
-              value: cluster-connectivity,ceremony-diagram
+              value: cluster-connectivity,ceremony-diagram,daily-standup
             - name: RUST_LOG
               value: info
           resources:

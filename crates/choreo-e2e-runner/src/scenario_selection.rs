@@ -18,6 +18,7 @@ pub(crate) enum E2eScenario {
     VllmRealMultiAgent,
     CeremonyDiagram,
     CeremonyVllm,
+    DailyStandup,
 }
 
 impl E2eScenario {
@@ -40,6 +41,8 @@ impl E2eScenario {
     const CEREMONY: [Self; 1] = [Self::CeremonyDiagram];
 
     const CEREMONY_VLLM: [Self; 1] = [Self::CeremonyVllm];
+
+    const DAILY_STANDUP: [Self; 1] = [Self::DailyStandup];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -71,6 +74,7 @@ impl E2eScenario {
             Self::VllmRealMultiAgent => 10,
             Self::CeremonyDiagram => 11,
             Self::CeremonyVllm => 12,
+            Self::DailyStandup => 13,
         }
     }
 }
@@ -124,6 +128,10 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.extend(E2eScenario::CEREMONY_VLLM);
             return Ok(());
         }
+        "daily-standup" | "daily" | "standup" => {
+            selected.extend(E2eScenario::DAILY_STANDUP);
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -149,7 +157,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
     }
 
     bail!(
-        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, 1-12, or a range like 1-4"
+        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, 1-13, or a range like 1-4"
     )
 }
 
@@ -167,7 +175,8 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         10 => Ok(E2eScenario::VllmRealMultiAgent),
         11 => Ok(E2eScenario::CeremonyDiagram),
         12 => Ok(E2eScenario::CeremonyVllm),
-        _ => bail!("scenario number {number} is out of range; expected 1-12"),
+        13 => Ok(E2eScenario::DailyStandup),
+        _ => bail!("scenario number {number} is out of range; expected 1-13"),
     }
 }
 
@@ -212,6 +221,9 @@ mod tests {
         assert_eq!(numbers(Some("ceremony-diagram")), vec![11]);
         assert_eq!(numbers(Some("ceremony-vllm")), vec![12]);
         assert_eq!(numbers(Some("gemma-ceremony")), vec![12]);
+        assert_eq!(numbers(Some("daily-standup")), vec![13]);
+        assert_eq!(numbers(Some("daily")), vec![13]);
+        assert_eq!(numbers(Some("standup")), vec![13]);
     }
 
     #[test]
@@ -224,11 +236,12 @@ mod tests {
         assert_eq!(numbers(Some("s10")), vec![10]);
         assert_eq!(numbers(Some("s11")), vec![11]);
         assert_eq!(numbers(Some("s12")), vec![12]);
+        assert_eq!(numbers(Some("s13")), vec![13]);
     }
 
     #[test]
     fn invalid_selection_is_rejected() {
-        assert!(parse_scenario_selection(Some("13")).is_err());
+        assert!(parse_scenario_selection(Some("14")).is_err());
         assert!(parse_scenario_selection(Some("4-1")).is_err());
         assert!(parse_scenario_selection(Some("unknown")).is_err());
     }
