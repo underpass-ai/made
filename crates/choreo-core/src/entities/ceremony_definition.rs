@@ -647,6 +647,192 @@ mod tests {
     }
 
     #[test]
+    fn rejects_empty_states_collection() {
+        let err =
+            definition(Vec::new(), Vec::new(), Vec::new(), Vec::new(), Vec::new()).unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::EmptyCollection {
+                field: "ceremony_definition.states"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_transition_referencing_unknown_from_state() {
+        let transition = CeremonyTransition::new(
+            state_id("ghost"),
+            state_id("done"),
+            trigger("finish"),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![transition],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_transition.from_state"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_transition_referencing_unknown_to_state() {
+        let transition = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("ghost"),
+            trigger("finish"),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![transition],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_transition.to_state"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_duplicate_state_trigger_pairs() {
+        let first = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("finish"),
+            Vec::new(),
+        )
+        .unwrap();
+        let duplicate = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("finish"),
+            Vec::new(),
+        )
+        .unwrap();
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![first, duplicate],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::AlreadyExists {
+                what: "ceremony_transition.state_trigger"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_transition_referencing_unknown_guard() {
+        let transition = CeremonyTransition::new(
+            state_id("drafting"),
+            state_id("done"),
+            trigger("finish"),
+            vec![guard_name("absent")],
+        )
+        .unwrap();
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            vec![transition],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_transition.guard"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_step_referencing_unknown_state() {
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            vec![step("plan", "ghost")],
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_step.state"
+            }
+        ));
+    }
+
+    #[test]
+    fn rejects_role_that_references_unknown_transition_trigger() {
+        let role = role(vec![RoleAction::transition(trigger("ghost"))]);
+
+        let err = definition(
+            vec![
+                CeremonyState::initial(state_id("drafting")),
+                CeremonyState::terminal(state_id("done")),
+            ],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            vec![role],
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::NotFound {
+                what: "ceremony_role.transition_action"
+            }
+        ));
+    }
+
+    #[test]
     fn resolves_role_authorised_for_a_step() {
         let definition = valid_definition();
 

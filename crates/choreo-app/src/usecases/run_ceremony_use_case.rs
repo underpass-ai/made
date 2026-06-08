@@ -212,8 +212,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, lease_owner, lease_ttl, now, started_instance, step_id,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake, StepHandlerFake,
+        approval_definition, ceremony_id, definition, lease_owner, lease_ttl, now,
+        started_instance, step_id, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        StepHandlerFake,
     };
 
     #[tokio::test]
@@ -251,6 +252,86 @@ mod tests {
             .saved(&ceremony_id())
             .await
             .is_completed(&definition));
+    }
+
+    #[tokio::test]
+    async fn aborts_when_a_step_does_not_complete_successfully() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let handler = Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
+            reason: "handler rejected step",
+        }));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            instances.clone(),
+            handler,
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let err = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "ceremony step did not complete successfully"
+            }
+        ));
+        // The failed step is recorded; the ceremony did not reach its
+        // terminal state.
+        assert!(!instances
+            .saved(&ceremony_id())
+            .await
+            .is_completed(&definition));
+    }
+
+    #[tokio::test]
+    async fn fails_when_no_outgoing_transition_is_satisfied() {
+        // The approval ceremony can only advance through a human-approval
+        // guard; with no approval in the context, no transition is
+        // enabled out of the initial state.
+        let definition = approval_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(StepOutput::empty()).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            instances,
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let err = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "no satisfied ceremony transition is available"
+            }
+        ));
+        // The approval ceremony declares no steps, so the handler is
+        // never invoked.
+        assert!(handler.requests().await.is_empty());
     }
 
     #[tokio::test]
