@@ -27,6 +27,9 @@ mod prompts;
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
 mod openai_compat;
 
+#[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+pub mod judge;
+
 #[cfg(feature = "agent-anthropic")]
 pub mod anthropic;
 
@@ -40,3 +43,76 @@ pub mod factory;
 pub use factory::{
     DispatchingAgentFactory, ANTHROPIC_AGENT_KIND, OPENAI_AGENT_KIND, VLLM_AGENT_KIND,
 };
+
+use std::sync::Arc;
+
+use choreo_core::error::DomainError;
+use choreo_core::ports::ValidatorPort;
+
+/// Build the LLM-judge validator from the environment, when enabled.
+///
+/// The judge is opt-in via `CHOREO_JUDGE_ENABLED` (`1`/`true`/`yes`). When
+/// enabled it reuses the vLLM endpoint and model (`CHOREO_VLLM_ENDPOINT`,
+/// `CHOREO_VLLM_MODEL`) and an optional `CHOREO_JUDGE_THRESHOLD` (default
+/// `0.5`). The feature-gating lives here, mirroring
+/// [`DispatchingAgentFactory::from_env`]: the composition root calls this
+/// unconditionally and stays free of provider `cfg`s.
+///
+/// Returns `Ok(None)` when the judge is disabled, or when the binary was
+/// built without a Chat-Completions provider feature (so the judge code is
+/// not compiled in). Returns `Err` — failing fast — when the judge is
+/// explicitly enabled but its endpoint/model/threshold are missing or
+/// invalid.
+pub fn judge_from_env() -> Result<Option<Arc<dyn ValidatorPort>>, DomainError> {
+    if !judge_enabled() {
+        return Ok(None);
+    }
+    #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+    {
+        build_env_judge().map(Some)
+    }
+    #[cfg(not(any(feature = "agent-openai", feature = "agent-vllm")))]
+    {
+        tracing::warn!(
+            "CHOREO_JUDGE_ENABLED is set but this build has no Chat-Completions \
+             provider feature; scoring stays uniform"
+        );
+        Ok(None)
+    }
+}
+
+/// Whether the operator opted the judge in via `CHOREO_JUDGE_ENABLED`.
+fn judge_enabled() -> bool {
+    std::env::var("CHOREO_JUDGE_ENABLED")
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes"
+            )
+        })
+        .unwrap_or(false)
+}
+
+/// Construct the judge from the vLLM endpoint/model env, failing fast on a
+/// missing or invalid setting.
+#[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
+fn build_env_judge() -> Result<Arc<dyn ValidatorPort>, DomainError> {
+    let endpoint = std::env::var("CHOREO_VLLM_ENDPOINT").map_err(|_| DomainError::EmptyField {
+        field: "judge.endpoint",
+    })?;
+    let model = std::env::var("CHOREO_VLLM_MODEL").map_err(|_| DomainError::EmptyField {
+        field: "judge.model",
+    })?;
+    let threshold = std::env::var("CHOREO_JUDGE_THRESHOLD")
+        .ok()
+        .map_or(Ok(0.5), |value| {
+            value
+                .trim()
+                .parse::<f64>()
+                .map_err(|_| DomainError::EmptyField {
+                    field: "judge.threshold",
+                })
+        })?;
+    let judge = judge::LlmJudgeValidator::new(endpoint, model, threshold)?;
+    Ok(Arc::new(judge))
+}

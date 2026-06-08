@@ -20,7 +20,7 @@ use choreo_adapters::postgres::{
 use choreo_adapters::runtime::{
     ExecutorBackendConfig, RuntimeExecutor, RuntimeExecutorConnectError,
 };
-use choreo_adapters::scoring::UniformScoring;
+use choreo_adapters::scoring::{JudgeAwareScoring, UniformScoring};
 use choreo_adapters::validators::{
     AllowedStringValuesValidator, BoundedEventShapeValidator, ContentNonEmptyValidator,
     JsonObjectOutputValidator, JsonSchemaValidator, RequiredFieldsValidator,
@@ -84,6 +84,25 @@ pub enum ComposeError {
     RuntimeExecutor(#[from] RuntimeExecutorConnectError),
 }
 
+/// Pick the scoring policy and wire the optional LLM judge.
+///
+/// When `judge_from_env` yields a judge it is appended to `validators`,
+/// and `JudgeAwareScoring` makes its verdict rank proposals; otherwise
+/// scoring is uniform. Fails fast when the judge is enabled but
+/// misconfigured.
+fn wire_scoring(
+    validators: &mut Vec<Arc<dyn ValidatorPort>>,
+) -> Result<Arc<dyn ScoringPort>, DomainError> {
+    match choreo_adapters::agents::judge_from_env()? {
+        Some(judge) => {
+            validators.push(judge);
+            info!("scoring: LLM judge enabled; ranking by judge verdict");
+            Ok(Arc::new(JudgeAwareScoring::new()))
+        }
+        None => Ok(Arc::new(UniformScoring::new())),
+    }
+}
+
 /// Wire the full application.
 ///
 /// - Reads [`ServiceConfig`] from the environment.
@@ -101,7 +120,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load().await?;
 
     let clock = Arc::new(SystemClock::new());
-    let validators: Vec<Arc<dyn ValidatorPort>> = vec![
+    let mut validators: Vec<Arc<dyn ValidatorPort>> = vec![
         Arc::new(ContentNonEmptyValidator::new()),
         Arc::new(JsonObjectOutputValidator::new()),
         Arc::new(RequiredFieldsValidator::new()),
@@ -114,7 +133,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         // needs different bounds.
         Arc::new(BoundedEventShapeValidator::new()),
     ];
-    let scoring: Arc<dyn ScoringPort> = Arc::new(UniformScoring::new());
+    // Choose scoring, and when an LLM judge is configured append it to
+    // the validator chain so its verdict drives the ranking.
+    let scoring: Arc<dyn ScoringPort> = wire_scoring(&mut validators)?;
     let executor = wire_executor().await?;
     let dispatching_factory = DispatchingAgentFactory::from_env()?;
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
