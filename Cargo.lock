@@ -634,6 +634,7 @@ dependencies = [
  "choreo-core",
  "choreo-proto",
  "futures",
+ "prost-types",
  "rcgen",
  "serde_json",
  "testcontainers",
