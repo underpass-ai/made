@@ -44,8 +44,7 @@ steps:
     handler: facilitation_prompt
     config:
       see_prior: false
-      participants:
-        - scrum_master
+      num_agents: 3
       prompt: "Open the standup. Restate the sprint goal and what 'done' means for today."
   - id: progress_round
     state: SHARING
@@ -53,24 +52,21 @@ steps:
     config:
       see_prior: true
       rounds: 1
-      participants:
-        - engineer
+      num_agents: 3
       prompt: "Report yesterday's progress and today's plan. Build on what has already been shared; do not repeat it."
   - id: impediment_review
     state: IMPEDIMENTS
     handler: challenge_prompt
     config:
       see_prior: true
-      participants:
-        - qa_lead
+      num_agents: 3
       prompt: "Given the progress shared, name the blockers, risks, and cross-dependencies, and who owns each."
   - id: commitment_summary
     state: COMMITMENTS
     handler: synthesis_prompt
     config:
       see_prior: true
-      participants:
-        - delivery_lead
+      num_agents: 3
       prompt: "Summarize the standup into commitments for today: owner, outcome, and the single most important unblock."
 guards:
   open_standup_completed:
