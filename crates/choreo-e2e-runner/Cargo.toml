@@ -41,6 +41,13 @@ path = "src/bin/stub_runtime.rs"
 name = "choreo-stub-llm"
 path = "src/bin/stub_llm.rs"
 
+# Operator tool: run any ceremony YAML against a deployed Choreographer
+# over gRPC and print the resulting state, per-step roles, and the
+# rendered conversation diagram.
+[[bin]]
+name = "choreo-run-ceremony"
+path = "src/bin/run_ceremony_file.rs"
+
 [dependencies]
 choreo-proto = { workspace = true }
 choreo-core = { workspace = true }
