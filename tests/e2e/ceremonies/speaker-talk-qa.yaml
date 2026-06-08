@@ -44,8 +44,7 @@ steps:
     handler: facilitation_prompt
     config:
       see_prior: false
-      participants:
-        - speaker
+      num_agents: 3
       prompt: "You are the speaker. Deliver the core talk on the announced topic: state your central thesis in one sentence, then lay out the two or three claims that support it and the single most important piece of evidence behind each. Be concrete and stake out a clear position the audience can push back on — name the assumption you are most relying on. This is the opening; there is no prior transcript to build on."
   - id: audience_questions
     state: QUESTIONING
@@ -53,8 +52,7 @@ steps:
     config:
       see_prior: true
       rounds: 1
-      participants:
-        - audience
+      num_agents: 3
       prompt: "You are the audience. Read the talk the speaker just delivered and raise the sharpest, most specific questions and challenges about it. Quote or name the exact claims and the stated assumption you are probing — do not invent material the speaker did not say. Press hardest where the evidence was thin or the position was strongest-but-unproven. Rank your questions from most to least important and address them directly to the speaker."
   - id: speaker_answers
     state: ANSWERING
@@ -62,16 +60,14 @@ steps:
     config:
       see_prior: true
       rounds: 1
-      participants:
-        - speaker
+      num_agents: 3
       prompt: "You are the speaker, now responding. Answer the audience's questions one by one, in their order of importance, referring to each question explicitly before you answer it. Defend the claims you can with reasoning or evidence, and where a challenge lands, concede the point plainly and state what would change your mind or what remains unresolved. Do not dodge or repeat the talk verbatim — engage with exactly what was asked."
   - id: takeaway_synthesis
     state: WRAP_UP
     handler: synthesis_prompt
     config:
       see_prior: true
-      participants:
-        - moderator
+      num_agents: 3
       prompt: "You are the moderator closing the session. Using the full exchange above, synthesize three sections: (1) the key takeaways and the thesis as it now stands after Q&A; (2) the questions that were answered convincingly and the points the speaker conceded; (3) the questions that remain open or unresolved. Attribute fairly and add nothing that was not actually said in the talk or the Q&A."
 guards:
   deliver_talk_completed:

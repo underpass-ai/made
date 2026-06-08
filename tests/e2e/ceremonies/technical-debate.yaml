@@ -44,8 +44,7 @@ steps:
     handler: facilitation_prompt
     config:
       see_prior: false
-      participants:
-        - proponent
+      num_agents: 3
       prompt: "You are the PROPONENT. State the proposal as a clear thesis, then make the strongest possible case for adopting it. Lead with the single most important benefit, then give the supporting evidence, the concrete mechanism by which it works, and the cost of NOT doing it. Be specific and falsifiable: name the assumptions your case depends on so they can be tested later. Do not hedge — argue to win."
   - id: raise_objections
     state: ARGUING
@@ -53,8 +52,7 @@ steps:
     config:
       see_prior: true
       rounds: 1
-      participants:
-        - opponent
+      num_agents: 3
       prompt: "You are the OPPONENT. You have just heard the proponent's thesis and case in the transcript above. Rebut it directly: quote or paraphrase each of their specific claims and dismantle it. Attack the weakest assumption first, then surface the risks, failure modes, hidden costs, and viable alternatives they ignored. Do not raise generic concerns — answer THEIR argument point by point and explain why each pillar of their case does not hold."
   - id: answer_objections
     state: REBUTTING
@@ -62,16 +60,14 @@ steps:
     config:
       see_prior: true
       rounds: 2
-      participants:
-        - rebutter
+      num_agents: 3
       prompt: "You are the REBUTTER arguing for the proposal. The opponent's objections are in the transcript above. Take their objections one at a time, in their own words, and answer each: concede what is genuinely true, then show why the remaining objections are mitigable, mispriced, or outweighed. Where you concede, propose the concrete condition or safeguard that neutralizes the risk. Across both rounds, sharpen the strongest surviving version of the proposal and make clear what, if anything, would have to be true for the objection to be fatal."
   - id: render_decision
     state: DECIDING
     handler: synthesis_prompt
     config:
       see_prior: true
-      participants:
-        - arbiter
+      num_agents: 3
       prompt: "You are the ARBITER. Read the full debate transcript above — thesis, objections, and rebuttal rounds. Render one decision: ADOPT, REJECT, or ADOPT WITH CONDITIONS. Justify it by citing the single strongest point from the proponent/rebutter side AND the single strongest point from the opponent side, and explain why one outweighs the other. If you adopt with conditions, list the specific conditions (drawn from the rebuttal's concessions) that must hold. State the one assumption that, if proven wrong, would reverse your decision."
 guards:
   state_thesis_completed:

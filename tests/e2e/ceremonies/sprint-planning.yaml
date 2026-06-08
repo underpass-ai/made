@@ -44,8 +44,7 @@ steps:
     handler: facilitation_prompt
     config:
       see_prior: false
-      participants:
-        - product_owner
+      num_agents: 3
       prompt: "Open the sprint planning. Restate the sprint goal in one sentence, then present the ranked priorities for this sprint and the concrete business outcomes each must deliver. For each top item, state why it matters now and what 'done' looks like from a user's perspective. Be explicit about the ordering so the engineer knows exactly which items to break down first."
   - id: task_breakdown
     state: TASK_BREAKDOWN
@@ -53,24 +52,21 @@ steps:
     config:
       see_prior: true
       rounds: 1
-      participants:
-        - engineer
+      num_agents: 3
       prompt: "Take the ranked priorities and desired outcomes the product owner just presented and break the top items, in their stated order, into concrete engineering tasks. For each item give a rough estimate (S/M/L or points) and explicitly surface the unknowns, technical risks, and open questions that could change that estimate. In your second pass, refine the estimates against the unknowns you raised and flag any item that looks too large to finish this sprint. Do not re-list the priorities; react to them directly."
   - id: capacity_review
     state: CAPACITY_CHECK
     handler: challenge_prompt
     config:
       see_prior: true
-      participants:
-        - scrum_master
+      num_agents: 3
       prompt: "Using the engineer's task breakdown and estimates, check the proposed work against real team capacity for this sprint. Sum the estimates against available capacity, then name the cross-task dependencies and sequencing constraints, the delivery risks, and any item whose unknowns make it unsafe to commit. Directly challenge any priority that no longer fits, and propose what should be deferred or split so the plan is achievable. Tie every concern back to a specific item the product owner or engineer named."
   - id: scope_commitment
     state: COMMITMENT
     handler: synthesis_prompt
     config:
       see_prior: true
-      participants:
-        - delivery_lead
+      num_agents: 3
       prompt: "Synthesize the whole discussion into the final committed sprint scope. List the items the team commits to, each with an owner and the outcome it delivers, honoring the priority order and respecting the capacity, dependency, and risk findings raised. Then state the explicit out-of-scope: the items deferred or split, and the one-line reason for each, drawn from the concerns already surfaced. End with the single biggest risk to this commitment and who watches it."
 guards:
   present_priorities_completed:
