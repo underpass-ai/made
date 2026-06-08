@@ -3,12 +3,10 @@ use std::collections::BTreeMap;
 use choreo_app::usecases::{CeremonyParticipantDescriptor, PrepareCeremonyParticipantsInput};
 use choreo_core::entities::CeremonyDefinition;
 use choreo_core::error::DomainError;
-use choreo_core::value_objects::{
-    AgentId, AgentKind, Attributes, CeremonyStep, NumAgents, Specialty,
-};
+use choreo_core::value_objects::{AgentId, Attributes, CeremonyStep};
 use serde_json::{json, Value};
 
-const DEFAULT_AGENT_KIND: &str = "noop";
+use super::CeremonyStepConfig;
 
 #[derive(Debug, Clone, Copy)]
 pub struct CeremonyParticipantPlanAdapter;
@@ -35,17 +33,15 @@ fn participants_from_step(
     definition: &CeremonyDefinition,
     step: &CeremonyStep,
 ) -> Result<Vec<CeremonyParticipantDescriptor>, DomainError> {
-    let config = step.handler_config().attributes();
-    let specialty = Specialty::new(
-        optional_string(config.get("specialty")).unwrap_or(step.handler_kind().as_str()),
-    )?;
-    let kind = AgentKind::new(
-        optional_string(config.get("agent_kind"))
-            .or_else(|| optional_string(config.get("agent.kind")))
-            .unwrap_or(DEFAULT_AGENT_KIND),
-    )?;
-    let labels = participant_labels(config.get("participants"))?;
-    let count = participant_count(config.get("num_agents"), labels.len())?;
+    let config = CeremonyStepConfig::new(step.handler_config().attributes(), step.handler_kind());
+    let specialty = config.specialty()?;
+    let kind = config.agent_kind()?;
+    let labels = config.participant_labels()?;
+    let count = if labels.is_empty() {
+        config.num_agents()?.map_or(1, |num| num.get() as usize)
+    } else {
+        labels.len()
+    };
 
     (0..count)
         .map(|index| {
@@ -58,66 +54,6 @@ fn participants_from_step(
             ))
         })
         .collect()
-}
-
-fn optional_string(value: Option<&Value>) -> Option<&str> {
-    value
-        .and_then(Value::as_str)
-        .map(str::trim)
-        .filter(|raw| !raw.is_empty())
-}
-
-fn participant_labels(value: Option<&Value>) -> Result<Vec<String>, DomainError> {
-    let Some(value) = value else {
-        return Ok(Vec::new());
-    };
-    if value.is_null() {
-        return Ok(Vec::new());
-    }
-    let Some(items) = value.as_array() else {
-        return Err(DomainError::InvalidCharacters {
-            field: "ceremony_step.config.participants",
-        });
-    };
-    items
-        .iter()
-        .map(|item| {
-            item.as_str()
-                .map(str::trim)
-                .filter(|label| !label.is_empty())
-                .map(str::to_owned)
-                .ok_or(DomainError::InvalidCharacters {
-                    field: "ceremony_step.config.participants",
-                })
-        })
-        .collect()
-}
-
-fn participant_count(value: Option<&Value>, label_count: usize) -> Result<usize, DomainError> {
-    if label_count > 0 {
-        return Ok(label_count);
-    }
-    let Some(value) = value else { return Ok(1) };
-    if value.is_null() {
-        return Ok(1);
-    }
-    let Some(raw) = value.as_u64() else {
-        return Err(DomainError::InvalidCharacters {
-            field: "ceremony_step.config.num_agents",
-        });
-    };
-    let count = u32::try_from(raw).map_err(|_| DomainError::OutOfRange {
-        field: "ceremony_step.config.num_agents",
-        value: raw as f64,
-        min: 1.0,
-        max: f64::from(u32::MAX),
-    })?;
-    usize::try_from(NumAgents::new(count)?.get()).map_err(|_| DomainError::OutOfRange {
-        field: "ceremony_step.config.num_agents",
-        value: f64::from(count),
-        min: 1.0,
-        max: f64::from(u32::MAX),
-    })
 }
 
 fn participant_attributes(
