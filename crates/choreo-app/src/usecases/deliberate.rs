@@ -648,6 +648,26 @@ mod tests {
         }
     }
 
+    /// A validator whose `validate` always fails with a transport-shaped
+    /// error — models e.g. the LLM judge hitting an HTTP/timeout/parse
+    /// failure (it returns `Err`, not a failing-but-well-formed report).
+    struct FailingValidator;
+    #[async_trait]
+    impl ValidatorPort for FailingValidator {
+        fn kind(&self) -> &'static str {
+            "failing"
+        }
+        async fn validate(
+            &self,
+            _content: &str,
+            _constraints: &TaskConstraints,
+        ) -> Result<ValidatorReport, DomainError> {
+            Err(DomainError::InvariantViolated {
+                reason: "validator boom",
+            })
+        }
+    }
+
     struct LinearScoring;
     #[async_trait]
     impl ScoringPort for LinearScoring {
@@ -1328,5 +1348,32 @@ mod tests {
         ));
         assert_eq!(repo.saved.lock().unwrap().len(), 1);
         assert_eq!(bus.completed.lock().unwrap().len(), 0);
+    }
+
+    #[tokio::test]
+    async fn validator_error_aborts_deliberation_without_saving_or_publishing() {
+        let council = council_with(&["a1"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> =
+            vec![StubAgent::new("a1", &sp, "a valid proposal", vec![]) as Arc<dyn AgentPort>];
+        let (usecase, repo, bus) = fixture_with_scoring(
+            agents,
+            council,
+            Arc::new(LinearScoring),
+            vec![Arc::new(FailingValidator)],
+        );
+
+        let err = usecase
+            .execute(task(TaskConstraints::default()))
+            .await
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated { reason } if reason == "validator boom"
+        ));
+        // A validator error must abort before the deliberation is persisted
+        // or any completion event is published — no half-finished state.
+        assert!(repo.saved.lock().unwrap().is_empty());
+        assert!(bus.completed.lock().unwrap().is_empty());
     }
 }
