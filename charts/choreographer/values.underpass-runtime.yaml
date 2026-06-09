@@ -86,15 +86,25 @@ providerEnv:
     value: "true"
   - name: CHOREO_JUDGE_THRESHOLD
     value: "0.5"
-  # OpenTelemetry trace export (the image ships the `otel` feature; it is
-  # dormant until this endpoint is set). A deliberation/ceremony then shows
-  # up as a distributed trace in Grafana Tempo — including the per-proposal
-  # and judge-verdict span events. Points straight at Tempo's OTLP gRPC
-  # receiver: the in-namespace `underpass-runtime-otel-collector:4317`
-  # broken-pipes our plaintext gRPC export (it wants TLS/HTTP), while
-  # Tempo's receiver accepts it cleanly (verified).
+  # OpenTelemetry trace export over mutual TLS (the image ships the `otel`
+  # feature; dormant until the endpoint is set). A deliberation/ceremony
+  # then shows up as a distributed trace — including the per-proposal and
+  # judge-verdict span events. The in-namespace OTLP collector requires a
+  # client cert (`client_ca_file`), per the Underpass mTLS posture, so the
+  # export presents the same client identity the Runtime executor uses
+  # (mounted at /etc/choreographer/runtime-tls). The collector's server
+  # cert SAN is `underpass-runtime`, not its Service name, hence the SNI
+  # override.
   - name: CHOREO_OTLP_ENDPOINT
-    value: "http://tempo.monitoring.svc.cluster.local:4317"
+    value: "https://underpass-runtime-otel-collector:4317"
+  - name: CHOREO_OTLP_TLS_CA_PATH
+    value: "/etc/choreographer/runtime-tls/ca.crt"
+  - name: CHOREO_OTLP_TLS_CERT_PATH
+    value: "/etc/choreographer/runtime-tls/tls.crt"
+  - name: CHOREO_OTLP_TLS_KEY_PATH
+    value: "/etc/choreographer/runtime-tls/tls.key"
+  - name: CHOREO_OTLP_TLS_DOMAIN_NAME
+    value: "underpass-runtime"
 
 # Persistence stays off in this first rollout; the deliberation
 # registries default to in-memory adapters, which is fine for the

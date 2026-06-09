@@ -64,6 +64,41 @@ fn env_filter() -> EnvFilter {
     EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"))
 }
 
+/// Build the mutual-TLS client config for the OTLP exporter from
+/// `CHOREO_OTLP_TLS_{CA,CERT,KEY}_PATH`, with an optional
+/// `CHOREO_OTLP_TLS_DOMAIN_NAME` SNI override for when the collector's
+/// Service name differs from its certificate SAN. Returns `None` when the
+/// TLS env is unset, leaving the export plaintext.
+#[cfg(feature = "otel")]
+fn otlp_client_tls_from_env() -> Result<Option<tonic::transport::ClientTlsConfig>> {
+    use anyhow::Context as _;
+    use tonic::transport::{Certificate, ClientTlsConfig, Identity};
+
+    let read = |var: &str| {
+        std::env::var(var)
+            .ok()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let (Some(ca), Some(cert), Some(key)) = (
+        read("CHOREO_OTLP_TLS_CA_PATH"),
+        read("CHOREO_OTLP_TLS_CERT_PATH"),
+        read("CHOREO_OTLP_TLS_KEY_PATH"),
+    ) else {
+        return Ok(None);
+    };
+    let ca_pem = std::fs::read(&ca).with_context(|| format!("reading OTLP CA {ca}"))?;
+    let cert_pem = std::fs::read(&cert).with_context(|| format!("reading OTLP cert {cert}"))?;
+    let key_pem = std::fs::read(&key).with_context(|| format!("reading OTLP key {key}"))?;
+    let mut tls = ClientTlsConfig::new()
+        .ca_certificate(Certificate::from_pem(ca_pem))
+        .identity(Identity::from_pem(cert_pem, key_pem));
+    if let Some(domain) = read("CHOREO_OTLP_TLS_DOMAIN_NAME") {
+        tls = tls.domain_name(domain);
+    }
+    Ok(Some(tls))
+}
+
 #[cfg(not(feature = "otel"))]
 pub fn init_tracing() -> Result<TelemetryGuard> {
     tracing_subscriber::registry()
@@ -77,7 +112,7 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
 pub fn init_tracing() -> Result<TelemetryGuard> {
     use opentelemetry::global;
     use opentelemetry::trace::TracerProvider as _;
-    use opentelemetry_otlp::WithExportConfig as _;
+    use opentelemetry_otlp::{WithExportConfig as _, WithTonicConfig as _};
     use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::TracerProvider, Resource};
     use opentelemetry_semantic_conventions as sc;
 
@@ -100,10 +135,18 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
         return Ok(TelemetryGuard::noop());
     };
 
-    let exporter = opentelemetry_otlp::SpanExporter::builder()
+    let mut exporter_builder = opentelemetry_otlp::SpanExporter::builder()
         .with_tonic()
-        .with_endpoint(endpoint.clone())
-        .build()?;
+        .with_endpoint(endpoint.clone());
+    // mTLS to the collector when configured. The Underpass planes speak
+    // mutual TLS end-to-end, so the OTLP export presents the same client
+    // identity the runtime executor uses; the collector verifies it against
+    // its `client_ca_file`. Stays plaintext when the TLS env is unset.
+    if let Some(tls) = otlp_client_tls_from_env()? {
+        exporter_builder = exporter_builder.with_tls_config(tls);
+        tracing::info!("otlp export: mutual TLS enabled");
+    }
+    let exporter = exporter_builder.build()?;
 
     let provider = TracerProvider::builder()
         .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
