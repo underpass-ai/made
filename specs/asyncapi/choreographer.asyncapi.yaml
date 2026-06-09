@@ -190,14 +190,14 @@ components:
       allOf:
         - $ref: '#/components/schemas/EventEnvelope'
         - type: object
-          required: [task_id, specialty, winner_proposal_id, duration_ms]
+          required: [task_id, specialty, winner_proposal_id, duration]
           properties:
             task_id: { type: string }
             specialty: { type: string }
             winner_proposal_id: { type: string }
-            duration_ms: { type: integer, minimum: 0 }
+            duration: { type: integer, minimum: 0 }
             num_candidates: { type: integer, minimum: 0 }
-            score: { type: number }
+            winner_score: { type: number }
 
     TaskDispatched:
       allOf:
