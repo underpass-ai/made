@@ -4,7 +4,7 @@
 //! spawns the locally-built `choreo-mcp` binary in gRPC mode pointing
 //! at the container's mapped port, and exercises the JSON-RPC surface:
 //!
-//!   1. `tools/list` — expect the full 16-tool catalog.
+//!   1. `tools/list` — expect the full 17-tool catalog.
 //!   2. `tools/call` — invoke the 4 simplest read-only tools and
 //!      assert the response is a well-formed JSON-RPC envelope with
 //!      a `result` object.
@@ -196,8 +196,8 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
         .unwrap_or_else(|| panic!("tools/list missing /result/tools array: {list:?}"));
     assert_eq!(
         tools.len(),
-        16,
-        "expected 16 tools, got {}: {:?}",
+        17,
+        "expected 17 tools, got {}: {:?}",
         tools.len(),
         tools.iter().map(|t| t.get("name")).collect::<Vec<_>>()
     );
