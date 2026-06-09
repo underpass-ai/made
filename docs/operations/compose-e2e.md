@@ -59,6 +59,10 @@ Supported selectors:
 | `structured-output` | 6-9 | Strict schema rejection plus positive Report contracts through `stub-llm`. |
 | `ceremony` / `ceremony-diagram` | 11 | YAML ceremony execution and Mermaid trace with deterministic agents. |
 | `ceremony-vllm` / `gemma-ceremony` | 12 | YAML ceremony execution through `kind=vllm`; compose uses `stub-llm`, Kubernetes uses the configured real vLLM/Gemma endpoint. |
+| `daily-standup` / `daily` / `standup` | 13 | Daily standup ceremony — multi-step, multi-agent panels through `kind=vllm`. |
+| `technical-debate` / `debate` | 14 | Technical debate ceremony. |
+| `sprint-planning` / `planning` | 15 | Sprint planning ceremony. |
+| `speaker-talk-qa` / `speaker-qa` | 16 | Speaker talk + Q&A ceremony. |
 | `1`, `scenario-5`, `s8`, `1-4` | selected numbers | Targeted debugging. |
 
 The script writes compose logs to `tests/e2e/compose.log` during
