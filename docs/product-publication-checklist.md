@@ -368,6 +368,41 @@ de interacción (`revision_count`) en la respuesta.
 - [ ] Evitar claim "real-time deliberation streaming" para turnos
   internos.
 
+## Fase 7 - Validación Juez Y Motor De Ceremonias
+
+Cubre las dos capacidades que llegaron a `main` el 2026-06-06 → 2026-06-09:
+el motor de ceremonias declarativo (YAML FSM) y el scorer LLM-as-judge.
+
+- [x] Motor de ceremonias declarativo: `RunCeremony` ejecuta una FSM YAML
+  (states/steps/transitions/guards/roles) con handlers enchufables.
+  Referencia: `crates/choreo-app/src/usecases/run_ceremony_use_case.rs`,
+  `crates/choreo-core/src/entities/ceremony_definition.rs`.
+- [x] Paneles multiagente por paso (`num_agents`) y brief de contexto
+  inyectado en la tarea de cada agente. Referencia:
+  `crates/choreo-adapters/src/ceremony/deliberating_ceremony_step_handler.rs`.
+- [x] Ceremonias del catálogo ejecutan E2E (daily standup, debate técnico,
+  sprint planning, speaker + Q&A). Referencia:
+  `tests/e2e/ceremonies/*.yaml`, `docs/operations/compose-e2e.md`
+  (escenarios 11-16), bin `choreo-run-ceremony`.
+- [x] Diagrama Mermaid de la conversación en la respuesta de `RunCeremony`.
+- [x] Scorer LLM-as-judge: `JudgeAwareScoring` rankea por calidad
+  intrínseca en vez de fracción de validadores que pasan. Referencia:
+  `crates/choreo-adapters/src/scoring.rs`,
+  `crates/choreo-adapters/src/agents/judge.rs`.
+- [x] Juez opt-in y fail-fast (`CHOREO_JUDGE_ENABLED`,
+  `CHOREO_JUDGE_THRESHOLD`): si se activa sin endpoint/modelo vLLM, no
+  arranca. Referencia: `crates/choreo/src/compose.rs`,
+  `crates/choreo-adapters/src/agents/mod.rs`.
+- [x] Juez persistido en el overlay Helm de `underpass-runtime` con guard
+  de chart y marker de CI. Referencia:
+  `charts/choreographer/values.underpass-runtime.yaml`,
+  `charts/choreographer/templates/deployment.yaml`,
+  `scripts/ci/helm-lint.sh`.
+- [x] Exponer `RunCeremony` como tool MCP `choreo_run_ceremony`.
+  Referencia: `crates/choreo-mcp/src/grpc/tools.rs`.
+- [ ] Validar el juez contra un vLLM real en un deploy de producto (modelo,
+  credenciales, presupuesto de latencia, network policy).
+
 ## Definición De Usable
 
 - [ ] Se puede instalar localmente.

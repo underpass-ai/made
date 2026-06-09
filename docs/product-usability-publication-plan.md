@@ -38,7 +38,11 @@ ejecutar sin leer el código fuente.
 ### Se Puede Prometer
 
 - Coordina councils de agentes especializados.
-- Expone la API gRPC completa `underpass.choreo.v1`.
+- Orquesta ceremonias multiagentes declarativas en YAML (daily standup,
+  debate técnico, sprint planning, speaker + Q&A) vía `RunCeremony`.
+- Rankea propuestas mediante un juez LLM opcional (`CHOREO_JUDGE_ENABLED`)
+  en vez de fracción de validadores; fail-fast sin endpoint vLLM.
+- Expone la API gRPC completa `underpass.choreo.v1` (17 RPCs).
 - Expone MCP stdio para agentes como Codex y Claude Desktop.
 - Acepta contexto externo mediante `ExternalContextBundle`.
 - Puede ejecutar winners mediante `RuntimeExecutor`.

@@ -3,7 +3,8 @@
 Snapshot date: 2026-04-25; honest re-audit 2026-05-11; PIR framing
 dropped 2026-05-12 (PIR is owned by a separate project — this backlog
 tracks Choreographer's own stack-readiness, not any one downstream
-consumer).
+consumer); ceremony engine + LLM-as-judge scorer landed 2026-06-06→09
+(Milestone F, below).
 
 Choreographer is agnostic and independent. References to PIR, KMP,
 Runtime, or other repositories in this backlog are historical context,
@@ -59,6 +60,34 @@ finish the release-candidate publication gates.
 Milestones A, B, C, D, and E are all complete as of 2026-05-14. The
 `choreo-mcp` Git-install UX and fixture/live smoke path are present;
 crates.io publication remains release-candidate work tracked in
+`docs/product-publication-checklist.md`.
+
+## Milestone F — ceremony engine + judge scoring (landed 2026-06-06 → 2026-06-09)
+
+Two stack capabilities beyond the original eight areas shipped to `main`:
+
+- **Ceremony engine.** `RunCeremony` (RPC #17 of `underpass.choreo.v1`)
+  executes a YAML-defined ceremony as a finite-state machine —
+  states/steps/transitions/guards/roles — with pluggable step handlers,
+  multi-agent panels, a run-time context brief injected into each agent's
+  task, and a Mermaid sequence diagram in the response. Catalog ceremonies
+  (daily standup, technical debate, sprint planning, speaker + Q&A) run
+  end-to-end in CI, driven by the `choreo-run-ceremony` operator tool
+  (`crates/choreo-e2e-runner`). Domain in
+  `crates/choreo-core/src/entities/ceremony_definition.rs` +
+  `ceremony_instance.rs`; use case in
+  `crates/choreo-app/src/usecases/run_ceremony_use_case.rs`.
+- **LLM-as-judge scoring.** Winner selection is a pluggable `ScoringPort`.
+  The default ranks by validator pass-fraction (which ties valid proposals
+  and picks an arbitrary winner); the opt-in `JudgeAwareScoring`
+  (`CHOREO_JUDGE_ENABLED`, `CHOREO_JUDGE_THRESHOLD`) is fed by an
+  `LlmJudgeValidator` that rates intrinsic quality and makes that the
+  score. Fail-fast: enabling it without a vLLM endpoint/model refuses to
+  start. Persisted durably in the `underpass-runtime` Helm overlay and
+  proven live against an in-cluster vLLM/Gemma endpoint.
+
+Remaining release-candidate work (crates.io publication, real external
+vLLM gates) is unchanged and tracked in
 `docs/product-publication-checklist.md`.
 
 The recommended remaining execution order is:

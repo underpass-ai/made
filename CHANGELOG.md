@@ -16,6 +16,23 @@ operator command.
 
 ### Added
 
+- LLM-as-judge scoring: an optional `JudgeAwareScoring` strategy fed by an
+  `LlmJudgeValidator` that ranks deliberation proposals by intrinsic
+  quality instead of validator pass-fraction. Opt-in via
+  `CHOREO_JUDGE_ENABLED` (with `CHOREO_JUDGE_THRESHOLD`), reusing the vLLM
+  endpoint/model; fail-fast wiring and a Helm chart guard refuse a
+  judge-on-without-vLLM configuration. Covered by unit tests and a
+  provider-backed E2E.
+- Ceremony engine: `RunCeremony` executes YAML-defined ceremonies as
+  finite-state machines (states, steps with pluggable handlers, guarded
+  transitions, roles), with multi-agent panels, a run-time context brief
+  injected into each agent's task, and a Mermaid sequence diagram in the
+  response. Catalog ceremonies (daily standup, technical debate, sprint
+  planning, speaker + Q&A) run end-to-end in CI, driven by the
+  `choreo-run-ceremony` operator tool.
+- Helm persistence for the judge + vLLM provider env in the
+  `underpass-runtime` overlay, guarded by a CI marker and a chart `fail`
+  assertion enforcing the judge↔vLLM coupling.
 - Product usability and publication planning:
   `docs/product-usability-publication-plan.md` and
   `docs/product-publication-checklist.md`.
@@ -27,7 +44,7 @@ operator command.
 - MCP fixture and live-gRPC quickstarts, plus examples for
   `CreateCouncil`, `RegisterAgent`, `RegisterContract`,
   `RunCouncilDecision`, and `Orchestrate`.
-- Repo-owned compose E2E guide covering the nine scenarios, stubs,
+- Repo-owned compose E2E guide covering the compose scenarios, stubs,
   Report schema, and provider-shaped OpenAI/vLLM paths.
 - E2E runner scenario selection through `CHOREO_E2E_SCENARIOS`, with
   groups for `compose`, `cluster-connectivity`, `runtime-stub`, and

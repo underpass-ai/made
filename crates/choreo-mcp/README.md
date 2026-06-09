@@ -71,6 +71,11 @@ without an extra round trip.
 | `choreo_register_agent`           | `RegisterAgent`                   | control plane |
 | `choreo_unregister_agent`         | `UnregisterAgent`                 | control plane |
 | `choreo_process_trigger_event`    | `ProcessTriggerEvent`             | event ingest |
+| `choreo_run_council_decision`     | `RunCouncilDecision`              | sync; structured-output decision |
+| `choreo_register_contract`        | `RegisterContract`                | control plane |
+| `choreo_list_contracts`           | `ListContracts`                   | read |
+| `choreo_delete_contract`          | `DeleteContract`                  | idempotent control plane |
+| `choreo_run_ceremony`             | `RunCeremony`                     | sync; runs a YAML ceremony to a terminal state |
 | `choreo_get_status`               | `GetStatus`                       | observability |
 | `choreo_get_metrics`              | `GetMetrics`                      | observability |
 
@@ -133,7 +138,7 @@ cargo test -p choreo-mcp --locked
 A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/underpass-choreographer:latest` image via
 testcontainers, spawns this crate's binary against its mapped gRPC
-port, and exercises `initialize`, `tools/list` (asserts the full 16-
+port, and exercises `initialize`, `tools/list` (asserts the full 17-
 tool catalog), and `tools/call` on the four simplest read-only RPCs.
 The test is gated by the `container-tests` Cargo feature so the
 default workspace `cargo test --workspace` stays fast + network-free.
