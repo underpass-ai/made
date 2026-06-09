@@ -493,7 +493,7 @@ will be accepted by `RegisterAgent`.
 | Provider | Required env | Optional env |
 |---|---|---|
 | `openai` | `CHOREO_OPENAI_API_KEY` | `CHOREO_OPENAI_MODEL`, `CHOREO_OPENAI_ENDPOINT`, `CHOREO_OPENAI_MAX_TOKENS` |
-| `vllm` | `CHOREO_VLLM_MODEL`, `CHOREO_VLLM_ENDPOINT` | `CHOREO_VLLM_BEARER_TOKEN`, `CHOREO_VLLM_MAX_TOKENS` |
+| `vllm` | `CHOREO_VLLM_MODEL`, `CHOREO_VLLM_ENDPOINT` | `CHOREO_VLLM_BEARER_TOKEN`, `CHOREO_VLLM_MAX_TOKENS`, `CHOREO_VLLM_TIMEOUT_SECS` |
 | `anthropic` | `CHOREO_ANTHROPIC_API_KEY` | `CHOREO_ANTHROPIC_MODEL`, `CHOREO_ANTHROPIC_ENDPOINT`, `CHOREO_ANTHROPIC_MAX_TOKENS` |
 
 `provider.model`, `provider.endpoint`, and `provider.max_tokens` can

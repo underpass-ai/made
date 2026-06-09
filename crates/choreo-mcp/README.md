@@ -79,6 +79,14 @@ Mappings live in `src/grpc/{json_to_proto.rs,proto_to_json.rs}` —
 change: add the schema key in `protocol.rs`, add the request mapper
 in `json_to_proto.rs`, add the response mapper in `proto_to_json.rs`.
 
+> `choreo-mcp` builds against `choreo-mcp-proto`, a **vendored copy** of
+> `underpass.choreo.v1` kept byte-identical to `crates/choreo-proto/proto`
+> so this crate can publish independently. The two `.proto` files must be
+> kept in sync by hand — there is no automated cross-copy diff. (The
+> `tools_catalog_is_derived_one_for_one_from_grpc_service` test only
+> enforces the tool↔RPC 1:1 mapping against this crate's own vendored
+> copy.)
+
 ## Design choices
 
 1. **No MCP SDK.** Tokio + serde_json + tonic + a handful of small

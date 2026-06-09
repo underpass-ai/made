@@ -8,6 +8,12 @@ marketing numbers. If an experiment has not been run yet, the claim does
 not appear in the docs, the README, the commit message, or the release
 notes.
 
+> **Note (2026-06-09):** experiments `001` and `002` were run on
+> 2026-04-18, before the LLM-as-judge scorer landed (2026-06-08). They
+> measure the default uniform-scoring deliberation path. A judge-inclusive
+> re-baseline (`003+`) is worth running to quantify the judge's
+> latency/quality trade-off before quoting any scoring numbers.
+
 ## Format
 
 Each experiment is a directory `docs/experiments/NNN-short-slug/`
