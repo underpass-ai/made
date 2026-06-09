@@ -86,6 +86,12 @@ providerEnv:
     value: "true"
   - name: CHOREO_JUDGE_THRESHOLD
     value: "0.5"
+  # OpenTelemetry trace export (the image ships the `otel` feature; it is
+  # dormant until this endpoint is set). Points at the in-namespace OTLP
+  # collector so a deliberation/ceremony shows up as a distributed trace in
+  # Grafana Tempo — including the per-proposal and judge-verdict span events.
+  - name: CHOREO_OTLP_ENDPOINT
+    value: "http://underpass-runtime-otel-collector:4317"
 
 # Persistence stays off in this first rollout; the deliberation
 # registries default to in-memory adapters, which is fine for the

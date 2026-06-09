@@ -242,6 +242,8 @@ runtime_markers=(
   'name: CHOREO_JUDGE_ENABLED'
   'name: CHOREO_JUDGE_THRESHOLD'
   'value: "0.5"'
+  'name: CHOREO_OTLP_ENDPOINT'
+  'value: http://underpass-runtime-otel-collector:4317'
 )
 for marker in "${runtime_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${RUNTIME_OUT}"; then

@@ -193,6 +193,7 @@ impl DeliberateUseCase {
             task_id = deliberation.task_id().as_str(),
             specialty = deliberation.specialty().as_str(),
             winner_id = winner.proposal().id().as_str(),
+            winner_score = winner.outcome().score().get(),
             duration_ms = duration.get(),
             "deliberation completed"
         );
@@ -297,6 +298,8 @@ impl DeliberateUseCase {
                 })
                 .await?;
             let proposal_id = new_proposal_id()?;
+            let content_len = draft.content.len();
+            let preview = content_preview(&draft.content);
             let proposal = Proposal::new(
                 proposal_id.clone(),
                 agent.id().clone(),
@@ -306,6 +309,15 @@ impl DeliberateUseCase {
                 now,
             )?;
             deliberation.add_proposal(proposal)?;
+            // Span event: each agent's opening proposal, observable in the
+            // OTEL trace as the "what each participant said" of the meeting.
+            info!(
+                proposal_id = proposal_id.as_str(),
+                author = agent.id().as_str(),
+                content_len,
+                preview = %preview,
+                "proposal drafted"
+            );
             ordered_ids.push(proposal_id);
         }
         Ok(ordered_ids)
@@ -344,7 +356,18 @@ impl DeliberateUseCase {
                 let critique = agent.critique(&peer_content, constraints).await?;
                 let revision = agent.revise(&peer_content, &critique).await?;
                 let now = self.clock.now();
+                let revised_preview = content_preview(&revision.content);
                 deliberation.revise_proposal(&peer_proposal_id, revision.content, now)?;
+                // Span event: the adversarial peer review — agent i critiques
+                // and revises agent (i+1)'s proposal. The back-and-forth of the
+                // meeting, observable in the trace.
+                info!(
+                    round = round + 1,
+                    reviewer = agent.id().as_str(),
+                    target_proposal = peer_proposal_id.as_str(),
+                    revised_preview = %revised_preview,
+                    "peer critique and revision"
+                );
             }
             debug!(round = round + 1, "peer review round completed");
         }
@@ -367,7 +390,25 @@ impl DeliberateUseCase {
                 })?;
 
             let reports = self.run_validators(&content, constraints).await?;
+            // Span events: every validator's verdict on this proposal. The LLM
+            // judge surfaces here too — its report `summary` carries the score
+            // (e.g. "llm judge score 0.87") — so the judging is observable in
+            // the trace without coupling this use case to any provider.
+            for report in &reports {
+                info!(
+                    proposal_id = id.as_str(),
+                    validator = report.kind(),
+                    passed = report.passed(),
+                    verdict = report.summary(),
+                    "validator verdict"
+                );
+            }
             let score = self.scoring.score(&reports).await?;
+            info!(
+                proposal_id = id.as_str(),
+                score = score.get(),
+                "proposal scored"
+            );
             let outcome = ValidationOutcome::new(score, reports);
             deliberation.attach_outcome(&id, outcome)?;
         }
@@ -404,6 +445,20 @@ impl DeliberateUseCase {
 
 fn new_proposal_id() -> Result<ProposalId, DomainError> {
     ProposalId::new(Uuid::new_v4().to_string())
+}
+
+/// A short, single-line preview of proposal/revision content for trace
+/// events — enough to read the gist of the meeting in a span without
+/// bloating the trace with the full payload (the full text lives in the
+/// ceremony transcript / `RunCeremony` response).
+const PREVIEW_MAX: usize = 160;
+fn content_preview(content: &str) -> String {
+    let flat = content.split_whitespace().collect::<Vec<_>>().join(" ");
+    if flat.chars().count() <= PREVIEW_MAX {
+        return flat;
+    }
+    let truncated: String = flat.chars().take(PREVIEW_MAX).collect();
+    format!("{truncated}…")
 }
 
 fn new_event_id() -> Result<EventId, DomainError> {
