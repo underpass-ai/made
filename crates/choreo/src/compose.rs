@@ -151,6 +151,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         agent_registry,
         agent_resolver,
         statistics,
+        pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
 
     // The contract registry is in-memory only today: contracts are
@@ -267,8 +268,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .service_version(env!("CARGO_PKG_VERSION"))
         .build()?;
 
-    let health_state =
-        crate::health::HealthState::new(nats_client, statistics.clone(), env!("CARGO_PKG_VERSION"));
+    let health_state = crate::health::HealthState::new(
+        nats_client,
+        postgres_pool,
+        statistics.clone(),
+        env!("CARGO_PKG_VERSION"),
+    );
 
     info!(
         grpc_port = service_config.grpc_port,
@@ -395,6 +400,9 @@ struct Persistence {
     agent_registry: Arc<dyn AgentRegistryPort>,
     agent_resolver: Arc<dyn AgentResolverPort>,
     statistics: Arc<dyn StatisticsPort>,
+    /// `Some` when Postgres-backed, so the readiness probe can check the
+    /// database; `None` for in-memory persistence.
+    pool: Option<PostgresPool>,
 }
 
 /// Pick persistent backings based on config. When `CHOREO_POSTGRES_URL`
@@ -415,7 +423,8 @@ async fn wire_persistence(
             council_registry: Arc::new(PostgresCouncilRegistry::new(pool.clone())),
             agent_registry: agents.clone(),
             agent_resolver: agents,
-            statistics: Arc::new(PostgresStatistics::new(pool)),
+            statistics: Arc::new(PostgresStatistics::new(pool.clone())),
+            pool: Some(pool),
         })
     } else {
         info!("postgres disabled; using in-memory persistence");
@@ -426,6 +435,7 @@ async fn wire_persistence(
             agent_registry: agents.clone(),
             agent_resolver: agents,
             statistics: Arc::new(InMemoryStatistics::new()),
+            pool: None,
         })
     }
 }

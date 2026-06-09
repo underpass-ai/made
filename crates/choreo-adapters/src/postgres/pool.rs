@@ -68,6 +68,18 @@ impl PostgresPool {
     pub(crate) fn inner(&self) -> &PgPool {
         &self.inner
     }
+
+    /// Lightweight liveness probe (`SELECT 1`): acquires a connection and
+    /// round-trips a trivial query. Used by the readiness endpoint to
+    /// detect a database that became unreachable *after* startup
+    /// (failover/partition), which migrations-on-boot cannot catch.
+    pub async fn health_check(&self) -> Result<(), PostgresPoolError> {
+        sqlx::query("SELECT 1")
+            .execute(&self.inner)
+            .await
+            .map(|_| ())
+            .map_err(PostgresPoolError::HealthCheck)
+    }
 }
 
 #[derive(Debug, Error)]
@@ -76,6 +88,8 @@ pub enum PostgresPoolError {
     Connect(#[source] sqlx::Error),
     #[error("postgres migrations failed: {0}")]
     Migrate(#[source] sqlx::migrate::MigrateError),
+    #[error("postgres health check failed: {0}")]
+    HealthCheck(#[source] sqlx::Error),
 }
 
 #[cfg(test)]

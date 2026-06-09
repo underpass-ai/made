@@ -8,7 +8,8 @@
 //!   anything.
 //! - `GET /readyz` — readiness. Checks that every external
 //!   dependency the composition root wired is presently reachable
-//!   (NATS via `connection_state()` when enabled). Returns `200 OK`
+//!   (NATS via `connection_state()`, Postgres via `SELECT 1`, each
+//!   when enabled). Returns `200 OK`
 //!   when every check passes, `503 Service Unavailable` with a JSON
 //!   body listing the failing components otherwise.
 //!
@@ -26,6 +27,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use choreo_adapters::postgres::PostgresPool;
 use choreo_core::ports::StatisticsPort;
 use serde::Serialize;
 
@@ -38,6 +40,9 @@ pub struct HealthState {
     /// `None` when the service is running with `NoopMessaging`; in
     /// that case readiness never fails on NATS.
     nats: Option<async_nats::Client>,
+    /// `Some` when persistence is Postgres-backed; `None` for the
+    /// in-memory default, in which case readiness never fails on Postgres.
+    postgres: Option<PostgresPool>,
     statistics: Arc<dyn StatisticsPort>,
     service_version: Arc<str>,
 }
@@ -46,6 +51,7 @@ impl std::fmt::Debug for HealthState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("HealthState")
             .field("nats_wired", &self.nats.is_some())
+            .field("postgres_wired", &self.postgres.is_some())
             .field("service_version", &self.service_version)
             .finish()
     }
@@ -55,11 +61,13 @@ impl HealthState {
     #[must_use]
     pub fn new(
         nats: Option<async_nats::Client>,
+        postgres: Option<PostgresPool>,
         statistics: Arc<dyn StatisticsPort>,
         service_version: impl Into<String>,
     ) -> Self {
         Self {
             nats,
+            postgres,
             statistics,
             service_version: Arc::from(service_version.into().into_boxed_str()),
         }
@@ -120,6 +128,15 @@ async fn readyz(State(state): State<HealthState>) -> Response {
             name: "nats",
             healthy: true,
             detail: "not wired (noop messaging)",
+        }),
+    }
+
+    match &state.postgres {
+        Some(pool) => checks.push(check_postgres(pool).await),
+        None => checks.push(CheckResult {
+            name: "postgres",
+            healthy: true,
+            detail: "not wired (in-memory persistence)",
         }),
     }
 
@@ -236,6 +253,21 @@ fn escape_label_value(value: &str) -> String {
     out
 }
 
+async fn check_postgres(pool: &PostgresPool) -> CheckResult {
+    match pool.health_check().await {
+        Ok(()) => CheckResult {
+            name: "postgres",
+            healthy: true,
+            detail: "reachable",
+        },
+        Err(_) => CheckResult {
+            name: "postgres",
+            healthy: false,
+            detail: "unreachable",
+        },
+    }
+}
+
 fn check_nats(client: &async_nats::Client) -> CheckResult {
     match client.connection_state() {
         NatsConnectionState::Connected => CheckResult {
@@ -290,7 +322,7 @@ mod tests {
 
     #[tokio::test]
     async fn healthz_returns_200_with_alive_status() {
-        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -309,7 +341,7 @@ mod tests {
 
     #[tokio::test]
     async fn readyz_without_nats_returns_200_and_reports_not_wired() {
-        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -323,10 +355,13 @@ mod tests {
         let body = body_json(resp).await;
         assert_eq!(body["status"], "ready");
         let checks = body["checks"].as_array().unwrap();
-        assert_eq!(checks.len(), 1);
+        assert_eq!(checks.len(), 2);
         assert_eq!(checks[0]["name"], "nats");
         assert_eq!(checks[0]["healthy"], true);
         assert_eq!(checks[0]["detail"], "not wired (noop messaging)");
+        assert_eq!(checks[1]["name"], "postgres");
+        assert_eq!(checks[1]["healthy"], true);
+        assert_eq!(checks[1]["detail"], "not wired (in-memory persistence)");
     }
 
     #[tokio::test]
@@ -338,7 +373,7 @@ mod tests {
         // hitting /healthz with `None` and asserting response shape.
         // The structural invariant is enforced by the implementation
         // of `healthz` never touching `state.nats`.
-        let app = router(HealthState::new(None, stats(), "9.9.9"));
+        let app = router(HealthState::new(None, None, stats(), "9.9.9"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -355,7 +390,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_route_is_404() {
-        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -370,7 +405,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_to_healthz_is_method_not_allowed() {
-        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -389,7 +424,7 @@ mod tests {
         // Paranoia: make sure nothing sensitive sneaks into the
         // Debug output. Right now there are no secrets here, but
         // this test locks the invariant as the state grows.
-        let state = HealthState::new(None, stats(), "0.1.0");
+        let state = HealthState::new(None, None, stats(), "0.1.0");
         let shown = format!("{state:?}");
         assert!(shown.contains("HealthState"));
         assert!(shown.contains("nats_wired"));
@@ -400,7 +435,7 @@ mod tests {
 
     #[tokio::test]
     async fn metrics_emits_prometheus_text_with_zero_counters_on_fresh_boot() {
-        let app = router(HealthState::new(None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -448,7 +483,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = HealthState::new(None, stats_adapter.clone(), "0.1.0");
+        let state = HealthState::new(None, None, stats_adapter.clone(), "0.1.0");
         let app = router(state);
         let resp = app
             .oneshot(
