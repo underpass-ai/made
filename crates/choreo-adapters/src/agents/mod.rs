@@ -27,6 +27,11 @@ mod prompts;
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
 mod openai_compat;
 
+// Shared provider-endpoint validation (scheme allowlist, fail-fast).
+// Available whenever any HTTP provider adapter is compiled in.
+#[cfg(feature = "_http")]
+mod endpoint;
+
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
 pub mod judge;
 

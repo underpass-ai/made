@@ -103,13 +103,8 @@ impl AnthropicConfig {
     }
 
     pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Result<Self, DomainError> {
-        let value = endpoint.into().trim().to_owned();
-        if value.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "anthropic.endpoint",
-            });
-        }
-        self.endpoint = value;
+        self.endpoint =
+            super::endpoint::validate_provider_endpoint("anthropic.endpoint", endpoint)?;
         Ok(self)
     }
 

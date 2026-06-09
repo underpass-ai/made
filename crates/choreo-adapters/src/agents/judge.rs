@@ -79,12 +79,7 @@ impl LlmJudgeValidator {
         model: impl Into<String>,
         threshold: f64,
     ) -> Result<Self, DomainError> {
-        let endpoint = endpoint.into().trim().to_owned();
-        if endpoint.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "judge.endpoint",
-            });
-        }
+        let endpoint = super::endpoint::validate_provider_endpoint("judge.endpoint", endpoint)?;
         let model = model.into().trim().to_owned();
         if model.is_empty() {
             return Err(DomainError::EmptyField {
