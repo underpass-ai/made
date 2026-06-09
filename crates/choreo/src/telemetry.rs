@@ -142,10 +142,12 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
     // mutual TLS end-to-end, so the OTLP export presents the same client
     // identity the runtime executor uses; the collector verifies it against
     // its `client_ca_file`. Stays plaintext when the TLS env is unset.
-    if let Some(tls) = otlp_client_tls_from_env()? {
+    let mtls = if let Some(tls) = otlp_client_tls_from_env()? {
         exporter_builder = exporter_builder.with_tls_config(tls);
-        tracing::info!("otlp export: mutual TLS enabled");
-    }
+        true
+    } else {
+        false
+    };
     let exporter = exporter_builder.build()?;
 
     let provider = TracerProvider::builder()
@@ -165,7 +167,8 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
         .with(otel_layer)
         .init();
 
-    tracing::info!(endpoint, "otlp exporter wired");
+    // Logged after `.init()` so it actually reaches a subscriber.
+    tracing::info!(endpoint, mtls, "otlp exporter wired");
     Ok(TelemetryGuard {
         provider: Some(provider),
     })
