@@ -7,6 +7,8 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use std::time::Duration;
+
 use async_trait::async_trait;
 use choreo_core::entities::Proposal;
 use choreo_core::error::DomainError;
@@ -18,6 +20,13 @@ use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
 use thiserror::Error;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tracing::{debug, warn};
+
+/// Max time to establish the TCP+TLS connection to the runtime.
+const RUNTIME_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+/// Per-RPC deadline applied to every call on the runtime channel. Generous
+/// because governed tool invocations can legitimately run for minutes; it
+/// is a safety net against an indefinitely-stuck runtime, not a tight SLA.
+const RUNTIME_REQUEST_TIMEOUT: Duration = Duration::from_secs(300);
 
 const DEFAULT_RUNTIME_GRPC_ENDPOINT: &str = "http://underpass-runtime:50053";
 const DEFAULT_RUNTIME_TENANT_ID: &str = "choreographer";
@@ -331,8 +340,14 @@ impl RuntimeExecutor {
         config: RuntimeExecutorConfig,
     ) -> Result<Self, RuntimeExecutorConnectError> {
         let endpoint_uri = endpoint_uri_for_tls_mode(&config.grpc_endpoint, config.tls.mode);
+        // Bound both connection establishment and every RPC on this channel
+        // so a stuck runtime can never hang a deliberation indefinitely.
+        // The request bound is generous (long-running governed tools are
+        // legitimate); the connect bound is tight.
         let mut endpoint = Endpoint::from_shared(endpoint_uri)
-            .map_err(|_| RuntimeExecutorConnectError::InvalidEndpoint)?;
+            .map_err(|_| RuntimeExecutorConnectError::InvalidEndpoint)?
+            .connect_timeout(RUNTIME_CONNECT_TIMEOUT)
+            .timeout(RUNTIME_REQUEST_TIMEOUT);
 
         if config.tls.mode != RuntimeClientTlsMode::Disabled {
             let tls_config = build_runtime_client_tls(&config.tls).await?;

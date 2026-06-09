@@ -355,10 +355,12 @@ impl ChoreographerService for ChoreographerGrpcService {
     ) -> GrpcResult<pb::CreateCouncilResponse> {
         link_span_to_metadata(&request);
         let req = request.into_inner();
-        let n = usize::try_from(req.num_agents).unwrap_or(0);
-        if n == 0 {
-            return Err(Status::invalid_argument("num_agents must be > 0"));
-        }
+        // Bound the council size through the domain value object: rejects
+        // zero and caps at MAX_NUM_AGENTS, so a hostile `num_agents` can't
+        // request a multi-billion-id allocation.
+        let num_agents = choreo_core::value_objects::NumAgents::new(req.num_agents)
+            .map_err(domain_error_to_status)?;
+        let n = num_agents.get() as usize;
         // The create-council RPC does not carry pre-minted agent ids;
         // we mint one id per slot and expect the caller to have
         // previously registered matching agents through the (future)
