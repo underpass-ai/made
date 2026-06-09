@@ -98,6 +98,9 @@ CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
 | `choreo-mcp-proto` | Vendored `underpass.choreo.v1` proto crate used to publish `choreo-mcp` independently. |
 | `choreo` | Binary: wires adapters, runs gRPC + NATS. |
 | `choreo-mcp` | Stdio MCP adapter that exposes every gRPC RPC as an MCP tool. |
+| `choreo-e2e-runner` | Operator + E2E driver binaries (incl. `choreo-run-ceremony`) that exercise the service over its public gRPC surface. |
+| `choreo-tests-integration` | Integration tests backed by testcontainers-managed services. Not shipped. |
+| `choreo-consumer-smoke` | Standalone NATS consumer smoke check. Not shipped. |
 
 ## Principles
 
@@ -174,8 +177,8 @@ gate in this repository):
   `GetDeliberationResult`, `Orchestrate`, `CreateCouncil`,
   `ListCouncils`, `DeleteCouncil`, `RegisterAgent`,
   `UnregisterAgent`, `ProcessTriggerEvent`, `RunCouncilDecision`,
-  `RegisterContract`, `ListContracts`, `DeleteContract`, `GetStatus`,
-  and `GetMetrics`. No RPC returns `UNIMPLEMENTED`. Caveats:
+  `RegisterContract`, `ListContracts`, `DeleteContract`, `RunCeremony`,
+  `GetStatus`, and `GetMetrics`. No RPC returns `UNIMPLEMENTED`. Caveats:
   (a) provider-backed `RegisterAgent` kinds require the matching Cargo
   feature and boot-time credentials; `noop` is always available.
   (b) `StreamDeliberation` emits phase transitions + a final
@@ -189,6 +192,20 @@ gate in this repository):
 - Optional seeding: `CHOREO_SEED_SPECIALTIES=triage,reviewer`
   registers one `NoopAgent` and one single-agent council per specialty
   so a fresh deployment is immediately exercisable end-to-end.
+- Ceremony orchestration: `RunCeremony` executes a YAML-defined ceremony
+  as a finite-state machine — states, steps with pluggable handlers,
+  guarded transitions, and roles. A step can drive a full council
+  deliberation; prior turns thread into later steps' briefs; the
+  response carries a Mermaid sequence diagram of the conversation.
+  Catalog ceremonies (daily standup, technical debate, sprint planning,
+  speaker + Q&A) run end-to-end in CI.
+- Scoring: the winner of a deliberation is chosen by a pluggable
+  `ScoringPort`. The default ranks by validator pass-fraction; an
+  optional LLM-as-judge (`CHOREO_JUDGE_ENABLED`, with
+  `CHOREO_JUDGE_THRESHOLD`) instead rates each proposal's intrinsic
+  quality and makes that the score. Disabled by default, and fail-fast:
+  enabling it without a vLLM endpoint/model refuses to start rather than
+  silently degrading.
 
 **Persistence**:
 

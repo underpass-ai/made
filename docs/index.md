@@ -18,13 +18,19 @@ does not require KMP, PIR, or any downstream product to run:
   the sibling repo `underpass-runtime`; the choreographer talks to
   it through `RuntimeExecutor` (Epic 1).
 
+## Architecture — how it works and how it differs
+
+| Doc | Purpose |
+|---|---|
+| [`choreographer-architecture-and-differentiation.md`](./choreographer-architecture-and-differentiation.md) | Code-grounded walkthrough of the hexagonal core, council deliberation pipeline, the declarative ceremony engine, and the LLM-as-judge scorer — and where the design diverges from common agent-orchestration patterns. |
+
 ## Operations — how to run, install, and configure
 
 | Doc | Purpose |
 |---|---|
 | [`dev-loop.md`](./dev-loop.md) | Local iteration loop, including `CHOREO_NATS_ENABLED=false just run` for no-external-service startup. |
 | [`release.md`](./release.md) | Versioning + cut-a-release checklist. |
-| [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, nine scenarios, stubs, Report schema, and provider-shaped paths. |
+| [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |
 | [`operations/deploy-kubernetes.md`](./operations/deploy-kubernetes.md) | Helm install guide, including minimal standalone install, embedded NATS, TLS/mTLS, Postgres secret, provider env secrets, Runtime executor, and the Underpass Runtime profile. |
 | [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter exposing every gRPC RPC as an MCP tool, including fixture-mode quickstart. |
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |

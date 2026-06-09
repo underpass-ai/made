@@ -1,6 +1,7 @@
 # Stack Gap Analysis
 
-Snapshot date: 2026-05-18
+Snapshot date: 2026-05-18 (ceremony engine + LLM-as-judge scorer added
+2026-06-09)
 
 This document records the remaining gaps for Choreographer as an
 independent, domain-agnostic coordination product. The following repos
@@ -27,7 +28,8 @@ current implementation state of sibling repositories.
 - The gRPC service exposes and implements the full
   `underpass.choreo.v1` surface: the generic deliberation/orchestration
   RPCs, council and agent registry RPCs, trigger ingest, status/metrics,
-  `RunCouncilDecision`, and contract CRUD.
+  `RunCouncilDecision`, contract CRUD, and `RunCeremony` ceremony
+  execution.
 - Runtime execution is configurable: `CHOREO_EXECUTOR_KIND=noop|runtime`
   selects either `NoopExecutor` or the gRPC `RuntimeExecutor`.
 - The context boundary is caller-materialized and agnostic.
@@ -47,14 +49,24 @@ current implementation state of sibling repositories.
   replay semantics.
 - Server TLS/mTLS and Runtime client TLS are wired and covered by
   handshake-level integration tests.
-- The compose E2E runner covers nine scenarios: seeded council,
+- The compose E2E runner covers the core scenarios: seeded council,
   deliberation, missing-council delete, causal metadata over NATS,
   `Orchestrate -> RuntimeExecutor -> stub-runtime`, strict schema
   rejection, `ExternalContextBundle` round-trip, positive structured
   output through a stub OpenAI-compatible agent, and the same Report
-  contract through the vLLM adapter shape. The operator-facing map
-  lives in [`operations/compose-e2e.md`](./operations/compose-e2e.md).
-- The stdio MCP adapter exposes all 16 gRPC RPCs as `choreo_*` tools
+  contract through the vLLM adapter shape — plus YAML ceremony execution
+  (a council deliberation per step) and the catalog ceremonies (daily
+  standup, technical debate, sprint planning, speaker + Q&A). The
+  operator-facing map lives in
+  [`operations/compose-e2e.md`](./operations/compose-e2e.md).
+- Ceremony orchestration is wired: `RunCeremony` executes a YAML
+  finite-state machine (states/steps/transitions/guards/roles) with
+  pluggable handlers, multi-agent panels, context threading between
+  steps, and a Mermaid diagram in the response.
+- Winner scoring is a pluggable `ScoringPort`: uniform pass-fraction by
+  default, or an opt-in LLM-as-judge (`CHOREO_JUDGE_ENABLED`) that ranks
+  by intrinsic quality and fails fast without a vLLM endpoint/model.
+- The stdio MCP adapter exposes all 17 gRPC RPCs as `choreo_*` tools
   and has fixture + live gRPC backends.
 
 ## Remaining Gaps
