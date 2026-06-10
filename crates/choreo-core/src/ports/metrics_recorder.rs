@@ -63,6 +63,20 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// Record token usage for one proposing-agent call, by provider —
     /// cost attribution and prompt-bloat detection.
     fn record_provider_tokens(&self, provider: &str, usage: TokenUsage);
+
+    /// Observe the latency of one proposing-agent call, by `provider` and
+    /// `operation` (generate / critique / revise). Recorded on every path.
+    fn observe_provider_request(&self, provider: &str, operation: &str, duration: DurationMs);
+
+    /// Increment the in-flight gauge for `provider` at the start of a
+    /// call. With vLLM serialised (`max-num-seqs=1`), a sustained
+    /// in-flight depth above 1 is the leading indicator of the latency
+    /// cliff — concurrency that any other backend would absorb queues here.
+    fn inc_provider_in_flight(&self, provider: &str);
+
+    /// Decrement the in-flight gauge for `provider` when a call returns,
+    /// whether it succeeded or failed.
+    fn dec_provider_in_flight(&self, provider: &str);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -84,4 +98,7 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
     fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
     fn record_provider_tokens(&self, _provider: &str, _usage: TokenUsage) {}
+    fn observe_provider_request(&self, _provider: &str, _operation: &str, _duration: DurationMs) {}
+    fn inc_provider_in_flight(&self, _provider: &str) {}
+    fn dec_provider_in_flight(&self, _provider: &str) {}
 }

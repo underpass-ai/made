@@ -330,6 +330,15 @@ mod tests {
         fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
         fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
         fn record_provider_tokens(&self, _provider: &str, _usage: TokenUsage) {}
+        fn observe_provider_request(
+            &self,
+            _provider: &str,
+            _operation: &str,
+            _duration: DurationMs,
+        ) {
+        }
+        fn inc_provider_in_flight(&self, _provider: &str) {}
+        fn dec_provider_in_flight(&self, _provider: &str) {}
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

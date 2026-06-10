@@ -34,6 +34,7 @@ use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, warn};
 
+use super::instrument::ProviderCallGuard;
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 use super::prompts;
 
@@ -288,6 +289,9 @@ impl VllmAgent {
         user: String,
         op: &str,
     ) -> Result<String, DomainError> {
+        // Records latency + in-flight on every return path (incl. the `?`
+        // error sites) when dropped at the end of the call.
+        let _guard = ProviderCallGuard::enter(self.metrics.as_ref(), PROVIDER, op);
         let body = ChatRequest {
             model: &self.config.model,
             max_tokens: self.config.max_tokens,
@@ -455,6 +459,8 @@ mod tests {
     struct CapturingMetrics {
         provider_errors: std::sync::Mutex<Vec<&'static str>>,
         provider_tokens: std::sync::Mutex<Vec<(u32, u32)>>,
+        in_flight: std::sync::atomic::AtomicI64,
+        requests: std::sync::Mutex<Vec<String>>,
     }
     impl MetricsRecorderPort for CapturingMetrics {
         fn observe_deliberation_duration(
@@ -482,6 +488,22 @@ mod tests {
                 .lock()
                 .unwrap()
                 .push((usage.prompt(), usage.completion()));
+        }
+        fn observe_provider_request(
+            &self,
+            _provider: &str,
+            operation: &str,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) {
+            self.requests.lock().unwrap().push(operation.to_owned());
+        }
+        fn inc_provider_in_flight(&self, _provider: &str) {
+            self.in_flight
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        }
+        fn dec_provider_in_flight(&self, _provider: &str) {
+            self.in_flight
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         }
     }
 
@@ -853,6 +875,32 @@ mod tests {
         assert_eq!(
             metrics.provider_tokens.lock().unwrap().as_slice(),
             &[(130, 47)]
+        );
+    }
+
+    #[tokio::test]
+    async fn call_balances_in_flight_and_records_its_operation_latency() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(chat_response("ok")))
+            .mount(&server)
+            .await;
+
+        let metrics = Arc::new(CapturingMetrics::default());
+        let agent = test_agent(&server).with_metrics(metrics.clone());
+        agent.generate(draft()).await.unwrap();
+
+        // The guard incremented on entry and decremented on drop, so the
+        // gauge is back to zero, and the call's latency was recorded once
+        // under its operation.
+        assert_eq!(
+            metrics.in_flight.load(std::sync::atomic::Ordering::SeqCst),
+            0
+        );
+        assert_eq!(
+            metrics.requests.lock().unwrap().as_slice(),
+            &["generate".to_owned()]
         );
     }
 

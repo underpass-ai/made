@@ -17,7 +17,7 @@ use choreo_core::value_objects::{
     DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
 };
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
+    Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
 };
 
 /// Latency buckets (seconds) sized for serialized vLLM deliberations,
@@ -34,6 +34,13 @@ const SCORE_BUCKETS: &[f64] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0
 const JUDGE_LATENCY_BUCKETS_SECONDS: &[f64] =
     &[0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 55.0, 60.0];
 
+/// Latency buckets (seconds) for a single proposing-agent call. A
+/// generate/critique/revise on a serialised vLLM model can run to tens of
+/// seconds, so the range reaches past two minutes.
+const PROVIDER_LATENCY_BUCKETS_SECONDS: &[f64] = &[
+    0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0,
+];
+
 pub struct PrometheusMetricsRecorder {
     registry: Registry,
     deliberation_duration_seconds: HistogramVec,
@@ -45,6 +52,8 @@ pub struct PrometheusMetricsRecorder {
     provider_errors_total: IntCounterVec,
     judge_tokens_total: IntCounterVec,
     provider_tokens_total: IntCounterVec,
+    provider_request_duration_seconds: HistogramVec,
+    provider_in_flight: IntGaugeVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -115,6 +124,19 @@ impl PrometheusMetricsRecorder {
             "Tokens consumed by proposing-agent calls, partitioned by provider and token type.",
             &["provider", "token_type"],
         )?;
+        let provider_request_duration_seconds = register_histogram(
+            &registry,
+            "choreo_provider_request_duration_seconds",
+            "Latency of a single proposing-agent call, by provider and operation.",
+            PROVIDER_LATENCY_BUCKETS_SECONDS,
+            &["provider", "operation"],
+        )?;
+        let provider_in_flight = register_gauge(
+            &registry,
+            "choreo_provider_in_flight",
+            "In-flight proposing-agent calls per provider; the vLLM serial-saturation signal.",
+            &["provider"],
+        )?;
 
         Ok(Self {
             registry,
@@ -127,6 +149,8 @@ impl PrometheusMetricsRecorder {
             provider_errors_total,
             judge_tokens_total,
             provider_tokens_total,
+            provider_request_duration_seconds,
+            provider_in_flight,
         })
     }
 
@@ -215,6 +239,20 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[provider, "completion"])
             .inc_by(u64::from(usage.completion()));
     }
+
+    fn observe_provider_request(&self, provider: &str, operation: &str, duration: DurationMs) {
+        self.provider_request_duration_seconds
+            .with_label_values(&[provider, operation])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn inc_provider_in_flight(&self, provider: &str) {
+        self.provider_in_flight.with_label_values(&[provider]).inc();
+    }
+
+    fn dec_provider_in_flight(&self, provider: &str) {
+        self.provider_in_flight.with_label_values(&[provider]).dec();
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -255,6 +293,22 @@ fn register_counter(
     Ok(metric)
 }
 
+/// Define a labelled gauge, register it on `registry`, and return the
+/// handle. See [`register_histogram`] for the pairing rationale.
+fn register_gauge(
+    registry: &Registry,
+    name: &str,
+    help: &str,
+    labels: &[&str],
+) -> Result<IntGaugeVec, DomainError> {
+    let metric =
+        IntGaugeVec::new(Opts::new(name, help), labels).map_err(|err| metrics_error(&err))?;
+    registry
+        .register(Box::new(metric.clone()))
+        .map_err(|err| metrics_error(&err))?;
+    Ok(metric)
+}
+
 /// Map a Prometheus setup failure to a fail-fast wiring error.
 fn metrics_error(err: &prometheus::Error) -> DomainError {
     tracing::error!(error = %err, "prometheus metrics setup failed");
@@ -285,6 +339,8 @@ mod tests {
         recorder.record_provider_error("vllm", LlmErrorKind::RateLimited);
         recorder.record_judge_tokens("gemma", TokenUsage::new(10, 5));
         recorder.record_provider_tokens("vllm", TokenUsage::new(10, 5));
+        recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(1_000));
+        recorder.inc_provider_in_flight("vllm");
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -296,6 +352,24 @@ mod tests {
         assert!(text.contains("# TYPE choreo_provider_errors_total counter"));
         assert!(text.contains("# TYPE choreo_judge_tokens_total counter"));
         assert!(text.contains("# TYPE choreo_provider_tokens_total counter"));
+        assert!(text.contains("# TYPE choreo_provider_request_duration_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_provider_in_flight gauge"));
+    }
+
+    #[test]
+    fn provider_in_flight_gauge_tracks_inc_and_dec() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.inc_provider_in_flight("vllm");
+        recorder.inc_provider_in_flight("vllm");
+        recorder.dec_provider_in_flight("vllm");
+        recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(2_000));
+
+        let text = recorder.render();
+        // Two starts, one finish -> depth 1.
+        assert!(text.contains("choreo_provider_in_flight{provider=\"vllm\"} 1"));
+        assert!(text.contains(
+            "choreo_provider_request_duration_seconds_sum{operation=\"generate\",provider=\"vllm\"} 2"
+        ));
     }
 
     #[test]
