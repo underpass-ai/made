@@ -836,6 +836,15 @@ mod tests {
             _usage: choreo_core::value_objects::TokenUsage,
         ) {
         }
+        fn observe_provider_request(
+            &self,
+            _provider: &str,
+            _operation: &str,
+            _duration: DurationMs,
+        ) {
+        }
+        fn inc_provider_in_flight(&self, _provider: &str) {}
+        fn dec_provider_in_flight(&self, _provider: &str) {}
     }
 
     // --- Fixture helpers --------------------------------------------------

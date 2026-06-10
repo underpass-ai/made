@@ -31,6 +31,7 @@ use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
 use reqwest::Client;
 use tracing::{debug, warn};
 
+use super::instrument::ProviderCallGuard;
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 use super::prompts;
 
@@ -209,6 +210,9 @@ impl OpenAiAgent {
         user: String,
         op: &str,
     ) -> Result<String, DomainError> {
+        // Records latency + in-flight on every return path (incl. the `?`
+        // error sites) when dropped at the end of the call.
+        let _guard = ProviderCallGuard::enter(self.metrics.as_ref(), PROVIDER, op);
         let body = ChatRequest {
             model: &self.config.model,
             max_tokens: self.config.max_tokens,

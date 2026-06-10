@@ -33,6 +33,7 @@ use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
+use super::instrument::ProviderCallGuard;
 use super::prompts;
 
 /// Provider label for this adapter's error metrics.
@@ -206,6 +207,9 @@ impl AnthropicAgent {
         user: String,
         op: &str,
     ) -> Result<String, DomainError> {
+        // Records latency + in-flight on every return path (incl. the `?`
+        // error sites) when dropped at the end of the call.
+        let _guard = ProviderCallGuard::enter(self.metrics.as_ref(), PROVIDER, op);
         let body = MessagesRequest {
             model: &self.config.model,
             max_tokens: self.config.max_tokens,

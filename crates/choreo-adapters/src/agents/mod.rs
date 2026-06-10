@@ -32,6 +32,10 @@ mod openai_compat;
 #[cfg(feature = "_http")]
 mod endpoint;
 
+// Shared latency + in-flight instrumentation for HTTP provider calls.
+#[cfg(feature = "_http")]
+mod instrument;
+
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
 pub mod judge;
 
