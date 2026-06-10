@@ -8,6 +8,7 @@ mod agent_kind;
 mod attributes;
 mod ceremony;
 mod council_selector;
+mod deliberation_outcome;
 mod duration;
 mod ids;
 mod num_agents;
@@ -32,6 +33,7 @@ pub use ceremony::{
     StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use council_selector::CouncilSelector;
+pub use deliberation_outcome::DeliberationOutcome;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use num_agents::NumAgents;

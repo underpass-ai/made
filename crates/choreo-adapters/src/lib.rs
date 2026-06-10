@@ -14,6 +14,7 @@
 //! | [`memory::InMemoryCouncilRegistry`] | `CouncilRegistryPort`             |
 //! | [`memory::InMemoryDeliberationRepository`] | `DeliberationRepositoryPort` |
 //! | [`memory::InMemoryAgentRegistry`]   | `AgentResolverPort` (+ writes)    |
+//! | [`metrics::PrometheusMetricsRecorder`] | `MetricsRecorderPort`          |
 //! | [`noop::NoopAgent`]                 | `AgentPort` (deterministic; tests / demos) |
 //! | [`noop::NoopExecutor`]              | `ExecutorPort`                    |
 //! | [`noop::NoopMessaging`]             | `MessagingPort`                   |
@@ -40,6 +41,7 @@ pub mod clock;
 pub mod config;
 pub mod memory;
 pub mod mermaid;
+pub mod metrics;
 pub mod noop;
 pub mod runtime;
 pub mod scoring;

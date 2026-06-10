@@ -271,6 +271,7 @@ fn build_usecase() -> DeliberateUseCase {
         Arc::new(NullRepo),
         Arc::new(NullBus),
         Arc::new(NullStats),
+        Arc::new(choreo_core::ports::NoopMetricsRecorder),
         "test",
     )
 }

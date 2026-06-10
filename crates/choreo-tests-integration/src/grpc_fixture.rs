@@ -123,6 +123,7 @@ impl GrpcFixture {
             repository.clone(),
             messaging.clone(),
             statistics.clone(),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
             "choreographer-tests",
         ));
         let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
@@ -281,6 +282,7 @@ impl GrpcFixture {
             repository.clone(),
             messaging.clone(),
             statistics.clone(),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
             "choreographer-tests",
         ));
         let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =

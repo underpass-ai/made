@@ -1,0 +1,196 @@
+//! [`PrometheusMetricsRecorder`] — Prometheus-backed [`MetricsRecorderPort`].
+//!
+//! Holds an explicit [`Registry`] and a typed handle per metric family —
+//! no global recorder, so the composition root owns the metrics' lifetime
+//! like every other adapter. Recording is lock-free (Prometheus uses
+//! atomics under the hood), matching the port's infallible, synchronous
+//! contract. The binary's `/metrics` handler renders the registry through
+//! [`render`](PrometheusMetricsRecorder::render).
+//!
+//! Unit conventions: latency histograms are in **seconds**; scores are the
+//! raw `[0.0, 1.0]` value. Conversion from the domain's millisecond
+//! durations happens here so the port stays domain-typed.
+
+use choreo_core::error::DomainError;
+use choreo_core::ports::MetricsRecorderPort;
+use choreo_core::value_objects::{DeliberationOutcome, DurationMs, Score, Specialty};
+use prometheus::{Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
+
+/// Latency buckets (seconds) sized for serialized vLLM deliberations,
+/// which run from a second or two up into minutes.
+const DURATION_BUCKETS_SECONDS: &[f64] =
+    &[0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 120.0, 300.0];
+
+/// Score buckets across the closed `[0.0, 1.0]` range.
+const SCORE_BUCKETS: &[f64] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
+
+pub struct PrometheusMetricsRecorder {
+    registry: Registry,
+    deliberation_duration_seconds: HistogramVec,
+    deliberation_winner_score: HistogramVec,
+    deliberation_completed_total: IntCounterVec,
+}
+
+impl PrometheusMetricsRecorder {
+    /// Build the recorder, defining and registering every metric family.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`DomainError::InvariantViolated`] if a metric fails to
+    /// register — a duplicate name or malformed label is a wiring bug,
+    /// surfaced at composition time rather than silently at runtime.
+    pub fn new() -> Result<Self, DomainError> {
+        let registry = Registry::new();
+
+        let deliberation_duration_seconds = HistogramVec::new(
+            HistogramOpts::new(
+                "choreo_deliberation_duration_seconds",
+                "End-to-end wall-clock duration of a deliberation that ran to completion.",
+            )
+            .buckets(DURATION_BUCKETS_SECONDS.to_vec()),
+            &["specialty"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
+        let deliberation_winner_score = HistogramVec::new(
+            HistogramOpts::new(
+                "choreo_deliberation_winner_score",
+                "Score of the winning proposal of a deliberation.",
+            )
+            .buckets(SCORE_BUCKETS.to_vec()),
+            &["specialty"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
+        let deliberation_completed_total = IntCounterVec::new(
+            Opts::new(
+                "choreo_deliberation_completed_total",
+                "Deliberations that ran to completion, partitioned by terminal outcome.",
+            ),
+            &["specialty", "outcome"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
+        registry
+            .register(Box::new(deliberation_duration_seconds.clone()))
+            .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(deliberation_winner_score.clone()))
+            .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(deliberation_completed_total.clone()))
+            .map_err(|err| metrics_error(&err))?;
+
+        Ok(Self {
+            registry,
+            deliberation_duration_seconds,
+            deliberation_winner_score,
+            deliberation_completed_total,
+        })
+    }
+
+    /// Render every registered metric in the Prometheus text exposition
+    /// format. Returns an empty string (and logs) on the practically
+    /// impossible event that text encoding fails, so the `/metrics`
+    /// handler can never be brought down by instrumentation.
+    #[must_use]
+    pub fn render(&self) -> String {
+        let metric_families = self.registry.gather();
+        let mut buffer = Vec::new();
+        let encoder = TextEncoder::new();
+        if let Err(err) = encoder.encode(&metric_families, &mut buffer) {
+            tracing::error!(error = %err, "prometheus metrics encode failed");
+            return String::new();
+        }
+        String::from_utf8(buffer).unwrap_or_default()
+    }
+}
+
+impl std::fmt::Debug for PrometheusMetricsRecorder {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // The metric handles are noisy and carry no useful debug signal;
+        // the registry's contents are observable at `/metrics` instead.
+        f.debug_struct("PrometheusMetricsRecorder").finish()
+    }
+}
+
+impl MetricsRecorderPort for PrometheusMetricsRecorder {
+    fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {
+        self.deliberation_duration_seconds
+            .with_label_values(&[specialty.as_str()])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn record_deliberation_outcome(&self, specialty: &Specialty, outcome: DeliberationOutcome) {
+        self.deliberation_completed_total
+            .with_label_values(&[specialty.as_str(), outcome.as_label()])
+            .inc();
+    }
+
+    fn observe_winner_score(&self, specialty: &Specialty, score: Score) {
+        self.deliberation_winner_score
+            .with_label_values(&[specialty.as_str()])
+            .observe(score.get());
+    }
+}
+
+/// Map a Prometheus setup failure to a fail-fast wiring error.
+fn metrics_error(err: &prometheus::Error) -> DomainError {
+    tracing::error!(error = %err, "prometheus metrics setup failed");
+    DomainError::InvariantViolated {
+        reason: "prometheus metrics setup failed",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn specialty() -> Specialty {
+        Specialty::new("reviewer").unwrap()
+    }
+
+    #[test]
+    fn registered_families_render_their_type_metadata_once_observed() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        // Prometheus omits metric families with no observed label sets, so
+        // touch each one before asserting it is exposed.
+        recorder.observe_deliberation_duration(&specialty(), DurationMs::from_millis(1_000));
+        recorder.observe_winner_score(&specialty(), Score::new(0.5).unwrap());
+        recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
+
+        let text = recorder.render();
+        assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_deliberation_winner_score histogram"));
+        assert!(text.contains("# TYPE choreo_deliberation_completed_total counter"));
+    }
+
+    #[test]
+    fn records_outcomes_with_specialty_and_outcome_labels() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
+        recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
+        recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::NoValidProposal);
+
+        let text = recorder.render();
+        assert!(text.contains(
+            "choreo_deliberation_completed_total{outcome=\"success\",specialty=\"reviewer\"} 2"
+        ));
+        assert!(text.contains(
+            "choreo_deliberation_completed_total{outcome=\"no_valid_proposal\",specialty=\"reviewer\"} 1"
+        ));
+    }
+
+    #[test]
+    fn observes_duration_in_seconds_and_winner_score() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.observe_deliberation_duration(&specialty(), DurationMs::from_millis(2_500));
+        recorder.observe_winner_score(&specialty(), Score::new(0.75).unwrap());
+
+        let text = recorder.render();
+        // 2500ms == 2.5s — lands in the histogram's running sum.
+        assert!(text.contains("choreo_deliberation_duration_seconds_sum{specialty=\"reviewer\"} 2.5"));
+        assert!(text.contains("choreo_deliberation_winner_score_sum{specialty=\"reviewer\"} 0.75"));
+        assert!(text.contains("choreo_deliberation_winner_score_count{specialty=\"reviewer\"} 1"));
+    }
+}

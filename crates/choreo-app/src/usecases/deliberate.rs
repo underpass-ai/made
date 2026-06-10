@@ -30,10 +30,10 @@ use choreo_core::error::DomainError;
 use choreo_core::events::{DeliberationCompletedEvent, EventEnvelope};
 use choreo_core::ports::{
     AgentPort, AgentResolverPort, ClockPort, CouncilRegistryPort, DeliberationObserverPort,
-    DeliberationRepositoryPort, DraftRequest, MessagingPort, NullObserver, ScoringPort,
-    StatisticsPort, ValidatorPort,
+    DeliberationRepositoryPort, DraftRequest, MessagingPort, MetricsRecorderPort, NullObserver,
+    ScoringPort, StatisticsPort, ValidatorPort,
 };
-use choreo_core::value_objects::{AgentId, EventId, ProposalId};
+use choreo_core::value_objects::{AgentId, DeliberationOutcome, EventId, ProposalId};
 use time::OffsetDateTime;
 use tracing::{debug, info};
 use uuid::Uuid;
@@ -55,6 +55,7 @@ pub struct DeliberateUseCase {
     repository: Arc<dyn DeliberationRepositoryPort>,
     messaging: Arc<dyn MessagingPort>,
     statistics: Arc<dyn StatisticsPort>,
+    metrics: Arc<dyn MetricsRecorderPort>,
     source: String,
 }
 
@@ -78,6 +79,7 @@ impl DeliberateUseCase {
         repository: Arc<dyn DeliberationRepositoryPort>,
         messaging: Arc<dyn MessagingPort>,
         statistics: Arc<dyn StatisticsPort>,
+        metrics: Arc<dyn MetricsRecorderPort>,
         source: impl Into<String>,
     ) -> Self {
         Self {
@@ -89,6 +91,7 @@ impl DeliberateUseCase {
             repository,
             messaging,
             statistics,
+            metrics,
             source: source.into(),
         }
     }
@@ -171,8 +174,25 @@ impl DeliberateUseCase {
         self.statistics
             .record_deliberation(deliberation.specialty(), duration)
             .await?;
+        // The duration is recorded for every completed run, before the
+        // winner is picked, so a `NoValidProposal` is still timed.
+        self.metrics
+            .observe_deliberation_duration(deliberation.specialty(), duration);
 
-        let winner = Self::pick_winner(&ranked, task.constraints())?;
+        let winner = match Self::pick_winner(&ranked, task.constraints()) {
+            Ok(winner) => winner,
+            Err(err) => {
+                self.metrics.record_deliberation_outcome(
+                    deliberation.specialty(),
+                    DeliberationOutcome::NoValidProposal,
+                );
+                return Err(err);
+            }
+        };
+        self.metrics
+            .record_deliberation_outcome(deliberation.specialty(), DeliberationOutcome::Success);
+        self.metrics
+            .observe_winner_score(deliberation.specialty(), winner.outcome().score());
 
         let completion_event = DeliberationCompletedEvent::new_with_context(
             self.envelope(completed_at, task.metadata())?,
@@ -758,6 +778,40 @@ mod tests {
         }
     }
 
+    // --- Metrics ----------------------------------------------------------
+
+    use choreo_core::ports::{MetricsRecorderPort, NoopMetricsRecorder};
+    use choreo_core::value_objects::{DeliberationOutcome, DurationMs};
+
+    /// Captures every observation so tests can assert what the use case
+    /// recorded, keyed by specialty.
+    #[derive(Default)]
+    struct RecordingMetrics {
+        durations: Mutex<Vec<(String, u64)>>,
+        outcomes: Mutex<Vec<(String, &'static str)>>,
+        winner_scores: Mutex<Vec<(String, f64)>>,
+    }
+    impl MetricsRecorderPort for RecordingMetrics {
+        fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {
+            self.durations
+                .lock()
+                .unwrap()
+                .push((specialty.as_str().to_owned(), duration.get()));
+        }
+        fn record_deliberation_outcome(&self, specialty: &Specialty, outcome: DeliberationOutcome) {
+            self.outcomes
+                .lock()
+                .unwrap()
+                .push((specialty.as_str().to_owned(), outcome.as_label()));
+        }
+        fn observe_winner_score(&self, specialty: &Specialty, score: Score) {
+            self.winner_scores
+                .lock()
+                .unwrap()
+                .push((specialty.as_str().to_owned(), score.get()));
+        }
+    }
+
     // --- Fixture helpers --------------------------------------------------
 
     fn specialty() -> Specialty {
@@ -839,17 +893,22 @@ mod tests {
         .unwrap()
     }
 
-    fn fixture(
+    /// Build a use case with every collaborator supplied — the single
+    /// constructor the typed fixtures below delegate to, so the metrics
+    /// recorder (and scoring/validators) can vary per test without
+    /// duplicating the wiring.
+    fn build_usecase(
         agents: Vec<Arc<dyn AgentPort>>,
         council: Council,
+        scoring: Arc<dyn ScoringPort>,
+        validators: Vec<Arc<dyn ValidatorPort>>,
+        metrics: Arc<dyn MetricsRecorderPort>,
     ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
         let clock = Arc::new(FrozenClock {
             now: datetime!(2026-04-15 12:00:00 UTC),
         });
         let registry = Arc::new(FixedRegistry { council });
         let resolver = Arc::new(StubResolver::new(agents));
-        let validators: Vec<Arc<dyn ValidatorPort>> = vec![Arc::new(ContentLengthValidator)];
-        let scoring: Arc<dyn ScoringPort> = Arc::new(LinearScoring);
         let repo = Arc::new(InMemoryRepo::default());
         let bus = Arc::new(NullBus::default());
 
@@ -863,9 +922,39 @@ mod tests {
             repo.clone(),
             bus.clone(),
             stats,
+            metrics,
             "choreographer",
         );
         (usecase, repo, bus)
+    }
+
+    fn fixture(
+        agents: Vec<Arc<dyn AgentPort>>,
+        council: Council,
+    ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
+        build_usecase(
+            agents,
+            council,
+            Arc::new(LinearScoring),
+            vec![Arc::new(ContentLengthValidator)],
+            Arc::new(NoopMetricsRecorder),
+        )
+    }
+
+    /// Like [`fixture`] but with a caller-supplied metrics recorder so a
+    /// test can assert what the deliberation observed.
+    fn fixture_with_metrics(
+        agents: Vec<Arc<dyn AgentPort>>,
+        council: Council,
+        metrics: Arc<dyn MetricsRecorderPort>,
+    ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
+        build_usecase(
+            agents,
+            council,
+            Arc::new(LinearScoring),
+            vec![Arc::new(ContentLengthValidator)],
+            metrics,
+        )
     }
 
     // --- Tests ------------------------------------------------------------
@@ -1325,27 +1414,7 @@ mod tests {
         scoring: Arc<dyn ScoringPort>,
         validators: Vec<Arc<dyn ValidatorPort>>,
     ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
-        let clock = Arc::new(FrozenClock {
-            now: datetime!(2026-04-15 12:00:00 UTC),
-        });
-        let registry = Arc::new(FixedRegistry { council });
-        let resolver = Arc::new(StubResolver::new(agents));
-        let repo = Arc::new(InMemoryRepo::default());
-        let bus = Arc::new(NullBus::default());
-
-        let stats: Arc<dyn choreo_core::ports::StatisticsPort> = Arc::new(NullStats);
-        let usecase = DeliberateUseCase::new(
-            clock,
-            registry,
-            resolver,
-            validators,
-            scoring,
-            repo.clone(),
-            bus.clone(),
-            stats,
-            "choreographer",
-        );
-        (usecase, repo, bus)
+        build_usecase(agents, council, scoring, validators, Arc::new(NoopMetricsRecorder))
     }
 
     #[tokio::test]
@@ -1430,5 +1499,68 @@ mod tests {
         // or any completion event is published — no half-finished state.
         assert!(repo.saved.lock().unwrap().is_empty());
         assert!(bus.completed.lock().unwrap().is_empty());
+    }
+
+    #[tokio::test]
+    async fn records_success_outcome_winner_score_and_duration() {
+        let council = council_with(&["a1", "a2"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> = vec![
+            StubAgent::new("a1", &sp, "a valid proposal", vec![]) as Arc<dyn AgentPort>,
+            StubAgent::new("a2", &sp, "another valid proposal", vec![]) as Arc<dyn AgentPort>,
+        ];
+        let metrics = Arc::new(RecordingMetrics::default());
+        let (usecase, _repo, _bus) = fixture_with_metrics(agents, council, metrics.clone());
+
+        usecase
+            .execute(task(TaskConstraints::new(
+                Rubric::empty(),
+                Rounds::new(0).unwrap(),
+                None,
+                None,
+            )))
+            .await
+            .unwrap();
+
+        // Exactly one success outcome, for the right specialty.
+        assert_eq!(
+            metrics.outcomes.lock().unwrap().as_slice(),
+            &[("reviewer".to_owned(), "success")]
+        );
+        // A winner score and a duration were observed for the run.
+        assert_eq!(metrics.winner_scores.lock().unwrap().len(), 1);
+        assert_eq!(metrics.durations.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn records_no_valid_proposal_outcome_without_a_winner_score() {
+        let council = council_with(&["a1"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> =
+            vec![StubAgent::new("a1", &sp, "plain text", vec![]) as Arc<dyn AgentPort>];
+        let metrics = Arc::new(RecordingMetrics::default());
+        let (usecase, _repo, _bus) = build_usecase(
+            agents,
+            council,
+            Arc::new(PreferInvalidScore),
+            vec![Arc::new(JsonObjectContractValidator)],
+            metrics.clone(),
+        );
+
+        let err = usecase
+            .execute(task(structured_constraints()))
+            .await
+            .unwrap_err();
+        assert!(matches!(err, DomainError::NoValidProposal { .. }));
+
+        // The failure outcome is recorded, and no winner score is — there
+        // was no winner. The duration is still timed (it precedes the
+        // winner selection).
+        assert_eq!(
+            metrics.outcomes.lock().unwrap().as_slice(),
+            &[("reviewer".to_owned(), "no_valid_proposal")]
+        );
+        assert!(metrics.winner_scores.lock().unwrap().is_empty());
+        assert_eq!(metrics.durations.lock().unwrap().len(), 1);
     }
 }
