@@ -14,7 +14,7 @@ use tracing::info;
 use super::DeliberationStepConfig;
 
 /// Attribute key under which a deliberation winner's content is stored.
-const WINNER_CONTENT_KEY: &str = "winner_content";
+pub(crate) const WINNER_CONTENT_KEY: &str = "winner_content";
 /// Defensive per-turn cap when rendering a prior contribution into the
 /// prompt, so one runaway turn cannot dominate the brief.
 const MAX_RENDERED_CONTRIBUTION_LEN: usize = 4000;

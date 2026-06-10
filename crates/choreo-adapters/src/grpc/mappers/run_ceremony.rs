@@ -64,6 +64,15 @@ pub fn run_ceremony_response_from(output: &RunCeremonyOutput) -> pb::RunCeremony
                 role_id: trace.role_id().as_str().to_owned(),
                 status: step_status_to_proto(trace.status()).to_owned(),
                 attempt: trace.attempt().get(),
+                // Surface the deliberation winner's content so the response
+                // carries the meeting's record, not just step statuses.
+                output: trace
+                    .output()
+                    .attributes()
+                    .get(crate::ceremony::WINNER_CONTENT_KEY)
+                    .and_then(|value| value.as_str())
+                    .unwrap_or_default()
+                    .to_owned(),
             })
             .collect(),
         mermaid_sequence: CeremonyConversationDiagram::render(definition),
@@ -188,6 +197,15 @@ roles:
                 RoleId::new("RUNNER").unwrap(),
                 StepAttempt::FIRST,
                 StepStatus::Completed,
+                StepOutput::new(
+                    choreo_core::value_objects::Attributes::new(std::collections::BTreeMap::from(
+                        [(
+                            crate::ceremony::WINNER_CONTENT_KEY.to_owned(),
+                            serde_json::json!("the agreed build plan"),
+                        )],
+                    ))
+                    .unwrap(),
+                ),
             )],
         );
 
@@ -197,6 +215,7 @@ roles:
         assert_eq!(response.final_state, "DONE");
         assert_eq!(response.steps.len(), 1);
         assert_eq!(response.steps[0].status, "COMPLETED");
+        assert_eq!(response.steps[0].output, "the agreed build plan");
         assert!(response.mermaid_sequence.contains("sequenceDiagram"));
     }
 }

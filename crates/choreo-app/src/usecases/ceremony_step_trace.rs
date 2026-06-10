@@ -1,4 +1,4 @@
-use choreo_core::value_objects::{RoleId, StateId, StepAttempt, StepId, StepStatus};
+use choreo_core::value_objects::{RoleId, StateId, StepAttempt, StepId, StepOutput, StepStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CeremonyStepTrace {
@@ -7,6 +7,7 @@ pub struct CeremonyStepTrace {
     role_id: RoleId,
     attempt: StepAttempt,
     status: StepStatus,
+    output: StepOutput,
 }
 
 impl CeremonyStepTrace {
@@ -17,6 +18,7 @@ impl CeremonyStepTrace {
         role_id: RoleId,
         attempt: StepAttempt,
         status: StepStatus,
+        output: StepOutput,
     ) -> Self {
         Self {
             state_id,
@@ -24,6 +26,7 @@ impl CeremonyStepTrace {
             role_id,
             attempt,
             status,
+            output,
         }
     }
 
@@ -50,5 +53,10 @@ impl CeremonyStepTrace {
     #[must_use]
     pub fn status(&self) -> StepStatus {
         self.status
+    }
+
+    #[must_use]
+    pub fn output(&self) -> &StepOutput {
+        &self.output
     }
 }

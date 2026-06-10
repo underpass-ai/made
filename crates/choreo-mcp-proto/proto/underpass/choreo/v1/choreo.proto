@@ -599,6 +599,11 @@ message CeremonyStepExecution {
   string role_id = 3;
   string status = 4;
   uint32 attempt = 5;
+  // The step's produced output — for a deliberating step, the winning
+  // proposal's content. Lets a caller read the meeting's record (what each
+  // role contributed) straight from the response. Empty for steps that
+  // produce no textual output.
+  string output = 6;
 }
 
 message RunCeremonyResponse {

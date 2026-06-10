@@ -37,11 +37,16 @@ COPY crates ./crates
 # adapters use). `agent-anthropic` stays off to keep the production
 # image minimal; operators that need it build a downstream image
 # that flips the corresponding flag.
+#
+# `otel` is compiled in but dormant: it exports spans over OTLP only
+# when `CHOREO_OTLP_ENDPOINT` is set, so an image without that env is
+# byte-for-byte the same behaviour as before (JSON spans to stdout).
 RUN --mount=type=cache,id=cargo-registry-choreo,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-choreo,target=/src/target \
     cargo build --release --locked --bin choreo \
         --features choreo-adapters/agent-openai \
         --features choreo-adapters/agent-vllm \
+        --features choreo/otel \
  && install -Dm 0755 target/release/choreo /out/choreo
 
 # ---------------------------------------------------------------------------
