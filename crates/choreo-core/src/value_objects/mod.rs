@@ -7,6 +7,7 @@
 mod agent_kind;
 mod attributes;
 mod ceremony;
+mod ceremony_outcome;
 mod council_selector;
 mod deliberation_outcome;
 mod discrimination;
@@ -35,6 +36,7 @@ pub use ceremony::{
     StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepLease,
     StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
+pub use ceremony_outcome::CeremonyOutcome;
 pub use council_selector::CouncilSelector;
 pub use deliberation_outcome::DeliberationOutcome;
 pub use discrimination::Discrimination;

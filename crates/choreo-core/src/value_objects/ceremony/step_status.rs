@@ -28,6 +28,19 @@ impl StepStatus {
     pub fn is_success(self) -> bool {
         self == Self::Completed
     }
+
+    /// Stable, low-cardinality label value for metrics exposition.
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::InProgress => "in_progress",
+            Self::Completed => "completed",
+            Self::Failed => "failed",
+            Self::WaitingForHuman => "waiting_for_human",
+            Self::Cancelled => "cancelled",
+        }
+    }
 }
 
 impl TryFrom<&str> for StepStatus {

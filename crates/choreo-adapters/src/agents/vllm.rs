@@ -511,6 +511,33 @@ mod tests {
             _result: choreo_core::value_objects::Discrimination,
         ) {
         }
+        fn record_ceremony_outcome(
+            &self,
+            _ceremony: &str,
+            _outcome: choreo_core::value_objects::CeremonyOutcome,
+        ) {
+        }
+        fn observe_ceremony_duration(
+            &self,
+            _ceremony: &str,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) {
+        }
+        fn observe_ceremony_step_duration(
+            &self,
+            _ceremony: &str,
+            _step: &str,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) {
+        }
+        fn record_ceremony_step(
+            &self,
+            _ceremony: &str,
+            _step: &str,
+            _status: choreo_core::value_objects::StepStatus,
+        ) {
+        }
+        fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {

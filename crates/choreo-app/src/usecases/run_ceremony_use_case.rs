@@ -6,16 +6,24 @@ use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
     CeremonyContextStorePort, CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MetricsRecorderPort,
+    NoopMetricsRecorder,
 };
 use choreo_core::value_objects::{
-    CeremonyStepContribution, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
-    StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
+    CeremonyOutcome, CeremonyStepContribution, CeremonyTranscript, DurationMs, IdempotencyKey,
+    LeaseOwnerId, RoleId, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
+use time::OffsetDateTime;
 
 use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
+
+/// Whole-millisecond duration between two clock readings, saturating at
+/// zero so a non-monotonic clock can never produce a negative latency.
+fn ms_since(start: OffsetDateTime, end: OffsetDateTime) -> DurationMs {
+    DurationMs::from_millis(u64::try_from((end - start).whole_milliseconds()).unwrap_or(0))
+}
 
 pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
@@ -23,6 +31,7 @@ pub struct RunCeremonyUseCase {
     handler: Arc<dyn CeremonyStepHandlerPort>,
     context_store: Arc<dyn CeremonyContextStorePort>,
     clock: Arc<dyn ClockPort>,
+    metrics: Arc<dyn MetricsRecorderPort>,
 }
 
 impl std::fmt::Debug for RunCeremonyUseCase {
@@ -46,9 +55,22 @@ impl RunCeremonyUseCase {
             handler,
             context_store,
             clock,
+            metrics: Arc::new(NoopMetricsRecorder),
         }
     }
 
+    /// Attach a metrics recorder so ceremony outcomes, durations and step
+    /// status are counted. The composition root wires the real recorder;
+    /// the default no-op keeps tests and bespoke uses free of one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
+    }
+
+    // The ceremony driver is one cohesive FSM loop; splitting it would
+    // scatter the state-machine logic and its interleaved instrumentation.
+    #[allow(clippy::too_many_lines)]
     #[tracing::instrument(
         name = "run_ceremony",
         skip_all,
@@ -56,15 +78,18 @@ impl RunCeremonyUseCase {
     )]
     pub async fn execute(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
         let (id, definition, context, lease_owner_id, lease_ttl) = input.into_parts();
+        let ceremony_name = definition.name().as_str().to_owned();
         if self.instances.exists(&id).await? {
+            self.metrics
+                .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::AlreadyExists);
             return Err(DomainError::AlreadyExists {
                 what: "ceremony_instance",
             });
         }
         self.definitions.save(&definition).await?;
 
-        let mut instance =
-            CeremonyInstance::start(id.clone(), &definition, context, self.clock.now());
+        let started_at = self.clock.now();
+        let mut instance = CeremonyInstance::start(id.clone(), &definition, context, started_at);
         self.instances.save(&instance).await?;
 
         let max_iterations = definition
@@ -75,6 +100,12 @@ impl RunCeremonyUseCase {
         let mut step_traces = Vec::new();
         for _ in 0..max_iterations {
             if instance.is_completed(&definition) {
+                self.metrics.observe_ceremony_duration(
+                    &ceremony_name,
+                    ms_since(started_at, self.clock.now()),
+                );
+                self.metrics
+                    .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::Completed);
                 return Ok(RunCeremonyOutput::new(definition, instance, step_traces));
             }
 
@@ -92,6 +123,7 @@ impl RunCeremonyUseCase {
                 }
                 let role_id = definition.role_id_for_step(&step_id)?;
                 let transcript = self.context_store.transcript(&id).await?;
+                let step_started = self.clock.now();
                 let (attempt, step_result) = self
                     .run_step(
                         &definition,
@@ -104,6 +136,16 @@ impl RunCeremonyUseCase {
                         transcript,
                     )
                     .await?;
+                self.metrics.observe_ceremony_step_duration(
+                    &ceremony_name,
+                    step_id.as_str(),
+                    ms_since(step_started, self.clock.now()),
+                );
+                self.metrics.record_ceremony_step(
+                    &ceremony_name,
+                    step_id.as_str(),
+                    step_result.status(),
+                );
                 if step_result.is_success() {
                     self.context_store
                         .append(
@@ -125,6 +167,8 @@ impl RunCeremonyUseCase {
                     step_result.output().clone(),
                 ));
                 if !step_result.is_success() {
+                    self.metrics
+                        .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::StepFailed);
                     return Err(DomainError::InvariantViolated {
                         reason: "ceremony step did not complete successfully",
                     });
@@ -132,13 +176,27 @@ impl RunCeremonyUseCase {
             }
 
             if instance.is_completed(&definition) {
+                self.metrics.observe_ceremony_duration(
+                    &ceremony_name,
+                    ms_since(started_at, self.clock.now()),
+                );
+                self.metrics
+                    .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::Completed);
                 return Ok(RunCeremonyOutput::new(definition, instance, step_traces));
             }
-            let transition = definition
-                .next_satisfied_transition(&state_id, instance.step_records(), instance.context())
-                .ok_or(DomainError::InvariantViolated {
+            let Some(transition) = definition.next_satisfied_transition(
+                &state_id,
+                instance.step_records(),
+                instance.context(),
+            ) else {
+                self.metrics
+                    .record_ceremony_transition_blocked(&ceremony_name, state_id.as_str());
+                self.metrics
+                    .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::NoTransition);
+                return Err(DomainError::InvariantViolated {
                     reason: "no satisfied ceremony transition is available",
-                })?;
+                });
+            };
             let role_id = definition.role_id_for_transition(transition.trigger())?;
             instance.apply_transition_as(
                 &definition,
@@ -149,6 +207,8 @@ impl RunCeremonyUseCase {
             self.instances.save(&instance).await?;
         }
 
+        self.metrics
+            .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::IterationLimit);
         Err(DomainError::InvariantViolated {
             reason: "ceremony execution exceeded transition safety limit",
         })
