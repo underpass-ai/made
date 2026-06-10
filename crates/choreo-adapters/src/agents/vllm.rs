@@ -21,18 +21,24 @@
 //! redaction so it cannot slip through logs.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use choreo_core::entities::TaskConstraints;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AgentPort, Critique, DraftRequest, Revision};
-use choreo_core::value_objects::{AgentId, Specialty};
+use choreo_core::ports::{
+    AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
+};
+use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, warn};
 
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 use super::prompts;
+
+/// Provider label for this adapter's error metrics.
+const PROVIDER: &str = "vllm";
 
 /// Static error reasons for the vLLM provider.
 const VLLM_ERRORS: ErrorStrings = ErrorStrings {
@@ -227,6 +233,7 @@ pub struct VllmAgent {
     specialty: Specialty,
     config: VllmConfig,
     http: Client,
+    metrics: Arc<dyn MetricsRecorderPort>,
 }
 
 impl fmt::Debug for VllmAgent {
@@ -262,7 +269,17 @@ impl VllmAgent {
             specialty,
             config,
             http,
+            metrics: Arc::new(NoopMetricsRecorder),
         })
+    }
+
+    /// Attach a metrics recorder so provider failures are counted. The
+    /// composition root wires the real recorder; the default is a no-op,
+    /// so tests and bespoke uses need not supply one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     async fn complete(
@@ -297,6 +314,12 @@ impl VllmAgent {
         };
 
         let response = request.send().await.map_err(|err| {
+            let kind = if err.is_timeout() {
+                LlmErrorKind::Timeout
+            } else {
+                LlmErrorKind::Transport
+            };
+            self.metrics.record_provider_error(PROVIDER, kind);
             warn!(
                 op,
                 agent_id = self.id.as_str(),
@@ -310,6 +333,8 @@ impl VllmAgent {
 
         let status = response.status();
         if !status.is_success() {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::from_status(status.as_u16()));
             let body_text = response.text().await.unwrap_or_default();
             warn!(
                 op,
@@ -322,6 +347,8 @@ impl VllmAgent {
         }
 
         let parsed: ChatResponse = response.json().await.map_err(|err| {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::MalformedBody);
             warn!(
                 op,
                 agent_id = self.id.as_str(),
@@ -334,6 +361,8 @@ impl VllmAgent {
         })?;
 
         wire::extract_text(parsed, &VLLM_ERRORS).inspect_err(|_| {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
             warn!(op, agent_id = self.id.as_str(), "vllm: empty text content");
         })
     }
@@ -409,6 +438,35 @@ mod tests {
             config,
         )
         .unwrap()
+    }
+
+    /// Captures `record_provider_error` so a test can assert the
+    /// classification an agent failure produced. Every other method is a
+    /// no-op.
+    #[derive(Default)]
+    struct CapturingMetrics {
+        provider_errors: std::sync::Mutex<Vec<&'static str>>,
+    }
+    impl MetricsRecorderPort for CapturingMetrics {
+        fn observe_deliberation_duration(
+            &self,
+            _s: &Specialty,
+            _d: choreo_core::value_objects::DurationMs,
+        ) {
+        }
+        fn record_deliberation_outcome(
+            &self,
+            _s: &Specialty,
+            _o: choreo_core::value_objects::DeliberationOutcome,
+        ) {
+        }
+        fn observe_winner_score(&self, _s: &Specialty, _sc: choreo_core::value_objects::Score) {}
+        fn observe_judge_latency(&self, _m: &str, _d: choreo_core::value_objects::DurationMs) {}
+        fn observe_judge_score(&self, _m: &str, _sc: choreo_core::value_objects::Score) {}
+        fn record_judge_error(&self, _m: &str, _k: LlmErrorKind) {}
+        fn record_provider_error(&self, _provider: &str, kind: LlmErrorKind) {
+            self.provider_errors.lock().unwrap().push(kind.as_label());
+        }
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {
@@ -753,6 +811,24 @@ mod tests {
                 reason: "vllm: rate-limited"
             }
         ));
+    }
+
+    #[tokio::test]
+    async fn rate_limited_response_records_a_provider_error() {
+        let server = MockServer::start().await;
+        Mock::given(any())
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+
+        let metrics = Arc::new(CapturingMetrics::default());
+        let agent = test_agent(&server).with_metrics(metrics.clone());
+        let _ = agent.generate(draft()).await.unwrap_err();
+
+        assert_eq!(
+            metrics.provider_errors.lock().unwrap().as_slice(),
+            &["rate_limited"]
+        );
     }
 
     #[tokio::test]

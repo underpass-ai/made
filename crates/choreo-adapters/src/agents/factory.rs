@@ -27,6 +27,7 @@
 //! - `provider.max_tokens` (number, ≤ `u32::MAX`)
 //! - `provider.timeout_secs` (number, ≤ `u32::MAX`; vLLM only)
 
+use std::fmt;
 use std::sync::Arc;
 #[cfg(any(
     feature = "agent-anthropic",
@@ -37,7 +38,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AgentDescriptor, AgentFactoryPort, AgentPort};
+use choreo_core::ports::{
+    AgentDescriptor, AgentFactoryPort, AgentPort, MetricsRecorderPort, NoopMetricsRecorder,
+};
 #[cfg(any(
     feature = "agent-anthropic",
     feature = "agent-openai",
@@ -86,7 +89,7 @@ const ATTR_TIMEOUT_SECS: &str = "provider.timeout_secs";
 ///
 /// Built via [`DispatchingAgentFactory::from_env`] in production; the
 /// `with_*` builders are kept for tests and bespoke composition.
-#[derive(Debug, Default, Clone)]
+#[derive(Clone)]
 pub struct DispatchingAgentFactory {
     #[cfg(feature = "agent-anthropic")]
     anthropic: Option<AnthropicConfig>,
@@ -94,12 +97,46 @@ pub struct DispatchingAgentFactory {
     openai: Option<OpenAiConfig>,
     #[cfg(feature = "agent-vllm")]
     vllm: Option<VllmConfig>,
+    /// Recorder forwarded to every agent this factory materializes, so
+    /// provider failures are counted. Defaults to a no-op.
+    metrics: Arc<dyn MetricsRecorderPort>,
+}
+
+impl Default for DispatchingAgentFactory {
+    fn default() -> Self {
+        Self {
+            #[cfg(feature = "agent-anthropic")]
+            anthropic: None,
+            #[cfg(feature = "agent-openai")]
+            openai: None,
+            #[cfg(feature = "agent-vllm")]
+            vllm: None,
+            metrics: Arc::new(NoopMetricsRecorder),
+        }
+    }
+}
+
+impl fmt::Debug for DispatchingAgentFactory {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("DispatchingAgentFactory")
+            .field("supported_kinds", &self.supported_kinds())
+            .finish()
+    }
 }
 
 impl DispatchingAgentFactory {
     #[must_use]
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Attach a metrics recorder, forwarded to every agent this factory
+    /// materializes. The composition root wires the real recorder; the
+    /// default no-op keeps tests and minimal builds free of one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     /// Read provider configurations from `CHOREO_*` env vars.
@@ -223,11 +260,10 @@ impl AgentFactoryPort for DispatchingAgentFactory {
                         reason: "agent factory: anthropic kind requested but not configured",
                     })?;
                 let config = apply_anthropic_attributes(base.clone(), &descriptor.attributes)?;
-                Ok(Arc::new(AnthropicAgent::new(
-                    descriptor.id,
-                    descriptor.specialty,
-                    config,
-                )?))
+                Ok(Arc::new(
+                    AnthropicAgent::new(descriptor.id, descriptor.specialty, config)?
+                        .with_metrics(self.metrics.clone()),
+                ))
             }
 
             #[cfg(feature = "agent-openai")]
@@ -236,11 +272,10 @@ impl AgentFactoryPort for DispatchingAgentFactory {
                     reason: "agent factory: openai kind requested but not configured",
                 })?;
                 let config = apply_openai_attributes(base.clone(), &descriptor.attributes)?;
-                Ok(Arc::new(OpenAiAgent::new(
-                    descriptor.id,
-                    descriptor.specialty,
-                    config,
-                )?))
+                Ok(Arc::new(
+                    OpenAiAgent::new(descriptor.id, descriptor.specialty, config)?
+                        .with_metrics(self.metrics.clone()),
+                ))
             }
 
             #[cfg(feature = "agent-vllm")]
@@ -249,11 +284,10 @@ impl AgentFactoryPort for DispatchingAgentFactory {
                     reason: "agent factory: vllm kind requested but not configured",
                 })?;
                 let config = apply_vllm_attributes(base.clone(), &descriptor.attributes)?;
-                Ok(Arc::new(VllmAgent::new(
-                    descriptor.id,
-                    descriptor.specialty,
-                    config,
-                )?))
+                Ok(Arc::new(
+                    VllmAgent::new(descriptor.id, descriptor.specialty, config)?
+                        .with_metrics(self.metrics.clone()),
+                ))
             }
 
             _ => Err(DomainError::InvariantViolated {

@@ -144,7 +144,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // the validator chain so its verdict drives the ranking.
     let scoring: Arc<dyn ScoringPort> = wire_scoring(&mut validators, metrics_recorder.clone())?;
     let executor = wire_executor().await?;
-    let dispatching_factory = DispatchingAgentFactory::from_env()?;
+    let dispatching_factory =
+        DispatchingAgentFactory::from_env()?.with_metrics(metrics_recorder.clone());
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
     let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(dispatching_factory);
 

@@ -320,6 +320,7 @@ mod tests {
         fn record_judge_error(&self, _model: &str, kind: LlmErrorKind) {
             self.errors.lock().unwrap().push(kind.as_label());
         }
+        fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

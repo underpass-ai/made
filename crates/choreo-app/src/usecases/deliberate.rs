@@ -818,6 +818,12 @@ mod tests {
             _kind: choreo_core::value_objects::LlmErrorKind,
         ) {
         }
+        fn record_provider_error(
+            &self,
+            _provider: &str,
+            _kind: choreo_core::value_objects::LlmErrorKind,
+        ) {
+        }
     }
 
     // --- Fixture helpers --------------------------------------------------
