@@ -32,6 +32,16 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// Observe the score of the winning proposal. Recorded only on the
     /// success path (a `NoValidProposal` outcome has no winner).
     fn observe_winner_score(&self, specialty: &Specialty, score: Score);
+
+    /// Observe the latency of a single LLM-judge rating call, whether it
+    /// succeeded or failed. A call that times out reports a latency near
+    /// the judge's deadline — the leading signal that the judge is
+    /// approaching its timeout cliff.
+    fn observe_judge_latency(&self, model: &str, duration: DurationMs);
+
+    /// Observe a judge's `[0.0, 1.0]` verdict for one proposal — the
+    /// basis for score calibration and threshold tuning.
+    fn observe_judge_score(&self, model: &str, score: Score);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -47,4 +57,6 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_deliberation_duration(&self, _specialty: &Specialty, _duration: DurationMs) {}
     fn record_deliberation_outcome(&self, _specialty: &Specialty, _outcome: DeliberationOutcome) {}
     fn observe_winner_score(&self, _specialty: &Specialty, _score: Score) {}
+    fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
+    fn observe_judge_score(&self, _model: &str, _score: Score) {}
 }

@@ -12,13 +12,14 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::time::Duration;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use choreo_core::entities::{TaskConstraints, ValidatorReport};
 use choreo_core::error::DomainError;
-use choreo_core::ports::ValidatorPort;
-use choreo_core::value_objects::Attributes;
+use choreo_core::ports::{MetricsRecorderPort, ValidatorPort};
+use choreo_core::value_objects::{Attributes, DurationMs, Score};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::warn;
@@ -56,6 +57,7 @@ pub struct LlmJudgeValidator {
     max_tokens: u32,
     threshold: f64,
     http: Client,
+    metrics: Arc<dyn MetricsRecorderPort>,
 }
 
 impl fmt::Debug for LlmJudgeValidator {
@@ -78,6 +80,7 @@ impl LlmJudgeValidator {
         endpoint: impl Into<String>,
         model: impl Into<String>,
         threshold: f64,
+        metrics: Arc<dyn MetricsRecorderPort>,
     ) -> Result<Self, DomainError> {
         let endpoint = super::endpoint::validate_provider_endpoint("judge.endpoint", endpoint)?;
         let model = model.into().trim().to_owned();
@@ -101,6 +104,7 @@ impl LlmJudgeValidator {
             max_tokens: DEFAULT_MAX_TOKENS,
             threshold,
             http,
+            metrics,
         })
     }
 
@@ -119,7 +123,18 @@ impl LlmJudgeValidator {
         Ok(self)
     }
 
+    /// Time one rating call and record its latency, success or failure,
+    /// before propagating the result. Latency is the leading signal of
+    /// the judge approaching its timeout, so it is recorded on every path.
     async fn rate(&self, content: &str) -> Result<f64, DomainError> {
+        let started = Instant::now();
+        let outcome = self.rate_inner(content).await;
+        self.metrics
+            .observe_judge_latency(&self.model, elapsed_ms(started));
+        outcome
+    }
+
+    async fn rate_inner(&self, content: &str) -> Result<f64, DomainError> {
         let user = format!(
             "Rate the following proposal on a 0–100 integer scale (100 = excellent). Respond with \
              ONLY a JSON object: {{\"score\": <integer 0-100>, \"reason\": \"<one short sentence>\"}}. \
@@ -185,6 +200,9 @@ impl ValidatorPort for LlmJudgeValidator {
         _constraints: &TaskConstraints,
     ) -> Result<ValidatorReport, DomainError> {
         let score = self.rate(proposal_content).await?;
+        // `rate` already clamps to [0.0, 1.0], so this is always valid.
+        self.metrics
+            .observe_judge_score(&self.model, Score::new(score).unwrap_or(Score::MIN));
         let details = Attributes::new(BTreeMap::from([(
             JUDGE_SCORE_DETAIL_KEY.to_owned(),
             json!(score),
@@ -196,6 +214,11 @@ impl ValidatorPort for LlmJudgeValidator {
             details,
         )
     }
+}
+
+/// Whole-millisecond latency since `started`, as the domain duration type.
+fn elapsed_ms(started: Instant) -> DurationMs {
+    DurationMs::from_millis(started.elapsed().as_millis() as u64)
 }
 
 fn build_client(timeout: Duration) -> Result<Client, DomainError> {
@@ -237,9 +260,14 @@ fn parse_score(text: &str) -> Result<f64, DomainError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use choreo_core::ports::NoopMetricsRecorder;
     use serde_json::json;
     use wiremock::matchers::{method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
+
+    fn metrics() -> Arc<dyn MetricsRecorderPort> {
+        Arc::new(NoopMetricsRecorder)
+    }
 
     #[test]
     fn parse_score_handles_plain_json() {
@@ -270,7 +298,7 @@ mod tests {
     #[test]
     fn threshold_out_of_range_is_rejected() {
         assert!(matches!(
-            LlmJudgeValidator::new("http://x", "m", 1.5).unwrap_err(),
+            LlmJudgeValidator::new("http://x", "m", 1.5, metrics()).unwrap_err(),
             DomainError::OutOfRange {
                 field: "judge.threshold",
                 ..
@@ -279,7 +307,7 @@ mod tests {
     }
 
     fn judge(server: &MockServer) -> LlmJudgeValidator {
-        LlmJudgeValidator::new(server.uri(), "test-model", 0.5)
+        LlmJudgeValidator::new(server.uri(), "test-model", 0.5, metrics())
             .unwrap()
             .with_timeout(Duration::from_secs(5))
             .unwrap()

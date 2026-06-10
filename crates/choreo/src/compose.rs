@@ -37,7 +37,8 @@ use choreo_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyContextStorePort,
     CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
     ConfigurationPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    ExecutorPort, MessagingPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
+    ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort, ServiceConfig, StatisticsPort,
+    ValidatorPort,
 };
 use thiserror::Error;
 use tracing::info;
@@ -93,8 +94,9 @@ pub enum ComposeError {
 /// misconfigured.
 fn wire_scoring(
     validators: &mut Vec<Arc<dyn ValidatorPort>>,
+    metrics: Arc<dyn MetricsRecorderPort>,
 ) -> Result<Arc<dyn ScoringPort>, DomainError> {
-    match choreo_adapters::agents::judge_from_env()? {
+    match choreo_adapters::agents::judge_from_env(metrics)? {
         Some(judge) => {
             validators.push(judge);
             info!("scoring: LLM judge enabled; ranking by judge verdict");
@@ -140,7 +142,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ];
     // Choose scoring, and when an LLM judge is configured append it to
     // the validator chain so its verdict drives the ranking.
-    let scoring: Arc<dyn ScoringPort> = wire_scoring(&mut validators)?;
+    let scoring: Arc<dyn ScoringPort> = wire_scoring(&mut validators, metrics_recorder.clone())?;
     let executor = wire_executor().await?;
     let dispatching_factory = DispatchingAgentFactory::from_env()?;
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");

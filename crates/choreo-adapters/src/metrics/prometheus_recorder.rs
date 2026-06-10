@@ -27,11 +27,18 @@ const DURATION_BUCKETS_SECONDS: &[f64] = &[
 /// Score buckets across the closed `[0.0, 1.0]` range.
 const SCORE_BUCKETS: &[f64] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
 
+/// Latency buckets (seconds) for judge rating calls, weighted toward the
+/// upper end so a p99 creeping toward the judge's 60s timeout is visible.
+const JUDGE_LATENCY_BUCKETS_SECONDS: &[f64] =
+    &[0.25, 0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 55.0, 60.0];
+
 pub struct PrometheusMetricsRecorder {
     registry: Registry,
     deliberation_duration_seconds: HistogramVec,
     deliberation_winner_score: HistogramVec,
     deliberation_completed_total: IntCounterVec,
+    judge_latency_seconds: HistogramVec,
+    judge_score: HistogramVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -74,6 +81,26 @@ impl PrometheusMetricsRecorder {
         )
         .map_err(|err| metrics_error(&err))?;
 
+        let judge_latency_seconds = HistogramVec::new(
+            HistogramOpts::new(
+                "choreo_judge_latency_seconds",
+                "Latency of a single LLM-judge rating call, success or failure.",
+            )
+            .buckets(JUDGE_LATENCY_BUCKETS_SECONDS.to_vec()),
+            &["model"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
+        let judge_score = HistogramVec::new(
+            HistogramOpts::new(
+                "choreo_judge_score",
+                "Distribution of the LLM judge's 0.0-1.0 verdicts.",
+            )
+            .buckets(SCORE_BUCKETS.to_vec()),
+            &["model"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
         registry
             .register(Box::new(deliberation_duration_seconds.clone()))
             .map_err(|err| metrics_error(&err))?;
@@ -83,12 +110,20 @@ impl PrometheusMetricsRecorder {
         registry
             .register(Box::new(deliberation_completed_total.clone()))
             .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(judge_latency_seconds.clone()))
+            .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(judge_score.clone()))
+            .map_err(|err| metrics_error(&err))?;
 
         Ok(Self {
             registry,
             deliberation_duration_seconds,
             deliberation_winner_score,
             deliberation_completed_total,
+            judge_latency_seconds,
+            judge_score,
         })
     }
 
@@ -135,6 +170,18 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[specialty.as_str()])
             .observe(score.get());
     }
+
+    fn observe_judge_latency(&self, model: &str, duration: DurationMs) {
+        self.judge_latency_seconds
+            .with_label_values(&[model])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn observe_judge_score(&self, model: &str, score: Score) {
+        self.judge_score
+            .with_label_values(&[model])
+            .observe(score.get());
+    }
 }
 
 /// Map a Prometheus setup failure to a fail-fast wiring error.
@@ -161,11 +208,27 @@ mod tests {
         recorder.observe_deliberation_duration(&specialty(), DurationMs::from_millis(1_000));
         recorder.observe_winner_score(&specialty(), Score::new(0.5).unwrap());
         recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
+        recorder.observe_judge_latency("gemma", DurationMs::from_millis(1_000));
+        recorder.observe_judge_score("gemma", Score::new(0.5).unwrap());
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
         assert!(text.contains("# TYPE choreo_deliberation_winner_score histogram"));
         assert!(text.contains("# TYPE choreo_deliberation_completed_total counter"));
+        assert!(text.contains("# TYPE choreo_judge_latency_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_judge_score histogram"));
+    }
+
+    #[test]
+    fn observes_judge_latency_in_seconds_and_score_by_model() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.observe_judge_latency("gemma", DurationMs::from_millis(45_000));
+        recorder.observe_judge_score("gemma", Score::new(0.9).unwrap());
+
+        let text = recorder.render();
+        assert!(text.contains("choreo_judge_latency_seconds_sum{model=\"gemma\"} 45"));
+        assert!(text.contains("choreo_judge_score_sum{model=\"gemma\"} 0.9"));
+        assert!(text.contains("choreo_judge_score_count{model=\"gemma\"} 1"));
     }
 
     #[test]
