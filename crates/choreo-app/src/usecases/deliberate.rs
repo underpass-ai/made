@@ -810,6 +810,8 @@ mod tests {
                 .unwrap()
                 .push((specialty.as_str().to_owned(), score.get()));
         }
+        fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
+        fn observe_judge_score(&self, _model: &str, _score: Score) {}
     }
 
     // --- Fixture helpers --------------------------------------------------

@@ -52,7 +52,7 @@ pub use factory::{
 use std::sync::Arc;
 
 use choreo_core::error::DomainError;
-use choreo_core::ports::ValidatorPort;
+use choreo_core::ports::{MetricsRecorderPort, ValidatorPort};
 
 /// Build the LLM-judge validator from the environment, when enabled.
 ///
@@ -68,16 +68,19 @@ use choreo_core::ports::ValidatorPort;
 /// not compiled in). Returns `Err` — failing fast — when the judge is
 /// explicitly enabled but its endpoint/model/threshold are missing or
 /// invalid.
-pub fn judge_from_env() -> Result<Option<Arc<dyn ValidatorPort>>, DomainError> {
+pub fn judge_from_env(
+    metrics: Arc<dyn MetricsRecorderPort>,
+) -> Result<Option<Arc<dyn ValidatorPort>>, DomainError> {
     if !judge_enabled() {
         return Ok(None);
     }
     #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
     {
-        build_env_judge().map(Some)
+        build_env_judge(metrics).map(Some)
     }
     #[cfg(not(any(feature = "agent-openai", feature = "agent-vllm")))]
     {
+        let _ = metrics;
         tracing::warn!(
             "CHOREO_JUDGE_ENABLED is set but this build has no Chat-Completions \
              provider feature; scoring stays uniform"
@@ -101,7 +104,9 @@ fn judge_enabled() -> bool {
 /// Construct the judge from the vLLM endpoint/model env, failing fast on a
 /// missing or invalid setting.
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]
-fn build_env_judge() -> Result<Arc<dyn ValidatorPort>, DomainError> {
+fn build_env_judge(
+    metrics: Arc<dyn MetricsRecorderPort>,
+) -> Result<Arc<dyn ValidatorPort>, DomainError> {
     let endpoint = std::env::var("CHOREO_VLLM_ENDPOINT").map_err(|_| DomainError::EmptyField {
         field: "judge.endpoint",
     })?;
@@ -118,6 +123,6 @@ fn build_env_judge() -> Result<Arc<dyn ValidatorPort>, DomainError> {
                     field: "judge.threshold",
                 })
         })?;
-    let judge = judge::LlmJudgeValidator::new(endpoint, model, threshold)?;
+    let judge = judge::LlmJudgeValidator::new(endpoint, model, threshold, metrics)?;
     Ok(Arc::new(judge))
 }
