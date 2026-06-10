@@ -28,7 +28,7 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
 };
-use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty};
+use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -276,7 +276,8 @@ impl AnthropicAgent {
             }
         })?;
 
-        extract_text(parsed).inspect_err(|_| {
+        let usage = parsed.usage;
+        let text = extract_text(parsed).inspect_err(|_| {
             self.metrics
                 .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
             warn!(
@@ -284,7 +285,14 @@ impl AnthropicAgent {
                 agent_id = self.id.as_str(),
                 "anthropic: empty text content"
             );
-        })
+        })?;
+        if let Some(usage) = usage {
+            self.metrics.record_provider_tokens(
+                PROVIDER,
+                TokenUsage::new(usage.input_tokens, usage.output_tokens),
+            );
+        }
+        Ok(text)
     }
 }
 
@@ -365,6 +373,19 @@ struct Message<'a> {
 struct MessagesResponse {
     #[serde(default)]
     content: Vec<ContentBlock>,
+    #[serde(default)]
+    usage: Option<AnthropicUsage>,
+}
+
+/// Token accounting block of a Messages API response. Anthropic names
+/// the two sides `input_tokens` / `output_tokens`; they map onto the
+/// shared prompt / completion token types.
+#[derive(Deserialize, Clone, Copy, Default)]
+struct AnthropicUsage {
+    #[serde(default)]
+    input_tokens: u32,
+    #[serde(default)]
+    output_tokens: u32,
 }
 
 #[derive(Deserialize)]

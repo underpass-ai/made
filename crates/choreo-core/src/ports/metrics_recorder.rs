@@ -18,7 +18,9 @@
 //!
 //! [`StatisticsPort`]: super::StatisticsPort
 
-use crate::value_objects::{DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty};
+use crate::value_objects::{
+    DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+};
 
 pub trait MetricsRecorderPort: Send + Sync {
     /// Observe the end-to-end wall-clock duration of a deliberation that
@@ -53,6 +55,14 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// (vllm / openai / anthropic) and [`LlmErrorKind`]. A 429 here is
     /// backpressure into every deliberation that routes to the provider.
     fn record_provider_error(&self, provider: &str, kind: LlmErrorKind);
+
+    /// Record token usage for one LLM-judge call. Combined with judge
+    /// discrimination, this is the cost side of the judge's ROI.
+    fn record_judge_tokens(&self, model: &str, usage: TokenUsage);
+
+    /// Record token usage for one proposing-agent call, by provider —
+    /// cost attribution and prompt-bloat detection.
+    fn record_provider_tokens(&self, provider: &str, usage: TokenUsage);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -72,4 +82,6 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_judge_score(&self, _model: &str, _score: Score) {}
     fn record_judge_error(&self, _model: &str, _kind: LlmErrorKind) {}
     fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
+    fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
+    fn record_provider_tokens(&self, _provider: &str, _usage: TokenUsage) {}
 }

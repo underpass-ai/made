@@ -824,6 +824,18 @@ mod tests {
             _kind: choreo_core::value_objects::LlmErrorKind,
         ) {
         }
+        fn record_judge_tokens(
+            &self,
+            _model: &str,
+            _usage: choreo_core::value_objects::TokenUsage,
+        ) {
+        }
+        fn record_provider_tokens(
+            &self,
+            _provider: &str,
+            _usage: choreo_core::value_objects::TokenUsage,
+        ) {
+        }
     }
 
     // --- Fixture helpers --------------------------------------------------

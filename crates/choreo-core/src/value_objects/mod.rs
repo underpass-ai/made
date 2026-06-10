@@ -19,6 +19,7 @@ mod rubric;
 mod score;
 mod specialty;
 mod task_description;
+mod token_usage;
 mod trace_context;
 mod validation_mode;
 
@@ -45,5 +46,6 @@ pub use rubric::Rubric;
 pub use score::Score;
 pub use specialty::Specialty;
 pub use task_description::TaskDescription;
+pub use token_usage::TokenUsage;
 pub use trace_context::TraceContext;
 pub use validation_mode::ValidationMode;

@@ -13,7 +13,9 @@
 
 use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
-use choreo_core::value_objects::{DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty};
+use choreo_core::value_objects::{
+    DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+};
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
 };
@@ -41,6 +43,8 @@ pub struct PrometheusMetricsRecorder {
     judge_score: HistogramVec,
     judge_errors_total: IntCounterVec,
     provider_errors_total: IntCounterVec,
+    judge_tokens_total: IntCounterVec,
+    provider_tokens_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -53,95 +57,64 @@ impl PrometheusMetricsRecorder {
     /// surfaced at composition time rather than silently at runtime.
     pub fn new() -> Result<Self, DomainError> {
         let registry = Registry::new();
-
-        let deliberation_duration_seconds = HistogramVec::new(
-            HistogramOpts::new(
-                "choreo_deliberation_duration_seconds",
-                "End-to-end wall-clock duration of a deliberation that ran to completion.",
-            )
-            .buckets(DURATION_BUCKETS_SECONDS.to_vec()),
+        let deliberation_duration_seconds = register_histogram(
+            &registry,
+            "choreo_deliberation_duration_seconds",
+            "End-to-end wall-clock duration of a deliberation that ran to completion.",
+            DURATION_BUCKETS_SECONDS,
             &["specialty"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let deliberation_winner_score = HistogramVec::new(
-            HistogramOpts::new(
-                "choreo_deliberation_winner_score",
-                "Score of the winning proposal of a deliberation.",
-            )
-            .buckets(SCORE_BUCKETS.to_vec()),
+        )?;
+        let deliberation_winner_score = register_histogram(
+            &registry,
+            "choreo_deliberation_winner_score",
+            "Score of the winning proposal of a deliberation.",
+            SCORE_BUCKETS,
             &["specialty"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let deliberation_completed_total = IntCounterVec::new(
-            Opts::new(
-                "choreo_deliberation_completed_total",
-                "Deliberations that ran to completion, partitioned by terminal outcome.",
-            ),
+        )?;
+        let deliberation_completed_total = register_counter(
+            &registry,
+            "choreo_deliberation_completed_total",
+            "Deliberations that ran to completion, partitioned by terminal outcome.",
             &["specialty", "outcome"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let judge_latency_seconds = HistogramVec::new(
-            HistogramOpts::new(
-                "choreo_judge_latency_seconds",
-                "Latency of a single LLM-judge rating call, success or failure.",
-            )
-            .buckets(JUDGE_LATENCY_BUCKETS_SECONDS.to_vec()),
+        )?;
+        let judge_latency_seconds = register_histogram(
+            &registry,
+            "choreo_judge_latency_seconds",
+            "Latency of a single LLM-judge rating call, success or failure.",
+            JUDGE_LATENCY_BUCKETS_SECONDS,
             &["model"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let judge_score = HistogramVec::new(
-            HistogramOpts::new(
-                "choreo_judge_score",
-                "Distribution of the LLM judge's 0.0-1.0 verdicts.",
-            )
-            .buckets(SCORE_BUCKETS.to_vec()),
+        )?;
+        let judge_score = register_histogram(
+            &registry,
+            "choreo_judge_score",
+            "Distribution of the LLM judge's 0.0-1.0 verdicts.",
+            SCORE_BUCKETS,
             &["model"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let judge_errors_total = IntCounterVec::new(
-            Opts::new(
-                "choreo_judge_errors_total",
-                "Failed LLM-judge calls, partitioned by error classification.",
-            ),
+        )?;
+        let judge_errors_total = register_counter(
+            &registry,
+            "choreo_judge_errors_total",
+            "Failed LLM-judge calls, partitioned by error classification.",
             &["model", "error_kind"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        let provider_errors_total = IntCounterVec::new(
-            Opts::new(
-                "choreo_provider_errors_total",
-                "Failed proposing-agent calls, partitioned by provider and error classification.",
-            ),
+        )?;
+        let provider_errors_total = register_counter(
+            &registry,
+            "choreo_provider_errors_total",
+            "Failed proposing-agent calls, partitioned by provider and error classification.",
             &["provider", "error_kind"],
-        )
-        .map_err(|err| metrics_error(&err))?;
-
-        registry
-            .register(Box::new(deliberation_duration_seconds.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(deliberation_winner_score.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(deliberation_completed_total.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(judge_latency_seconds.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(judge_score.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(judge_errors_total.clone()))
-            .map_err(|err| metrics_error(&err))?;
-        registry
-            .register(Box::new(provider_errors_total.clone()))
-            .map_err(|err| metrics_error(&err))?;
+        )?;
+        let judge_tokens_total = register_counter(
+            &registry,
+            "choreo_judge_tokens_total",
+            "Tokens consumed by LLM-judge calls, partitioned by token type.",
+            &["model", "token_type"],
+        )?;
+        let provider_tokens_total = register_counter(
+            &registry,
+            "choreo_provider_tokens_total",
+            "Tokens consumed by proposing-agent calls, partitioned by provider and token type.",
+            &["provider", "token_type"],
+        )?;
 
         Ok(Self {
             registry,
@@ -152,6 +125,8 @@ impl PrometheusMetricsRecorder {
             judge_score,
             judge_errors_total,
             provider_errors_total,
+            judge_tokens_total,
+            provider_tokens_total,
         })
     }
 
@@ -222,6 +197,62 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[provider, kind.as_label()])
             .inc();
     }
+
+    fn record_judge_tokens(&self, model: &str, usage: TokenUsage) {
+        self.judge_tokens_total
+            .with_label_values(&[model, "prompt"])
+            .inc_by(u64::from(usage.prompt()));
+        self.judge_tokens_total
+            .with_label_values(&[model, "completion"])
+            .inc_by(u64::from(usage.completion()));
+    }
+
+    fn record_provider_tokens(&self, provider: &str, usage: TokenUsage) {
+        self.provider_tokens_total
+            .with_label_values(&[provider, "prompt"])
+            .inc_by(u64::from(usage.prompt()));
+        self.provider_tokens_total
+            .with_label_values(&[provider, "completion"])
+            .inc_by(u64::from(usage.completion()));
+    }
+}
+
+/// Define a labelled histogram, register it on `registry`, and return
+/// the handle. Definition and registration are paired so a metric can
+/// never be defined but left unregistered (it would then be invisible at
+/// `/metrics`).
+fn register_histogram(
+    registry: &Registry,
+    name: &str,
+    help: &str,
+    buckets: &[f64],
+    labels: &[&str],
+) -> Result<HistogramVec, DomainError> {
+    let metric = HistogramVec::new(
+        HistogramOpts::new(name, help).buckets(buckets.to_vec()),
+        labels,
+    )
+    .map_err(|err| metrics_error(&err))?;
+    registry
+        .register(Box::new(metric.clone()))
+        .map_err(|err| metrics_error(&err))?;
+    Ok(metric)
+}
+
+/// Define a labelled counter, register it on `registry`, and return the
+/// handle. See [`register_histogram`] for the pairing rationale.
+fn register_counter(
+    registry: &Registry,
+    name: &str,
+    help: &str,
+    labels: &[&str],
+) -> Result<IntCounterVec, DomainError> {
+    let metric =
+        IntCounterVec::new(Opts::new(name, help), labels).map_err(|err| metrics_error(&err))?;
+    registry
+        .register(Box::new(metric.clone()))
+        .map_err(|err| metrics_error(&err))?;
+    Ok(metric)
 }
 
 /// Map a Prometheus setup failure to a fail-fast wiring error.
@@ -252,6 +283,8 @@ mod tests {
         recorder.observe_judge_score("gemma", Score::new(0.5).unwrap());
         recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
         recorder.record_provider_error("vllm", LlmErrorKind::RateLimited);
+        recorder.record_judge_tokens("gemma", TokenUsage::new(10, 5));
+        recorder.record_provider_tokens("vllm", TokenUsage::new(10, 5));
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -261,6 +294,27 @@ mod tests {
         assert!(text.contains("# TYPE choreo_judge_score histogram"));
         assert!(text.contains("# TYPE choreo_judge_errors_total counter"));
         assert!(text.contains("# TYPE choreo_provider_errors_total counter"));
+        assert!(text.contains("# TYPE choreo_judge_tokens_total counter"));
+        assert!(text.contains("# TYPE choreo_provider_tokens_total counter"));
+    }
+
+    #[test]
+    fn records_tokens_split_by_type_and_summed() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_provider_tokens("vllm", TokenUsage::new(100, 40));
+        recorder.record_provider_tokens("vllm", TokenUsage::new(50, 10));
+        recorder.record_judge_tokens("gemma", TokenUsage::new(200, 8));
+
+        let text = recorder.render();
+        // Counters accumulate the token counts (100+50 prompt, 40+10 completion).
+        assert!(text
+            .contains("choreo_provider_tokens_total{provider=\"vllm\",token_type=\"prompt\"} 150"));
+        assert!(text.contains(
+            "choreo_provider_tokens_total{provider=\"vllm\",token_type=\"completion\"} 50"
+        ));
+        assert!(
+            text.contains("choreo_judge_tokens_total{model=\"gemma\",token_type=\"prompt\"} 200")
+        );
     }
 
     #[test]
