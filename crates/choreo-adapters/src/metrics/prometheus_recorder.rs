@@ -13,7 +13,7 @@
 
 use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
-use choreo_core::value_objects::{DeliberationOutcome, DurationMs, Score, Specialty};
+use choreo_core::value_objects::{DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty};
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
 };
@@ -39,6 +39,7 @@ pub struct PrometheusMetricsRecorder {
     deliberation_completed_total: IntCounterVec,
     judge_latency_seconds: HistogramVec,
     judge_score: HistogramVec,
+    judge_errors_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -101,6 +102,15 @@ impl PrometheusMetricsRecorder {
         )
         .map_err(|err| metrics_error(&err))?;
 
+        let judge_errors_total = IntCounterVec::new(
+            Opts::new(
+                "choreo_judge_errors_total",
+                "Failed LLM-judge calls, partitioned by error classification.",
+            ),
+            &["model", "error_kind"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
         registry
             .register(Box::new(deliberation_duration_seconds.clone()))
             .map_err(|err| metrics_error(&err))?;
@@ -116,6 +126,9 @@ impl PrometheusMetricsRecorder {
         registry
             .register(Box::new(judge_score.clone()))
             .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(judge_errors_total.clone()))
+            .map_err(|err| metrics_error(&err))?;
 
         Ok(Self {
             registry,
@@ -124,6 +137,7 @@ impl PrometheusMetricsRecorder {
             deliberation_completed_total,
             judge_latency_seconds,
             judge_score,
+            judge_errors_total,
         })
     }
 
@@ -182,6 +196,12 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[model])
             .observe(score.get());
     }
+
+    fn record_judge_error(&self, model: &str, kind: LlmErrorKind) {
+        self.judge_errors_total
+            .with_label_values(&[model, kind.as_label()])
+            .inc();
+    }
 }
 
 /// Map a Prometheus setup failure to a fail-fast wiring error.
@@ -210,6 +230,7 @@ mod tests {
         recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
         recorder.observe_judge_latency("gemma", DurationMs::from_millis(1_000));
         recorder.observe_judge_score("gemma", Score::new(0.5).unwrap());
+        recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -217,6 +238,22 @@ mod tests {
         assert!(text.contains("# TYPE choreo_deliberation_completed_total counter"));
         assert!(text.contains("# TYPE choreo_judge_latency_seconds histogram"));
         assert!(text.contains("# TYPE choreo_judge_score histogram"));
+        assert!(text.contains("# TYPE choreo_judge_errors_total counter"));
+    }
+
+    #[test]
+    fn records_judge_errors_by_model_and_kind() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
+        recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
+        recorder.record_judge_error("gemma", LlmErrorKind::RateLimited);
+
+        let text = recorder.render();
+        assert!(
+            text.contains("choreo_judge_errors_total{error_kind=\"timeout\",model=\"gemma\"} 2")
+        );
+        assert!(text
+            .contains("choreo_judge_errors_total{error_kind=\"rate_limited\",model=\"gemma\"} 1"));
     }
 
     #[test]

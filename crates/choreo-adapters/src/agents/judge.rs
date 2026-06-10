@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use choreo_core::entities::{TaskConstraints, ValidatorReport};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{MetricsRecorderPort, ValidatorPort};
-use choreo_core::value_objects::{Attributes, DurationMs, Score};
+use choreo_core::value_objects::{Attributes, DurationMs, LlmErrorKind, Score};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::warn;
@@ -166,6 +166,15 @@ impl LlmJudgeValidator {
             .send()
             .await
             .map_err(|err| {
+                // A connection-level failure before any HTTP status; a
+                // deadline overrun is reported distinctly so saturation is
+                // separable from a dead endpoint.
+                let kind = if err.is_timeout() {
+                    LlmErrorKind::Timeout
+                } else {
+                    LlmErrorKind::Transport
+                };
+                self.metrics.record_judge_error(&self.model, kind);
                 warn!(error = %err, "judge: request failed");
                 DomainError::InvariantViolated {
                     reason: "judge: request failed",
@@ -174,17 +183,29 @@ impl LlmJudgeValidator {
 
         let status = response.status();
         if !status.is_success() {
+            self.metrics
+                .record_judge_error(&self.model, LlmErrorKind::from_status(status.as_u16()));
             return Err(wire::classify_error(status, &JUDGE_ERRORS));
         }
 
         let parsed: ChatResponse = response.json().await.map_err(|err| {
+            self.metrics
+                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
             warn!(error = %err, "judge: malformed response body");
             DomainError::InvariantViolated {
                 reason: JUDGE_ERRORS.malformed_body,
             }
         })?;
-        let text = wire::extract_text(parsed, &JUDGE_ERRORS)?;
-        parse_score(&text)
+        let text = wire::extract_text(parsed, &JUDGE_ERRORS).inspect_err(|_| {
+            self.metrics
+                .record_judge_error(&self.model, LlmErrorKind::EmptyContent);
+        })?;
+        parse_score(&text).inspect_err(|_| {
+            // The call succeeded but the judge's reply was not a usable
+            // score object — a malformed body at the contract level.
+            self.metrics
+                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
+        })
     }
 }
 
@@ -267,6 +288,45 @@ mod tests {
 
     fn metrics() -> Arc<dyn MetricsRecorderPort> {
         Arc::new(NoopMetricsRecorder)
+    }
+
+    /// Captures `record_judge_error` so a test can assert which kind the
+    /// judge classified a failure as. Every other method is a no-op.
+    #[derive(Default)]
+    struct CapturingMetrics {
+        errors: std::sync::Mutex<Vec<&'static str>>,
+    }
+    impl MetricsRecorderPort for CapturingMetrics {
+        fn observe_deliberation_duration(
+            &self,
+            _specialty: &choreo_core::value_objects::Specialty,
+            _duration: DurationMs,
+        ) {
+        }
+        fn record_deliberation_outcome(
+            &self,
+            _specialty: &choreo_core::value_objects::Specialty,
+            _outcome: choreo_core::value_objects::DeliberationOutcome,
+        ) {
+        }
+        fn observe_winner_score(
+            &self,
+            _specialty: &choreo_core::value_objects::Specialty,
+            _score: Score,
+        ) {
+        }
+        fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
+        fn observe_judge_score(&self, _model: &str, _score: Score) {}
+        fn record_judge_error(&self, _model: &str, kind: LlmErrorKind) {
+            self.errors.lock().unwrap().push(kind.as_label());
+        }
+    }
+
+    fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {
+        LlmJudgeValidator::new(server.uri(), "test-model", 0.5, metrics)
+            .unwrap()
+            .with_timeout(Duration::from_secs(5))
+            .unwrap()
     }
 
     #[test]
@@ -356,6 +416,30 @@ mod tests {
                 .abs()
                 < 1e-9
         );
+    }
+
+    #[tokio::test]
+    async fn rate_limited_response_records_a_rate_limited_judge_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+
+        let metrics = Arc::new(CapturingMetrics::default());
+        let err = judge_with(&server, metrics.clone())
+            .validate("anything", &TaskConstraints::default())
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvariantViolated {
+                reason: "judge: rate-limited"
+            }
+        ));
+        assert_eq!(metrics.errors.lock().unwrap().as_slice(), &["rate_limited"]);
     }
 
     #[tokio::test]
