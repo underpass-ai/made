@@ -66,6 +66,7 @@ figment = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 jsonschema = { workspace = true }
+prometheus = { workspace = true }
 
 prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }

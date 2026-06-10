@@ -229,6 +229,7 @@ fn build_usecase(n_agents: usize) -> DeliberateUseCase {
         Arc::new(NullRepo),
         Arc::new(NullBus),
         Arc::new(NullStats),
+        Arc::new(choreo_core::ports::NoopMetricsRecorder),
         "bench",
     )
 }

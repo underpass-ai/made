@@ -320,6 +320,7 @@ mod tests {
             Arc::new(InMemoryDeliberationRepository::new()),
             Arc::new(NoopMessaging::new()),
             statistics.clone(),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
             "ceremony-step-handler-test",
         ));
         let handler = DeliberatingCeremonyStepHandler::new(deliberate);

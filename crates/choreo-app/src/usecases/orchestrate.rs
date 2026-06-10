@@ -629,6 +629,7 @@ mod tests {
             repository,
             bus.clone(),
             stats,
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
             "choreographer",
         ));
 
@@ -670,6 +671,7 @@ mod tests {
             repository,
             bus.clone(),
             stats,
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
             "choreographer",
         ));
 

@@ -27,6 +27,7 @@ use axum::{
     routing::get,
     Json, Router,
 };
+use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::postgres::PostgresPool;
 use choreo_core::ports::StatisticsPort;
 use serde::Serialize;
@@ -44,6 +45,9 @@ pub struct HealthState {
     /// in-memory default, in which case readiness never fails on Postgres.
     postgres: Option<PostgresPool>,
     statistics: Arc<dyn StatisticsPort>,
+    /// Prometheus registry rendered at `/metrics` for the rich
+    /// operational histograms and counters fed by `MetricsRecorderPort`.
+    metrics: Arc<PrometheusMetricsRecorder>,
     service_version: Arc<str>,
 }
 
@@ -63,12 +67,14 @@ impl HealthState {
         nats: Option<async_nats::Client>,
         postgres: Option<PostgresPool>,
         statistics: Arc<dyn StatisticsPort>,
+        metrics: Arc<PrometheusMetricsRecorder>,
         service_version: impl Into<String>,
     ) -> Self {
         Self {
             nats,
             postgres,
             statistics,
+            metrics,
             service_version: Arc::from(service_version.into().into_boxed_str()),
         }
     }
@@ -157,10 +163,13 @@ async fn readyz(State(state): State<HealthState>) -> Response {
 
 /// Prometheus text format exposition.
 ///
-/// Hand-rolled (no client library) to avoid another dependency for
-/// five counters and a gauge. The format is specified at
-/// <https://prometheus.io/docs/instrumenting/exposition_formats/>.
-/// One metric family per `# HELP` / `# TYPE` pair; samples follow.
+/// Two sources are concatenated, both in the same text format
+/// (<https://prometheus.io/docs/instrumenting/exposition_formats/>):
+/// the durable business counters read from `StatisticsPort` (hand-rolled
+/// below, since they live behind an async, possibly Postgres-backed
+/// port), and the rich operational histograms/counters rendered from the
+/// in-process Prometheus registry fed by `MetricsRecorderPort`. The two
+/// metric-name spaces are disjoint, so the concatenation is valid.
 async fn metrics(State(state): State<HealthState>) -> Response {
     use std::fmt::Write as _;
 
@@ -229,6 +238,10 @@ async fn metrics(State(state): State<HealthState>) -> Response {
     body.push_str("# HELP choreo_service_ready 1 when every wired dependency is reachable.\n");
     body.push_str("# TYPE choreo_service_ready gauge\n");
     writeln!(body, "choreo_service_ready {ready_gauge}").unwrap();
+
+    // Append the operational metrics registry (histograms, per-outcome
+    // counters) rendered by the Prometheus recorder.
+    body.push_str(&state.metrics.render());
 
     (
         StatusCode::OK,
@@ -306,6 +319,10 @@ mod tests {
         Arc::new(InMemoryStatistics::new())
     }
 
+    fn recorder() -> Arc<PrometheusMetricsRecorder> {
+        Arc::new(PrometheusMetricsRecorder::new().expect("metrics recorder"))
+    }
+
     async fn body_json(resp: Response) -> Value {
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
@@ -322,7 +339,7 @@ mod tests {
 
     #[tokio::test]
     async fn healthz_returns_200_with_alive_status() {
-        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -341,7 +358,7 @@ mod tests {
 
     #[tokio::test]
     async fn readyz_without_nats_returns_200_and_reports_not_wired() {
-        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -373,7 +390,7 @@ mod tests {
         // hitting /healthz with `None` and asserting response shape.
         // The structural invariant is enforced by the implementation
         // of `healthz` never touching `state.nats`.
-        let app = router(HealthState::new(None, None, stats(), "9.9.9"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "9.9.9"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -390,7 +407,7 @@ mod tests {
 
     #[tokio::test]
     async fn unknown_route_is_404() {
-        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -405,7 +422,7 @@ mod tests {
 
     #[tokio::test]
     async fn post_to_healthz_is_method_not_allowed() {
-        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -424,7 +441,7 @@ mod tests {
         // Paranoia: make sure nothing sensitive sneaks into the
         // Debug output. Right now there are no secrets here, but
         // this test locks the invariant as the state grows.
-        let state = HealthState::new(None, None, stats(), "0.1.0");
+        let state = HealthState::new(None, None, stats(), recorder(), "0.1.0");
         let shown = format!("{state:?}");
         assert!(shown.contains("HealthState"));
         assert!(shown.contains("nats_wired"));
@@ -435,7 +452,7 @@ mod tests {
 
     #[tokio::test]
     async fn metrics_emits_prometheus_text_with_zero_counters_on_fresh_boot() {
-        let app = router(HealthState::new(None, None, stats(), "0.1.0"));
+        let app = router(HealthState::new(None, None, stats(), recorder(), "0.1.0"));
         let resp = app
             .oneshot(
                 Request::builder()
@@ -459,6 +476,42 @@ mod tests {
         assert!(text.contains("choreo_operation_duration_milliseconds_sum 0"));
         assert!(text.contains("choreo_operation_duration_milliseconds_count 0"));
         assert!(text.contains("choreo_service_ready 1"));
+        // An untouched operational registry exposes nothing — Prometheus
+        // omits metric families with no observed label sets — so the
+        // legacy block is all that shows on a fresh boot.
+    }
+
+    #[tokio::test]
+    async fn metrics_endpoint_renders_recorded_operational_metrics() {
+        use choreo_core::ports::MetricsRecorderPort;
+        use choreo_core::value_objects::DeliberationOutcome;
+
+        let rec = recorder();
+        rec.record_deliberation_outcome(
+            &choreo_core::value_objects::Specialty::new("reviewer").unwrap(),
+            DeliberationOutcome::Success,
+        );
+
+        let app = router(HealthState::new(None, None, stats(), rec, "0.1.0"));
+        let resp = app
+            .oneshot(
+                Request::builder()
+                    .uri("/metrics")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let text = body_text(resp).await;
+        // Both the legacy StatisticsPort block and the operational
+        // registry are present in the one exposition.
+        assert!(text.contains("choreo_service_ready 1"));
+        assert!(
+            text.contains("choreo_deliberation_completed_total"),
+            "operational registry not rendered:\n{text}"
+        );
+        assert!(text.contains("outcome=\"success\""));
     }
 
     #[tokio::test]
@@ -483,7 +536,7 @@ mod tests {
             .await
             .unwrap();
 
-        let state = HealthState::new(None, None, stats_adapter.clone(), "0.1.0");
+        let state = HealthState::new(None, None, stats_adapter.clone(), recorder(), "0.1.0");
         let app = router(state);
         let resp = app
             .oneshot(

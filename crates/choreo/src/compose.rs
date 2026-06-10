@@ -11,6 +11,7 @@ use choreo_adapters::memory::{
     InMemoryCeremonyInstanceRepository, InMemoryContractRegistry, InMemoryCouncilRegistry,
     InMemoryDeliberationRepository, InMemoryStatistics,
 };
+use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use choreo_adapters::noop::{NoopExecutor, NoopMessaging};
 use choreo_adapters::postgres::{
@@ -120,6 +121,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load().await?;
 
     let clock = Arc::new(SystemClock::new());
+    // One Prometheus registry for the whole process, shared between the
+    // use cases that record into it and the health endpoint that renders
+    // it. Fails fast if a metric is malformed (a wiring bug).
+    let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators: Vec<Arc<dyn ValidatorPort>> = vec![
         Arc::new(ContentNonEmptyValidator::new()),
         Arc::new(JsonObjectOutputValidator::new()),
@@ -182,6 +187,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         repository.clone(),
         messaging.clone(),
         statistics.clone(),
+        metrics_recorder.clone(),
         "choreographer",
     ));
 
@@ -272,6 +278,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_client,
         postgres_pool,
         statistics.clone(),
+        metrics_recorder.clone(),
         env!("CARGO_PKG_VERSION"),
     );
 

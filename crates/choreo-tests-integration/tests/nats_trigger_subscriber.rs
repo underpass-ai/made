@@ -119,6 +119,7 @@ async fn trigger_event_over_nats_drives_full_pipeline() {
         repo.clone(),
         messaging.clone(),
         statistics,
+        Arc::new(choreo_core::ports::NoopMetricsRecorder),
         "integration-test",
     ));
 
