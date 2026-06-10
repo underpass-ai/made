@@ -812,6 +812,12 @@ mod tests {
         }
         fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
         fn observe_judge_score(&self, _model: &str, _score: Score) {}
+        fn record_judge_error(
+            &self,
+            _model: &str,
+            _kind: choreo_core::value_objects::LlmErrorKind,
+        ) {
+        }
     }
 
     // --- Fixture helpers --------------------------------------------------

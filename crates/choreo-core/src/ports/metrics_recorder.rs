@@ -18,7 +18,7 @@
 //!
 //! [`StatisticsPort`]: super::StatisticsPort
 
-use crate::value_objects::{DeliberationOutcome, DurationMs, Score, Specialty};
+use crate::value_objects::{DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty};
 
 pub trait MetricsRecorderPort: Send + Sync {
     /// Observe the end-to-end wall-clock duration of a deliberation that
@@ -42,6 +42,12 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// Observe a judge's `[0.0, 1.0]` verdict for one proposal — the
     /// basis for score calibration and threshold tuning.
     fn observe_judge_score(&self, model: &str, score: Score);
+
+    /// Record a failed LLM-judge call, classified by [`LlmErrorKind`].
+    /// A judge error fails the deliberation at the validating gate, and
+    /// the kind dictates the response (timeout vs rate-limit vs
+    /// credential rotation).
+    fn record_judge_error(&self, model: &str, kind: LlmErrorKind);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -59,4 +65,5 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_winner_score(&self, _specialty: &Specialty, _score: Score) {}
     fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
     fn observe_judge_score(&self, _model: &str, _score: Score) {}
+    fn record_judge_error(&self, _model: &str, _kind: LlmErrorKind) {}
 }
