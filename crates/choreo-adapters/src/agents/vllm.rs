@@ -538,6 +538,13 @@ mod tests {
         ) {
         }
         fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
+        fn observe_nats_publish(
+            &self,
+            _subject_kind: &str,
+            _duration: choreo_core::value_objects::DurationMs,
+        ) {
+        }
+        fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {

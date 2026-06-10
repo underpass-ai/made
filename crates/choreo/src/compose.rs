@@ -179,7 +179,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         port: messaging,
         subscriber_factory: nats_subscriber_factory,
         nats_client,
-    } = wire_messaging(&service_config).await?;
+    } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
@@ -370,7 +370,10 @@ struct MessagingWiring {
     nats_client: Option<async_nats::Client>,
 }
 
-async fn wire_messaging(cfg: &ServiceConfig) -> Result<MessagingWiring, ComposeError> {
+async fn wire_messaging(
+    cfg: &ServiceConfig,
+    metrics: Arc<dyn MetricsRecorderPort>,
+) -> Result<MessagingWiring, ComposeError> {
     if !cfg.nats_enabled {
         info!("nats disabled; using noop messaging");
         let port: Arc<dyn MessagingPort> = Arc::new(NoopMessaging::new());
@@ -385,10 +388,9 @@ async fn wire_messaging(cfg: &ServiceConfig) -> Result<MessagingWiring, ComposeE
     let client = connect_nats_with_retry(&nats_cfg.url, NATS_CONNECT_BUDGET).await?;
     info!(url = nats_cfg.url.as_str(), "nats connected");
 
-    let port: Arc<dyn MessagingPort> = Arc::new(NatsMessaging::new(
-        client.clone(),
-        nats_cfg.subjects.clone(),
-    ));
+    let port: Arc<dyn MessagingPort> = Arc::new(
+        NatsMessaging::new(client.clone(), nats_cfg.subjects.clone()).with_metrics(metrics),
+    );
 
     let subjects = nats_cfg.subjects.clone();
     let factory_client = client.clone();

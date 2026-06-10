@@ -902,6 +902,8 @@ mod tests {
         ) {
         }
         fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
+        fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
+        fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
     }
 
     // --- Fixture helpers --------------------------------------------------

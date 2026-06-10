@@ -105,6 +105,14 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// guard deadlock or a missing event, distinct from a normal pending
     /// wait.
     fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str);
+
+    /// Observe the latency of one NATS publish, by event `subject_kind`.
+    fn observe_nats_publish(&self, subject_kind: &str, duration: DurationMs);
+
+    /// Record a failed NATS publish, by `subject_kind` and `reason`
+    /// (serialize vs publish). Completion events drive downstream
+    /// orchestration, so a silent publish failure loses work.
+    fn record_nats_publish_error(&self, subject_kind: &str, reason: &str);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -135,4 +143,6 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_ceremony_step_duration(&self, _ceremony: &str, _step: &str, _duration: DurationMs) {}
     fn record_ceremony_step(&self, _ceremony: &str, _step: &str, _status: StepStatus) {}
     fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
+    fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
+    fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
 }

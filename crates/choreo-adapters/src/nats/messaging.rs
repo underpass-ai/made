@@ -13,6 +13,9 @@
 //! this crate reads the same header back and surfaces it as span
 //! fields on `nats.trigger.inbound`.
 
+use std::sync::Arc;
+use std::time::Instant;
+
 use async_nats::{header::HeaderMap, Client};
 use async_trait::async_trait;
 use choreo_core::error::DomainError;
@@ -20,8 +23,8 @@ use choreo_core::events::{
     DeliberationCompletedEvent, PhaseChangedEvent, TaskCompletedEvent, TaskDispatchedEvent,
     TaskFailedEvent,
 };
-use choreo_core::ports::MessagingPort;
-use choreo_core::value_objects::TraceContext;
+use choreo_core::ports::{MessagingPort, MetricsRecorderPort, NoopMetricsRecorder};
+use choreo_core::value_objects::{DurationMs, TraceContext};
 use serde::Serialize;
 use tracing::debug;
 
@@ -38,6 +41,7 @@ pub(super) const TRACEPARENT_HEADER: &str = "traceparent";
 pub struct NatsMessaging {
     client: Client,
     subjects: NatsSubjects,
+    metrics: Arc<dyn MetricsRecorderPort>,
 }
 
 impl std::fmt::Debug for NatsMessaging {
@@ -51,15 +55,31 @@ impl std::fmt::Debug for NatsMessaging {
 impl NatsMessaging {
     #[must_use]
     pub fn new(client: Client, subjects: NatsSubjects) -> Self {
-        Self { client, subjects }
+        Self {
+            client,
+            subjects,
+            metrics: Arc::new(NoopMetricsRecorder),
+        }
+    }
+
+    /// Attach a metrics recorder so publish latency and failures are
+    /// counted. The composition root wires the real recorder; the default
+    /// no-op keeps tests free of one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     async fn publish_event<E: Serialize>(
         &self,
+        subject_kind: &'static str,
         subject: &str,
         event: &E,
     ) -> Result<(), DomainError> {
         let payload = serde_json::to_vec(event).map_err(|err| {
+            self.metrics
+                .record_nats_publish_error(subject_kind, "serialize");
             debug!(error = %err, "nats payload encoding failed");
             DomainError::InvariantViolated {
                 reason: "nats: failed to serialize outbound event",
@@ -68,15 +88,23 @@ impl NatsMessaging {
         let trace = TraceContext::generate();
         let mut headers = HeaderMap::new();
         headers.insert(TRACEPARENT_HEADER, trace.to_header().as_str());
-        self.client
+        let started = Instant::now();
+        let result = self
+            .client
             .publish_with_headers(subject.to_owned(), headers, payload.into())
-            .await
-            .map_err(|err| {
-                debug!(error = %err, subject, "nats publish failed");
-                DomainError::InvariantViolated {
-                    reason: "nats: publish failed",
-                }
-            })?;
+            .await;
+        self.metrics.observe_nats_publish(
+            subject_kind,
+            DurationMs::from_millis(u64::try_from(started.elapsed().as_millis()).unwrap_or(0)),
+        );
+        result.map_err(|err| {
+            self.metrics
+                .record_nats_publish_error(subject_kind, "publish");
+            debug!(error = %err, subject, "nats publish failed");
+            DomainError::InvariantViolated {
+                reason: "nats: publish failed",
+            }
+        })?;
         debug!(subject, trace_id = trace.trace_id(), "nats event published");
         Ok(())
     }
@@ -88,29 +116,34 @@ impl MessagingPort for NatsMessaging {
         &self,
         event: &TaskDispatchedEvent,
     ) -> Result<(), DomainError> {
-        self.publish_event(&self.subjects.task_dispatched, event)
+        self.publish_event("task_dispatched", &self.subjects.task_dispatched, event)
             .await
     }
 
     async fn publish_task_completed(&self, event: &TaskCompletedEvent) -> Result<(), DomainError> {
-        self.publish_event(&self.subjects.task_completed, event)
+        self.publish_event("task_completed", &self.subjects.task_completed, event)
             .await
     }
 
     async fn publish_task_failed(&self, event: &TaskFailedEvent) -> Result<(), DomainError> {
-        self.publish_event(&self.subjects.task_failed, event).await
+        self.publish_event("task_failed", &self.subjects.task_failed, event)
+            .await
     }
 
     async fn publish_deliberation_completed(
         &self,
         event: &DeliberationCompletedEvent,
     ) -> Result<(), DomainError> {
-        self.publish_event(&self.subjects.deliberation_completed, event)
-            .await
+        self.publish_event(
+            "deliberation_completed",
+            &self.subjects.deliberation_completed,
+            event,
+        )
+        .await
     }
 
     async fn publish_phase_changed(&self, event: &PhaseChangedEvent) -> Result<(), DomainError> {
-        self.publish_event(&self.subjects.phase_changed, event)
+        self.publish_event("phase_changed", &self.subjects.phase_changed, event)
             .await
     }
 }
