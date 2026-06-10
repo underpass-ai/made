@@ -67,8 +67,18 @@ async fn main() -> Result<()> {
             step.step_id, step.role_id, step.status, step.attempt
         );
     }
+    let has_output = response.steps.iter().any(|s| !s.output.trim().is_empty());
+    if has_output {
+        println!("\n--- meeting record (winning contribution per step) ---");
+        for step in &response.steps {
+            if step.output.trim().is_empty() {
+                continue;
+            }
+            println!("\n### {} [{}]\n{}", step.step_id, step.role_id, step.output);
+        }
+    }
     println!(
-        "--- conversation diagram ---\n{}",
+        "\n--- conversation diagram ---\n{}",
         response.mermaid_sequence
     );
 

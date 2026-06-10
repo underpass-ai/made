@@ -122,6 +122,7 @@ impl RunCeremonyUseCase {
                     role_id,
                     attempt,
                     step_result.status(),
+                    step_result.output().clone(),
                 ));
                 if !step_result.is_success() {
                     return Err(DomainError::InvariantViolated {

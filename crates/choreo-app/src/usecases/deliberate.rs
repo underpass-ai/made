@@ -447,11 +447,11 @@ fn new_proposal_id() -> Result<ProposalId, DomainError> {
     ProposalId::new(Uuid::new_v4().to_string())
 }
 
-/// A short, single-line preview of proposal/revision content for trace
-/// events — enough to read the gist of the meeting in a span without
-/// bloating the trace with the full payload (the full text lives in the
-/// ceremony transcript / `RunCeremony` response).
-const PREVIEW_MAX: usize = 160;
+/// A single-line preview of proposal/revision content for trace events —
+/// enough to read each competing proposal in a span without carrying the
+/// full payload (the winning text per step lives in full in the
+/// `RunCeremony` response and the ceremony transcript).
+const PREVIEW_MAX: usize = 700;
 fn content_preview(content: &str) -> String {
     let flat = content.split_whitespace().collect::<Vec<_>>().join(" ");
     if flat.chars().count() <= PREVIEW_MAX {
