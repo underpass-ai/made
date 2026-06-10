@@ -30,7 +30,7 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
 };
-use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty};
+use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, warn};
 
@@ -360,11 +360,19 @@ impl VllmAgent {
             }
         })?;
 
-        wire::extract_text(parsed, &VLLM_ERRORS).inspect_err(|_| {
+        let usage = parsed.usage;
+        let text = wire::extract_text(parsed, &VLLM_ERRORS).inspect_err(|_| {
             self.metrics
                 .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
             warn!(op, agent_id = self.id.as_str(), "vllm: empty text content");
-        })
+        })?;
+        if let Some(usage) = usage {
+            self.metrics.record_provider_tokens(
+                PROVIDER,
+                TokenUsage::new(usage.prompt_tokens, usage.completion_tokens),
+            );
+        }
+        Ok(text)
     }
 }
 
@@ -446,6 +454,7 @@ mod tests {
     #[derive(Default)]
     struct CapturingMetrics {
         provider_errors: std::sync::Mutex<Vec<&'static str>>,
+        provider_tokens: std::sync::Mutex<Vec<(u32, u32)>>,
     }
     impl MetricsRecorderPort for CapturingMetrics {
         fn observe_deliberation_duration(
@@ -466,6 +475,13 @@ mod tests {
         fn record_judge_error(&self, _m: &str, _k: LlmErrorKind) {}
         fn record_provider_error(&self, _provider: &str, kind: LlmErrorKind) {
             self.provider_errors.lock().unwrap().push(kind.as_label());
+        }
+        fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
+        fn record_provider_tokens(&self, _provider: &str, usage: TokenUsage) {
+            self.provider_tokens
+                .lock()
+                .unwrap()
+                .push((usage.prompt(), usage.completion()));
         }
     }
 
@@ -811,6 +827,33 @@ mod tests {
                 reason: "vllm: rate-limited"
             }
         ));
+    }
+
+    #[tokio::test]
+    async fn successful_response_records_provider_token_usage() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1/chat/completions"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(json!({
+                "id": "cmpl-test",
+                "choices": [{
+                    "index": 0,
+                    "message": {"role": "assistant", "content": "ok proposal"},
+                    "finish_reason": "stop"
+                }],
+                "usage": {"prompt_tokens": 130, "completion_tokens": 47, "total_tokens": 177}
+            })))
+            .mount(&server)
+            .await;
+
+        let metrics = Arc::new(CapturingMetrics::default());
+        let agent = test_agent(&server).with_metrics(metrics.clone());
+        agent.generate(draft()).await.unwrap();
+
+        assert_eq!(
+            metrics.provider_tokens.lock().unwrap().as_slice(),
+            &[(130, 47)]
+        );
     }
 
     #[tokio::test]

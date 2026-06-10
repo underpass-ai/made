@@ -19,7 +19,7 @@ use async_trait::async_trait;
 use choreo_core::entities::{TaskConstraints, ValidatorReport};
 use choreo_core::error::DomainError;
 use choreo_core::ports::{MetricsRecorderPort, ValidatorPort};
-use choreo_core::value_objects::{Attributes, DurationMs, LlmErrorKind, Score};
+use choreo_core::value_objects::{Attributes, DurationMs, LlmErrorKind, Score, TokenUsage};
 use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::warn;
@@ -196,10 +196,17 @@ impl LlmJudgeValidator {
                 reason: JUDGE_ERRORS.malformed_body,
             }
         })?;
+        let usage = parsed.usage;
         let text = wire::extract_text(parsed, &JUDGE_ERRORS).inspect_err(|_| {
             self.metrics
                 .record_judge_error(&self.model, LlmErrorKind::EmptyContent);
         })?;
+        if let Some(usage) = usage {
+            self.metrics.record_judge_tokens(
+                &self.model,
+                TokenUsage::new(usage.prompt_tokens, usage.completion_tokens),
+            );
+        }
         parse_score(&text).inspect_err(|_| {
             // The call succeeded but the judge's reply was not a usable
             // score object — a malformed body at the contract level.
@@ -321,6 +328,8 @@ mod tests {
             self.errors.lock().unwrap().push(kind.as_label());
         }
         fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
+        fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
+        fn record_provider_tokens(&self, _provider: &str, _usage: TokenUsage) {}
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

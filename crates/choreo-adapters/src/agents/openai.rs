@@ -27,7 +27,7 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::{
     AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
 };
-use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty};
+use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
 use reqwest::Client;
 use tracing::{debug, warn};
 
@@ -282,7 +282,8 @@ impl OpenAiAgent {
             }
         })?;
 
-        wire::extract_text(parsed, &OPENAI_ERRORS).inspect_err(|_| {
+        let usage = parsed.usage;
+        let text = wire::extract_text(parsed, &OPENAI_ERRORS).inspect_err(|_| {
             self.metrics
                 .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
             warn!(
@@ -290,7 +291,14 @@ impl OpenAiAgent {
                 agent_id = self.id.as_str(),
                 "openai: empty text content"
             );
-        })
+        })?;
+        if let Some(usage) = usage {
+            self.metrics.record_provider_tokens(
+                PROVIDER,
+                TokenUsage::new(usage.prompt_tokens, usage.completion_tokens),
+            );
+        }
+        Ok(text)
     }
 }
 

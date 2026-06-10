@@ -55,6 +55,21 @@ pub(super) struct ChatMessage<'a> {
 pub(super) struct ChatResponse {
     #[serde(default)]
     pub choices: Vec<ChatChoice>,
+    /// Token accounting. Present on a successful completion for OpenAI
+    /// and vLLM; absent on some streamed or error-shaped bodies, hence
+    /// `Option`. Dropped before this change — the reason judge/provider
+    /// token cost was previously unreadable.
+    #[serde(default)]
+    pub usage: Option<Usage>,
+}
+
+/// Token usage block of a Chat Completions response.
+#[derive(Deserialize, Clone, Copy, Default)]
+pub(super) struct Usage {
+    #[serde(default)]
+    pub prompt_tokens: u32,
+    #[serde(default)]
+    pub completion_tokens: u32,
 }
 
 #[derive(Deserialize)]
