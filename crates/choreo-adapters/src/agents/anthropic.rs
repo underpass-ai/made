@@ -19,18 +19,24 @@
 //! leaks the credential.
 
 use std::fmt;
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use choreo_core::entities::TaskConstraints;
 use choreo_core::error::DomainError;
-use choreo_core::ports::{AgentPort, Critique, DraftRequest, Revision};
-use choreo_core::value_objects::{AgentId, Specialty};
+use choreo_core::ports::{
+    AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
+};
+use choreo_core::value_objects::{AgentId, LlmErrorKind, Specialty};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use super::prompts;
+
+/// Provider label for this adapter's error metrics.
+const PROVIDER: &str = "anthropic";
 
 const ANTHROPIC_VERSION_HEADER: &str = "2023-06-01";
 const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com";
@@ -148,6 +154,7 @@ pub struct AnthropicAgent {
     specialty: Specialty,
     config: AnthropicConfig,
     http: Client,
+    metrics: Arc<dyn MetricsRecorderPort>,
 }
 
 impl fmt::Debug for AnthropicAgent {
@@ -180,7 +187,17 @@ impl AnthropicAgent {
             specialty,
             config,
             http,
+            metrics: Arc::new(NoopMetricsRecorder),
         })
+    }
+
+    /// Attach a metrics recorder so provider failures are counted. The
+    /// composition root wires the real recorder; the default is a no-op,
+    /// so tests and bespoke uses need not supply one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
     }
 
     async fn complete(
@@ -213,6 +230,12 @@ impl AnthropicAgent {
             .send()
             .await
             .map_err(|err| {
+                let kind = if err.is_timeout() {
+                    LlmErrorKind::Timeout
+                } else {
+                    LlmErrorKind::Transport
+                };
+                self.metrics.record_provider_error(PROVIDER, kind);
                 warn!(
                     op,
                     agent_id = self.id.as_str(),
@@ -226,6 +249,8 @@ impl AnthropicAgent {
 
         let status = response.status();
         if !status.is_success() {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::from_status(status.as_u16()));
             let body_text = response.text().await.unwrap_or_default();
             warn!(
                 op,
@@ -238,6 +263,8 @@ impl AnthropicAgent {
         }
 
         let parsed: MessagesResponse = response.json().await.map_err(|err| {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::MalformedBody);
             warn!(
                 op,
                 agent_id = self.id.as_str(),
@@ -250,6 +277,8 @@ impl AnthropicAgent {
         })?;
 
         extract_text(parsed).inspect_err(|_| {
+            self.metrics
+                .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
             warn!(
                 op,
                 agent_id = self.id.as_str(),

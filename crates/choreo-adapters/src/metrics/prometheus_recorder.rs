@@ -40,6 +40,7 @@ pub struct PrometheusMetricsRecorder {
     judge_latency_seconds: HistogramVec,
     judge_score: HistogramVec,
     judge_errors_total: IntCounterVec,
+    provider_errors_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -111,6 +112,15 @@ impl PrometheusMetricsRecorder {
         )
         .map_err(|err| metrics_error(&err))?;
 
+        let provider_errors_total = IntCounterVec::new(
+            Opts::new(
+                "choreo_provider_errors_total",
+                "Failed proposing-agent calls, partitioned by provider and error classification.",
+            ),
+            &["provider", "error_kind"],
+        )
+        .map_err(|err| metrics_error(&err))?;
+
         registry
             .register(Box::new(deliberation_duration_seconds.clone()))
             .map_err(|err| metrics_error(&err))?;
@@ -129,6 +139,9 @@ impl PrometheusMetricsRecorder {
         registry
             .register(Box::new(judge_errors_total.clone()))
             .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(provider_errors_total.clone()))
+            .map_err(|err| metrics_error(&err))?;
 
         Ok(Self {
             registry,
@@ -138,6 +151,7 @@ impl PrometheusMetricsRecorder {
             judge_latency_seconds,
             judge_score,
             judge_errors_total,
+            provider_errors_total,
         })
     }
 
@@ -202,6 +216,12 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[model, kind.as_label()])
             .inc();
     }
+
+    fn record_provider_error(&self, provider: &str, kind: LlmErrorKind) {
+        self.provider_errors_total
+            .with_label_values(&[provider, kind.as_label()])
+            .inc();
+    }
 }
 
 /// Map a Prometheus setup failure to a fail-fast wiring error.
@@ -231,6 +251,7 @@ mod tests {
         recorder.observe_judge_latency("gemma", DurationMs::from_millis(1_000));
         recorder.observe_judge_score("gemma", Score::new(0.5).unwrap());
         recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
+        recorder.record_provider_error("vllm", LlmErrorKind::RateLimited);
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -239,6 +260,25 @@ mod tests {
         assert!(text.contains("# TYPE choreo_judge_latency_seconds histogram"));
         assert!(text.contains("# TYPE choreo_judge_score histogram"));
         assert!(text.contains("# TYPE choreo_judge_errors_total counter"));
+        assert!(text.contains("# TYPE choreo_provider_errors_total counter"));
+    }
+
+    #[test]
+    fn records_provider_errors_by_provider_and_kind() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_provider_error("vllm", LlmErrorKind::RateLimited);
+        recorder.record_provider_error("vllm", LlmErrorKind::Timeout);
+        recorder.record_provider_error("openai", LlmErrorKind::Unauthorized);
+
+        let text = recorder.render();
+        assert!(text.contains(
+            "choreo_provider_errors_total{error_kind=\"rate_limited\",provider=\"vllm\"} 1"
+        ));
+        assert!(text
+            .contains("choreo_provider_errors_total{error_kind=\"timeout\",provider=\"vllm\"} 1"));
+        assert!(text.contains(
+            "choreo_provider_errors_total{error_kind=\"unauthorized\",provider=\"openai\"} 1"
+        ));
     }
 
     #[test]

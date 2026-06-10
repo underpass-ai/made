@@ -48,6 +48,11 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// the kind dictates the response (timeout vs rate-limit vs
     /// credential rotation).
     fn record_judge_error(&self, model: &str, kind: LlmErrorKind);
+
+    /// Record a failed proposing-agent call, partitioned by `provider`
+    /// (vllm / openai / anthropic) and [`LlmErrorKind`]. A 429 here is
+    /// backpressure into every deliberation that routes to the provider.
+    fn record_provider_error(&self, provider: &str, kind: LlmErrorKind);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -66,4 +71,5 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
     fn observe_judge_score(&self, _model: &str, _score: Score) {}
     fn record_judge_error(&self, _model: &str, _kind: LlmErrorKind) {}
+    fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
 }
