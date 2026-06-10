@@ -505,6 +505,12 @@ mod tests {
             self.in_flight
                 .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
         }
+        fn record_discrimination(
+            &self,
+            _specialty: &Specialty,
+            _result: choreo_core::value_objects::Discrimination,
+        ) {
+        }
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {

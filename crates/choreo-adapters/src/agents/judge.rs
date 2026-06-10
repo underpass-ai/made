@@ -339,6 +339,12 @@ mod tests {
         }
         fn inc_provider_in_flight(&self, _provider: &str) {}
         fn dec_provider_in_flight(&self, _provider: &str) {}
+        fn record_discrimination(
+            &self,
+            _specialty: &choreo_core::value_objects::Specialty,
+            _result: choreo_core::value_objects::Discrimination,
+        ) {
+        }
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

@@ -19,7 +19,7 @@
 //! [`StatisticsPort`]: super::StatisticsPort
 
 use crate::value_objects::{
-    DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
 };
 
 pub trait MetricsRecorderPort: Send + Sync {
@@ -77,6 +77,12 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// Decrement the in-flight gauge for `provider` when a call returns,
     /// whether it succeeded or failed.
     fn dec_provider_in_flight(&self, provider: &str);
+
+    /// Record whether the scoring policy re-ranked the winner of a
+    /// deliberation. The killer signal for the LLM judge's worth: a
+    /// `reranked` ratio near zero means the judge never changes the
+    /// outcome and is pure cost.
+    fn record_discrimination(&self, specialty: &Specialty, result: Discrimination);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -101,4 +107,5 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_provider_request(&self, _provider: &str, _operation: &str, _duration: DurationMs) {}
     fn inc_provider_in_flight(&self, _provider: &str) {}
     fn dec_provider_in_flight(&self, _provider: &str) {}
+    fn record_discrimination(&self, _specialty: &Specialty, _result: Discrimination) {}
 }

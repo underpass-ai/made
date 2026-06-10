@@ -74,6 +74,18 @@ pub struct RankedOutcome {
 }
 
 impl RankedOutcome {
+    /// Pair a proposal with its validation outcome and a rank. The real
+    /// ranking is produced by [`Deliberation::complete`]; this constructor
+    /// also lets scoring policies and tests assemble outcomes directly.
+    #[must_use]
+    pub fn new(proposal: Proposal, outcome: ValidationOutcome, rank: u32) -> Self {
+        Self {
+            proposal,
+            outcome,
+            rank,
+        }
+    }
+
     #[must_use]
     pub fn proposal(&self) -> &Proposal {
         &self.proposal
