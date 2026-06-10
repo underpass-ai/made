@@ -14,7 +14,7 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
 use choreo_core::value_objects::{
-    DeliberationOutcome, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
 };
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
@@ -54,6 +54,7 @@ pub struct PrometheusMetricsRecorder {
     provider_tokens_total: IntCounterVec,
     provider_request_duration_seconds: HistogramVec,
     provider_in_flight: IntGaugeVec,
+    judge_discrimination_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -137,6 +138,12 @@ impl PrometheusMetricsRecorder {
             "In-flight proposing-agent calls per provider; the vLLM serial-saturation signal.",
             &["provider"],
         )?;
+        let judge_discrimination_total = register_counter(
+            &registry,
+            "choreo_judge_discrimination_total",
+            "Whether the scoring policy re-ranked the deliberation winner vs the structural baseline.",
+            &["specialty", "result"],
+        )?;
 
         Ok(Self {
             registry,
@@ -151,6 +158,7 @@ impl PrometheusMetricsRecorder {
             provider_tokens_total,
             provider_request_duration_seconds,
             provider_in_flight,
+            judge_discrimination_total,
         })
     }
 
@@ -253,6 +261,12 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
     fn dec_provider_in_flight(&self, provider: &str) {
         self.provider_in_flight.with_label_values(&[provider]).dec();
     }
+
+    fn record_discrimination(&self, specialty: &Specialty, result: Discrimination) {
+        self.judge_discrimination_total
+            .with_label_values(&[specialty.as_str(), result.as_label()])
+            .inc();
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -341,6 +355,7 @@ mod tests {
         recorder.record_provider_tokens("vllm", TokenUsage::new(10, 5));
         recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(1_000));
         recorder.inc_provider_in_flight("vllm");
+        recorder.record_discrimination(&specialty(), Discrimination::Reranked);
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -354,6 +369,23 @@ mod tests {
         assert!(text.contains("# TYPE choreo_provider_tokens_total counter"));
         assert!(text.contains("# TYPE choreo_provider_request_duration_seconds histogram"));
         assert!(text.contains("# TYPE choreo_provider_in_flight gauge"));
+        assert!(text.contains("# TYPE choreo_judge_discrimination_total counter"));
+    }
+
+    #[test]
+    fn records_discrimination_by_specialty_and_result() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_discrimination(&specialty(), Discrimination::Reranked);
+        recorder.record_discrimination(&specialty(), Discrimination::Reranked);
+        recorder.record_discrimination(&specialty(), Discrimination::Agreed);
+
+        let text = recorder.render();
+        assert!(text.contains(
+            "choreo_judge_discrimination_total{result=\"reranked\",specialty=\"reviewer\"} 2"
+        ));
+        assert!(text.contains(
+            "choreo_judge_discrimination_total{result=\"agreed\",specialty=\"reviewer\"} 1"
+        ));
     }
 
     #[test]

@@ -9,6 +9,7 @@ mod attributes;
 mod ceremony;
 mod council_selector;
 mod deliberation_outcome;
+mod discrimination;
 mod duration;
 mod ids;
 mod llm_error_kind;
@@ -36,6 +37,7 @@ pub use ceremony::{
 };
 pub use council_selector::CouncilSelector;
 pub use deliberation_outcome::DeliberationOutcome;
+pub use discrimination::Discrimination;
 pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;

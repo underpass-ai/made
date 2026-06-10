@@ -160,6 +160,10 @@ impl DeliberateUseCase {
 
         let completed_at = self.clock.now();
         let mut ranked = deliberation.complete(completed_at)?;
+        // Whether the scoring policy re-ranked the winner — computed on the
+        // pure score order, before the contract-driven valid-first reorder.
+        // The policy owns the judge contract, so this stays judge-agnostic.
+        let discrimination = self.scoring.discrimination(&ranked);
         observer
             .on_phase_changed(deliberation.task_id(), deliberation.phase(), completed_at)
             .await;
@@ -178,6 +182,10 @@ impl DeliberateUseCase {
         // winner is picked, so a `NoValidProposal` is still timed.
         self.metrics
             .observe_deliberation_duration(deliberation.specialty(), duration);
+        if let Some(result) = discrimination {
+            self.metrics
+                .record_discrimination(deliberation.specialty(), result);
+        }
 
         let winner = match Self::pick_winner(&ranked, task.constraints()) {
             Ok(winner) => winner,
@@ -756,6 +764,26 @@ mod tests {
         }
     }
 
+    /// Scores like [`LinearScoring`] but always reports a `Reranked`
+    /// discrimination, so a test can assert the use case forwards it.
+    struct RerankingScoring;
+    #[async_trait]
+    impl ScoringPort for RerankingScoring {
+        async fn score(&self, reports: &[ValidatorReport]) -> Result<Score, DomainError> {
+            if reports.is_empty() {
+                return Score::new(0.0);
+            }
+            let passed = reports.iter().filter(|r| r.passed()).count() as f64;
+            Score::new(passed / reports.len() as f64)
+        }
+        fn discrimination(
+            &self,
+            _ranked: &[choreo_core::entities::RankedOutcome],
+        ) -> Option<choreo_core::value_objects::Discrimination> {
+            Some(choreo_core::value_objects::Discrimination::Reranked)
+        }
+    }
+
     #[derive(Default)]
     struct NullStats;
     #[async_trait]
@@ -781,7 +809,7 @@ mod tests {
     // --- Metrics ----------------------------------------------------------
 
     use choreo_core::ports::{MetricsRecorderPort, NoopMetricsRecorder};
-    use choreo_core::value_objects::{DeliberationOutcome, DurationMs};
+    use choreo_core::value_objects::{DeliberationOutcome, Discrimination, DurationMs};
 
     /// Captures every observation so tests can assert what the use case
     /// recorded, keyed by specialty.
@@ -790,6 +818,7 @@ mod tests {
         durations: Mutex<Vec<(String, u64)>>,
         outcomes: Mutex<Vec<(String, &'static str)>>,
         winner_scores: Mutex<Vec<(String, f64)>>,
+        discriminations: Mutex<Vec<(String, &'static str)>>,
     }
     impl MetricsRecorderPort for RecordingMetrics {
         fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {
@@ -845,6 +874,12 @@ mod tests {
         }
         fn inc_provider_in_flight(&self, _provider: &str) {}
         fn dec_provider_in_flight(&self, _provider: &str) {}
+        fn record_discrimination(&self, specialty: &Specialty, result: Discrimination) {
+            self.discriminations
+                .lock()
+                .unwrap()
+                .push((specialty.as_str().to_owned(), result.as_label()));
+        }
     }
 
     // --- Fixture helpers --------------------------------------------------
@@ -1603,5 +1638,39 @@ mod tests {
         );
         assert!(metrics.winner_scores.lock().unwrap().is_empty());
         assert_eq!(metrics.durations.lock().unwrap().len(), 1);
+    }
+
+    #[tokio::test]
+    async fn records_the_scoring_policys_discrimination() {
+        let council = council_with(&["a1", "a2"]);
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> = vec![
+            StubAgent::new("a1", &sp, "a valid proposal", vec![]) as Arc<dyn AgentPort>,
+            StubAgent::new("a2", &sp, "another valid proposal", vec![]) as Arc<dyn AgentPort>,
+        ];
+        let metrics = Arc::new(RecordingMetrics::default());
+        let (usecase, _repo, _bus) = build_usecase(
+            agents,
+            council,
+            Arc::new(RerankingScoring),
+            vec![Arc::new(ContentLengthValidator)],
+            metrics.clone(),
+        );
+
+        usecase
+            .execute(task(TaskConstraints::new(
+                Rubric::empty(),
+                Rounds::new(0).unwrap(),
+                None,
+                None,
+            )))
+            .await
+            .unwrap();
+
+        // The use case forwarded the policy's discrimination verdict.
+        assert_eq!(
+            metrics.discriminations.lock().unwrap().as_slice(),
+            &[("reviewer".to_owned(), "reranked")]
+        );
     }
 }
