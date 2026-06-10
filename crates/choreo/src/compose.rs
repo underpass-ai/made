@@ -212,13 +212,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
         deliberate.clone(),
         repository.clone(),
     ));
-    let run_ceremony = Arc::new(RunCeremonyUseCase::new(
-        ceremony_definitions,
-        ceremony_instances,
-        ceremony_step_handler,
-        ceremony_context_store,
-        clock.clone(),
-    ));
+    let run_ceremony = Arc::new(
+        RunCeremonyUseCase::new(
+            ceremony_definitions,
+            ceremony_instances,
+            ceremony_step_handler,
+            ceremony_context_store,
+            clock.clone(),
+        )
+        .with_metrics(metrics_recorder.clone()),
+    );
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),

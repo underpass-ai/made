@@ -345,6 +345,28 @@ mod tests {
             _result: choreo_core::value_objects::Discrimination,
         ) {
         }
+        fn record_ceremony_outcome(
+            &self,
+            _ceremony: &str,
+            _outcome: choreo_core::value_objects::CeremonyOutcome,
+        ) {
+        }
+        fn observe_ceremony_duration(&self, _ceremony: &str, _duration: DurationMs) {}
+        fn observe_ceremony_step_duration(
+            &self,
+            _ceremony: &str,
+            _step: &str,
+            _duration: DurationMs,
+        ) {
+        }
+        fn record_ceremony_step(
+            &self,
+            _ceremony: &str,
+            _step: &str,
+            _status: choreo_core::value_objects::StepStatus,
+        ) {
+        }
+        fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

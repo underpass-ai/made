@@ -19,7 +19,8 @@
 //! [`StatisticsPort`]: super::StatisticsPort
 
 use crate::value_objects::{
-    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
+    Specialty, StepStatus, TokenUsage,
 };
 
 pub trait MetricsRecorderPort: Send + Sync {
@@ -83,6 +84,27 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// `reranked` ratio near zero means the judge never changes the
     /// outcome and is pure cost.
     fn record_discrimination(&self, specialty: &Specialty, result: Discrimination);
+
+    /// Record the terminal outcome of a ceremony run, by definition name —
+    /// the completion-rate and failure-mode split per ceremony type.
+    fn record_ceremony_outcome(&self, ceremony: &str, outcome: CeremonyOutcome);
+
+    /// Observe the end-to-end duration of a ceremony run that reached a
+    /// terminal state.
+    fn observe_ceremony_duration(&self, ceremony: &str, duration: DurationMs);
+
+    /// Observe the duration of a single ceremony step — slow-step
+    /// isolation within a ceremony.
+    fn observe_ceremony_step_duration(&self, ceremony: &str, step: &str, duration: DurationMs);
+
+    /// Record that a ceremony step finished with `status` — per-step volume
+    /// and the failure split.
+    fn record_ceremony_step(&self, ceremony: &str, step: &str, status: StepStatus);
+
+    /// Record that no transition out of `from_state` was satisfiable — a
+    /// guard deadlock or a missing event, distinct from a normal pending
+    /// wait.
+    fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -108,4 +130,9 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn inc_provider_in_flight(&self, _provider: &str) {}
     fn dec_provider_in_flight(&self, _provider: &str) {}
     fn record_discrimination(&self, _specialty: &Specialty, _result: Discrimination) {}
+    fn record_ceremony_outcome(&self, _ceremony: &str, _outcome: CeremonyOutcome) {}
+    fn observe_ceremony_duration(&self, _ceremony: &str, _duration: DurationMs) {}
+    fn observe_ceremony_step_duration(&self, _ceremony: &str, _step: &str, _duration: DurationMs) {}
+    fn record_ceremony_step(&self, _ceremony: &str, _step: &str, _status: StepStatus) {}
+    fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
 }

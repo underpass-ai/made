@@ -14,7 +14,8 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
 use choreo_core::value_objects::{
-    DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score, Specialty, TokenUsage,
+    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
+    Specialty, StepStatus, TokenUsage,
 };
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
@@ -55,6 +56,11 @@ pub struct PrometheusMetricsRecorder {
     provider_request_duration_seconds: HistogramVec,
     provider_in_flight: IntGaugeVec,
     judge_discrimination_total: IntCounterVec,
+    ceremony_completed_total: IntCounterVec,
+    ceremony_duration_seconds: HistogramVec,
+    ceremony_step_duration_seconds: HistogramVec,
+    ceremony_step_total: IntCounterVec,
+    ceremony_transition_blocked_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -65,6 +71,9 @@ impl PrometheusMetricsRecorder {
     /// Returns a [`DomainError::InvariantViolated`] if a metric fails to
     /// register — a duplicate name or malformed label is a wiring bug,
     /// surfaced at composition time rather than silently at runtime.
+    // A flat define-and-register list, one entry per metric family; it
+    // grows by enumeration, not complexity.
+    #[allow(clippy::too_many_lines)]
     pub fn new() -> Result<Self, DomainError> {
         let registry = Registry::new();
         let deliberation_duration_seconds = register_histogram(
@@ -144,6 +153,38 @@ impl PrometheusMetricsRecorder {
             "Whether the scoring policy re-ranked the deliberation winner vs the structural baseline.",
             &["specialty", "result"],
         )?;
+        let ceremony_completed_total = register_counter(
+            &registry,
+            "choreo_ceremony_completed_total",
+            "Ceremony runs that reached a stop, partitioned by terminal outcome.",
+            &["ceremony", "outcome"],
+        )?;
+        let ceremony_duration_seconds = register_histogram(
+            &registry,
+            "choreo_ceremony_duration_seconds",
+            "End-to-end duration of a ceremony run that reached a terminal state.",
+            DURATION_BUCKETS_SECONDS,
+            &["ceremony"],
+        )?;
+        let ceremony_step_duration_seconds = register_histogram(
+            &registry,
+            "choreo_ceremony_step_duration_seconds",
+            "Duration of a single ceremony step.",
+            DURATION_BUCKETS_SECONDS,
+            &["ceremony", "step"],
+        )?;
+        let ceremony_step_total = register_counter(
+            &registry,
+            "choreo_ceremony_step_total",
+            "Ceremony steps that finished, partitioned by step and terminal status.",
+            &["ceremony", "step", "status"],
+        )?;
+        let ceremony_transition_blocked_total = register_counter(
+            &registry,
+            "choreo_ceremony_transition_blocked_total",
+            "Ceremony states from which no transition was satisfiable — a deadlock or missing event.",
+            &["ceremony", "from_state"],
+        )?;
 
         Ok(Self {
             registry,
@@ -159,6 +200,11 @@ impl PrometheusMetricsRecorder {
             provider_request_duration_seconds,
             provider_in_flight,
             judge_discrimination_total,
+            ceremony_completed_total,
+            ceremony_duration_seconds,
+            ceremony_step_duration_seconds,
+            ceremony_step_total,
+            ceremony_transition_blocked_total,
         })
     }
 
@@ -267,6 +313,36 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[specialty.as_str(), result.as_label()])
             .inc();
     }
+
+    fn record_ceremony_outcome(&self, ceremony: &str, outcome: CeremonyOutcome) {
+        self.ceremony_completed_total
+            .with_label_values(&[ceremony, outcome.as_label()])
+            .inc();
+    }
+
+    fn observe_ceremony_duration(&self, ceremony: &str, duration: DurationMs) {
+        self.ceremony_duration_seconds
+            .with_label_values(&[ceremony])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn observe_ceremony_step_duration(&self, ceremony: &str, step: &str, duration: DurationMs) {
+        self.ceremony_step_duration_seconds
+            .with_label_values(&[ceremony, step])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn record_ceremony_step(&self, ceremony: &str, step: &str, status: StepStatus) {
+        self.ceremony_step_total
+            .with_label_values(&[ceremony, step, status.as_label()])
+            .inc();
+    }
+
+    fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str) {
+        self.ceremony_transition_blocked_total
+            .with_label_values(&[ceremony, from_state])
+            .inc();
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -356,6 +432,11 @@ mod tests {
         recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(1_000));
         recorder.inc_provider_in_flight("vllm");
         recorder.record_discrimination(&specialty(), Discrimination::Reranked);
+        recorder.record_ceremony_outcome("plan", CeremonyOutcome::Completed);
+        recorder.observe_ceremony_duration("plan", DurationMs::from_millis(1_000));
+        recorder.observe_ceremony_step_duration("plan", "frame", DurationMs::from_millis(1_000));
+        recorder.record_ceremony_step("plan", "frame", StepStatus::Completed);
+        recorder.record_ceremony_transition_blocked("plan", "drafting");
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -370,6 +451,28 @@ mod tests {
         assert!(text.contains("# TYPE choreo_provider_request_duration_seconds histogram"));
         assert!(text.contains("# TYPE choreo_provider_in_flight gauge"));
         assert!(text.contains("# TYPE choreo_judge_discrimination_total counter"));
+        assert!(text.contains("# TYPE choreo_ceremony_completed_total counter"));
+        assert!(text.contains("# TYPE choreo_ceremony_duration_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_ceremony_step_duration_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_ceremony_step_total counter"));
+        assert!(text.contains("# TYPE choreo_ceremony_transition_blocked_total counter"));
+    }
+
+    #[test]
+    fn records_ceremony_outcome_and_step_status() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_ceremony_outcome("engineering_planning", CeremonyOutcome::StepFailed);
+        recorder.record_ceremony_step("engineering_planning", "design", StepStatus::Failed);
+        recorder.record_ceremony_transition_blocked("engineering_planning", "review");
+
+        let text = recorder.render();
+        assert!(text.contains(
+            "choreo_ceremony_completed_total{ceremony=\"engineering_planning\",outcome=\"step_failed\"} 1"
+        ));
+        assert!(text.contains("status=\"failed\""));
+        assert!(text.contains(
+            "choreo_ceremony_transition_blocked_total{ceremony=\"engineering_planning\",from_state=\"review\"} 1"
+        ));
     }
 
     #[test]
