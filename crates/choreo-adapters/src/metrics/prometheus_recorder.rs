@@ -14,12 +14,15 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
 use choreo_core::value_objects::{DeliberationOutcome, DurationMs, Score, Specialty};
-use prometheus::{Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder};
+use prometheus::{
+    Encoder, HistogramOpts, HistogramVec, IntCounterVec, Opts, Registry, TextEncoder,
+};
 
 /// Latency buckets (seconds) sized for serialized vLLM deliberations,
 /// which run from a second or two up into minutes.
-const DURATION_BUCKETS_SECONDS: &[f64] =
-    &[0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 120.0, 300.0];
+const DURATION_BUCKETS_SECONDS: &[f64] = &[
+    0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 120.0, 300.0,
+];
 
 /// Score buckets across the closed `[0.0, 1.0]` range.
 const SCORE_BUCKETS: &[f64] = &[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9, 1.0];
@@ -189,7 +192,9 @@ mod tests {
 
         let text = recorder.render();
         // 2500ms == 2.5s — lands in the histogram's running sum.
-        assert!(text.contains("choreo_deliberation_duration_seconds_sum{specialty=\"reviewer\"} 2.5"));
+        assert!(
+            text.contains("choreo_deliberation_duration_seconds_sum{specialty=\"reviewer\"} 2.5")
+        );
         assert!(text.contains("choreo_deliberation_winner_score_sum{specialty=\"reviewer\"} 0.75"));
         assert!(text.contains("choreo_deliberation_winner_score_count{specialty=\"reviewer\"} 1"));
     }

@@ -1414,7 +1414,13 @@ mod tests {
         scoring: Arc<dyn ScoringPort>,
         validators: Vec<Arc<dyn ValidatorPort>>,
     ) -> (DeliberateUseCase, Arc<InMemoryRepo>, Arc<NullBus>) {
-        build_usecase(agents, council, scoring, validators, Arc::new(NoopMetricsRecorder))
+        build_usecase(
+            agents,
+            council,
+            scoring,
+            validators,
+            Arc::new(NoopMetricsRecorder),
+        )
     }
 
     #[tokio::test]
