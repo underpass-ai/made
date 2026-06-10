@@ -249,7 +249,8 @@ fn run_ceremony_fixture() -> Value {
                 "step_id": "collect_context",
                 "role_id": "FACILITATOR",
                 "status": "COMPLETED",
-                "attempt": 1
+                "attempt": 1,
+                "output": "context collected: the team agreed on the brief"
             }
         ],
         "mermaid_sequence": "sequenceDiagram\n    FACILITATOR->>FACILITATOR: collect_context [noop_step]"
