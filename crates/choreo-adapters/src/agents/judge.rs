@@ -370,6 +370,7 @@ mod tests {
         fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
         fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
         fn set_postgres_pool_in_use(&self, _connections: i64) {}
+        fn record_scoring_mode(&self, _mode: choreo_core::value_objects::ScoringMode) {}
     }
 
     fn judge_with(server: &MockServer, metrics: Arc<dyn MetricsRecorderPort>) -> LlmJudgeValidator {

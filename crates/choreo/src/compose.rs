@@ -96,11 +96,11 @@ fn wire_scoring(
     validators: &mut Vec<Arc<dyn ValidatorPort>>,
     metrics: Arc<dyn MetricsRecorderPort>,
 ) -> Result<Arc<dyn ScoringPort>, DomainError> {
-    match choreo_adapters::agents::judge_from_env(metrics)? {
+    match choreo_adapters::agents::judge_from_env(metrics.clone())? {
         Some(judge) => {
             validators.push(judge);
             info!("scoring: LLM judge enabled; ranking by judge verdict");
-            Ok(Arc::new(JudgeAwareScoring::new()))
+            Ok(Arc::new(JudgeAwareScoring::new().with_metrics(metrics)))
         }
         None => Ok(Arc::new(UniformScoring::new())),
     }

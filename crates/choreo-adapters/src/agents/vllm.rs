@@ -546,6 +546,7 @@ mod tests {
         }
         fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
         fn set_postgres_pool_in_use(&self, _connections: i64) {}
+        fn record_scoring_mode(&self, _mode: choreo_core::value_objects::ScoringMode) {}
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {
