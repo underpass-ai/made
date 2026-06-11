@@ -20,7 +20,7 @@
 
 use crate::value_objects::{
     CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
-    Specialty, StepStatus, TokenUsage,
+    ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 
 pub trait MetricsRecorderPort: Send + Sync {
@@ -118,6 +118,11 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// pool. Sampled at scrape time; saturation here cascades into
     /// readiness failures, so it is the leading pool-exhaustion signal.
     fn set_postgres_pool_in_use(&self, connections: i64);
+
+    /// Record which branch a judge-aware scorer took for one proposal. A
+    /// spike in `uniform_fallback` while a judge is configured means the
+    /// judge silently is not scoring — an otherwise-undetectable misconfig.
+    fn record_scoring_mode(&self, mode: ScoringMode);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -151,4 +156,5 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
     fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
     fn set_postgres_pool_in_use(&self, _connections: i64) {}
+    fn record_scoring_mode(&self, _mode: ScoringMode) {}
 }

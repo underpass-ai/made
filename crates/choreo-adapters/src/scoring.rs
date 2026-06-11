@@ -6,11 +6,13 @@
 //! policy (weighted average, fail-fast, learned combinator, …) by
 //! implementing `ScoringPort` elsewhere.
 
+use std::sync::Arc;
+
 use async_trait::async_trait;
 use choreo_core::entities::{RankedOutcome, ValidatorReport};
 use choreo_core::error::DomainError;
-use choreo_core::ports::ScoringPort;
-use choreo_core::value_objects::{Discrimination, ProposalId, Score};
+use choreo_core::ports::{MetricsRecorderPort, NoopMetricsRecorder, ScoringPort};
+use choreo_core::value_objects::{Discrimination, ProposalId, Score, ScoringMode};
 use serde_json::Value;
 
 /// Details key under which an LLM judge writes its 0.0–1.0 verdict. This
@@ -56,13 +58,38 @@ impl ScoringPort for UniformScoring {
 /// not an arbitrary one among those that merely passed the structural
 /// validators. When no judge ran, it falls back to the same
 /// pass-fraction policy as [`UniformScoring`], so it is a safe default.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct JudgeAwareScoring;
+#[derive(Clone)]
+pub struct JudgeAwareScoring {
+    metrics: Arc<dyn MetricsRecorderPort>,
+}
+
+impl std::fmt::Debug for JudgeAwareScoring {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("JudgeAwareScoring").finish()
+    }
+}
+
+impl Default for JudgeAwareScoring {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl JudgeAwareScoring {
     #[must_use]
-    pub const fn new() -> Self {
-        Self
+    pub fn new() -> Self {
+        Self {
+            metrics: Arc::new(NoopMetricsRecorder),
+        }
+    }
+
+    /// Attach a metrics recorder so the scoring-mode split (judge verdict
+    /// vs uniform fallback) is counted. The composition root wires the
+    /// real recorder; the default no-op keeps tests free of one.
+    #[must_use]
+    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = metrics;
+        self
     }
 }
 
@@ -74,8 +101,13 @@ impl ScoringPort for JudgeAwareScoring {
             .find_map(|report| report.details().get(JUDGE_SCORE_DETAIL_KEY))
             .and_then(Value::as_f64)
         {
+            self.metrics.record_scoring_mode(ScoringMode::JudgeVerdict);
             return Score::new(verdict.clamp(0.0, 1.0));
         }
+        // No judge verdict on this proposal: the score (empty -> MIN, or
+        // pass-fraction) is the uniform fallback.
+        self.metrics
+            .record_scoring_mode(ScoringMode::UniformFallback);
         if reports.is_empty() {
             return Ok(Score::MIN);
         }

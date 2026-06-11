@@ -15,7 +15,7 @@ use choreo_core::error::DomainError;
 use choreo_core::ports::MetricsRecorderPort;
 use choreo_core::value_objects::{
     CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
-    Specialty, StepStatus, TokenUsage,
+    ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 use prometheus::{
     Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
@@ -70,6 +70,7 @@ pub struct PrometheusMetricsRecorder {
     nats_publish_duration_seconds: HistogramVec,
     nats_publish_errors_total: IntCounterVec,
     postgres_pool_in_use: IntGauge,
+    judge_scoring_mode_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -215,6 +216,12 @@ impl PrometheusMetricsRecorder {
         registry
             .register(Box::new(postgres_pool_in_use.clone()))
             .map_err(|err| metrics_error(&err))?;
+        let judge_scoring_mode_total = register_counter(
+            &registry,
+            "choreo_judge_scoring_mode_total",
+            "Judge-aware scoring decisions, by mode (judge verdict vs uniform fallback).",
+            &["mode"],
+        )?;
 
         Ok(Self {
             registry,
@@ -238,6 +245,7 @@ impl PrometheusMetricsRecorder {
             nats_publish_duration_seconds,
             nats_publish_errors_total,
             postgres_pool_in_use,
+            judge_scoring_mode_total,
         })
     }
 
@@ -392,6 +400,12 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
     fn set_postgres_pool_in_use(&self, connections: i64) {
         self.postgres_pool_in_use.set(connections);
     }
+
+    fn record_scoring_mode(&self, mode: ScoringMode) {
+        self.judge_scoring_mode_total
+            .with_label_values(&[mode.as_label()])
+            .inc();
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -511,6 +525,22 @@ mod tests {
         assert!(text.contains("# TYPE choreo_nats_publish_errors_total counter"));
         // The single label-less pool gauge renders even unset.
         assert!(text.contains("# TYPE choreo_postgres_pool_in_use gauge"));
+        recorder.record_scoring_mode(ScoringMode::JudgeVerdict);
+        assert!(recorder
+            .render()
+            .contains("# TYPE choreo_judge_scoring_mode_total counter"));
+    }
+
+    #[test]
+    fn records_scoring_mode_by_branch() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_scoring_mode(ScoringMode::JudgeVerdict);
+        recorder.record_scoring_mode(ScoringMode::JudgeVerdict);
+        recorder.record_scoring_mode(ScoringMode::UniformFallback);
+
+        let text = recorder.render();
+        assert!(text.contains("choreo_judge_scoring_mode_total{mode=\"judge_verdict\"} 2"));
+        assert!(text.contains("choreo_judge_scoring_mode_total{mode=\"uniform_fallback\"} 1"));
     }
 
     #[test]
