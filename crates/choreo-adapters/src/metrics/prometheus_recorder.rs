@@ -42,6 +42,11 @@ const PROVIDER_LATENCY_BUCKETS_SECONDS: &[f64] = &[
     0.5, 1.0, 2.0, 5.0, 10.0, 20.0, 30.0, 45.0, 60.0, 90.0, 120.0,
 ];
 
+/// Latency buckets (seconds) for a NATS publish — a fast in-cluster
+/// operation, so the range is sub-second-weighted.
+const NATS_PUBLISH_BUCKETS_SECONDS: &[f64] =
+    &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5];
+
 pub struct PrometheusMetricsRecorder {
     registry: Registry,
     deliberation_duration_seconds: HistogramVec,
@@ -61,6 +66,8 @@ pub struct PrometheusMetricsRecorder {
     ceremony_step_duration_seconds: HistogramVec,
     ceremony_step_total: IntCounterVec,
     ceremony_transition_blocked_total: IntCounterVec,
+    nats_publish_duration_seconds: HistogramVec,
+    nats_publish_errors_total: IntCounterVec,
 }
 
 impl PrometheusMetricsRecorder {
@@ -185,6 +192,19 @@ impl PrometheusMetricsRecorder {
             "Ceremony states from which no transition was satisfiable — a deadlock or missing event.",
             &["ceremony", "from_state"],
         )?;
+        let nats_publish_duration_seconds = register_histogram(
+            &registry,
+            "choreo_nats_publish_duration_seconds",
+            "Latency of a NATS publish, by event subject kind.",
+            NATS_PUBLISH_BUCKETS_SECONDS,
+            &["subject_kind"],
+        )?;
+        let nats_publish_errors_total = register_counter(
+            &registry,
+            "choreo_nats_publish_errors_total",
+            "Failed NATS publishes, by subject kind and reason.",
+            &["subject_kind", "reason"],
+        )?;
 
         Ok(Self {
             registry,
@@ -205,6 +225,8 @@ impl PrometheusMetricsRecorder {
             ceremony_step_duration_seconds,
             ceremony_step_total,
             ceremony_transition_blocked_total,
+            nats_publish_duration_seconds,
+            nats_publish_errors_total,
         })
     }
 
@@ -343,6 +365,18 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[ceremony, from_state])
             .inc();
     }
+
+    fn observe_nats_publish(&self, subject_kind: &str, duration: DurationMs) {
+        self.nats_publish_duration_seconds
+            .with_label_values(&[subject_kind])
+            .observe(duration.get() as f64 / 1000.0);
+    }
+
+    fn record_nats_publish_error(&self, subject_kind: &str, reason: &str) {
+        self.nats_publish_errors_total
+            .with_label_values(&[subject_kind, reason])
+            .inc();
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -437,6 +471,8 @@ mod tests {
         recorder.observe_ceremony_step_duration("plan", "frame", DurationMs::from_millis(1_000));
         recorder.record_ceremony_step("plan", "frame", StepStatus::Completed);
         recorder.record_ceremony_transition_blocked("plan", "drafting");
+        recorder.observe_nats_publish("deliberation_completed", DurationMs::from_millis(5));
+        recorder.record_nats_publish_error("deliberation_completed", "publish");
 
         let text = recorder.render();
         assert!(text.contains("# TYPE choreo_deliberation_duration_seconds histogram"));
@@ -456,6 +492,24 @@ mod tests {
         assert!(text.contains("# TYPE choreo_ceremony_step_duration_seconds histogram"));
         assert!(text.contains("# TYPE choreo_ceremony_step_total counter"));
         assert!(text.contains("# TYPE choreo_ceremony_transition_blocked_total counter"));
+        assert!(text.contains("# TYPE choreo_nats_publish_duration_seconds histogram"));
+        assert!(text.contains("# TYPE choreo_nats_publish_errors_total counter"));
+    }
+
+    #[test]
+    fn records_nats_publish_errors_by_subject_and_reason() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_nats_publish_error("deliberation_completed", "publish");
+        recorder.record_nats_publish_error("deliberation_completed", "publish");
+        recorder.record_nats_publish_error("task_dispatched", "serialize");
+
+        let text = recorder.render();
+        assert!(text.contains(
+            "choreo_nats_publish_errors_total{reason=\"publish\",subject_kind=\"deliberation_completed\"} 2"
+        ));
+        assert!(text.contains(
+            "choreo_nats_publish_errors_total{reason=\"serialize\",subject_kind=\"task_dispatched\"} 1"
+        ));
     }
 
     #[test]
