@@ -33,10 +33,14 @@ use choreo_core::ports::{
     DeliberationRepositoryPort, DraftRequest, MessagingPort, MetricsRecorderPort, NullObserver,
     ScoringPort, StatisticsPort, ValidatorPort,
 };
-use choreo_core::value_objects::{AgentId, DeliberationOutcome, EventId, ProposalId};
+use choreo_core::value_objects::{
+    AgentId, DeliberationOutcome, Discrimination, EventId, ProposalId,
+};
 use time::OffsetDateTime;
 use tracing::{debug, info};
 use uuid::Uuid;
+
+use super::winner_selection;
 
 /// Result returned by [`DeliberateUseCase::execute`].
 #[derive(Debug, Clone)]
@@ -168,9 +172,26 @@ impl DeliberateUseCase {
             .on_phase_changed(deliberation.task_id(), deliberation.phase(), completed_at)
             .await;
         if task.constraints().output_contract().is_some() {
-            ranked = Self::prioritize_valid_outputs(&mut deliberation, &ranked)?;
+            ranked = winner_selection::prioritize_valid_outputs(&mut deliberation, &ranked)?;
         }
 
+        self.finalize(deliberation, ranked, &task, completed_at, discrimination)
+            .await
+    }
+
+    /// Persist and emit a completed deliberation: record statistics and
+    /// metrics, select the winner (recording the terminal outcome),
+    /// publish the completion event, and return the output. Split out from
+    /// the pipeline so `execute_with_observer` reads as the algorithm and
+    /// this reads as its close-out effects.
+    async fn finalize(
+        &self,
+        deliberation: Deliberation,
+        ranked: Vec<choreo_core::entities::RankedOutcome>,
+        task: &Task,
+        completed_at: OffsetDateTime,
+        discrimination: Option<Discrimination>,
+    ) -> Result<DeliberateOutput, DomainError> {
         self.repository.save(&deliberation).await?;
 
         let duration = deliberation.duration().unwrap_or_default();
@@ -187,7 +208,7 @@ impl DeliberateUseCase {
                 .record_discrimination(deliberation.specialty(), result);
         }
 
-        let winner = match Self::pick_winner(&ranked, task.constraints()) {
+        let winner = match winner_selection::pick_winner(&ranked, task.constraints()) {
             Ok(winner) => winner,
             Err(err) => {
                 self.metrics.record_deliberation_outcome(
@@ -229,41 +250,6 @@ impl DeliberateUseCase {
         Ok(DeliberateOutput {
             winner_proposal_id: winner.proposal().id().clone(),
             deliberation,
-        })
-    }
-
-    fn prioritize_valid_outputs(
-        deliberation: &mut Deliberation,
-        ranked: &[choreo_core::entities::RankedOutcome],
-    ) -> Result<Vec<choreo_core::entities::RankedOutcome>, DomainError> {
-        let reordered = ranked
-            .iter()
-            .filter(|candidate| candidate.outcome().all_passed())
-            .chain(
-                ranked
-                    .iter()
-                    .filter(|candidate| !candidate.outcome().all_passed()),
-            )
-            .map(|candidate| candidate.proposal().id().clone())
-            .collect::<Vec<_>>();
-        deliberation.reprioritize(reordered)
-    }
-
-    fn pick_winner<'a>(
-        ranked: &'a [choreo_core::entities::RankedOutcome],
-        constraints: &TaskConstraints,
-    ) -> Result<&'a choreo_core::entities::RankedOutcome, DomainError> {
-        if let Some(contract) = constraints.output_contract() {
-            return ranked
-                .iter()
-                .find(|candidate| candidate.outcome().all_passed())
-                .ok_or(DomainError::NoValidProposal {
-                    contract_id: contract.contract_id().to_owned(),
-                });
-        }
-
-        ranked.first().ok_or(DomainError::EmptyCollection {
-            field: "deliberation.ranked",
         })
     }
 

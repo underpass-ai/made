@@ -38,6 +38,7 @@ mod start_ceremony_step_input;
 mod start_ceremony_step_use_case;
 mod start_ceremony_use_case;
 mod unregister_agent;
+mod winner_selection;
 
 pub use apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 pub use apply_ceremony_transition_use_case::ApplyCeremonyTransitionUseCase;
