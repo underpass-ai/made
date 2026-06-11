@@ -545,6 +545,7 @@ mod tests {
         ) {
         }
         fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
+        fn set_postgres_pool_in_use(&self, _connections: i64) {}
     }
 
     fn test_agent_with_bearer(server: &MockServer, token: &str) -> VllmAgent {

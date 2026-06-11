@@ -69,6 +69,15 @@ impl PostgresPool {
         &self.inner
     }
 
+    /// Connections currently checked out of the pool — total open minus
+    /// idle. Sampled by the metrics endpoint as the pool-saturation
+    /// signal (the pool has a small max and a short acquire timeout, so
+    /// exhaustion cascades into readiness failures).
+    #[must_use]
+    pub fn in_use(&self) -> u64 {
+        u64::from(self.inner.size()).saturating_sub(self.inner.num_idle() as u64)
+    }
+
     /// Lightweight liveness probe (`SELECT 1`): acquires a connection and
     /// round-trips a trivial query. Used by the readiness endpoint to
     /// detect a database that became unreachable *after* startup

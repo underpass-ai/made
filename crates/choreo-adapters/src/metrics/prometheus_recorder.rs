@@ -18,7 +18,8 @@ use choreo_core::value_objects::{
     Specialty, StepStatus, TokenUsage,
 };
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGaugeVec, Opts, Registry, TextEncoder,
+    Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
+    TextEncoder,
 };
 
 /// Latency buckets (seconds) sized for serialized vLLM deliberations,
@@ -68,6 +69,7 @@ pub struct PrometheusMetricsRecorder {
     ceremony_transition_blocked_total: IntCounterVec,
     nats_publish_duration_seconds: HistogramVec,
     nats_publish_errors_total: IntCounterVec,
+    postgres_pool_in_use: IntGauge,
 }
 
 impl PrometheusMetricsRecorder {
@@ -205,6 +207,14 @@ impl PrometheusMetricsRecorder {
             "Failed NATS publishes, by subject kind and reason.",
             &["subject_kind", "reason"],
         )?;
+        let postgres_pool_in_use = IntGauge::new(
+            "choreo_postgres_pool_in_use",
+            "Connections currently checked out of the Postgres pool.",
+        )
+        .map_err(|err| metrics_error(&err))?;
+        registry
+            .register(Box::new(postgres_pool_in_use.clone()))
+            .map_err(|err| metrics_error(&err))?;
 
         Ok(Self {
             registry,
@@ -227,6 +237,7 @@ impl PrometheusMetricsRecorder {
             ceremony_transition_blocked_total,
             nats_publish_duration_seconds,
             nats_publish_errors_total,
+            postgres_pool_in_use,
         })
     }
 
@@ -377,6 +388,10 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .with_label_values(&[subject_kind, reason])
             .inc();
     }
+
+    fn set_postgres_pool_in_use(&self, connections: i64) {
+        self.postgres_pool_in_use.set(connections);
+    }
 }
 
 /// Define a labelled histogram, register it on `registry`, and return
@@ -494,6 +509,17 @@ mod tests {
         assert!(text.contains("# TYPE choreo_ceremony_transition_blocked_total counter"));
         assert!(text.contains("# TYPE choreo_nats_publish_duration_seconds histogram"));
         assert!(text.contains("# TYPE choreo_nats_publish_errors_total counter"));
+        // The single label-less pool gauge renders even unset.
+        assert!(text.contains("# TYPE choreo_postgres_pool_in_use gauge"));
+    }
+
+    #[test]
+    fn postgres_pool_gauge_reflects_the_last_set_value() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.set_postgres_pool_in_use(7);
+        assert!(recorder.render().contains("choreo_postgres_pool_in_use 7"));
+        recorder.set_postgres_pool_in_use(3);
+        assert!(recorder.render().contains("choreo_postgres_pool_in_use 3"));
     }
 
     #[test]
