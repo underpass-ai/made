@@ -43,9 +43,9 @@ securityContext:
 
 service:
   type: ClusterIP
-  # gRPC is the product surface; HTTP carries only health endpoints
-  # (and, eventually, metrics). Both land on a single Service with
-  # two named ports so probes can hit HTTP without any DNS games.
+  # gRPC is the product surface; HTTP carries the health endpoints and
+  # the Prometheus `/metrics` scrape endpoint. Both land on a single
+  # Service with two named ports so probes can hit HTTP without DNS games.
   port: 50055
   httpPort: 8080
   annotations: {}
@@ -83,7 +83,8 @@ affinity: {}
 config:
   grpcPort: 50055
   # The service exposes HTTP on a separate port for health probes
-  # and future metrics. Kept small, plaintext, cluster-internal.
+  # and the Prometheus `/metrics` endpoint. Kept small, plaintext,
+  # cluster-internal.
   httpPort: 8080
   logLevel: info
   # Optional startup seeding. Comma-separated list of specialty

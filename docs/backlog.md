@@ -897,7 +897,7 @@ Status of the chain:
 #### Remaining follow-ups
 
 - compose-level operations doc (`docs/operations/compose-e2e.md`):
-  done 2026-05-18. It documents the nine scenarios, `stub-runtime`,
+  done 2026-05-18. It documents the compose-shaped scenarios, `stub-runtime`,
   `stub-llm`, Report schema, provider-shaped OpenAI/vLLM paths, and
   when to use `make e2e-compose` versus `make e2e-provider-vllm`.
 - optional consumer-smoke positive-path mode: done 2026-05-18.
@@ -970,7 +970,7 @@ Status: done (foundation 2026-05-12; distribution 2026-05-14).
 Current state:
 
 - `crates/choreo-mcp` exposes every RPC of `underpass.choreo.v1` as
-  a `choreo_*` MCP tool (16 tools 1:1 with the gRPC service).
+  a `choreo_*` MCP tool (17 tools 1:1 with the gRPC service).
 - JSON-RPC 2.0 over stdin/stdout, no MCP SDK — the wire protocol is
   hand-rolled so it stays in lock-step with the proto contract.
 - `ChoreoMcpToolBackend` trait has two impls: fixture (canned

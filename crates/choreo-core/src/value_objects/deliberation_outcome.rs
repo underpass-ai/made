@@ -7,10 +7,10 @@
 /// contract — every proposal was generated but none satisfied it.
 ///
 /// Adapter-shaped aborts (an agent or validator returning `Err`) are
-/// deliberately **not** outcomes: they surface as [`DomainError`]s and,
-/// in later observability slices, as dedicated error counters. Keeping
-/// this enum to the two genuine end-states keeps the `outcome` metric
-/// label low-cardinality and meaningful.
+/// deliberately **not** outcomes: they surface as [`DomainError`]s and as
+/// dedicated error counters (the judge/provider `*_errors_total` families).
+/// Keeping this enum to the two genuine end-states keeps the `outcome`
+/// metric label low-cardinality and meaningful.
 ///
 /// [`DomainError`]: crate::error::DomainError
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
