@@ -113,6 +113,11 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// (serialize vs publish). Completion events drive downstream
     /// orchestration, so a silent publish failure loses work.
     fn record_nats_publish_error(&self, subject_kind: &str, reason: &str);
+
+    /// Set the gauge of Postgres connections currently checked out of the
+    /// pool. Sampled at scrape time; saturation here cascades into
+    /// readiness failures, so it is the leading pool-exhaustion signal.
+    fn set_postgres_pool_in_use(&self, connections: i64);
 }
 
 /// A [`MetricsRecorderPort`] that discards every observation.
@@ -145,4 +150,5 @@ impl MetricsRecorderPort for NoopMetricsRecorder {
     fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
     fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
     fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
+    fn set_postgres_pool_in_use(&self, _connections: i64) {}
 }

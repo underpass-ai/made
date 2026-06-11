@@ -29,7 +29,7 @@ use axum::{
 };
 use choreo_adapters::metrics::PrometheusMetricsRecorder;
 use choreo_adapters::postgres::PostgresPool;
-use choreo_core::ports::StatisticsPort;
+use choreo_core::ports::{MetricsRecorderPort, StatisticsPort};
 use serde::Serialize;
 
 /// Read-only handles the health endpoints need. Cloning a
@@ -238,6 +238,13 @@ async fn metrics(State(state): State<HealthState>) -> Response {
     body.push_str("# HELP choreo_service_ready 1 when every wired dependency is reachable.\n");
     body.push_str("# TYPE choreo_service_ready gauge\n");
     writeln!(body, "choreo_service_ready {ready_gauge}").unwrap();
+
+    // Sample the Postgres pool gauge at scrape time — no background task.
+    if let Some(pool) = &state.postgres {
+        state
+            .metrics
+            .set_postgres_pool_in_use(i64::try_from(pool.in_use()).unwrap_or(i64::MAX));
+    }
 
     // Append the operational metrics registry (histograms, per-outcome
     // counters) rendered by the Prometheus recorder.
