@@ -1,8 +1,9 @@
 //! [`LlmErrorKind`] — a low-cardinality classification of an LLM call
 //! failure.
 //!
-//! A single dimension for error metrics across every LLM-backed adapter
-//! (the judge today; provider agents in later slices). The variants name
+//! A single dimension for error metrics across every LLM-backed adapter:
+//! the LLM judge and every HTTP provider agent (vLLM / OpenAI / Anthropic).
+//! The variants name
 //! *what went wrong* at a granularity that demands different operator
 //! responses — a `RateLimited` is backpressure, an `Unauthorized` is a
 //! credential rotation, a `Timeout` is saturation — so the same eight

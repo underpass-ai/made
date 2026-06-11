@@ -16,6 +16,26 @@ operator command.
 
 ### Added
 
+- Observability — Prometheus metrics: the binary exposes the operational
+  metric families at `GET /metrics` (HTTP port `8080`) through a
+  `MetricsRecorderPort` (core) and a `PrometheusMetricsRecorder` adapter
+  (explicit registry, no global recorder), alongside the original
+  `Statistics`-backed counters. Covers deliberation quality (duration,
+  winner-score distribution, terminal outcome), the LLM judge (latency,
+  score, errors by kind, discrimination, tokens, scoring mode), the
+  proposing providers (request latency, errors, in-flight gauge, tokens),
+  the ceremony engine (outcomes, durations, per-step status, blocked
+  transitions), NATS publish (latency + errors), and the Postgres pool.
+  Wired through a `with_metrics` opt-in so only the composition root
+  installs the live recorder. Covered by unit tests.
+- Observability — distributed tracing: with the `otel` feature and an OTLP
+  endpoint configured, a deliberation is exported as one trace whose span
+  events carry the debate itself — proposals, peer critiques, validator
+  verdicts, judge scores, and the winning rationale — over mutual TLS to
+  the in-cluster collector.
+- Ceremony "meeting record": the winning contribution of each ceremony step
+  is returned on the `RunCeremony` response (`CeremonyStepExecution.output`),
+  so the full prose outcome of a run is a first-class API artifact.
 - LLM-as-judge scoring: an optional `JudgeAwareScoring` strategy fed by an
   `LlmJudgeValidator` that ranks deliberation proposals by intrinsic
   quality instead of validator pass-fraction. Opt-in via

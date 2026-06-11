@@ -19,14 +19,17 @@
 //! | [`noop::NoopExecutor`]              | `ExecutorPort`                    |
 //! | [`noop::NoopMessaging`]             | `MessagingPort`                   |
 //! | [`scoring::UniformScoring`]         | `ScoringPort` (pass fraction)     |
+//! | [`scoring::JudgeAwareScoring`]      | `ScoringPort` (judge verdict, wired when a judge is configured) |
 //! | [`validators::ContentNonEmptyValidator`] | `ValidatorPort` (sanity check) |
 //!
 //! ## Feature-gated
 //!
 //! | Feature            | Integration                                 |
 //! |--------------------|---------------------------------------------|
+//! | `grpc` (default)   | Tonic gRPC server adapter (`grpc::*`)       |
 //! | `nats`             | NATS JetStream messaging adapter            |
 //! | `postgres`         | Postgres deliberation repository (sqlx)     |
+//! | `otel`             | gRPC W3C tracecontext → OpenTelemetry bridge |
 //! | `agent-vllm`       | vLLM / OpenAI-compatible local inference    |
 //! | `agent-anthropic`  | Anthropic Messages API                      |
 //! | `agent-openai`     | OpenAI Chat Completions / Responses API     |

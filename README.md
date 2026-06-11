@@ -241,6 +241,23 @@ gate in this repository):
 
 **Caveats and observability**:
 
+- **Prometheus metrics**: the binary serves an operational metric
+  surface at `GET /metrics` (HTTP port `8080`) through a domain
+  `MetricsRecorderPort` and a `PrometheusMetricsRecorder` adapter
+  (explicit registry, no global recorder), exposed alongside the
+  original `Statistics`-backed counters. The families cover
+  deliberation quality (duration, winner-score distribution, terminal
+  outcome), the LLM judge (latency, score, errors by kind,
+  **discrimination** — does the judge re-rank or just burn tokens? —,
+  tokens, scoring mode), the proposing providers (request latency,
+  errors, in-flight gauge for vLLM serial saturation, tokens), the
+  ceremony engine (outcomes, durations, per-step status, blocked
+  transitions), NATS publish, and the Postgres pool. Recording is a
+  synchronous, infallible side-channel that can never block or fail a
+  deliberation. See `docs/choreographer-observability-design.md` for
+  the catalogue, alerts, and dashboard design. (Deferred so far: gRPC
+  front-door RED — already covered by the request traces — and
+  per-query Postgres latency.)
 - `StreamDeliberation` streams phase transitions only; per-proposal,
   per-critique, and per-revision streaming arrives in a later slice.
 - Distributed tracing: the core use cases, gRPC handlers, NATS

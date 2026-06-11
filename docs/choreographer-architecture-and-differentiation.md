@@ -65,7 +65,7 @@ for round in 0..rounds {
 
 - **Validating.** Each proposal runs through every configured `ValidatorPort` in sequence, producing a list of `ValidatorReport`s (pass/fail plus opaque per-validator detail). Validators are domain-agnostic: lint, policy, fact-check, clinical-safety — the report carries any `kind` string, with no enum of use-case-specific check types baked into the core.
 - **Scoring.** The reports for a proposal are aggregated into a single `Score` by the pluggable `ScoringPort`.
-- **Completed.** `complete()` sorts proposals by score descending, breaking ties by proposal ID, and seals the ranking immutably: `ranked.sort_by(|a, b| b.2.score().cmp(&a.2.score()).then_with(|| a.0.cmp(&b.0)))` (`deliberation.rs`, line 260).
+- **Completed.** `complete()` sorts proposals by score descending, breaking ties by proposal ID, and seals the ranking immutably: `ranked.sort_by(|a, b| b.2.score().cmp(&a.2.score()).then_with(|| a.0.cmp(&b.0)))` (`deliberation.rs`).
 
 If the task declares an **output contract**, the ranking is reprioritized so valid proposals (those that passed all reports) come before invalid ones, and a missing valid proposal is a fail-safe `DomainError` rather than a silently-bad winner. A call-scoped `DeliberationObserverPort` (distinct from the persistent messaging port) lets one caller stream phase transitions live without affecting other callers or persisting anything; the default is a `NullObserver`.
 
@@ -125,7 +125,7 @@ impl ScoringPort for JudgeAwareScoring {
     }
 }
 ```
-*(`crates/choreo-adapters/src/scoring.rs`, lines 70–87)*
+*(`crates/choreo-adapters/src/scoring.rs`; the scoring-mode metric instrumentation is elided here for readability)*
 
 Three properties matter. It is a **safe default**: with no judge report present it falls back to exactly the uniform pass-fraction policy. It is **fail-fast**: the judge is opt-in via `CHOREO_JUDGE_ENABLED`, and if enabled but missing its endpoint, model, or threshold, `judge_from_env()` returns a `DomainError` at composition time — wiring fails to start, it does not silently degrade at runtime. And it is **decoupled**: the judge is a validator that feeds the scorer through a structured detail contract, so pass/fail validation and ranking policy stay separate concerns. Because the verdict is clamped into a bounded `Score`, the final `sort_by(score desc, then id)` remains a deterministic total order; the judge simply replaces an arbitrary tie-break with an intrinsic-quality signal.
 
@@ -145,6 +145,8 @@ That winning prose for each step is not buried inside the engine. The chosen con
 
 The meeting is also **fully replayable as a distributed trace**. Built with the `otel` feature and given an OTLP endpoint, the whole deliberation becomes one trace whose span events carry the debate itself — *proposal drafted*, *peer critique and revision*, *validator verdict*, *proposal scored* (with the judge's 0.0–1.0 number), *deliberation completed* (with the winning score). Export is over **mutual TLS** — the Choreographer presents a client certificate to the collector, the Underpass standard for every in-cluster hop — landing in Tempo and viewable in Grafana. The result is uncommon for an agent system: you can open a past meeting and watch, span by span, *which* proposals were made, *how* they were critiqued, *what* the judge scored each one, and *why* a particular contribution won — the reasoning itself, addressable by trace ID, not a summary reconstructed after the fact.
 
+And in aggregate the same meeting is a set of **metrics**, scraped from `/metrics` and recorded through a `MetricsRecorderPort` whose contract is deliberately synchronous and infallible — instrumentation can never block or fail a deliberation. They measure the things a deliberation orchestrator should be judged on, which generic RED dashboards never capture: the **winner-score distribution** (is the *quality* of decisions drifting?), the **`NoValidProposal` rate** (every proposal generated but none satisfied the contract), per-provider **token cost** and **in-flight depth** (the leading indicator of vLLM serial saturation), and — the sharpest of them — **judge discrimination**: the rate at which the judge's verdict actually re-ranks the winner versus merely confirming the first proposal. A judge that never re-ranks is expensive dead weight; the metric, computed inside the judge-aware scorer so the use case stays judge-agnostic, is the one number that answers "is the expensive LLM judge earning its tokens?" — a question no generic agent dashboard thinks to ask.
+
 ## What makes it different
 
 Stated generically, against the prevailing state of the art, and tied to a concrete mechanism in each case:
@@ -155,7 +157,7 @@ Stated generically, against the prevailing state of the art, and tied to a concr
 - **Where vendor-coupled SDKs assume one provider's API shape**, every vendor is a feature-gated peer behind `AgentPort`, secrets are redacted opaque types, and an unsupported kind fails loudly rather than silently no-op-ing.
 - **Where anemic glue code spreads invariants across handlers**, value objects enforce bounds at construction, aggregates guard their own transitions, and all ports return `DomainError` so adapter failures never leak upward as foreign types.
 - **Where context is threaded through a shared mutable channel that concurrent runs can race on**, context arrives as a caller-supplied, per-call `ExternalContextBundle` through a port, and a ceremony's transcript is owned by its own instance — prior turns flow into downstream briefs by default, with no global state for parallel ceremonies to contend over.
-- **Where most agent systems emit a final answer and, at best, an unstructured log**, a deliberation is one OpenTelemetry trace whose span events carry the debate — every proposal, critique, validator verdict, and judge score, plus the winning rationale — exported over mutual TLS, so a past meeting is replayable span-by-span by trace ID rather than reconstructed from prose.
+- **Where most agent systems emit a final answer and, at best, an unstructured log**, a deliberation is one OpenTelemetry trace whose span events carry the debate — every proposal, critique, validator verdict, and judge score, plus the winning rationale — exported over mutual TLS, so a past meeting is replayable span-by-span by trace ID; and in aggregate it is a set of deliberation-specific Prometheus metrics (winner-score distribution, `NoValidProposal` rate, per-provider token cost and saturation, and judge re-rank discrimination) that ask whether the *decisions* are good and whether the judge earns its tokens — questions a generic RED dashboard never poses.
 
 ## How it runs
 
