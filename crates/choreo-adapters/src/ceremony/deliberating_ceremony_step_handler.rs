@@ -451,6 +451,157 @@ mod tests {
         ));
     }
 
+    /// Stub agent that always answers with structured claims citing a
+    /// reference that is NOT in the step's evidence pack — the exact
+    /// failure mode the grounding gate exists for (a fluent, well-formed
+    /// proposal built on fabricated evidence).
+    #[derive(Debug)]
+    struct FabricatingAgent {
+        id: AgentId,
+        specialty: Specialty,
+    }
+
+    #[async_trait::async_trait]
+    impl choreo_core::ports::AgentPort for FabricatingAgent {
+        fn id(&self) -> &AgentId {
+            &self.id
+        }
+
+        fn specialty(&self) -> &Specialty {
+            &self.specialty
+        }
+
+        async fn generate(
+            &self,
+            _request: choreo_core::ports::DraftRequest,
+        ) -> Result<choreo_core::ports::Revision, DomainError> {
+            Ok(choreo_core::ports::Revision {
+                content: json!({
+                    "claims": [
+                        {
+                            "text": "the pod spec sets privileged: true",
+                            "evidence_refs": ["ev-fabricated"],
+                        },
+                    ],
+                    "decision": "accept",
+                })
+                .to_string(),
+            })
+        }
+
+        async fn critique(
+            &self,
+            _peer_content: &str,
+            _constraints: &choreo_core::entities::TaskConstraints,
+        ) -> Result<choreo_core::ports::Critique, DomainError> {
+            Ok(choreo_core::ports::Critique {
+                feedback: "looks fine".to_owned(),
+            })
+        }
+
+        async fn revise(
+            &self,
+            own_content: &str,
+            _critique: &choreo_core::ports::Critique,
+        ) -> Result<choreo_core::ports::Revision, DomainError> {
+            Ok(choreo_core::ports::Revision {
+                content: own_content.to_owned(),
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn grounding_gate_rejects_fabricated_evidence_end_to_end() {
+        let specialty = Specialty::new("evidence_gate").unwrap();
+        let agent_id = AgentId::new("agent-evidence_gate-0").unwrap();
+        let agent_registry = Arc::new(InMemoryAgentRegistry::new());
+        agent_registry
+            .insert(Arc::new(FabricatingAgent {
+                id: agent_id.clone(),
+                specialty: specialty.clone(),
+            }))
+            .await
+            .unwrap();
+
+        let council_registry = Arc::new(InMemoryCouncilRegistry::new());
+        council_registry
+            .register(
+                Council::new(
+                    CouncilId::new("council-evidence_gate").unwrap(),
+                    specialty.clone(),
+                    vec![agent_id],
+                    SystemClock::new().now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let deliberate = Arc::new(DeliberateUseCase::new(
+            Arc::new(SystemClock::new()),
+            council_registry,
+            agent_registry,
+            vec![
+                Arc::new(ContentNonEmptyValidator::new()),
+                Arc::new(JsonObjectOutputValidator::new()),
+                Arc::new(RequiredFieldsValidator::new()),
+                Arc::new(crate::validators::ClaimsEvidenceGroundedValidator::new()),
+            ],
+            Arc::new(UniformScoring::new()),
+            Arc::new(InMemoryDeliberationRepository::new()),
+            Arc::new(NoopMessaging::new()),
+            Arc::new(InMemoryStatistics::new()),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
+            "ceremony-step-handler-test",
+        ));
+        let handler = DeliberatingCeremonyStepHandler::new(deliberate);
+
+        // The evidence pack arrives through the ceremony context — the
+        // deterministic collector's output — and the step contract
+        // points its grounding rule at it.
+        let request = CeremonyStepHandlerRequest::new(
+            CeremonyId::new("ceremony-1").unwrap(),
+            CeremonyName::new("evidence_review").unwrap(),
+            CeremonyVersion::v1(),
+            StateId::new("REVIEW").unwrap(),
+            StepId::new("evidence_review").unwrap(),
+            StepHandlerKind::new("evidence_gate").unwrap(),
+            StepHandlerConfig::new(
+                Attributes::new(BTreeMap::from([
+                    ("prompt".to_owned(), json!("Review the change")),
+                    ("num_agents".to_owned(), json!(1)),
+                    (
+                        "output_contract".to_owned(),
+                        json!({
+                            "contract_id": "evidence-bound-decision",
+                            "required_fields": ["claims", "decision"],
+                            "evidence": {
+                                "allowed_refs_from_context": "evidence_pack",
+                            },
+                        }),
+                    ),
+                ]))
+                .unwrap(),
+            ),
+            CeremonyContext::new(
+                Attributes::new(BTreeMap::from([(
+                    "evidence_pack".to_owned(),
+                    json!([{"id": "ev-journal-1"}, {"id": "ev-trace-1"}]),
+                )]))
+                .unwrap(),
+            ),
+            StepAttempt::FIRST,
+        );
+
+        let err = handler.execute(request).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            choreo_core::error::DomainError::NoValidProposal { ref contract_id }
+                if contract_id == "evidence-bound-decision"
+        ));
+    }
+
     #[test]
     fn description_without_role_or_transcript_is_well_formed() {
         let request = request_with_prompt();

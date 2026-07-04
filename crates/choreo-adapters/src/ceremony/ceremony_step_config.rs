@@ -46,6 +46,15 @@ mod contract_key {
     pub(super) const REQUIRED_FIELDS: &str = "required_fields";
     pub(super) const ALLOWED_VALUES: &str = "allowed_values";
     pub(super) const JSON_SCHEMA: &str = "json_schema";
+    pub(super) const EVIDENCE: &str = "evidence";
+}
+
+/// Keys recognised inside the `output_contract.evidence` block.
+mod evidence_key {
+    pub(super) const CLAIMS_FIELD: &str = "claims_field";
+    pub(super) const REFS_FIELD: &str = "refs_field";
+    pub(super) const ALLOWED_REFS: &str = "allowed_refs";
+    pub(super) const ALLOWED_REFS_FROM_CONTEXT: &str = "allowed_refs_from_context";
 }
 
 /// Stable `DomainError` field names surfaced when a value is malformed.
@@ -64,6 +73,32 @@ mod field {
         "ceremony_step.config.output_contract.allowed_values";
     pub(super) const CONTRACT_JSON_SCHEMA: &str =
         "ceremony_step.config.output_contract.json_schema";
+    pub(super) const CONTRACT_EVIDENCE: &str = "ceremony_step.config.output_contract.evidence";
+    pub(super) const EVIDENCE_CLAIMS_FIELD: &str =
+        "ceremony_step.config.output_contract.evidence.claims_field";
+    pub(super) const EVIDENCE_REFS_FIELD: &str =
+        "ceremony_step.config.output_contract.evidence.refs_field";
+    pub(super) const EVIDENCE_ALLOWED_REFS: &str =
+        "ceremony_step.config.output_contract.evidence.allowed_refs";
+    pub(super) const EVIDENCE_CONTEXT_KEY: &str =
+        "ceremony_step.config.output_contract.evidence.allowed_refs_from_context";
+}
+
+/// Default output field carrying the claims array.
+const DEFAULT_CLAIMS_FIELD: &str = "claims";
+/// Default per-claim field carrying the evidence references.
+const DEFAULT_REFS_FIELD: &str = "evidence_refs";
+
+/// Declared evidence-grounding configuration for a step, before the
+/// context-borne refs are resolved. The step config owns the schema;
+/// the transport layer — which holds the ceremony context — resolves
+/// `context_key` into concrete refs and builds the domain rule.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct EvidenceGroundingSpec {
+    pub(crate) claims_field: String,
+    pub(crate) refs_field: String,
+    pub(crate) static_refs: Vec<String>,
+    pub(crate) context_key: Option<String>,
 }
 
 /// A validated, typed view over one ceremony step's handler configuration.
@@ -201,6 +236,7 @@ impl<'a> CeremonyStepConfig<'a> {
             contract_key::REQUIRED_FIELDS,
             contract_key::ALLOWED_VALUES,
             contract_key::JSON_SCHEMA,
+            contract_key::EVIDENCE,
         ];
         if block.keys().any(|key| !known.contains(&key.as_str())) {
             return Err(DomainError::InvalidCharacters {
@@ -266,6 +302,111 @@ impl<'a> CeremonyStepConfig<'a> {
             fields,
             json_schema,
         )?))
+    }
+
+    /// Evidence-grounding declaration inside the step's contract, if
+    /// any.
+    ///
+    /// Shape (inside the `output_contract` block):
+    ///
+    /// ```yaml
+    /// output_contract:
+    ///   contract_id: evidence-bound-decision
+    ///   evidence:
+    ///     claims_field: claims                    # optional, default "claims"
+    ///     refs_field: evidence_refs               # optional, default "evidence_refs"
+    ///     allowed_refs: [ev-static-1]             # optional, static pack entries
+    ///     allowed_refs_from_context: evidence_pack # optional, ceremony-context key
+    /// ```
+    ///
+    /// At least one of `allowed_refs` / `allowed_refs_from_context` is
+    /// required, unknown keys are rejected (same reasoning as the
+    /// contract block: a typo must not silently weaken a policy gate).
+    /// The context key is resolved by the transport layer at request
+    /// time — the context entry must be an array of strings, or of
+    /// objects each carrying a string `id` (the natural shape of an
+    /// evidence pack).
+    pub(crate) fn evidence_grounding_spec(
+        &self,
+    ) -> Result<Option<EvidenceGroundingSpec>, DomainError> {
+        let Some(contract) = self.attributes.get(key::OUTPUT_CONTRACT) else {
+            return Ok(None);
+        };
+        let Some(block) = contract.as_object() else {
+            // output_contract() already rejects this shape; stay quiet here.
+            return Ok(None);
+        };
+        let Some(value) = block.get(contract_key::EVIDENCE) else {
+            return Ok(None);
+        };
+        if value.is_null() {
+            return Ok(None);
+        }
+        let Some(evidence) = value.as_object() else {
+            return Err(DomainError::InvalidCharacters {
+                field: field::CONTRACT_EVIDENCE,
+            });
+        };
+
+        let known = [
+            evidence_key::CLAIMS_FIELD,
+            evidence_key::REFS_FIELD,
+            evidence_key::ALLOWED_REFS,
+            evidence_key::ALLOWED_REFS_FROM_CONTEXT,
+        ];
+        if evidence.keys().any(|key| !known.contains(&key.as_str())) {
+            return Err(DomainError::InvalidCharacters {
+                field: field::CONTRACT_EVIDENCE,
+            });
+        }
+
+        if let Some(value) = evidence.get(evidence_key::CLAIMS_FIELD) {
+            if !value.is_null() && !value.is_string() {
+                return Err(DomainError::InvalidCharacters {
+                    field: field::EVIDENCE_CLAIMS_FIELD,
+                });
+            }
+        }
+        if let Some(value) = evidence.get(evidence_key::REFS_FIELD) {
+            if !value.is_null() && !value.is_string() {
+                return Err(DomainError::InvalidCharacters {
+                    field: field::EVIDENCE_REFS_FIELD,
+                });
+            }
+        }
+        let claims_field = optional_string(evidence.get(evidence_key::CLAIMS_FIELD))
+            .unwrap_or(DEFAULT_CLAIMS_FIELD)
+            .to_owned();
+        let refs_field = optional_string(evidence.get(evidence_key::REFS_FIELD))
+            .unwrap_or(DEFAULT_REFS_FIELD)
+            .to_owned();
+
+        let static_refs = string_array(
+            evidence.get(evidence_key::ALLOWED_REFS),
+            field::EVIDENCE_ALLOWED_REFS,
+        )?;
+        if let Some(value) = evidence.get(evidence_key::ALLOWED_REFS_FROM_CONTEXT) {
+            if !value.is_null() && !value.is_string() {
+                return Err(DomainError::InvalidCharacters {
+                    field: field::EVIDENCE_CONTEXT_KEY,
+                });
+            }
+        }
+        let context_key = optional_string(evidence.get(evidence_key::ALLOWED_REFS_FROM_CONTEXT))
+            .map(str::to_owned);
+
+        if static_refs.is_empty() && context_key.is_none() {
+            return Err(DomainError::EmptyField {
+                field: field::EVIDENCE_ALLOWED_REFS,
+            });
+        }
+
+        Ok(Some(EvidenceGroundingSpec {
+            claims_field,
+            refs_field,
+            static_refs,
+            context_key,
+        }))
     }
 }
 

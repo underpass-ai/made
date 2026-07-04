@@ -649,6 +649,216 @@ impl ShapeViolation {
     }
 }
 
+/// A validator that enforces the evidence-grounding rule declared in
+/// the output contract: every claim in the output must cite at least
+/// one evidence reference, and every cited reference must exist in the
+/// contract's allowed evidence pack.
+///
+/// Expected output shape (field names configurable per rule):
+///
+/// ```json
+/// { "claims": [ { "text": "…", "evidence_refs": ["ev-1"] }, … ] }
+/// ```
+///
+/// Semantics:
+///
+/// - no contract, or contract without a grounding rule → pass
+///   (`"no evidence grounding configured"`, the sibling validators'
+///   pattern).
+/// - claims field missing or not an array → fail (a grounding-gated
+///   step must produce inspectable claims).
+/// - an empty claims array passes: grounding judges what is claimed,
+///   not how much — pair with `required_fields`/`json_schema`
+///   (`minItems`) to demand substance.
+/// - each claim must be a JSON object whose refs field is a non-empty
+///   array of strings, all present in the allowed pack. Violations
+///   name the claim index, a text preview and the orphan refs — that
+///   detail lands in spans/logs and becomes part of the decision
+///   record.
+#[derive(Debug, Default, Clone, Copy)]
+pub struct ClaimsEvidenceGroundedValidator;
+
+impl ClaimsEvidenceGroundedValidator {
+    #[must_use]
+    pub const fn new() -> Self {
+        Self
+    }
+}
+
+const CLAIM_TEXT_PREVIEW_LEN: usize = 80;
+
+#[async_trait]
+impl ValidatorPort for ClaimsEvidenceGroundedValidator {
+    fn kind(&self) -> &'static str {
+        "claims-evidence-grounded"
+    }
+
+    async fn validate(
+        &self,
+        proposal_content: &str,
+        constraints: &TaskConstraints,
+    ) -> Result<ValidatorReport, DomainError> {
+        let Some(contract) = constraints.output_contract() else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no evidence grounding configured",
+                Attributes::empty(),
+            );
+        };
+        let Some(rule) = contract.evidence_grounding() else {
+            return ValidatorReport::new(
+                self.kind(),
+                true,
+                "no evidence grounding configured",
+                Attributes::empty(),
+            );
+        };
+
+        let object = match parse_json_object(proposal_content) {
+            Ok(object) => object,
+            Err(summary) => {
+                return ValidatorReport::new(
+                    self.kind(),
+                    false,
+                    summary,
+                    attributes(json!({ "contract_id": contract.contract_id() }))?,
+                );
+            }
+        };
+
+        let Some(claims) = object.get(rule.claims_field()).and_then(Value::as_array) else {
+            return ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "claims field `{}` is missing or not an array",
+                    rule.claims_field()
+                ),
+                attributes(json!({
+                    "contract_id": contract.contract_id(),
+                    "claims_field": rule.claims_field(),
+                }))?,
+            );
+        };
+
+        let violations: Vec<Value> = claims
+            .iter()
+            .enumerate()
+            .flat_map(|(index, claim)| claim_violations(index, claim, rule))
+            .collect();
+
+        if violations.is_empty() {
+            ValidatorReport::new(
+                self.kind(),
+                true,
+                format!(
+                    "all {} claims grounded in the evidence pack ({} allowed refs)",
+                    claims.len(),
+                    rule.allowed_refs().len()
+                ),
+                Attributes::empty(),
+            )
+        } else {
+            ValidatorReport::new(
+                self.kind(),
+                false,
+                format!(
+                    "{} of {} claims lack grounded evidence",
+                    violations.len(),
+                    claims.len()
+                ),
+                attributes(json!({
+                    "contract_id": contract.contract_id(),
+                    "claims_field": rule.claims_field(),
+                    "refs_field": rule.refs_field(),
+                    "violations": violations,
+                }))?,
+            )
+        }
+    }
+}
+
+/// Grounding violations for one claim: shape problems, absent or empty
+/// refs, non-string refs, and refs outside the allowed pack.
+fn claim_violations(
+    index: usize,
+    claim: &Value,
+    rule: &choreo_core::value_objects::EvidenceGroundingRule,
+) -> Vec<Value> {
+    let Some(claim_object) = claim.as_object() else {
+        return vec![json!({
+            "claim_index": index,
+            "problem": "claim is not a JSON object",
+            "actual_type": value_type_name(claim),
+        })];
+    };
+    let preview = claim_preview(claim_object);
+    let Some(refs) = claim_object
+        .get(rule.refs_field())
+        .and_then(Value::as_array)
+    else {
+        return vec![json!({
+            "claim_index": index,
+            "claim_preview": preview,
+            "problem": format!(
+                "refs field `{}` is missing or not an array",
+                rule.refs_field()
+            ),
+        })];
+    };
+    if refs.is_empty() {
+        return vec![json!({
+            "claim_index": index,
+            "claim_preview": preview,
+            "problem": "claim cites no evidence",
+        })];
+    }
+
+    let mut violations = Vec::new();
+    let mut orphans = Vec::new();
+    for reference in refs {
+        match reference.as_str() {
+            Some(id) if rule.allowed_refs().contains(id) => {}
+            Some(id) => orphans.push(id.to_owned()),
+            None => violations.push(json!({
+                "claim_index": index,
+                "claim_preview": preview,
+                "problem": "evidence ref is not a string",
+                "actual_type": value_type_name(reference),
+            })),
+        }
+    }
+    if !orphans.is_empty() {
+        violations.push(json!({
+            "claim_index": index,
+            "claim_preview": preview,
+            "problem": "evidence refs not present in the allowed pack",
+            "orphan_refs": orphans,
+        }));
+    }
+    violations
+}
+
+/// Short human preview of a claim for violation details: its `text`
+/// field when present, otherwise the serialized object, truncated at a
+/// char boundary.
+fn claim_preview(claim: &Map<String, Value>) -> String {
+    let raw = claim
+        .get("text")
+        .and_then(Value::as_str)
+        .map_or_else(|| Value::Object(claim.clone()).to_string(), str::to_owned);
+    if raw.len() > CLAIM_TEXT_PREVIEW_LEN {
+        let mut end = CLAIM_TEXT_PREVIEW_LEN;
+        while !raw.is_char_boundary(end) {
+            end -= 1;
+        }
+        format!("{}…", &raw[..end])
+    } else {
+        raw
+    }
+}
+
 fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, String> {
     let trimmed = proposal_content.trim();
     let value: Value = serde_json::from_str(trimmed)
@@ -705,6 +915,103 @@ mod tests {
             )
             .unwrap(),
         )
+    }
+
+    fn grounded_constraints() -> TaskConstraints {
+        TaskConstraints::default().with_output_contract(
+            OutputContract::json_object("evidence-contract", BTreeMap::new())
+                .unwrap()
+                .with_evidence_grounding(
+                    choreo_core::value_objects::EvidenceGroundingRule::new(
+                        "claims",
+                        "evidence_refs",
+                        ["ev-1", "ev-2"],
+                    )
+                    .unwrap(),
+                ),
+        )
+    }
+
+    #[tokio::test]
+    async fn grounding_passes_without_configuration() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let r = v
+            .validate("free prose", &TaskConstraints::default())
+            .await
+            .unwrap();
+        assert!(r.passed());
+        assert_eq!(r.kind(), "claims-evidence-grounded");
+        assert!(r.summary().contains("no evidence grounding configured"));
+
+        // A contract without a grounding rule is also a no-op.
+        let r = v
+            .validate("free prose", &structured_constraints())
+            .await
+            .unwrap();
+        assert!(r.passed());
+    }
+
+    #[tokio::test]
+    async fn grounded_claims_pass() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let content = r#"{"claims":[
+            {"text":"typha holds the port","evidence_refs":["ev-1"]},
+            {"text":"crun state is per root","evidence_refs":["ev-1","ev-2"]}
+        ]}"#;
+        let r = v.validate(content, &grounded_constraints()).await.unwrap();
+        assert!(r.passed(), "summary: {}", r.summary());
+        assert!(r.summary().contains("all 2 claims grounded"));
+    }
+
+    #[tokio::test]
+    async fn claim_without_refs_fails() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let content = r#"{"claims":[
+            {"text":"grounded","evidence_refs":["ev-1"]},
+            {"text":"vibes only"}
+        ]}"#;
+        let r = v.validate(content, &grounded_constraints()).await.unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("1 of 2 claims"));
+    }
+
+    #[tokio::test]
+    async fn claim_with_empty_refs_fails() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let content = r#"{"claims":[{"text":"empty-handed","evidence_refs":[]}]}"#;
+        let r = v.validate(content, &grounded_constraints()).await.unwrap();
+        assert!(!r.passed());
+    }
+
+    #[tokio::test]
+    async fn orphan_ref_fails_and_is_named() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let content = r#"{"claims":[{"text":"invented","evidence_refs":["ev-999"]}]}"#;
+        let r = v.validate(content, &grounded_constraints()).await.unwrap();
+        assert!(!r.passed());
+        let details = serde_json::to_string(r.details()).unwrap();
+        assert!(details.contains("ev-999"));
+    }
+
+    #[tokio::test]
+    async fn missing_claims_field_fails() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let r = v
+            .validate(r#"{"decision":"accept"}"#, &grounded_constraints())
+            .await
+            .unwrap();
+        assert!(!r.passed());
+        assert!(r.summary().contains("claims"));
+    }
+
+    #[tokio::test]
+    async fn empty_claims_array_passes() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let r = v
+            .validate(r#"{"claims":[]}"#, &grounded_constraints())
+            .await
+            .unwrap();
+        assert!(r.passed());
     }
 
     #[tokio::test]

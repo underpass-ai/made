@@ -45,7 +45,7 @@ pub use duration::DurationMs;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use num_agents::NumAgents;
-pub use output_contract::{OutputContract, OutputFieldRule, OutputFormat};
+pub use output_contract::{EvidenceGroundingRule, OutputContract, OutputFieldRule, OutputFormat};
 pub use rounds::Rounds;
 pub use rubric::Rubric;
 pub use score::Score;
