@@ -1,6 +1,6 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::CeremonyStepHandlerRequest;
-use choreo_core::value_objects::{NumAgents, Rounds, Specialty, TaskDescription};
+use choreo_core::value_objects::{NumAgents, OutputContract, Rounds, Specialty, TaskDescription};
 
 use super::CeremonyStepConfig;
 
@@ -11,6 +11,7 @@ pub struct DeliberationStepConfig {
     rounds: Rounds,
     num_agents: Option<NumAgents>,
     see_prior: bool,
+    output_contract: Option<OutputContract>,
 }
 
 impl DeliberationStepConfig {
@@ -26,6 +27,7 @@ impl DeliberationStepConfig {
             rounds: config.rounds()?,
             num_agents: config.num_agents()?,
             see_prior: config.see_prior_steps()?,
+            output_contract: config.output_contract()?,
         })
     }
 
@@ -54,6 +56,13 @@ impl DeliberationStepConfig {
     #[must_use]
     pub fn see_prior(&self) -> bool {
         self.see_prior
+    }
+
+    /// Structured output contract the step's proposals must satisfy, if
+    /// the step declared one.
+    #[must_use]
+    pub fn output_contract(&self) -> Option<&OutputContract> {
+        self.output_contract.as_ref()
     }
 }
 
@@ -122,5 +131,35 @@ mod tests {
                 field: "ceremony_step.config.prompt"
             }
         ));
+    }
+
+    #[test]
+    fn carries_declared_output_contract() {
+        let config = DeliberationStepConfig::from_request(&request(BTreeMap::from([
+            ("prompt".to_owned(), json!("Decide")),
+            (
+                "output_contract".to_owned(),
+                json!({
+                    "contract_id": "evidence-bound-decision",
+                    "required_fields": ["decision"],
+                }),
+            ),
+        ])))
+        .unwrap();
+
+        let contract = config.output_contract().unwrap();
+        assert_eq!(contract.contract_id(), "evidence-bound-decision");
+        assert!(contract.fields()["decision"].required());
+    }
+
+    #[test]
+    fn output_contract_defaults_to_none() {
+        let config = DeliberationStepConfig::from_request(&request(BTreeMap::from([(
+            "prompt".to_owned(),
+            json!("Decide"),
+        )])))
+        .unwrap();
+
+        assert!(config.output_contract().is_none());
     }
 }

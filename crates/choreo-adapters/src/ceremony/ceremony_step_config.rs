@@ -10,9 +10,12 @@
 //! step configuration through it, which keeps the schema — including the
 //! canonical-vs-legacy agent-kind key — consistent across the adapter.
 
+use std::collections::BTreeMap;
+
 use choreo_core::error::DomainError;
 use choreo_core::value_objects::{
-    AgentKind, Attributes, NumAgents, Rounds, Specialty, StepHandlerKind, TaskDescription,
+    AgentKind, Attributes, NumAgents, OutputContract, OutputFieldRule, OutputFormat, Rounds,
+    Specialty, StepHandlerKind, TaskDescription,
 };
 use serde_json::Value;
 
@@ -32,6 +35,17 @@ mod key {
     pub(super) const PARTICIPANTS: &str = "participants";
     /// Whether the step deliberates with the prior transcript in view.
     pub(super) const SEE_PRIOR: &str = "see_prior";
+    /// Structured output contract enforced on the step's proposals.
+    pub(super) const OUTPUT_CONTRACT: &str = "output_contract";
+}
+
+/// Keys recognised inside the `output_contract` block.
+mod contract_key {
+    pub(super) const CONTRACT_ID: &str = "contract_id";
+    pub(super) const FORMAT: &str = "format";
+    pub(super) const REQUIRED_FIELDS: &str = "required_fields";
+    pub(super) const ALLOWED_VALUES: &str = "allowed_values";
+    pub(super) const JSON_SCHEMA: &str = "json_schema";
 }
 
 /// Stable `DomainError` field names surfaced when a value is malformed.
@@ -41,6 +55,15 @@ mod field {
     pub(super) const NUM_AGENTS: &str = "ceremony_step.config.num_agents";
     pub(super) const PARTICIPANTS: &str = "ceremony_step.config.participants";
     pub(super) const SEE_PRIOR: &str = "ceremony_step.config.see_prior";
+    pub(super) const OUTPUT_CONTRACT: &str = "ceremony_step.config.output_contract";
+    pub(super) const CONTRACT_ID: &str = "ceremony_step.config.output_contract.contract_id";
+    pub(super) const CONTRACT_FORMAT: &str = "ceremony_step.config.output_contract.format";
+    pub(super) const CONTRACT_REQUIRED_FIELDS: &str =
+        "ceremony_step.config.output_contract.required_fields";
+    pub(super) const CONTRACT_ALLOWED_VALUES: &str =
+        "ceremony_step.config.output_contract.allowed_values";
+    pub(super) const CONTRACT_JSON_SCHEMA: &str =
+        "ceremony_step.config.output_contract.json_schema";
 }
 
 /// A validated, typed view over one ceremony step's handler configuration.
@@ -135,6 +158,138 @@ impl<'a> CeremonyStepConfig<'a> {
     pub(crate) fn see_prior_steps(&self) -> Result<bool, DomainError> {
         Ok(optional_bool(self.attributes.get(key::SEE_PRIOR), field::SEE_PRIOR)?.unwrap_or(true))
     }
+
+    /// Structured output contract declared on the step, if any.
+    ///
+    /// Shape (all under the step's `config`):
+    ///
+    /// ```yaml
+    /// output_contract:
+    ///   contract_id: evidence-bound-decision   # required
+    ///   format: json_object                    # optional; only value today
+    ///   required_fields: [claims, decision]    # optional
+    ///   allowed_values:                        # optional, per field
+    ///     decision: [accept, reject, request_changes, request_more_evidence]
+    ///   json_schema: '{"type":"object"}'       # optional, inline body
+    /// ```
+    ///
+    /// `required_fields` and `allowed_values` merge into per-field rules
+    /// (a field named only under `allowed_values` is constrained but not
+    /// required). Unknown keys inside the block are rejected: a typo in a
+    /// policy gate must fail the parse, not silently weaken the contract.
+    /// Enforcement itself is the existing deliberation pipeline — the
+    /// contract validators run per proposal, and when no proposal
+    /// satisfies the contract the step fails with
+    /// `NoValidProposal { contract_id }` (the ceremony retries per its
+    /// retry policy and otherwise stops at the guard).
+    pub(crate) fn output_contract(&self) -> Result<Option<OutputContract>, DomainError> {
+        let Some(value) = self.attributes.get(key::OUTPUT_CONTRACT) else {
+            return Ok(None);
+        };
+        if value.is_null() {
+            return Ok(None);
+        }
+        let Some(block) = value.as_object() else {
+            return Err(DomainError::InvalidCharacters {
+                field: field::OUTPUT_CONTRACT,
+            });
+        };
+
+        let known = [
+            contract_key::CONTRACT_ID,
+            contract_key::FORMAT,
+            contract_key::REQUIRED_FIELDS,
+            contract_key::ALLOWED_VALUES,
+            contract_key::JSON_SCHEMA,
+        ];
+        if block.keys().any(|key| !known.contains(&key.as_str())) {
+            return Err(DomainError::InvalidCharacters {
+                field: field::OUTPUT_CONTRACT,
+            });
+        }
+
+        let contract_id =
+            required_string(block.get(contract_key::CONTRACT_ID), field::CONTRACT_ID)?;
+
+        let format = match optional_string(block.get(contract_key::FORMAT)) {
+            None | Some("json_object") => OutputFormat::JsonObject,
+            Some(_) => {
+                return Err(DomainError::InvalidCharacters {
+                    field: field::CONTRACT_FORMAT,
+                })
+            }
+        };
+
+        let required = string_array(
+            block.get(contract_key::REQUIRED_FIELDS),
+            field::CONTRACT_REQUIRED_FIELDS,
+        )?;
+
+        let mut allowed: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        if let Some(value) = block.get(contract_key::ALLOWED_VALUES) {
+            if !value.is_null() {
+                let Some(map) = value.as_object() else {
+                    return Err(DomainError::InvalidCharacters {
+                        field: field::CONTRACT_ALLOWED_VALUES,
+                    });
+                };
+                for (field_name, values) in map {
+                    allowed.insert(
+                        field_name.clone(),
+                        string_array(Some(values), field::CONTRACT_ALLOWED_VALUES)?,
+                    );
+                }
+            }
+        }
+
+        let mut fields: BTreeMap<String, OutputFieldRule> = BTreeMap::new();
+        for name in &required {
+            let values = allowed.remove(name).unwrap_or_default();
+            fields.insert(name.clone(), OutputFieldRule::new(true, values)?);
+        }
+        for (name, values) in allowed {
+            fields.insert(name, OutputFieldRule::new(false, values)?);
+        }
+
+        let json_schema = optional_string(block.get(contract_key::JSON_SCHEMA)).unwrap_or_default();
+        if let Some(value) = block.get(contract_key::JSON_SCHEMA) {
+            if !value.is_null() && !value.is_string() {
+                return Err(DomainError::InvalidCharacters {
+                    field: field::CONTRACT_JSON_SCHEMA,
+                });
+            }
+        }
+
+        Ok(Some(OutputContract::new_with_schema(
+            contract_id,
+            format,
+            fields,
+            json_schema,
+        )?))
+    }
+}
+
+/// Parse a JSON value as a non-empty-string array (absent/null → empty).
+fn string_array(value: Option<&Value>, field: &'static str) -> Result<Vec<String>, DomainError> {
+    let Some(value) = value else {
+        return Ok(Vec::new());
+    };
+    if value.is_null() {
+        return Ok(Vec::new());
+    }
+    let Some(items) = value.as_array() else {
+        return Err(DomainError::InvalidCharacters { field });
+    };
+    items
+        .iter()
+        .map(|item| {
+            item.as_str()
+                .map(str::trim)
+                .filter(|raw| !raw.is_empty())
+                .map(str::to_owned)
+                .ok_or(DomainError::InvalidCharacters { field })
+        })
+        .collect()
 }
 
 fn required_string(value: Option<&Value>, field: &'static str) -> Result<String, DomainError> {
@@ -312,6 +467,124 @@ mod tests {
             step.see_prior_steps().unwrap_err(),
             DomainError::InvalidCharacters {
                 field: "ceremony_step.config.see_prior"
+            }
+        ));
+    }
+
+    #[test]
+    fn output_contract_defaults_to_none() {
+        let (attributes, handler_kind) = config(BTreeMap::new());
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(step.output_contract().unwrap().is_none());
+    }
+
+    #[test]
+    fn output_contract_parses_full_shape() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!({
+                "contract_id": "evidence-bound-decision",
+                "format": "json_object",
+                "required_fields": ["claims", "decision"],
+                "allowed_values": {
+                    "decision": ["accept", "reject", "request_changes"],
+                    "confidence": ["high", "medium", "low"],
+                },
+                "json_schema": "{\"type\":\"object\"}",
+            }),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        let contract = step.output_contract().unwrap().unwrap();
+
+        assert_eq!(contract.contract_id(), "evidence-bound-decision");
+        assert!(contract.fields()["claims"].required());
+        assert!(contract.fields()["decision"].required());
+        assert!(contract.fields()["decision"]
+            .allowed_string_values()
+            .contains("request_changes"));
+        // Constrained but not required: named only under allowed_values.
+        assert!(!contract.fields()["confidence"].required());
+        assert_eq!(contract.json_schema(), "{\"type\":\"object\"}");
+    }
+
+    #[test]
+    fn output_contract_requires_contract_id() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!({ "required_fields": ["decision"] }),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.output_contract().unwrap_err(),
+            DomainError::EmptyField {
+                field: "ceremony_step.config.output_contract.contract_id"
+            }
+        ));
+    }
+
+    #[test]
+    fn output_contract_rejects_unknown_keys() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!({ "contract_id": "c1", "require_fields": ["decision"] }),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.output_contract().unwrap_err(),
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract"
+            }
+        ));
+    }
+
+    #[test]
+    fn output_contract_rejects_unknown_format() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!({ "contract_id": "c1", "format": "yaml" }),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.output_contract().unwrap_err(),
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract.format"
+            }
+        ));
+    }
+
+    #[test]
+    fn output_contract_rejects_non_object_block() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!("evidence-bound-decision"),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.output_contract().unwrap_err(),
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract"
+            }
+        ));
+    }
+
+    #[test]
+    fn output_contract_rejects_non_array_allowed_values() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "output_contract".to_owned(),
+            json!({ "contract_id": "c1", "allowed_values": { "decision": "accept" } }),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert!(matches!(
+            step.output_contract().unwrap_err(),
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract.allowed_values"
             }
         ));
     }
