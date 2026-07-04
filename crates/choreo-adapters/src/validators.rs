@@ -346,7 +346,7 @@ impl ValidatorPort for JsonSchemaValidator {
             }
         };
 
-        let instance: Value = match serde_json::from_str(proposal_content.trim()) {
+        let instance: Value = match serde_json::from_str(strip_markdown_fences(proposal_content)) {
             Ok(v) => v,
             Err(err) => {
                 return ValidatorReport::new(
@@ -536,7 +536,7 @@ impl ValidatorPort for BoundedEventShapeValidator {
             );
         }
 
-        let instance: Value = match serde_json::from_str(trimmed) {
+        let instance: Value = match serde_json::from_str(strip_markdown_fences(trimmed)) {
             Ok(v) => v,
             Err(err) => {
                 return ValidatorReport::new(
@@ -860,7 +860,7 @@ fn claim_preview(claim: &Map<String, Value>) -> String {
 }
 
 fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, String> {
-    let trimmed = proposal_content.trim();
+    let trimmed = strip_markdown_fences(proposal_content);
     let value: Value = serde_json::from_str(trimmed)
         .map_err(|err| format!("proposal is not valid JSON: {err}"))?;
     match value {
@@ -869,6 +869,28 @@ fn parse_json_object(proposal_content: &str) -> Result<Map<String, Value>, Strin
             "proposal root must be a JSON object, got {}",
             value_type_name(&other)
         )),
+    }
+}
+
+/// Contracts govern content, not transport cosmetics: models routinely wrap
+/// an otherwise-valid JSON payload in Markdown code fences (```json … ```)
+/// even when told not to. When the whole trimmed payload is a single fenced
+/// block, unwrap it before parsing; anything else (prose around the fence,
+/// multiple blocks) is returned untouched and will fail JSON parsing as
+/// before — this is deliberately narrow so the gate never "finds" JSON
+/// buried inside surrounding text the model also emitted.
+fn strip_markdown_fences(content: &str) -> &str {
+    let trimmed = content.trim();
+    let Some(rest) = trimmed.strip_prefix("```") else {
+        return trimmed;
+    };
+    let Some(inner) = rest.strip_suffix("```") else {
+        return trimmed;
+    };
+    // Drop the info string (e.g. `json`) on the opening fence line, if any.
+    match inner.split_once('\n') {
+        Some((info, body)) if !info.trim().contains(' ') => body.trim(),
+        _ => inner.trim(),
     }
 }
 
@@ -949,6 +971,30 @@ mod tests {
             .await
             .unwrap();
         assert!(r.passed());
+    }
+
+    #[test]
+    fn strip_markdown_fences_unwraps_pure_fenced_block() {
+        assert_eq!(
+            strip_markdown_fences("```json\n{\"a\": 1}\n```"),
+            "{\"a\": 1}"
+        );
+        assert_eq!(strip_markdown_fences("```\n{\"a\": 1}\n```"), "{\"a\": 1}");
+        // Sin fences: intacto.
+        assert_eq!(strip_markdown_fences("  {\"a\": 1} "), "{\"a\": 1}");
+        // Prosa alrededor del fence: intacto (fallara el parse, a proposito).
+        let mixed = "look: ```json\n{}\n```";
+        assert_eq!(strip_markdown_fences(mixed), mixed.trim());
+        // Fence sin cierre: intacto.
+        assert_eq!(strip_markdown_fences("```json\n{"), "```json\n{");
+    }
+
+    #[tokio::test]
+    async fn grounded_claims_pass_inside_markdown_fences() {
+        let v = ClaimsEvidenceGroundedValidator::new();
+        let content = "```json\n{\"claims\":[{\"text\":\"typha holds the port\",\"evidence_refs\":[\"ev-1\"]}]}\n```";
+        let r = v.validate(content, &grounded_constraints()).await.unwrap();
+        assert!(r.passed(), "summary: {}", r.summary());
     }
 
     #[tokio::test]
