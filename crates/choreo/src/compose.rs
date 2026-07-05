@@ -23,8 +23,9 @@ use choreo_adapters::runtime::{
 };
 use choreo_adapters::scoring::{JudgeAwareScoring, UniformScoring};
 use choreo_adapters::validators::{
-    AllowedStringValuesValidator, BoundedEventShapeValidator, ContentNonEmptyValidator,
-    JsonObjectOutputValidator, JsonSchemaValidator, RequiredFieldsValidator,
+    AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
+    ContentNonEmptyValidator, JsonObjectOutputValidator, JsonSchemaValidator,
+    RequiredFieldsValidator,
 };
 use choreo_app::services::AutoDispatchService;
 use choreo_app::usecases::{
@@ -133,6 +134,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(RequiredFieldsValidator::new()),
         Arc::new(AllowedStringValuesValidator::new()),
         Arc::new(JsonSchemaValidator::new()),
+        // Evidence grounding: rejects claims citing refs outside the
+        // contract's evidence pack (no-op unless a contract declares a
+        // grounding rule). Runs before the shape-budget guard so orphan
+        // refs are named even when the output is otherwise well-formed.
+        Arc::new(ClaimsEvidenceGroundedValidator::new()),
         // Final shape-budget guard: defends downstream bus consumers
         // against pathological JSON (deeply nested, huge arrays,
         // bloated strings). Uses the validator's conservative

@@ -1,6 +1,9 @@
 use choreo_core::error::DomainError;
 use choreo_core::ports::CeremonyStepHandlerRequest;
-use choreo_core::value_objects::{NumAgents, OutputContract, Rounds, Specialty, TaskDescription};
+use choreo_core::value_objects::{
+    EvidenceGroundingRule, NumAgents, OutputContract, Rounds, Specialty, TaskDescription,
+};
+use serde_json::Value;
 
 use super::CeremonyStepConfig;
 
@@ -21,13 +24,32 @@ impl DeliberationStepConfig {
             request.handler_kind(),
         );
 
+        let mut output_contract = config.output_contract()?;
+        // Resolve the evidence-grounding declaration here: the spec may
+        // point at a ceremony-context key, and only the transport layer
+        // holds the context. The resolved rule rides on the contract so
+        // the grounding validator sees it through `TaskConstraints`.
+        if let Some(spec) = config.evidence_grounding_spec()? {
+            let contract = output_contract.take().ok_or(DomainError::EmptyField {
+                // `evidence` nests inside `output_contract`; reaching
+                // here without a contract is a parse invariant breach.
+                field: "ceremony_step.config.output_contract",
+            })?;
+            let mut refs = spec.static_refs;
+            if let Some(key) = spec.context_key {
+                refs.extend(context_refs(request, &key)?);
+            }
+            let rule = EvidenceGroundingRule::new(spec.claims_field, spec.refs_field, refs)?;
+            output_contract = Some(contract.with_evidence_grounding(rule));
+        }
+
         Ok(Self {
             task_description: config.prompt()?,
             specialty: config.specialty()?,
             rounds: config.rounds()?,
             num_agents: config.num_agents()?,
             see_prior: config.see_prior_steps()?,
-            output_contract: config.output_contract()?,
+            output_contract,
         })
     }
 
@@ -64,6 +86,48 @@ impl DeliberationStepConfig {
     pub fn output_contract(&self) -> Option<&OutputContract> {
         self.output_contract.as_ref()
     }
+}
+
+/// Stable error field for a malformed or missing context evidence pack.
+const CONTEXT_REFS_FIELD: &str =
+    "ceremony_step.config.output_contract.evidence.allowed_refs_from_context";
+
+/// Resolve an evidence pack from the ceremony context. The entry must
+/// be an array of strings, or of objects each carrying a string `id`
+/// (the natural shape of an evidence pack: `[{id, kind, uri, …}, …]`).
+/// A grounding gate pointing at an absent or malformed pack fails
+/// loudly — running the step ungrounded would silently void the
+/// policy.
+fn context_refs(
+    request: &CeremonyStepHandlerRequest,
+    key: &str,
+) -> Result<Vec<String>, DomainError> {
+    let Some(value) = request.context().attributes().get(key) else {
+        return Err(DomainError::EmptyField {
+            field: CONTEXT_REFS_FIELD,
+        });
+    };
+    let Some(items) = value.as_array() else {
+        return Err(DomainError::InvalidCharacters {
+            field: CONTEXT_REFS_FIELD,
+        });
+    };
+    items
+        .iter()
+        .map(|item| match item {
+            Value::String(reference) => Ok(reference.clone()),
+            Value::Object(entry) => entry
+                .get("id")
+                .and_then(Value::as_str)
+                .map(str::to_owned)
+                .ok_or(DomainError::InvalidCharacters {
+                    field: CONTEXT_REFS_FIELD,
+                }),
+            _ => Err(DomainError::InvalidCharacters {
+                field: CONTEXT_REFS_FIELD,
+            }),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -150,6 +214,141 @@ mod tests {
         let contract = config.output_contract().unwrap();
         assert_eq!(contract.contract_id(), "evidence-bound-decision");
         assert!(contract.fields()["decision"].required());
+    }
+
+    fn request_with_context(
+        config: BTreeMap<String, Value>,
+        context: BTreeMap<String, Value>,
+    ) -> CeremonyStepHandlerRequest {
+        CeremonyStepHandlerRequest::new(
+            CeremonyId::new("ceremony-1").unwrap(),
+            CeremonyName::new("editorial").unwrap(),
+            CeremonyVersion::v1(),
+            StateId::new("OPENING").unwrap(),
+            StepId::new("open_room").unwrap(),
+            StepHandlerKind::new("facilitation_prompt").unwrap(),
+            StepHandlerConfig::new(Attributes::new(config).unwrap()),
+            CeremonyContext::new(Attributes::new(context).unwrap()),
+            StepAttempt::FIRST,
+        )
+    }
+
+    fn evidence_contract_config(evidence: &Value) -> BTreeMap<String, Value> {
+        BTreeMap::from([
+            ("prompt".to_owned(), json!("Decide with evidence")),
+            (
+                "output_contract".to_owned(),
+                json!({
+                    "contract_id": "evidence-bound-decision",
+                    "required_fields": ["claims"],
+                    "evidence": evidence,
+                }),
+            ),
+        ])
+    }
+
+    #[test]
+    fn resolves_evidence_pack_from_ceremony_context() {
+        let config = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+            })),
+            BTreeMap::from([(
+                "evidence_pack".to_owned(),
+                json!([
+                    {"id": "ev-trace-1", "kind": "trace"},
+                    {"id": "ev-metric-1", "kind": "metric"},
+                ]),
+            )]),
+        ))
+        .unwrap();
+
+        let rule = config
+            .output_contract()
+            .unwrap()
+            .evidence_grounding()
+            .unwrap();
+        assert_eq!(rule.claims_field(), "claims");
+        assert_eq!(rule.refs_field(), "evidence_refs");
+        assert!(rule.allowed_refs().contains("ev-trace-1"));
+        assert!(rule.allowed_refs().contains("ev-metric-1"));
+    }
+
+    #[test]
+    fn merges_static_refs_with_context_refs_and_custom_fields() {
+        let config = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "claims_field": "findings",
+                "refs_field": "sources",
+                "allowed_refs": ["ev-static-1"],
+                "allowed_refs_from_context": "evidence_pack",
+            })),
+            BTreeMap::from([("evidence_pack".to_owned(), json!(["ev-ctx-1"]))]),
+        ))
+        .unwrap();
+
+        let rule = config
+            .output_contract()
+            .unwrap()
+            .evidence_grounding()
+            .unwrap();
+        assert_eq!(rule.claims_field(), "findings");
+        assert_eq!(rule.refs_field(), "sources");
+        assert!(rule.allowed_refs().contains("ev-static-1"));
+        assert!(rule.allowed_refs().contains("ev-ctx-1"));
+    }
+
+    #[test]
+    fn grounding_gate_fails_loudly_when_context_pack_is_absent() {
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs_from_context": "evidence_pack",
+            })),
+            BTreeMap::new(),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "ceremony_step.config.output_contract.evidence.allowed_refs_from_context"
+            }
+        ));
+    }
+
+    #[test]
+    fn evidence_block_without_any_source_is_rejected() {
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({ "claims_field": "claims" })),
+            BTreeMap::new(),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "ceremony_step.config.output_contract.evidence.allowed_refs"
+            }
+        ));
+    }
+
+    #[test]
+    fn evidence_block_with_unknown_key_is_rejected() {
+        let err = DeliberationStepConfig::from_request(&request_with_context(
+            evidence_contract_config(&json!({
+                "allowed_refs": ["ev-1"],
+                "allowd_refs": ["typo"],
+            })),
+            BTreeMap::new(),
+        ))
+        .unwrap_err();
+
+        assert!(matches!(
+            err,
+            DomainError::InvalidCharacters {
+                field: "ceremony_step.config.output_contract.evidence"
+            }
+        ));
     }
 
     #[test]

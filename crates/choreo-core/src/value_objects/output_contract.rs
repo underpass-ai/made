@@ -21,6 +21,11 @@ const MAX_ALLOWED_VALUE_LEN: usize = 256;
 /// dozen enums; anything larger should live behind a `$ref` and be
 /// fetched by the validator if/when remote schemas are supported.
 const MAX_JSON_SCHEMA_LEN: usize = 256 * 1024;
+/// Cap on the evidence pack an evidence-grounding rule may carry. An
+/// evidence pack is a curated set of reference ids for one
+/// deliberation, not a corpus; anything larger belongs in an external
+/// store that the pack entries reference.
+const MAX_ALLOWED_EVIDENCE_REFS: usize = 1024;
 
 /// Wire- and storage-stable structured output format selector.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -88,6 +93,87 @@ impl OutputFieldRule {
     }
 }
 
+/// Evidence-grounding rule for one invocation: which output field
+/// carries the claims, which per-claim field carries the evidence
+/// references, and the closed set of reference ids that count as real
+/// evidence for this deliberation (the "evidence pack").
+///
+/// The rule is deliberately shape-only: the core does not know what an
+/// evidence ref points at (a document, a trace, a metric snapshot) —
+/// only that a claim citing a ref outside the pack is ungrounded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EvidenceGroundingRule {
+    claims_field: String,
+    refs_field: String,
+    allowed_refs: BTreeSet<String>,
+}
+
+impl EvidenceGroundingRule {
+    /// Build a grounding rule. `allowed_refs` must be non-empty: an
+    /// evidence-bound deliberation with an empty pack is a
+    /// configuration error, not a stricter gate.
+    pub fn new(
+        claims_field: impl Into<String>,
+        refs_field: impl Into<String>,
+        allowed_refs: impl IntoIterator<Item = impl Into<String>>,
+    ) -> Result<Self, DomainError> {
+        let claims_field = validate_text(
+            &claims_field.into(),
+            "output_contract.evidence.claims_field",
+            MAX_FIELD_NAME_LEN,
+        )?;
+        let refs_field = validate_text(
+            &refs_field.into(),
+            "output_contract.evidence.refs_field",
+            MAX_FIELD_NAME_LEN,
+        )?;
+        let allowed_refs = allowed_refs
+            .into_iter()
+            .map(|reference| {
+                let reference = reference.into();
+                validate_text(
+                    &reference,
+                    "output_contract.evidence.allowed_ref",
+                    MAX_ALLOWED_VALUE_LEN,
+                )
+            })
+            .collect::<Result<BTreeSet<_>, _>>()?;
+        if allowed_refs.is_empty() {
+            return Err(DomainError::EmptyField {
+                field: "output_contract.evidence.allowed_refs",
+            });
+        }
+        if allowed_refs.len() > MAX_ALLOWED_EVIDENCE_REFS {
+            return Err(DomainError::OutOfRange {
+                field: "output_contract.evidence.allowed_refs",
+                value: allowed_refs.len() as f64,
+                min: 1.0,
+                max: MAX_ALLOWED_EVIDENCE_REFS as f64,
+            });
+        }
+        Ok(Self {
+            claims_field,
+            refs_field,
+            allowed_refs,
+        })
+    }
+
+    #[must_use]
+    pub fn claims_field(&self) -> &str {
+        &self.claims_field
+    }
+
+    #[must_use]
+    pub fn refs_field(&self) -> &str {
+        &self.refs_field
+    }
+
+    #[must_use]
+    pub fn allowed_refs(&self) -> &BTreeSet<String> {
+        &self.allowed_refs
+    }
+}
+
 /// Typed structured-output contract attached to one invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputContract {
@@ -102,6 +188,11 @@ pub struct OutputContract {
     /// schema-engine dependency.
     #[serde(default, skip_serializing_if = "String::is_empty")]
     json_schema: String,
+    /// Optional evidence-grounding rule. When present, the adapter
+    /// grounding validator rejects proposals whose claims do not cite
+    /// evidence from the allowed pack.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evidence_grounding: Option<EvidenceGroundingRule>,
 }
 
 impl OutputContract {
@@ -154,6 +245,7 @@ impl OutputContract {
             format,
             fields: normalized,
             json_schema,
+            evidence_grounding: None,
         })
     }
 
@@ -185,6 +277,20 @@ impl OutputContract {
     #[must_use]
     pub fn json_schema(&self) -> &str {
         &self.json_schema
+    }
+
+    /// Attach an evidence-grounding rule to this contract.
+    #[must_use]
+    pub fn with_evidence_grounding(mut self, rule: EvidenceGroundingRule) -> Self {
+        self.evidence_grounding = Some(rule);
+        self
+    }
+
+    /// Evidence-grounding rule, when the contract declares one. `None`
+    /// means the grounding validator is a no-op for this invocation.
+    #[must_use]
+    pub fn evidence_grounding(&self) -> Option<&EvidenceGroundingRule> {
+        self.evidence_grounding.as_ref()
     }
 }
 
@@ -323,6 +429,60 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn evidence_grounding_rule_keeps_fields_and_refs() {
+        let rule = EvidenceGroundingRule::new("claims", "evidence_refs", ["ev-1", "ev-2"]).unwrap();
+        assert_eq!(rule.claims_field(), "claims");
+        assert_eq!(rule.refs_field(), "evidence_refs");
+        assert!(rule.allowed_refs().contains("ev-1"));
+        assert_eq!(rule.allowed_refs().len(), 2);
+    }
+
+    #[test]
+    fn evidence_grounding_rule_rejects_empty_pack() {
+        let err = EvidenceGroundingRule::new("claims", "evidence_refs", Vec::<String>::new())
+            .unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.allowed_refs"
+            }
+        ));
+    }
+
+    #[test]
+    fn evidence_grounding_rule_rejects_blank_ref() {
+        let err = EvidenceGroundingRule::new("claims", "evidence_refs", ["  "]).unwrap_err();
+        assert!(matches!(
+            err,
+            DomainError::EmptyField {
+                field: "output_contract.evidence.allowed_ref"
+            }
+        ));
+    }
+
+    #[test]
+    fn contract_with_evidence_grounding_roundtrips() {
+        let contract = OutputContract::json_object("c1", BTreeMap::new())
+            .unwrap()
+            .with_evidence_grounding(
+                EvidenceGroundingRule::new("claims", "evidence_refs", ["ev-1"]).unwrap(),
+            );
+        let serialized = serde_json::to_string(&contract).unwrap();
+        let back: OutputContract = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(back, contract);
+        assert_eq!(back.evidence_grounding().unwrap().claims_field(), "claims");
+    }
+
+    #[test]
+    fn contract_without_grounding_deserializes_from_legacy_wire_shape() {
+        // Contracts serialized before the grounding field existed must
+        // keep deserializing (registry/persistence compatibility).
+        let legacy = r#"{"contract_id":"c1","format":"JsonObject","fields":{}}"#;
+        let back: OutputContract = serde_json::from_str(legacy).unwrap();
+        assert!(back.evidence_grounding().is_none());
     }
 
     #[test]
