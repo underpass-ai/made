@@ -69,16 +69,24 @@ fn task_from(
     request: &CeremonyStepHandlerRequest,
     config: &DeliberationStepConfig,
 ) -> Result<Task, DomainError> {
+    let mut constraints = TaskConstraints::new(
+        choreo_core::value_objects::Rubric::empty(),
+        config.rounds(),
+        config.num_agents(),
+        None,
+    );
+    // A step-declared contract turns the deliberation into a policy
+    // gate: the contract validators judge every proposal, and with no
+    // satisfying proposal the step fails as NoValidProposal naming the
+    // contract_id — deterministic rejection, not another model opinion.
+    if let Some(contract) = config.output_contract() {
+        constraints = constraints.with_output_contract(contract.clone());
+    }
     Ok(Task::new(
         task_id_from(request)?,
         config.specialty().clone(),
         build_description(request, config)?,
-        TaskConstraints::new(
-            choreo_core::value_objects::Rubric::empty(),
-            config.rounds(),
-            config.num_agents(),
-            None,
-        ),
+        constraints,
         Attributes::new(task_attributes(request, config))?,
     ))
 }
@@ -279,7 +287,9 @@ mod tests {
     };
     use crate::noop::{NoopAgent, NoopMessaging};
     use crate::scoring::UniformScoring;
-    use crate::validators::ContentNonEmptyValidator;
+    use crate::validators::{
+        ContentNonEmptyValidator, JsonObjectOutputValidator, RequiredFieldsValidator,
+    };
 
     use super::*;
 
@@ -357,6 +367,88 @@ mod tests {
                 .copied(),
             Some(1)
         );
+    }
+
+    #[tokio::test]
+    async fn step_with_output_contract_fails_as_no_valid_proposal_when_violated() {
+        // The noop agent answers in plain prose, which cannot satisfy a
+        // json_object contract — the deterministic gate must reject the
+        // step naming the contract, not fall back to picking a winner.
+        let specialty = Specialty::new("policy_gate").unwrap();
+        let agent_id = AgentId::new("agent-policy_gate-0").unwrap();
+        let agent_registry = Arc::new(InMemoryAgentRegistry::new());
+        agent_registry
+            .insert(Arc::new(NoopAgent::new(
+                agent_id.clone(),
+                specialty.clone(),
+            )))
+            .await
+            .unwrap();
+
+        let council_registry = Arc::new(InMemoryCouncilRegistry::new());
+        council_registry
+            .register(
+                Council::new(
+                    CouncilId::new("council-policy_gate").unwrap(),
+                    specialty.clone(),
+                    vec![agent_id],
+                    SystemClock::new().now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        let deliberate = Arc::new(DeliberateUseCase::new(
+            Arc::new(SystemClock::new()),
+            council_registry,
+            agent_registry,
+            vec![
+                Arc::new(ContentNonEmptyValidator::new()),
+                Arc::new(JsonObjectOutputValidator::new()),
+                Arc::new(RequiredFieldsValidator::new()),
+            ],
+            Arc::new(UniformScoring::new()),
+            Arc::new(InMemoryDeliberationRepository::new()),
+            Arc::new(NoopMessaging::new()),
+            Arc::new(InMemoryStatistics::new()),
+            Arc::new(choreo_core::ports::NoopMetricsRecorder),
+            "ceremony-step-handler-test",
+        ));
+        let handler = DeliberatingCeremonyStepHandler::new(deliberate);
+
+        let request = CeremonyStepHandlerRequest::new(
+            CeremonyId::new("ceremony-1").unwrap(),
+            CeremonyName::new("editorial").unwrap(),
+            CeremonyVersion::v1(),
+            StateId::new("RULING").unwrap(),
+            StepId::new("ruling").unwrap(),
+            StepHandlerKind::new("policy_gate").unwrap(),
+            StepHandlerConfig::new(
+                Attributes::new(BTreeMap::from([
+                    ("prompt".to_owned(), json!("Deliver the ruling")),
+                    ("num_agents".to_owned(), json!(1)),
+                    (
+                        "output_contract".to_owned(),
+                        json!({
+                            "contract_id": "ruling-contract",
+                            "required_fields": ["decision", "claims"],
+                        }),
+                    ),
+                ]))
+                .unwrap(),
+            ),
+            CeremonyContext::empty(),
+            StepAttempt::FIRST,
+        );
+
+        let err = handler.execute(request).await.unwrap_err();
+
+        assert!(matches!(
+            err,
+            choreo_core::error::DomainError::NoValidProposal { ref contract_id }
+                if contract_id == "ruling-contract"
+        ));
     }
 
     #[test]
