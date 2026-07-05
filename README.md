@@ -2,8 +2,41 @@
 
 > Part of [Underpass AI](https://underpassai.com) — memory and execution infrastructure for reliable AI agents.
 
-Event-driven coordination plane for specialist agents. Domain-agnostic port of
-the `swe-ai-fleet` orchestrator service to Rust.
+Event-driven coordination plane for councils of specialist agents. It runs
+structured deliberations (propose → peer-critique → revise → validate →
+score → winner) and longer declarative YAML ceremonies as explicit state
+machines, enforces output contracts on what agents produce, can score with
+an LLM judge, and ships observability that shows *why* an answer won.
+Domain- and provider-agnostic (vLLM, Anthropic, OpenAI, local, rule-based,
+human-in-the-loop). Kubernetes-first.
+
+Lineage: started as a domain-agnostic Rust port of the `swe-ai-fleet`
+orchestrator service, and has since grown well beyond that port.
+
+## What it does
+
+- **Structured deliberation** — a strict one-way FSM per council run
+  (`Proposing → Revising → Validating → Scoring → Completed`) with
+  deterministic peer critique between agents and a bounded, total-order
+  score for ranking.
+- **Declarative ceremonies** — longer multi-step meetings defined in YAML as
+  explicit state machines (states, transitions, guards, retries, leases).
+  The winning contribution of every step is an **API artifact** — a meeting
+  record with a Mermaid diagram of the conversation — not a log line.
+- **Output contracts** — JSON Schema plus field rules enforced by shipped
+  validators, with deterministic rejection (`NoValidProposal`) when no
+  proposal satisfies the contract: unsupported output does not become a
+  decision.
+- **Optional LLM-as-judge** — judge-aware scoring with fail-fast
+  configuration, plus a judge *discrimination* metric that tells you whether
+  the judge actually re-ranks proposals or just burns tokens.
+- **Deliberation-native observability** — every deliberation is a replayable
+  OpenTelemetry trace (the debate itself, span by span, exported over mTLS)
+  and Prometheus metrics designed for this domain: winner-score
+  distribution, `NoValidProposal` rate, per-step ceremony outcomes. See
+  [`docs/choreographer-observability-design.md`](docs/choreographer-observability-design.md).
+- **Two surfaces** — a contract-first gRPC API, and a stdio MCP server
+  exposing the same RPCs 1:1 to coding agents (Codex CLI, Claude Desktop).
 
 ## The Underpass platform
 
