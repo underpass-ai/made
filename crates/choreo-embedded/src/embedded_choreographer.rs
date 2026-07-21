@@ -3,12 +3,15 @@ use std::sync::Arc;
 
 use choreo_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
-    ApproveCeremonyGuardUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
-    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ListCeremonyDefinitionsUseCase, MountCeremonyDefinitionsOutput,
-    MountCeremonyDefinitionsUseCase, RunCeremonyInput, RunCeremonyOutput, RunCeremonyStepInput,
-    RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyInput,
-    StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    ApproveCeremonyGuardUseCase, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
+    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, GetCeremonyDefinitionUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, ListCeremonyDefinitionsUseCase,
+    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
+    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
+    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
+    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    StartCeremonyUseCase,
 };
 use choreo_core::entities::{CeremonyDefinition, CeremonyInstance};
 use choreo_core::error::DomainError;
@@ -149,6 +152,45 @@ impl EmbeddedChoreographer {
             .await
     }
 
+    pub async fn request_intervention(
+        &self,
+        input: RequestCeremonyInterventionInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        RequestCeremonyInterventionUseCase::new(
+            self.definitions.clone(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn respond_to_intervention(
+        &self,
+        input: RespondToCeremonyInterventionInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        RespondToCeremonyInterventionUseCase::new(
+            self.definitions.clone(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn close_intervention(
+        &self,
+        input: CloseCeremonyInterventionInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        CloseCeremonyInterventionUseCase::new(
+            self.definitions.clone(),
+            self.instances.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
     pub async fn start_step(
         &self,
         input: StartCeremonyStepInput,
@@ -172,6 +214,7 @@ impl EmbeddedChoreographer {
             self.step_handler.clone(),
             self.clock.clone(),
         )
+        .with_context_store(self.context_store.clone())
         .execute(input)
         .await
     }
