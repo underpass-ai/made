@@ -482,7 +482,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry_sdk",
  "prometheus",
- "prost",
  "prost-types",
  "reqwest",
  "serde",
@@ -587,10 +586,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "choreo-embedded"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "choreo-adapters",
+ "choreo-app",
+ "choreo-core",
+ "tokio",
+]
+
+[[package]]
 name = "choreo-mcp"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "choreo-adapters",
+ "choreo-app",
+ "choreo-core",
+ "choreo-embedded",
  "choreo-mcp-proto",
  "futures",
  "opentelemetry",
@@ -603,6 +617,7 @@ dependencies = [
  "tonic",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]

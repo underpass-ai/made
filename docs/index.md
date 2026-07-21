@@ -23,6 +23,7 @@ does not require KMP, PIR, or any downstream product to run:
 | Doc | Purpose |
 |---|---|
 | [`choreographer-architecture-and-differentiation.md`](./choreographer-architecture-and-differentiation.md) | Code-grounded walkthrough of the hexagonal core, council deliberation pipeline, the declarative ceremony engine, and the LLM-as-judge scorer — and where the design diverges from common agent-orchestration patterns. |
+| [`embedded-choreographer.md`](./embedded-choreographer.md) | Two-distribution architecture and the implemented in-process ceremony API, injectable ports, local defaults and current limits. |
 | [`choreographer-observability-design.md`](./choreographer-observability-design.md) | The observability design and the shipped metric catalogue served at `/metrics`: deliberation/judge/provider/ceremony Prometheus families, the differentiating signals (judge discrimination, winner-score distribution, vLLM serial saturation, token cost), and the alert/SLO + dashboard design. |
 
 ## Operations — how to run, install, and configure
@@ -34,6 +35,7 @@ does not require KMP, PIR, or any downstream product to run:
 | [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |
 | [`operations/deploy-kubernetes.md`](./operations/deploy-kubernetes.md) | Helm install guide, including minimal standalone install, embedded NATS, TLS/mTLS, Postgres secret, provider env secrets, Runtime executor, and the Underpass Runtime profile. |
 | [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter exposing every gRPC RPC as an MCP tool, including fixture-mode quickstart. |
+| [`operations/codex-plugin.md`](./operations/codex-plugin.md) | Cumulative acceptance ladder, bundle layout, and local installation boundary for the Codex plugin. |
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |
 | [`operations/mcp/claude-desktop.md`](./operations/mcp/claude-desktop.md) | `claude_desktop_config.json` snippets, per-OS paths, troubleshooting. |
 | [`operations/support-matrix.md`](./operations/support-matrix.md) | Supported Rust toolchain and release-support rules. |
