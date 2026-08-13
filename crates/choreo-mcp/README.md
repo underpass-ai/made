@@ -89,6 +89,7 @@ that intentionally have no gRPC mapping:
 
 | MCP tool | Purpose |
 |----------|---------|
+| `choreo_design_ceremony` | Turn structured intent into an analysed, unpublished linear ceremony draft. |
 | `choreo_start_ceremony` | Mount YAML and start without advancing. |
 | `choreo_run_ceremony_step` | Execute and persist one step. |
 | `choreo_approve_ceremony_guard` | Record an explicit human approval for a currently relevant human guard. |

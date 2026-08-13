@@ -10,6 +10,7 @@ mod embedded_ceremony_instance_presenter;
 mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
 mod embedded_defer_ceremony_guard_request;
+mod embedded_design_ceremony_request;
 mod embedded_diff_ceremony_definitions_request;
 mod embedded_get_ceremony_instance_request;
 mod embedded_publication_presenter;
@@ -32,11 +33,12 @@ use crate::backend::{ChoreoMcpToolBackend, ChoreoMcpToolFuture};
 use crate::protocol::{
     tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
-    COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GET_CEREMONY_INSTANCE_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
-    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -51,6 +53,7 @@ use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresente
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
 use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardRequest;
+use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
 use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
 use self::embedded_get_ceremony_instance_request::EmbeddedGetCeremonyInstanceRequest;
 use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
@@ -123,6 +126,7 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
                 | COLLECT_CEREMONY_EVIDENCE_TOOL
                 | ASSERT_CEREMONY_REASON_TOOL
+                | DESIGN_CEREMONY_TOOL
                 | VALIDATE_CEREMONY_DRAFT_TOOL
                 | EXPLAIN_CEREMONY_DRAFT_TOOL
                 | PUBLISH_CEREMONY_DEFINITION_TOOL
@@ -138,6 +142,19 @@ impl ChoreoMcpToolBackend for EmbeddedChoreoMcpBackend {
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> ChoreoMcpToolFuture<'a> {
         Box::pin(async move {
             match name {
+                DESIGN_CEREMONY_TOOL => {
+                    let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)?.design()?;
+                    let report = designed.draft().analyze();
+                    Ok(tool_success_result(
+                        EmbeddedCeremonyDraftPresenter::present_design(
+                            designed.definition_yaml(),
+                            &CeremonyDraftView::project(designed.draft(), &report),
+                            designed.stage_count(),
+                            designed.participant_count(),
+                            designed.final_approval_required(),
+                        ),
+                    ))
+                }
                 VALIDATE_CEREMONY_DRAFT_TOOL => {
                     let request = EmbeddedCeremonyDraftRequest::try_from(arguments)?;
                     let draft = request.parse()?;

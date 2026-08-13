@@ -27,6 +27,7 @@ pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "choreo_respond_to_ceremony_intervention";
 pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony_intervention";
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
+pub(crate) const DESIGN_CEREMONY_TOOL: &str = "choreo_design_ceremony";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
@@ -116,7 +117,13 @@ fn tool_catalog() -> Vec<Value> {
     // A test pins that correspondence both ways: a tool with no RPC,
     // or an RPC with no tool, is a surface that exists on one side
     // only, which is how two distributions drift apart.
-    grpc_tool_catalog()
+    let mut tools = grpc_tool_catalog();
+    tools.push(tool_def(
+        DESIGN_CEREMONY_TOOL,
+        "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
+        ceremony_design_schema(),
+    ));
+    tools
 }
 
 fn start_published_ceremony_schema() -> Value {
@@ -169,6 +176,113 @@ fn ceremony_draft_schema() -> Value {
                 "Ceremony definition YAML to analyse. It does not need to be publishable — reporting why it is not is the point."
             )
         }
+    })
+}
+
+fn ceremony_design_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["name", "objective", "outputs", "participants", "stages"],
+        "properties": {
+            "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
+            "version": string_schema("Immutable publication version. Defaults to 1.0."),
+            "objective": string_schema("The single question or artifact this ceremony exists to resolve or produce."),
+            "required_inputs": unique_string_array_schema("Context keys every run must provide."),
+            "optional_inputs": unique_string_array_schema("Context keys a run may provide."),
+            "outputs": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Named output objects the completed ceremony promises."
+            },
+            "participants": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["role_id"],
+                    "properties": {
+                        "role_id": string_schema("Role seated at the working session."),
+                        "capabilities": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": {
+                                "type": "string",
+                                "enum": ["request_intervention", "respond_to_intervention"]
+                            },
+                            "description": "Optional live-agenda capabilities beyond owned stages."
+                        }
+                    }
+                }
+            },
+            "stages": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["id", "owner_role_id", "instructions"],
+                    "properties": {
+                        "id": string_schema("Lower_snake_case step identity. Declaration order is execution order."),
+                        "owner_role_id": string_schema("Participant role allowed to run this stage."),
+                        "instructions": string_schema("Concrete instructions and success criteria for this stage."),
+                        "handler": string_schema("Host step-handler specialty. Defaults to host_callback."),
+                        "see_prior": {
+                            "type": "boolean",
+                            "description": "Whether earlier stage outputs enter this stage; defaults to false for the first stage and true afterwards."
+                        },
+                        "num_agents": {
+                            "type": "integer",
+                            "minimum": 1,
+                            "description": "Council size. Defaults to one."
+                        },
+                        "review_rounds": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Adversarial peer-review rounds. A positive value requires at least two agents."
+                        }
+                    }
+                }
+            },
+            "final_approval": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["role_id"],
+                "properties": {
+                    "role_id": string_schema("Participant role whose explicit human approval unlocks completion."),
+                    "guard_name": string_schema("Human guard identity. Defaults to human_approved_outcome."),
+                    "trigger": string_schema("Final transition trigger. Defaults to approve_outcome.")
+                },
+                "description": "Optional explicit human gate after the final stage. Designing it never records approval."
+            },
+            "step_timeout_seconds": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Default step timeout written into the draft. Defaults to 300."
+            },
+            "max_attempts": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Default maximum attempts written into the draft. Defaults to two."
+            },
+            "backoff_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Default retry backoff written into the draft. Defaults to one."
+            }
+        }
+    })
+}
+
+fn unique_string_array_schema(description: &str) -> Value {
+    json!({
+        "type": "array",
+        "uniqueItems": true,
+        "items": { "type": "string", "minLength": 1 },
+        "description": description,
     })
 }
 
@@ -1191,7 +1305,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 35);
+        assert_eq!(all_names.len(), 36);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
@@ -1206,6 +1320,7 @@ mod tests {
         assert!(all_names.contains(&RESPOND_TO_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&COLLECT_CEREMONY_EVIDENCE_TOOL.to_owned()));
+        assert!(all_names.contains(&DESIGN_CEREMONY_TOOL.to_owned()));
     }
 
     #[test]

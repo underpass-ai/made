@@ -1,0 +1,4 @@
+interface:
+  display_name: "Design Ceremony"
+  short_description: "Design a validated ceremony draft"
+  default_prompt: "Design a Choreographer ceremony from my intent, validate it, and explain the draft before publication."

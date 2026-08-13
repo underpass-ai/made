@@ -35,6 +35,8 @@ async-trait = { workspace = true }
 futures = { workspace = true, optional = true }
 prost-types = { workspace = true, optional = true }
 serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_yaml = { workspace = true, optional = true }
 sha2 = { workspace = true }
 time = { workspace = true, optional = true }
 tokio = { workspace = true }
@@ -52,6 +54,8 @@ embedded = [
     "dep:choreo-app",
     "dep:choreo-core",
     "dep:choreo-embedded",
+    "dep:serde",
+    "dep:serde_yaml",
     "dep:time",
     "dep:uuid",
 ]
