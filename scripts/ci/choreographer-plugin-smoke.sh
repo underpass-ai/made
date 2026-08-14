@@ -21,8 +21,8 @@ response_contains() {
   fi
 }
 
-if [[ "$(printf '%s\n' "${responses}" | wc -l)" -ne 3 ]]; then
-  echo "choreographer plugin smoke expected three MCP responses" >&2
+if [[ "$(printf '%s\n' "${responses}" | wc -l)" -ne 4 ]]; then
+  echo "choreographer plugin smoke expected four MCP responses" >&2
   exit 1
 fi
 
@@ -43,6 +43,26 @@ fi
 
 if ! response_contains '"name":"choreo_request_ceremony_intervention"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not advertise dynamic interventions" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_design_ceremony"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise ceremony design" >&2
+  exit 1
+fi
+
+if ! response_contains '"ceremony":"plugin_designed_review"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not design the requested ceremony" >&2
+  exit 1
+fi
+
+if ! response_contains '"published":false' <<<"${responses}"; then
+  echo "choreographer plugin design unexpectedly published its draft" >&2
+  exit 1
+fi
+
+if ! response_contains '"started":false' <<<"${responses}"; then
+  echo "choreographer plugin design unexpectedly started its draft" >&2
   exit 1
 fi
 

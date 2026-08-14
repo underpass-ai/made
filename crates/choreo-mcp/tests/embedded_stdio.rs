@@ -147,11 +147,79 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_publish_ceremony_definition",
             "choreo_diff_ceremony_definitions",
             "choreo_bind_ceremony_participants",
+            "choreo_design_ceremony",
         ]
     );
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
+}
+
+#[tokio::test]
+async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
+    let server = ChoreoMcpServer::embedded();
+    let response = send(
+        &server,
+        jsonrpc(
+            1,
+            "tools/call",
+            Some(json!({
+                "name": "choreo_design_ceremony",
+                "arguments": {
+                    "name": "asset_composition_review",
+                    "objective": "Compose one asset candidate and submit it for human review.",
+                    "required_inputs": ["brief", "accepted_parts"],
+                    "outputs": ["candidate_review"],
+                    "participants": [
+                        { "role_id": "WORKER", "capabilities": ["respond_to_intervention"] },
+                        { "role_id": "ARTIST", "capabilities": ["request_intervention"] }
+                    ],
+                    "stages": [
+                        {
+                            "id": "compose",
+                            "owner_role_id": "WORKER",
+                            "instructions": "Compose one candidate from the accepted parts."
+                        },
+                        {
+                            "id": "review",
+                            "owner_role_id": "ARTIST",
+                            "instructions": "Compare the candidate with the brief.",
+                            "num_agents": 2,
+                            "review_rounds": 1
+                        }
+                    ],
+                    "final_approval": { "role_id": "ARTIST" }
+                }
+            })),
+        ),
+    )
+    .await;
+    let designed = structured(&response);
+
+    assert_eq!(designed["ceremony"], "asset_composition_review");
+    assert_eq!(designed["publishable"], true, "{designed:?}");
+    assert_eq!(designed["design"]["topology"], "linear");
+    assert_eq!(designed["design"]["stages"], 2);
+    assert_eq!(designed["design"]["final_approval_required"], true);
+    assert_eq!(designed["published"], false);
+    assert_eq!(designed["started"], false);
+    let yaml = designed["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("human_approved_outcome"));
+    assert!(yaml.contains("type: human"));
+
+    let listed = send(
+        &server,
+        jsonrpc(
+            2,
+            "tools/call",
+            Some(json!({
+                "name": "choreo_list_ceremony_instances",
+                "arguments": {}
+            })),
+        ),
+    )
+    .await;
+    assert_eq!(structured(&listed)["count"], 0);
 }
 
 #[tokio::test]
@@ -777,7 +845,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 19);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 20);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

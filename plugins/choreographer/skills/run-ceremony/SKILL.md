@@ -9,6 +9,10 @@ Use the tools exposed by the bundled Choreographer MCP server. Choose the
 one-shot path only when the ceremony can run to completion without a later
 human decision.
 
+When the user asks to design or create a ceremony rather than run supplied
+YAML, follow the `design-ceremony` skill and call `choreo_design_ceremony`
+before using this execution workflow.
+
 ## One-shot ceremonies
 
 1. Obtain or construct a valid ceremony YAML definition.

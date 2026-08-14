@@ -1,7 +1,7 @@
 {
   "name": "choreographer",
   "version": "0.1.0",
-  "description": "Run declarative Choreographer ceremonies locally from Codex.",
+  "description": "Design and run declarative Choreographer ceremonies locally from Codex.",
   "author": {
     "name": "Underpass AI"
   },
@@ -16,14 +16,15 @@
   "mcpServers": "./.mcp.json",
   "interface": {
     "displayName": "Choreographer",
-    "shortDescription": "Run local declarative ceremonies",
-    "longDescription": "Embed the Choreographer ceremony engine in Codex through a local MCP stdio process, without requiring a deployed service.",
+    "shortDescription": "Design and run local ceremonies",
+    "longDescription": "Design, validate, publish and run Choreographer ceremonies in Codex through a local MCP stdio process, without requiring a deployed service.",
     "developerName": "Underpass AI",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive"
     ],
     "defaultPrompt": [
+      "Design a ceremony from this objective and explain the draft before publication.",
       "Run a local ceremony from this YAML definition."
     ]
   }

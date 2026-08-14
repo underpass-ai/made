@@ -15,3 +15,5 @@ much as the decision itself.
   contract; the host owns durability
 - [ADR-004](004-published-embedded-api-contract.md): `choreo-api` is the
   contract a consumer compiles against
+- [ADR-005](005-structured-ceremony-design-tool.md): ceremony design accepts
+  structured intent and returns an unpublished draft

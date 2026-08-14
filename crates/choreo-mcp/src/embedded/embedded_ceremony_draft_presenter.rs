@@ -12,6 +12,30 @@ use serde_json::{json, Value};
 pub(crate) struct EmbeddedCeremonyDraftPresenter;
 
 impl EmbeddedCeremonyDraftPresenter {
+    pub(crate) fn present_design(
+        definition_yaml: &str,
+        view: &CeremonyDraftView<'_>,
+        stage_count: usize,
+        participant_count: usize,
+        final_approval_required: bool,
+    ) -> Value {
+        json!({
+            "ceremony": view.name().as_str(),
+            "version": view.version().as_str(),
+            "definition_yaml": definition_yaml,
+            "publishable": view.is_publishable(),
+            "design": {
+                "topology": "linear",
+                "stages": stage_count,
+                "participants": participant_count,
+                "final_approval_required": final_approval_required,
+            },
+            "analysis": Self::present_validation(view),
+            "published": false,
+            "started": false,
+        })
+    }
+
     pub(crate) fn present_validation(view: &CeremonyDraftView<'_>) -> Value {
         json!({
             "ceremony": view.name().as_str(),

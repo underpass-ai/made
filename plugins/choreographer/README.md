@@ -9,6 +9,8 @@ The repository packaging script places the isolated embedded binary at
 
 Executable scope:
 
+- `choreo_design_ceremony` to turn structured intent into an analysed,
+  unpublished linear ceremony draft;
 - `choreo_run_ceremony` for one-shot terminal execution;
 - `choreo_start_ceremony`, `choreo_run_ceremony_step`,
   `choreo_approve_ceremony_guard`, `choreo_defer_ceremony_guard`,
