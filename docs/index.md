@@ -32,6 +32,7 @@ does not require KMP, PIR, or any downstream product to run:
 
 | Doc | Purpose |
 |---|---|
+| [`operations/capability-verification.md`](./operations/capability-verification.md) | **Start here before making capability claims.** Separates executable tool discovery, execution ownership, external authority and restart durability for every distribution. |
 | [`dev-loop.md`](./dev-loop.md) | Local iteration loop, including `CHOREO_NATS_ENABLED=false just run` for no-external-service startup. |
 | [`release.md`](./release.md) | Versioning + cut-a-release checklist. |
 | [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |

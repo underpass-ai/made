@@ -2,6 +2,8 @@
 
 Status: Accepted
 
+Implementation status last verified: 2026-08-14
+
 ## Context
 
 Publishing a typed event does not make an audit. A message can be lost,
@@ -11,10 +13,11 @@ history.
 
 The engine also has mechanisms that exist specifically to survive failure —
 step leases for failover, idempotency keys so a retry does not duplicate
-effects, human guards that block until a person decides. All three currently
-live in memory, including in the deployable server, which wires ceremonies to an
-in-memory repository. A guard that disappears on restart is not a guard; a lease
-that does not outlive the failure it exists for is decorative.
+effects, human guards that block until a person decides. Their durability
+depends on the host composition. The deployable server uses in-memory ceremony
+state when `CHOREO_CEREMONY_STORE_PATH` is absent and Redb-backed ceremony
+state when it is configured. A guard that disappears on restart is not a guard;
+a lease that does not outlive the failure it exists for is decorative.
 
 ## Decision
 
@@ -50,9 +53,16 @@ unit of work directly. A composite `(ceremony_id, sequence)` key makes the
 monotonic sequence and its uniqueness inherent rather than a declared
 constraint, and gives range scans for chain verification.
 
-**The server distribution uses PostgreSQL.** redb takes an exclusive file lock
-and serves a single process, which is right for embedded and wrong for
-replicas. Both adapters implement one port and pass one conformance suite.
+**The deployable server currently uses Redb for ceremony state when
+`CHOREO_CEREMONY_STORE_PATH` is configured.** Redb takes an exclusive file
+lock and serves a single process, so the Helm composition pairs ceremony
+persistence with a single replica and a ReadWriteOnce volume. Without that
+variable, ceremony state remains in memory.
+
+PostgreSQL currently persists deliberations, councils, agents and related
+statistics; it is not the ceremony-state adapter. A future PostgreSQL ceremony
+adapter must implement the same port and pass the same conformance suite before
+the server can claim replicated ceremony persistence.
 
 **Snapshot plus append-only journal plus outbox, not event sourcing.** It gives
 strong auditability at materially lower risk, and does not foreclose the move.
@@ -73,8 +83,9 @@ Two independent implementations of the same port, passing the same suite, are
 better evidence than one: they show the port is not shaped around a single
 store.
 
-The deployable server stops losing ceremonies on restart, which is a precondition
-for the ceremony engine being a product rather than a demo.
+The deployable server can resume Redb-backed ceremonies after restart when
+`CHOREO_CEREMONY_STORE_PATH` and its volume are configured. The default
+in-memory composition makes no restart-durability claim.
 
 The engine's public claim becomes precise: it defines, chains and verifies the
 audit contract; durability is the host's, and conformance is how that stays

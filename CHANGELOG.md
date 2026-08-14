@@ -16,6 +16,10 @@ operator command.
 
 ### Added
 
+- A capability-verification runbook that separates implemented engine features,
+  the active MCP executable catalog, execution ownership and configured
+  durability. Root, plugin and embedded documentation now direct agents to
+  verify each claim independently.
 - MCP self-description through `choreo_discover_capabilities`, derived from
   the active backend-filtered tool catalog, plus `choreo_get_help` guidance
   for users and agents. Discovery marks artifact generators and their
@@ -41,9 +45,13 @@ operator command.
   work. Process-restart durability remains a responsibility of the repositories
   configured by the embedded host.
 - Embedded MCP backend and repo-local Codex plugin bundle. The isolated
-  `choreo-mcp` build exposes only `choreo_run_ceremony`, completes the MCP
-  stdio handshake and a real ceremony without gRPC/protobuf, and is covered by
-  direct, process, dependency-boundary, and plugin-launcher smoke tests.
+  `choreo-mcp` build completes the MCP stdio handshake and runs ceremonies
+  without gRPC/protobuf. Its current backend-filtered catalog also includes
+  discovery, authoring, incremental controls, delegated-host execution,
+  interventions, evidence and reports; callers must use
+  `choreo_discover_capabilities` for the exact installed surface. Direct,
+  process, dependency-boundary and plugin-launcher smoke tests cover the
+  bundle.
 - `choreo-embedded`, an in-process distribution of the ceremony engine with
   local defaults, injectable domain ports, an async host-callback step adapter,
   incremental human-active operations, and no required gRPC, NATS or Postgres

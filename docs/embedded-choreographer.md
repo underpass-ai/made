@@ -1,8 +1,9 @@
 # Choreographer Embedded
 
 Status: implemented first slice. The embedded surface currently covers the
-ceremony engine. Native embedded facades for the broader council and
-deliberation APIs are not claimed yet.
+ceremony engine, with process-local defaults and an opt-in durable Redb
+composition. Native embedded facades for the broader council and deliberation
+APIs are not claimed yet.
 
 ## One engine, two distributions
 
@@ -65,6 +66,29 @@ These defaults start no service and perform no remote IO. They are suitable for
 single-process workflows, tests and hosts that begin with ephemeral state.
 They are not a durability claim: a host that must resume after process loss
 injects persistent implementations of the same repositories and context port.
+
+## Durable Redb composition
+
+With the `redb` feature enabled,
+`EmbeddedChoreographer::open_redb(path)` supplies a
+`RedbCeremonyStore` to the ceremony-store and definition-publication ports.
+That composition persists ceremony snapshots, unit-of-work state, the audit
+journal, outbox rows and published definitions across process restarts. Its
+crash/reopen behavior is exercised by
+`crates/choreo-embedded/tests/redb_engine_api.rs`.
+
+The constructor does not silently make every port durable. Mounted definition
+repositories and ceremony transcripts still use their default in-memory
+adapters unless the host injects replacements. Step execution and evidence
+collection also keep their default no-op adapters unless the host supplies real
+implementations. Redb persistence therefore proves durable ceremony state; it
+does not prove that external work occurred.
+
+One consequence deserves emphasis: an instance started from a mounted
+(unpublished) definition persists its state but cannot rehydrate after the
+store reopens — loading it fails with `not found: ceremony_definition`. A host
+that must resume instances across restarts publishes the definition first and
+starts instances from the published identity.
 
 ## Host callback adapter
 
@@ -129,7 +153,9 @@ explicitly, preserving its existing deployment capabilities.
 ## Current limits
 
 - The embedded facade currently covers ceremonies, not every public gRPC RPC.
-- The default repositories are process-local and ephemeral.
+- `EmbeddedChoreographer::default()` is process-local and ephemeral.
+  `open_redb(path)` persists the ceremony store and definition publications,
+  but mounted definitions and transcripts remain host-configured boundaries.
 - Callbacks execute on the caller's async runtime; Choreographer does not create
   or hide a runtime.
 - Packaging to crates.io and a stable compatibility commitment wait for the
