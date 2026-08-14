@@ -4,7 +4,8 @@
 //! spawns the locally-built `choreo-mcp` binary in gRPC mode pointing
 //! at the container's mapped port, and exercises the JSON-RPC surface:
 //!
-//!   1. `tools/list` — expect 17 gRPC-backed plus 2 server-owned tools.
+//!   1. `tools/list` — require the same executable surface returned by
+//!      machine-readable discovery, including server-owned guidance.
 //!   2. `tools/call` — invoke the 4 simplest read-only tools and
 //!      assert the response is a well-formed JSON-RPC envelope with
 //!      a `result` object.
@@ -188,19 +189,41 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
         "initialize missing serverInfo: {init:?}",
     );
 
-    // tools/list — assert the 1:1 gRPC catalog plus server-owned guidance.
+    // tools/list — assert the same executable surface as machine discovery,
+    // avoiding another hard-coded cardinal that can drift from the proto.
     let list = mcp.call("tools/list", json!({})).await;
     let tools = list
         .pointer("/result/tools")
         .and_then(Value::as_array)
         .unwrap_or_else(|| panic!("tools/list missing /result/tools array: {list:?}"));
+    let listed_names = tools
+        .iter()
+        .map(|tool| tool["name"].clone())
+        .collect::<Vec<_>>();
+    let discovery = mcp
+        .call(
+            "tools/call",
+            json!({
+                "name": "choreo_discover_capabilities",
+                "arguments": {}
+            }),
+        )
+        .await;
+    let discovered_tools = discovery
+        .pointer("/result/structuredContent/tools")
+        .and_then(Value::as_array)
+        .unwrap_or_else(|| panic!("discovery missing structured tools: {discovery:?}"));
+    let discovered_names = discovered_tools
+        .iter()
+        .map(|tool| tool["name"].clone())
+        .collect::<Vec<_>>();
+    assert_eq!(listed_names, discovered_names);
     assert_eq!(
-        tools.len(),
-        19,
-        "expected 19 tools (17 gRPC + 2 server-owned), got {}: {:?}",
-        tools.len(),
-        tools.iter().map(|t| t.get("name")).collect::<Vec<_>>()
+        discovery.pointer("/result/structuredContent/tool_count"),
+        Some(&json!(tools.len()))
     );
+    assert!(listed_names.contains(&json!("choreo_discover_capabilities")));
+    assert!(listed_names.contains(&json!("choreo_get_help")));
 
     // Sanity-check that every tool name starts with `choreo_`.
     for tool in tools {

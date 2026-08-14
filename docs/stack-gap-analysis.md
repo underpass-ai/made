@@ -66,7 +66,7 @@ current implementation state of sibling repositories.
 - Winner scoring is a pluggable `ScoringPort`: uniform pass-fraction by
   default, or an opt-in LLM-as-judge (`CHOREO_JUDGE_ENABLED`) that ranks
   by intrinsic quality and fails fast without a vLLM endpoint/model.
-- The stdio MCP adapter exposes all 17 gRPC RPCs as `choreo_*` tools
+- The stdio MCP adapter exposes all 35 gRPC RPCs as `choreo_*` tools
   and has fixture + live gRPC backends.
 
 ## Remaining Gaps

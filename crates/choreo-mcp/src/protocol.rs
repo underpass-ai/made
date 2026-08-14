@@ -5,7 +5,7 @@
 //! the gRPC contract it wraps.
 //!
 //! The base catalog is 1:1 with the `underpass.choreo.v1` gRPC
-//! service: 17 tools, one per RPC. Backend-specific adapters may add
+//! service: one backend-owned tool per RPC. Backend-specific adapters may add
 //! capabilities that have no remote transport equivalent.
 
 use serde_json::{json, Value};
@@ -367,7 +367,7 @@ fn unique_string_array_schema(description: &str) -> Value {
     })
 }
 
-#[allow(clippy::too_many_lines)] // 17 gRPC tool definitions form one auditable transport contract
+#[allow(clippy::too_many_lines)] // gRPC tool definitions form one auditable transport contract
 fn grpc_tool_catalog() -> Vec<Value> {
     vec![
         tool_def(

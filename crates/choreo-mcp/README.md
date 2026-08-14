@@ -88,32 +88,44 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `choreo_list_contracts`           | `ListContracts`                   | read |
 | `choreo_delete_contract`          | `DeleteContract`                  | idempotent control plane |
 | `choreo_run_ceremony`             | `RunCeremony`                     | sync; runs a YAML ceremony to a terminal state |
+| `choreo_get_ceremony_instance`    | `GetCeremonyInstance`             | inspect a persistent instance |
+| `choreo_list_ceremony_instances`  | `ListCeremonyInstances`           | discover persistent instances |
+| `choreo_start_ceremony`           | `StartCeremony`                   | start supplied YAML without advancing |
+| `choreo_start_published_ceremony` | `StartPublishedCeremony`          | start an immutable published definition |
+| `choreo_run_ceremony_step`        | `RunCeremonyStep`                 | invoke the configured server-owned step handler |
+| `choreo_apply_ceremony_transition` | `ApplyCeremonyTransition`         | apply an enabled transition |
+| `choreo_approve_ceremony_guard`   | `ApproveCeremonyGuard`            | record an explicit human guard approval |
+| `choreo_defer_ceremony_guard`     | `DeferCeremonyGuard`              | preserve a human deferral |
+| `choreo_request_ceremony_intervention` | `RequestCeremonyIntervention` | open a participant request |
+| `choreo_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | record a targeted response |
+| `choreo_close_ceremony_intervention` | `CloseCeremonyIntervention`    | close a participant request |
+| `choreo_collect_ceremony_evidence` | `CollectCeremonyEvidence`        | attach evidence from a configured source |
+| `choreo_assert_ceremony_reason`   | `AssertCeremonyReason`            | record a participant-attributed reason |
+| `choreo_validate_ceremony_draft`  | `ValidateCeremonyDraft`           | validate without publishing |
+| `choreo_explain_ceremony_draft`   | `ExplainCeremonyDraft`            | explain structure and findings |
+| `choreo_publish_ceremony_definition` | `PublishCeremonyDefinition`    | publish an immutable definition |
+| `choreo_diff_ceremony_definitions` | `DiffCeremonyDefinitions`        | compare two definitions |
+| `choreo_bind_ceremony_participants` | `BindCeremonyParticipants`      | seat participants in declared roles |
 | `choreo_get_status`               | `GetStatus`                       | observability |
 | `choreo_get_metrics`              | `GetMetrics`                      | observability |
 
-The embedded backend also exposes persistent, incremental ceremony controls
-that intentionally have no gRPC mapping:
+These 35 backend-owned tools map 1:1 to the 35 RPCs in the Choreographer gRPC
+service. Every server composition additionally advertises the two server-owned
+discovery/help tools described below.
+
+The embedded backend also exposes four tools that intentionally have no gRPC
+mapping:
 
 | MCP tool | Purpose |
 |----------|---------|
 | `choreo_design_ceremony` | Turn structured intent into an analysed, unpublished linear ceremony draft. |
-| `choreo_start_ceremony` | Mount YAML and start without advancing. |
-| `choreo_run_ceremony_step` | Execute and persist one step. |
 | `choreo_claim_ceremony_step` | Lease the next step for real work performed by the MCP host; claiming performs no work. |
 | `choreo_complete_ceremony_step` | Record the observable status, structured output, and evidence of a previously claimed host-executed step. |
-| `choreo_approve_ceremony_guard` | Record an explicit human approval for a currently relevant human guard. |
-| `choreo_defer_ceremony_guard` | Preserve an explicit human deferral without satisfying the guard. |
-| `choreo_apply_ceremony_transition` | Apply one enabled transition. |
-| `choreo_get_ceremony_instance` | Inspect steps, transitions, and blocking human guards. |
-| `choreo_list_ceremony_instances` | Discover instances known to the active backend before starting a replacement. |
-| `choreo_request_ceremony_intervention` | Open a participant request, optionally linked to the table response it selects. |
-| `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
-| `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
-| `choreo_collect_ceremony_evidence` | Collect a typed evidence pack through a host-provided read-only source. |
 | `choreo_generate_ceremony_report` | Render one or more persisted instances and their audit journals as deterministic Markdown. |
 
-These calls allow the host to pause between actions. Human guard approval is
-never inferred by the server; the client must obtain the person's decision
+The incremental ceremony controls allow the host to pause between actions.
+Human guard approval is never inferred by the server; the client must obtain
+the person's decision
 before it invokes the approval tool. Dynamic interventions likewise coordinate
 the live agenda without bypassing host permissions or ceremony guards. Omitting
 `target_role_ids` addresses the whole table; supplying it scopes the request to
@@ -220,8 +232,8 @@ cargo test -p choreo-mcp --locked
 A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/underpass-choreographer:latest` image via
 testcontainers, spawns this crate's binary against its mapped gRPC
-port, and exercises `initialize`, `tools/list` (asserts all 17 gRPC-backed
-tools plus the two server-owned discovery/help tools), and `tools/call` on the
+port, and exercises `initialize`, verifies `tools/list` against machine-readable
+discovery (currently 35 gRPC-backed plus two server-owned tools), and calls the
 four simplest read-only RPCs.
 The test is gated by the `container-tests` Cargo feature so the
 default workspace `cargo test --workspace` stays fast + network-free.

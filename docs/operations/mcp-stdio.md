@@ -370,7 +370,9 @@ Both responses are derived against the same catalog filter as `tools/list`.
 An embedded build therefore advertises its report generator, while a backend
 that cannot execute that tool neither lists it nor recommends its workflow.
 
-The 17 MCP tools are 1:1 with the choreographer's gRPC service:
+The 35 backend-owned MCP tools are 1:1 with the choreographer's 35 gRPC RPCs.
+Together with the two server-owned discovery/help tools above, gRPC mode
+advertises 37 executable tools:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
@@ -389,7 +391,24 @@ The 17 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
-| `choreo_run_ceremony`             | `RunCeremony`                         | Run a declarative YAML ceremony to a terminal state. |
+| `choreo_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
+| `choreo_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
+| `choreo_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
+| `choreo_start_published_ceremony` | `StartPublishedCeremony`              | Start an immutable published definition. |
+| `choreo_run_ceremony_step`        | `RunCeremonyStep`                     | Invoke the configured server-owned step handler. |
+| `choreo_apply_ceremony_transition` | `ApplyCeremonyTransition`            | Apply an enabled transition. |
+| `choreo_approve_ceremony_guard`   | `ApproveCeremonyGuard`                | Record an explicit human guard approval. |
+| `choreo_defer_ceremony_guard`     | `DeferCeremonyGuard`                  | Preserve a human deferral. |
+| `choreo_request_ceremony_intervention` | `RequestCeremonyIntervention`    | Open a participant request. |
+| `choreo_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | Record a targeted response. |
+| `choreo_close_ceremony_intervention` | `CloseCeremonyIntervention`        | Close a participant request. |
+| `choreo_collect_ceremony_evidence` | `CollectCeremonyEvidence`            | Attach evidence from a configured source. |
+| `choreo_assert_ceremony_reason`   | `AssertCeremonyReason`                | Record a participant-attributed reason. |
+| `choreo_validate_ceremony_draft`  | `ValidateCeremonyDraft`               | Validate without publishing. |
+| `choreo_explain_ceremony_draft`   | `ExplainCeremonyDraft`                | Explain structure and findings. |
+| `choreo_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
+| `choreo_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
+| `choreo_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
 | `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
