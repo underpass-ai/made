@@ -24,11 +24,12 @@ use choreo_app::usecases::{
     StartPublishedCeremonyUseCase,
 };
 use choreo_core::entities::{
-    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+    AuditRecord, CeremonyDefinition, CeremonyInstance, PublicationOutcome,
+    PublishedCeremonyDefinition,
 };
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
     CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort, MemoryWriterPort,
     MetricsRecorderPort,
@@ -46,6 +47,7 @@ pub struct EmbeddedChoreographer {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
     instances: Arc<dyn CeremonyInstanceRepositoryPort>,
+    audit_journal: Arc<dyn AuditJournalPort>,
     /// Reading a session with its revision, and storing it with the
     /// record of what it did.
     ///
@@ -92,6 +94,7 @@ impl EmbeddedChoreographer {
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         instances: Arc<dyn CeremonyInstanceRepositoryPort>,
         unit_of_work: Arc<dyn CeremonyUnitOfWorkPort>,
+        audit_journal: Arc<dyn AuditJournalPort>,
         transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -104,6 +107,7 @@ impl EmbeddedChoreographer {
             publications,
             journal: Arc::new(SessionJournal::new(unit_of_work, instances.clone())),
             instances,
+            audit_journal,
             transcript_store,
             step_handler,
             evidence_source,
@@ -176,6 +180,11 @@ impl EmbeddedChoreographer {
         ListCeremonyInstancesUseCase::new(self.instances.clone())
             .execute()
             .await
+    }
+
+    /// Every persisted audit record for one session, in journal order.
+    pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
+        self.audit_journal.records(id).await
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {

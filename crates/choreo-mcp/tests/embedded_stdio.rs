@@ -148,11 +148,88 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_diff_ceremony_definitions",
             "choreo_bind_ceremony_participants",
             "choreo_design_ceremony",
+            "choreo_generate_ceremony_report",
         ]
     );
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
+}
+
+#[tokio::test]
+async fn ceremony_reports_are_deterministic_and_cover_mixed_completion() {
+    let server = ChoreoMcpServer::embedded();
+    send(&server, run_ceremony_call(1, "report-completed")).await;
+    send(&server, start_ceremony_call(2, "report-in-progress")).await;
+
+    let arguments = json!({
+        "ceremony_ids": ["report-completed", "report-in-progress"],
+        "title": "Review <unsafe> # heading"
+    });
+    let first = send(
+        &server,
+        tool_call(3, "choreo_generate_ceremony_report", &arguments),
+    )
+    .await;
+    let second = send(
+        &server,
+        tool_call(4, "choreo_generate_ceremony_report", &arguments),
+    )
+    .await;
+
+    let first = structured(&first);
+    let second = structured(&second);
+    assert_eq!(first, second, "read-only reporting must be deterministic");
+    assert_eq!(first["ceremony_count"], 2);
+    assert_eq!(first["completed_count"], 1);
+    assert_eq!(first["incomplete_count"], 1);
+    assert_eq!(first["persisted"], false);
+    let markdown = first["report_markdown"].as_str().unwrap();
+    assert!(markdown.starts_with("# Review &lt;unsafe&gt; \\# heading"));
+    for heading in [
+        "### Definition",
+        "### Steps and outputs",
+        "### Transitions",
+        "### Guard approvals",
+        "### Guard deferrals",
+        "### Interventions and evidence",
+        "### Reasons",
+        "### Audit journal",
+    ] {
+        assert!(markdown.contains(heading), "missing {heading}: {markdown}");
+    }
+    assert!(markdown.contains("ceremony_instance_started"));
+    assert!(markdown.contains("ceremony_completed"));
+}
+
+#[tokio::test]
+async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
+    let server = ChoreoMcpServer::embedded();
+    send(&server, run_ceremony_call(1, "report-known")).await;
+
+    for (id, ceremony_ids, expected) in [
+        (2, json!([]), "at least one"),
+        (3, json!(["report-known", "report-known"]), "duplicate"),
+        (4, json!(["report-missing"]), "could not be loaded"),
+    ] {
+        let response = send(
+            &server,
+            tool_call(
+                id,
+                "choreo_generate_ceremony_report",
+                &json!({"ceremony_ids": ceremony_ids}),
+            ),
+        )
+        .await;
+        assert_eq!(response["result"]["isError"], true, "{response:?}");
+        assert!(
+            response["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap()
+                .contains(expected),
+            "{response:?}"
+        );
+    }
 }
 
 #[tokio::test]
@@ -434,7 +511,7 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
                 "checkout-error-rate",
                 "metric",
                 "Checkout error rate",
-                Some("Error rate is 18%, up from 0.4%.".to_owned()),
+                Some("Error rate is 18%. ```untrusted fence```".to_owned()),
                 Attributes::empty(),
                 Vec::new(),
             )?;
@@ -493,12 +570,29 @@ async fn host_evidence_source_attaches_a_typed_pack_to_the_open_intervention() {
     assert_eq!(response["evidence_pack"]["source_id"], "observability");
     assert_eq!(
         response["evidence_pack"]["bundle"]["items"][0]["narrative"],
-        "Error rate is 18%, up from 0.4%."
+        "Error rate is 18%. ```untrusted fence```"
     );
     assert_eq!(
         response["details"]["evidence_pack"],
         response["evidence_pack"]
     );
+
+    let report = send(
+        &server,
+        tool_call(
+            4,
+            "choreo_generate_ceremony_report",
+            &json!({"ceremony_ids": [ceremony_id]}),
+        ),
+    )
+    .await;
+    let markdown = structured(&report)["report_markdown"].as_str().unwrap();
+    assert!(markdown.contains("Error rate is 18%. ```untrusted fence```"));
+    assert!(
+        markdown.contains("````json"),
+        "the report fence must outgrow untrusted backtick runs: {markdown}"
+    );
+    assert!(markdown.contains("evidence_collected"));
 }
 
 #[tokio::test]
@@ -845,7 +939,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 20);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 21);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

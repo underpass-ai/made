@@ -16,6 +16,10 @@ operator command.
 
 ### Added
 
+- Embedded MCP ceremony reports through `choreo_generate_ceremony_report`.
+  Reports project one or more persisted snapshots, resolved definitions and
+  ordered audit journals into deterministic, injection-safe Markdown, return
+  structured completion and definition-binding metadata, and perform no write.
 - Host-owned MCP server identity for embedded compositions. The default remains
   `underpass-choreo-mcp`, while an embedding application can advertise its own
   name and version during the MCP initialization handshake.

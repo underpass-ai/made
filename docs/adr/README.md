@@ -17,3 +17,5 @@ much as the decision itself.
   contract a consumer compiles against
 - [ADR-005](005-structured-ceremony-design-tool.md): ceremony design accepts
   structured intent and returns an unpublished draft
+- [ADR-006](006-ceremony-reports-are-persisted-state-projections.md): ceremony
+  reports project persisted state and journal records without inferred prose

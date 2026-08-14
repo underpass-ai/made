@@ -28,6 +28,7 @@ pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
 pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony_intervention";
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
 pub(crate) const DESIGN_CEREMONY_TOOL: &str = "choreo_design_ceremony";
+pub(crate) const GENERATE_CEREMONY_REPORT_TOOL: &str = "choreo_generate_ceremony_report";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
@@ -123,7 +124,30 @@ fn tool_catalog() -> Vec<Value> {
         "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
         ceremony_design_schema(),
     ));
+    tools.push(tool_def(
+        GENERATE_CEREMONY_REPORT_TOOL,
+        "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
+        ceremony_report_schema(),
+    ));
     tools
+}
+
+fn ceremony_report_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_ids"],
+        "properties": {
+            "ceremony_ids": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": string_schema("Identifier of a persisted ceremony instance."),
+                "description": "One or more ceremony ids, reported in caller order. Empty lists, duplicates and unknown ids are errors."
+            },
+            "title": string_schema("Optional report heading. It affects presentation only and is escaped as untrusted Markdown text.")
+        }
+    })
 }
 
 fn start_published_ceremony_schema() -> Value {
@@ -1305,7 +1329,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 36);
+        assert_eq!(all_names.len(), 37);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
@@ -1321,6 +1345,7 @@ mod tests {
         assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&COLLECT_CEREMONY_EVIDENCE_TOOL.to_owned()));
         assert!(all_names.contains(&DESIGN_CEREMONY_TOOL.to_owned()));
+        assert!(all_names.contains(&GENERATE_CEREMONY_REPORT_TOOL.to_owned()));
     }
 
     #[test]

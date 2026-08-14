@@ -36,7 +36,9 @@ orchestrator service, and has since grown well beyond that port.
   distribution, `NoValidProposal` rate, per-step ceremony outcomes. See
   [`docs/choreographer-observability-design.md`](docs/choreographer-observability-design.md).
 - **Two surfaces** — a contract-first gRPC API, and a stdio MCP server
-  exposing the same RPCs 1:1 to coding agents (Codex CLI, Claude Desktop).
+  exposing the same RPCs 1:1 to coding agents (Codex CLI, Claude Desktop),
+  with embedded-only ceremony controls and read-only Markdown reports where no
+  remote RPC exists.
 
 ## The Underpass platform
 
