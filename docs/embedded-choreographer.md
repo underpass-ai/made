@@ -84,6 +84,12 @@ collection also keep their default no-op adapters unless the host supplies real
 implementations. Redb persistence therefore proves durable ceremony state; it
 does not prove that external work occurred.
 
+One consequence deserves emphasis: an instance started from a mounted
+(unpublished) definition persists its state but cannot rehydrate after the
+store reopens — loading it fails with `not found: ceremony_definition`. A host
+that must resume instances across restarts publishes the definition first and
+starts instances from the published identity.
+
 ## Host callback adapter
 
 `CallbackCeremonyStepHandler` turns an async Rust callback into a

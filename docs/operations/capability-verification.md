@@ -62,6 +62,26 @@ performs that work nor grants external credentials or authority.
 For the current repository composition, PostgreSQL persists deliberations,
 councils, agents and related statistics. It is not the ceremony-state adapter.
 
+### The published-definition restart boundary
+
+Durable ceremony state alone does not guarantee restart recovery of every
+instance. In the Redb compositions, published definitions are durable but
+mounted definitions are not, so:
+
+- an instance started from a **published** definition
+  (`choreo_publish_ceremony_definition`, then
+  `choreo_start_published_ceremony`) rehydrates after the process reopens the
+  store;
+- an instance started from an inline `definition_yaml` (a mounted definition)
+  persists its state, but rehydration fails after reopen with
+  `not found: ceremony_definition`, because the definition it needs lived in
+  memory.
+
+Verify restart claims with the publish → start-published → reopen sequence;
+`crates/choreo-embedded/tests/redb_engine_api.rs` exercises the recovering
+path. A host that must resume instances across restarts starts them from
+published definitions.
+
 ## What discovery proves — and what it does not
 
 `choreo_discover_capabilities` is generated from the same filtered catalog
