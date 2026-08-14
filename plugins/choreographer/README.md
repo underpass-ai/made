@@ -4,6 +4,20 @@ This bundle runs the Choreographer ceremony engine as a local MCP stdio
 process. It does not require a Choreographer service, gRPC, NATS, or a
 database.
 
+## Capability truth
+
+This plugin selects the embedded MCP backend, but “embedded” does not by itself
+mean durable or externally authorized. The bundled composition uses
+process-local repositories and may use `NoopCeremonyStepHandler`. A terminal
+step from that default proves ceremony protocol and state-machine behavior, not
+that an agent, tool, API, or human performed the requested work.
+
+Treat the running executable as the source of truth for tool availability:
+inspect MCP `tools/list`, then call `choreo_discover_capabilities` when
+present. Establish execution ownership and durability separately. The
+[capability-verification runbook](../../docs/operations/capability-verification.md)
+defines the required checks and wording for agents and documentation.
+
 The repository packaging script places the isolated embedded binary at
 `bin/choreo-mcp`. Codex starts it through `scripts/run-embedded-mcp.sh`.
 

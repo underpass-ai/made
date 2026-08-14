@@ -40,6 +40,22 @@ orchestrator service, and has since grown well beyond that port.
   with embedded-only ceremony controls and read-only Markdown reports where no
   remote RPC exists.
 
+## Verify capabilities before making claims
+
+“Choreographer supports X” is incomplete unless the statement identifies the
+running distribution and backend, the tools exposed by that executable, who
+performs external work, and which state survives a restart.
+
+For MCP sessions, inspect the active `tools/list` result and start with
+`choreo_discover_capabilities` when it is available. Its backend-filtered
+catalog is authoritative for the installed executable surface. Discovery does
+not prove that a real step handler, durable store, credentials, or external
+authority have been configured.
+
+See the
+[capability-verification runbook](docs/operations/capability-verification.md)
+before documenting or automating an integration.
+
 ## The Underpass platform
 
 Three planes, three repos:
