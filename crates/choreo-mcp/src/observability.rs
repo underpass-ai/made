@@ -13,19 +13,20 @@ use sha2::{Digest, Sha256};
 use tracing::{debug, warn};
 
 /// Coarse error taxonomy for metrics. Stays a small enum so charts
-/// have a finite label set. Only `Backend` is constructed today —
-/// `Validation` will land when we move JSON-args validation out of
-/// the backend trait into the server.
+/// have a finite label set.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ToolErrorKind {
     /// Backend (gRPC / fixture) returned an error.
     Backend,
+    /// A server-owned tool rejected invalid arguments.
+    Validation,
 }
 
 impl ToolErrorKind {
     fn as_str(self) -> &'static str {
         match self {
             Self::Backend => "backend",
+            Self::Validation => "validation",
         }
     }
 }
@@ -107,6 +108,7 @@ mod tests {
     #[test]
     fn error_kind_labels_are_stable() {
         assert_eq!(ToolErrorKind::Backend.as_str(), "backend");
+        assert_eq!(ToolErrorKind::Validation.as_str(), "validation");
     }
 
     #[test]

@@ -18,10 +18,12 @@ use crate::embedded::EmbeddedChoreoMcpBackend;
 use crate::fixture::FixtureChoreoMcpBackend;
 #[cfg(feature = "grpc")]
 use crate::grpc::GrpcChoreoMcpBackend;
+use crate::guidance::{discovery_result, help_result};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
-    initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tools_list_result,
+    initialize_result, is_server_tool, jsonrpc_error, jsonrpc_result, tool_error_result,
+    tool_success_result, tools_list_result, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
 /// Boxed-trait holder over any [`ChoreoMcpToolBackend`].
@@ -195,7 +197,21 @@ impl ChoreoMcpServer {
         let arguments = params.get("arguments").unwrap_or(&Value::Null);
         let start = Instant::now();
 
-        match self.backend.call_tool(name, arguments).await {
+        let outcome = match name {
+            DISCOVER_CAPABILITIES_TOOL => discovery_result(
+                self.identity,
+                self.backend_name(),
+                self.grpc_tls_mode_name(),
+                arguments,
+                |tool| self.backend.supports_tool(tool),
+            )
+            .map(tool_success_result),
+            GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
+                .map(tool_success_result),
+            _ => self.backend.call_tool(name, arguments).await,
+        };
+
+        match outcome {
             Ok(result) => {
                 record_tool_success(
                     self.backend_name(),
@@ -213,7 +229,11 @@ impl ChoreoMcpServer {
                     self.grpc_tls_mode_name(),
                     name,
                     arguments,
-                    ToolErrorKind::Backend,
+                    if is_server_tool(name) {
+                        ToolErrorKind::Validation
+                    } else {
+                        ToolErrorKind::Backend
+                    },
                     &message,
                     start.elapsed(),
                 );
@@ -313,7 +333,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tools_list_lists_one_tool_per_rpc() {
+    async fn tools_list_includes_rpc_and_server_owned_tools() {
         let server = ChoreoMcpServer::fixture();
         let response = server
             .handle_json_line(r#"{"jsonrpc":"2.0","id":2,"method":"tools/list"}"#)
@@ -321,8 +341,59 @@ mod tests {
             .unwrap();
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
-        // One per RPC on the choreographer service.
-        assert_eq!(tools.len(), 35);
+        // One per RPC plus backend-independent discovery and help.
+        assert_eq!(tools.len(), 37);
+        assert!(tools
+            .iter()
+            .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));
+        assert!(tools.iter().any(|tool| tool["name"] == GET_HELP_TOOL));
+    }
+
+    #[tokio::test]
+    async fn server_owned_discovery_uses_host_identity_and_active_backend() {
+        let server =
+            ChoreoMcpServer::fixture().with_identity(McpServerIdentity::new("host-mcp", "9.8.7"));
+        let response = server
+            .handle_json_line(
+                r#"{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"choreo_discover_capabilities","arguments":{}}}"#,
+            )
+            .await
+            .unwrap();
+        let parsed: Value = serde_json::from_str(&response).unwrap();
+        let discovery = &parsed["result"]["structuredContent"];
+
+        assert_eq!(discovery["server"]["name"], "host-mcp");
+        assert_eq!(discovery["server"]["version"], "9.8.7");
+        assert_eq!(discovery["backend"]["name"], "fixture");
+        assert!(discovery["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|tool| tool["name"] == GET_HELP_TOOL));
+    }
+
+    #[tokio::test]
+    async fn server_owned_help_returns_user_and_agent_guidance() {
+        let server = ChoreoMcpServer::fixture();
+        for audience in ["user", "agent"] {
+            let request = serde_json::json!({
+                "jsonrpc": "2.0",
+                "id": 4,
+                "method": "tools/call",
+                "params": {
+                    "name": GET_HELP_TOOL,
+                    "arguments": {"audience": audience}
+                }
+            });
+            let response = server.handle_json_line(&request.to_string()).await.unwrap();
+            let parsed: Value = serde_json::from_str(&response).unwrap();
+            let help = &parsed["result"]["structuredContent"];
+            assert_eq!(help["audience"], audience);
+            assert!(help["help_markdown"]
+                .as_str()
+                .unwrap()
+                .starts_with("# Choreographer help"));
+        }
     }
 
     #[tokio::test]

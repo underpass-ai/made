@@ -7,11 +7,40 @@ description: Run a declarative Choreographer ceremony locally from YAML when the
 
 Use the tools exposed by the bundled Choreographer MCP server. Choose the
 one-shot path only when the ceremony can run to completion without a later
-human decision.
+human decision and the active host has configured real handlers for every
+step. The bundled embedded default may use `NoopCeremonyStepHandler`; a
+completed no-op proves engine wiring, not that search, scraping, modelling,
+rendering, or artifact creation happened.
+
+When the active plugin build or backend is uncertain, call
+`choreo_discover_capabilities` before choosing a path. Use
+`choreo_get_help` with `audience: agent` for the server's current preconditions,
+authority boundaries, delegated-host sequence and error handling. Those tools
+describe the running server; this skill supplies the deeper execution policy.
 
 When the user asks to design or create a ceremony rather than run supplied
 YAML, follow the `design-ceremony` skill and call `choreo_design_ceremony`
 before using this execution workflow.
+
+## Choose the execution owner
+
+Use exactly one of these paths for each step:
+
+- Server-owned handler: only call `choreo_run_ceremony` or
+  `choreo_run_ceremony_step` after the active host confirms that the declared
+  handler is backed by a real `CeremonyStepHandlerPort`. Inspect its returned
+  output and evidence before advancing.
+- Delegated host: call `choreo_claim_ceremony_step` for the exact
+  `next_step_id`, perform the real work through the host's authorized worker
+  and tools, then call `choreo_complete_ceremony_step` with the observable
+  status and structured output, including artifact or evidence references.
+  Refresh with `choreo_get_ceremony_instance` before applying an enabled
+  transition.
+
+A successful claim records a lease and performs no stage work. Never record
+attempted, simulated, inaccessible, or empty work as completed evidence. These
+tools coordinate existing host authority; they do not grant permission to use
+an external system.
 
 ## One-shot ceremonies
 
@@ -35,9 +64,10 @@ Do not claim that a ceremony completed if the tool returned `isError: true` or
 1. Call `choreo_start_ceremony` with the YAML, initial context, and
    `actor_id` / `actor_kind` for whoever is opening it.
    Keep its `ceremony_id` for every later call.
-2. While `next_step_id` is present, call `choreo_run_ceremony_step` for that
-   exact step, declaring `actor_kind`. Re-read the returned instance after
-   every action.
+2. While `next_step_id` is present, choose the verified server-owned handler
+   path or the delegated-host claim/work/complete path above for that exact
+   step, declaring `actor_kind`. Re-read the returned instance after every
+   action.
 3. When `waiting_for_human` contains guard names, pause the ceremony and ask
    the user to authorize or reject the concrete decision. Explain what
    transition the approval would enable.
@@ -117,3 +147,12 @@ ceremony guard or host permission. Resolve ambiguous operational requests to
 the safe read-only meaning: inspect logs, query a database without writes, and
 peek at queue metadata without consuming messages. Ask for explicit approval
 before any consequential mutation.
+
+## Reports
+
+When the user asks for a ceremony report, confirm through discovery that
+`choreo_generate_ceremony_report` is available, select exact ceremony ids, and
+call it. Treat `structuredContent.report_markdown` as the generated artifact.
+The tool is read-only and returns `persisted: false`; save it only through a
+host-authorized file or document operation and report that destination
+separately.

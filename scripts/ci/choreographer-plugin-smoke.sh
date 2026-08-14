@@ -21,8 +21,8 @@ response_contains() {
   fi
 }
 
-if [[ "$(printf '%s\n' "${responses}" | wc -l)" -ne 4 ]]; then
-  echo "choreographer plugin smoke expected four MCP responses" >&2
+if [[ "$(printf '%s\n' "${responses}" | wc -l)" -ne 8 ]]; then
+  echo "choreographer plugin smoke expected eight MCP responses" >&2
   exit 1
 fi
 
@@ -51,6 +51,56 @@ if ! response_contains '"name":"choreo_design_ceremony"' <<<"${responses}"; then
   exit 1
 fi
 
+if ! response_contains '"name":"choreo_claim_ceremony_step"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise delegated-host claiming" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_complete_ceremony_step"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise delegated-host completion" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_generate_ceremony_report"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise ceremony reporting" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_discover_capabilities"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise capability discovery" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_get_help"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise audience help" >&2
+  exit 1
+fi
+
+if ! response_contains '"report_generator":true' <<<"${responses}"; then
+  echo "choreographer plugin discovery did not mark the report generator" >&2
+  exit 1
+fi
+
+if ! response_contains '"audience":"user"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not return user help" >&2
+  exit 1
+fi
+
+if ! response_contains '"audience":"agent"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not return agent help" >&2
+  exit 1
+fi
+
+if ! response_contains '"delegated_host_sequence"' <<<"${responses}"; then
+  echo "choreographer plugin agent help omitted delegated-host sequencing" >&2
+  exit 1
+fi
+
+if ! response_contains 'NoopCeremonyStepHandler' <<<"${responses}"; then
+  echo "choreographer plugin agent help omitted the no-op handler boundary" >&2
+  exit 1
+fi
+
 if ! response_contains '"ceremony":"plugin_designed_review"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not design the requested ceremony" >&2
   exit 1
@@ -68,6 +118,16 @@ fi
 
 if ! response_contains '"completed":true' <<<"${responses}"; then
   echo "choreographer plugin smoke did not complete the ceremony" >&2
+  exit 1
+fi
+
+if ! response_contains '"report_markdown":"# Plugin smoke report' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not generate the ceremony report" >&2
+  exit 1
+fi
+
+if ! response_contains '"persisted":false' <<<"${responses}"; then
+  echo "choreographer plugin report did not expose its host-owned persistence boundary" >&2
   exit 1
 fi
 

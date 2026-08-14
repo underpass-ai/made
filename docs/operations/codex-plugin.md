@@ -31,19 +31,30 @@ bash scripts/ci/choreographer-plugin-smoke.sh
 
 The smoke builds an isolated release binary, places it at
 `plugins/choreographer/bin/choreo-mcp`, starts it through the plugin's own
-launcher, and verifies the three MCP responses. The binary is ignored by Git;
+launcher, and verifies initialization, the executable tool catalog, machine
+discovery, both help audiences, ceremony design and execution, and actual
+Markdown report generation. The binary is ignored by Git;
 source, manifest, skill, launcher, and tests remain reviewable.
 
 ## Current capability
 
-The installed plugin exposes `choreo_run_ceremony`. It accepts a declarative
-YAML definition plus optional context and returns the final state, step trace,
-and Mermaid sequence.
+The installed plugin exposes the embedded ceremony engine's design,
+publication, one-shot and incremental execution, delegated-host
+claim/work/complete coordination, recovery, interventions, evidence and
+read-only report projection. `choreo_discover_capabilities`
+describes the exact running version, backend and executable surface, while
+`choreo_get_help` returns `user` or `agent` guidance derived against that
+surface. The smoke requires `choreo_generate_ceremony_report` to be advertised
+and to generate a real report from a ceremony completed in the same process.
 
-This first slice supports one-shot ceremonies only. Incremental commands for a
-pause, later human authorization, and continuation remain a subsequent
-acceptance level; the bundled skill explicitly refuses to imply that behavior
-already exists.
+The embedded default is process-scoped memory. Tool discovery does not imply
+restart durability: a host must wire durable instance, definition and context
+repositories when state must survive the MCP process.
+
+The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
+three cases distinct: the bundled no-op handler, a configured real
+server-owned handler, and delegated-host work recorded only after a claim and
+an evidence-bearing completion.
 
 ## Installation boundary
 

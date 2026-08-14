@@ -3,7 +3,8 @@
 Codex CLI reads MCP servers from its TOML config (usually
 `~/.codex/config.toml` or `~/.config/codex/config.toml`). The
 `choreo-mcp` adapter is added once; every Codex session can then call
-the 17 `choreo_*` tools.
+the 35 backend-owned `choreo_*` tools plus the two server-owned discovery and
+help tools exposed in gRPC mode.
 
 See the canonical UX reference at
 [`docs/operations/mcp-stdio.md`](../mcp-stdio.md) for the tool list,
@@ -72,8 +73,9 @@ command = "choreo-mcp"
 CHOREO_MCP_BACKEND = "fixture"
 ```
 
-The 17 `choreo_*` tools become callable; every call returns the
-deterministic canned response (no network).
+The 35 backend-owned `choreo_*` tools plus discovery and help become callable;
+backend calls return deterministic canned responses (no network), while the
+server-owned tools describe that filtered fixture surface.
 
 ## mTLS to a hardened deployment
 

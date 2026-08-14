@@ -464,7 +464,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn every_tool_has_a_fixture() {
+    async fn every_backend_tool_has_a_fixture() {
         let backend = FixtureChoreoMcpBackend;
         let catalog = crate::protocol::tools_list_result(|name| backend.supports_tool(name));
         for tool in catalog["tools"]
@@ -473,6 +473,9 @@ mod tests {
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
         {
+            if crate::protocol::is_server_tool(tool) {
+                continue;
+            }
             let v = backend.call_tool(tool, &json!({})).await.unwrap();
             assert_eq!(v["isError"], false, "{tool} fixture must be a success");
         }

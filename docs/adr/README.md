@@ -19,3 +19,5 @@ much as the decision itself.
   structured intent and returns an unpublished draft
 - [ADR-006](006-ceremony-reports-are-persisted-state-projections.md): ceremony
   reports project persisted state and journal records without inferred prose
+- [ADR-007](007-mcp-self-description-uses-the-executable-catalog.md): MCP
+  discovery and help are projections constrained by the executable catalog

@@ -345,7 +345,34 @@ takes precedence over overlapping execution-profile metadata.
 
 ## Tools
 
-The 17 MCP tools are 1:1 with the choreographer's gRPC service:
+### Discovering the active surface and getting help
+
+Two server-owned tools are available independently of the selected backend:
+
+- `choreo_discover_capabilities` returns the server name and version, active
+  backend and TLS posture, backend-filtered tools, capability groups and
+  artifact generators. It is the machine-readable source for deciding what
+  this running process can execute.
+- `choreo_get_help` accepts `audience: user` or `audience: agent`. User help
+  presents available workflows and examples. Agent help adds preconditions,
+  authority boundaries, delegated-host sequencing and explicit responses to
+  protocol errors, tool errors, absent tools and lost host context.
+
+```json
+{"name":"choreo_discover_capabilities","arguments":{}}
+```
+
+```json
+{"name":"choreo_get_help","arguments":{"audience":"agent"}}
+```
+
+Both responses are derived against the same catalog filter as `tools/list`.
+An embedded build therefore advertises its report generator, while a backend
+that cannot execute that tool neither lists it nor recommends its workflow.
+
+The 35 backend-owned MCP tools are 1:1 with the choreographer's 35 gRPC RPCs.
+Together with the two server-owned discovery/help tools above, gRPC mode
+advertises 37 executable tools:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
@@ -364,7 +391,24 @@ The 17 MCP tools are 1:1 with the choreographer's gRPC service:
 | `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
-| `choreo_run_ceremony`             | `RunCeremony`                         | Run a declarative YAML ceremony to a terminal state. |
+| `choreo_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
+| `choreo_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
+| `choreo_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
+| `choreo_start_published_ceremony` | `StartPublishedCeremony`              | Start an immutable published definition. |
+| `choreo_run_ceremony_step`        | `RunCeremonyStep`                     | Invoke the configured server-owned step handler. |
+| `choreo_apply_ceremony_transition` | `ApplyCeremonyTransition`            | Apply an enabled transition. |
+| `choreo_approve_ceremony_guard`   | `ApproveCeremonyGuard`                | Record an explicit human guard approval. |
+| `choreo_defer_ceremony_guard`     | `DeferCeremonyGuard`                  | Preserve a human deferral. |
+| `choreo_request_ceremony_intervention` | `RequestCeremonyIntervention`    | Open a participant request. |
+| `choreo_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | Record a targeted response. |
+| `choreo_close_ceremony_intervention` | `CloseCeremonyIntervention`        | Close a participant request. |
+| `choreo_collect_ceremony_evidence` | `CollectCeremonyEvidence`            | Attach evidence from a configured source. |
+| `choreo_assert_ceremony_reason`   | `AssertCeremonyReason`                | Record a participant-attributed reason. |
+| `choreo_validate_ceremony_draft`  | `ValidateCeremonyDraft`               | Validate without publishing. |
+| `choreo_explain_ceremony_draft`   | `ExplainCeremonyDraft`                | Explain structure and findings. |
+| `choreo_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
+| `choreo_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
+| `choreo_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
 | `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
@@ -405,9 +449,10 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
   env var is mandatory; the binary exits with code 2 if it is missing.
 - **`embedded`** — executes the real ceremony engine in process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
-  starting, inspecting, stepping, explicitly approving a human guard, and
-  applying a transition. It can also generate deterministic Markdown reports
-  from one or more persisted ceremony snapshots and audit journals.
+  starting, inspecting, stepping, claiming/completing host-owned work,
+  explicitly approving a human guard, and applying a transition. It can also
+  generate deterministic Markdown reports from one or more persisted ceremony
+  snapshots and audit journals.
   Participants can open, answer, and close dynamic opinion, investigation, or
   action requests while the ceremony remains active. It requires no
   Choreographer service, gRPC, protobuf, NATS, or database.
@@ -421,6 +466,25 @@ CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
 CHOREO_MCP_BACKEND=embedded \
   cargo run -p choreo-mcp --no-default-features --features embedded --locked
 ```
+
+### Embedded step execution ownership
+
+There are two distinct execution paths:
+
+- `choreo_run_ceremony_step` invokes a server-owned step handler. Use it for
+  operational work only when the embedding host configured a real
+  `CeremonyStepHandlerPort`. The bundled default may use
+  `NoopCeremonyStepHandler`; its empty completed result demonstrates protocol
+  and state-machine wiring, not that external work occurred.
+- For work owned by the MCP host, call `choreo_claim_ceremony_step` for the
+  exact next step, perform the real work through authorized host workers and
+  tools, then call `choreo_complete_ceremony_step` with its observable status,
+  structured output, and evidence/artifact references. Refresh the instance
+  before applying an enabled transition.
+
+Claiming records a lease and performs no external work. Claim and completion
+wire existing application use cases; they grant no new authority and do not
+relax human guards or host policy.
 
 The embedded-only intervention tools are:
 

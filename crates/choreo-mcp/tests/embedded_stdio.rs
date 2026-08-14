@@ -1,12 +1,14 @@
 #![cfg(feature = "embedded")]
 
 use std::process::Stdio;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use std::time::Duration;
 
 use choreo_core::entities::{
     CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
 };
-use choreo_core::value_objects::Attributes;
+use choreo_core::value_objects::{Attributes, StepOutput, StepResult};
 use choreo_embedded::EmbeddedChoreographer;
 use choreo_mcp::{ChoreoMcpServer, EmbeddedChoreoMcpBackend};
 use serde_json::{json, Value};
@@ -148,12 +150,114 @@ async fn embedded_server_advertises_only_executable_tools() {
             "choreo_diff_ceremony_definitions",
             "choreo_bind_ceremony_participants",
             "choreo_design_ceremony",
+            "choreo_claim_ceremony_step",
+            "choreo_complete_ceremony_step",
             "choreo_generate_ceremony_report",
+            "choreo_discover_capabilities",
+            "choreo_get_help",
         ]
     );
 
     let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
     assert_completed(&completed);
+}
+
+#[tokio::test]
+async fn default_embedded_step_handler_is_observably_a_noop() {
+    let server = ChoreoMcpServer::embedded();
+    let ceremony_id = "embedded-noop-handler";
+
+    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
+    let completed = send(&server, run_step_call(2, ceremony_id, "work")).await;
+
+    let step = &structured(&completed)["steps"][0];
+    assert_eq!(step["status"], "completed");
+    assert_eq!(step["output"], json!({}));
+}
+
+#[tokio::test]
+async fn configured_server_owned_handler_performs_the_step() {
+    let called = Arc::new(AtomicBool::new(false));
+    let observed = called.clone();
+    let embedded = EmbeddedChoreographer::builder()
+        .with_step_handler_callback(move |_request| {
+            let observed = observed.clone();
+            async move {
+                observed.store(true, Ordering::SeqCst);
+                let output = serde_json::from_value(json!({
+                    "handler": "configured-server-handler"
+                }))
+                .expect("test output is valid attributes");
+                StepResult::completed(StepOutput::new(output))
+            }
+        })
+        .build();
+    let server = ChoreoMcpServer::with_backend(EmbeddedChoreoMcpBackend::new(embedded));
+    let ceremony_id = "embedded-real-handler";
+
+    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
+    let completed = send(&server, run_step_call(2, ceremony_id, "work")).await;
+
+    assert!(called.load(Ordering::SeqCst));
+    assert_eq!(structured(&completed)["steps"][0]["status"], "completed");
+    assert_eq!(
+        structured(&completed)["steps"][0]["output"]["handler"],
+        "configured-server-handler"
+    );
+}
+
+#[tokio::test]
+async fn delegated_host_claim_and_completion_preserve_host_evidence() {
+    let server = ChoreoMcpServer::embedded();
+    let ceremony_id = "embedded-delegated-host";
+
+    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
+    let claimed = send(&server, claim_step_call(2, ceremony_id, "work")).await;
+    assert_eq!(structured(&claimed)["steps"][0]["status"], "in_progress");
+    assert_eq!(structured(&claimed)["steps"][0]["attempt"], 1);
+
+    // The adapter cannot perform host work. This is the observable result an
+    // authorized external executor submits after doing it. The test proves a
+    // claim remains in progress and evidence appears only on completion.
+    let output = json!({
+        "artifact": "asset://wheel/accepted-v1",
+        "evidence": ["render://wheel/front", "render://wheel/side"],
+        "verified_by": "external-host-test"
+    });
+    let completed = send(
+        &server,
+        complete_step_call(3, ceremony_id, "work", "completed", &output, None),
+    )
+    .await;
+    let completed = structured(&completed);
+    assert_eq!(completed["steps"][0]["status"], "completed");
+    assert_eq!(completed["steps"][0]["output"], output);
+    assert_eq!(completed["transitions"][0]["enabled"], true);
+
+    let transitioned = send(&server, transition_call(4, ceremony_id, "finish")).await;
+    assert_eq!(structured(&transitioned)["completed"], true);
+}
+
+#[tokio::test]
+async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
+    let server = ChoreoMcpServer::embedded();
+    let ceremony_id = "embedded-delegated-invalid";
+    send(&server, start_simple_ceremony_call(1, ceremony_id)).await;
+
+    let unclaimed = send(
+        &server,
+        complete_step_call(2, ceremony_id, "work", "completed", &json!({}), None),
+    )
+    .await;
+    assert_eq!(unclaimed["result"]["isError"], true);
+
+    send(&server, claim_step_call(3, ceremony_id, "work")).await;
+    let missing_error = send(
+        &server,
+        complete_step_call(4, ceremony_id, "work", "failed", &json!({}), None),
+    )
+    .await;
+    assert_eq!(missing_error["result"]["isError"], true);
 }
 
 #[tokio::test]
@@ -939,7 +1043,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 21);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 25);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
@@ -1004,6 +1108,20 @@ fn start_ceremony_call(id: u64, ceremony_id: &str) -> Value {
             "actor_id": "smoke-operator",
             "actor_kind": "service",
             "context": { "requested_by": "incremental-smoke" }
+        }),
+    )
+}
+
+fn start_simple_ceremony_call(id: u64, ceremony_id: &str) -> Value {
+    tool_call(
+        id,
+        "choreo_start_ceremony",
+        &json!({
+            "ceremony_id": ceremony_id,
+            "definition_yaml": CEREMONY_YAML,
+            "actor_id": "codex-host",
+            "actor_kind": "agent",
+            "context": { "requested_by": "external-host-test" }
         }),
     )
 }
@@ -1260,6 +1378,42 @@ fn run_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
         "choreo_run_ceremony_step",
         &json!({ "ceremony_id": ceremony_id, "step_id": step_id, "actor_kind": "agent" }),
     )
+}
+
+fn claim_step_call(id: u64, ceremony_id: &str, step_id: &str) -> Value {
+    tool_call(
+        id,
+        "choreo_claim_ceremony_step",
+        &json!({
+            "ceremony_id": ceremony_id,
+            "step_id": step_id,
+            "actor_kind": "agent",
+            "lease_owner_id": "codex-host",
+            "idempotency_key": format!("claim-{ceremony_id}-{step_id}"),
+            "lease_ttl_ms": 300_000
+        }),
+    )
+}
+
+fn complete_step_call(
+    id: u64,
+    ceremony_id: &str,
+    step_id: &str,
+    status: &str,
+    output: &Value,
+    error: Option<&str>,
+) -> Value {
+    let mut arguments = json!({
+        "ceremony_id": ceremony_id,
+        "step_id": step_id,
+        "actor_kind": "agent",
+        "status": status,
+        "output": output
+    });
+    if let Some(error) = error {
+        arguments["error"] = json!(error);
+    }
+    tool_call(id, "choreo_complete_ceremony_step", &arguments)
 }
 
 fn approval_call(id: u64, ceremony_id: &str, guard_name: &str) -> Value {
