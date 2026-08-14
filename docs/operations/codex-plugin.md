@@ -39,8 +39,9 @@ source, manifest, skill, launcher, and tests remain reviewable.
 ## Current capability
 
 The installed plugin exposes the embedded ceremony engine's design,
-publication, one-shot and incremental execution, recovery, interventions,
-evidence and read-only report projection. `choreo_discover_capabilities`
+publication, one-shot and incremental execution, delegated-host
+claim/work/complete coordination, recovery, interventions, evidence and
+read-only report projection. `choreo_discover_capabilities`
 describes the exact running version, backend and executable surface, while
 `choreo_get_help` returns `user` or `agent` guidance derived against that
 surface. The smoke requires `choreo_generate_ceremony_report` to be advertised
@@ -49,6 +50,11 @@ and to generate a real report from a ceremony completed in the same process.
 The embedded default is process-scoped memory. Tool discovery does not imply
 restart durability: a host must wire durable instance, definition and context
 repositories when state must survive the MCP process.
+
+The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
+three cases distinct: the bundled no-op handler, a configured real
+server-owned handler, and delegated-host work recorded only after a claim and
+an evidence-bearing completion.
 
 ## Installation boundary
 

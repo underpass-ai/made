@@ -430,9 +430,10 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
   env var is mandatory; the binary exits with code 2 if it is missing.
 - **`embedded`** — executes the real ceremony engine in process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
-  starting, inspecting, stepping, explicitly approving a human guard, and
-  applying a transition. It can also generate deterministic Markdown reports
-  from one or more persisted ceremony snapshots and audit journals.
+  starting, inspecting, stepping, claiming/completing host-owned work,
+  explicitly approving a human guard, and applying a transition. It can also
+  generate deterministic Markdown reports from one or more persisted ceremony
+  snapshots and audit journals.
   Participants can open, answer, and close dynamic opinion, investigation, or
   action requests while the ceremony remains active. It requires no
   Choreographer service, gRPC, protobuf, NATS, or database.
@@ -446,6 +447,25 @@ CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
 CHOREO_MCP_BACKEND=embedded \
   cargo run -p choreo-mcp --no-default-features --features embedded --locked
 ```
+
+### Embedded step execution ownership
+
+There are two distinct execution paths:
+
+- `choreo_run_ceremony_step` invokes a server-owned step handler. Use it for
+  operational work only when the embedding host configured a real
+  `CeremonyStepHandlerPort`. The bundled default may use
+  `NoopCeremonyStepHandler`; its empty completed result demonstrates protocol
+  and state-machine wiring, not that external work occurred.
+- For work owned by the MCP host, call `choreo_claim_ceremony_step` for the
+  exact next step, perform the real work through authorized host workers and
+  tools, then call `choreo_complete_ceremony_step` with its observable status,
+  structured output, and evidence/artifact references. Refresh the instance
+  before applying an enabled transition.
+
+Claiming records a lease and performs no external work. Claim and completion
+wire existing application use cases; they grant no new authority and do not
+relax human guards or host policy.
 
 The embedded-only intervention tools are:
 

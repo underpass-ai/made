@@ -99,6 +99,8 @@ that intentionally have no gRPC mapping:
 | `choreo_design_ceremony` | Turn structured intent into an analysed, unpublished linear ceremony draft. |
 | `choreo_start_ceremony` | Mount YAML and start without advancing. |
 | `choreo_run_ceremony_step` | Execute and persist one step. |
+| `choreo_claim_ceremony_step` | Lease the next step for real work performed by the MCP host; claiming performs no work. |
+| `choreo_complete_ceremony_step` | Record the observable status, structured output, and evidence of a previously claimed host-executed step. |
 | `choreo_approve_ceremony_guard` | Record an explicit human approval for a currently relevant human guard. |
 | `choreo_defer_ceremony_guard` | Preserve an explicit human deferral without satisfying the guard. |
 | `choreo_apply_ceremony_transition` | Apply one enabled transition. |
@@ -116,6 +118,14 @@ before it invokes the approval tool. Dynamic interventions likewise coordinate
 the live agenda without bypassing host permissions or ceremony guards. Omitting
 `target_role_ids` addresses the whole table; supplying it scopes the request to
 those roles. Responses and interventions retain insertion order in the instance.
+Server-owned execution through `choreo_run_ceremony_step` is valid only when
+the embedding host configured a real step handler. The bundled default may use
+`NoopCeremonyStepHandler`, whose empty completed result proves wiring rather
+than operational work. For delegated-host execution, claim the exact next
+step, perform the real work through authorized host capabilities, complete it
+with observable output/evidence, refresh the instance, and only then apply an
+enabled transition. These adapters invoke existing application use cases and
+add no external authority or approval policy.
 The default embedded composition stores state in memory. Process-restart
 recovery requires the host to supply durable repositories for ceremony
 instances, mounted definitions, and transcript context.
@@ -210,8 +220,9 @@ cargo test -p choreo-mcp --locked
 A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/underpass-choreographer:latest` image via
 testcontainers, spawns this crate's binary against its mapped gRPC
-port, and exercises `initialize`, `tools/list` (asserts the full 17-
-tool catalog), and `tools/call` on the four simplest read-only RPCs.
+port, and exercises `initialize`, `tools/list` (asserts all 17 gRPC-backed
+tools plus the two server-owned discovery/help tools), and `tools/call` on the
+four simplest read-only RPCs.
 The test is gated by the `container-tests` Cargo feature so the
 default workspace `cargo test --workspace` stays fast + network-free.
 

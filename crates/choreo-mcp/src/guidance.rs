@@ -12,14 +12,14 @@ use serde_json::{json, Map, Value};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
     available_tool_catalog, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
-    ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
-    COLLECT_CEREMONY_EVIDENCE_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
-    DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
-    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_HELP_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL,
+    ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
+    CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
+    DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
+    DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
+    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 const SCHEMA_VERSION: &str = "1.0";
@@ -81,6 +81,8 @@ const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
             START_CEREMONY_TOOL,
             START_PUBLISHED_CEREMONY_TOOL,
             RUN_CEREMONY_STEP_TOOL,
+            CLAIM_CEREMONY_STEP_TOOL,
+            COMPLETE_CEREMONY_STEP_TOOL,
             APPLY_CEREMONY_TRANSITION_TOOL,
         ],
     },
@@ -313,6 +315,10 @@ fn workflow(id: &str, title: &str, summary: &str, steps: &[(&str, &str)]) -> Val
 }
 
 fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
+    let mut start_here = vec![
+        "Describe the outcome, participants, stages, and any decision that must remain human.",
+        "Ask to inspect capabilities when you are unsure which plugin build or backend is active.",
+    ];
     let mut examples = vec![json!({
         "request": "What can this installed Choreographer do?",
         "first_tool": DISCOVER_CAPABILITIES_TOOL,
@@ -324,6 +330,9 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         }));
     }
     if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
+        start_here.push(
+            "Ask for a report by ceremony id; Choreographer returns Markdown but does not choose a file path for you.",
+        );
         examples.push(json!({
             "request": "Generate a report for ceremonies session-17 and session-18.",
             "first_tool": GENERATE_CEREMONY_REPORT_TOOL,
@@ -336,11 +345,7 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         "schema_version": SCHEMA_VERSION,
         "audience": "user",
         "summary": "Choreographer designs and coordinates explicit working sessions. The active backend determines which workflows are available.",
-        "start_here": [
-            "Describe the outcome, participants, stages, and any decision that must remain human.",
-            "Ask to inspect capabilities when you are unsure which plugin build or backend is active.",
-            "Ask for a report by ceremony id; Choreographer returns Markdown but does not choose a file path for you."
-        ],
+        "start_here": start_here,
         "authority": "A ceremony coordinates work and records declared decisions. It does not grant permission for external actions and it never turns an agent statement into human approval.",
         "workflows": workflows,
         "examples": examples,
@@ -348,75 +353,55 @@ fn user_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
 }
 
 fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
-    let report_step = names.contains(GENERATE_CEREMONY_REPORT_TOOL).then(|| {
-        json!({
-            "order": 6,
-            "tool": GENERATE_CEREMONY_REPORT_TOOL,
-            "instruction": "Generate the final Markdown projection, verify isError=false, then let the host persist report_markdown at the user-approved destination."
-        })
-    });
-    let mut delegated_host_sequence = vec![
-        json!({
-            "order": 1,
-            "tool": DISCOVER_CAPABILITIES_TOOL,
-            "instruction": "Discover the current server before planning; never assume another installation's tool surface."
-        }),
-        json!({
-            "order": 2,
-            "instruction": "Choose only a workflow whose complete tool sequence is advertised."
-        }),
-        json!({
-            "order": 3,
-            "instruction": "When a ceremony step requires specialist work, the host delegates through its own authorized agent/tool mechanism; Choreographer coordinates and records the result but does not create that authority."
-        }),
-        json!({
-            "order": 4,
-            "tool": RUN_CEREMONY_STEP_TOOL,
-            "instruction": "Submit the exact declared step after real work is complete, then re-read the returned state."
-        }),
-        json!({
-            "order": 5,
-            "tool": APPLY_CEREMONY_TRANSITION_TOOL,
-            "instruction": "Apply only a transition reported as enabled; pause for any unresolved human guard or intervention."
-        }),
+    let mut preconditions = vec![
+        format!(
+            "Call {DISCOVER_CAPABILITIES_TOOL} and plan against its returned tools, backend, and version."
+        ),
+        "Preserve stable ceremony ids and actor identity across calls.".to_owned(),
+        "Have the exact definition, required context, and host permissions before starting."
+            .to_owned(),
+        "Treat isError=true, completed=false, and missing evidence as explicit non-success."
+            .to_owned(),
     ];
-    delegated_host_sequence.retain(|step| {
-        step.get("tool")
-            .and_then(Value::as_str)
-            .is_none_or(|tool| names.contains(tool))
-    });
-    if let Some(report_step) = report_step {
-        delegated_host_sequence.push(report_step);
+    let mut authority_boundaries = base_agent_authority_boundaries();
+    let mut execution_paths = Vec::new();
+
+    if let Some(path) = server_owned_execution_path(names) {
+        preconditions.push(format!(
+            "Use {RUN_CEREMONY_STEP_TOOL} only after verifying that the active host configured a real handler for the declared step; the bundled default can be no-op."
+        ));
+        execution_paths.push(path);
+    }
+    let delegated_host_sequence = delegated_host_sequence(names);
+    if !delegated_host_sequence.is_empty() {
+        preconditions.push(format!(
+            "For host-owned work, require both {CLAIM_CEREMONY_STEP_TOOL} and {COMPLETE_CEREMONY_STEP_TOOL}; a claim alone is not evidence of execution."
+        ));
+        authority_boundaries.push(json!({
+            "rule": "A delegated-host claim records a lease, not completion or evidence.",
+            "forbidden_inference": "A successful claim means the external work happened."
+        }));
+        execution_paths.push(json!({
+            "id": "delegated_host",
+            "title": "Delegated-host execution",
+            "when": "Use when the MCP host, its worker, or an external tool must perform the real stage work.",
+            "sequence": delegated_host_sequence.clone(),
+        }));
+    }
+    if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
+        authority_boundaries.push(json!({
+            "rule": "Report generation is read-only.",
+            "forbidden_inference": "persisted=false means a report file already exists."
+        }));
     }
 
     json!({
         "schema_version": SCHEMA_VERSION,
         "audience": "agent",
         "summary": "Operational guidance for an agent or host driving Choreographer without inventing capability, evidence, or authority.",
-        "preconditions": [
-            format!("Call {DISCOVER_CAPABILITIES_TOOL} and plan against its returned tools, backend, and version."),
-            "Preserve stable ceremony ids and actor identity across calls.",
-            "Have the exact definition, required context, and host permissions before starting.",
-            "Treat isError=true, completed=false, and missing evidence as explicit non-success."
-        ],
-        "authority_boundaries": [
-            {
-                "rule": "Human guard approval requires a person's explicit current authorization.",
-                "forbidden_inference": "Silence, prior approval, an agent recommendation, or operational convenience."
-            },
-            {
-                "rule": "Interventions coordinate requests but grant no external mutation authority.",
-                "forbidden_inference": "An action request is permission to alter another system."
-            },
-            {
-                "rule": "Evidence must come from an actual authorized source and remain attributable.",
-                "forbidden_inference": "An empty, inaccessible, or imagined source is evidence."
-            },
-            {
-                "rule": "Report generation is read-only.",
-                "forbidden_inference": "persisted=false means a report file already exists."
-            }
-        ],
+        "preconditions": preconditions,
+        "authority_boundaries": authority_boundaries,
+        "execution_paths": execution_paths,
         "delegated_host_sequence": delegated_host_sequence,
         "error_handling": [
             {
@@ -429,7 +414,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             },
             {
                 "signal": "tool is absent from discovery",
-                "response": "Do not call it. Choose an advertised workflow or report the backend limitation."
+                "response": "Do not call it. Choose an advertised workflow or surface the backend limitation."
             },
             {
                 "signal": "host context was lost",
@@ -438,6 +423,79 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         ],
         "workflows": workflows,
     })
+}
+
+fn base_agent_authority_boundaries() -> Vec<Value> {
+    vec![
+        json!({
+            "rule": "Human guard approval requires a person's explicit current authorization.",
+            "forbidden_inference": "Silence, prior approval, an agent recommendation, or operational convenience."
+        }),
+        json!({
+            "rule": "Interventions coordinate requests but grant no external mutation authority.",
+            "forbidden_inference": "An action request is permission to alter another system."
+        }),
+        json!({
+            "rule": "Evidence must come from an actual authorized source and remain attributable.",
+            "forbidden_inference": "An empty, inaccessible, or imagined source is evidence."
+        }),
+    ]
+}
+
+fn server_owned_execution_path(names: &BTreeSet<String>) -> Option<Value> {
+    names.contains(RUN_CEREMONY_STEP_TOOL).then(|| {
+        json!({
+            "id": "server_owned_handler",
+            "title": "Server-owned handler execution",
+            "when": "Use only when the active host configured a real CeremonyStepHandlerPort for the declared handler.",
+            "default_warning": "The bundled embedded default may use NoopCeremonyStepHandler. A completed no-op proves state-machine wiring, not that search, scraping, modeling, rendering, or artifact creation occurred.",
+            "sequence": [{
+                "order": 1,
+                "tool": RUN_CEREMONY_STEP_TOOL,
+                "instruction": "Invoke the verified real server-owned handler and inspect its returned output/evidence before advancing."
+            }]
+        })
+    })
+}
+
+fn delegated_host_sequence(names: &BTreeSet<String>) -> Vec<Value> {
+    let required = [
+        CLAIM_CEREMONY_STEP_TOOL,
+        COMPLETE_CEREMONY_STEP_TOOL,
+        GET_CEREMONY_INSTANCE_TOOL,
+        APPLY_CEREMONY_TRANSITION_TOOL,
+    ];
+    if !required.iter().all(|tool| names.contains(*tool)) {
+        return Vec::new();
+    }
+
+    vec![
+        json!({
+            "order": 1,
+            "tool": CLAIM_CEREMONY_STEP_TOOL,
+            "instruction": "Claim the exact next_step_id with stable lease owner and idempotency key. This acquires a lease; it performs no stage work."
+        }),
+        json!({
+            "order": 2,
+            "host_action": true,
+            "instruction": "Perform the stage's real work through the host's authorized worker and tools. Verify the resulting artifacts/evidence before recording success."
+        }),
+        json!({
+            "order": 3,
+            "tool": COMPLETE_CEREMONY_STEP_TOOL,
+            "instruction": "Only after real work finishes, record its observable status and structured output with evidence/artifact references. Never file attempted or simulated work as completed."
+        }),
+        json!({
+            "order": 4,
+            "tool": GET_CEREMONY_INSTANCE_TOOL,
+            "instruction": "Refresh the instance and verify the persisted step status and output."
+        }),
+        json!({
+            "order": 5,
+            "tool": APPLY_CEREMONY_TRANSITION_TOOL,
+            "instruction": "Apply only a transition reported as enabled; pause for unresolved guards or interventions."
+        }),
+    ]
 }
 
 fn render_help_markdown(help: &Value) -> String {
@@ -450,6 +508,15 @@ fn render_help_markdown(help: &Value) -> String {
         render_string_list(&mut markdown, &help["start_here"]);
         if let Some(authority) = help["authority"].as_str() {
             let _ = write!(markdown, "\n## Authority boundary\n\n{authority}\n");
+        }
+        if let Some(examples) = help["examples"].as_array() {
+            markdown.push_str("\n## Examples\n");
+            for example in examples {
+                let request = example["request"].as_str().unwrap_or_default();
+                let tool = example["first_tool"].as_str().unwrap_or_default();
+                let _ = write!(markdown, "\n- {request} Start with `{tool}`.");
+            }
+            markdown.push('\n');
         }
     } else if audience == "agent" {
         markdown.push_str("\n## Preconditions\n");
@@ -464,19 +531,22 @@ fn render_help_markdown(help: &Value) -> String {
             let forbidden = boundary["forbidden_inference"].as_str().unwrap_or_default();
             let _ = write!(markdown, "\n- {rule} Do not infer: {forbidden}");
         }
-        markdown.push_str("\n\n## Delegated-host sequence\n");
-        for step in help["delegated_host_sequence"]
-            .as_array()
-            .into_iter()
-            .flatten()
-        {
-            let order = step["order"].as_u64().unwrap_or_default();
-            let instruction = step["instruction"].as_str().unwrap_or_default();
-            if let Some(tool) = step["tool"].as_str() {
-                let _ = write!(markdown, "\n{order}. `{tool}` — {instruction}");
-            } else {
-                let _ = write!(markdown, "\n{order}. {instruction}");
+        markdown.push_str("\n\n## Execution paths\n");
+        for path in help["execution_paths"].as_array().into_iter().flatten() {
+            let title = path["title"].as_str().unwrap_or("Execution path");
+            let when = path["when"].as_str().unwrap_or_default();
+            let _ = write!(markdown, "\n### {title}\n\n{when}\n");
+            if let Some(warning) = path["default_warning"].as_str() {
+                let _ = write!(markdown, "\nWarning: {warning}\n");
             }
+            render_sequence(&mut markdown, &path["sequence"]);
+        }
+        if help["delegated_host_sequence"]
+            .as_array()
+            .is_some_and(|steps| !steps.is_empty())
+        {
+            markdown.push_str("\n## Delegated-host sequence\n");
+            render_sequence(&mut markdown, &help["delegated_host_sequence"]);
         }
         markdown.push_str("\n\n## Error handling\n");
         for error in help["error_handling"].as_array().into_iter().flatten() {
@@ -501,6 +571,19 @@ fn render_help_markdown(help: &Value) -> String {
         markdown.push('\n');
     }
     markdown
+}
+
+fn render_sequence(markdown: &mut String, sequence: &Value) {
+    for step in sequence.as_array().into_iter().flatten() {
+        let order = step["order"].as_u64().unwrap_or_default();
+        let instruction = step["instruction"].as_str().unwrap_or_default();
+        if let Some(tool) = step["tool"].as_str() {
+            let _ = write!(markdown, "\n{order}. `{tool}` — {instruction}");
+        } else {
+            let _ = write!(markdown, "\n{order}. {instruction}");
+        }
+    }
+    markdown.push('\n');
 }
 
 fn render_string_list(markdown: &mut String, values: &Value) {
@@ -658,11 +741,60 @@ mod tests {
                     let markdown = help["help_markdown"].as_str().unwrap();
                     assert!(markdown.contains("## Preconditions"));
                     assert!(markdown.contains("## Authority boundaries"));
-                    assert!(markdown.contains("## Delegated-host sequence"));
                     assert!(markdown.contains("## Error handling"));
+                    assert_eq!(
+                        markdown.contains("## Delegated-host sequence"),
+                        backend == "all"
+                    );
                 }
             }
         }
+    }
+
+    #[test]
+    fn fixture_and_grpc_help_omit_filtered_reporting_and_delegated_execution() {
+        for backend in ["fixture", "grpc"] {
+            let user = help_result(&json!({"audience": "user"}), is_grpc_tool).unwrap();
+            let user_text = serde_json::to_string(&user).unwrap().to_ascii_lowercase();
+            assert!(
+                !user_text.contains("report"),
+                "{backend} user help recommends unavailable reporting: {user_text}"
+            );
+
+            let agent = help_result(&json!({"audience": "agent"}), is_grpc_tool).unwrap();
+            assert!(agent["delegated_host_sequence"]
+                .as_array()
+                .unwrap()
+                .is_empty());
+            let agent_text = serde_json::to_string(&agent).unwrap();
+            assert!(!agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
+            assert!(!agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
+            assert!(!agent_text
+                .to_ascii_lowercase()
+                .contains("report generation"));
+        }
+    }
+
+    #[test]
+    fn agent_help_separates_real_server_handlers_from_delegated_host_work() {
+        let help = help_result(&json!({"audience": "agent"}), supports_all).unwrap();
+        let paths = help["execution_paths"].as_array().unwrap();
+        assert_eq!(paths.len(), 2);
+        assert_eq!(paths[0]["id"], "server_owned_handler");
+        assert!(paths[0]["default_warning"]
+            .as_str()
+            .unwrap()
+            .contains("NoopCeremonyStepHandler"));
+        assert_eq!(paths[1]["id"], "delegated_host");
+
+        let sequence = help["delegated_host_sequence"].as_array().unwrap();
+        assert_eq!(sequence[0]["tool"], CLAIM_CEREMONY_STEP_TOOL);
+        assert_eq!(sequence[1]["host_action"], true);
+        assert_eq!(sequence[2]["tool"], COMPLETE_CEREMONY_STEP_TOOL);
+        assert!(sequence[2]["instruction"]
+            .as_str()
+            .unwrap()
+            .contains("evidence/artifact references"));
     }
 
     #[test]
@@ -724,8 +856,34 @@ mod tests {
                     assert_help_tool_references_are_advertised(child, advertised, backend);
                 }
             }
+            Value::String(text) => {
+                for tool in tool_names_in_text(text) {
+                    assert!(
+                        advertised.contains(tool),
+                        "{backend} help text references unadvertised tool {tool}: {text}"
+                    );
+                }
+            }
             _ => {}
         }
+    }
+
+    fn tool_names_in_text(text: &str) -> Vec<&str> {
+        text.match_indices("choreo_")
+            .map(|(start, _)| {
+                let suffix = &text[start..];
+                let end = suffix
+                    .char_indices()
+                    .find_map(|(index, character)| {
+                        (!(character.is_ascii_lowercase()
+                            || character.is_ascii_digit()
+                            || character == '_'))
+                            .then_some(index)
+                    })
+                    .unwrap_or(suffix.len());
+                &suffix[..end]
+            })
+            .collect()
     }
 
     fn supports_all(_: &str) -> bool {

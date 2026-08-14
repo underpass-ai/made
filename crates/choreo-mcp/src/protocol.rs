@@ -16,6 +16,8 @@ pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
 pub(crate) const RUN_CEREMONY_TOOL: &str = "choreo_run_ceremony";
 pub(crate) const START_CEREMONY_TOOL: &str = "choreo_start_ceremony";
 pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "choreo_run_ceremony_step";
+pub(crate) const CLAIM_CEREMONY_STEP_TOOL: &str = "choreo_claim_ceremony_step";
+pub(crate) const COMPLETE_CEREMONY_STEP_TOOL: &str = "choreo_complete_ceremony_step";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "choreo_approve_ceremony_guard";
 pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "choreo_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "choreo_apply_ceremony_transition";
@@ -135,6 +137,16 @@ fn tool_catalog() -> Vec<Value> {
         DESIGN_CEREMONY_TOOL,
         "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
         ceremony_design_schema(),
+    ));
+    tools.push(tool_def(
+        CLAIM_CEREMONY_STEP_TOOL,
+        "Acquire a lease for one ceremony step that the MCP host will execute with its own agents and tools. This records the claim but performs no external work.",
+        claim_ceremony_step_schema(),
+    ));
+    tools.push(tool_def(
+        COMPLETE_CEREMONY_STEP_TOOL,
+        "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step.",
+        complete_ceremony_step_schema(),
     ));
     tools.push(tool_def(
         GENERATE_CEREMONY_REPORT_TOOL,
@@ -788,6 +800,54 @@ fn run_ceremony_step_schema() -> Value {
     })
 }
 
+fn claim_ceremony_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "step_id", "actor_kind"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "step_id": string_schema("Next declared step that the host will execute outside the ceremony engine."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party fills the step's declared seat. The engine records this declaration and never infers it."
+            },
+            "lease_owner_id": string_schema("Logical host runner acquiring the step lease."),
+            "idempotency_key": string_schema("Unique execution key for this claim. The server mints one when omitted."),
+            "lease_ttl_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Lease TTL in milliseconds. Zero or omitted uses the five-minute external-host default."
+            }
+        }
+    })
+}
+
+fn complete_ceremony_step_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "step_id", "actor_kind", "status"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id."),
+            "step_id": string_schema("Previously claimed ceremony step receiving the host's result."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party completed the work. The step's seat comes from the immutable definition."
+            },
+            "status": {
+                "type": "string",
+                "enum": ["completed", "failed", "waiting_for_human", "cancelled"],
+                "description": "Observable result. `failed` requires `error`; every other status forbids it."
+            },
+            "output": attributes_schema("Structured host output, including evidence and artifact references. Omitted output is empty."),
+            "error": string_schema("Required only for failed results and forbidden otherwise.")
+        }
+    })
+}
+
 fn ceremony_guard_approval_schema() -> Value {
     json!({
         "type": "object",
@@ -1378,7 +1438,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 39);
+        assert_eq!(all_names.len(), 41);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
@@ -1394,6 +1454,8 @@ mod tests {
         assert!(all_names.contains(&CLOSE_CEREMONY_INTERVENTION_TOOL.to_owned()));
         assert!(all_names.contains(&COLLECT_CEREMONY_EVIDENCE_TOOL.to_owned()));
         assert!(all_names.contains(&DESIGN_CEREMONY_TOOL.to_owned()));
+        assert!(all_names.contains(&CLAIM_CEREMONY_STEP_TOOL.to_owned()));
+        assert!(all_names.contains(&COMPLETE_CEREMONY_STEP_TOOL.to_owned()));
         assert!(all_names.contains(&GENERATE_CEREMONY_REPORT_TOOL.to_owned()));
         assert!(all_names.contains(&DISCOVER_CAPABILITIES_TOOL.to_owned()));
         assert!(all_names.contains(&GET_HELP_TOOL.to_owned()));

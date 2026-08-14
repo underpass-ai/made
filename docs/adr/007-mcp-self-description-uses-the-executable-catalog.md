@@ -34,7 +34,23 @@ operations they describe remain filtered through `supports_tool`.
 The discovery projection copies tool names, descriptions and input schemas
 from the executable catalog rather than maintaining another list. Capability
 groups and help workflows name tools, and coverage tests require every tool
-reference returned for a backend to be advertised by that same backend.
+reference returned for a backend to be advertised by that same backend. This
+includes tool names embedded in prose and Markdown, so filtering a capability
+also removes recommendations and examples that depend on it.
+
+Execution guidance distinguishes two ownership paths. A server-owned step may
+use `choreo_run_ceremony_step` only when a real `CeremonyStepHandlerPort` is
+configured; the embedded default can complete through
+`NoopCeremonyStepHandler`, which is wiring evidence rather than evidence of
+operational work. Delegated-host work instead follows claim, real external
+host work, completion with observable output/evidence, refresh, and transition.
+
+The application layer already exposed `StartCeremonyStepUseCase` and
+`CompleteCeremonyStepUseCase`, but `origin/main` did not adapt them to MCP.
+The embedded MCP therefore exposes `choreo_claim_ceremony_step` and
+`choreo_complete_ceremony_step` as thin request/dispatch adapters. They add no
+domain authority or policy: the existing use cases retain lease, state,
+authorization, and result validation.
 
 Artifact generators are explicit records. The ceremony report generator names
 its tool, artifact kind, media type and response field, and records
@@ -47,7 +63,8 @@ its tool, artifact kind, media type and response field, and records
 - User and agent help share the same availability boundary as execution.
 - Adding a tool to a help workflow without making it executable fails coverage.
 - Capability grouping and explanatory prose still require deliberate product
-  maintenance; tests prevent dangling tool references but cannot judge prose.
+  maintenance; tests prevent dangling tool-name references but cannot judge
+  the semantic quality of prose.
 - Discovery describes capability, not authorization. It does not grant a host
   permission to perform external work or convert an agent decision into human
   approval.

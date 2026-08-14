@@ -51,6 +51,16 @@ if ! response_contains '"name":"choreo_design_ceremony"' <<<"${responses}"; then
   exit 1
 fi
 
+if ! response_contains '"name":"choreo_claim_ceremony_step"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise delegated-host claiming" >&2
+  exit 1
+fi
+
+if ! response_contains '"name":"choreo_complete_ceremony_step"' <<<"${responses}"; then
+  echo "choreographer plugin smoke did not advertise delegated-host completion" >&2
+  exit 1
+fi
+
 if ! response_contains '"name":"choreo_generate_ceremony_report"' <<<"${responses}"; then
   echo "choreographer plugin smoke did not advertise ceremony reporting" >&2
   exit 1
@@ -83,6 +93,11 @@ fi
 
 if ! response_contains '"delegated_host_sequence"' <<<"${responses}"; then
   echo "choreographer plugin agent help omitted delegated-host sequencing" >&2
+  exit 1
+fi
+
+if ! response_contains 'NoopCeremonyStepHandler' <<<"${responses}"; then
+  echo "choreographer plugin agent help omitted the no-op handler boundary" >&2
   exit 1
 fi
 

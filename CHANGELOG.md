@@ -22,6 +22,11 @@ operator command.
   persistence boundary; agent help covers preconditions, authority,
   delegated-host sequencing and errors. The Codex plugin smoke now proves the
   report generator is advertised and generates Markdown.
+- Embedded MCP adapters for host-owned step execution through
+  `choreo_claim_ceremony_step` and `choreo_complete_ceremony_step`, reusing the
+  existing start/complete application use cases. Guidance distinguishes a
+  configured real server handler, the bundled no-op default, and delegated
+  host work completed only with observable output/evidence.
 - Embedded MCP ceremony reports through `choreo_generate_ceremony_report`.
   Reports project one or more persisted snapshots, resolved definitions and
   ordered audit journals into deterministic, injection-safe Markdown, return

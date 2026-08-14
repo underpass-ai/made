@@ -20,6 +20,7 @@ Executable scope:
   unpublished linear ceremony draft;
 - `choreo_run_ceremony` for one-shot terminal execution;
 - `choreo_start_ceremony`, `choreo_run_ceremony_step`,
+  `choreo_claim_ceremony_step`, `choreo_complete_ceremony_step`,
   `choreo_approve_ceremony_guard`, `choreo_defer_ceremony_guard`,
   `choreo_apply_ceremony_transition`, and
   `choreo_get_ceremony_instance` for persistent, human-authorized flows;
@@ -59,3 +60,11 @@ or:
 The returned `help_markdown` is meant for display. The parallel structured
 fields let an agent choose only workflows whose complete tool sequence is
 available on the active backend.
+
+Step execution has two explicit ownership paths. A verified server-owned
+handler may be invoked with `choreo_run_ceremony_step`. Otherwise the host
+claims the exact step, performs the real work through its own authorized
+worker/tools, and completes it with observable output and evidence references.
+The bundled default may use `NoopCeremonyStepHandler`; an empty completed step
+proves protocol/state-machine wiring only. Claiming a step performs no work and
+grants no external authority.
