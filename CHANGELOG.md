@@ -16,6 +16,12 @@ operator command.
 
 ### Added
 
+- MCP self-description through `choreo_discover_capabilities`, derived from
+  the active backend-filtered tool catalog, plus `choreo_get_help` guidance
+  for users and agents. Discovery marks artifact generators and their
+  persistence boundary; agent help covers preconditions, authority,
+  delegated-host sequencing and errors. The Codex plugin smoke now proves the
+  report generator is advertised and generates Markdown.
 - Embedded MCP ceremony reports through `choreo_generate_ceremony_report`.
   Reports project one or more persisted snapshots, resolved definitions and
   ordered audit journals into deterministic, injection-safe Markdown, return

@@ -9,6 +9,12 @@ Use the tools exposed by the bundled Choreographer MCP server. Choose the
 one-shot path only when the ceremony can run to completion without a later
 human decision.
 
+When the active plugin build or backend is uncertain, call
+`choreo_discover_capabilities` before choosing a path. Use
+`choreo_get_help` with `audience: agent` for the server's current preconditions,
+authority boundaries, delegated-host sequence and error handling. Those tools
+describe the running server; this skill supplies the deeper execution policy.
+
 When the user asks to design or create a ceremony rather than run supplied
 YAML, follow the `design-ceremony` skill and call `choreo_design_ceremony`
 before using this execution workflow.
@@ -117,3 +123,12 @@ ceremony guard or host permission. Resolve ambiguous operational requests to
 the safe read-only meaning: inspect logs, query a database without writes, and
 peek at queue metadata without consuming messages. Ask for explicit approval
 before any consequential mutation.
+
+## Reports
+
+When the user asks for a ceremony report, confirm through discovery that
+`choreo_generate_ceremony_report` is available, select exact ceremony ids, and
+call it. Treat `structuredContent.report_markdown` as the generated artifact.
+The tool is read-only and returns `persisted: false`; save it only through a
+host-authorized file or document operation and report that destination
+separately.

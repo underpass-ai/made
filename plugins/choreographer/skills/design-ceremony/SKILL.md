@@ -9,6 +9,10 @@ Use `choreo_design_ceremony` before writing ceremony YAML yourself. Translate
 the user's intent into the tool's structured fields while preserving their
 vocabulary in the objective and stage instructions.
 
+If the installed surface is uncertain, call `choreo_discover_capabilities`
+first. `choreo_get_help` with `audience: agent` gives the running server's
+short operational guidance without replacing this design policy.
+
 1. Establish the single question or artifact the ceremony must resolve.
 2. Name the required context, output objects, participant roles and ordered
    stages. Use `lower_snake_case` for ceremony and stage ids.

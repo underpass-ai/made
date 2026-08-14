@@ -62,6 +62,13 @@ The `initialize` reply carries `serverInfo` and adapter-side metadata
 (`backend`, `grpc_tls`) so the client can record what it negotiated
 without an extra round trip.
 
+For self-description after initialization, call
+`choreo_discover_capabilities`. It projects server identity, active backend,
+capability groups, artifact generators and executable tools from the same
+backend-filtered catalog used by `tools/list`. `choreo_get_help` accepts
+`audience: user` or `audience: agent`; the latter includes preconditions,
+authority boundaries, delegated-host sequencing and explicit error handling.
+
 ## Tool dispatch table
 
 | MCP tool                          | gRPC RPC                          | Notes |
@@ -121,6 +128,20 @@ completed/incomplete counts, definition versions and available digests, plus
 stable, untrusted values are JSON-encoded inside safe variable-length fences,
 and persisted outputs/evidence are not truncated. Split large selections into
 smaller calls when the MCP client has a response-size limit.
+
+Every server composition also exposes these adapter-owned tools:
+
+| MCP tool | Purpose |
+|----------|---------|
+| `choreo_discover_capabilities` | Return version, backend, capability groups, tools, and generators from the active catalog. |
+| `choreo_get_help` | Return structured plus Markdown guidance for a `user` or an `agent`. |
+
+Discovery marks the report tool in two machine-readable places:
+`tools[].report_generator` and `artifact_generators[]`. The generator record
+also identifies `structuredContent.report_markdown` and states that the host,
+not the tool, owns persistence. Help workflows are filtered against the active
+catalog, and coverage tests reject a help response that references a tool the
+same backend does not advertise.
 
 Mappings live in `src/grpc/{json_to_proto.rs,proto_to_json.rs}` —
 **hand-written field-by-field**. A new proto field is a one-PR

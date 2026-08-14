@@ -29,6 +29,8 @@ pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "choreo_close_ceremony
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "choreo_collect_ceremony_evidence";
 pub(crate) const DESIGN_CEREMONY_TOOL: &str = "choreo_design_ceremony";
 pub(crate) const GENERATE_CEREMONY_REPORT_TOOL: &str = "choreo_generate_ceremony_report";
+pub(crate) const DISCOVER_CAPABILITIES_TOOL: &str = "choreo_discover_capabilities";
+pub(crate) const GET_HELP_TOOL: &str = "choreo_get_help";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "choreo_validate_ceremony_draft";
 pub(crate) const EXPLAIN_CEREMONY_DRAFT_TOOL: &str = "choreo_explain_ceremony_draft";
 pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "choreo_publish_ceremony_definition";
@@ -74,6 +76,8 @@ const GRPC_TOOL_NAMES: [&str; 35] = [
     "choreo_get_metrics",
 ];
 
+const SERVER_TOOL_NAMES: [&str; 2] = [DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL];
+
 /// Build the `initialize` result. Includes adapter-side metadata so
 /// the client can record which backend + TLS posture it negotiated
 /// without an extra round-trip.
@@ -102,15 +106,23 @@ pub(crate) fn initialize_result(
 /// `tools/list` result filtered to capabilities honored by the active
 /// backend.
 pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
-    let tools = tool_catalog()
+    json!({ "tools": available_tool_catalog(supports) })
+}
+
+/// Catalog entries executable through this server composition.
+///
+/// Server-owned introspection tools are available for every backend. All
+/// other entries are filtered through the active backend so discovery and
+/// `tools/list` can never disagree about the executable surface.
+pub(crate) fn available_tool_catalog(supports: impl Fn(&str) -> bool) -> Vec<Value> {
+    tool_catalog()
         .into_iter()
         .filter(|tool| {
             tool.get("name")
                 .and_then(Value::as_str)
-                .is_some_and(&supports)
+                .is_some_and(|name| is_server_tool(name) || supports(name))
         })
-        .collect::<Vec<_>>();
-    json!({ "tools": tools })
+        .collect()
 }
 
 fn tool_catalog() -> Vec<Value> {
@@ -129,7 +141,40 @@ fn tool_catalog() -> Vec<Value> {
         "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
         ceremony_report_schema(),
     ));
+    tools.push(tool_def(
+        DISCOVER_CAPABILITIES_TOOL,
+        "Discover this server's version, active backend, executable tool catalog, capability groups, and artifact generators as machine-readable data.",
+        empty_object_schema(),
+    ));
+    tools.push(tool_def(
+        GET_HELP_TOOL,
+        "Get audience-specific Choreographer guidance. User help explains available workflows and examples; agent help explains preconditions, authority boundaries, delegated-host sequencing, and error handling.",
+        help_schema(),
+    ));
     tools
+}
+
+fn help_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["audience"],
+        "properties": {
+            "audience": {
+                "type": "string",
+                "enum": ["user", "agent"],
+                "description": "Choose concise product guidance for a person or operational guidance for an agent/host."
+            }
+        }
+    })
+}
+
+fn empty_object_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {}
+    })
 }
 
 fn ceremony_report_schema() -> Value {
@@ -632,6 +677,10 @@ fn grpc_tool_catalog() -> Vec<Value> {
 
 pub(crate) fn is_grpc_tool(name: &str) -> bool {
     GRPC_TOOL_NAMES.contains(&name)
+}
+
+pub(crate) fn is_server_tool(name: &str) -> bool {
+    SERVER_TOOL_NAMES.contains(&name)
 }
 
 fn run_council_decision_schema() -> Value {
@@ -1329,7 +1378,7 @@ mod tests {
         let all_names = catalog_tool_names();
         let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-        assert_eq!(all_names.len(), 37);
+        assert_eq!(all_names.len(), 39);
         assert_eq!(unique_names.len(), all_names.len());
         assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
         assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
@@ -1346,6 +1395,8 @@ mod tests {
         assert!(all_names.contains(&COLLECT_CEREMONY_EVIDENCE_TOOL.to_owned()));
         assert!(all_names.contains(&DESIGN_CEREMONY_TOOL.to_owned()));
         assert!(all_names.contains(&GENERATE_CEREMONY_REPORT_TOOL.to_owned()));
+        assert!(all_names.contains(&DISCOVER_CAPABILITIES_TOOL.to_owned()));
+        assert!(all_names.contains(&GET_HELP_TOOL.to_owned()));
     }
 
     #[test]

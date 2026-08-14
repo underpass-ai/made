@@ -9,6 +9,13 @@ The repository packaging script places the isolated embedded binary at
 
 Executable scope:
 
+- `choreo_discover_capabilities` to return the installed server version,
+  backend, capability groups, executable tools and artifact generators from
+  the same filtered catalog used by MCP `tools/list`;
+- `choreo_get_help` with `audience: user` or `audience: agent` for
+  human-readable and structured workflow guidance. Agent help includes
+  preconditions, authority boundaries, delegated-host sequencing and error
+  handling;
 - `choreo_design_ceremony` to turn structured intent into an analysed,
   unpublished linear ceremony draft;
 - `choreo_run_ceremony` for one-shot terminal execution;
@@ -18,6 +25,9 @@ Executable scope:
   `choreo_get_ceremony_instance` for persistent, human-authorized flows;
 - `choreo_list_ceremony_instances` to rediscover resumable meetings known to
   the active backend;
+- `choreo_generate_ceremony_report` to project selected ceremony snapshots
+  and their ordered audit journals into deterministic Markdown. It returns
+  `persisted: false`; the host chooses whether and where to save that text;
 - `choreo_request_ceremony_intervention`,
   `choreo_respond_to_ceremony_intervention`,
   `choreo_collect_ceremony_evidence`, and
@@ -28,3 +38,24 @@ The bundled zero-infrastructure process keeps its repositories in memory.
 `choreo_list_ceremony_instances` can recover host-side conversation loss while
 that process remains alive. Surviving a process restart requires a host to wire
 durable instance, definition, and context repositories.
+
+Start an unfamiliar session with `choreo_discover_capabilities`. Its
+`artifact_generators` array marks `choreo_generate_ceremony_report`, including
+the exact response field and the host-owned persistence boundary. This is a
+machine-readable view of the running binary, not a static copy of this README.
+
+For a guided workflow, call:
+
+```json
+{"name":"choreo_get_help","arguments":{"audience":"user"}}
+```
+
+or:
+
+```json
+{"name":"choreo_get_help","arguments":{"audience":"agent"}}
+```
+
+The returned `help_markdown` is meant for display. The parallel structured
+fields let an agent choose only workflows whose complete tool sequence is
+available on the active backend.

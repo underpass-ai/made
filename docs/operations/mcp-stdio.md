@@ -345,6 +345,31 @@ takes precedence over overlapping execution-profile metadata.
 
 ## Tools
 
+### Discovering the active surface and getting help
+
+Two server-owned tools are available independently of the selected backend:
+
+- `choreo_discover_capabilities` returns the server name and version, active
+  backend and TLS posture, backend-filtered tools, capability groups and
+  artifact generators. It is the machine-readable source for deciding what
+  this running process can execute.
+- `choreo_get_help` accepts `audience: user` or `audience: agent`. User help
+  presents available workflows and examples. Agent help adds preconditions,
+  authority boundaries, delegated-host sequencing and explicit responses to
+  protocol errors, tool errors, absent tools and lost host context.
+
+```json
+{"name":"choreo_discover_capabilities","arguments":{}}
+```
+
+```json
+{"name":"choreo_get_help","arguments":{"audience":"agent"}}
+```
+
+Both responses are derived against the same catalog filter as `tools/list`.
+An embedded build therefore advertises its report generator, while a backend
+that cannot execute that tool neither lists it nor recommends its workflow.
+
 The 17 MCP tools are 1:1 with the choreographer's gRPC service:
 
 | MCP tool                          | gRPC RPC                              | Purpose |

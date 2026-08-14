@@ -14,6 +14,7 @@ pub mod embedded;
 pub mod fixture;
 #[cfg(feature = "grpc")]
 pub mod grpc;
+mod guidance;
 pub mod mcp_server_identity;
 pub mod observability;
 pub mod protocol;
