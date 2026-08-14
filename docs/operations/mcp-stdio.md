@@ -373,6 +373,30 @@ an explicit JSON key in both the tool input schema and the response.
 No flattening, no silent drops. Enums (e.g. `DeliberationPhase`) map
 to stable string labels (`DELIBERATION_PHASE_PROPOSING`, …).
 
+### Durable ceremony reports (embedded)
+
+`choreo_generate_ceremony_report` is an embedded-only, read-only extension. A
+call supplies `ceremony_ids` as a non-empty array with no duplicates and may
+supply `title`. Unknown ids fail the whole call; caller order is preserved.
+
+```json
+{
+  "name": "choreo_generate_ceremony_report",
+  "arguments": {
+    "ceremony_ids": ["session-17", "session-18"],
+    "title": "Working-session report"
+  }
+}
+```
+
+The response's `structuredContent` contains `report_markdown`, selected ids,
+completed and incomplete counts, and each definition's version plus computed
+and bound digests when available. `persisted` is always `false`: the tool does
+not create a file. Definition, steps and outputs, transitions, guards and
+deferrals, interventions and evidence, reasons, and ordered journal records are
+rendered without inferred narrative. Values are not truncated; use smaller id
+batches if the MCP client imposes a response-size limit.
+
 ## Modes
 
 Backend selection is driven by `CHOREO_MCP_BACKEND`:
@@ -382,10 +406,11 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
 - **`embedded`** — executes the real ceremony engine in process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
   starting, inspecting, stepping, explicitly approving a human guard, and
-  applying a transition. Participants can also open, answer, and close dynamic
-  opinion, investigation, or action requests while the ceremony remains
-  active. It requires no Choreographer service, gRPC, protobuf, NATS, or
-  database.
+  applying a transition. It can also generate deterministic Markdown reports
+  from one or more persisted ceremony snapshots and audit journals.
+  Participants can open, answer, and close dynamic opinion, investigation, or
+  action requests while the ceremony remains active. It requires no
+  Choreographer service, gRPC, protobuf, NATS, or database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
   running choreographer.

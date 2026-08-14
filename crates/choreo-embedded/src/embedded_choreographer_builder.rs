@@ -12,10 +12,10 @@ use choreo_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler}
 use choreo_core::entities::CeremonyEvidencePack;
 use choreo_core::error::DomainError;
 use choreo_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEvidenceRequest,
-    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort,
-    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
+    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort,
+    CeremonyUnitOfWorkPort, ClockPort, MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use choreo_core::value_objects::StepResult;
 
@@ -34,6 +34,7 @@ pub struct EmbeddedChoreographerBuilder {
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
     unit_of_work: Option<Arc<dyn CeremonyUnitOfWorkPort>>,
+    audit_journal: Option<Arc<dyn AuditJournalPort>>,
     transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
@@ -81,10 +82,11 @@ impl EmbeddedChoreographerBuilder {
     #[must_use]
     pub fn with_ceremony_store<S>(mut self, adapter: Arc<S>) -> Self
     where
-        S: CeremonyInstanceRepositoryPort + CeremonyUnitOfWorkPort + 'static,
+        S: AuditJournalPort + CeremonyInstanceRepositoryPort + CeremonyUnitOfWorkPort + 'static,
     {
         self.instances = Some(adapter.clone());
-        self.unit_of_work = Some(adapter);
+        self.unit_of_work = Some(adapter.clone());
+        self.audit_journal = Some(adapter);
         self
     }
 
@@ -162,14 +164,23 @@ impl EmbeddedChoreographerBuilder {
         // `with_ceremony_store` takes them together: the pair is set by
         // one call or by neither, and a host that configures nothing
         // still gets one storage behind both.
-        let (instances, unit_of_work) =
-            self.instances.zip(self.unit_of_work).unwrap_or_else(|| {
-                let store = Arc::new(InMemoryCeremonyStore::new());
-                (
-                    store.clone() as Arc<dyn CeremonyInstanceRepositoryPort>,
-                    store as Arc<dyn CeremonyUnitOfWorkPort>,
-                )
-            });
+        let (instances, unit_of_work, audit_journal) = self
+            .instances
+            .zip(self.unit_of_work)
+            .zip(self.audit_journal)
+            .map_or_else(
+                || {
+                    let store = Arc::new(InMemoryCeremonyStore::new());
+                    (
+                        store.clone() as Arc<dyn CeremonyInstanceRepositoryPort>,
+                        store.clone() as Arc<dyn CeremonyUnitOfWorkPort>,
+                        store as Arc<dyn AuditJournalPort>,
+                    )
+                },
+                |((instances, unit_of_work), audit_journal)| {
+                    (instances, unit_of_work, audit_journal)
+                },
+            );
         let transcript_store = self.transcript_store.unwrap_or_else(|| {
             Arc::new(InMemoryCeremonyTranscriptStore::new()) as Arc<dyn CeremonyTranscriptStorePort>
         });
@@ -191,6 +202,7 @@ impl EmbeddedChoreographerBuilder {
             publications,
             instances,
             unit_of_work,
+            audit_journal,
             transcript_store,
             step_handler,
             evidence_source,

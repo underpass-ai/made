@@ -3,6 +3,7 @@
 use std::collections::BTreeMap;
 
 use choreo_api::{CeremonyEngineApi, StartCeremonyRequest};
+use choreo_core::value_objects::CeremonyId;
 use choreo_embedded::EmbeddedChoreographer;
 
 const DEFINITION: &str = r#"
@@ -67,5 +68,14 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
     assert_eq!(
         ceremony.definition_digest.as_deref(),
         Some(analyzed_digest.as_str())
+    );
+    let journal = reopened
+        .audit_records(&CeremonyId::new("ceremony-1").unwrap())
+        .await
+        .expect("journal survives restart through the embedded facade");
+    assert_eq!(journal.len(), 1);
+    assert_eq!(
+        journal[0].event_type().as_str(),
+        "ceremony_instance_started"
     );
 }

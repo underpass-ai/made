@@ -101,6 +101,7 @@ that intentionally have no gRPC mapping:
 | `choreo_respond_to_ceremony_intervention` | Record one targeted role's response. |
 | `choreo_close_ceremony_intervention` | Let the requesting role close its intervention. |
 | `choreo_collect_ceremony_evidence` | Collect a typed evidence pack through a host-provided read-only source. |
+| `choreo_generate_ceremony_report` | Render one or more persisted instances and their audit journals as deterministic Markdown. |
 
 These calls allow the host to pause between actions. Human guard approval is
 never inferred by the server; the client must obtain the person's decision
@@ -111,6 +112,15 @@ those roles. Responses and interventions retain insertion order in the instance.
 The default embedded composition stores state in memory. Process-restart
 recovery requires the host to supply durable repositories for ceremony
 instances, mounted definitions, and transcript context.
+
+`choreo_generate_ceremony_report` accepts a non-empty, duplicate-free
+`ceremony_ids` array and an optional presentation title. Unknown ids fail the
+whole request. Its structured result contains the Markdown, selected ids,
+completed/incomplete counts, definition versions and available digests, plus
+`persisted: false`: it never writes a report file. Sections and ordering are
+stable, untrusted values are JSON-encoded inside safe variable-length fences,
+and persisted outputs/evidence are not truncated. Split large selections into
+smaller calls when the MCP client has a response-size limit.
 
 Mappings live in `src/grpc/{json_to_proto.rs,proto_to_json.rs}` —
 **hand-written field-by-field**. A new proto field is a one-PR
