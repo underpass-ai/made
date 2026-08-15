@@ -16,6 +16,34 @@ operator command.
 
 _Nothing yet._
 
+## 0.1.3 - 2026-08-15
+
+The release that actually reaches crates.io.
+
+### Added
+
+- Every public crate is published: `made-core`, `made-api`, `made-proto`,
+  `made-app`, `made-adapters`, `made-embedded`, `made-mcp-proto` and
+  `made-mcp`, in dependency order, by
+  `scripts/ci/publish-crates.sh`. The script skips versions already on the
+  registry — a release that dies halfway is resumed by re-running the job,
+  never by moving a tag — and waits out the new-crate rate limit, which a
+  first chain release is guaranteed to hit.
+- A README for every published crate. Each states what the crate is, where
+  its boundary runs and what it is not allowed to know: `made-adapters`
+  that no provider is privileged, `made-embedded` what durability does and
+  does not recover, `made-api` why its contract version is not its release
+  number.
+
+### Fixed
+
+- `made-mcp` can be published at all. It carries the embedded engine, so
+  it requires `made-adapters`, `made-app`, `made-core` and
+  `made-embedded`, and cargo resolves every versioned dependency against
+  the registry whether or not its feature is enabled. `v0.1.2` failed with
+  `no matching package named made-adapters found`; it was the first tag to
+  get far enough to say so.
+
 ## 0.1.2 - 2026-08-15
 
 ### Fixed

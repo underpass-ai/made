@@ -16,7 +16,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.1.3"
 edition = "2021"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -120,15 +120,15 @@ sha2 = "0.10"
 jsonschema = { version = "0.17", default-features = false }
 
 # internal
-made-core = { path = "crates/made-core", version = "0.1.2" }
-made-api = { path = "crates/made-api", version = "0.1.2" }
-made-app = { path = "crates/made-app", version = "0.1.2" }
-made-adapters = { path = "crates/made-adapters", version = "0.1.2", default-features = false }
-made-embedded = { path = "crates/made-embedded", version = "0.1.2" }
-made-proto = { path = "crates/made-proto", version = "0.1.2" }
-made-mcp = { path = "crates/made-mcp", version = "0.1.2", default-features = false }
-made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.1.2" }
-made-tests-integration = { path = "crates/made-tests-integration", version = "0.1.2" }
+made-core = { path = "crates/made-core", version = "0.1.3" }
+made-api = { path = "crates/made-api", version = "0.1.3" }
+made-app = { path = "crates/made-app", version = "0.1.3" }
+made-adapters = { path = "crates/made-adapters", version = "0.1.3", default-features = false }
+made-embedded = { path = "crates/made-embedded", version = "0.1.3" }
+made-proto = { path = "crates/made-proto", version = "0.1.3" }
+made-mcp = { path = "crates/made-mcp", version = "0.1.3", default-features = false }
+made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.1.3" }
+made-tests-integration = { path = "crates/made-tests-integration", version = "0.1.3" }
 
 [profile.release]
 lto = "thin"
