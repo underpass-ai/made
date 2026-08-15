@@ -16,6 +16,57 @@ operator command.
 
 _Nothing yet._
 
+## 0.1.1 - 2026-08-15
+
+Everything here was found while publishing `v0.1.0`. That tag stays as it
+was cut; this is the release that fixes what it shipped.
+
+### Fixed
+
+- Incoming `traceparent` headers are adopted again under the current
+  OpenTelemetry bridge. `tracing-opentelemetry` 0.33 refuses to re-parent a
+  span whose context has already started — which entering a span now does —
+  and it reports that refusal by value, which the adapter was discarding.
+  The subscriber turns context activation off so handler spans stay
+  re-parentable, and the adapter logs a rejected adoption instead of
+  swallowing it. Traces kept exporting throughout; they had quietly stopped
+  being the caller's, which is the failure mode worth catching loudly. The
+  test now asserts on exported span data rather than on the bridge's
+  in-process view, because that view is what changed shape.
+- `otel` joins the CI clippy and test matrix, for the adapter and for the
+  binary's OTLP exporter setup. The regression above was invisible because
+  no CI job ever built that feature; the exporter migration then broke the
+  container build, which was the only job that did.
+- The OTLP exporter's TLS config is built from the tonic that
+  `opentelemetry-otlp` links, one major ahead of the server's. Same name,
+  different type: the exporter keeps its own tonic rather than dragging the
+  gRPC surface through a migration it does not need.
+
+
+- The Windows plugin package reaches the GitHub Release. Its attach step is
+  a bash script and `windows-latest` runs steps under PowerShell, which read
+  the line continuations as unary operators and failed to parse; the step
+  now declares `shell: bash`. The bundle itself always built and smoke-tested
+  correctly — only publication failed.
+- `scripts/plugin/package-made-plugin.sh` empties `dist/plugin` before it
+  builds. The release job globs that directory, so a leftover or stray
+  archive was published as if it belonged to the version being released.
+  The `v0.1.0` release carried one such archive, built from a different
+  commit; it has been removed from the release assets.
+
+### Security
+
+- Dependencies refreshed against every advisory open at release time.
+  `async-nats` moves to 0.50, which drops the vulnerable `rustls-webpki`
+  0.102 line (GHSA-82j2-j2ch-gfr8 and three lower-severity advisories) with
+  no source change on our side, and the lockfile refresh takes `quinn-proto`
+  to 0.11.16 (GHSA-4w2j-m93h-cj5j), `rand` to 0.8.7 and `serde_with` to
+  3.22.0. `testcontainers` moves to 0.28, which replaces the unmaintained
+  `tokio-tar` with the patched `astral-tokio-tar` 0.6.4
+  (GHSA-j5gw-2vrg-8fgx), and the OpenTelemetry stack moves to 0.32 with
+  `tracing-opentelemetry` 0.33 (GHSA-w9wp-h8wv-79jx). No advisory is open
+  against this release.
+
 ## 0.1.0 - 2026-08-15
 
 First tagged release. Everything below shipped under the previous name,
@@ -233,51 +284,8 @@ rename to MADE is itself the first entry under Changed.
   positive-path behavior against local MADE, NATS, and
   `made-stub-llm`.
 
-### Fixed
-
-- Incoming `traceparent` headers are adopted again under the current
-  OpenTelemetry bridge. `tracing-opentelemetry` 0.33 refuses to re-parent a
-  span whose context has already started — which entering a span now does —
-  and it reports that refusal by value, which the adapter was discarding.
-  The subscriber turns context activation off so handler spans stay
-  re-parentable, and the adapter logs a rejected adoption instead of
-  swallowing it. Traces kept exporting throughout; they had quietly stopped
-  being the caller's, which is the failure mode worth catching loudly. The
-  test now asserts on exported span data rather than on the bridge's
-  in-process view, because that view is what changed shape.
-- `otel` joins the CI clippy and test matrix, for the adapter and for the
-  binary's OTLP exporter setup. The regression above was invisible because
-  no CI job ever built that feature; the exporter migration then broke the
-  container build, which was the only job that did.
-- The OTLP exporter's TLS config is built from the tonic that
-  `opentelemetry-otlp` links, one major ahead of the server's. Same name,
-  different type: the exporter keeps its own tonic rather than dragging the
-  gRPC surface through a migration it does not need.
-
-
-- The Windows plugin package reaches the GitHub Release. Its attach step is
-  a bash script and `windows-latest` runs steps under PowerShell, which read
-  the line continuations as unary operators and failed to parse; the step
-  now declares `shell: bash`. The bundle itself always built and smoke-tested
-  correctly — only publication failed.
-- `scripts/plugin/package-made-plugin.sh` empties `dist/plugin` before it
-  builds. The release job globs that directory, so a leftover or stray
-  archive was published as if it belonged to the version being released.
-  The `v0.1.0` release carried one such archive, built from a different
-  commit; it has been removed from the release assets.
-
 ### Security
 
-- Dependencies refreshed against every advisory open at release time.
-  `async-nats` moves to 0.50, which drops the vulnerable `rustls-webpki`
-  0.102 line (GHSA-82j2-j2ch-gfr8 and three lower-severity advisories) with
-  no source change on our side, and the lockfile refresh takes `quinn-proto`
-  to 0.11.16 (GHSA-4w2j-m93h-cj5j), `rand` to 0.8.7 and `serde_with` to
-  3.22.0. `testcontainers` moves to 0.28, which replaces the unmaintained
-  `tokio-tar` with the patched `astral-tokio-tar` 0.6.4
-  (GHSA-j5gw-2vrg-8fgx), and the OpenTelemetry stack moves to 0.32 with
-  `tracing-opentelemetry` 0.33 (GHSA-w9wp-h8wv-79jx). No advisory is open
-  against this release.
 - Provider credentials, Postgres DSNs, and TLS materials are documented
   as secret-managed inputs, not values-file or descriptor content.
 - Chart gates assert hardened pod defaults and prevent accidental
