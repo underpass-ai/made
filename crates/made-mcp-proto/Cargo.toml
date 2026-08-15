@@ -6,6 +6,7 @@ rust-version = "1.97"
 license = "Apache-2.0"
 authors = ["Tirso Garcia Ibañez"]
 repository = "https://github.com/underpass-ai/made"
+readme = "README.md"
 description = "Standalone vendored proto types for underpass.made.v1, distributed alongside the made-mcp binary so `cargo install made-mcp` can pull from crates.io without depending on the MADE's internal workspace crates."
 keywords = ["mcp", "made", "grpc", "tonic", "underpass"]
 categories = ["api-bindings"]
