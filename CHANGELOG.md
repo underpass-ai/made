@@ -2,10 +2,10 @@
 
 All notable changes to MADE are tracked here.
 
-This repository has not cut a public `v*` tag yet. The workspace and
-Helm chart currently carry version `0.1.0`; keep entries under
-`Unreleased` until the release process in `docs/release.md` creates an
-immutable tag and published artifacts.
+`v0.1.0` is the first tagged release. Keep new entries under
+`Unreleased` until the release process in `docs/release.md` bumps the
+version and creates the next immutable tag; released sections are not
+edited afterwards.
 
 The format follows the spirit of Keep a Changelog, with categories kept
 short and factual. Do not add claims here unless the behavior is
@@ -13,6 +13,14 @@ implemented and covered by a committed gate, smoke test, or documented
 operator command.
 
 ## Unreleased
+
+_Nothing yet._
+
+## 0.1.0 - 2026-08-15
+
+First tagged release. Everything below shipped under the previous name,
+`underpass-choreographer`, except where an entry says otherwise; the
+rename to MADE is itself the first entry under Changed.
 
 ### Added
 
@@ -232,9 +240,3 @@ operator command.
 - The Helm chart does not manage Ingress, provider egress allow-lists,
   or multi-replica/state coordination beyond the documented single
   replica posture.
-
-## 0.1.0 - Pending
-
-- Initial pre-release version present in `Cargo.toml` and
-  `charts/made/Chart.yaml`.
-- No immutable `v0.1.0` tag is present in this checkout yet.
