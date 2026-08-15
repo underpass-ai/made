@@ -69,6 +69,19 @@ new_text, count = re.subn(
 )
 if count == 0:
     sys.exit("Cargo.toml: no workspace version line matched")
+
+# Internal path dependencies carry a literal version next to their path —
+# cargo has no way to inherit it — and a published crate whose sibling
+# requirement still points at the previous release cannot resolve on
+# crates.io. They move with the workspace or the release is broken.
+new_text, pinned = re.subn(
+    r'(^made-[a-z-]+ = \{ path = "crates/[^"]+", version = )"[^"]+"',
+    rf'\1"{version}"',
+    new_text,
+    flags=re.MULTILINE,
+)
+if pinned == 0:
+    sys.exit("Cargo.toml: no internal dependency pins matched")
 cargo.write_text(new_text)
 
 # Chart.yaml: both `version:` (chart) and `appVersion:` (app) track

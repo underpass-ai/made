@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.1.2 - 2026-08-15
+
 ### Fixed
 
 - Embedded plugin startup can import the pre-rename Choreographer redb state
@@ -22,6 +26,14 @@ operator command.
   only in a new MADE database and commit with a durable migration receipt.
   Structured startup events expose source SHA-256 and bounded counts without
   logging ceremony content. Existing destinations are never overwritten.
+- The two published crates track the release version. `made-mcp` and
+  `made-mcp-proto` pinned `0.1.0` literally while every other crate
+  inherited the workspace version, so `v0.1.1` would have published crates
+  numbered `0.1.0` had it got that far. They now inherit like the rest.
+- `just version` moves the internal dependency pins with it. Cargo cannot
+  inherit the version that sits next to a path dependency, so a bump left
+  every sibling requirement pointing at the previous release — a published
+  crate whose dependency does not exist on crates.io.
 
 ## 0.1.1 - 2026-08-15
 
