@@ -245,8 +245,14 @@ rename to MADE is itself the first entry under Changed.
   being the caller's, which is the failure mode worth catching loudly. The
   test now asserts on exported span data rather than on the bridge's
   in-process view, because that view is what changed shape.
-- `otel` joins the CI clippy and test matrix. The regression above was
-  invisible because no CI job ever built that feature.
+- `otel` joins the CI clippy and test matrix, for the adapter and for the
+  binary's OTLP exporter setup. The regression above was invisible because
+  no CI job ever built that feature; the exporter migration then broke the
+  container build, which was the only job that did.
+- The OTLP exporter's TLS config is built from the tonic that
+  `opentelemetry-otlp` links, one major ahead of the server's. Same name,
+  different type: the exporter keeps its own tonic rather than dragging the
+  gRPC surface through a migration it does not need.
 
 
 - The Windows plugin package reaches the GitHub Release. Its attach step is

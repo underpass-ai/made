@@ -121,6 +121,7 @@ jobs:
             --features made-adapters/redb \
             --features made-adapters/kmp \
             --features made-adapters/otel \
+            --features made/otel \
             -- -D warnings
 
   test:
@@ -161,7 +162,8 @@ jobs:
             --features made-adapters/agent-vllm \
             --features made-adapters/redb \
             --features made-adapters/kmp \
-            --features made-adapters/otel
+            --features made-adapters/otel \
+            --features made/otel
 
   container-image:
     runs-on: ubuntu-24.04
