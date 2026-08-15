@@ -76,6 +76,26 @@ After step 8, the release artefacts are live:
 - `ghcr.io/underpass-ai/made:v0.2.0`
 - `ghcr.io/underpass-ai/made-e2e-runner:v0.2.0`
 - `oci://ghcr.io/underpass-ai/charts/made:0.2.0`
+- the plugin bundles, attached to the GitHub Release for linux-x86_64,
+  linux-arm64, macos-arm64 and windows-x86_64
+- every public crate on crates.io
+
+## What reaches crates.io
+
+`made-mcp` is installable from the registry, and it carries the embedded
+engine, so cargo requires its whole chain to be there too. The release
+publishes, in this order: `made-core`, `made-api`, `made-proto`,
+`made-app`, `made-adapters`, `made-embedded`, `made-mcp-proto`,
+`made-mcp`. `scripts/ci/publish-crates.sh` owns that order.
+
+Two operational notes about that step:
+
+- It is **idempotent**. Versions already on the registry are skipped, so a
+  release that failed halfway is resumed by re-running the job — never by
+  moving the tag, which is not a thing we do.
+- crates.io throttles new crates to a burst of five and then one every ten
+  minutes. A release that introduces more than five new crate names will
+  sit waiting rather than fail; the job's timeout is sized for it.
 
 ## What `just release` does
 

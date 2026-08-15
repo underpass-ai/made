@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "Infrastructure adapters implementing MADE ports. Provider-agnostic; each integration is opt-in via a Cargo feature."
 
 [lints]
