@@ -98,5 +98,7 @@ tokio-test = { workspace = true }
 wiremock = "0.6"
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
-opentelemetry_sdk = { workspace = true }
+# `testing` brings the in-memory span exporter: trace propagation is
+# asserted on what would reach a collector, not on a getter's opinion.
+opentelemetry_sdk = { workspace = true, features = ["testing"] }
 tracing-opentelemetry = { workspace = true }

@@ -45,7 +45,7 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
 uuid = { workspace = true, optional = true }
-testcontainers = { version = "0.23", optional = true }
+testcontainers = { version = "0.28", optional = true }
 
 [features]
 default = ["grpc"]

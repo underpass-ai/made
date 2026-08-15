@@ -23,7 +23,7 @@ pub fn link_span_to_metadata<T>(_request: &tonic::Request<T>) {}
 mod enabled {
     use opentelemetry::propagation::Extractor;
     use tonic::metadata::MetadataMap;
-    use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+    use tracing_opentelemetry::{OpenTelemetrySpanExt as _, SetParentError};
 
     /// Extract W3C tracecontext from `request.metadata()` and set it
     /// as the parent of the currently-active `tracing` span.
@@ -32,7 +32,23 @@ mod enabled {
         let parent_ctx = opentelemetry::global::get_text_map_propagator(|propagator| {
             propagator.extract(&carrier)
         });
-        tracing::Span::current().set_parent(parent_ctx);
+        // The bridge refuses to re-parent a span whose OpenTelemetry context
+        // has already started, and it reports that by value. Discarding the
+        // result is how a subscriber misconfigured with context activation
+        // turns every incoming trace into a silent orphan: the traces still
+        // export, they just stop being the caller's.
+        if let Err(error) = tracing::Span::current().set_parent(parent_ctx) {
+            match error {
+                SetParentError::SpanDisabled => {
+                    tracing::debug!("tracecontext: span filtered out, no parent to set");
+                }
+                other => tracing::warn!(
+                    error = ?other,
+                    "tracecontext: incoming traceparent was not adopted; this span will \
+                     export as its own trace"
+                ),
+            }
+        }
     }
 
     /// Adapter from tonic's `MetadataMap` to OTel's `Extractor`

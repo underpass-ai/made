@@ -31,7 +31,7 @@ async-trait = { workspace = true }
 async-nats = { workspace = true }
 tonic = { workspace = true }
 tokio-stream = { workspace = true }
-testcontainers = { version = "0.23", optional = true }
+testcontainers = { version = "0.28", optional = true }
 # Used by `tls_fixture` to mint in-memory CA + server + client
 # certificates for the TLS handshake integration tests. Lives in
 # `[dependencies]` (not dev-dependencies) because `tls_fixture` is
@@ -55,4 +55,4 @@ serde_json = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 prost-types = { workspace = true }
-testcontainers = "0.23"
+testcontainers = "0.28"

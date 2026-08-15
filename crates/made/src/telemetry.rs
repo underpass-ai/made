@@ -159,7 +159,16 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
         .build();
 
     global::set_tracer_provider(provider.clone());
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("made"));
+    // Context activation is off on purpose. With it on, entering a span
+    // starts its OpenTelemetry context immediately, and a started span can
+    // no longer be re-parented — which is exactly what every RPC handler
+    // does when it adopts an incoming `traceparent` (see
+    // `made_adapters::grpc::tracecontext`). Nothing here injects context
+    // into outbound calls, so the only thing activation would buy us is the
+    // loss of caller parentage.
+    let otel_layer = tracing_opentelemetry::layer()
+        .with_tracer(provider.tracer("made"))
+        .with_context_activation(false);
 
     tracing_subscriber::registry()
         .with(filter)

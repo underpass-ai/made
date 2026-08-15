@@ -235,6 +235,19 @@ rename to MADE is itself the first entry under Changed.
 
 ### Fixed
 
+- Incoming `traceparent` headers are adopted again under the current
+  OpenTelemetry bridge. `tracing-opentelemetry` 0.33 refuses to re-parent a
+  span whose context has already started — which entering a span now does —
+  and it reports that refusal by value, which the adapter was discarding.
+  The subscriber turns context activation off so handler spans stay
+  re-parentable, and the adapter logs a rejected adoption instead of
+  swallowing it. Traces kept exporting throughout; they had quietly stopped
+  being the caller's, which is the failure mode worth catching loudly. The
+  test now asserts on exported span data rather than on the bridge's
+  in-process view, because that view is what changed shape.
+- `otel` joins the CI clippy and test matrix. The regression above was
+  invisible because no CI job ever built that feature.
+
 
 - The Windows plugin package reaches the GitHub Release. Its attach step is
   a bash script and `windows-latest` runs steps under PowerShell, which read
@@ -254,18 +267,11 @@ rename to MADE is itself the first entry under Changed.
   0.102 line (GHSA-82j2-j2ch-gfr8 and three lower-severity advisories) with
   no source change on our side, and the lockfile refresh takes `quinn-proto`
   to 0.11.16 (GHSA-4w2j-m93h-cj5j), `rand` to 0.8.7 and `serde_with` to
-  3.22.0. Two advisories remain open and are not shipped defects:
-  - `tokio-tar` 0.3.1 (GHSA-j5gw-2vrg-8fgx) has no patched release. It
-    reaches us only through `testcontainers`, a dev-dependency of the
-    `publish = false` integration-test crate: it is in no image, no chart
-    and no published crate.
-  - `opentelemetry_sdk` 0.27.1 (GHSA-w9wp-h8wv-79jx) is an unbounded
-    allocation in **W3C Baggage** propagation. This workspace never
-    propagates baggage. The patched line is 0.32, and that migration was
-    measured rather than assumed: it compiles, but an incoming
-    `traceparent` stops being adopted as the parent span, which would
-    silently break the replayable-trace promise. It gets its own change,
-    not a release-day bump.
+  3.22.0. `testcontainers` moves to 0.28, which replaces the unmaintained
+  `tokio-tar` with the patched `astral-tokio-tar` 0.6.4
+  (GHSA-j5gw-2vrg-8fgx), and the OpenTelemetry stack moves to 0.32 with
+  `tracing-opentelemetry` 0.33 (GHSA-w9wp-h8wv-79jx). No advisory is open
+  against this release.
 - Provider credentials, Postgres DSNs, and TLS materials are documented
   as secret-managed inputs, not values-file or descriptor content.
 - Chart gates assert hardened pod defaults and prevent accidental
