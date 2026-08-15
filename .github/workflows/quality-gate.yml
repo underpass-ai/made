@@ -105,8 +105,10 @@ jobs:
       - name: Run clippy
         # Enable every provider / transport / persistence feature
         # explicitly so feature-gated adapters (agent-anthropic,
-        # agent-openai, agent-vllm, grpc, nats, redb, kmp) are linted. A
-        # feature CI never turns on is code CI never checks.
+        # agent-openai, agent-vllm, grpc, nats, redb, kmp, otel) are
+        # linted. A feature CI never turns on is code CI never checks —
+        # `otel` was outside this list while the trace bridge silently
+        # stopped adopting incoming traceparents.
         # `container-tests` is deliberately excluded because the
         # separate `integration` workflow covers it with a real Docker
         # runtime.
@@ -118,6 +120,8 @@ jobs:
             --features made-adapters/agent-vllm \
             --features made-adapters/redb \
             --features made-adapters/kmp \
+            --features made-adapters/otel \
+            --features made/otel \
             -- -D warnings
 
   test:
@@ -157,7 +161,9 @@ jobs:
             --features made-adapters/agent-openai \
             --features made-adapters/agent-vllm \
             --features made-adapters/redb \
-            --features made-adapters/kmp
+            --features made-adapters/kmp \
+            --features made-adapters/otel \
+            --features made/otel
 
   container-image:
     runs-on: ubuntu-24.04

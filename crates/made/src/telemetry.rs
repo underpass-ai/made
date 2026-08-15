@@ -27,7 +27,7 @@ use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, Env
 #[must_use]
 pub struct TelemetryGuard {
     #[cfg(feature = "otel")]
-    provider: Option<opentelemetry_sdk::trace::TracerProvider>,
+    provider: Option<opentelemetry_sdk::trace::SdkTracerProvider>,
 }
 
 impl TelemetryGuard {
@@ -70,9 +70,15 @@ fn env_filter() -> EnvFilter {
 /// Service name differs from its certificate SAN. Returns `None` when the
 /// TLS env is unset, leaving the export plaintext.
 #[cfg(feature = "otel")]
-fn otlp_client_tls_from_env() -> Result<Option<tonic::transport::ClientTlsConfig>> {
+/// The OTLP exporter links its own tonic, one major ahead of the one the
+/// gRPC server uses. Its TLS config is therefore a different type with the
+/// same name, and it must be built from the exporter's re-export or it will
+/// not typecheck — a compiler error worth keeping rather than papering over
+/// with a workspace-wide tonic bump the server does not need.
+fn otlp_client_tls_from_env(
+) -> Result<Option<opentelemetry_otlp::tonic_types::transport::ClientTlsConfig>> {
     use anyhow::Context as _;
-    use tonic::transport::{Certificate, ClientTlsConfig, Identity};
+    use opentelemetry_otlp::tonic_types::transport::{Certificate, ClientTlsConfig, Identity};
 
     let read = |var: &str| {
         std::env::var(var)
@@ -113,7 +119,9 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
     use opentelemetry::global;
     use opentelemetry::trace::TracerProvider as _;
     use opentelemetry_otlp::{WithExportConfig as _, WithTonicConfig as _};
-    use opentelemetry_sdk::{propagation::TraceContextPropagator, trace::TracerProvider, Resource};
+    use opentelemetry_sdk::{
+        propagation::TraceContextPropagator, trace::SdkTracerProvider, Resource,
+    };
     use opentelemetry_semantic_conventions as sc;
 
     // Every binary build registers the W3C propagator so any
@@ -150,16 +158,32 @@ pub fn init_tracing() -> Result<TelemetryGuard> {
     };
     let exporter = exporter_builder.build()?;
 
-    let provider = TracerProvider::builder()
-        .with_batch_exporter(exporter, opentelemetry_sdk::runtime::Tokio)
-        .with_resource(Resource::new(vec![
-            opentelemetry::KeyValue::new(sc::resource::SERVICE_NAME, "made"),
-            opentelemetry::KeyValue::new(sc::resource::SERVICE_VERSION, env!("CARGO_PKG_VERSION")),
-        ]))
+    let provider = SdkTracerProvider::builder()
+        .with_batch_exporter(exporter)
+        .with_resource(
+            Resource::builder()
+                .with_attributes([
+                    opentelemetry::KeyValue::new(sc::resource::SERVICE_NAME, "made"),
+                    opentelemetry::KeyValue::new(
+                        sc::resource::SERVICE_VERSION,
+                        env!("CARGO_PKG_VERSION"),
+                    ),
+                ])
+                .build(),
+        )
         .build();
 
     global::set_tracer_provider(provider.clone());
-    let otel_layer = tracing_opentelemetry::layer().with_tracer(provider.tracer("made"));
+    // Context activation is off on purpose. With it on, entering a span
+    // starts its OpenTelemetry context immediately, and a started span can
+    // no longer be re-parented — which is exactly what every RPC handler
+    // does when it adopts an incoming `traceparent` (see
+    // `made_adapters::grpc::tracecontext`). Nothing here injects context
+    // into outbound calls, so the only thing activation would buy us is the
+    // loss of caller parentage.
+    let otel_layer = tracing_opentelemetry::layer()
+        .with_tracer(provider.tracer("made"))
+        .with_context_activation(false);
 
     tracing_subscriber::registry()
         .with(filter)
