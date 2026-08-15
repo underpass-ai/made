@@ -32,7 +32,7 @@ postgres = ["dep:sqlx"]
 # Embedded persistence. redb is the store the embedded distribution
 # uses: pure Rust, no non-optional dependencies and no C toolchain, so
 # an embedded host stays free of system dependencies.
-redb = ["dep:redb"]
+redb = ["dep:redb", "dep:sha2"]
 
 # Memory that outlives a session, kept by an external memory kernel
 # spoken to over its tool protocol. Deliberately dependency-free: a
@@ -85,6 +85,7 @@ async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }
 redb = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }

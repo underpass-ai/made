@@ -59,6 +59,12 @@ defines the required checks and wording for agents and documentation.
 The repository packaging script places the isolated embedded binary at
 `bin/made-mcp`. Codex starts it through `scripts/run-embedded-mcp.sh`.
 
+On a first start with no MADE state file, the launcher imports the former
+`underpass-choreographer/ceremonies.redb` default automatically when present.
+The source is read-only; recovery and digest migration happen only in the new
+MADE file. Set `MADE_MCP_LEGACY_REDB_PATH` explicitly for any other legacy
+location.
+
 Executable scope:
 
 - `made_discover_capabilities` to return the installed server version,

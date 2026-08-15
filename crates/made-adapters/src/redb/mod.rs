@@ -10,7 +10,13 @@
 
 mod error;
 mod keys;
+mod legacy_definition_binding;
+mod legacy_instance_migration;
+mod legacy_publication_migration;
+mod legacy_state_migration_receipt;
+mod legacy_state_migrator;
 
 pub use ceremony_store::RedbCeremonyStore;
+pub use legacy_state_migration_receipt::LegacyStateMigrationReceipt;
 
 mod ceremony_store;

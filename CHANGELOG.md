@@ -14,7 +14,14 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- Embedded plugin startup can import the pre-rename Choreographer redb state
+  automatically. The legacy database is cloned through a read-only descriptor;
+  redb recovery, publication digest migration and instance rebinding happen
+  only in a new MADE database and commit with a durable migration receipt.
+  Structured startup events expose source SHA-256 and bounded counts without
+  logging ceremony content. Existing destinations are never overwritten.
 
 ## 0.1.1 - 2026-08-15
 

@@ -4,7 +4,7 @@
 //! processes, one state file, and the question of what the second one can
 //! still see.
 
-use made_mcp::{MadeMcpServer, EMBEDDED_REDB_PATH_ENV, MCP_BACKEND_ENV};
+use made_mcp::{MadeMcpServer, EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
 const CEREMONY_YAML: &str = r#"
@@ -283,6 +283,7 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
     // variables are global, so splitting this would race with itself.
     std::env::set_var(MCP_BACKEND_ENV, "embedded");
     std::env::remove_var(EMBEDDED_REDB_PATH_ENV);
+    std::env::remove_var(LEGACY_REDB_PATH_ENV);
 
     let Err(refused) = MadeMcpServer::try_from_env() else {
         panic!("embedded must demand a state file");
@@ -298,6 +299,7 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
 
     std::env::remove_var(MCP_BACKEND_ENV);
     std::env::remove_var(EMBEDDED_REDB_PATH_ENV);
+    std::env::remove_var(LEGACY_REDB_PATH_ENV);
 }
 
 async fn send(server: &MadeMcpServer, request: Value) -> Value {

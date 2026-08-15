@@ -23,6 +23,9 @@ pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
 /// the embedded backend is selected: where ceremony state survives a
 /// restart is an operator decision, never a default this crate invents.
 pub const EMBEDDED_REDB_PATH_ENV: &str = "MADE_MCP_REDB_PATH";
+/// Optional pre-rename Choreographer redb source. When set for the embedded
+/// backend, startup imports it read-only into [`EMBEDDED_REDB_PATH_ENV`].
+pub const LEGACY_REDB_PATH_ENV: &str = "MADE_MCP_LEGACY_REDB_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";
 /// PEM bundle the client should trust as a CA when verifying the

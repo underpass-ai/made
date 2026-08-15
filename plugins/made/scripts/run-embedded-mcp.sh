@@ -21,15 +21,26 @@ export MADE_MCP_BACKEND=embedded
 # operator to ask, so it picks the conventional per-user state directory
 # and says so — an explicit `MADE_MCP_REDB_PATH` always wins.
 if [[ -z "${MADE_MCP_REDB_PATH:-}" ]]; then
-  MADE_STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}/underpass-made"
+  USER_STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}"
+  MADE_STATE_ROOT="${USER_STATE_ROOT}/underpass-made"
   mkdir -p "${MADE_STATE_ROOT}"
   export MADE_MCP_REDB_PATH="${MADE_STATE_ROOT}/ceremonies.redb"
+
+  # First start after the rename imports the former default automatically.
+  # The legacy file remains read-only evidence; MADE writes a separate file.
+  LEGACY_DEFAULT="${USER_STATE_ROOT}/underpass-choreographer/ceremonies.redb"
+  if [[ ! -e "${MADE_MCP_REDB_PATH}" && -f "${LEGACY_DEFAULT}" && -z "${MADE_MCP_LEGACY_REDB_PATH:-}" ]]; then
+    export MADE_MCP_LEGACY_REDB_PATH="${LEGACY_DEFAULT}"
+  fi
 fi
 
 # Git Bash hands the native Windows binary an MSYS path it cannot open;
 # cygpath converts it when, and only when, we are on such a host.
 if command -v cygpath >/dev/null 2>&1; then
   MADE_MCP_REDB_PATH="$(cygpath -w "${MADE_MCP_REDB_PATH}")"
+  if [[ -n "${MADE_MCP_LEGACY_REDB_PATH:-}" ]]; then
+    MADE_MCP_LEGACY_REDB_PATH="$(cygpath -w "${MADE_MCP_LEGACY_REDB_PATH}")"
+  fi
 fi
 
 exec "${BINARY}"

@@ -34,17 +34,21 @@ use time::OffsetDateTime;
 
 use super::error::{encoding_failure, join_failure, store_failure};
 use super::keys::{ceremony_of, published, scope_range, scoped};
+use super::legacy_state_migration_receipt::{LegacyStateMigrationReceipt, LEGACY_STATE_MIGRATIONS};
+use super::legacy_state_migrator::LegacyStateMigrator;
 
-const CEREMONIES: TableDefinition<&str, &[u8]> = TableDefinition::new("ceremony_instances");
-const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("audit_journal");
-const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("outbox");
-const PUBLICATIONS: TableDefinition<&[u8], &[u8]> = TableDefinition::new("published_definitions");
+pub(super) const CEREMONIES: TableDefinition<&str, &[u8]> =
+    TableDefinition::new("ceremony_instances");
+pub(super) const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("audit_journal");
+pub(super) const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("outbox");
+pub(super) const PUBLICATIONS: TableDefinition<&[u8], &[u8]> =
+    TableDefinition::new("published_definitions");
 
 /// A ceremony's stored state and the revision that guards it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct StoredCeremony {
-    revision: CeremonyRevision,
-    instance: CeremonyInstance,
+pub(super) struct StoredCeremony {
+    pub(super) revision: CeremonyRevision,
+    pub(super) instance: CeremonyInstance,
 }
 
 /// A committed message and everything the store knows about getting it
@@ -103,6 +107,9 @@ impl RedbCeremonyStore {
             write
                 .open_table(PUBLICATIONS)
                 .map_err(|error| store_failure(error, "open publications table"))?;
+            write
+                .open_table(LEGACY_STATE_MIGRATIONS)
+                .map_err(|error| store_failure(error, "open state migrations table"))?;
         }
         write
             .commit()
@@ -110,6 +117,111 @@ impl RedbCeremonyStore {
         Ok(Self {
             database: Arc::new(database),
         })
+    }
+
+    /// Import a pre-rename Choreographer redb file into a new MADE store.
+    ///
+    /// The source is opened with read-only file permissions. The destination
+    /// must not exist, so migration cannot overwrite either the legacy
+    /// evidence or an independently created MADE store.
+    pub fn import_legacy(
+        source: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+    ) -> Result<Self, DomainError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+
+        if same_path(source, destination) {
+            tracing::error!(
+                migration_id = LegacyStateMigrationReceipt::MIGRATION_ID,
+                "legacy state migration source and destination are the same file"
+            );
+            return Err(DomainError::InvariantViolated {
+                reason: "legacy state migration requires different source and destination files",
+            });
+        }
+        if destination.exists() {
+            tracing::error!(
+                migration_id = LegacyStateMigrationReceipt::MIGRATION_ID,
+                "legacy state migration destination already exists"
+            );
+            return Err(DomainError::Conflict {
+                what: "legacy_state_migration_destination",
+            });
+        }
+
+        let receipt = LegacyStateMigrator::migrate(source, destination)?;
+        tracing::info!(
+            migration_id = LegacyStateMigrationReceipt::MIGRATION_ID,
+            source_open_mode = "read_only",
+            publications = receipt.publications(),
+            migrated_publications = receipt.migrated_publications(),
+            instances = receipt.instances(),
+            migrated_instances = receipt.migrated_instances(),
+            unresolved_bindings = receipt.unresolved_bindings(),
+            audit_records = receipt.audit_records(),
+            outbox_messages = receipt.outbox_messages(),
+            source_sha256 = receipt.source_sha256(),
+            "made legacy state migration completed"
+        );
+        Self::open(destination)
+    }
+
+    /// Import once, then reopen the already migrated destination on later
+    /// process starts.
+    pub fn open_or_import_legacy(
+        source: impl AsRef<Path>,
+        destination: impl AsRef<Path>,
+    ) -> Result<Self, DomainError> {
+        let source = source.as_ref();
+        let destination = destination.as_ref();
+        if same_path(source, destination) {
+            return Err(DomainError::InvariantViolated {
+                reason: "legacy state migration requires different source and destination files",
+            });
+        }
+        if !destination.exists() {
+            return Self::import_legacy(source, destination);
+        }
+
+        let store = Self::open(destination)?;
+        let receipt = store
+            .legacy_migration_receipt()?
+            .ok_or(DomainError::Conflict {
+                what: "legacy_state_migration_destination_without_receipt",
+            })?;
+        tracing::info!(
+            migration_id = LegacyStateMigrationReceipt::MIGRATION_ID,
+            outcome = "already_completed",
+            source_open_mode = "not_reopened",
+            publications = receipt.publications(),
+            migrated_publications = receipt.migrated_publications(),
+            instances = receipt.instances(),
+            migrated_instances = receipt.migrated_instances(),
+            unresolved_bindings = receipt.unresolved_bindings(),
+            source_sha256 = receipt.source_sha256(),
+            "made legacy state migration receipt verified"
+        );
+        Ok(store)
+    }
+
+    /// The durable receipt written by a completed legacy import, if this
+    /// store was created through [`Self::import_legacy`].
+    pub fn legacy_migration_receipt(
+        &self,
+    ) -> Result<Option<LegacyStateMigrationReceipt>, DomainError> {
+        let read = self
+            .database
+            .begin_read()
+            .map_err(|error| store_failure(error, "begin migration receipt read"))?;
+        let migrations = read
+            .open_table(LEGACY_STATE_MIGRATIONS)
+            .map_err(|error| store_failure(error, "open state migrations"))?;
+        migrations
+            .get(LegacyStateMigrationReceipt::MIGRATION_ID)
+            .map_err(|error| store_failure(error, "read legacy migration receipt"))?
+            .map(|value| decode(value.value(), "decode legacy migration receipt"))
+            .transpose()
     }
 
     async fn blocking<T, F>(&self, op: &'static str, work: F) -> Result<T, DomainError>
@@ -124,11 +236,24 @@ impl RedbCeremonyStore {
     }
 }
 
-fn encode<T: Serialize>(value: &T, op: &'static str) -> Result<Vec<u8>, DomainError> {
+fn same_path(left: &Path, right: &Path) -> bool {
+    if left == right {
+        return true;
+    }
+    match (std::fs::canonicalize(left), std::fs::canonicalize(right)) {
+        (Ok(left), Ok(right)) => left == right,
+        _ => false,
+    }
+}
+
+pub(super) fn encode<T: Serialize>(value: &T, op: &'static str) -> Result<Vec<u8>, DomainError> {
     serde_json::to_vec(value).map_err(|error| encoding_failure(&error, op))
 }
 
-fn decode<T: for<'de> Deserialize<'de>>(bytes: &[u8], op: &'static str) -> Result<T, DomainError> {
+pub(super) fn decode<T: for<'de> Deserialize<'de>>(
+    bytes: &[u8],
+    op: &'static str,
+) -> Result<T, DomainError> {
     serde_json::from_slice(bytes).map_err(|error| encoding_failure(&error, op))
 }
 
@@ -516,13 +641,13 @@ fn read_outbox(
 /// stored one is evidence the file was edited, and that is worth being
 /// able to see.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-struct StoredPublication {
-    definition: made_core::entities::CeremonyDefinition,
-    digest: CeremonyDefinitionDigest,
+pub(super) struct StoredPublication {
+    pub(super) definition: made_core::entities::CeremonyDefinition,
+    pub(super) digest: CeremonyDefinitionDigest,
 }
 
 impl StoredPublication {
-    fn seal(published: &PublishedCeremonyDefinition) -> Self {
+    pub(super) fn seal(published: &PublishedCeremonyDefinition) -> Self {
         Self {
             definition: published.definition().clone(),
             digest: published.digest(),
@@ -530,7 +655,13 @@ impl StoredPublication {
     }
 
     fn restore(self) -> Result<PublishedCeremonyDefinition, DomainError> {
-        PublishedCeremonyDefinition::seal(self.definition)
+        let restored = PublishedCeremonyDefinition::seal(self.definition)?;
+        if restored.digest() != self.digest {
+            return Err(DomainError::InvariantViolated {
+                reason: "the stored publication digest does not match its definition",
+            });
+        }
+        Ok(restored)
     }
 }
 
