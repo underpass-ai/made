@@ -1,6 +1,6 @@
 # Developer loop
 
-Honest recipes for iterating on the Underpass Choreographer. Each
+Honest recipes for iterating on MADE. Each
 command mirrors a CI gate one-for-one — when CI is red, the same
 command produces the same failure locally.
 
@@ -95,7 +95,7 @@ make e2e-kubernetes  # Kubernetes cluster + Helm chart + runner Job
 ```
 
 For an existing cluster, the standard path matches sibling repos:
-push the Choreographer image and runner image to `ghcr.io`, create
+push the MADE image and runner image to `ghcr.io`, create
 an `imagePullSecrets` named `ghcr-pull` in the target namespace, and
 point the script at that registry.
 
@@ -123,13 +123,13 @@ operator story.
 ### Provider-E2E (vLLM)
 
 Exercises the `agent-vllm` adapter directly against a real vLLM
-endpoint — not the full choreographer — so it pins the provider
+endpoint — not the full MADE — so it pins the provider
 wire contract. The Kubernetes Job mounts a client certificate and
 hits the endpoint via mTLS.
 
 ```bash
 # Build the runner image and push it where the cluster can pull it.
-IMAGE_TAG=<registry>/underpass-choreographer-e2e-provider:dev \
+IMAGE_TAG=<registry>/made-e2e-provider:dev \
     make build-provider-image
 
 # Edit tests/e2e/kubernetes/provider-vllm-job.yaml to use that tag,
@@ -142,12 +142,12 @@ edit the manifest for a different endpoint):
 
 | Var | Required | Notes |
 |---|---|---|
-| `CHOREO_VLLM_ENDPOINT` | yes | base URL, e.g. `https://llm.underpassai.com` |
-| `CHOREO_VLLM_MODEL` | yes | model id, e.g. `google/gemma-4-31B-it` |
-| `CHOREO_VLLM_CLIENT_CERT_PATH` | with key | PEM file for mTLS client cert |
-| `CHOREO_VLLM_CLIENT_KEY_PATH` | with cert | PEM file for mTLS client key |
-| `CHOREO_VLLM_BEARER_TOKEN` | optional | bearer auth |
-| `CHOREO_VLLM_MAX_TOKENS` | optional | default `1024`; bump when the model uses a reasoning parser that burns budget before `content` |
+| `MADE_VLLM_ENDPOINT` | yes | base URL, e.g. `https://llm.underpassai.com` |
+| `MADE_VLLM_MODEL` | yes | model id, e.g. `google/gemma-4-31B-it` |
+| `MADE_VLLM_CLIENT_CERT_PATH` | with key | PEM file for mTLS client cert |
+| `MADE_VLLM_CLIENT_KEY_PATH` | with cert | PEM file for mTLS client key |
+| `MADE_VLLM_BEARER_TOKEN` | optional | bearer auth |
+| `MADE_VLLM_MAX_TOKENS` | optional | default `1024`; bump when the model uses a reasoning parser that burns budget before `content` |
 
 The runner validates `generate` + `critique` + `revise` each
 return text of at least 20 characters; a failing assertion exits
@@ -176,118 +176,118 @@ messaging, and the default noop executor:
 
 ```bash
 # With no external services.
-CHOREO_NATS_ENABLED=false just run
+MADE_NATS_ENABLED=false just run
 
 # Same command without just.
-CHOREO_NATS_ENABLED=false cargo run --locked -p choreo
+MADE_NATS_ENABLED=false cargo run --locked -p made
 
 # Optional: seed a demo council so ListCouncils/Deliberate are
 # immediately exercisable after boot.
-CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage just run
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage just run
 
 # Same seeded run without just.
-CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage \
-  cargo run --locked -p choreo
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage \
+  cargo run --locked -p made
 
 # With defaults, the binary expects NATS at nats://nats:4222 and uses
-# in-memory persistence unless CHOREO_POSTGRES_URL is set.
+# in-memory persistence unless MADE_POSTGRES_URL is set.
 just run
 
 # With the OTLP exporter compiled in. At runtime, set
-# CHOREO_OTLP_ENDPOINT to actually ship spans somewhere.
-CHOREO_OTLP_ENDPOINT=http://localhost:4317 just run-otel
+# MADE_OTLP_ENDPOINT to actually ship spans somewhere.
+MADE_OTLP_ENDPOINT=http://localhost:4317 just run-otel
 ```
 
 Full configuration surface — see the table in
-[`crates/choreo-adapters/src/config.rs`](../crates/choreo-adapters/src/config.rs)
+[`crates/made-adapters/src/config.rs`](../crates/made-adapters/src/config.rs)
 and
-[`charts/choreographer/values.yaml`](../charts/choreographer/values.yaml).
+[`charts/made/values.yaml`](../charts/made/values.yaml).
 
 ## Running the MCP adapter
 
 Fixture mode is the quickest MCP client-wiring path because it needs no
-running Choreographer:
+running MADE:
 
 ```bash
 # Installed binary.
-CHOREO_MCP_BACKEND=fixture choreo-mcp
+MADE_MCP_BACKEND=fixture made-mcp
 
 # Same mode from a checkout.
-CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
+MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 # One-shot terminal smoke.
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
-Live mode points at a running Choreographer:
+Live mode points at a running MADE:
 
 ```bash
 # Installed binary against the local server from `just run`.
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 # Same mode from a checkout.
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-  cargo run -p choreo-mcp --locked
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+  cargo run -p made-mcp --locked
 
 # One-shot smoke against the local server.
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_MCP_BIN=target/debug/choreo-mcp \
-  bash scripts/mcp/choreo-stdio-smoke.sh
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_MCP_BIN=target/debug/made-mcp \
+  bash scripts/mcp/made-stdio-smoke.sh
 ```
 
 The canonical end-user guide is
 [`docs/operations/mcp-stdio.md`](operations/mcp-stdio.md).
 
 For MCP parity against the real multi-agent vLLM council ceremony,
-point MCP at a Choreographer that has `kind=vllm` enabled and provide
+point MCP at a MADE instance that has `kind=vllm` enabled and provide
 the provider endpoint/model:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
-CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_VLLM_ENDPOINT=https://vllm.example.com \
+MADE_VLLM_MODEL=google/gemma-4-31B-it \
   make e2e-mcp-council-vllm
 ```
 
-This path intentionally enters through `choreo-mcp` stdio. Use
+This path intentionally enters through `made-mcp` stdio. Use
 `make e2e-council-vllm` when validating the direct gRPC runner instead.
 
 ## Adding a new port
 
-1. Define the trait in `choreo-core/src/ports/<name>.rs` and
+1. Define the trait in `made-core/src/ports/<name>.rs` and
    re-export from `ports/mod.rs`. Only domain types; no IO, no
    vendor vocabulary.
 2. Add adapter implementations under
-   `choreo-adapters/src/{memory,nats,postgres,grpc,…}/`.
-3. Wire the adapter through `choreo/src/compose.rs` (typically in
+   `made-adapters/src/{memory,nats,postgres,grpc,…}/`.
+3. Wire the adapter through `made/src/compose.rs` (typically in
    `wire_persistence` / `wire_messaging` or next to them).
 4. Add unit tests with an in-process stub.
 5. Add an integration test when the adapter has external
    behaviour (e.g. Postgres schema, NATS subjects, gRPC wire
    format). See
-   [`crates/choreo-tests-integration/tests/`](../crates/choreo-tests-integration/tests/)
+   [`crates/made-tests-integration/tests/`](../crates/made-tests-integration/tests/)
    for shape.
 
 ## Adding a new use case
 
-1. Create `choreo-app/src/usecases/<name>.rs` exposing a struct
+1. Create `made-app/src/usecases/<name>.rs` exposing a struct
    with constructor-injected ports + an `async fn execute`.
 2. Add `#[tracing::instrument(name = "...", skip_all,
    fields(...))]` on `execute` with the domain fields operators
    will query by.
 3. Re-export from `usecases/mod.rs`.
-4. Thread through `choreo/src/compose.rs`.
+4. Thread through `made/src/compose.rs`.
 5. If the use case exposes a gRPC surface, wire the handler in
-   `choreo-adapters/src/grpc/service.rs` and call
+   `made-adapters/src/grpc/service.rs` and call
    `link_span_to_metadata(&request)` at the top of the handler
    body so W3C tracecontext propagation keeps working.
 
 ## Adding a new provider adapter
 
 Provider adapters (LLMs, rule engines, humans-in-the-loop) live
-behind their own Cargo feature in `choreo-adapters/Cargo.toml`. See
+behind their own Cargo feature in `made-adapters/Cargo.toml`. See
 `agent-anthropic`, `agent-openai`, `agent-vllm` for the pattern. No
 provider is privileged — every one is a peer behind its flag.
 

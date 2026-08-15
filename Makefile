@@ -1,7 +1,7 @@
 SHELL := /usr/bin/env bash
 .DEFAULT_GOAL := help
 
-PROVIDER_FEATURES := --features choreo-adapters/agent-anthropic --features choreo-adapters/agent-openai --features choreo-adapters/agent-vllm
+PROVIDER_FEATURES := --features made-adapters/agent-anthropic --features made-adapters/agent-openai --features made-adapters/agent-vllm
 RUN_ARGS ?=
 VERSION ?=
 
@@ -24,13 +24,13 @@ help:
 		'  make e2e-compose            # manual E2E via docker/podman compose or podman-compose' \
 		'  make e2e-kubernetes         # manual E2E via Kubernetes Job' \
 		'  make e2e-provider-vllm      # provider-level vLLM E2E' \
-		'  make e2e-council-vllm       # Choreographer council E2E against real vLLM' \
+		'  make e2e-council-vllm       # MADE council E2E against real vLLM' \
 		'  make e2e-mcp-council-vllm   # MCP stdio council E2E against real vLLM' \
 		'  make consumer-smoke         # drive the public RPC + bus surface as a consumer would' \
 		'  make helm-lint              # helm lint + hardened render assertions' \
 		'  make build-image            # production container image' \
 		'  make build-provider-image   # provider E2E runner image' \
-		'  make run RUN_ARGS="..."     # run choreographer locally' \
+		'  make run RUN_ARGS="..."     # run MADE locally' \
 		'  make run-otel RUN_ARGS="..."' \
 		'  make version VERSION=X.Y.Z' \
 		'  make release VERSION=X.Y.Z'
@@ -79,8 +79,8 @@ e2e-mcp-council-vllm:
 	bash scripts/ci/e2e-mcp-council-vllm.sh
 
 consumer-smoke:
-	cargo run -p choreo-consumer-smoke -- \
-		--endpoint $${CHOREOGRAPHER_ENDPOINT:-http://localhost:50055} \
+	cargo run -p made-consumer-smoke -- \
+		--endpoint $${MADE_ENDPOINT:-http://localhost:50055} \
 		--chain $${CONSUMER_SMOKE_CHAIN:-all}
 
 helm-lint:
@@ -93,16 +93,16 @@ build-provider-image:
 	bash scripts/ci/build-provider-image.sh
 
 run:
-	cargo run --locked -p choreo $(RUN_ARGS)
+	cargo run --locked -p made $(RUN_ARGS)
 
 run-otel:
-	cargo run --locked -p choreo --features otel $(RUN_ARGS)
+	cargo run --locked -p made --features otel $(RUN_ARGS)
 
 bench-trace:
-	cargo bench -p choreo-core --bench trace_context
+	cargo bench -p made-core --bench trace_context
 
 bench-deliberate:
-	cargo bench -p choreo-app --bench deliberate
+	cargo bench -p made-app --bench deliberate
 
 bench-experiment-001:
 	bash docs/experiments/001-baseline-deliberation-latency/run.sh

@@ -14,7 +14,7 @@ ensure_testcontainers_host
 # Keep container-backed suites single-threaded to avoid parallel startup
 # spikes saturating the runner.
 RUST_TEST_THREADS=1 cargo test \
-  -p choreo-tests-integration \
+  -p made-tests-integration \
   --features container-tests \
   --test postgres_deliberation_repository \
   --test postgres_council_registry \

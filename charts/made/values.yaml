@@ -1,0 +1,325 @@
+replicaCount: 1
+
+image:
+  repository: ghcr.io/underpass-ai/made
+  pullPolicy: IfNotPresent
+  # One of `tag` or `digest` MUST be set. There is no default: mutable
+  # `:latest` pulls are refused in production to keep releases reproducible.
+  tag: ""
+  digest: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  # The binary does not call the Kubernetes API, so mounting the
+  # service-account token inside the pod is gratuitous attack
+  # surface. Turn it back on only if a future adapter legitimately
+  # needs in-cluster credentials.
+  automountServiceAccountToken: false
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  runAsNonRoot: true
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+service:
+  type: ClusterIP
+  # gRPC is the product surface; HTTP carries the health endpoints and
+  # the Prometheus `/metrics` scrape endpoint. Both land on a single
+  # Service with two named ports so probes can hit HTTP without DNS games.
+  port: 50055
+  httpPort: 8080
+  annotations: {}
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 1
+    memory: 512Mi
+
+probes:
+  liveness:
+    enabled: true
+    initialDelaySeconds: 10
+    periodSeconds: 10
+  readiness:
+    enabled: true
+    initialDelaySeconds: 5
+    periodSeconds: 10
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+# ---------------------------------------------------------------------------
+# Runtime configuration
+# ---------------------------------------------------------------------------
+#
+# MADE is provider-agnostic. None of these fields select a
+# specific LLM vendor; agent providers are configured by the deployment
+# (e.g. via secret-mounted config files or additional env vars) and plug in
+# through the `AgentPort` trait.
+config:
+  grpcPort: 50055
+  # The service exposes HTTP on a separate port for health probes
+  # and the Prometheus `/metrics` endpoint. Kept small, plaintext,
+  # cluster-internal.
+  httpPort: 8080
+  logLevel: info
+  # Optional startup seeding. Comma-separated list of specialty
+  # labels: for each one the binary registers a deterministic
+  # `NoopAgent` and a single-agent council, so the service is
+  # immediately exercisable end-to-end. Off by default — real
+  # deployments register agents through other channels.
+  seedSpecialties: ""
+
+# Extra env wiring for provider adapters. These fields are intentionally
+# generic because provider enablement is feature-gated in the binary
+# and env-gated at boot.
+#
+# Use `providerEnv` for individual vars, preferably with
+# `valueFrom.secretKeyRef` for credentials. Use `providerEnvFrom` when
+# an existing Secret or ConfigMap already exposes MADE_* keys.
+providerEnv: []
+providerEnvFrom: []
+
+messaging:
+  nats:
+    enabled: true
+    # Endpoint the binary connects to. The placeholder
+    # `nats://nats:4222` works out of the box against compose-shaped
+    # deployments. To use the chart's own embedded NATS, set this to
+    # an empty string and flip `embedded.enabled: true`; the chart
+    # then resolves the URL to the release-local Service
+    # (`<release>-nats:4222`). An explicit URL always wins over the
+    # embedded one.
+    url: nats://nats:4222
+    # Subject prefix used for MADE-published events.
+    publishPrefix: made
+    # Wildcard of inbound trigger subjects consumed by the service.
+    triggerSubject: made.trigger.>
+    # Optional in-release NATS server. Off by default to match the
+    # chart's "external dependencies" posture and to keep `helm install`
+    # cheap; flip to `true` in deployment-target values files (e.g.
+    # `values.underpass-runtime.yaml`) so MADE ships with
+    # its own bus and does not collide with sibling Underpass planes.
+    embedded:
+      enabled: false
+      image:
+        repository: docker.io/library/nats
+        tag: "2.10-alpine"
+        pullPolicy: IfNotPresent
+      # JetStream + persistence are off by default. Core NATS is enough
+      # for MADE's fire-and-forget event surface; opt in
+      # only when a stream-bound consumer needs it.
+      jetstream:
+        enabled: false
+        persistence:
+          enabled: false
+          size: 1Gi
+          storageClass: ""
+      monitoring:
+        enabled: false
+      resources:
+        requests:
+          cpu: 50m
+          memory: 64Mi
+        limits:
+          cpu: 500m
+          memory: 256Mi
+
+# Executor — what handles winning proposals after a council reaches a
+# decision. `noop` returns synthetic invocation IDs (good for smoke
+# testing the gRPC + bus surface without a runtime). `runtime` calls
+# `underpass-runtime`'s `SessionService` + `InvocationService` over
+# gRPC, which is the production posture.
+executor:
+  kind: noop  # one of: "noop" | "runtime"
+  runtime:
+    # gRPC endpoint of the sibling underpass-runtime service. Required
+    # when `kind: runtime`. Use `http://...` for plain HTTP/2 or
+    # `https://...` when the runtime presents TLS.
+    endpoint: ""
+    # Principal stamped on every `CreateSession` call. The runtime
+    # uses this to authorize tool invocations and to scope side-effects
+    # in its audit trail.
+    principal:
+      tenantId: ""
+      actorId: ""
+      # Comma-separated list, e.g. "developer,ops".
+      roles: ""
+    # Client TLS posture against the runtime. Independent of the
+    # server-side TLS (`tls.mode`) that this service presents to its
+    # own callers. Mirrors the runtime adapter's env-driven config.
+    tls:
+      # One of: "disabled" | "server" | "mutual".
+      #   - "disabled": plain HTTP/2 over TCP
+      #   - "server":   verify the runtime's server cert against a CA
+      #                 bundle this side already has
+      #   - "mutual":   in addition, present a client cert+key so the
+      #                 runtime can authenticate this caller
+      mode: disabled
+      # SAN/CN to expect on the runtime's server certificate. Optional;
+      # when empty the host portion of `endpoint` is used.
+      domainName: ""
+      # Kubernetes secret mounted read-only at
+      # /etc/made/runtime-tls. Required when `mode != disabled`.
+      # Expected keys:
+      #   ca.crt   — trust bundle for the runtime's server identity
+      #   tls.crt  — client cert PEM        (mutual only)
+      #   tls.key  — client private key PEM (mutual only)
+      existingSecret: ""
+
+# Persistent storage for deliberations, councils, agents, and
+# statistics. When `enabled: true`, every registry that has a
+# Postgres adapter goes through it atomically; migrations apply on
+# startup.
+persistence:
+  # Durable ceremony state: instances, their audit journal and their
+  # outbox. Off by default, and an unconfigured server says at startup
+  # that step leases, idempotency keys and pending human guards will
+  # not survive a restart.
+  #
+  # The embedded store takes an exclusive file lock and serves one
+  # process, so enabling this pins the deployment to a single replica.
+  # The chart refuses any other value rather than letting two pods
+  # contend for one file.
+  ceremonies:
+    enabled: false
+    mountPath: /var/lib/made
+    size: 1Gi
+    storageClass: ""
+
+  postgres:
+    enabled: false
+    # One of the two URL sources below must be set when enabled.
+    # Secret-by-reference is strongly preferred in production so
+    # the DSN (and the embedded password) never land in the
+    # Deployment spec or in Helm value files.
+    url: ""
+    urlFromSecret:
+      name: ""
+      key: ""
+
+tls:
+  # Transport security mode for the gRPC service.
+  # One of: "none" | "server" | "mutual".
+  #   - "none":   plain HTTP/2 over TCP (private mesh only)
+  #   - "server": one-way TLS; the server presents an identity, the
+  #               client verifies it via a trust anchor it already has
+  #   - "mutual": both server and client present identities; the server
+  #               validates the client cert against the CA bundle
+  # When non-"none", `existingSecret` must reference a Kubernetes
+  # `kubernetes.io/tls` (or similar) secret containing:
+  #   tls.crt  — server certificate PEM
+  #   tls.key  — server private key PEM
+  #   ca.crt   — client CA bundle PEM (required only for `mutual`)
+  # The secret is mounted read-only at /etc/made/tls and the
+  # binary picks up the paths via MADE_GRPC_TLS_* env vars.
+  mode: none
+  existingSecret: ""
+
+# PodDisruptionBudget. Only meaningful for multi-replica deployments;
+# off by default (single-replica is the chart's default posture).
+pdb:
+  enabled: false
+  # Either `minAvailable` or `maxUnavailable` — the template only
+  # emits a block when both this value is set and `pdb.enabled`.
+  minAvailable: 1
+  # maxUnavailable: ""
+
+# NetworkPolicy. Restricts both ingress (only declared ports) and
+# egress (DNS + NATS + Postgres + OTLP by default). Off by default
+# so the chart installs on clusters without a NetworkPolicy CNI;
+# production deployments should flip this to true.
+networkPolicy:
+  enabled: false
+  # Who can reach the pod. Must be a non-empty list in production —
+  # an empty list combined with a podSelector-only ingress rule
+  # would allow every pod in the namespace. Example:
+  #
+  #   ingressFrom:
+  #     - namespaceSelector:
+  #         matchLabels:
+  #           role: client
+  #     - podSelector:
+  #         matchLabels:
+  #           app.kubernetes.io/name: caller
+  ingressFrom: []
+  egress:
+    # Pre-wired egress blocks for the dependencies the binary
+    # actually talks to. Each entry is a single NetworkPolicy
+    # peer (`to`) + ports group; set it to `~` (null) to drop
+    # that block when the dependency lives outside the cluster
+    # and egress is permitted elsewhere.
+    nats:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: nats
+      ports:
+        - port: 4222
+          protocol: TCP
+    postgres:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: postgres
+      ports:
+        - port: 5432
+          protocol: TCP
+    otlp:
+      to:
+        - namespaceSelector: {}
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: otel-collector
+      ports:
+        - port: 4317
+          protocol: TCP
+    # Any extra rules operators want to append (e.g. vLLM endpoint,
+    # Anthropic/OpenAI via an egress proxy). Full NetworkPolicy
+    # rule shape.
+    extra: []
+
+# Read-only root filesystem is enforced via securityContext, but
+# libraries reach for /tmp occasionally. Mount an in-memory emptyDir
+# so those writes succeed without loosening the FS permissions.
+tmpVolume:
+  enabled: true
+  sizeLimit: 64Mi
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts: []
+  tls: []
+
+development:
+  # Setting `image.tag` to a mutable reference (e.g. "latest") is rejected
+  # unless explicitly allowed in a non-production environment.
+  allowMutableImageTags: false

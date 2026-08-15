@@ -1,0 +1,44 @@
+//! [`DeliberationPhase`] ↔ proto enum conversion.
+//!
+//! The domain FSM is 5-state (Proposing, Revising, Validating,
+//! Scoring, Completed); the proto enum matches it after the
+//! API-alignment slice.
+
+use made_core::entities::DeliberationPhase;
+use made_proto::v1 as pb;
+
+/// Project the domain [`DeliberationPhase`] onto the proto enum.
+///
+/// Used by the `StreamDeliberation` handler to emit phase transitions
+/// on the response stream.
+#[must_use]
+pub fn proto_phase_from_domain(phase: DeliberationPhase) -> pb::DeliberationPhase {
+    match phase {
+        DeliberationPhase::Proposing => pb::DeliberationPhase::Proposing,
+        DeliberationPhase::Revising => pb::DeliberationPhase::Revising,
+        DeliberationPhase::Validating => pb::DeliberationPhase::Validating,
+        DeliberationPhase::Scoring => pb::DeliberationPhase::Scoring,
+        DeliberationPhase::Completed => pb::DeliberationPhase::Completed,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_domain_phase_has_a_distinct_proto_value() {
+        use std::collections::HashSet;
+        let mapped: HashSet<i32> = [
+            DeliberationPhase::Proposing,
+            DeliberationPhase::Revising,
+            DeliberationPhase::Validating,
+            DeliberationPhase::Scoring,
+            DeliberationPhase::Completed,
+        ]
+        .iter()
+        .map(|p| proto_phase_from_domain(*p) as i32)
+        .collect();
+        assert_eq!(mapped.len(), 5);
+    }
+}

@@ -52,10 +52,10 @@ steps:
         - synthesizer
       rounds: 0
       num_agents: 4
-      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
-      provider.model: __CHOREO_VLLM_MODEL__
-      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
-      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      provider.endpoint: __MADE_VLLM_ENDPOINT__
+      provider.model: __MADE_VLLM_MODEL__
+      provider.max_tokens: __MADE_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __MADE_VLLM_TIMEOUT_SECS__
       prompt: "Open the meeting, restate the brief, and invite perspectives."
   - id: customer_story
     state: DIVERGING
@@ -66,10 +66,10 @@ steps:
       participants: *editorial_meeting_participants
       rounds: 0
       num_agents: 4
-      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
-      provider.model: __CHOREO_VLLM_MODEL__
-      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
-      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      provider.endpoint: __MADE_VLLM_ENDPOINT__
+      provider.model: __MADE_VLLM_MODEL__
+      provider.max_tokens: __MADE_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __MADE_VLLM_TIMEOUT_SECS__
       prompt: "Describe what the audience needs to understand and remember."
   - id: risk_check
     state: REVIEWING
@@ -80,10 +80,10 @@ steps:
       participants: *editorial_meeting_participants
       rounds: 0
       num_agents: 4
-      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
-      provider.model: __CHOREO_VLLM_MODEL__
-      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
-      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      provider.endpoint: __MADE_VLLM_ENDPOINT__
+      provider.model: __MADE_VLLM_MODEL__
+      provider.max_tokens: __MADE_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __MADE_VLLM_TIMEOUT_SECS__
       prompt: "Challenge weak assumptions and name risks in the plan."
   - id: decision_summary
     state: SYNTHESIZING
@@ -94,10 +94,10 @@ steps:
       participants: *editorial_meeting_participants
       rounds: 0
       num_agents: 4
-      provider.endpoint: __CHOREO_VLLM_ENDPOINT__
-      provider.model: __CHOREO_VLLM_MODEL__
-      provider.max_tokens: __CHOREO_VLLM_MAX_TOKENS__
-      provider.timeout_secs: __CHOREO_VLLM_TIMEOUT_SECS__
+      provider.endpoint: __MADE_VLLM_ENDPOINT__
+      provider.model: __MADE_VLLM_MODEL__
+      provider.max_tokens: __MADE_VLLM_MAX_TOKENS__
+      provider.timeout_secs: __MADE_VLLM_TIMEOUT_SECS__
       prompt: "Summarize the decision, owner, and next action."
 guards:
   open_room_completed:

@@ -4,7 +4,7 @@ This page records what the repository actually supports today. A
 support claim belongs here only when the source of truth and the
 enforcement gate are both named.
 
-Choreographer remains independently usable. KMP, PIR, Runtime, provider
+MADE remains independently usable. KMP, PIR, Runtime, provider
 endpoints, and downstream products may be useful integration cases, but
 they do not define this repository's support matrix unless this chart,
 binary, or API requires them.
@@ -28,9 +28,9 @@ Current support is exact-version support, not a broad Rust range.
   `clippy` and `rustfmt`.
 - The locked dependency graph in `Cargo.lock`.
 - The provider-feature matrix used by CI:
-  `choreo-adapters/agent-anthropic`,
-  `choreo-adapters/agent-openai`, and
-  `choreo-adapters/agent-vllm`.
+  `made-adapters/agent-anthropic`,
+  `made-adapters/agent-openai`, and
+  `made-adapters/agent-vllm`.
 
 ### Not Supported
 
@@ -76,8 +76,8 @@ Published image repositories:
 
 | Image | Purpose | Build source | Publish path |
 |---|---|---|---|
-| `ghcr.io/underpass-ai/underpass-choreographer` | Product runtime image | `Dockerfile` | `.github/workflows/publish-distribution.yml` |
-| `ghcr.io/underpass-ai/underpass-choreographer-e2e-runner` | Release/E2E runner image | `tests/e2e/runner.Dockerfile` | `.github/workflows/publish-distribution.yml` |
+| `ghcr.io/underpass-ai/made` | Product runtime image | `Dockerfile` | `.github/workflows/publish-distribution.yml` |
+| `ghcr.io/underpass-ai/made-e2e-runner` | Release/E2E runner image | `tests/e2e/runner.Dockerfile` | `.github/workflows/publish-distribution.yml` |
 
 The provider-E2E image built by `scripts/ci/build-provider-image.sh`
 is operator-pushed test tooling. It is not a supported production
@@ -112,7 +112,7 @@ Changing image tag support requires updating:
 
 - `.github/workflows/publish-distribution.yml`;
 - `scripts/ci/container-image.sh`, if local build semantics change;
-- `charts/choreographer/templates/_helpers.tpl`, if chart acceptance
+- `charts/made/templates/_helpers.tpl`, if chart acceptance
   changes;
 - `scripts/ci/helm-lint.sh`;
 - `docs/operations/deploy-kubernetes.md`;
@@ -125,18 +125,18 @@ Chart source and release registry:
 
 | Surface | Current value | Source of truth | Enforcement |
 |---|---:|---|---|
-| Chart path | `charts/choreographer` | repository layout | `scripts/ci/helm-lint.sh` |
-| Chart name | `choreographer` | `charts/choreographer/Chart.yaml` | `helm lint` |
-| Chart version | `0.1.0` | `charts/choreographer/Chart.yaml` `version` | `scripts/release.sh release` |
-| App version | `0.1.0` | `charts/choreographer/Chart.yaml` `appVersion` | `scripts/release.sh release` |
-| Kubernetes version floor | `>=1.28.0-0` | `charts/choreographer/Chart.yaml` `kubeVersion` | Helm client compatibility check |
-| OCI registry | `oci://ghcr.io/underpass-ai/charts/choreographer` | `.github/workflows/publish-distribution.yml` | `helm package` + `helm push` |
+| Chart path | `charts/made` | repository layout | `scripts/ci/helm-lint.sh` |
+| Chart name | `MADE` | `charts/made/Chart.yaml` | `helm lint` |
+| Chart version | `0.1.0` | `charts/made/Chart.yaml` `version` | `scripts/release.sh release` |
+| App version | `0.1.0` | `charts/made/Chart.yaml` `appVersion` | `scripts/release.sh release` |
+| Kubernetes version floor | `>=1.28.0-0` | `charts/made/Chart.yaml` `kubeVersion` | Helm client compatibility check |
+| OCI registry | `oci://ghcr.io/underpass-ai/charts/made` | `.github/workflows/publish-distribution.yml` | `helm package` + `helm push` |
 
 | Chart reference | Support status | Notes |
 |---|---|---|
-| Checkout chart at `charts/choreographer` | Supported for development, PR review, and release-candidate validation | Must pass `bash scripts/ci/helm-lint.sh`. |
-| `oci://ghcr.io/underpass-ai/charts/choreographer:0.1.0` | Pending | `0.1.0` is present in metadata but no public `v0.1.0` tag exists in this checkout yet. |
-| `oci://ghcr.io/underpass-ai/charts/choreographer:X.Y.Z` | Supported after the matching `vX.Y.Z` release tag publishes successfully | Chart `version`, `appVersion`, and workspace version must match. |
+| Checkout chart at `charts/made` | Supported for development, PR review, and release-candidate validation | Must pass `bash scripts/ci/helm-lint.sh`. |
+| `oci://ghcr.io/underpass-ai/charts/made:0.1.0` | Pending | `0.1.0` is present in metadata but no public `v0.1.0` tag exists in this checkout yet. |
+| `oci://ghcr.io/underpass-ai/charts/made:X.Y.Z` | Supported after the matching `vX.Y.Z` release tag publishes successfully | Chart `version`, `appVersion`, and workspace version must match. |
 | Older chart versions | Not currently supported | No stable-release support window has been declared yet. |
 | Unversioned or moving chart references | Not supported | Use an explicit chart version. |
 
@@ -145,8 +145,8 @@ Chart source and release registry:
 The release helper keeps these values in lockstep:
 
 - `Cargo.toml` `[workspace.package].version`;
-- `charts/choreographer/Chart.yaml` `version`;
-- `charts/choreographer/Chart.yaml` `appVersion`;
+- `charts/made/Chart.yaml` `version`;
+- `charts/made/Chart.yaml` `appVersion`;
 - Git tag `vX.Y.Z`;
 - published product image tag `vX.Y.Z`;
 - published E2E runner image tag `vX.Y.Z`;
@@ -159,7 +159,7 @@ match the binary/image version it is meant to deploy.
 
 Changing chart version support requires updating:
 
-- `charts/choreographer/Chart.yaml`;
+- `charts/made/Chart.yaml`;
 - `scripts/release.sh`;
 - `.github/workflows/publish-distribution.yml`;
 - `docs/release.md`;
@@ -172,7 +172,7 @@ Changing chart version support requires updating:
 Provider support has three separate gates:
 
 1. The binary must be compiled with the provider feature.
-2. Required `CHOREO_*` environment variables must be present at boot.
+2. Required `MADE_*` environment variables must be present at boot.
 3. The registered agent must use a kind listed in the startup
    `agent_kinds=...` log field.
 
@@ -182,9 +182,9 @@ descriptors may be persisted and must not carry credentials.
 | Kind | Cargo feature | Default product image | Required env | Optional env | Repo validation | Support status |
 |---|---|---:|---|---|---|---|
 | `noop` | none | yes | none | none | unit tests, local smoke, minimal Helm smoke | Always supported. |
-| `openai` | `choreo-adapters/agent-openai` | yes | `CHOREO_OPENAI_API_KEY` | `CHOREO_OPENAI_MODEL`, `CHOREO_OPENAI_ENDPOINT`, `CHOREO_OPENAI_MAX_TOKENS` | CI compile/test, compose scenario with OpenAI-compatible stub, consumer positive-path | Supported adapter shape. Real provider credentials, quotas, endpoint policy, and model behavior are operator-owned. |
-| `vllm` | `choreo-adapters/agent-vllm` | yes | `CHOREO_VLLM_MODEL`, `CHOREO_VLLM_ENDPOINT` | `CHOREO_VLLM_BEARER_TOKEN`, `CHOREO_VLLM_MAX_TOKENS`, `CHOREO_VLLM_TIMEOUT_SECS` | CI compile/test, compose scenario with OpenAI-compatible stub, provider-E2E runner for real vLLM, gRPC council runner, MCP council runner (operator-run real execution pending) | Supported adapter shape. Service factory Helm path supports endpoint/model/bearer; vLLM client cert envs are provider-E2E runner only today. |
-| `anthropic` | `choreo-adapters/agent-anthropic` | no | `CHOREO_ANTHROPIC_API_KEY` | `CHOREO_ANTHROPIC_MODEL`, `CHOREO_ANTHROPIC_ENDPOINT`, `CHOREO_ANTHROPIC_MAX_TOKENS` | CI compile/test | Implemented feature, not included in the default Dockerfile, and not covered by repo-owned E2E yet. Operators need a downstream image that enables the feature. |
+| `openai` | `made-adapters/agent-openai` | yes | `MADE_OPENAI_API_KEY` | `MADE_OPENAI_MODEL`, `MADE_OPENAI_ENDPOINT`, `MADE_OPENAI_MAX_TOKENS` | CI compile/test, compose scenario with OpenAI-compatible stub, consumer positive-path | Supported adapter shape. Real provider credentials, quotas, endpoint policy, and model behavior are operator-owned. |
+| `vllm` | `made-adapters/agent-vllm` | yes | `MADE_VLLM_MODEL`, `MADE_VLLM_ENDPOINT` | `MADE_VLLM_BEARER_TOKEN`, `MADE_VLLM_MAX_TOKENS`, `MADE_VLLM_TIMEOUT_SECS` | CI compile/test, compose scenario with OpenAI-compatible stub, provider-E2E runner for real vLLM, gRPC council runner, MCP council runner (operator-run real execution pending) | Supported adapter shape. Service factory Helm path supports endpoint/model/bearer; vLLM client cert envs are provider-E2E runner only today. |
+| `anthropic` | `made-adapters/agent-anthropic` | no | `MADE_ANTHROPIC_API_KEY` | `MADE_ANTHROPIC_MODEL`, `MADE_ANTHROPIC_ENDPOINT`, `MADE_ANTHROPIC_MAX_TOKENS` | CI compile/test | Implemented feature, not included in the default Dockerfile, and not covered by repo-owned E2E yet. Operators need a downstream image that enables the feature. |
 
 Per-agent descriptor attributes supported by provider adapters:
 
@@ -202,14 +202,14 @@ Per-agent descriptor attributes supported by provider adapters:
 | `just check` / `scripts/ci/quality-gate.sh` | `agent-anthropic`, `agent-openai`, `agent-vllm` |
 | Compose E2E stack | OpenAI-compatible and vLLM-compatible stub paths |
 | Provider-E2E runner image | real `agent-vllm` runner path |
-| MCP council runner | real `agent-vllm` path through `choreo-mcp` stdio; operator-run execution pending |
+| MCP council runner | real `agent-vllm` path through `made-mcp` stdio; operator-run execution pending |
 
 ### Change Rule
 
 Changing provider support requires updating:
 
-- `crates/choreo-adapters/Cargo.toml`;
-- `crates/choreo-adapters/src/agents/factory.rs`;
+- `crates/made-adapters/Cargo.toml`;
+- `crates/made-adapters/src/agents/factory.rs`;
 - `Dockerfile`, if the default product image feature set changes;
 - `justfile` and `scripts/ci/quality-gate.sh`, if CI feature coverage
   changes;
@@ -249,7 +249,7 @@ the shape.
 - Chart-managed Ingress. `values.yaml` has reserved ingress fields, but
   no Ingress template is shipped yet.
 - Embedded NATS as a highly available durable event store. Current
-  Choreographer events are fire-and-forget and the embedded profile
+  MADE events are fire-and-forget and the embedded profile
   disables JetStream by default.
 - Multi-replica production state without an explicit state plan.
   Postgres covers current persistent repositories, but output-contract
@@ -263,9 +263,9 @@ the shape.
 
 Changing Kubernetes posture support requires updating:
 
-- `charts/choreographer/values.yaml`;
-- any checked-in profile under `charts/choreographer/values.*.yaml`;
-- relevant templates under `charts/choreographer/templates/`;
+- `charts/made/values.yaml`;
+- any checked-in profile under `charts/made/values.*.yaml`;
+- relevant templates under `charts/made/templates/`;
 - `scripts/ci/helm-lint.sh`;
 - `docs/operations/deploy-kubernetes.md`;
 - this support matrix;

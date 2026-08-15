@@ -1,0 +1,60 @@
+{{- /*
+Post-install notes. The one thing an operator must not discover weeks
+later is that deliberations ran without exported traces: auditable
+decision traces are the product's core promise, and the `otel` feature
+stays dormant unless MADE_OTLP_ENDPOINT is present (see
+crates/made/src/telemetry.rs). Mirror the deployment template's
+providerEnv introspection (and its providerEnvFrom escape hatch, since a
+Secret/ConfigMap cannot be introspected at render time) and shout when
+tracing is off.
+*/ -}}
+{{- $penv := dict }}
+{{- range (.Values.providerEnv | default list) }}
+{{- $penv = set $penv .name ((.value | default "from-ref") | toString) }}
+{{- end }}
+{{- $tracingOn := hasKey $penv "MADE_OTLP_ENDPOINT" }}
+{{ include "made.fullname" . }} deployed in namespace {{ .Release.Namespace }}.
+
+  gRPC (MadeService): {{ include "made.fullname" . }}:{{ .Values.service.port }}
+  HTTP (healthz, /metrics):    {{ include "made.fullname" . }}:{{ .Values.service.httpPort }}
+{{- if $tracingOn }}
+
+  Tracing: MADE_OTLP_ENDPOINT = {{ get $penv "MADE_OTLP_ENDPOINT" }}
+  Every deliberation and ceremony is exported as a distributed trace
+  (per-proposal and judge-verdict span events included).
+{{- else if .Values.providerEnvFrom }}
+
+  Tracing: MADE_OTLP_ENDPOINT not found in providerEnv. If your
+  providerEnvFrom Secret/ConfigMap sets it, traces are being exported and
+  you can ignore this note. If it does not, see the warning below — the
+  chart cannot introspect envFrom sources at render time.
+{{- end }}
+{{- if and (not $tracingOn) (not .Values.providerEnvFrom) }}
+
+  ##############################################################################
+  ##                                                                          ##
+  ##   ██     ██  █████  ██████  ███    ██ ██ ███    ██  ██████               ##
+  ##   ██     ██ ██   ██ ██   ██ ████   ██ ██ ████   ██ ██                    ##
+  ##   ██  █  ██ ███████ ██████  ██ ██  ██ ██ ██ ██  ██ ██   ███              ##
+  ##   ██ ███ ██ ██   ██ ██   ██ ██  ██ ██ ██ ██  ██ ██ ██    ██              ##
+  ##    ███ ███  ██   ██ ██   ██ ██   ████ ██ ██   ████  ██████               ##
+  ##                                                                          ##
+  ##   DECISION TRACES ARE NOT BEING EXPORTED                                 ##
+  ##                                                                          ##
+  ##   MADE_OTLP_ENDPOINT is not set. Deliberations, councils and           ##
+  ##   ceremonies will run, but their traces stay inside the pod's            ##
+  ##   stdout logs: no distributed trace, no per-proposal spans, no           ##
+  ##   judge-verdict span events, no cross-service correlation.               ##
+  ##                                                                          ##
+  ##   Auditable decision traces are the point of this product. Wire          ##
+  ##   the exporter before you rely on any deliberation outcome:              ##
+  ##                                                                          ##
+  ##     providerEnv:                                                         ##
+  ##       - name: MADE_OTLP_ENDPOINT                                       ##
+  ##         value: "http://<your-otlp-collector>:4317"                       ##
+  ##                                                                          ##
+  ##   (mTLS deployments: add the MADE_OTLP_TLS_* variables; see            ##
+  ##   values.underpass-runtime.yaml for a worked example.)                   ##
+  ##                                                                          ##
+  ##############################################################################
+{{- end }}

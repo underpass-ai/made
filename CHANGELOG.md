@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to the Underpass Choreographer are tracked here.
+All notable changes to MADE are tracked here.
 
 This repository has not cut a public `v*` tag yet. The workspace and
 Helm chart currently carry version `0.1.0`; keep entries under
@@ -20,39 +20,39 @@ operator command.
   the active MCP executable catalog, execution ownership and configured
   durability. Root, plugin and embedded documentation now direct agents to
   verify each claim independently.
-- MCP self-description through `choreo_discover_capabilities`, derived from
-  the active backend-filtered tool catalog, plus `choreo_get_help` guidance
+- MCP self-description through `made_discover_capabilities`, derived from
+  the active backend-filtered tool catalog, plus `made_get_help` guidance
   for users and agents. Discovery marks artifact generators and their
   persistence boundary; agent help covers preconditions, authority,
   delegated-host sequencing and errors. The Codex plugin smoke now proves the
   report generator is advertised and generates Markdown.
 - Embedded MCP adapters for host-owned step execution through
-  `choreo_claim_ceremony_step` and `choreo_complete_ceremony_step`, reusing the
+  `made_claim_ceremony_step` and `made_complete_ceremony_step`, reusing the
   existing start/complete application use cases. Guidance distinguishes a
   configured real server handler, the bundled no-op default, and delegated
   host work completed only with observable output/evidence.
-- Embedded MCP ceremony reports through `choreo_generate_ceremony_report`.
+- Embedded MCP ceremony reports through `made_generate_ceremony_report`.
   Reports project one or more persisted snapshots, resolved definitions and
   ordered audit journals into deterministic, injection-safe Markdown, return
   structured completion and definition-binding metadata, and perform no write.
 - Host-owned MCP server identity for embedded compositions. The default remains
-  `underpass-choreo-mcp`, while an embedding application can advertise its own
+  `underpass-made-mcp`, while an embedding application can advertise its own
   name and version during the MCP initialization handshake.
 - Embedded ceremony instance discovery through
-  `choreo_list_ceremony_instances`. Hosts can enumerate recoverable meetings
+  `made_list_ceremony_instances`. Hosts can enumerate recoverable meetings
   after losing conversation context, refresh the selected instance, and resume
   without approving guards, closing interventions, or replaying operational
   work. Process-restart durability remains a responsibility of the repositories
   configured by the embedded host.
 - Embedded MCP backend and repo-local Codex plugin bundle. The isolated
-  `choreo-mcp` build completes the MCP stdio handshake and runs ceremonies
+  `made-mcp` build completes the MCP stdio handshake and runs ceremonies
   without gRPC/protobuf. Its current backend-filtered catalog also includes
   discovery, authoring, incremental controls, delegated-host execution,
   interventions, evidence and reports; callers must use
-  `choreo_discover_capabilities` for the exact installed surface. Direct,
+  `made_discover_capabilities` for the exact installed surface. Direct,
   process, dependency-boundary and plugin-launcher smoke tests cover the
   bundle.
-- `choreo-embedded`, an in-process distribution of the ceremony engine with
+- `made-embedded`, an in-process distribution of the ceremony engine with
   local defaults, injectable domain ports, an async host-callback step adapter,
   incremental human-active operations, and no required gRPC, NATS or Postgres
   dependency. It uses the same domain and application use cases as the
@@ -95,7 +95,7 @@ operator command.
 - LLM-as-judge scoring: an optional `JudgeAwareScoring` strategy fed by an
   `LlmJudgeValidator` that ranks deliberation proposals by intrinsic
   quality instead of validator pass-fraction. Opt-in via
-  `CHOREO_JUDGE_ENABLED` (with `CHOREO_JUDGE_THRESHOLD`), reusing the vLLM
+  `MADE_JUDGE_ENABLED` (with `MADE_JUDGE_THRESHOLD`), reusing the vLLM
   endpoint/model; fail-fast wiring and a Helm chart guard refuse a
   judge-on-without-vLLM configuration. Covered by unit tests and a
   provider-backed E2E.
@@ -105,24 +105,24 @@ operator command.
   injected into each agent's task, and a Mermaid sequence diagram in the
   response. Catalog ceremonies (daily standup, technical debate, sprint
   planning, speaker + Q&A) run end-to-end in CI, driven by the
-  `choreo-run-ceremony` operator tool.
+  `made-run-ceremony` operator tool.
 - Helm persistence for the judge + vLLM provider env in the
   `underpass-runtime` overlay, guarded by a CI marker and a chart `fail`
   assertion enforcing the judge↔vLLM coupling.
 - Product usability and publication planning:
   `docs/product-usability-publication-plan.md` and
   `docs/product-publication-checklist.md`.
-- Explicit documentation that Choreographer is agnostic and
+- Explicit documentation that MADE is agnostic and
   independently usable; KMP, PIR, Runtime, and other projects are study
   cases or optional integrations, not required dependencies.
 - Local no-external-service quickstart:
-  `CHOREO_NATS_ENABLED=false just run`.
+  `MADE_NATS_ENABLED=false just run`.
 - MCP fixture and live-gRPC quickstarts, plus examples for
   `CreateCouncil`, `RegisterAgent`, `RegisterContract`,
   `RunCouncilDecision`, and `Orchestrate`.
 - Repo-owned compose E2E guide covering the compose scenarios, stubs,
   Report schema, and provider-shaped OpenAI/vLLM paths.
-- E2E runner scenario selection through `CHOREO_E2E_SCENARIOS`, with
+- E2E runner scenario selection through `MADE_E2E_SCENARIOS`, with
   groups for `compose`, `cluster-connectivity`, `runtime-stub`, and
   `structured-output`.
 - Consumer smoke `positive-path`, including Report contract
@@ -145,6 +145,27 @@ operator command.
 
 ### Changed
 
+- **Renamed: Underpass Choreographer is now MADE by Underpass** — the
+  Multi-Agent Deliberation Engine. The repository moved to
+  `underpass-ai/made`. Every naming surface moved with it, and all of these
+  are breaking for existing callers and deployments:
+  - crates `choreo-*` → `made-*`, and the server binary `choreo` → `made`;
+  - proto package `underpass.choreo.v1` → `underpass.made.v1`, service
+    `ChoreographerService` → `MadeService`;
+  - MCP tools `choreo_*` → `made_*`;
+  - environment variables `CHOREO_*` / `CHOREOGRAPHER_*` → `MADE_*`;
+  - NATS subjects `choreo.*` → `made.*` and Prometheus metrics
+    `choreo_*` → `made_*`;
+  - Helm chart `charts/choreographer` → `charts/made`, default namespace
+    `choreographer-system` → `made-system`, image
+    `ghcr.io/underpass-ai/underpass-choreographer` →
+    `ghcr.io/underpass-ai/made`;
+  - Codex plugin `plugins/choreographer` → `plugins/made`.
+
+  Behavior is unchanged: this release renames, it does not re-scope. The
+  engine still runs councils, ceremonies, contracts and judge scoring
+  exactly as before.
+
 - Contract gate validators tolerate Markdown-fenced JSON payloads (#120):
   a proposal that is *purely* a fenced JSON block is unwrapped before
   validation, so the gate measures evidence quality, not transport
@@ -165,9 +186,9 @@ operator command.
   structured Report output and provider-shaped paths.
 - Kubernetes smoke has been validated with the selected
   cluster-connectivity group.
-- `choreo-consumer-smoke` has been validated for rejection-path and
-  positive-path behavior against local Choreographer, NATS, and
-  `choreo-stub-llm`.
+- `made-consumer-smoke` has been validated for rejection-path and
+  positive-path behavior against local MADE, NATS, and
+  `made-stub-llm`.
 
 ### Security
 
@@ -181,7 +202,7 @@ operator command.
 - No public immutable `v*` tag, release image, OCI chart, or crates.io
   package has been cut yet; current published `sha-*` images are RC
   smoke artifacts, not stable release artifacts.
-- `choreo-mcp` can only be published after `choreo-mcp-proto v0.1.0`
+- `made-mcp` can only be published after `made-mcp-proto v0.1.0`
   is available in crates.io.
 - Provider-backed positive smokes are validated with deterministic
   OpenAI-compatible stubs unless a real provider is explicitly wired by
@@ -193,5 +214,5 @@ operator command.
 ## 0.1.0 - Pending
 
 - Initial pre-release version present in `Cargo.toml` and
-  `charts/choreographer/Chart.yaml`.
+  `charts/made/Chart.yaml`.
 - No immutable `v0.1.0` tag is present in this checkout yet.

@@ -9,7 +9,7 @@ set -euo pipefail
 # the registry mirrored (kind, podman-desktop, etc.) can pull it.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IMAGE_TAG="${IMAGE_TAG:-underpass-choreographer-e2e-provider:dev}"
+IMAGE_TAG="${IMAGE_TAG:-made-e2e-provider:dev}"
 DOCKERFILE="${ROOT_DIR}/tests/e2e/provider-runner.Dockerfile"
 
 cd "${ROOT_DIR}"

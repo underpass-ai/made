@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1.7
 #
-# Underpass Choreographer — multi-stage build.
+# MADE — multi-stage build.
 # Works identically under docker and podman. Produces a minimal
 # distroless-style runtime image that runs as a non-root user.
 
@@ -39,31 +39,31 @@ COPY crates ./crates
 # that flips the corresponding flag.
 #
 # `otel` is compiled in but dormant: it exports spans over OTLP only
-# when `CHOREO_OTLP_ENDPOINT` is set, so an image without that env is
+# when `MADE_OTLP_ENDPOINT` is set, so an image without that env is
 # byte-for-byte the same behaviour as before (JSON spans to stdout).
-RUN --mount=type=cache,id=cargo-registry-choreo,target=/usr/local/cargo/registry \
-    --mount=type=cache,id=cargo-target-choreo,target=/src/target \
-    cargo build --release --locked --bin choreo \
-        --features choreo-adapters/agent-openai \
-        --features choreo-adapters/agent-vllm \
-        --features choreo/otel \
- && install -Dm 0755 target/release/choreo /out/choreo
+RUN --mount=type=cache,id=cargo-registry-made,target=/usr/local/cargo/registry \
+    --mount=type=cache,id=cargo-target-made,target=/src/target \
+    cargo build --release --locked --bin made \
+        --features made-adapters/agent-openai \
+        --features made-adapters/agent-vllm \
+        --features made/otel \
+ && install -Dm 0755 target/release/made /out/made
 
 # ---------------------------------------------------------------------------
 # Runtime
 # ---------------------------------------------------------------------------
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
-LABEL org.opencontainers.image.title="underpass-choreographer" \
+LABEL org.opencontainers.image.title="made" \
       org.opencontainers.image.description="Event-driven coordinator of specialist agent councils. Use-case agnostic." \
       org.opencontainers.image.vendor="Underpass AI" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/underpass-ai/underpass-choreographer"
+      org.opencontainers.image.source="https://github.com/underpass-ai/made"
 
-COPY --from=builder /out/choreo /usr/local/bin/choreo
+COPY --from=builder /out/made /usr/local/bin/made
 
 USER nonroot:nonroot
 
 EXPOSE 50055
 
-ENTRYPOINT ["/usr/local/bin/choreo"]
+ENTRYPOINT ["/usr/local/bin/made"]

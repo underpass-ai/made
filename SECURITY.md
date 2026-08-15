@@ -1,10 +1,10 @@
 # Security Policy
 
 This repository is the security boundary for the Underpass
-Choreographer: the gRPC API, MCP adapter, event contracts, provider
+MADE: the gRPC API, MCP adapter, event contracts, provider
 adapter wiring, container image, and Helm chart in this checkout.
 
-The Choreographer is product-agnostic and independently deployable. It
+MADE is product-agnostic and independently deployable. It
 does not require KMP, PIR, Runtime, or any downstream product to run.
 Security issues in sibling projects should be reported to those
 projects unless the impact crosses into this repository's code,
@@ -35,7 +35,7 @@ let another party reproduce the issue.
 Preferred private channel:
 
 - GitHub private vulnerability reporting:
-  <https://github.com/underpass-ai/underpass-choreographer/security/advisories/new>
+  <https://github.com/underpass-ai/made/security/advisories/new>
 
 If that channel is unavailable, contact the maintainers through the
 private project channel already used for the deployment or customer
@@ -94,7 +94,7 @@ checks, or tests. Current baseline expectations:
   and no mounted service account token unless a deployment has a
   specific reason to change it.
 - Treat MCP clients as API clients. If MCP connects to a hardened
-  Choreographer deployment, configure the MCP gRPC backend with the
+  MADE deployment, configure the MCP gRPC backend with the
   same TLS or mTLS posture.
 - Provider adapters are enabled only when the binary is built with the
   relevant feature and the required environment variables are present.
@@ -102,13 +102,13 @@ checks, or tests. Current baseline expectations:
 
 ## Secrets and Incident Containment
 
-If a Choreographer deployment may have exposed secrets:
+If a MADE deployment may have exposed secrets:
 
 1. Revoke or rotate provider API keys and bearer tokens.
 2. Rotate Postgres DSNs, NATS credentials embedded in URLs, TLS
    certificates, and MCP client certificates that could have been read.
 3. Redeploy with a pinned fixed image digest and reviewed Helm values.
-4. Check Choreographer logs, provider logs, Postgres access logs, NATS
+4. Check MADE logs, provider logs, Postgres access logs, NATS
    logs, and Kubernetes audit logs for unexpected access.
 5. Re-register affected agents or contracts only after confirming they
    do not contain credentials.

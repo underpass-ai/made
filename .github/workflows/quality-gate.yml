@@ -76,13 +76,13 @@ jobs:
       - name: Check embedded dependency boundary
         run: bash scripts/ci/embedded-dependency-boundary.sh
       - name: Lint embedded feature boundary
-        run: cargo clippy -p choreo-embedded --all-targets --locked -- -D warnings
+        run: cargo clippy -p made-embedded --all-targets --locked -- -D warnings
       - name: Lint embedded MCP backend
-        run: cargo clippy -p choreo-mcp --all-targets --no-default-features --features embedded --locked -- -D warnings
+        run: cargo clippy -p made-mcp --all-targets --no-default-features --features embedded --locked -- -D warnings
       - name: Test embedded MCP stdio
-        run: cargo test -p choreo-mcp --all-targets --no-default-features --features embedded --locked
+        run: cargo test -p made-mcp --all-targets --no-default-features --features embedded --locked
       - name: Smoke-test Codex plugin bundle
-        run: bash scripts/ci/choreographer-plugin-smoke.sh
+        run: bash scripts/ci/made-plugin-smoke.sh
 
   clippy:
     runs-on: ubuntu-24.04
@@ -112,12 +112,12 @@ jobs:
         # runtime.
         run: |
           cargo clippy --workspace --all-targets --locked \
-            --features choreo-embedded/redb \
-            --features choreo-adapters/agent-anthropic \
-            --features choreo-adapters/agent-openai \
-            --features choreo-adapters/agent-vllm \
-            --features choreo-adapters/redb \
-            --features choreo-adapters/kmp \
+            --features made-embedded/redb \
+            --features made-adapters/agent-anthropic \
+            --features made-adapters/agent-openai \
+            --features made-adapters/agent-vllm \
+            --features made-adapters/redb \
+            --features made-adapters/kmp \
             -- -D warnings
 
   test:
@@ -152,12 +152,12 @@ jobs:
         # success without it.
         run: |
           cargo test --workspace --locked \
-            --features choreo-embedded/redb \
-            --features choreo-adapters/agent-anthropic \
-            --features choreo-adapters/agent-openai \
-            --features choreo-adapters/agent-vllm \
-            --features choreo-adapters/redb \
-            --features choreo-adapters/kmp
+            --features made-embedded/redb \
+            --features made-adapters/agent-anthropic \
+            --features made-adapters/agent-openai \
+            --features made-adapters/agent-vllm \
+            --features made-adapters/redb \
+            --features made-adapters/kmp
 
   container-image:
     runs-on: ubuntu-24.04
@@ -212,7 +212,7 @@ jobs:
 
   publish-dry-run:
     # Catches packaging regressions for the two crates that go to
-    # crates.io (`choreo-mcp-proto` + `choreo-mcp`) before they hit
+    # crates.io (`made-mcp-proto` + `made-mcp`) before they hit
     # the publish-distribution workflow. No registry token is
     # required — `cargo publish --dry-run` and `cargo package -l`
     # only validate metadata and the file list.

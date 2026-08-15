@@ -1,0 +1,102 @@
+[package]
+name = "made-adapters"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Infrastructure adapters implementing MADE ports. Provider-agnostic; each integration is opt-in via a Cargo feature."
+
+[lints]
+workspace = true
+
+# Provider adapters are opt-in. The MADE core is agnostic to any
+# particular LLM vendor, transport, or message bus; concrete integrations
+# live behind features so that consumers pick what they need.
+[features]
+default = ["grpc", "nats", "runtime-grpc"]
+
+# Transports / infra. `grpc` is the inbound MADE service;
+# `runtime-grpc` is the independent outbound Runtime executor adapter.
+grpc = ["dep:made-proto", "dep:prost-types", "dep:tokio-stream", "dep:tonic"]
+nats = ["dep:async-nats", "dep:futures"]
+runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
+
+# Persistence. Postgres adapter for DeliberationRepositoryPort.
+# Other registries (councils, agents, statistics) remain in-memory
+# in this slice; they will grow their own persistent backings in
+# later slices.
+postgres = ["dep:sqlx"]
+
+# Embedded persistence. redb is the store the embedded distribution
+# uses: pure Rust, no non-optional dependencies and no C toolchain, so
+# an embedded host stays free of system dependencies.
+redb = ["dep:redb"]
+
+# Memory that outlives a session, kept by an external memory kernel
+# spoken to over its tool protocol. Deliberately dependency-free: a
+# child process and JSON, so this crate stays publishable without
+# taking on another workspace's release cadence.
+kmp = []
+
+# OpenTelemetry integration. Pulls in the bridge crates the gRPC
+# interceptor needs to extract W3C tracecontext from request
+# metadata and set it as the OTel parent context. The exporter
+# itself lives in the MADE binary crate under the same flag.
+otel = [
+    "dep:opentelemetry",
+    "dep:opentelemetry_sdk",
+    "dep:tracing-opentelemetry",
+]
+
+# Agent providers (LLMs, humans-in-the-loop, rule engines, ...).
+# Each is a peer adapter behind its own feature flag — none is privileged.
+agent-vllm = ["_http"]
+agent-anthropic = ["_http"]
+agent-openai = ["_http"]
+
+# Internal helper feature: shared HTTP client wiring for any provider adapter.
+_http = ["dep:reqwest", "dep:url"]
+
+[dependencies]
+made-core = { workspace = true }
+made-app = { workspace = true }
+made-proto = { workspace = true, optional = true }
+async-trait = { workspace = true }
+thiserror = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tokio-stream = { workspace = true, optional = true }
+futures = { workspace = true, optional = true }
+tonic = { workspace = true, optional = true }
+tracing = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde_yaml = { workspace = true }
+figment = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+jsonschema = { workspace = true }
+prometheus = { workspace = true }
+
+prost-types = { workspace = true, optional = true }
+async-nats = { workspace = true, optional = true }
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+url = { workspace = true, optional = true }
+redb = { workspace = true, optional = true }
+sqlx = { workspace = true, optional = true }
+opentelemetry = { workspace = true, optional = true }
+opentelemetry_sdk = { workspace = true, optional = true }
+tracing-opentelemetry = { workspace = true, optional = true }
+
+[dev-dependencies]
+made-core = { workspace = true, features = ["conformance"] }
+tempfile = "3"
+mockall = { workspace = true }
+tokio-test = { workspace = true }
+wiremock = "0.6"
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+opentelemetry_sdk = { workspace = true }
+tracing-opentelemetry = { workspace = true }

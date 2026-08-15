@@ -1,6 +1,6 @@
 # Contributing
 
-This repository is the Underpass Choreographer. Contributions should
+This repository is MADE. Contributions should
 keep it independently usable, use-case agnostic, provider-agnostic, and
 API-first.
 
@@ -14,13 +14,13 @@ Start here:
 
 ## What Belongs Here
 
-Choreographer-owned work includes:
+MADE-owned work includes:
 
-- gRPC contracts under `crates/choreo-proto/proto/underpass/choreo/v1`;
+- gRPC contracts under `crates/made-proto/proto/underpass/made/v1`;
 - AsyncAPI event contracts under `specs/asyncapi`;
 - council, agent, deliberation, output-contract, and orchestration
   behavior;
-- MCP exposure of the Choreographer gRPC surface;
+- MCP exposure of the MADE gRPC surface;
 - provider adapter boundaries that stay behind `AgentPort`;
 - Runtime executor integration as an optional executor adapter;
 - container image, Helm chart, and repo-owned smoke/E2E tooling.
@@ -29,7 +29,7 @@ Work that belongs elsewhere:
 
 - KMP, PIR, Runtime, or product-specific business workflows;
 - domain vocabulary in core contracts or chart defaults;
-- provider-specific behavior in `choreo-core`;
+- provider-specific behavior in `made-core`;
 - deployment credentials, private endpoints, customer data, or secrets.
 
 Use `attributes`, `payload`, or `google.protobuf.Struct` for
@@ -50,13 +50,13 @@ Use the setup in `docs/dev-loop.md`. Minimum tools:
 The smallest local run has no external dependencies:
 
 ```bash
-CHOREO_NATS_ENABLED=false just run
+MADE_NATS_ENABLED=false just run
 ```
 
 Without `just`:
 
 ```bash
-CHOREO_NATS_ENABLED=false cargo run --locked -p choreo
+MADE_NATS_ENABLED=false cargo run --locked -p made
 ```
 
 ## Development Workflow
@@ -110,7 +110,7 @@ Run consumer smoke when changing the public gRPC behavior that
 downstream consumers rely on:
 
 ```bash
-cargo run -p choreo-consumer-smoke --locked -- \
+cargo run -p made-consumer-smoke --locked -- \
   --endpoint http://127.0.0.1:50055 \
   --chain all
 ```
@@ -120,10 +120,10 @@ run instead.
 
 ## Contract Changes
 
-Choreographer is API-first:
+MADE is API-first:
 
-- gRPC source: `crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`;
-- AsyncAPI source: `specs/asyncapi/choreographer.asyncapi.yaml`.
+- gRPC source: `crates/made-proto/proto/underpass/made/v1/made.proto`;
+- AsyncAPI source: `specs/asyncapi/made.asyncapi.yaml`.
 
 For public-surface changes:
 
@@ -193,7 +193,7 @@ Prefer concise, imperative commits. Existing history commonly uses:
 - `chore: ...`
 
 PR descriptions should lead with what changed and why it belongs in the
-Choreographer. Include the gates run and any gate you could not run.
+MADE. Include the gates run and any gate you could not run.
 
 ## Release Work
 

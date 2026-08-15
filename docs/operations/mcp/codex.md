@@ -2,8 +2,8 @@
 
 Codex CLI reads MCP servers from its TOML config (usually
 `~/.codex/config.toml` or `~/.config/codex/config.toml`). The
-`choreo-mcp` adapter is added once; every Codex session can then call
-the 35 backend-owned `choreo_*` tools plus the two server-owned discovery and
+`made-mcp` adapter is added once; every Codex session can then call
+the 35 backend-owned `made_*` tools plus the two server-owned discovery and
 help tools exposed in gRPC mode.
 
 See the canonical UX reference at
@@ -15,27 +15,27 @@ env-var reference, and TLS posture options.
 Install from crates.io:
 
 ```bash
-cargo install choreo-mcp --locked
+cargo install made-mcp --locked
 ```
 
 The dev fallback (in-tree source) lives at
-`CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh`
+`MADE_MCP_INSTALL_MODE=git bash scripts/mcp/install-made-mcp.sh`
 in the repo.
 
 ```bash
-codex mcp add underpass-choreographer \
-  --env CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com \
-  -- choreo-mcp
+codex mcp add made \
+  --env MADE_MCP_GRPC_ENDPOINT=https://made.example.com \
+  -- made-mcp
 ```
 
 The command writes:
 
 ```toml
-[mcp_servers.underpass-choreographer]
-command = "choreo-mcp"
+[mcp_servers.made]
+command = "made-mcp"
 
-[mcp_servers.underpass-choreographer.env]
-CHOREO_MCP_GRPC_ENDPOINT = "https://choreographer.example.com"
+[mcp_servers.made.env]
+MADE_MCP_GRPC_ENDPOINT = "https://made.example.com"
 ```
 
 ## Dev from a checkout
@@ -45,54 +45,54 @@ an absolute manifest path so the config works from any working
 directory:
 
 ```bash
-codex mcp add underpass-choreographer \
-  --env CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com \
-  -- cargo run -q --manifest-path /path/to/underpass-orchestrator/Cargo.toml -p choreo-mcp --locked
+codex mcp add made \
+  --env MADE_MCP_GRPC_ENDPOINT=https://made.example.com \
+  -- cargo run -q --manifest-path /path/to/underpass-orchestrator/Cargo.toml -p made-mcp --locked
 ```
 
 Which writes:
 
 ```toml
-[mcp_servers.underpass-choreographer]
+[mcp_servers.made]
 command = "cargo"
-args = ["run", "-q", "--manifest-path", "/path/to/underpass-orchestrator/Cargo.toml", "-p", "choreo-mcp", "--locked"]
+args = ["run", "-q", "--manifest-path", "/path/to/underpass-orchestrator/Cargo.toml", "-p", "made-mcp", "--locked"]
 
-[mcp_servers.underpass-choreographer.env]
-CHOREO_MCP_GRPC_ENDPOINT = "https://choreographer.example.com"
+[mcp_servers.made.env]
+MADE_MCP_GRPC_ENDPOINT = "https://made.example.com"
 ```
 
-## Fixture mode (no choreographer running)
+## Fixture mode (no MADE running)
 
 Useful for verifying that Codex picks the tools up at all:
 
 ```toml
-[mcp_servers.underpass-choreographer]
-command = "choreo-mcp"
+[mcp_servers.made]
+command = "made-mcp"
 
-[mcp_servers.underpass-choreographer.env]
-CHOREO_MCP_BACKEND = "fixture"
+[mcp_servers.made.env]
+MADE_MCP_BACKEND = "fixture"
 ```
 
-The 35 backend-owned `choreo_*` tools plus discovery and help become callable;
+The 35 backend-owned `made_*` tools plus discovery and help become callable;
 backend calls return deterministic canned responses (no network), while the
 server-owned tools describe that filtered fixture surface.
 
 ## mTLS to a hardened deployment
 
-When the choreographer is behind mTLS (chart's
+When MADE is behind mTLS (chart's
 `tls.mode=mutual`), point Codex at the local cert bundle:
 
 ```toml
-[mcp_servers.underpass-choreographer]
-command = "choreo-mcp"
+[mcp_servers.made]
+command = "made-mcp"
 
-[mcp_servers.underpass-choreographer.env]
-CHOREO_MCP_GRPC_ENDPOINT = "https://choreographer.underpass.svc:50055"
-CHOREO_MCP_GRPC_TLS_MODE = "mutual"
-CHOREO_MCP_GRPC_TLS_CA_PATH = "/var/run/choreo-tls/ca.crt"
-CHOREO_MCP_GRPC_TLS_CERT_PATH = "/var/run/choreo-tls/tls.crt"
-CHOREO_MCP_GRPC_TLS_KEY_PATH = "/var/run/choreo-tls/tls.key"
-CHOREO_MCP_GRPC_TLS_DOMAIN_NAME = "choreographer-grpc"
+[mcp_servers.made.env]
+MADE_MCP_GRPC_ENDPOINT = "https://made.underpass.svc:50055"
+MADE_MCP_GRPC_TLS_MODE = "mutual"
+MADE_MCP_GRPC_TLS_CA_PATH = "/var/run/made-tls/ca.crt"
+MADE_MCP_GRPC_TLS_CERT_PATH = "/var/run/made-tls/tls.crt"
+MADE_MCP_GRPC_TLS_KEY_PATH = "/var/run/made-tls/tls.key"
+MADE_MCP_GRPC_TLS_DOMAIN_NAME = "made-grpc"
 ```
 
 The same `_TLS_*` envs trigger auto-detection — setting them is
@@ -103,7 +103,7 @@ for self-documentation.
 
 After updating the config, restart Codex and ask the agent:
 
-> List the choreographer's councils.
+> List MADE's councils.
 
-Codex should call `choreo_list_councils` and return the live result
+Codex should call `made_list_councils` and return the live result
 (or the fixture's canned list, depending on backend).

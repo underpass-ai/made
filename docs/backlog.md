@@ -1,15 +1,15 @@
-# Choreographer Backlog
+# MADE Backlog
 
 Snapshot date: 2026-04-25; honest re-audit 2026-05-11; PIR framing
 dropped 2026-05-12 (PIR is owned by a separate project — this backlog
-tracks Choreographer's own stack-readiness, not any one downstream
+tracks MADE's own stack-readiness, not any one downstream
 consumer); ceremony engine + LLM-as-judge scorer landed 2026-06-06→09
 (Milestone F, below).
 
-Choreographer is agnostic and independent. References to PIR, KMP,
+MADE is agnostic and independent. References to PIR, KMP,
 Runtime, or other repositories in this backlog are historical context,
 study material, or examples of possible integrations. They are not
-required dependencies for Choreographer as a product.
+required dependencies for MADE as a product.
 
 Companion documents:
 
@@ -17,7 +17,7 @@ Companion documents:
 - [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) — installable
   stdio MCP adapter UX.
 
-The goal is to keep Choreographer trustworthy as a stack peer:
+The goal is to keep MADE trustworthy as a stack peer:
 real execution, real context, structured council outputs, causal
 metadata, provider-backed councils, honest transport, TLS, an
 agent-facing surface (gRPC + MCP), and reproducible stack E2E.
@@ -29,7 +29,7 @@ agent-facing surface (gRPC + MCP), and reproducible stack E2E.
 > the epics: the observability suite (#102–#113: Prometheus `/metrics` with
 > deliberation/judge/provider/ceremony families, OTel deliberation traces,
 > meeting record in `CeremonyStepExecution.output` — see
-> `choreographer-observability-design.md`) and the evidence-gate work
+> `made-observability-design.md`) and the evidence-gate work
 > (#115–#120: step-level `output_contract` in ceremony YAML, evidence
 > grounding validator, fenced-JSON tolerance, observability/authoring
 > runbooks, chart NOTES banner).
@@ -49,9 +49,9 @@ As of 2026-05-14 the eight stack-readiness areas resolve as follows:
 
 Two surfaces beyond the eight areas:
 
-- **MCP stdio adapter** — `crates/choreo-mcp` ships a hand-rolled
-  stdio MCP server that exposes every RPC of `underpass.choreo.v1`
-  as a `choreo_*` tool. End-user docs live at
+- **MCP stdio adapter** — `crates/made-mcp` ships a hand-rolled
+  stdio MCP server that exposes every RPC of `underpass.made.v1`
+  as a `made_*` tool. End-user docs live at
   [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md); per-
   client snippets for Codex CLI and Claude Desktop live under
   `docs/operations/mcp/`. Foundation merged 2026-05-12; the
@@ -59,7 +59,7 @@ Two surfaces beyond the eight areas:
   link.
 - **Downstream product integrations (PIR, payments incident response,
   custom agentic flows)** are **out of scope for this repo**. The
-  product owns its own deliberation surface; Choreographer's job is to
+  product owns its own deliberation surface; MADE's job is to
   expose a clean, fully-typed gRPC API plus the MCP wrapping so any
   agentic consumer can drive it.
 
@@ -68,7 +68,7 @@ positive-path work is narrower: keep the operator-facing
 `make e2e-provider-vllm` flow for real external vLLM endpoints and
 finish the release-candidate publication gates.
 Milestones A, B, C, D, and E are all complete as of 2026-05-14. The
-`choreo-mcp` Git-install UX and fixture/live smoke path are present;
+`made-mcp` Git-install UX and fixture/live smoke path are present;
 crates.io publication remains release-candidate work tracked in
 `docs/product-publication-checklist.md`.
 
@@ -76,21 +76,21 @@ crates.io publication remains release-candidate work tracked in
 
 Two stack capabilities beyond the original eight areas shipped to `main`:
 
-- **Ceremony engine.** `RunCeremony` (RPC #17 of `underpass.choreo.v1`)
+- **Ceremony engine.** `RunCeremony` (RPC #17 of `underpass.made.v1`)
   executes a YAML-defined ceremony as a finite-state machine —
   states/steps/transitions/guards/roles — with pluggable step handlers,
   multi-agent panels, a run-time context brief injected into each agent's
   task, and a Mermaid sequence diagram in the response. Catalog ceremonies
   (daily standup, technical debate, sprint planning, speaker + Q&A) run
-  end-to-end in CI, driven by the `choreo-run-ceremony` operator tool
-  (`crates/choreo-e2e-runner`). Domain in
-  `crates/choreo-core/src/entities/ceremony_definition.rs` +
+  end-to-end in CI, driven by the `made-run-ceremony` operator tool
+  (`crates/made-e2e-runner`). Domain in
+  `crates/made-core/src/entities/ceremony_definition.rs` +
   `ceremony_instance.rs`; use case in
-  `crates/choreo-app/src/usecases/run_ceremony_use_case.rs`.
+  `crates/made-app/src/usecases/run_ceremony_use_case.rs`.
 - **LLM-as-judge scoring.** Winner selection is a pluggable `ScoringPort`.
   The default ranks by validator pass-fraction (which ties valid proposals
   and picks an arbitrary winner); the opt-in `JudgeAwareScoring`
-  (`CHOREO_JUDGE_ENABLED`, `CHOREO_JUDGE_THRESHOLD`) is fed by an
+  (`MADE_JUDGE_ENABLED`, `MADE_JUDGE_THRESHOLD`) is fed by an
   `LlmJudgeValidator` that rates intrinsic quality and makes that the
   score. Fail-fast: enabling it without a vLLM endpoint/model refuses to
   start. Persisted durably in the `underpass-runtime` Helm overlay and
@@ -109,8 +109,8 @@ The recommended remaining execution order is:
 
 This backlog does not include:
 
-- moving any context system's graph semantics into Choreographer
-- making Choreographer domain-specific (payments, incidents, …)
+- moving any context system's graph semantics into MADE
+- making MADE domain-specific (payments, incidents, …)
 - implementing any downstream product (PIR, payments incident
   response, etc.) in this repository
 
@@ -187,12 +187,12 @@ notes still live in each epic block below.
   application in `runtime.rs`, chart template wires the secret +
   env vars, helm-lint gate 4 added.
 - **#50** `feat(mcp): hand-rolled stdio MCP adapter for the
-  choreographer API` — Epic 13 foundation. Crate `choreo-mcp`
-  exposes every RPC of `underpass.choreo.v1` as MCP tools over
+  MADE API` — Epic 13 foundation. Crate `made-mcp`
+  exposes every RPC of `underpass.made.v1` as MCP tools over
   JSON-RPC/stdio. Hand-rolled (no SDK), fixture + gRPC backends,
   field-for-field JSON↔proto mappers, TLS auto-detection, buffered
   streaming.
-- **#51** `docs(mcp): distribution + UX for the choreo-mcp adapter` —
+- **#51** `docs(mcp): distribution + UX for the made-mcp adapter` —
   Epic 13 distribution slice. Install wrapper, smoke script, canonical
   user-facing docs at `docs/operations/mcp-stdio.md`, per-client
   snippets for Codex CLI and Claude Desktop, top-level README link.
@@ -216,7 +216,7 @@ Current state:
   Underpass Runtime gRPC; creates ephemeral sessions, invokes tools,
   closes sessions, maps `Succeeded`/`Failed`/`Denied`/transport errors
   distinctly
-- `ExecutorBackendConfig` selected from `CHOREO_EXECUTOR_KIND=noop|runtime`
+- `ExecutorBackendConfig` selected from `MADE_EXECUTOR_KIND=noop|runtime`
   plus principal env vars; `NoopExecutor` stays as explicit fallback
 - adapter unit tests cover success, denial, transport error, env
   loading, and option-vs-attributes precedence; compose-level test
@@ -224,9 +224,9 @@ Current state:
 
 Relevant code:
 
-- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs)
-- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs) (`wire_executor`)
-- [`crates/choreo-core/src/ports/executor.rs`](../crates/choreo-core/src/ports/executor.rs)
+- [`crates/made-adapters/src/runtime.rs`](../crates/made-adapters/src/runtime.rs)
+- [`crates/made/src/compose.rs`](../crates/made/src/compose.rs) (`wire_executor`)
+- [`crates/made-core/src/ports/executor.rs`](../crates/made-core/src/ports/executor.rs)
 
 Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
 (PR #43). All four acceptance criteria + the three required tests
@@ -234,7 +234,7 @@ listed below are present in the repo today.
 
 #### Deliverables
 
-1. add a Runtime gRPC executor adapter in `choreo-adapters`
+1. add a Runtime gRPC executor adapter in `made-adapters`
 2. map winner proposals plus execution options into runtime session creation
 3. support runtime session metadata for:
    - external incident id
@@ -281,22 +281,22 @@ Current state:
 
 Relevant code:
 
-- [`crates/choreo-core/src/entities/external_context.rs`](../crates/choreo-core/src/entities/external_context.rs)
-- [`crates/choreo-core/src/entities/task.rs`](../crates/choreo-core/src/entities/task.rs)
-- [`crates/choreo-adapters/src/grpc/mappers/task.rs`](../crates/choreo-adapters/src/grpc/mappers/task.rs)
-- [`crates/choreo-adapters/src/grpc/mappers/event.rs`](../crates/choreo-adapters/src/grpc/mappers/event.rs)
-- [`crates/choreo-app/src/services/auto_dispatch.rs`](../crates/choreo-app/src/services/auto_dispatch.rs)
-- [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs)
+- [`crates/made-core/src/entities/external_context.rs`](../crates/made-core/src/entities/external_context.rs)
+- [`crates/made-core/src/entities/task.rs`](../crates/made-core/src/entities/task.rs)
+- [`crates/made-adapters/src/grpc/mappers/task.rs`](../crates/made-adapters/src/grpc/mappers/task.rs)
+- [`crates/made-adapters/src/grpc/mappers/event.rs`](../crates/made-adapters/src/grpc/mappers/event.rs)
+- [`crates/made-app/src/services/auto_dispatch.rs`](../crates/made-app/src/services/auto_dispatch.rs)
+- [`crates/made-app/src/usecases/deliberate.rs`](../crates/made-app/src/usecases/deliberate.rs)
 
 Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
-(PR #43). A Choreographer-owned adapter for any specific context
+(PR #43). A MADE-owned adapter for any specific context
 system remains intentionally out of scope unless a concrete product
 needs that boundary.
 
 #### Deliverables
 
 1. define one explicit context ingestion boundary:
-   - caller fetches context and passes it to Choreographer
+   - caller fetches context and passes it to MADE
    - a future product-specific adapter can fetch context through a new
      port if needed
 2. choose one as the production path for the first downstream integration
@@ -313,10 +313,10 @@ needs that boundary.
 Prefer caller-materialized context:
 
 - the consumer remains the owner of its context system
-- Choreographer remains domain-agnostic
+- MADE remains domain-agnostic
 - the integration boundary is cleaner
 
-That means Choreographer must still gain a first-class notion of
+That means MADE must still gain a first-class notion of
 "structured external context bundle", but it does not have to own
 context-provider transport.
 
@@ -354,9 +354,9 @@ Current state:
 
 Relevant code:
 
-- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs)
-- [`crates/choreo-core/src/entities/proposal.rs`](../crates/choreo-core/src/entities/proposal.rs)
-- [`crates/choreo-app/src/usecases/deliberate.rs`](../crates/choreo-app/src/usecases/deliberate.rs) (`prioritize_valid_outputs`, `pick_winner`)
+- [`crates/made-core/src/value_objects/output_contract.rs`](../crates/made-core/src/value_objects/output_contract.rs)
+- [`crates/made-core/src/entities/proposal.rs`](../crates/made-core/src/entities/proposal.rs)
+- [`crates/made-app/src/usecases/deliberate.rs`](../crates/made-app/src/usecases/deliberate.rs) (`prioritize_valid_outputs`, `pick_winner`)
 
 Progress as of 2026-05-11: implementation landed in commit `fab9bfb`
 (PR #43).
@@ -426,10 +426,10 @@ Current state (2026-05-12):
 
 Relevant code:
 
-- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs)
-- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
-- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs)
-- [`crates/choreo-adapters/src/grpc/mappers/output_contract.rs`](../crates/choreo-adapters/src/grpc/mappers/output_contract.rs)
+- [`crates/made-adapters/src/validators.rs`](../crates/made-adapters/src/validators.rs)
+- [`crates/made/src/compose.rs`](../crates/made/src/compose.rs)
+- [`crates/made-core/src/value_objects/output_contract.rs`](../crates/made-core/src/value_objects/output_contract.rs)
+- [`crates/made-adapters/src/grpc/mappers/output_contract.rs`](../crates/made-adapters/src/grpc/mappers/output_contract.rs)
 - [`api/examples/output-contracts/`](../api/examples/output-contracts/) — canonical Report-shape schema + README
 
 Progress as of 2026-05-12: format-level slice (`ContentNonEmpty` +
@@ -451,7 +451,7 @@ Progress as of 2026-05-12: format-level slice (`ContentNonEmpty` +
 #### Acceptance criteria
 
 - validators are composable through the existing validation pipeline (done)
-- validator reports remain domain-agnostic from Choreographer's perspective (done)
+- validator reports remain domain-agnostic from MADE's perspective (done)
 - consumer-facing council contracts can be enforced with no
   handwritten post-processing hacks (done — JSON Schema covers
   nested objects, arrays, enums, patterns, bounds)
@@ -481,8 +481,8 @@ Progress as of 2026-04-26:
 
 Relevant code:
 
-- [`crates/choreo-core/src/entities/task.rs`](../crates/choreo-core/src/entities/task.rs)
-- [`crates/choreo-core/src/events/envelope.rs`](../crates/choreo-core/src/events/envelope.rs)
+- [`crates/made-core/src/entities/task.rs`](../crates/made-core/src/entities/task.rs)
+- [`crates/made-core/src/events/envelope.rs`](../crates/made-core/src/events/envelope.rs)
 
 #### Deliverables
 
@@ -513,12 +513,12 @@ Status: done
 
 Current state:
 
-- `DispatchingAgentFactory` (in `crates/choreo-adapters/src/agents/factory.rs`)
+- `DispatchingAgentFactory` (in `crates/made-adapters/src/agents/factory.rs`)
   implements `AgentFactoryPort` and dispatches on `descriptor.kind`:
   - `"noop"` — always available
-  - `"anthropic"` — gated on `agent-anthropic` feature + `CHOREO_ANTHROPIC_API_KEY`
-  - `"openai"` — gated on `agent-openai` feature + `CHOREO_OPENAI_API_KEY`
-  - `"vllm"` — gated on `agent-vllm` feature + `CHOREO_VLLM_MODEL` + `CHOREO_VLLM_ENDPOINT`
+  - `"anthropic"` — gated on `agent-anthropic` feature + `MADE_ANTHROPIC_API_KEY`
+  - `"openai"` — gated on `agent-openai` feature + `MADE_OPENAI_API_KEY`
+  - `"vllm"` — gated on `agent-vllm` feature + `MADE_VLLM_MODEL` + `MADE_VLLM_ENDPOINT`
 - per-descriptor overrides: `provider.model`, `provider.endpoint`,
   `provider.max_tokens` on the descriptor's `attributes`
 - credentials live ONLY in env (descriptors are persisted in Postgres,
@@ -530,9 +530,9 @@ Current state:
 
 Relevant code:
 
-- [`crates/choreo-adapters/src/agents/factory.rs`](../crates/choreo-adapters/src/agents/factory.rs)
-- [`crates/choreo/src/compose.rs`](../crates/choreo/src/compose.rs)
-- [`crates/choreo-adapters/src/agents/`](../crates/choreo-adapters/src/agents/)
+- [`crates/made-adapters/src/agents/factory.rs`](../crates/made-adapters/src/agents/factory.rs)
+- [`crates/made/src/compose.rs`](../crates/made/src/compose.rs)
+- [`crates/made-adapters/src/agents/`](../crates/made-adapters/src/agents/)
 
 Progress as of 2026-05-11: implementation landed in the next PR.
 `NoopAgentFactory` remains available as a single-kind factory for
@@ -585,15 +585,15 @@ is deferred to a future epic gated on actual bus-coupling demand.
 
 Relevant code:
 
-- [`crates/choreo-adapters/src/nats/messaging.rs`](../crates/choreo-adapters/src/nats/messaging.rs)
-- [`crates/choreo-adapters/src/nats/subscriber.rs`](../crates/choreo-adapters/src/nats/subscriber.rs)
-- [`specs/asyncapi/choreographer.asyncapi.yaml`](../specs/asyncapi/choreographer.asyncapi.yaml)
+- [`crates/made-adapters/src/nats/messaging.rs`](../crates/made-adapters/src/nats/messaging.rs)
+- [`crates/made-adapters/src/nats/subscriber.rs`](../crates/made-adapters/src/nats/subscriber.rs)
+- [`specs/asyncapi/made.asyncapi.yaml`](../specs/asyncapi/made.asyncapi.yaml)
 
 #### Deliverables
 
 Choose one:
 
-1. explicitly declare Choreographer as plain NATS
+1. explicitly declare MADE as plain NATS
 2. or implement true JetStream semantics:
    - stream
    - durable consumer
@@ -618,18 +618,18 @@ integration tests).
 
 Current state (2026-05-11):
 
-- gRPC server in `crates/choreo/src/runtime.rs` builds with
+- gRPC server in `crates/made/src/runtime.rs` builds with
   `ServerTlsConfig::new().identity(...)` (server mode) or additionally
   `client_ca_root(...)` (mutual mode), driven by the new
   `GrpcTlsConfig` enum in `ServiceConfig`. PEM files are read at
   startup; a misconfigured deployment fails fast.
-- `EnvConfiguration` reads `CHOREO_GRPC_TLS_MODE` (`none`/`server`/`mutual`),
-  `CHOREO_GRPC_TLS_CERT_PATH`, `CHOREO_GRPC_TLS_KEY_PATH`, and (for mutual)
-  `CHOREO_GRPC_TLS_CLIENT_CA_PATH`. Validation surfaces missing-path
+- `EnvConfiguration` reads `MADE_GRPC_TLS_MODE` (`none`/`server`/`mutual`),
+  `MADE_GRPC_TLS_CERT_PATH`, `MADE_GRPC_TLS_KEY_PATH`, and (for mutual)
+  `MADE_GRPC_TLS_CLIENT_CA_PATH`. Validation surfaces missing-path
   combinations as `DomainError::EmptyField` and an invalid mode as
   `InvariantViolated`.
-- Chart template (`charts/choreographer/templates/deployment.yaml`) mounts
-  `tls.existingSecret` read-only at `/etc/choreographer/tls` and passes
+- Chart template (`charts/made/templates/deployment.yaml`) mounts
+  `tls.existingSecret` read-only at `/etc/made/tls` and passes
   the matching env vars; rendering with `tls.mode != "none"` but no
   `existingSecret` fails the helm template with an explicit message.
 - `scripts/ci/helm-lint.sh` gate 4 asserts the rendered manifest for
@@ -644,9 +644,9 @@ now:
 
 - carries a `RuntimeClientTlsConfig` (variants `Disabled`/`Server`/
   `Mutual`) on `RuntimeExecutorConfig`, mirroring the env-driven
-  auto-detection used by `crates/choreo-mcp` (`https://` endpoint
+  auto-detection used by `crates/made-mcp` (`https://` endpoint
   → server; `_CERT_PATH`/`_KEY_PATH` → mutual; explicit
-  `CHOREO_RUNTIME_TLS_MODE` wins);
+  `MADE_RUNTIME_TLS_MODE` wins);
 - rewrites `http://` to `https://` at connect time when TLS is on so
   callers can flip a single env var;
 - reads PEM files at startup and applies `ClientTlsConfig` on the
@@ -662,24 +662,24 @@ now:
 Remaining work — **all done 2026-05-14 (Bundle A)**:
 
 - Rust integration test that performs an actual TLS handshake
-  against the choreographer using `rcgen` to mint a self-signed
+  against MADE using `rcgen` to mint a self-signed
   CA + server + client leaves in memory. Lives in
-  `crates/choreo-tests-integration/tests/tls_server_handshake.rs`
+  `crates/made-tests-integration/tests/tls_server_handshake.rs`
   (server mode) and `tls_mutual_handshake.rs` (mutual mode: a
   client with identity is accepted, a client without identity
   is rejected). The fixture
-  `crates/choreo-tests-integration/src/tls_fixture.rs` exports
+  `crates/made-tests-integration/src/tls_fixture.rs` exports
   `mint_tls(server_san)`; `GrpcFixture::start_with_tls(setup)`
   serves over TLS without process-env mutation.
 
 Relevant code:
 
-- [`crates/choreo/src/runtime.rs`](../crates/choreo/src/runtime.rs)
-- [`crates/choreo-adapters/src/config.rs`](../crates/choreo-adapters/src/config.rs)
-- [`crates/choreo-core/src/ports/configuration.rs`](../crates/choreo-core/src/ports/configuration.rs)
-- [`charts/choreographer/templates/deployment.yaml`](../charts/choreographer/templates/deployment.yaml)
+- [`crates/made/src/runtime.rs`](../crates/made/src/runtime.rs)
+- [`crates/made-adapters/src/config.rs`](../crates/made-adapters/src/config.rs)
+- [`crates/made-core/src/ports/configuration.rs`](../crates/made-core/src/ports/configuration.rs)
+- [`charts/made/templates/deployment.yaml`](../charts/made/templates/deployment.yaml)
 - [`scripts/ci/helm-lint.sh`](../scripts/ci/helm-lint.sh)
-- [`crates/choreo-adapters/src/runtime.rs`](../crates/choreo-adapters/src/runtime.rs) (Runtime client — TLS shipped 2026-05-12)
+- [`crates/made-adapters/src/runtime.rs`](../crates/made-adapters/src/runtime.rs) (Runtime client — TLS shipped 2026-05-12)
 
 #### Deliverables
 
@@ -716,18 +716,18 @@ Current state:
   mode propagates `NoValidProposal`, Warn mode returns the
   top-ranked candidate with `passed=false`
 - the in-memory `ContractRegistry` is the source of truth today;
-  contracts are seeded at startup from `CHOREO_CONTRACT_DIR`
+  contracts are seeded at startup from `MADE_CONTRACT_DIR`
 - the MCP stdio adapter exposes four matching tools
-  (`choreo_run_council_decision`, `choreo_register_contract`,
-  `choreo_list_contracts`, `choreo_delete_contract`)
+  (`made_run_council_decision`, `made_register_contract`,
+  `made_list_contracts`, `made_delete_contract`)
 
 Relevant code:
 
-- [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto)
-- [`crates/choreo-app/src/usecases/run_council_decision.rs`](../crates/choreo-app/src/usecases/run_council_decision.rs)
-- [`crates/choreo-core/src/ports/contract_registry.rs`](../crates/choreo-core/src/ports/contract_registry.rs)
-- [`crates/choreo-adapters/src/grpc/mappers/run_council_decision.rs`](../crates/choreo-adapters/src/grpc/mappers/run_council_decision.rs)
-- [`crates/choreo-tests-integration/tests/run_council_decision_rpc.rs`](../crates/choreo-tests-integration/tests/run_council_decision_rpc.rs)
+- [`crates/made-proto/proto/underpass/made/v1/made.proto`](../crates/made-proto/proto/underpass/made/v1/made.proto)
+- [`crates/made-app/src/usecases/run_council_decision.rs`](../crates/made-app/src/usecases/run_council_decision.rs)
+- [`crates/made-core/src/ports/contract_registry.rs`](../crates/made-core/src/ports/contract_registry.rs)
+- [`crates/made-adapters/src/grpc/mappers/run_council_decision.rs`](../crates/made-adapters/src/grpc/mappers/run_council_decision.rs)
+- [`crates/made-tests-integration/tests/run_council_decision_rpc.rs`](../crates/made-tests-integration/tests/run_council_decision_rpc.rs)
 
 #### Deliverables — all met
 
@@ -748,7 +748,7 @@ Relevant code:
 Status: done (via JSON Schema, no bespoke entity)
 
 Decision (2026-05-12): rather than add a `Report` / `HumanHandoffReport`
-entity to `choreo-core` and a parallel proto message — which would
+entity to `made-core` and a parallel proto message — which would
 have baked product vocabulary into the core — Report becomes an
 **output contract shape** expressed as a JSON Schema. Consumers bind
 the canonical schema (or any variant) via
@@ -774,9 +774,9 @@ Current state:
 Relevant code:
 
 - [`api/examples/output-contracts/`](../api/examples/output-contracts/)
-- [`crates/choreo-core/src/value_objects/output_contract.rs`](../crates/choreo-core/src/value_objects/output_contract.rs) (`json_schema()` accessor)
-- [`crates/choreo-adapters/src/validators.rs`](../crates/choreo-adapters/src/validators.rs) (`JsonSchemaValidator`)
-- [`crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`](../crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto) (`OutputContract.json_schema` proto field 4)
+- [`crates/made-core/src/value_objects/output_contract.rs`](../crates/made-core/src/value_objects/output_contract.rs) (`json_schema()` accessor)
+- [`crates/made-adapters/src/validators.rs`](../crates/made-adapters/src/validators.rs) (`JsonSchemaValidator`)
+- [`crates/made-proto/proto/underpass/made/v1/made.proto`](../crates/made-proto/proto/underpass/made/v1/made.proto) (`OutputContract.json_schema` proto field 4)
 
 #### Deliverables — all met
 
@@ -797,7 +797,7 @@ schema (renamed to drop product vocabulary where appropriate, e.g.
 
 ## Phase 6 — Stack E2E Readiness
 
-### Epic 11. Choreographer stack E2E
+### Epic 11. MADE stack E2E
 
 Status: done for the repo-owned stack E2E path as of 2026-05-14.
 The compose stack covers the Runtime executor via `stub-runtime`, the
@@ -807,8 +807,8 @@ remains an operator-run validation through `make e2e-provider-vllm`.
 
 Current state:
 
-- `crates/choreo-e2e-runner/src/main.rs` dispatches the selected
-  scenarios; `crates/choreo-e2e-runner/src/scenarios/` contains the
+- `crates/made-e2e-runner/src/main.rs` dispatches the selected
+  scenarios; `crates/made-e2e-runner/src/scenarios/` contains the
   assertions against a real gRPC + NATS stack with stub-runtime +
   stub-llm sidecars:
   1. seeded council is visible
@@ -843,15 +843,15 @@ Current state:
      real external vLLM endpoint remains covered by
      `make e2e-provider-vllm`.
 - the `stub-runtime` sidecar ships in this repo as
-  `crates/choreo-e2e-runner/src/bin/stub_runtime.rs` +
+  `crates/made-e2e-runner/src/bin/stub_runtime.rs` +
   `tests/e2e/stub-runtime.Dockerfile`. It serves the canonical
   `underpass.runtime.v1.{SessionService,InvocationService}` and
   always returns a successful canned Session / Invocation. Lets
-  Choreographer's `RuntimeExecutor` exercise a real gRPC peer
+  MADE's `RuntimeExecutor` exercise a real gRPC peer
   without dragging the real underpass-runtime image into this
   repo's test path.
-- the compose stack now wires `CHOREO_EXECUTOR_KIND=runtime` +
-  `CHOREO_RUNTIME_GRPC_ENDPOINT=http://stub-runtime:50053` so
+- the compose stack now wires `MADE_EXECUTOR_KIND=runtime` +
+  `MADE_RUNTIME_GRPC_ENDPOINT=http://stub-runtime:50053` so
   scenarios 2 / 5 exercise the full Deliberate -> winner ->
   RuntimeExecutor -> gRPC InvokeTool -> outcome path. Validated
   locally with `CONTAINER_RUNTIME=podman-compose make e2e-compose`:
@@ -866,11 +866,11 @@ Current state:
 
 Relevant code:
 
-- [`crates/choreo-e2e-runner/src/main.rs`](../crates/choreo-e2e-runner/src/main.rs)
-- [`crates/choreo-e2e-runner/src/scenario_selection.rs`](../crates/choreo-e2e-runner/src/scenario_selection.rs)
-- [`crates/choreo-e2e-runner/src/scenarios/`](../crates/choreo-e2e-runner/src/scenarios/)
-- [`crates/choreo-e2e-runner/src/bin/stub_runtime.rs`](../crates/choreo-e2e-runner/src/bin/stub_runtime.rs)
-- [`crates/choreo-e2e-runner/src/bin/stub_llm.rs`](../crates/choreo-e2e-runner/src/bin/stub_llm.rs)
+- [`crates/made-e2e-runner/src/main.rs`](../crates/made-e2e-runner/src/main.rs)
+- [`crates/made-e2e-runner/src/scenario_selection.rs`](../crates/made-e2e-runner/src/scenario_selection.rs)
+- [`crates/made-e2e-runner/src/scenarios/`](../crates/made-e2e-runner/src/scenarios/)
+- [`crates/made-e2e-runner/src/bin/stub_runtime.rs`](../crates/made-e2e-runner/src/bin/stub_runtime.rs)
+- [`crates/made-e2e-runner/src/bin/stub_llm.rs`](../crates/made-e2e-runner/src/bin/stub_llm.rs)
 - [`tests/e2e/stub-runtime.Dockerfile`](../tests/e2e/stub-runtime.Dockerfile)
 - [`tests/e2e/stub-llm.Dockerfile`](../tests/e2e/stub-llm.Dockerfile)
 - [`tests/e2e/docker-compose.e2e.yaml`](../tests/e2e/docker-compose.e2e.yaml)
@@ -921,20 +921,20 @@ Status: done (2026-05-14).
 
 #### What shipped
 
-A consumer-shaped smoke harness — `crates/choreo-consumer-smoke` —
-that drives the choreographer's public surface (gRPC over `tonic` +
+A consumer-shaped smoke harness — `crates/made-consumer-smoke` —
+that drives MADE's public surface (gRPC over `tonic` +
 optional core NATS over `async-nats`) the way a real downstream
-consumer would. Distributed as a library the choreographer's own
+consumer would. Distributed as a library MADE's own
 integration tests reuse and a CLI a consumer can point at a live
 cluster.
 
 Two chains:
 
 - **Chain 1** (Warn-mode reevaluation): trigger-style envelope
-  publish on `choreo.trigger.<specialty>`, `RunCouncilDecision` in
+  publish on `made.trigger.<specialty>`, `RunCouncilDecision` in
   Warn mode with a deterministic kernel-rehydration-shaped bundle,
   then six typed assertions including correlation / causation
-  propagation on the outbound `choreo.deliberation.completed`.
+  propagation on the outbound `made.deliberation.completed`.
 - **Chain 2** (Strict-mode handoff report): registers the canonical
   Report `OutputContract`
   (`api/examples/output-contracts/report.schema.json`), runs Strict
@@ -944,11 +944,11 @@ Two chains:
 
 Deliverables:
 
-- New crate `crates/choreo-consumer-smoke` (lib + bin).
+- New crate `crates/made-consumer-smoke` (lib + bin).
 - 11 lib unit tests + 2 binary unit tests + 2 integration tests
   (`tests/chain1_warn_against_fixture.rs`,
   `tests/chain2_strict_rejection_against_fixture.rs`) that reuse
-  `choreo_tests_integration::grpc_fixture::GrpcFixture`.
+  `made_tests_integration::grpc_fixture::GrpcFixture`.
 - `Harness::from_parts(channel, nats)` helper so the integration
   tests can share the fixture's `tonic::Channel`.
 - Operations doc: `docs/operations/consumer-smoke.md`.
@@ -970,7 +970,7 @@ Deliverables:
 
 #### Relevant code
 
-- [`crates/choreo-consumer-smoke/`](../crates/choreo-consumer-smoke/)
+- [`crates/made-consumer-smoke/`](../crates/made-consumer-smoke/)
 - [`docs/operations/consumer-smoke.md`](./operations/consumer-smoke.md)
 
 ### Epic 13. MCP stdio adapter
@@ -979,11 +979,11 @@ Status: done (foundation 2026-05-12; distribution 2026-05-14).
 
 Current state:
 
-- `crates/choreo-mcp` exposes every RPC of `underpass.choreo.v1` as
-  a `choreo_*` MCP tool (17 tools 1:1 with the gRPC service).
+- `crates/made-mcp` exposes every RPC of `underpass.made.v1` as
+  a `made_*` MCP tool (17 tools 1:1 with the gRPC service).
 - JSON-RPC 2.0 over stdin/stdout, no MCP SDK — the wire protocol is
   hand-rolled so it stays in lock-step with the proto contract.
-- `ChoreoMcpToolBackend` trait has two impls: fixture (canned
+- `MadeMcpToolBackend` trait has two impls: fixture (canned
   responses for client wiring) and gRPC (live tonic client with
   optional TLS).
 - Field-for-field JSON ↔ proto mappers in `src/grpc/{json_to_proto,
@@ -991,40 +991,40 @@ Current state:
 - `StreamDeliberation` buffered into one response (frames array +
   winner extracted from the last `result`-typed frame). MCP stdio is
   sync.
-- 7 env vars (`CHOREO_MCP_BACKEND`, `CHOREO_MCP_GRPC_ENDPOINT`, and
-  5 `CHOREO_MCP_GRPC_TLS_*`) with the same auto-detection pattern as
+- 7 env vars (`MADE_MCP_BACKEND`, `MADE_MCP_GRPC_ENDPOINT`, and
+  5 `MADE_MCP_GRPC_TLS_*`) with the same auto-detection pattern as
   the sibling rehydration-mcp.
 - 21 unit tests + workspace clippy clean.
 
 Distribution UX slice (done 2026-05-14; registry-readiness extended
 2026-05-18):
 
-- `scripts/mcp/install-choreo-mcp.sh` — registry install wrapper by
-  default (`cargo install choreo-mcp`), with
-  `CHOREO_MCP_INSTALL_MODE=git` fallback for unreleased branches,
+- `scripts/mcp/install-made-mcp.sh` — registry install wrapper by
+  default (`cargo install made-mcp`), with
+  `MADE_MCP_INSTALL_MODE=git` fallback for unreleased branches,
   tags, and revisions.
-- `scripts/mcp/choreo-stdio-smoke.sh` — one `tools/call` + grep marker
+- `scripts/mcp/made-stdio-smoke.sh` — one `tools/call` + grep marker
   for both fixture and live modes.
 - `docs/operations/mcp-stdio.md` — canonical user-facing UX.
 - `docs/operations/mcp/codex.md`, `docs/operations/mcp/claude-desktop.md`
   — per-client config snippets.
-- `crates/choreo-mcp/README.md` — developer-oriented twin.
+- `crates/made-mcp/README.md` — developer-oriented twin.
 - top-level `README.md` link to `docs/operations/mcp-stdio.md`.
-- `crates/choreo-mcp-proto` — vendored proto crate so `choreo-mcp`
-  can publish without depending on the internal `choreo-proto` crate.
+- `crates/made-mcp-proto` — vendored proto crate so `made-mcp`
+  can publish without depending on the internal `made-proto` crate.
 - `scripts/ci/publish-dry-run.sh` and tag-gated publish jobs in
   `.github/workflows/publish-distribution.yml`.
 
 Relevant code:
 
-- [`crates/choreo-mcp/`](../crates/choreo-mcp/)
+- [`crates/made-mcp/`](../crates/made-mcp/)
 - [`docs/operations/mcp-stdio.md`](./operations/mcp-stdio.md)
 
 #### Deliverables
 
 Met:
 
-1. Git fallback install path for unreleased `choreo-mcp` builds.
+1. Git fallback install path for unreleased `made-mcp` builds.
 2. Fixture and live stdio smoke script.
 3. End-user docs plus Codex CLI and Claude Desktop snippets.
 4. crates.io publication readiness: vendored proto crate, tag-gated
@@ -1032,9 +1032,9 @@ Met:
 
 Open release-candidate work:
 
-1. Publish `choreo-mcp-proto` and then `choreo-mcp` from the first
+1. Publish `made-mcp-proto` and then `made-mcp` from the first
    `v*` tag.
-2. Verify registry install path (`cargo install choreo-mcp`) after the
+2. Verify registry install path (`cargo install made-mcp`) after the
    crates.io publish jobs complete.
 
 ## Proposed execution order
@@ -1049,7 +1049,7 @@ Must finish:
 
 Exit condition:
 
-- Choreographer is no longer an isolated deliberation prototype
+- MADE is no longer an isolated deliberation prototype
 
 **Cleared 2026-05-11.** Runtime executor adapter, kernel context
 boundary (option A), and causal metadata model are all done.
@@ -1064,7 +1064,7 @@ Must finish:
 
 Exit condition:
 
-- Choreographer can return consumer-safe structured decisions
+- MADE can return consumer-safe structured decisions
 
 **Cleared 2026-05-12.** Epic 3 done; Epic 4 done end-to-end
 (JSON Schema validator subsumes the bounded-shape deliverable); Epic
@@ -1114,7 +1114,7 @@ Exit condition:
 - it is reasonable to begin consumer integration work
 
 **Cleared 2026-05-14.** Epic 12 done — consumer-smoke harness lives
-at `crates/choreo-consumer-smoke` with two chains, a CLI, and two
+at `crates/made-consumer-smoke` with two chains, a CLI, and two
 integration tests against the in-process `GrpcFixture`. The remaining
 `Skipped` assertions are explicit harness-scope choices: bundle
 round-trip is covered by Epic 11 scenario 7, and Chain 2's positive
@@ -1187,11 +1187,11 @@ tests via `NoopAgentFactory`).
 The following rule should be treated as hard policy:
 
 > No downstream product that requires structured, audited deliberation
-> output should depend on Choreographer until Milestones A, B, and C
+> output should depend on MADE until Milestones A, B, and C
 > are complete.
 
 Status 2026-05-18: Milestones A, B, C, D, and E are complete.
-`choreo-mcp` has a Git-install UX and smoke coverage; crates.io
+`made-mcp` has a Git-install UX and smoke coverage; crates.io
 publication remains release-candidate work.
 
 Why the rule still applies in spirit even with B and C now cleared:
@@ -1204,7 +1204,7 @@ Why the rule still applies in spirit even with B and C now cleared:
 
 If only one sentence is carried forward from this document, it should be:
 
-> Choreographer's job is to be a trustworthy, agnostic coordination
+> MADE's job is to be a trustworthy, agnostic coordination
 > product — structured external context input, structured outputs,
 > honest transport, optional execution adapters, and agent-callable
 > surfaces through gRPC and MCP. Downstream products integrate; they

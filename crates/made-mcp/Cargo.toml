@@ -1,0 +1,73 @@
+[package]
+name = "made-mcp"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.97"
+license = "Apache-2.0"
+authors = ["Tirso Garcia Ibañez"]
+repository = "https://github.com/underpass-ai/made"
+description = "Stdio MCP (Model Context Protocol) adapter that exposes the MADE gRPC API to coding agents (Codex, Claude Desktop, …)."
+keywords = ["mcp", "anthropic", "made", "stdio"]
+categories = ["command-line-utilities"]
+publish = true
+readme = "README.md"
+include = [
+    "src/**/*.rs",
+    "Cargo.toml",
+    "README.md",
+    "LICENSE*",
+]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "made-mcp"
+path = "src/main.rs"
+
+[dependencies]
+made-adapters = { workspace = true, optional = true }
+made-app = { workspace = true, optional = true }
+made-core = { workspace = true, optional = true }
+made-embedded = { workspace = true, optional = true }
+made-mcp-proto = { workspace = true, optional = true }
+async-trait = { workspace = true }
+futures = { workspace = true, optional = true }
+prost-types = { workspace = true, optional = true }
+serde_json = { workspace = true }
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_yaml = { workspace = true, optional = true }
+sha2 = { workspace = true }
+time = { workspace = true, optional = true }
+tokio = { workspace = true }
+tonic = { workspace = true, optional = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+opentelemetry = { workspace = true }
+uuid = { workspace = true, optional = true }
+testcontainers = { version = "0.23", optional = true }
+
+[features]
+default = ["grpc"]
+embedded = [
+    "dep:made-adapters",
+    "dep:made-app",
+    "dep:made-core",
+    "dep:made-embedded",
+    "dep:serde",
+    "dep:serde_yaml",
+    "dep:time",
+    "dep:uuid",
+]
+grpc = [
+    "dep:made-mcp-proto",
+    "dep:futures",
+    "dep:prost-types",
+    "dep:time",
+    "dep:tonic",
+    "dep:uuid",
+]
+container-tests = ["dep:testcontainers"]
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["full", "test-util"] }

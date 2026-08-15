@@ -10,7 +10,7 @@ A release cuts versioned container images + a Helm chart to
 Semver. Two places must stay in lockstep:
 
 - `Cargo.toml` → `[workspace.package].version`
-- `charts/choreographer/Chart.yaml` → `version` + `appVersion`
+- `charts/made/Chart.yaml` → `version` + `appVersion`
 
 `scripts/release.sh version <X.Y.Z>` (or `just version 0.2.0`)
 rewrites both in one pass and is idempotent.
@@ -73,9 +73,9 @@ mirrors the CI gate.
 
 After step 8, the release artefacts are live:
 
-- `ghcr.io/underpass-ai/underpass-choreographer:v0.2.0`
-- `ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:v0.2.0`
-- `oci://ghcr.io/underpass-ai/charts/choreographer:0.2.0`
+- `ghcr.io/underpass-ai/made:v0.2.0`
+- `ghcr.io/underpass-ai/made-e2e-runner:v0.2.0`
+- `oci://ghcr.io/underpass-ai/charts/made:0.2.0`
 
 ## What `just release` does
 

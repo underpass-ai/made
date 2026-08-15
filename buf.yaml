@@ -1,6 +1,6 @@
 version: v2
 modules:
-  - path: crates/choreo-proto/proto
+  - path: crates/made-proto/proto
 lint:
   use:
     - STANDARD

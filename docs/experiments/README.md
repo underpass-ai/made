@@ -1,6 +1,6 @@
 # Experiments
 
-This directory is the lab notebook of the Underpass Choreographer.
+This directory is the lab notebook of MADE.
 
 Every behavioural, performance, or quality claim in this project must be
 backed by a reproducible experiment recorded here. We do **not** ship

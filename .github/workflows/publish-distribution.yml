@@ -17,11 +17,11 @@ on:
   workflow_dispatch:
 
 env:
-  IMAGE_NAME: ghcr.io/underpass-ai/underpass-choreographer
-  E2E_RUNNER_IMAGE_NAME: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner
-  CHART_NAME: choreographer
+  IMAGE_NAME: ghcr.io/underpass-ai/made
+  E2E_RUNNER_IMAGE_NAME: ghcr.io/underpass-ai/made-e2e-runner
+  CHART_NAME: made
   CHART_REGISTRY: oci://ghcr.io/underpass-ai/charts
-  CHART_PATH: charts/choreographer
+  CHART_PATH: charts/made
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
@@ -176,10 +176,10 @@ jobs:
         with:
           shared-key: publish-crate
 
-      - name: Publish choreo-mcp-proto
+      - name: Publish made-mcp-proto
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p choreo-mcp-proto --token "${CARGO_REGISTRY_TOKEN}"
+        run: cargo publish -p made-mcp-proto --token "${CARGO_REGISTRY_TOKEN}"
 
   publish-crate-mcp:
     needs: [publish-crate-proto]
@@ -206,12 +206,12 @@ jobs:
           shared-key: publish-crate
 
       # Give the crates.io index time to propagate the new
-      # `choreo-mcp-proto` version before the MCP publish tries to
+      # `made-mcp-proto` version before the MCP publish tries to
       # resolve it from the registry.
       - name: Wait for registry propagation
         run: sleep 30
 
-      - name: Publish choreo-mcp
+      - name: Publish made-mcp
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p choreo-mcp --token "${CARGO_REGISTRY_TOKEN}"
+        run: cargo publish -p made-mcp --token "${CARGO_REGISTRY_TOKEN}"

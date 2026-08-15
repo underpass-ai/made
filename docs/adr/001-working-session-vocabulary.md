@@ -15,19 +15,19 @@ Four layers, and only four:
 
 | Layer | Term |
 | --- | --- |
-| Domain types in `choreo-core` | `Ceremony` |
+| Domain types in `made-core` | `Ceremony` |
 | Public English | working session |
 | Public Spanish | mesa de trabajo |
 | Consuming product | its own, never here |
 
-`choreo-core` must not gain a second, parallel hierarchy for the same concept.
+`made-core` must not gain a second, parallel hierarchy for the same concept.
 There is no `WorktableDefinition` next to `CeremonyDefinition`.
 
 No vocabulary from a consuming product enters this repository — not in domain
 types, not in tool names, not in commit messages. A product-specific term
 reaching a public artifact of this repo is a defect, not a naming preference.
 
-Ceremony patterns are data. They are never types in `choreo-core`, because the
+Ceremony patterns are data. They are never types in `made-core`, because the
 first patterns anyone writes will be shaped by whatever domain they came from.
 
 ## Consequences

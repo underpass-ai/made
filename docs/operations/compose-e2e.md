@@ -1,7 +1,7 @@
 # Compose E2E
 
 `make e2e-compose` is the repository-owned end-to-end proof for the
-Choreographer stack. It runs the public gRPC API, core NATS events, the
+MADE stack. It runs the public gRPC API, core NATS events, the
 Runtime executor adapter, JSON-Schema output contracts, and
 provider-shaped agents without external credentials.
 
@@ -15,7 +15,7 @@ Prerequisites:
 
 - Docker with the Compose plugin, Podman with compose support, or
   `podman-compose`.
-- Enough local resources to build the Choreographer image plus the two
+- Enough local resources to build the MADE image plus the two
   test sidecars.
 
 Run:
@@ -39,14 +39,14 @@ session or force `CONTAINER_RUNTIME=podman-compose`.
 
 ## Scenario Selection
 
-The runner reads `CHOREO_E2E_SCENARIOS`. The default is `compose`, which
+The runner reads `MADE_E2E_SCENARIOS`. The default is `compose`, which
 keeps `make e2e-compose` on the full 1-9 suite. To run a subset:
 
 ```sh
-CHOREO_E2E_SCENARIOS=cluster-connectivity make e2e-compose
-CHOREO_E2E_SCENARIOS=structured-output make e2e-compose
-CHOREO_E2E_SCENARIOS=ceremony-vllm make e2e-compose
-CHOREO_E2E_SCENARIOS=1-4,8 make e2e-compose
+MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose
+MADE_E2E_SCENARIOS=structured-output make e2e-compose
+MADE_E2E_SCENARIOS=ceremony-vllm make e2e-compose
+MADE_E2E_SCENARIOS=1-4,8 make e2e-compose
 ```
 
 Supported selectors:
@@ -102,11 +102,11 @@ Implementation entry points:
   — compose runtime detection, cleanup, and log capture.
 - [`../../tests/e2e/docker-compose.e2e.yaml`](../../tests/e2e/docker-compose.e2e.yaml)
   — stack definition.
-- [`../../crates/choreo-e2e-runner/src/main.rs`](../../crates/choreo-e2e-runner/src/main.rs)
+- [`../../crates/made-e2e-runner/src/main.rs`](../../crates/made-e2e-runner/src/main.rs)
   — runner entrypoint and scenario dispatch.
-- [`../../crates/choreo-e2e-runner/src/scenario_selection.rs`](../../crates/choreo-e2e-runner/src/scenario_selection.rs)
+- [`../../crates/made-e2e-runner/src/scenario_selection.rs`](../../crates/made-e2e-runner/src/scenario_selection.rs)
   — selector parsing and scenario groups.
-- [`../../crates/choreo-e2e-runner/src/scenarios/`](../../crates/choreo-e2e-runner/src/scenarios/)
+- [`../../crates/made-e2e-runner/src/scenarios/`](../../crates/made-e2e-runner/src/scenarios/)
   — the scenario assertions, split by surface.
 
 ## Stack
@@ -118,14 +118,14 @@ The compose file starts five meaningful services:
 | `nats` | Core NATS broker for inbound triggers and outbound events. The image starts with `-js`, but the adapter uses plain core NATS pub/sub semantics. |
 | `stub-runtime` | Minimal `underpass.runtime.v1` gRPC peer for `RuntimeExecutor`. |
 | `stub-llm` | OpenAI-compatible HTTP peer returning deterministic Report-shaped JSON. |
-| `choreographer` | Service under test, seeded with one `triage` council and configured for NATS + Runtime executor + OpenAI/vLLM provider kinds. |
+| `MADE` | Service under test, seeded with one `triage` council and configured for NATS + Runtime executor + OpenAI/vLLM provider kinds. |
 | `e2e-runner` | Drives assertions through public gRPC and NATS surfaces only. |
 
 The runner uses:
 
-- `CHOREOGRAPHER_ENDPOINT=http://choreographer:50055`
-- `CHOREO_SEED_SPECIALTY=triage`
-- `CHOREO_REPORT_SCHEMA_PATH=/etc/choreo/report.schema.json`
+- `MADE_ENDPOINT=http://made:50055`
+- `MADE_SEED_SPECIALTY=triage`
+- `MADE_REPORT_SCHEMA_PATH=/etc/made/report.schema.json`
 
 ## Scenarios
 
@@ -148,7 +148,7 @@ structured-output path with provider-shaped agents.
 ## Stub Runtime
 
 `stub-runtime` is a small gRPC server built from
-[`../../crates/choreo-e2e-runner/src/bin/stub_runtime.rs`](../../crates/choreo-e2e-runner/src/bin/stub_runtime.rs).
+[`../../crates/made-e2e-runner/src/bin/stub_runtime.rs`](../../crates/made-e2e-runner/src/bin/stub_runtime.rs).
 It implements the Runtime services needed by `RuntimeExecutor`:
 
 - `CreateSession` returns `stub-session-1`.
@@ -156,11 +156,11 @@ It implements the Runtime services needed by `RuntimeExecutor`:
 - `CloseSession` returns `closed=true`.
 
 The compose service listens on `0.0.0.0:50053` through
-`STUB_RUNTIME_GRPC_ADDR`. Choreographer reaches it through:
+`STUB_RUNTIME_GRPC_ADDR`. MADE reaches it through:
 
 ```text
-CHOREO_EXECUTOR_KIND=runtime
-CHOREO_RUNTIME_GRPC_ENDPOINT=http://stub-runtime:50053
+MADE_EXECUTOR_KIND=runtime
+MADE_RUNTIME_GRPC_ENDPOINT=http://stub-runtime:50053
 ```
 
 Scenario 5 sets `runtime.tool_name=stub.echo`. That tool name is a
@@ -170,7 +170,7 @@ deployment contains `stub.echo`.
 ## Stub LLM
 
 `stub-llm` is an OpenAI-compatible HTTP server built from
-[`../../crates/choreo-e2e-runner/src/bin/stub_llm.rs`](../../crates/choreo-e2e-runner/src/bin/stub_llm.rs).
+[`../../crates/made-e2e-runner/src/bin/stub_llm.rs`](../../crates/made-e2e-runner/src/bin/stub_llm.rs).
 It exposes:
 
 - `POST /v1/chat/completions`
@@ -182,7 +182,7 @@ satisfies the canonical Report schema.
 
 The listener is controlled by `STUB_LLM_LISTEN`; compose sets it to
 `0.0.0.0:8000`. The sidecar ignores bearer tokens and does not call a
-real model. It exists only to prove Choreographer's provider-shaped
+real model. It exists only to prove MADE's provider-shaped
 adapter path and structured-output validation without external
 credentials.
 
@@ -190,7 +190,7 @@ credentials.
 
 Scenarios 8 and 9 use
 [`../../api/examples/output-contracts/report.schema.json`](../../api/examples/output-contracts/report.schema.json).
-The runner image copies it to `/etc/choreo/report.schema.json`, then
+The runner image copies it to `/etc/made/report.schema.json`, then
 registers it with `RegisterContract`.
 
 The schema requires:
@@ -202,16 +202,16 @@ The schema requires:
 
 It is generic by design. Application identifiers and domain vocabulary
 belong in `Task.attributes`, `ExternalContextBundle.metadata`, or the
-calling product, not in the Choreographer core.
+calling product, not in the MADE core.
 
 ## Provider Shapes
 
 Compose enables both provider kinds at boot:
 
 ```text
-CHOREO_OPENAI_API_KEY=stub-key-not-used
-CHOREO_VLLM_MODEL=stub-report-vllm-v1
-CHOREO_VLLM_ENDPOINT=http://stub-llm:8000
+MADE_OPENAI_API_KEY=stub-key-not-used
+MADE_VLLM_MODEL=stub-report-vllm-v1
+MADE_VLLM_ENDPOINT=http://stub-llm:8000
 ```
 
 Scenario 8 registers an `openai` agent with:
@@ -230,7 +230,7 @@ provider.model=stub-report-vllm-v1
 ```
 
 Both adapters speak the OpenAI Chat Completions wire shape, so one
-sidecar can validate both paths. This proves Choreographer's adapter
+sidecar can validate both paths. This proves MADE's adapter
 contract and registration flow. It does not prove latency,
 authentication, model behavior, or network policy for a real external
 provider.
@@ -241,7 +241,7 @@ For a real vLLM endpoint, use the operator-run flow:
 make e2e-provider-vllm
 ```
 
-For a full Choreographer council plus YAML-mounted ceremony against real
+For a full MADE council plus YAML-mounted ceremony against real
 vLLM, use:
 
 ```sh
@@ -249,13 +249,13 @@ make e2e-council-vllm
 ```
 
 That path uses the gRPC E2E runner. The MCP parity path uses the same
-contract and assertions but enters through the `choreo-mcp` stdio
+contract and assertions but enters through the `made-mcp` stdio
 adapter:
 
 ```sh
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
-CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_VLLM_ENDPOINT=https://vllm.example.com \
+MADE_VLLM_MODEL=google/gemma-4-31B-it \
   make e2e-mcp-council-vllm
 ```
 
@@ -269,12 +269,12 @@ provider".
 |---|---|---|
 | `make e2e-compose` | Repo-owned stack proof with deterministic fixtures. | Local container runtime only. |
 | `make e2e-provider-vllm` | Adapter-level validation against a real vLLM endpoint. | Kubernetes access plus real vLLM endpoint configuration. |
-| `make e2e-council-vllm` | gRPC council validation and YAML ceremony execution against multiple real vLLM agents. | Deployed Choreographer with `kind=vllm`, plus real vLLM endpoint configuration. |
-| `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM ceremony. | Deployed Choreographer reachable from `choreo-mcp`, plus real vLLM endpoint configuration. |
-| Kubernetes smoke job | Connectivity smoke after Helm install. | Cluster, deployed Choreographer, and matching runtime/provider fixtures if running compose-shaped scenarios. |
+| `make e2e-council-vllm` | gRPC council validation and YAML ceremony execution against multiple real vLLM agents. | Deployed MADE with `kind=vllm`, plus real vLLM endpoint configuration. |
+| `make e2e-mcp-council-vllm` | MCP parity validation for the same multi-agent vLLM ceremony. | Deployed MADE reachable from `made-mcp`, plus real vLLM endpoint configuration. |
+| Kubernetes smoke job | Connectivity smoke after Helm install. | Cluster, deployed MADE, and matching runtime/provider fixtures if running compose-shaped scenarios. |
 
 Do not present `make e2e-compose` as proof of real provider
-performance. It proves that Choreographer's public surfaces and
+performance. It proves that MADE's public surfaces and
 provider-shaped wiring are coherent under deterministic test fixtures.
 
 ## Troubleshooting
@@ -285,7 +285,7 @@ provider-shaped wiring are coherent under deterministic test fixtures.
   expects `stub.echo`; use the compose stack or provide an equivalent
   Runtime fixture.
 - **Scenarios 8 or 9 fail with provider kind unsupported**: confirm the
-  Choreographer binary was built with the OpenAI/vLLM feature flags and
+  MADE binary was built with the OpenAI/vLLM feature flags and
   booted with the provider env vars needed by `DispatchingAgentFactory`.
 - **Need detailed logs**: inspect `tests/e2e/compose.log` after the
   wrapper exits.

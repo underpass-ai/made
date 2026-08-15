@@ -1,17 +1,17 @@
 #!/usr/bin/env bash
 #
 # Publish dry-run gate for the two crates that ship to crates.io:
-#   - `choreo-mcp-proto` (vendored proto crate)
-#   - `choreo-mcp`       (stdio MCP adapter)
+#   - `made-mcp-proto` (vendored proto crate)
+#   - `made-mcp`       (stdio MCP adapter)
 #
 # Catches packaging regressions (missing metadata, missing files,
 # accidental path-only deps) before the publish-distribution
 # workflow tries to push to crates.io.
 #
-# `choreo-mcp-proto` uses the full `cargo publish --dry-run` flow:
+# `made-mcp-proto` uses the full `cargo publish --dry-run` flow:
 # compiles the staged tarball as a stand-alone crate.
 #
-# `choreo-mcp` does NOT — it depends on `choreo-mcp-proto` which is
+# `made-mcp` does NOT — it depends on `made-mcp-proto` which is
 # not yet on the registry, so cargo's pre-publish verify step would
 # always fail. The real publish-distribution workflow serializes the
 # two jobs (proto first, then mcp with a 30s wait for index
@@ -27,10 +27,10 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-echo "::group::cargo publish --dry-run -p choreo-mcp-proto"
-cargo publish --dry-run -p choreo-mcp-proto
+echo "::group::cargo publish --dry-run -p made-mcp-proto"
+cargo publish --dry-run -p made-mcp-proto
 echo "::endgroup::"
 
-echo "::group::cargo package -l -p choreo-mcp"
-cargo package --list -p choreo-mcp
+echo "::group::cargo package -l -p made-mcp"
+cargo package --list -p made-mcp
 echo "::endgroup::"

@@ -1,11 +1,11 @@
 # MCP Stdio Adapter
 
-Status: installable stdio adapter for the Underpass Choreographer gRPC API.
+Status: installable stdio adapter for the MADE gRPC API.
 
 The repo ships a stdio MCP server in
-[`crates/choreo-mcp`](../../crates/choreo-mcp). It exposes every RPC of
-`underpass.choreo.v1` as an MCP tool, so coding agents (Codex CLI,
-Claude Desktop) can drive the choreographer without re-implementing
+[`crates/made-mcp`](../../crates/made-mcp). It exposes every RPC of
+`underpass.made.v1` as an MCP tool, so coding agents (Codex CLI,
+Claude Desktop) can drive MADE without re-implementing
 gRPC.
 
 Companion docs:
@@ -15,11 +15,11 @@ Companion docs:
 
 ## Quickstart — fixture mode
 
-After installing `choreo-mcp`, the fastest client-wiring check needs
-no running Choreographer and no gRPC endpoint:
+After installing `made-mcp`, the fastest client-wiring check needs
+no running MADE and no gRPC endpoint:
 
 ```bash
-CHOREO_MCP_BACKEND=fixture choreo-mcp
+MADE_MCP_BACKEND=fixture made-mcp
 ```
 
 That starts the stdio MCP server and waits for JSON-RPC on stdin. For
@@ -28,7 +28,7 @@ a terminal smoke that exits immediately:
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | CHOREO_MCP_BACKEND=fixture choreo-mcp
+  | MADE_MCP_BACKEND=fixture made-mcp
 ```
 
 From a checkout, without installing the binary first:
@@ -36,55 +36,55 @@ From a checkout, without installing the binary first:
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Fixture mode returns deterministic canned responses for every tool. It
 is for MCP client setup, tool-choice validation, and demos; it is not a
-live Choreographer integration test.
+live MADE integration test.
 
 ## Quickstart — live local gRPC
 
-To test the MCP adapter against a real local Choreographer, use two
+To test the MCP adapter against a real local MADE, use two
 terminals.
 
-Terminal 1 starts Choreographer with no external services and seeds one
+Terminal 1 starts MADE with no external services and seeds one
 demo council:
 
 ```bash
-CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage just run
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage just run
 ```
 
 If `just` is not installed, use the equivalent Cargo command:
 
 ```bash
-CHOREO_NATS_ENABLED=false CHOREO_SEED_SPECIALTIES=triage \
-  cargo run --locked -p choreo
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage \
+  cargo run --locked -p made
 ```
 
 Terminal 2 starts the MCP stdio adapter against the local gRPC endpoint:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 choreo-mcp
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 ```
 
 For a one-shot terminal smoke from a checkout:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_MCP_BIN=target/debug/choreo-mcp \
-  bash scripts/mcp/choreo-stdio-smoke.sh
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_MCP_BIN=target/debug/made-mcp \
+  bash scripts/mcp/made-stdio-smoke.sh
 ```
 
-The smoke calls `choreo_list_councils` and expects the seeded `triage`
-council. If `choreo-mcp` is already installed on PATH, omit
-`CHOREO_MCP_BIN`.
+The smoke calls `made_list_councils` and expects the seeded `triage`
+council. If `made-mcp` is already installed on PATH, omit
+`MADE_MCP_BIN`.
 
 ## Tool Call Examples
 
 ### CreateCouncil
 
-`choreo_create_council` creates a council for a specialty and asks the
+`made_create_council` creates a council for a specialty and asks the
 server to seat `num_agents` agents. In live mode those agents must
 already be resolvable. The gRPC handler mints ids in the form
 `agent-<specialty>-<index>`, so `{"specialty":"triage","num_agents":1}`
@@ -94,8 +94,8 @@ Fixture-mode terminal check:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_create_council","arguments":{"specialty":"triage","num_agents":1}}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_create_council","arguments":{"specialty":"triage","num_agents":1}}}' \
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected response shape:
@@ -119,13 +119,13 @@ Expected response shape:
 
 The fixture response is deterministic and does not mutate state. For a
 live local call, first ensure the matching agent exists through seeding
-or `choreo_register_agent`, then set
-`CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055` instead of
-`CHOREO_MCP_BACKEND=fixture`.
+or `made_register_agent`, then set
+`MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055` instead of
+`MADE_MCP_BACKEND=fixture`.
 
 ### RegisterAgent
 
-`choreo_register_agent` registers an agent descriptor so later calls can
+`made_register_agent` registers an agent descriptor so later calls can
 resolve that agent by id. It does not attach the agent to a council by
 itself; `CreateCouncil` still controls council membership.
 
@@ -133,8 +133,8 @@ Fixture-mode terminal check:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_register_agent","arguments":{"specialty":"review","agent":{"agent_id":"agent-review-0","specialty":"review","kind":"noop"},"agent_config":{"label":"local noop reviewer"}}}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_register_agent","arguments":{"specialty":"review","agent":{"agent_id":"agent-review-0","specialty":"review","kind":"noop"},"agent_config":{"label":"local noop reviewer"}}}}' \
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected response shape:
@@ -163,7 +163,7 @@ creating a `review` council with `num_agents: 1`.
 
 ### RegisterContract
 
-`choreo_register_contract` stores an `OutputContract` in the contract
+`made_register_contract` stores an `OutputContract` in the contract
 registry. Later `RunCouncilDecision` calls reference it by
 `contract_id` and validate the council winner against its field rules
 and optional embedded JSON Schema.
@@ -172,8 +172,8 @@ Fixture-mode terminal check:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_register_contract","arguments":{"contract":{"contract_id":"contract-review-v1","format":"json_object","fields":{"status":{"required":true,"allowed_string_values":["accepted","needs_changes"]},"summary":{"required":true},"rationale":{"required":false}}}}}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_register_contract","arguments":{"contract":{"contract_id":"contract-review-v1","format":"json_object","fields":{"status":{"required":true,"allowed_string_values":["accepted","needs_changes"]},"summary":{"required":true},"rationale":{"required":false}}}}}}' \
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected response shape:
@@ -192,7 +192,7 @@ Expected response shape:
 ```
 
 For a live local call, keep the returned or requested `contract_id` and
-pass it to `choreo_run_council_decision`. `format` is currently
+pass it to `made_run_council_decision`. `format` is currently
 `json_object`. Field rules can require named fields and constrain string
 values; for stricter validation, include a `json_schema` string. The
 canonical Report-shape example lives at
@@ -200,7 +200,7 @@ canonical Report-shape example lives at
 
 ### RunCouncilDecision
 
-`choreo_run_council_decision` runs a council and validates the winning
+`made_run_council_decision` runs a council and validates the winning
 proposal against a previously registered contract. The call must include
 `contract_id`, `description`, and exactly one selector:
 `specialty` or `council_id`.
@@ -209,8 +209,8 @@ Fixture-mode terminal check:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_run_council_decision","arguments":{"specialty":"review","contract_id":"contract-review-v1","description":"Review the candidate change and return status, summary, and rationale.","validation_mode":"VALIDATION_MODE_STRICT"}}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_run_council_decision","arguments":{"specialty":"review","contract_id":"contract-review-v1","description":"Review the candidate change and return status, summary, and rationale.","validation_mode":"VALIDATION_MODE_STRICT"}}}' \
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected response shape:
@@ -282,7 +282,7 @@ returned even if validation fails.
 
 ### Orchestrate
 
-`choreo_orchestrate` runs the full path: deliberate on the task's
+`made_orchestrate` runs the full path: deliberate on the task's
 specialty, pick the winning proposal, and pass that winner to the
 configured `ExecutorPort`. The call takes a `task` object and optional
 opaque `execution_options`.
@@ -291,8 +291,8 @@ Fixture-mode terminal check:
 
 ```bash
 printf '%s\n' \
-  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"choreo_orchestrate","arguments":{"task":{"task_id":"task-review-orchestrate-1","description":"Review the candidate change and execute the accepted plan.","specialty":"review","constraints":{"rounds":1,"num_agents":1}},"execution_options":{"executor":"noop","trace_label":"mcp-orchestrate-demo"}}}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"made_orchestrate","arguments":{"task":{"task_id":"task-review-orchestrate-1","description":"Review the candidate change and execute the accepted plan.","specialty":"review","constraints":{"rounds":1,"num_agents":1}},"execution_options":{"executor":"noop","trace_label":"mcp-orchestrate-demo"}}}}' \
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected response shape:
@@ -349,83 +349,83 @@ takes precedence over overlapping execution-profile metadata.
 
 Two server-owned tools are available independently of the selected backend:
 
-- `choreo_discover_capabilities` returns the server name and version, active
+- `made_discover_capabilities` returns the server name and version, active
   backend and TLS posture, backend-filtered tools, capability groups and
   artifact generators. It is the machine-readable source for deciding what
   this running process can execute.
-- `choreo_get_help` accepts `audience: user` or `audience: agent`. User help
+- `made_get_help` accepts `audience: user` or `audience: agent`. User help
   presents available workflows and examples. Agent help adds preconditions,
   authority boundaries, delegated-host sequencing and explicit responses to
   protocol errors, tool errors, absent tools and lost host context.
 
 ```json
-{"name":"choreo_discover_capabilities","arguments":{}}
+{"name":"made_discover_capabilities","arguments":{}}
 ```
 
 ```json
-{"name":"choreo_get_help","arguments":{"audience":"agent"}}
+{"name":"made_get_help","arguments":{"audience":"agent"}}
 ```
 
 Both responses are derived against the same catalog filter as `tools/list`.
 An embedded build therefore advertises its report generator, while a backend
 that cannot execute that tool neither lists it nor recommends its workflow.
 
-The 35 backend-owned MCP tools are 1:1 with the choreographer's 35 gRPC RPCs.
+The 35 backend-owned MCP tools are 1:1 with MADE's 35 gRPC RPCs.
 Together with the two server-owned discovery/help tools above, gRPC mode
 advertises 37 executable tools:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
-| `choreo_deliberate`               | `Deliberate`                          | Run a council deliberation; returns ranked proposals. |
-| `choreo_stream_deliberation`      | `StreamDeliberation`                  | Same as above but every phase-transition frame buffered into one response (stdio is sync). |
-| `choreo_get_deliberation_result`  | `GetDeliberationResult`               | Fetch a previously-executed deliberation by task id. |
-| `choreo_orchestrate`              | `Orchestrate`                         | Deliberate AND execute the winner through the wired executor. |
-| `choreo_create_council`           | `CreateCouncil`                       | Create / replace a council for a specialty. |
-| `choreo_list_councils`            | `ListCouncils`                        | Enumerate registered councils. |
-| `choreo_delete_council`           | `DeleteCouncil`                       | Idempotent delete. |
-| `choreo_register_agent`           | `RegisterAgent`                       | Register an agent descriptor (`noop` / `anthropic` / `openai` / `vllm`). |
-| `choreo_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
-| `choreo_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
-| `choreo_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
-| `choreo_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
-| `choreo_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
-| `choreo_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
-| `choreo_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
-| `choreo_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
-| `choreo_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
-| `choreo_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
-| `choreo_start_published_ceremony` | `StartPublishedCeremony`              | Start an immutable published definition. |
-| `choreo_run_ceremony_step`        | `RunCeremonyStep`                     | Invoke the configured server-owned step handler. |
-| `choreo_apply_ceremony_transition` | `ApplyCeremonyTransition`            | Apply an enabled transition. |
-| `choreo_approve_ceremony_guard`   | `ApproveCeremonyGuard`                | Record an explicit human guard approval. |
-| `choreo_defer_ceremony_guard`     | `DeferCeremonyGuard`                  | Preserve a human deferral. |
-| `choreo_request_ceremony_intervention` | `RequestCeremonyIntervention`    | Open a participant request. |
-| `choreo_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | Record a targeted response. |
-| `choreo_close_ceremony_intervention` | `CloseCeremonyIntervention`        | Close a participant request. |
-| `choreo_collect_ceremony_evidence` | `CollectCeremonyEvidence`            | Attach evidence from a configured source. |
-| `choreo_assert_ceremony_reason`   | `AssertCeremonyReason`                | Record a participant-attributed reason. |
-| `choreo_validate_ceremony_draft`  | `ValidateCeremonyDraft`               | Validate without publishing. |
-| `choreo_explain_ceremony_draft`   | `ExplainCeremonyDraft`                | Explain structure and findings. |
-| `choreo_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
-| `choreo_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
-| `choreo_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
-| `choreo_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
-| `choreo_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
+| `made_deliberate`               | `Deliberate`                          | Run a council deliberation; returns ranked proposals. |
+| `made_stream_deliberation`      | `StreamDeliberation`                  | Same as above but every phase-transition frame buffered into one response (stdio is sync). |
+| `made_get_deliberation_result`  | `GetDeliberationResult`               | Fetch a previously-executed deliberation by task id. |
+| `made_orchestrate`              | `Orchestrate`                         | Deliberate AND execute the winner through the wired executor. |
+| `made_create_council`           | `CreateCouncil`                       | Create / replace a council for a specialty. |
+| `made_list_councils`            | `ListCouncils`                        | Enumerate registered councils. |
+| `made_delete_council`           | `DeleteCouncil`                       | Idempotent delete. |
+| `made_register_agent`           | `RegisterAgent`                       | Register an agent descriptor (`noop` / `anthropic` / `openai` / `vllm`). |
+| `made_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
+| `made_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
+| `made_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
+| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
+| `made_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
+| `made_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
+| `made_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
+| `made_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
+| `made_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
+| `made_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
+| `made_start_published_ceremony` | `StartPublishedCeremony`              | Start an immutable published definition. |
+| `made_run_ceremony_step`        | `RunCeremonyStep`                     | Invoke the configured server-owned step handler. |
+| `made_apply_ceremony_transition` | `ApplyCeremonyTransition`            | Apply an enabled transition. |
+| `made_approve_ceremony_guard`   | `ApproveCeremonyGuard`                | Record an explicit human guard approval. |
+| `made_defer_ceremony_guard`     | `DeferCeremonyGuard`                  | Preserve a human deferral. |
+| `made_request_ceremony_intervention` | `RequestCeremonyIntervention`    | Open a participant request. |
+| `made_respond_to_ceremony_intervention` | `RespondToCeremonyIntervention` | Record a targeted response. |
+| `made_close_ceremony_intervention` | `CloseCeremonyIntervention`        | Close a participant request. |
+| `made_collect_ceremony_evidence` | `CollectCeremonyEvidence`            | Attach evidence from a configured source. |
+| `made_assert_ceremony_reason`   | `AssertCeremonyReason`                | Record a participant-attributed reason. |
+| `made_validate_ceremony_draft`  | `ValidateCeremonyDraft`               | Validate without publishing. |
+| `made_explain_ceremony_draft`   | `ExplainCeremonyDraft`                | Explain structure and findings. |
+| `made_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
+| `made_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
+| `made_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
+| `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
+| `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
-The choreographer API is **respected at 100%** — every proto field has
+The MADE API is **respected at 100%** — every proto field has
 an explicit JSON key in both the tool input schema and the response.
 No flattening, no silent drops. Enums (e.g. `DeliberationPhase`) map
 to stable string labels (`DELIBERATION_PHASE_PROPOSING`, …).
 
 ### Durable ceremony reports (embedded)
 
-`choreo_generate_ceremony_report` is an embedded-only, read-only extension. A
+`made_generate_ceremony_report` is an embedded-only, read-only extension. A
 call supplies `ceremony_ids` as a non-empty array with no duplicates and may
 supply `title`. Unknown ids fail the whole call; caller order is preserved.
 
 ```json
 {
-  "name": "choreo_generate_ceremony_report",
+  "name": "made_generate_ceremony_report",
   "arguments": {
     "ceremony_ids": ["session-17", "session-18"],
     "title": "Working-session report"
@@ -443,9 +443,9 @@ batches if the MCP client imposes a response-size limit.
 
 ## Modes
 
-Backend selection is driven by `CHOREO_MCP_BACKEND`:
+Backend selection is driven by `MADE_MCP_BACKEND`:
 
-- **`grpc`** (default) — talks to a real choreographer. The endpoint
+- **`grpc`** (default) — talks to a real MADE. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
 - **`embedded`** — executes the real ceremony engine in process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
@@ -455,30 +455,30 @@ Backend selection is driven by `CHOREO_MCP_BACKEND`:
   snapshots and audit journals.
   Participants can open, answer, and close dynamic opinion, investigation, or
   action requests while the ceremony remains active. It requires no
-  Choreographer service, gRPC, protobuf, NATS, or database.
+  MADE service, gRPC, protobuf, NATS, or database.
 - **`fixture`** — returns canned responses for every tool. Useful for
   client wiring, demos, and tool-choice validation **without** a
-  running choreographer.
+  running MADE.
 
 ```bash
-CHOREO_MCP_BACKEND=fixture cargo run -p choreo-mcp --locked
+MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
-CHOREO_MCP_BACKEND=embedded \
-  cargo run -p choreo-mcp --no-default-features --features embedded --locked
+MADE_MCP_BACKEND=embedded \
+  cargo run -p made-mcp --no-default-features --features embedded --locked
 ```
 
 ### Embedded step execution ownership
 
 There are two distinct execution paths:
 
-- `choreo_run_ceremony_step` invokes a server-owned step handler. Use it for
+- `made_run_ceremony_step` invokes a server-owned step handler. Use it for
   operational work only when the embedding host configured a real
   `CeremonyStepHandlerPort`. The bundled default may use
   `NoopCeremonyStepHandler`; its empty completed result demonstrates protocol
   and state-machine wiring, not that external work occurred.
-- For work owned by the MCP host, call `choreo_claim_ceremony_step` for the
+- For work owned by the MCP host, call `made_claim_ceremony_step` for the
   exact next step, perform the real work through authorized host workers and
-  tools, then call `choreo_complete_ceremony_step` with its observable status,
+  tools, then call `made_complete_ceremony_step` with its observable status,
   structured output, and evidence/artifact references. Refresh the instance
   before applying an enabled transition.
 
@@ -488,12 +488,12 @@ relax human guards or host policy.
 
 The embedded-only intervention tools are:
 
-- `choreo_request_ceremony_intervention`: the requesting role opens a live
+- `made_request_ceremony_intervention`: the requesting role opens a live
   agenda item. Omit `target_role_ids` for the whole table or provide one or
   more role ids for a scoped request.
-- `choreo_respond_to_ceremony_intervention`: a targeted role records one
+- `made_respond_to_ceremony_intervention`: a targeted role records one
   response, with optional structured `details`.
-- `choreo_close_ceremony_intervention`: only the requesting role can close
+- `made_close_ceremony_intervention`: only the requesting role can close
   the item.
 
 The YAML must grant `request_intervention` and `respond_to_intervention` in
@@ -507,92 +507,92 @@ For users outside the repo, install as a Cargo binary from crates.io
 after the first release has published the package:
 
 ```bash
-cargo install choreo-mcp --locked
+cargo install made-mcp --locked
 ```
 
 The repo helper uses the registry path by default:
 
 ```bash
-bash scripts/mcp/install-choreo-mcp.sh
+bash scripts/mcp/install-made-mcp.sh
 ```
 
 For unreleased changes, switch the helper to Git mode and pin a ref:
 
 ```bash
-CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh
+MADE_MCP_INSTALL_MODE=git bash scripts/mcp/install-made-mcp.sh
 
-CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_TAG=v0.1.0 bash scripts/mcp/install-choreo-mcp.sh
-CHOREO_MCP_INSTALL_MODE=git CHOREO_MCP_REV=<git-sha> bash scripts/mcp/install-choreo-mcp.sh
+MADE_MCP_INSTALL_MODE=git MADE_MCP_TAG=v0.1.0 bash scripts/mcp/install-made-mcp.sh
+MADE_MCP_INSTALL_MODE=git MADE_MCP_REV=<git-sha> bash scripts/mcp/install-made-mcp.sh
 ```
 
-After install, the adapter is just `choreo-mcp` on PATH:
+After install, the adapter is just `made-mcp` on PATH:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com choreo-mcp
+MADE_MCP_GRPC_ENDPOINT=https://made.example.com made-mcp
 ```
 
 ### Distribution model
 
-`choreo-mcp` depends on `choreo-mcp-proto`, a small vendored proto
-crate that carries only the public `underpass.choreo.v1` API needed by
-the MCP adapter. Release tags publish `choreo-mcp-proto` first, wait
-for crates.io index propagation, and then publish `choreo-mcp`.
+`made-mcp` depends on `made-mcp-proto`, a small vendored proto
+crate that carries only the public `underpass.made.v1` API needed by
+the MCP adapter. Release tags publish `made-mcp-proto` first, wait
+for crates.io index propagation, and then publish `made-mcp`.
 
 ## Live gRPC mode
 
 Plain (no TLS):
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-  cargo run -p choreo-mcp --locked
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+  cargo run -p made-mcp --locked
 ```
 
 `https://` endpoints auto-enable server TLS using system / webpki roots:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.example.com \
-  cargo run -p choreo-mcp --locked
+MADE_MCP_GRPC_ENDPOINT=https://made.example.com \
+  cargo run -p made-mcp --locked
 ```
 
 Private CAs and direct mTLS are explicit:
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=https://choreographer.underpass.svc:50055 \
-CHOREO_MCP_GRPC_TLS_MODE=mutual \
-CHOREO_MCP_GRPC_TLS_CA_PATH=/var/run/choreo-tls/ca.crt \
-CHOREO_MCP_GRPC_TLS_CERT_PATH=/var/run/choreo-tls/tls.crt \
-CHOREO_MCP_GRPC_TLS_KEY_PATH=/var/run/choreo-tls/tls.key \
-CHOREO_MCP_GRPC_TLS_DOMAIN_NAME=choreographer-grpc \
-  cargo run -p choreo-mcp --locked
+MADE_MCP_GRPC_ENDPOINT=https://made.underpass.svc:50055 \
+MADE_MCP_GRPC_TLS_MODE=mutual \
+MADE_MCP_GRPC_TLS_CA_PATH=/var/run/made-tls/ca.crt \
+MADE_MCP_GRPC_TLS_CERT_PATH=/var/run/made-tls/tls.crt \
+MADE_MCP_GRPC_TLS_KEY_PATH=/var/run/made-tls/tls.key \
+MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
+  cargo run -p made-mcp --locked
 ```
 
 ### Env var reference
 
 | Var                              | Purpose                                                                  |
 |----------------------------------|--------------------------------------------------------------------------|
-| `CHOREO_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
-| `CHOREO_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
-| `CHOREO_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
-| `CHOREO_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |
-| `CHOREO_MCP_GRPC_TLS_CERT_PATH`  | Client cert PEM (mutual). Implies `mutual` mode when set.                |
-| `CHOREO_MCP_GRPC_TLS_KEY_PATH`   | Client key PEM (mutual). Implies `mutual` mode when set.                 |
-| `CHOREO_MCP_GRPC_TLS_DOMAIN_NAME`| TLS SNI/domain override when cert CN/SAN differs from the URL host.      |
+| `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
+| `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
+| `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
+| `MADE_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |
+| `MADE_MCP_GRPC_TLS_CERT_PATH`  | Client cert PEM (mutual). Implies `mutual` mode when set.                |
+| `MADE_MCP_GRPC_TLS_KEY_PATH`   | Client key PEM (mutual). Implies `mutual` mode when set.                 |
+| `MADE_MCP_GRPC_TLS_DOMAIN_NAME`| TLS SNI/domain override when cert CN/SAN differs from the URL host.      |
 
-`RUST_LOG=choreo_mcp=debug` enables structured per-tool-call tracing
+`RUST_LOG=made_mcp=debug` enables structured per-tool-call tracing
 on stderr (stdout is reserved for JSON-RPC).
 
 ## Smoke test
 
 ```bash
-# Fixture mode (no choreographer needed)
-CHOREO_MCP_BACKEND=fixture \
-CHOREO_MCP_BIN=choreo-mcp \
-  bash scripts/mcp/choreo-stdio-smoke.sh
+# Fixture mode (no MADE needed)
+MADE_MCP_BACKEND=fixture \
+MADE_MCP_BIN=made-mcp \
+  bash scripts/mcp/made-stdio-smoke.sh
 
 # Live mode
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_MCP_BIN=choreo-mcp \
-  bash scripts/mcp/choreo-stdio-smoke.sh
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_MCP_BIN=made-mcp \
+  bash scripts/mcp/made-stdio-smoke.sh
 ```
 
 The script issues one `tools/call`, asserts `"jsonrpc":"2.0"` is
@@ -603,30 +603,30 @@ present.
 
 `make e2e-mcp-council-vllm` proves the same real-provider council
 ceremony through MCP stdio instead of direct gRPC. It builds
-`choreo-mcp` from the checkout when `CHOREO_MCP_BIN` is not set, then
+`made-mcp` from the checkout when `MADE_MCP_BIN` is not set, then
 uses `tools/call` requests for:
 
-- `choreo_register_contract`
-- `choreo_register_agent`, once per vLLM agent
-- `choreo_create_council`
-- `choreo_run_council_decision`
+- `made_register_contract`
+- `made_register_agent`, once per vLLM agent
+- `made_create_council`
+- `made_run_council_decision`
 
 The final response must contain multiple candidates, at least one
 schema-valid candidate, a schema-valid Report winner, distinct agent
 authors, and `revision_count > 0` on the winner and every candidate.
 
 ```bash
-CHOREO_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
-CHOREO_VLLM_ENDPOINT=https://vllm.example.com \
-CHOREO_VLLM_MODEL=google/gemma-4-31B-it \
-CHOREO_VLLM_AGENT_COUNT=3 \
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \
+MADE_VLLM_ENDPOINT=https://vllm.example.com \
+MADE_VLLM_MODEL=google/gemma-4-31B-it \
+MADE_VLLM_AGENT_COUNT=3 \
   make e2e-mcp-council-vllm
 ```
 
-Use the same TLS env vars as live mode when the Choreographer endpoint
-requires server TLS or mTLS. The Choreographer target must be built
-with `agent-vllm` and booted with `CHOREO_VLLM_MODEL` plus
-`CHOREO_VLLM_ENDPOINT` so `kind=vllm` is available; the E2E also sends
+Use the same TLS env vars as live mode when the MADE endpoint
+requires server TLS or mTLS. The MADE target must be built
+with `agent-vllm` and booted with `MADE_VLLM_MODEL` plus
+`MADE_VLLM_ENDPOINT` so `kind=vllm` is available; the E2E also sends
 per-agent `provider.endpoint`, `provider.model`, and
 `provider.max_tokens` overrides through MCP.
 
@@ -635,7 +635,7 @@ per-agent `provider.endpoint`, `provider.model`, and
 ```bash
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"tools/list","params":{}}' \
-  | CHOREO_MCP_BACKEND=fixture cargo run -q -p choreo-mcp --locked
+  | MADE_MCP_BACKEND=fixture cargo run -q -p made-mcp --locked
 ```
 
 Expected:
@@ -659,7 +659,7 @@ is the file location the client expects.
 
 ## Streaming caveat
 
-`choreo_stream_deliberation` corresponds to `StreamDeliberation`, a
+`made_stream_deliberation` corresponds to `StreamDeliberation`, a
 server-streaming RPC. MCP stdio is synchronous request/response, so
 the adapter buffers the entire stream into a single response:
 

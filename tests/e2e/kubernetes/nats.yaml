@@ -3,14 +3,14 @@
 #
 # Not a production chart — intentionally tiny so the E2E path is
 # exact and debuggable. The Service name `nats` matches the default
-# `messaging.nats.url` the Choreographer chart ships with.
+# `messaging.nats.url` the MADE chart ships with.
 apiVersion: v1
 kind: Service
 metadata:
   name: nats
   labels:
     app: nats
-    app.kubernetes.io/part-of: choreographer-e2e
+    app.kubernetes.io/part-of: made-e2e
 spec:
   selector:
     app: nats
@@ -26,7 +26,7 @@ metadata:
   name: nats
   labels:
     app: nats
-    app.kubernetes.io/part-of: choreographer-e2e
+    app.kubernetes.io/part-of: made-e2e
 spec:
   replicas: 1
   selector:

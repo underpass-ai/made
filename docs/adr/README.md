@@ -1,6 +1,6 @@
 # Architecture decision records
 
-Durable decisions about the Choreographer core, its contracts and its
+Durable decisions about the MADE core, its contracts and its
 distributions. Each record states what was decided and what it costs, not how
 the code is organised — that lives in the architecture docs.
 
@@ -13,7 +13,7 @@ much as the decision itself.
   construction still fails fast
 - [ADR-003](003-audit-journal-and-durability.md): the engine owns the audit
   contract; the host owns durability
-- [ADR-004](004-published-embedded-api-contract.md): `choreo-api` is the
+- [ADR-004](004-published-embedded-api-contract.md): `made-api` is the
   contract a consumer compiles against
 - [ADR-005](005-structured-ceremony-design-tool.md): ceremony design accepts
   structured intent and returns an unpublished draft

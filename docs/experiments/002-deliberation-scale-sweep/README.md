@@ -4,7 +4,7 @@
 - **Date:** 2026-04-18
 - **Status:** complete
 - **Related code:**
-  - `crates/choreo-app/benches/deliberate.rs`
+  - `crates/made-app/benches/deliberate.rs`
   - Follow-up to [`001-baseline-deliberation-latency`](../001-baseline-deliberation-latency/README.md)
 
 ## 1. Hypothesis
@@ -124,7 +124,7 @@ extrapolated below its fit range should not be trusted.
 - **Still stub-agent.** As in 001, every agent call is a constant
   no-op. Real LLM latencies (tens to thousands of ms) dwarf the
   microsecond regime measured here. This experiment is about
-  **the choreographer's own scaling**, not about deliberation
+  **MADE's own scaling**, not about deliberation
   latency in production.
 - **Narrow agent range.** The grid tops out at 10 agents. We have
   not measured cache effects that would emerge at, say, 32 or 64

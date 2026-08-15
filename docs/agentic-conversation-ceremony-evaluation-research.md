@@ -3,17 +3,17 @@
 Status: research and design proposal. This document is not an implementation
 claim.
 
-Choreographer is agnostic and independent. KMP, Runtime, and other
+MADE is agnostic and independent. KMP, Runtime, and other
 systems mentioned here are studied as possible context, evidence, or
 tool providers for evaluations; they are not required dependencies of
-the Choreographer product.
+the MADE product.
 
 Date: 2026-04-26
 
 ## Scope
 
 We want to evaluate whether a designed agentic meeting ceremony is a good fit
-for a given problem. The design must use Choreographer as a
+for a given problem. The design must use MADE as a
 domain-agnostic conversation orchestrator. Product vocabulary, domain facts, and
 application-owned identifiers must stay at the edge through task attributes,
 external context metadata, output contracts, kernel graph data, or runtime
@@ -21,7 +21,7 @@ session metadata.
 
 Code reviewed locally for the original research snapshot:
 
-- this Choreographer repository
+- this MADE repository
 - a local checkout of `underpass-runtime`
 - a local checkout of `rehydration-kernel`
 
@@ -38,7 +38,7 @@ kernel context, runtime tool results, artifacts, or approved external inputs.
 
 This gives us three complementary planes:
 
-- Choreographer is the neutral meeting facilitator. It controls phases,
+- MADE is the neutral meeting facilitator. It controls phases,
   participants, turn policy, critique/revision/scoring, and trace emission
   without knowing the product domain.
 - Rehydration Kernel is the scenario memory plane. It can recreate past
@@ -65,7 +65,7 @@ validated.
 
 ## Design Stance: Adapter-Agnostic, Sibling-Optimized
 
-The medium-term goal is a generic Choreographer that is usable outside the
+The medium-term goal is a generic MADE that is usable outside the
 Underpass stack. The contracts must therefore stay adapter-agnostic: no kernel
 types, runtime tool names, Kubernetes terms, or product vocabulary should leak
 into the core meeting model.
@@ -98,24 +98,24 @@ initial deployment.
 
 ## Local Evidence
 
-### Choreographer
+### MADE
 
-Choreographer is currently a domain-agnostic deliberation engine.
+MADE is currently a domain-agnostic deliberation engine.
 
 - `docs/PRINCIPLES.md` states that core/protocol/specs must avoid use-case
   vocabulary. Domain terms belong in `attributes` or external context.
-- `crates/choreo-core/src/ports/agent.rs` exposes only generic agent actions:
+- `crates/made-core/src/ports/agent.rs` exposes only generic agent actions:
   `generate`, `critique`, and `revise`.
-- `crates/choreo-app/src/usecases/deliberate.rs` implements a generic ceremony:
+- `crates/made-app/src/usecases/deliberate.rs` implements a generic ceremony:
   propose, peer critique, revise, validate, score, complete.
-- `crates/choreo-app/src/usecases/orchestrate.rs` composes deliberation with an
+- `crates/made-app/src/usecases/orchestrate.rs` composes deliberation with an
   executor and carries generic execution options.
-- `crates/choreo-core/src/entities/task.rs` now carries `TaskMetadata` for
+- `crates/made-core/src/entities/task.rs` now carries `TaskMetadata` for
   causal IDs and execution profile, while application-owned IDs remain in
   `Task.attributes` or `ExternalContextBundle.metadata`.
-- `crates/choreo-core/src/entities/external_context.rs` provides bounded,
+- `crates/made-core/src/entities/external_context.rs` provides bounded,
   typed-but-caller-owned context items, references, summaries, and metadata.
-- `crates/choreo-adapters/src/agents/prompts.rs` keeps system prompts neutral
+- `crates/made-adapters/src/agents/prompts.rs` keeps system prompts neutral
   and tests against domain-vocabulary leaks.
 
 Implication: meeting ceremonies can be represented as orchestration
@@ -195,13 +195,13 @@ The web/research baseline suggests these reusable ceremony archetypes:
 
 | Ceremony archetype | Shape | External evidence | Local fit |
 | --- | --- | --- | --- |
-| Solo refinement | draft -> self-feedback -> revise -> validate | Self-Refine: <https://arxiv.org/abs/2303.17651>; Reflexion: <https://arxiv.org/abs/2303.11366> | Single-agent Choreographer council or runtime loop with reflection memory from kernel |
-| Peer-review council | parallel proposals -> peer critique -> revision -> score | AutoGen multi-agent conversations: <https://arxiv.org/abs/2308.08155> | Current Choreographer `DeliberateUseCase` |
+| Solo refinement | draft -> self-feedback -> revise -> validate | Self-Refine: <https://arxiv.org/abs/2303.17651>; Reflexion: <https://arxiv.org/abs/2303.11366> | Single-agent MADE council or runtime loop with reflection memory from kernel |
+| Peer-review council | parallel proposals -> peer critique -> revision -> score | AutoGen multi-agent conversations: <https://arxiv.org/abs/2308.08155> | Current MADE `DeliberateUseCase` |
 | Adversarial debate | independent answers -> debate rounds -> judge | Multiagent debate: <https://arxiv.org/abs/2305.14325> | Add debate phase policy above generic agent ports |
 | Role-play pair | role-constrained assistant/user agents cooperate | CAMEL role playing: <https://arxiv.org/abs/2303.17760> | Role descriptions in council/agent descriptors, still generic |
 | Selector group chat | shared thread, next speaker selected by manager/model | AutoGen conversation patterns: <https://autogenhub.github.io/autogen/docs/tutorial/conversation-patterns/> | Requires turn-level trace and speaker-selection policy |
-| Supervisor/router | central supervisor delegates to specialists | LangChain multi-agent docs: <https://docs.langchain.com/oss/python/langchain/multi-agent/index> | App-layer shell can route between Choreographer, kernel, and runtime |
-| SOP pipeline | ordered roles with structured handoffs | MetaGPT SOPs: <https://arxiv.org/abs/2308.00352>; ChatDev chat chain: <https://arxiv.org/abs/2307.07924> | Runtime e2e `13-multi-agent-pipeline`, but domain-specific roles stay outside Choreographer |
+| Supervisor/router | central supervisor delegates to specialists | LangChain multi-agent docs: <https://docs.langchain.com/oss/python/langchain/multi-agent/index> | App-layer shell can route between MADE, kernel, and runtime |
+| SOP pipeline | ordered roles with structured handoffs | MetaGPT SOPs: <https://arxiv.org/abs/2308.00352>; ChatDev chat chain: <https://arxiv.org/abs/2307.07924> | Runtime e2e `13-multi-agent-pipeline`, but domain-specific roles stay outside MADE |
 | Social/memory simulation | agents remember, reflect, plan, and interact over time | Generative Agents: <https://arxiv.org/abs/2304.03442> | Kernel provides durable context; runtime provides action evidence |
 | Governed execution board | agents must acquire evidence before conclusions/actions | AgentBench interactive evals: <https://arxiv.org/abs/2308.03688>; GAIA tool-use tasks: <https://arxiv.org/abs/2311.12983> | Kernel + runtime evidence gates before scoring |
 | Agent-as-judge | evaluator inspects intermediate trajectory, not only output | Agent-as-a-Judge: <https://arxiv.org/abs/2410.10934>; MT-Bench LLM judge caveats: <https://arxiv.org/abs/2306.05685> | Evaluator should combine deterministic checks with bounded LLM judging |
@@ -353,7 +353,7 @@ Each phase should be inspectable:
 
 The evaluator needs a full trace, not only the final answer:
 
-- Choreographer events: event ID, correlation ID, causation ID, task ID,
+- MADE events: event ID, correlation ID, causation ID, task ID,
   phase transitions, proposals, critiques, revisions, validations, scores, and
   final output.
 - Kernel context: root/focus node IDs, rendered content hash, mode, tiers,
@@ -372,7 +372,7 @@ The evaluator needs a full trace, not only the final answer:
 - Evaluation artifacts: deterministic check results, judge prompts, judge
   outputs, score components, failure taxonomy, and baselines compared.
 
-Current gap: Choreographer has domain events and proposals, but it does not yet
+Current gap: MADE has domain events and proposals, but it does not yet
 persist an explicit turn-level transcript, claim ledger, meeting minutes, or
 scenario branch references. That is the main instrumentation gap before serious
 ceremony evaluation.
@@ -387,11 +387,11 @@ ceremony evaluation.
 | Claim validation | Important claims are verified, rejected, or marked as assumptions | Claim ledger, runtime tool results, kernel references |
 | Past replay | Reconstructed context preserves causal path, evidence, and known history | Kernel context, relation explanations, ground truth |
 | Future planning | Future scenarios include explicit assumptions, branches, risks, and validation steps | Scenario branches, runtime checks, evaluator rubrics |
-| Process integrity | Phases, turn policy, critique/revision loops, and stop criteria were followed | Choreographer events and transcript |
+| Process integrity | Phases, turn policy, critique/revision loops, and stop criteria were followed | MADE events and transcript |
 | Runtime governance | Tool use respected policies, approvals, side-effect budget, and denials | Runtime invocations, policy decisions, artifacts |
 | Output correctness | Final output satisfies contract, task constraints, and success criteria | Validators, ground truth, LLM judge when needed |
 | Traceability | Claims map to proposal, context, invocation, artifact, or validation evidence | Correlation/causation IDs, references, artifacts |
-| Efficiency | Token, latency, tool count, cost, context compression, and retries are acceptable | Choreographer timing, kernel metrics, runtime quality metrics |
+| Efficiency | Token, latency, tool count, cost, context compression, and retries are acceptable | MADE timing, kernel metrics, runtime quality metrics |
 | Robustness | Ceremony survives noise, missing context, alternate budgets, and ablations | Re-run matrix and perturbation tests |
 | Safety | No fabricated evidence, unauthorized actions, hidden side effects, or ignored denials | Runtime policy, kernel provenance, evaluator checks |
 
@@ -433,8 +433,8 @@ Hard gates:
 3. Create a runtime session with explicit principal, allowed paths, tool
    profile, and metadata.
 4. Run the candidate `CeremonySpec` through an app-layer shell that calls
-   Choreographer, kernel, and runtime through adapters.
-5. Capture `RunTrace` with Choreographer events, kernel render metadata,
+   MADE, kernel, and runtime through adapters.
+5. Capture `RunTrace` with MADE events, kernel render metadata,
    runtime invocations, artifacts, transcript entries, and correlation IDs.
 6. Extract the meeting minutes, claim ledger, decisions, unresolved questions,
    action items, and scenario branches.
@@ -445,14 +445,14 @@ Hard gates:
    meeting quality, reasoning quality, completeness, and problem-fit rationale.
    Judge prompts must include the evidence bundle and must not see unsupported
    hidden data.
-9. Compare against baselines: direct single agent, Choreographer peer-review
+9. Compare against baselines: direct single agent, MADE peer-review
    without kernel, peer-review with kernel, debate, and SOP pipeline.
 10. Emit a scorecard, hard-gate status, failure taxonomy, and ceremony
    improvement recommendations.
 
 ## Architecture Implications
 
-- Choreographer remains the ceremony orchestrator. It should not know kernel
+- MADE remains the ceremony orchestrator. It should not know kernel
   graph semantics, runtime tool catalogs, Kubernetes, or product nouns.
 - A thin app-layer integration shell should map concrete provider evidence into
   `ExternalContextBundle`, `Task.attributes`, and generic output contracts.
@@ -478,7 +478,7 @@ Hard gates:
    `EvaluationSpec`.
 3. Add meeting-oriented schema docs for agenda, minutes, claim ledger,
    decisions, action items, and scenario branches.
-4. Add turn-level trace/evidence-reference instrumentation to Choreographer
+4. Add turn-level trace/evidence-reference instrumentation to MADE
    using domain-agnostic names only.
 5. Build an offline evaluator over fixtures from `rehydration-kernel` testkit
    and `underpass-runtime` e2e artifacts.
@@ -494,8 +494,8 @@ Hard gates:
 ## Open Design Questions
 
 - Should `CeremonySpec` live as a versioned YAML/JSON schema first, or as Rust
-  value objects in Choreographer with adapters later?
-- Do we need a new Choreographer `ConversationTrace` aggregate, or should trace
+  value objects in MADE with adapters later?
+- Do we need a new MADE `ConversationTrace` aggregate, or should trace
   be an observer/adaptor concern?
 - How strict should evidence citation be: every final claim, every decision,
   or only claims marked as high risk by the problem spec?

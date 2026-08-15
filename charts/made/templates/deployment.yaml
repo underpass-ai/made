@@ -1,0 +1,250 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "made.fullname" . }}
+  labels:
+    {{- include "made.labels" . | nindent 4 }}
+spec:
+{{- if and .Values.persistence.ceremonies.enabled (gt (int .Values.replicaCount) 1) }}
+{{- fail "persistence.ceremonies.enabled=true requires replicaCount=1: the embedded ceremony store takes an exclusive file lock and serves a single process" }}
+{{- end }}
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels:
+      {{- include "made.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "made.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      serviceAccountName: {{ include "made.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automountServiceAccountToken | default false }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      {{- $tlsMode := .Values.tls.mode | default "none" }}
+      {{- $executorKind := .Values.executor.kind | default "noop" }}
+      {{- $runtimeTlsMode := .Values.executor.runtime.tls.mode | default "disabled" }}
+      {{- if and (eq $executorKind "runtime") (not .Values.executor.runtime.endpoint) }}
+      {{- fail "executor.kind=runtime but executor.runtime.endpoint is empty; set the runtime gRPC URL" }}
+      {{- end }}
+      {{- if and (eq $executorKind "runtime") (ne $runtimeTlsMode "disabled") (not .Values.executor.runtime.tls.existingSecret) }}
+      {{- fail "executor.runtime.tls.mode != disabled but executor.runtime.tls.existingSecret is empty; provide a secret with ca.crt (plus tls.crt + tls.key for mutual)" }}
+      {{- end }}
+      {{- $runtimeTlsMounted := and (eq $executorKind "runtime") (ne $runtimeTlsMode "disabled") }}
+      {{- /*
+        LLM-judge fail-fast guard. The judge (MADE_JUDGE_ENABLED) reuses the
+        vLLM endpoint/model and the binary fails fast — crash-looping the pod —
+        when enabled without them. Refuse to render a judge-on-without-vLLM
+        config, mirroring the binary's truthiness ("1"/"true"/"yes"). Skipped
+        when providerEnvFrom is set, since a Secret/ConfigMap may carry the
+        vLLM vars and the template cannot introspect it.
+      */}}
+      {{- $penv := dict }}
+      {{- range (.Values.providerEnv | default list) }}
+      {{- $penv = set $penv .name ((.value | default "") | toString) }}
+      {{- end }}
+      {{- $judgeOn := has (lower (trim (get $penv "MADE_JUDGE_ENABLED"))) (list "1" "true" "yes") }}
+      {{- if and $judgeOn (not .Values.providerEnvFrom) }}
+      {{- if or (eq (get $penv "MADE_VLLM_ENDPOINT") "") (eq (get $penv "MADE_VLLM_MODEL") "") }}
+      {{- fail "MADE_JUDGE_ENABLED is set but providerEnv lacks MADE_VLLM_ENDPOINT/MADE_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
+      {{- end }}
+      {{- end }}
+      {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+      volumes:
+        {{- if .Values.persistence.ceremonies.enabled }}
+        - name: ceremonies
+          persistentVolumeClaim:
+            claimName: {{ include "made.fullname" . }}-ceremonies
+        {{- end }}
+        {{- if .Values.tmpVolume.enabled }}
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.tmpVolume.sizeLimit }}
+        {{- end }}
+        {{- if ne $tlsMode "none" }}
+        {{- if not .Values.tls.existingSecret }}
+        {{- fail "tls.mode is not 'none' but tls.existingSecret is empty; provide a Kubernetes secret with tls.crt and tls.key (plus ca.crt for mutual mode)" }}
+        {{- end }}
+        - name: grpc-tls
+          secret:
+            secretName: {{ .Values.tls.existingSecret | quote }}
+            defaultMode: 0400
+        {{- end }}
+        {{- if $runtimeTlsMounted }}
+        - name: runtime-tls
+          secret:
+            secretName: {{ .Values.executor.runtime.tls.existingSecret | quote }}
+            defaultMode: 0400
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: made
+          image: {{ include "made.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+          volumeMounts:
+            {{- if .Values.persistence.ceremonies.enabled }}
+            - name: ceremonies
+              mountPath: {{ .Values.persistence.ceremonies.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.tmpVolume.enabled }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- if ne $tlsMode "none" }}
+            - name: grpc-tls
+              mountPath: /etc/made/tls
+              readOnly: true
+            {{- end }}
+            {{- if $runtimeTlsMounted }}
+            - name: runtime-tls
+              mountPath: /etc/made/runtime-tls
+              readOnly: true
+            {{- end }}
+          {{- end }}
+          ports:
+            - name: grpc
+              containerPort: {{ .Values.config.grpcPort }}
+              protocol: TCP
+            - name: http
+              containerPort: {{ .Values.config.httpPort }}
+              protocol: TCP
+          env:
+            - name: MADE_GRPC_PORT
+              value: {{ .Values.config.grpcPort | quote }}
+            - name: MADE_HTTP_PORT
+              value: {{ .Values.config.httpPort | quote }}
+            - name: RUST_LOG
+              value: {{ .Values.config.logLevel | quote }}
+            {{- if .Values.messaging.nats.enabled }}
+            - name: MADE_NATS_ENABLED
+              value: "true"
+            - name: MADE_NATS_URL
+              value: {{ include "made.natsUrl" . | quote }}
+            - name: MADE_TRIGGER_SUBJECT
+              value: {{ .Values.messaging.nats.triggerSubject | quote }}
+            - name: MADE_PUBLISH_PREFIX
+              value: {{ .Values.messaging.nats.publishPrefix | quote }}
+            {{- else }}
+            - name: MADE_NATS_ENABLED
+              value: "false"
+            {{- end }}
+            {{- if .Values.config.seedSpecialties }}
+            - name: MADE_SEED_SPECIALTIES
+              value: {{ .Values.config.seedSpecialties | quote }}
+            {{- end }}
+            {{- if ne $tlsMode "none" }}
+            - name: MADE_GRPC_TLS_MODE
+              value: {{ $tlsMode | quote }}
+            - name: MADE_GRPC_TLS_CERT_PATH
+              value: "/etc/made/tls/tls.crt"
+            - name: MADE_GRPC_TLS_KEY_PATH
+              value: "/etc/made/tls/tls.key"
+            {{- if eq $tlsMode "mutual" }}
+            - name: MADE_GRPC_TLS_CLIENT_CA_PATH
+              value: "/etc/made/tls/ca.crt"
+            {{- end }}
+            {{- end }}
+            - name: MADE_EXECUTOR_KIND
+              value: {{ $executorKind | quote }}
+            {{- if eq $executorKind "runtime" }}
+            - name: MADE_RUNTIME_GRPC_ENDPOINT
+              value: {{ .Values.executor.runtime.endpoint | quote }}
+            {{- with .Values.executor.runtime.principal.tenantId }}
+            - name: MADE_RUNTIME_PRINCIPAL_TENANT_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.executor.runtime.principal.actorId }}
+            - name: MADE_RUNTIME_PRINCIPAL_ACTOR_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.executor.runtime.principal.roles }}
+            - name: MADE_RUNTIME_PRINCIPAL_ROLES
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if ne $runtimeTlsMode "disabled" }}
+            - name: MADE_RUNTIME_TLS_MODE
+              value: {{ $runtimeTlsMode | quote }}
+            - name: MADE_RUNTIME_TLS_CA_PATH
+              value: "/etc/made/runtime-tls/ca.crt"
+            {{- if eq $runtimeTlsMode "mutual" }}
+            - name: MADE_RUNTIME_TLS_CERT_PATH
+              value: "/etc/made/runtime-tls/tls.crt"
+            - name: MADE_RUNTIME_TLS_KEY_PATH
+              value: "/etc/made/runtime-tls/tls.key"
+            {{- end }}
+            {{- with .Values.executor.runtime.tls.domainName }}
+            - name: MADE_RUNTIME_TLS_DOMAIN_NAME
+              value: {{ . | quote }}
+            {{- end }}
+            {{- end }}
+            {{- end }}
+            {{- if .Values.persistence.ceremonies.enabled }}
+            - name: MADE_CEREMONY_STORE_PATH
+              value: {{ printf "%s/ceremonies.redb" .Values.persistence.ceremonies.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.persistence.postgres.enabled }}
+            {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}
+            - name: MADE_POSTGRES_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.persistence.postgres.urlFromSecret.name | quote }}
+                  key: {{ .Values.persistence.postgres.urlFromSecret.key | quote }}
+            {{- else if .Values.persistence.postgres.url }}
+            - name: MADE_POSTGRES_URL
+              value: {{ .Values.persistence.postgres.url | quote }}
+            {{- else }}
+            {{- fail "persistence.postgres.enabled=true requires either persistence.postgres.url or persistence.postgres.urlFromSecret.{name,key}" }}
+            {{- end }}
+            {{- end }}
+            {{- with .Values.providerEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          {{- with .Values.providerEnvFrom }}
+          envFrom:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- if .Values.probes.liveness.enabled }}
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: http
+            initialDelaySeconds: {{ .Values.probes.liveness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.liveness.periodSeconds }}
+          {{- end }}
+          {{- if .Values.probes.readiness.enabled }}
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: http
+            initialDelaySeconds: {{ .Values.probes.readiness.initialDelaySeconds }}
+            periodSeconds: {{ .Values.probes.readiness.periodSeconds }}
+          {{- end }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

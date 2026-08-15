@@ -18,20 +18,20 @@ env-var reference, and TLS posture options.
 Install from crates.io:
 
 ```bash
-cargo install choreo-mcp --locked
+cargo install made-mcp --locked
 ```
 
 The dev fallback (in-tree source) lives at
-`CHOREO_MCP_INSTALL_MODE=git bash scripts/mcp/install-choreo-mcp.sh`
+`MADE_MCP_INSTALL_MODE=git bash scripts/mcp/install-made-mcp.sh`
 in the repo.
 
 ```json
 {
   "mcpServers": {
-    "underpass-choreographer": {
-      "command": "choreo-mcp",
+    "made": {
+      "command": "made-mcp",
       "env": {
-        "CHOREO_MCP_GRPC_ENDPOINT": "https://choreographer.example.com"
+        "MADE_MCP_GRPC_ENDPOINT": "https://made.example.com"
       }
     }
   }
@@ -43,7 +43,7 @@ under `~/.cargo/bin` and that directory is not in Claude's `PATH`,
 use an absolute path:
 
 ```json
-"command": "/home/<you>/.cargo/bin/choreo-mcp"
+"command": "/home/<you>/.cargo/bin/made-mcp"
 ```
 
 ## Dev from a checkout
@@ -51,38 +51,38 @@ use an absolute path:
 ```json
 {
   "mcpServers": {
-    "underpass-choreographer": {
+    "made": {
       "command": "cargo",
       "args": [
         "run", "-q",
         "--manifest-path", "/path/to/underpass-orchestrator/Cargo.toml",
-        "-p", "choreo-mcp",
+        "-p", "made-mcp",
         "--locked"
       ],
       "env": {
-        "CHOREO_MCP_GRPC_ENDPOINT": "https://choreographer.example.com"
+        "MADE_MCP_GRPC_ENDPOINT": "https://made.example.com"
       }
     }
   }
 }
 ```
 
-## Fixture mode (no choreographer running)
+## Fixture mode (no MADE running)
 
 ```json
 {
   "mcpServers": {
-    "underpass-choreographer": {
-      "command": "choreo-mcp",
+    "made": {
+      "command": "made-mcp",
       "env": {
-        "CHOREO_MCP_BACKEND": "fixture"
+        "MADE_MCP_BACKEND": "fixture"
       }
     }
   }
 }
 ```
 
-Every `choreo_*` tool becomes callable and returns its deterministic
+Every `made_*` tool becomes callable and returns its deterministic
 canned response.
 
 ## mTLS to a hardened deployment
@@ -90,15 +90,15 @@ canned response.
 ```json
 {
   "mcpServers": {
-    "underpass-choreographer": {
-      "command": "choreo-mcp",
+    "made": {
+      "command": "made-mcp",
       "env": {
-        "CHOREO_MCP_GRPC_ENDPOINT": "https://choreographer.underpass.svc:50055",
-        "CHOREO_MCP_GRPC_TLS_MODE": "mutual",
-        "CHOREO_MCP_GRPC_TLS_CA_PATH": "/var/run/choreo-tls/ca.crt",
-        "CHOREO_MCP_GRPC_TLS_CERT_PATH": "/var/run/choreo-tls/tls.crt",
-        "CHOREO_MCP_GRPC_TLS_KEY_PATH": "/var/run/choreo-tls/tls.key",
-        "CHOREO_MCP_GRPC_TLS_DOMAIN_NAME": "choreographer-grpc"
+        "MADE_MCP_GRPC_ENDPOINT": "https://made.underpass.svc:50055",
+        "MADE_MCP_GRPC_TLS_MODE": "mutual",
+        "MADE_MCP_GRPC_TLS_CA_PATH": "/var/run/made-tls/ca.crt",
+        "MADE_MCP_GRPC_TLS_CERT_PATH": "/var/run/made-tls/tls.crt",
+        "MADE_MCP_GRPC_TLS_KEY_PATH": "/var/run/made-tls/tls.key",
+        "MADE_MCP_GRPC_TLS_DOMAIN_NAME": "made-grpc"
       }
     }
   }
@@ -110,15 +110,15 @@ canned response.
 After saving the config, restart Claude Desktop completely (the
 config is read on launch). In a new conversation:
 
-> List the choreographer's councils.
+> List MADE's councils.
 
-Claude should call `choreo_list_councils` and show the result.
+Claude should call `made_list_councils` and show the result.
 
 If the tools do not appear:
 
 - check Claude Desktop's "Developer" panel for stderr from the
-  spawned `choreo-mcp` process — the adapter writes JSON tracing
+  spawned `made-mcp` process — the adapter writes JSON tracing
   to stderr on launch (`backend`, `grpc_tls`);
-- verify `choreo-mcp --version` runs from a terminal with the
+- verify `made-mcp --version` runs from a terminal with the
   same `PATH` Claude inherits;
 - rule out config-parse errors by validating the JSON file.

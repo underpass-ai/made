@@ -6,7 +6,7 @@ ceremony with two 2-agent councils running three adversarial peer-review
 rounds each.*
 
 The architecture docs explain *how the engine deliberates*
-([choreographer-architecture-and-differentiation.md](../choreographer-architecture-and-differentiation.md));
+([made-architecture-and-differentiation.md](../made-architecture-and-differentiation.md));
 this runbook is for the operator **writing a ceremony YAML**: the schema keys
 that matter, the mechanics they trigger, the silent no-ops, how to size
 timeouts, and how to verify what actually happened.
@@ -83,12 +83,12 @@ rotation) and the neighbour's proposal is replaced by the revision.**
 
 ## 3. Role aliases mix models *per call*
 
-If the provider behind `CHOREO_VLLM_ENDPOINT` is a routing gateway that
+If the provider behind `MADE_VLLM_ENDPOINT` is a routing gateway that
 resolves aliases (e.g. `role:coding` → round-robin over the models carrying
 that role), then **every individual call — draft, critique, revision —
 resolves independently**. In a 3-round council the model that critiques a
 proposal is routinely not the model that drafted it. This is a feature (true
-model heterogeneity inside one council) and a caveat (the choreographer's
+model heterogeneity inside one council) and a caveat (MADE's
 logs record the agent id, not which physical model served each call — if you
 need that attribution, log the resolved model in your gateway).
 
@@ -118,7 +118,7 @@ investigation fail?"* with 3 peer-review rounds each:
 ## 5. Sizing and invocation checklist
 
 1. **Lint before running**: `CeremonyDefinitionYaml::parse_path` (a five-line
-   test in `crates/choreo-adapters/tests/`) catches schema errors in
+   test in `crates/made-adapters/tests/`) catches schema errors in
    milliseconds instead of after a cluster round-trip.
 2. **Count your calls**: sum over steps of
    `num_agents + rounds × num_agents × 2`. Multiply by expected per-call
@@ -160,7 +160,7 @@ roles:
 ```
 
 The host opens an `opinion`, `investigation`, or `action` with
-`choreo_request_ceremony_intervention`. With no `target_role_ids`, every role
+`made_request_ceremony_intervention`. With no `target_role_ids`, every role
 with response capability may answer; a non-empty list scopes the request.
 Each targeted role can answer once, and only the requesting role can close the
 intervention. Relevant requests and accumulated responses are passed into

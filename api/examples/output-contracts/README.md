@@ -1,13 +1,13 @@
 # Output contract JSON Schemas
 
 Canonical schemas for use with `Constraints.output_contract.json_schema`
-(proto field 4 of `OutputContract`). The choreographer's
+(proto field 4 of `OutputContract`). MADE's
 `JsonSchemaValidator` adapter compiles whatever schema body the caller
 supplies and validates every proposal output against it.
 
 These examples are **not** hardcoded into the service — they are
 suggestions consumers can copy verbatim, embed inline, fetch from a
-schema registry, or replace with their own. The choreographer does
+schema registry, or replace with their own. MADE does
 not interpret any of these field names.
 
 ## Files
@@ -44,7 +44,7 @@ Constraints {
 ```
 
 The MCP adapter forwards the schema verbatim through
-`choreo_deliberate` / `choreo_orchestrate` / `choreo_process_trigger_event`
+`made_deliberate` / `made_orchestrate` / `made_process_trigger_event`
 when the caller includes `constraints.output_contract.json_schema` in
 the tool arguments.
 

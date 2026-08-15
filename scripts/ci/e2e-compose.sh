@@ -7,7 +7,7 @@ set -euo pipefail
 # or `podman-compose` in that order. Override with
 # `CONTAINER_RUNTIME=podman|podman-compose|docker|auto`.
 #
-# Brings up Choreographer + NATS + the e2e runner container and runs
+# Brings up MADE + NATS + the e2e runner container and runs
 # the runner against the stack. The runner drives scenarios over the
 # public gRPC / AsyncAPI contract — no access to internals.
 

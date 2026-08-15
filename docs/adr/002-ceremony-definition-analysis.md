@@ -50,10 +50,10 @@ exception.
 serialization belongs to the adapter layer. Adapters render their own wire
 shape.
 
-**Authoring tools are read-only and stateless.** `choreo_validate_ceremony_draft`
-and `choreo_explain_ceremony_draft` neither publish nor execute, so they hold no
-state and never reach the choreographer. They ship on the `embedded` feature:
-`choreo-core` and `choreo-adapters` are optional dependencies of a published
+**Authoring tools are read-only and stateless.** `made_validate_ceremony_draft`
+and `made_explain_ceremony_draft` neither publish nor execute, so they hold no
+state and never reach MADE. They ship on the `embedded` feature:
+`made-core` and `made-adapters` are optional dependencies of a published
 crate, and serving the gRPC backend as well is a proto change, not a flag.
 
 ## Consequences

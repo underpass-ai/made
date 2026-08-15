@@ -13,7 +13,7 @@ OUT_DIR="${ROOT_DIR}/docs/experiments/002-deliberation-scale-sweep/results"
 mkdir -p "${OUT_DIR}"
 cd "${ROOT_DIR}"
 
-cargo bench -p choreo-app --bench deliberate -- \
+cargo bench -p made-app --bench deliberate -- \
     --warm-up-time 1 \
     --measurement-time 2 \
     --sample-size 50 \

@@ -10,12 +10,12 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAMESPACE="${NAMESPACE:-underpass-runtime}"
-JOB_NAME="${JOB_NAME:-choreographer-e2e-provider-vllm}"
+JOB_NAME="${JOB_NAME:-made-e2e-provider-vllm}"
 MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/provider-vllm-job.yaml"
 TIMEOUT="${TIMEOUT:-180s}"
-PROVIDER_IMAGE="${PROVIDER_IMAGE:-ghcr.io/underpass-ai/underpass-choreographer-e2e-provider:latest}"
-VLLM_ENDPOINT="${CHOREO_VLLM_ENDPOINT:-https://llm.underpassai.com}"
-VLLM_MODEL="${CHOREO_VLLM_MODEL:-google/gemma-4-31B-it}"
+PROVIDER_IMAGE="${PROVIDER_IMAGE:-ghcr.io/underpass-ai/made-e2e-provider:latest}"
+VLLM_ENDPOINT="${MADE_VLLM_ENDPOINT:-https://llm.underpassai.com}"
+VLLM_MODEL="${MADE_VLLM_MODEL:-google/gemma-4-31B-it}"
 TLS_SECRET_NAME="${E2E_CLIENT_TLS_SECRET:-e2e-client-tls}"
 IMAGE_PULL_SECRET="${E2E_IMAGE_PULL_SECRET:-}"
 RENDERED_MANIFEST=""
@@ -44,17 +44,17 @@ awk \
     -v tls_secret="${TLS_SECRET_NAME}" \
     -v pull_secret="${IMAGE_PULL_SECRET}" '
       {
-        gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-provider:latest", "image: " image);
+        gsub("image: ghcr.io/underpass-ai/made-e2e-provider:latest", "image: " image);
         gsub("secretName: e2e-client-tls", "secretName: " tls_secret);
       }
-      /- name: CHOREO_VLLM_ENDPOINT/ {
+      /- name: MADE_VLLM_ENDPOINT/ {
         print;
         getline;
         sub(/value:.*/, "value: " endpoint);
         print;
         next;
       }
-      /- name: CHOREO_VLLM_MODEL/ {
+      /- name: MADE_VLLM_MODEL/ {
         print;
         getline;
         sub(/value:.*/, "value: " model);

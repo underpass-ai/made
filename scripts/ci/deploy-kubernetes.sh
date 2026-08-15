@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# Wrapper around `helm upgrade --install` for the choreographer chart.
+# Wrapper around `helm upgrade --install` for the MADE chart.
 # Mirrors the sibling `rehydration-kernel/scripts/ci/deploy-kubernetes.sh`
 # so the deploy ergonomics are identical across Underpass planes.
 #
 # Required env:
-#   RELEASE_NAME  Helm release name (e.g. "choreographer")
+#   RELEASE_NAME  Helm release name (e.g. "made")
 #   NAMESPACE     Target namespace (e.g. "underpass-runtime")
 #   IMAGE_TAG     OR IMAGE_DIGEST (mutually exclusive; one is required)
 #
 # Optional env:
-#   CHART_PATH       (default: charts/choreographer)
+#   CHART_PATH       (default: charts/made)
 #   VALUES_FILE      (one extra `-f <file>` on top of values.yaml)
 #   HELM_TIMEOUT     (default: 10m)
 #   WAIT_FOR_ROLLOUT (default: true)
@@ -19,7 +19,7 @@
 
 set -euo pipefail
 
-CHART_PATH="${CHART_PATH:-charts/choreographer}"
+CHART_PATH="${CHART_PATH:-charts/made}"
 RELEASE_NAME="${RELEASE_NAME:?RELEASE_NAME is required}"
 NAMESPACE="${NAMESPACE:?NAMESPACE is required}"
 VALUES_FILE="${VALUES_FILE:-}"

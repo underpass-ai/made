@@ -2,10 +2,10 @@
 
 Describe the change briefly.
 
-## Why This Belongs In The Choreographer
+## Why This Belongs In MADE
 
-Explain why this is choreographer-owned work and not integrating-product logic.
-Remember the Choreographer is:
+Explain why this is made-owned work and not integrating-product logic.
+Remember MADE is:
 
 - **use-case agnostic** (no SWE, clinical, supply-chain, … vocabulary)
 - **provider-agnostic** (no vLLM, Anthropic, OpenAI, … privileged)
@@ -23,8 +23,8 @@ Remember the Choreographer is:
 ## Contract Impact
 
 - [ ] No public contract changes
-- [ ] gRPC (`underpass.choreo.v1`) contract changed
-- [ ] AsyncAPI (`specs/asyncapi/choreographer.asyncapi.yaml`) changed
+- [ ] gRPC (`underpass.made.v1`) contract changed
+- [ ] AsyncAPI (`specs/asyncapi/made.asyncapi.yaml`) changed
 - [ ] Helm chart public surface changed
 
 ## Honesty & Evidence
@@ -46,6 +46,6 @@ Remember the Choreographer is:
 - [ ] DDD and hexagonal boundaries preserved
 - [ ] No primitive obsession in domain APIs (newtypes / value objects)
 - [ ] SOLID respected (SRP, DIP, ISP in particular)
-- [ ] No integrating-product nouns added to the choreographer boundary
+- [ ] No integrating-product nouns added to the MADE boundary
 - [ ] No LLM-provider identity leaks into core
 - [ ] Docs updated where needed

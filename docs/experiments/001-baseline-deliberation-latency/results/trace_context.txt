@@ -2,7 +2,7 @@
    Compiling tracing-core v0.1.36
    Compiling tokio v1.52.0
    Compiling tracing v0.1.44
-   Compiling choreo-core v0.1.0 (/home/tirso/ai/developents/underpass-orchestrator/crates/choreo-core)
+   Compiling made-core v0.1.0 (/home/tirso/ai/developents/underpass-orchestrator/crates/made-core)
    Compiling regex v1.12.3
    Compiling criterion v0.5.1
     Finished `bench` profile [optimized] target(s) in 18.90s

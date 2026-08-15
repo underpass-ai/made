@@ -1,18 +1,18 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/choreo-core",
-    "crates/choreo-api",
-    "crates/choreo-app",
-    "crates/choreo-adapters",
-    "crates/choreo-embedded",
-    "crates/choreo-proto",
-    "crates/choreo-mcp-proto",
-    "crates/choreo",
-    "crates/choreo-tests-integration",
-    "crates/choreo-e2e-runner",
-    "crates/choreo-mcp",
-    "crates/choreo-consumer-smoke",
+    "crates/made-core",
+    "crates/made-api",
+    "crates/made-app",
+    "crates/made-adapters",
+    "crates/made-embedded",
+    "crates/made-proto",
+    "crates/made-mcp-proto",
+    "crates/made",
+    "crates/made-tests-integration",
+    "crates/made-e2e-runner",
+    "crates/made-mcp",
+    "crates/made-consumer-smoke",
 ]
 
 [workspace.package]
@@ -21,7 +21,7 @@ edition = "2021"
 rust-version = "1.97"
 license = "Apache-2.0"
 authors = ["Tirso Garcia Ibañez"]
-repository = "https://github.com/underpass-ai/underpass-choreographer"
+repository = "https://github.com/underpass-ai/made"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -120,15 +120,15 @@ sha2 = "0.10"
 jsonschema = { version = "0.17", default-features = false }
 
 # internal
-choreo-core = { path = "crates/choreo-core", version = "0.1.0" }
-choreo-api = { path = "crates/choreo-api", version = "0.1.0" }
-choreo-app = { path = "crates/choreo-app", version = "0.1.0" }
-choreo-adapters = { path = "crates/choreo-adapters", version = "0.1.0", default-features = false }
-choreo-embedded = { path = "crates/choreo-embedded", version = "0.1.0" }
-choreo-proto = { path = "crates/choreo-proto", version = "0.1.0" }
-choreo-mcp = { path = "crates/choreo-mcp", version = "0.1.0", default-features = false }
-choreo-mcp-proto = { path = "crates/choreo-mcp-proto", version = "0.1.0" }
-choreo-tests-integration = { path = "crates/choreo-tests-integration", version = "0.1.0" }
+made-core = { path = "crates/made-core", version = "0.1.0" }
+made-api = { path = "crates/made-api", version = "0.1.0" }
+made-app = { path = "crates/made-app", version = "0.1.0" }
+made-adapters = { path = "crates/made-adapters", version = "0.1.0", default-features = false }
+made-embedded = { path = "crates/made-embedded", version = "0.1.0" }
+made-proto = { path = "crates/made-proto", version = "0.1.0" }
+made-mcp = { path = "crates/made-mcp", version = "0.1.0", default-features = false }
+made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.1.0" }
+made-tests-integration = { path = "crates/made-tests-integration", version = "0.1.0" }
 
 [profile.release]
 lto = "thin"

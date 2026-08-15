@@ -11,5 +11,5 @@ OUT_DIR="${ROOT_DIR}/docs/experiments/001-baseline-deliberation-latency/results"
 mkdir -p "${OUT_DIR}"
 cd "${ROOT_DIR}"
 
-cargo bench -p choreo-core --bench trace_context | tee "${OUT_DIR}/trace_context.txt"
-cargo bench -p choreo-app  --bench deliberate   | tee "${OUT_DIR}/deliberate.txt"
+cargo bench -p made-core --bench trace_context | tee "${OUT_DIR}/trace_context.txt"
+cargo bench -p made-app  --bench deliberate   | tee "${OUT_DIR}/deliberate.txt"

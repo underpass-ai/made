@@ -1,12 +1,12 @@
-# Runs the `choreo-e2e-runner` binary as a Kubernetes Job against a
-# choreographer deployed in-cluster. Useful as a smoke test after a
+# Runs the `made-e2e-runner` binary as a Kubernetes Job against a
+# MADE deployed in-cluster. Useful as a smoke test after a
 # `helm upgrade --install`: scenarios 1-4 are driven through real DNS,
 # real network, and the cluster's NATS connection.
 #
 # Caveats:
 #
 # - Scenarios 1-4 cover gRPC + NATS + causal metadata against the
-#   real deploy. They pass when the choreographer is wired correctly
+#   real deploy. They pass when MADE is wired correctly
 #   to its own NATS bus.
 #
 # - Scenarios 5-9 are fixture-shaped and stay opt-in: scenario 5
@@ -21,7 +21,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: choreographer-e2e
+  name: made-e2e
   namespace: underpass-runtime
   labels:
     app.kubernetes.io/part-of: underpass
@@ -40,19 +40,19 @@ spec:
         - name: ghcr-pull
       containers:
         - name: e2e-runner
-          # Pin to the same commit as the choreographer image; both
+          # Pin to the same commit as the MADE image; both
           # come from the same workspace and rolling them together
           # avoids API skew between client and server.
-          image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:sha-23b3af0
+          image: ghcr.io/underpass-ai/made-e2e-runner:sha-23b3af0
           imagePullPolicy: IfNotPresent
           env:
-            - name: CHOREOGRAPHER_ENDPOINT
-              value: "http://choreographer:50055"
-            - name: CHOREO_NATS_URL
-              value: "nats://choreographer-nats:4222"
-            - name: CHOREO_SEED_SPECIALTY
+            - name: MADE_ENDPOINT
+              value: "http://made:50055"
+            - name: MADE_NATS_URL
+              value: "nats://made-nats:4222"
+            - name: MADE_SEED_SPECIALTY
               value: "triage"
-            - name: CHOREO_E2E_SCENARIOS
+            - name: MADE_E2E_SCENARIOS
               value: "cluster-connectivity"
             - name: RUST_LOG
               value: "info"

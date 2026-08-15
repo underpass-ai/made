@@ -1,27 +1,27 @@
 # Consumer-smoke harness
 
-`choreo-consumer-smoke` is a CLI that drives the Choreographer's
+`made-consumer-smoke` is a CLI that drives MADE's
 public surface the way a real downstream consumer would. It does not
-share any in-process types with the choreographer's own runtime — it
+share any in-process types with MADE's own runtime — it
 only talks gRPC over `tonic` and (optionally) core NATS over
 `async-nats`. That makes it a faithful smoke test of the integration
 contract a real consumer commits to.
 
 The default smoke runs two provider-free chains. An opt-in positive
-path is available when the target Choreographer has a provider-backed
+path is available when the target MADE has a provider-backed
 agent kind enabled and a compatible endpoint is reachable:
 
 - **Chain 1** — Warn-mode reevaluation. Mirrors what a consumer
   triggers after observing an incident or domain event: optionally
   publish a trigger envelope, invoke `RunCouncilDecision` in Warn
   mode with a kernel-rehydration-shaped bundle, then assert on the
-  typed response + the outbound `choreo.deliberation.completed`
+  typed response + the outbound `made.deliberation.completed`
   envelope (correlation / causation propagation).
 
 - **Chain 2** — Strict-mode handoff report / rejection path. Registers the canonical
   Report `OutputContract` (JSON Schema body bound in
   `OutputContract.json_schema`), invokes `RunCouncilDecision` in
-  Strict mode, and asserts that the choreographer rejects free-form
+  Strict mode, and asserts that MADE rejects free-form
   NoopAgent text with `Code::FailedPrecondition` whose message
   mentions the contract id.
 
@@ -33,7 +33,7 @@ agent kind enabled and a compatible endpoint is reachable:
 
 ## Prerequisites
 
-- A running Choreographer (e.g. `make e2e-compose`, or a live
+- A running MADE (e.g. `make e2e-compose`, or a live
   cluster you can reach over gRPC).
 - A seeded council under the target specialty (default `triage`)
   with at least one agent registered. Without a council the gRPC
@@ -43,17 +43,17 @@ agent kind enabled and a compatible endpoint is reachable:
   `RegisterContract` and tolerates `AlreadyExists` /
   `FailedPrecondition` (already seeded) as a pass — but the registry
   must accept new contracts when starting from empty.
-- For `positive-path`: the Choreographer binary must be built with
+- For `positive-path`: the MADE binary must be built with
   the provider feature and booted with the provider's base config:
-  `agent-openai` plus `CHOREO_OPENAI_API_KEY` for `openai`, or
-  `agent-vllm` plus `CHOREO_VLLM_MODEL` and `CHOREO_VLLM_ENDPOINT`
+  `agent-openai` plus `MADE_OPENAI_API_KEY` for `openai`, or
+  `agent-vllm` plus `MADE_VLLM_MODEL` and `MADE_VLLM_ENDPOINT`
   for `vllm`. Per-run `provider.endpoint` and `provider.model`
   overrides are sent through `RegisterAgent.agent_config`.
 
 For the canonical bus subjects (Chain 1's NATS-coupled assertions):
 
-- Trigger: `choreo.trigger.<specialty>`
-- Deliberation completed: `choreo.deliberation.completed`
+- Trigger: `made.trigger.<specialty>`
+- Deliberation completed: `made.deliberation.completed`
 
 If `--nats-url` is omitted, those assertions are recorded as
 `Skipped` (never silently dropped) and the rest of the chain still
@@ -66,7 +66,7 @@ in Warn mode.
 ## Invocation
 
 ```bash
-cargo run -p choreo-consumer-smoke -- \
+cargo run -p made-consumer-smoke -- \
     --endpoint http://localhost:50055 \
     [--nats-url nats://localhost:4222] \
     [--chain {one,two,all,positive-path}] \
@@ -80,11 +80,11 @@ cargo run -p choreo-consumer-smoke -- \
 
 Environment overrides:
 
-- `CHOREOGRAPHER_ENDPOINT` — defaults to `http://localhost:50055`.
-- `CHOREO_NATS_URL` — optional. When set, Chain 1 publishes the
-  trigger envelope and subscribes to `choreo.deliberation.completed`
+- `MADE_ENDPOINT` — defaults to `http://localhost:50055`.
+- `MADE_NATS_URL` — optional. When set, Chain 1 publishes the
+  trigger envelope and subscribes to `made.deliberation.completed`
   for the correlation/causation assertions.
-- `CHOREO_REPORT_SCHEMA_PATH` — Chain 2 reads the schema from this
+- `MADE_REPORT_SCHEMA_PATH` — Chain 2 reads the schema from this
   path. Default `api/examples/output-contracts/report.schema.json`
   (relative to the binary's cwd).
 - `CONSUMER_SMOKE_PROVIDER_KIND` — provider kind for
@@ -102,14 +102,14 @@ A `make consumer-smoke` target wraps the same call:
 
 ```bash
 make consumer-smoke
-CONSUMER_SMOKE_CHAIN=two CHOREOGRAPHER_ENDPOINT=https://staging:50055 \
+CONSUMER_SMOKE_CHAIN=two MADE_ENDPOINT=https://staging:50055 \
     make consumer-smoke
 ```
 
 Positive path against a local OpenAI-compatible stub/provider:
 
 ```bash
-cargo run -p choreo-consumer-smoke -- \
+cargo run -p made-consumer-smoke -- \
     --endpoint http://localhost:50055 \
     --chain positive-path \
     --provider-kind openai \
@@ -122,12 +122,12 @@ cargo run -p choreo-consumer-smoke -- \
 A downstream consumer can gate a staging deploy with two smoke steps:
 the default provider-free chain set, then the provider-backed positive
 path. The first step checks that the public API is alive, that strict
-schema rejection works, and, when `CHOREO_NATS_URL` is set, that
+schema rejection works, and, when `MADE_NATS_URL` is set, that
 correlation/causation propagate on the bus. The second step checks
 that a structured Report JSON winner is accepted.
 
 ```yaml
-name: choreographer-consumer-smoke
+name: made-consumer-smoke
 
 on:
   workflow_dispatch:
@@ -138,28 +138,28 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      CHOREOGRAPHER_ENDPOINT: ${{ secrets.CHOREOGRAPHER_ENDPOINT }}
-      CHOREO_NATS_URL: ${{ secrets.CHOREO_NATS_URL }}
+      MADE_ENDPOINT: ${{ secrets.MADE_ENDPOINT }}
+      MADE_NATS_URL: ${{ secrets.MADE_NATS_URL }}
       CONSUMER_SMOKE_PROVIDER_KIND: openai
       CONSUMER_SMOKE_PROVIDER_ENDPOINT: ${{ secrets.CONSUMER_SMOKE_PROVIDER_ENDPOINT }}
       CONSUMER_SMOKE_PROVIDER_MODEL: ${{ vars.CONSUMER_SMOKE_PROVIDER_MODEL }}
     steps:
       - uses: actions/checkout@v4
         with:
-          repository: underpass-ai/underpass-choreographer
+          repository: underpass-ai/made
           ref: <pinned-tag-or-sha>
-          path: choreographer-smoke
+          path: made-smoke
 
       - name: Provider-free API and rejection smoke
-        working-directory: choreographer-smoke
+        working-directory: made-smoke
         run: |
-          cargo run -p choreo-consumer-smoke --locked -- \
+          cargo run -p made-consumer-smoke --locked -- \
             --chain all
 
       - name: Positive Report smoke
-        working-directory: choreographer-smoke
+        working-directory: made-smoke
         run: |
-          cargo run -p choreo-consumer-smoke --locked -- \
+          cargo run -p made-consumer-smoke --locked -- \
             --chain positive-path
 ```
 
@@ -174,7 +174,7 @@ assertion failed, and `2` means the smoke could not run.
 | chain1 | `validation_summary_present` | `response.validation` is `Some` |
 | chain1 | `candidates_non_empty` | `response.candidates.len() > 0` |
 | chain1 | `bundle_seam_documented` | always `Skipped` — points at Epic 11 scenario 7 (bundle round-trip) |
-| chain1 | `trigger_envelope_observed` | a `choreo.deliberation.completed` envelope with the run's `correlation_id` arrives within 5 s |
+| chain1 | `trigger_envelope_observed` | a `made.deliberation.completed` envelope with the run's `correlation_id` arrives within 5 s |
 | chain1 | `causal_metadata_propagated` | that envelope's `causation_id` matches the one the harness sent |
 | chain2 | `report_schema_registered` | `RegisterContract` succeeds or the contract already exists |
 | chain2 | `report_contract_rejects_freeform_text` | `RunCouncilDecision` returns `FailedPrecondition` mentioning the contract id |
@@ -220,7 +220,7 @@ the typed shape without parsing the printed table.
 
 ## The kernel rehydration seam
 
-`choreo_consumer_smoke::bundle::deterministic_bundle()` returns a
+`made_consumer_smoke::bundle::deterministic_bundle()` returns a
 literal `ExternalContextBundle`. A real consumer integration would
 replace it with the result of a kernel rehydration call (Underpass
 KMP, RAG, whatever the consumer wires) before invoking
@@ -235,5 +235,5 @@ KMP, RAG, whatever the consumer wires) before invoking
 
 Keeping the rehydration adapter out of this crate keeps the smoke
 binary's dependency surface narrow. The chains exercise the
-choreographer's public RPC + bus contract; the kernel boundary is a
+MADE's public RPC + bus contract; the kernel boundary is a
 separate integration concern.

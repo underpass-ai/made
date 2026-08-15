@@ -2,8 +2,8 @@
 #
 # Stub-runtime sidecar for the stack E2E.
 #
-# Builds the `choreo-stub-runtime` binary and ships it in a minimal,
-# non-root image. Lets the choreographer's `RuntimeExecutor` talk to
+# Builds the `made-stub-runtime` binary and ships it in a minimal,
+# non-root image. Lets MADE's `RuntimeExecutor` talk to
 # a real gRPC peer (`SessionService` + `InvocationService`) without
 # dragging the real `underpass-runtime` image into this repo's test
 # path. Driven by `tests/e2e/docker-compose.e2e.yaml`.
@@ -32,21 +32,21 @@ COPY crates ./crates
 
 RUN --mount=type=cache,id=cargo-registry-stub-runtime,target=/usr/local/cargo/registry \
     --mount=type=cache,id=cargo-target-stub-runtime,target=/src/target \
-    cargo build --release --locked --bin choreo-stub-runtime \
- && install -Dm 0755 target/release/choreo-stub-runtime /out/stub-runtime
+    cargo build --release --locked --bin made-stub-runtime \
+ && install -Dm 0755 target/release/made-stub-runtime /out/stub-runtime
 
 FROM gcr.io/distroless/cc-debian12:nonroot AS runtime
 
-LABEL org.opencontainers.image.title="underpass-choreographer-stub-runtime" \
+LABEL org.opencontainers.image.title="made-stub-runtime" \
       org.opencontainers.image.description="Canned-response stub of underpass.runtime.v1 for stack E2E. Not shipped." \
       org.opencontainers.image.vendor="Underpass AI" \
       org.opencontainers.image.licenses="Apache-2.0" \
-      org.opencontainers.image.source="https://github.com/underpass-ai/underpass-choreographer"
+      org.opencontainers.image.source="https://github.com/underpass-ai/made"
 
-COPY --from=builder /out/stub-runtime /usr/local/bin/choreo-stub-runtime
+COPY --from=builder /out/stub-runtime /usr/local/bin/made-stub-runtime
 
 USER nonroot:nonroot
 
 EXPOSE 50053
 
-ENTRYPOINT ["/usr/local/bin/choreo-stub-runtime"]
+ENTRYPOINT ["/usr/local/bin/made-stub-runtime"]

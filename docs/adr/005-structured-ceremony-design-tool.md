@@ -16,7 +16,7 @@ author asked for a design.
 
 ## Decision
 
-The embedded Choreographer plugin exposes `choreo_design_ceremony`. It accepts
+The embedded MADE plugin exposes `made_design_ceremony`. It accepts
 structured, domain-neutral intent: one objective, inputs, outputs,
 participants, ordered stages and an optional final human approval.
 

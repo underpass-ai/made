@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IMAGE_TAG="${1:-underpass-choreographer:ci}"
+IMAGE_TAG="${1:-made:ci}"
 DOCKERFILE="${2:-Dockerfile}"
 : "${CONTAINER_RUNTIME:=auto}"
 

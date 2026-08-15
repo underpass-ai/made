@@ -14,7 +14,7 @@ assert_embedded_boundary() {
   while IFS= read -r package; do
     name="${package%% *}"
     case "${name}" in
-      async-nats|choreo-mcp-proto|choreo-proto|prost|prost-types|sqlx|tonic)
+      async-nats|made-mcp-proto|made-proto|prost|prost-types|sqlx|tonic)
         forbidden+=("${name}")
         ;;
     esac
@@ -31,9 +31,9 @@ assert_embedded_boundary() {
   echo "${label} dependency boundary passed"
 }
 
-assert_embedded_boundary "choreo-embedded" -p choreo-embedded
+assert_embedded_boundary "made-embedded" -p made-embedded
 assert_embedded_boundary \
-  "choreo-mcp embedded backend" \
-  -p choreo-mcp \
+  "made-mcp embedded backend" \
+  -p made-mcp \
   --no-default-features \
   --features embedded

@@ -10,12 +10,12 @@
 Fecha: 2026-05-18
 
 Este plan asume que el producto a publicar es **Underpass
-Choreographer como plano genérico de coordinación**, no PIR ni ningún
+MADE como plano genérico de coordinación**, no PIR ni ningún
 producto downstream concreto.
 
 ## Aclaración De Independencia
 
-Choreographer es agnóstico e independiente. PIR, KMP,
+MADE es agnóstico e independiente. PIR, KMP,
 `underpass-runtime` u otros repos aparecen en la documentación solo
 como referencias de estudio, integraciones posibles o casos de uso.
 No forman parte obligatoria del producto publicable.
@@ -47,9 +47,9 @@ ejecutar sin leer el código fuente.
 - Coordina councils de agentes especializados.
 - Orquesta ceremonias multiagentes declarativas en YAML (daily standup,
   debate técnico, sprint planning, speaker + Q&A) vía `RunCeremony`.
-- Rankea propuestas mediante un juez LLM opcional (`CHOREO_JUDGE_ENABLED`)
+- Rankea propuestas mediante un juez LLM opcional (`MADE_JUDGE_ENABLED`)
   en vez de fracción de validadores; fail-fast sin endpoint vLLM.
-- Expone la API gRPC completa `underpass.choreo.v1` (17 RPCs).
+- Expone la API gRPC completa `underpass.made.v1` (17 RPCs).
 - Expone MCP stdio para agentes como Codex y Claude Desktop.
 - Acepta contexto externo mediante `ExternalContextBundle`.
 - Puede ejecutar winners mediante `RuntimeExecutor`.
@@ -60,7 +60,7 @@ ejecutar sin leer el código fuente.
 
 ### No Se Debe Prometer Todavía
 
-- Que Choreographer consulta KMP directamente o depende de KMP.
+- Que MADE consulta KMP directamente o depende de KMP.
 - Que NATS tiene semántica durable, replay o ack tipo JetStream.
 - Que `StreamDeliberation` emite cada propuesta, crítica y revisión.
 - Que un provider real está validado en CI sin credenciales externas.
@@ -77,9 +77,9 @@ Trabajo:
 - Explicar `stub-runtime`, `stub-llm`, Report schema y los provider
   shapes OpenAI/vLLM.
 - Añadir un quickstart local:
-  - sin externos: `CHOREO_NATS_ENABLED=false just run`
+  - sin externos: `MADE_NATS_ENABLED=false just run`
   - demo completa: `make e2e-compose`
-  - MCP fixture: `CHOREO_MCP_BACKEND=fixture choreo-mcp`
+  - MCP fixture: `MADE_MCP_BACKEND=fixture made-mcp`
   - MCP live contra gRPC local.
 - Añadir ejemplos concretos de requests para:
   - `CreateCouncil`
@@ -119,11 +119,11 @@ Criterio de salida:
 
 ## Fase 3 - Consumer Smoke Integrable
 
-Objetivo: que un downstream pueda poner Choreographer en su CI.
+Objetivo: que un downstream pueda poner MADE en su CI.
 
 Trabajo:
 
-- Extender `choreo-consumer-smoke` con modo positivo:
+- Extender `made-consumer-smoke` con modo positivo:
   - registrar agent `openai` o `vllm` contra un endpoint
     OpenAI-compatible.
   - registrar Report schema.
@@ -189,7 +189,7 @@ Gates obligatorios:
 - `make consumer-smoke` rejection-path.
 - consumer-smoke positive-path contra `stub-llm` o provider compatible.
 - `make e2e-provider-vllm` si se va a anunciar vLLM real.
-- `cargo publish --dry-run` para `choreo-mcp-proto` y `choreo-mcp`.
+- `cargo publish --dry-run` para `made-mcp-proto` y `made-mcp`.
 - build/push dry run de imagen y chart.
 
 Criterio de salida:
@@ -197,7 +197,7 @@ Criterio de salida:
 - Tag RC.
 - Imagen GHCR.
 - Helm chart OCI.
-- `choreo-mcp` instalable.
+- `made-mcp` instalable.
 - Release notes con límites explícitos.
 
 ## Fase 6 - Public Beta
@@ -206,7 +206,7 @@ Objetivo: publicarlo honestamente.
 
 Publicar como:
 
-- **Underpass Choreographer Public Beta**
+- **MADE Public Beta**
 - Generic agent council coordination plane.
 - gRPC + MCP + Helm.
 - Caller-supplied context.
@@ -216,7 +216,7 @@ Publicar como:
 No usar todavía:
 
 - "production-ready" sin downstream smoke real.
-- "KMP-integrated" si Choreographer no consulta KMP.
+- "KMP-integrated" si MADE no consulta KMP.
 - "durable eventing".
 - "real-time deliberation streaming" para turnos internos.
 

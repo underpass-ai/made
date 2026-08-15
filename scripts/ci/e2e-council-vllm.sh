@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Launches the Choreographer multi-agent vLLM E2E Job, waits for
+# Launches the MADE multi-agent vLLM E2E Job, waits for
 # completion, tails logs, and cleans up. Namespace defaults to the
 # Underpass runtime namespace because that is where the shared
-# Choreographer + vLLM services run in the operator environment.
+# MADE + vLLM services run in the operator environment.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 NAMESPACE="${NAMESPACE:-underpass-runtime}"
-JOB_NAME="${JOB_NAME:-choreographer-e2e-council-vllm}"
+JOB_NAME="${JOB_NAME:-made-e2e-council-vllm}"
 MANIFEST="${ROOT_DIR}/tests/e2e/kubernetes/council-vllm-job.yaml"
 TIMEOUT="${TIMEOUT:-600s}"
-RUNNER_IMAGE="${RUNNER_IMAGE:-ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:e2e-latest}"
-CHOREOGRAPHER_ENDPOINT="${CHOREOGRAPHER_ENDPOINT:-http://choreographer:50055}"
-VLLM_ENDPOINT="${CHOREO_VLLM_ENDPOINT:-http://underpass-llm-gemma-4-31b-structured:8000}"
-VLLM_MODEL="${CHOREO_VLLM_MODEL:-google/gemma-4-31B-it}"
-VLLM_AGENT_COUNT="${CHOREO_VLLM_AGENT_COUNT:-3}"
-VLLM_MAX_TOKENS="${CHOREO_VLLM_MAX_TOKENS:-512}"
-VLLM_TIMEOUT_SECS="${CHOREO_VLLM_TIMEOUT_SECS:-300}"
-SCENARIOS="${CHOREO_E2E_SCENARIOS:-vllm-real-multi-agent,ceremony-vllm}"
+RUNNER_IMAGE="${RUNNER_IMAGE:-ghcr.io/underpass-ai/made-e2e-runner:e2e-latest}"
+MADE_ENDPOINT="${MADE_ENDPOINT:-http://made:50055}"
+VLLM_ENDPOINT="${MADE_VLLM_ENDPOINT:-http://underpass-llm-gemma-4-31b-structured:8000}"
+VLLM_MODEL="${MADE_VLLM_MODEL:-google/gemma-4-31B-it}"
+VLLM_AGENT_COUNT="${MADE_VLLM_AGENT_COUNT:-3}"
+VLLM_MAX_TOKENS="${MADE_VLLM_MAX_TOKENS:-512}"
+VLLM_TIMEOUT_SECS="${MADE_VLLM_TIMEOUT_SECS:-300}"
+SCENARIOS="${MADE_E2E_SCENARIOS:-vllm-real-multi-agent,ceremony-vllm}"
 IMAGE_PULL_SECRET="${E2E_IMAGE_PULL_SECRET:-}"
 RENDERED_MANIFEST=""
 
@@ -35,7 +35,7 @@ trap cleanup EXIT
 RENDERED_MANIFEST="$(mktemp)"
 awk \
     -v image="${RUNNER_IMAGE}" \
-    -v choreographer_endpoint="${CHOREOGRAPHER_ENDPOINT}" \
+    -v made_endpoint="${MADE_ENDPOINT}" \
     -v vllm_endpoint="${VLLM_ENDPOINT}" \
     -v vllm_model="${VLLM_MODEL}" \
     -v agent_count="${VLLM_AGENT_COUNT}" \
@@ -44,51 +44,51 @@ awk \
     -v scenarios="${SCENARIOS}" \
     -v pull_secret="${IMAGE_PULL_SECRET}" '
       {
-        gsub("image: ghcr.io/underpass-ai/underpass-choreographer-e2e-runner:e2e-latest", "image: " image);
+        gsub("image: ghcr.io/underpass-ai/made-e2e-runner:e2e-latest", "image: " image);
       }
-      /- name: CHOREO_E2E_SCENARIOS/ {
+      /- name: MADE_E2E_SCENARIOS/ {
         print;
         getline;
         sub(/value:.*/, "value: " scenarios);
         print;
         next;
       }
-      /- name: CHOREOGRAPHER_ENDPOINT/ {
+      /- name: MADE_ENDPOINT/ {
         print;
         getline;
-        sub(/value:.*/, "value: " choreographer_endpoint);
+        sub(/value:.*/, "value: " made_endpoint);
         print;
         next;
       }
-      /- name: CHOREO_VLLM_ENDPOINT/ {
+      /- name: MADE_VLLM_ENDPOINT/ {
         print;
         getline;
         sub(/value:.*/, "value: " vllm_endpoint);
         print;
         next;
       }
-      /- name: CHOREO_VLLM_MODEL/ {
+      /- name: MADE_VLLM_MODEL/ {
         print;
         getline;
         sub(/value:.*/, "value: " vllm_model);
         print;
         next;
       }
-      /- name: CHOREO_VLLM_AGENT_COUNT/ {
+      /- name: MADE_VLLM_AGENT_COUNT/ {
         print;
         getline;
         sub(/value:.*/, "value: \"" agent_count "\"");
         print;
         next;
       }
-      /- name: CHOREO_VLLM_MAX_TOKENS/ {
+      /- name: MADE_VLLM_MAX_TOKENS/ {
         print;
         getline;
         sub(/value:.*/, "value: \"" max_tokens "\"");
         print;
         next;
       }
-      /- name: CHOREO_VLLM_TIMEOUT_SECS/ {
+      /- name: MADE_VLLM_TIMEOUT_SECS/ {
         print;
         getline;
         sub(/value:.*/, "value: \"" timeout_secs "\"");

@@ -7,13 +7,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-export CHOREO_MCP_GRPC_ENDPOINT="${CHOREO_MCP_GRPC_ENDPOINT:-http://127.0.0.1:50055}"
+export MADE_MCP_GRPC_ENDPOINT="${MADE_MCP_GRPC_ENDPOINT:-http://127.0.0.1:50055}"
 
-if [[ -z "${CHOREO_MCP_BIN:-}" ]]; then
-  export CHOREO_MCP_BIN="${ROOT_DIR}/target/debug/choreo-mcp"
-  if [[ ! -x "${CHOREO_MCP_BIN}" ]]; then
-    cargo build -p choreo-mcp --locked
+if [[ -z "${MADE_MCP_BIN:-}" ]]; then
+  export MADE_MCP_BIN="${ROOT_DIR}/target/debug/made-mcp"
+  if [[ ! -x "${MADE_MCP_BIN}" ]]; then
+    cargo build -p made-mcp --locked
   fi
 fi
 
-python3 "${ROOT_DIR}/scripts/mcp/choreo-mcp-council-vllm.py"
+python3 "${ROOT_DIR}/scripts/mcp/made-mcp-council-vllm.py"

@@ -12,7 +12,7 @@ happened.
 
 ## Decision
 
-`choreo_generate_ceremony_report` is an embedded MCP read capability. It reads
+`made_generate_ceremony_report` is an embedded MCP read capability. It reads
 each `CeremonyInstance`, resolves the exact definition it runs, and reads the
 same store's `AuditJournalPort`. The embedded builder therefore accepts one
 ceremony store implementing repository, unit-of-work and audit-journal ports;

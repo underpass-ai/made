@@ -435,256 +435,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "613afe47fcd5fac7ccf1db93babcb082c5994d996f20b8b159f2ad1658eb5724"
 
 [[package]]
-name = "choreo"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "axum",
- "choreo-adapters",
- "choreo-app",
- "choreo-core",
- "choreo-proto",
- "figment",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tokio-stream",
- "tonic",
- "tower 0.4.13",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "choreo-adapters"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "choreo-app",
- "choreo-core",
- "choreo-proto",
- "figment",
- "futures",
- "jsonschema",
- "mockall",
- "opentelemetry",
- "opentelemetry_sdk",
- "prometheus",
- "prost-types",
- "redb",
- "reqwest",
- "serde",
- "serde_json",
- "serde_yaml",
- "sqlx",
- "tempfile",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tonic",
- "tracing",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "uuid",
- "wiremock",
-]
-
-[[package]]
-name = "choreo-api"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
-]
-
-[[package]]
-name = "choreo-app"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "choreo-core",
- "criterion",
- "mockall",
- "serde",
- "serde_json",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tokio-test",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "choreo-consumer-smoke"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "async-trait",
- "choreo-adapters",
- "choreo-app",
- "choreo-core",
- "choreo-proto",
- "choreo-tests-integration",
- "clap",
- "futures",
- "jsonschema",
- "prost-types",
- "serde_json",
- "time",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "choreo-core"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "criterion",
- "futures",
- "mockall",
- "serde",
- "serde_json",
- "sha2",
- "thiserror 1.0.69",
- "time",
- "tokio",
- "tracing",
- "uuid",
-]
-
-[[package]]
-name = "choreo-e2e-runner"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-nats",
- "axum",
- "choreo-adapters",
- "choreo-core",
- "choreo-proto",
- "futures",
- "jsonschema",
- "prost-types",
- "serde",
- "serde_json",
- "time",
- "tokio",
- "tonic",
- "tower 0.5.3",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "choreo-embedded"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "choreo-adapters",
- "choreo-api",
- "choreo-app",
- "choreo-core",
- "serde_json",
- "tempfile",
- "time",
- "tokio",
-]
-
-[[package]]
-name = "choreo-mcp"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "choreo-adapters",
- "choreo-app",
- "choreo-core",
- "choreo-embedded",
- "choreo-mcp-proto",
- "futures",
- "opentelemetry",
- "prost-types",
- "serde",
- "serde_json",
- "serde_yaml",
- "sha2",
- "testcontainers",
- "time",
- "tokio",
- "tonic",
- "tracing",
- "tracing-subscriber",
- "uuid",
-]
-
-[[package]]
-name = "choreo-mcp-proto"
-version = "0.1.0"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "choreo-proto"
-version = "0.1.0"
-dependencies = [
- "prost",
- "prost-types",
- "tonic",
- "tonic-build",
-]
-
-[[package]]
-name = "choreo-tests-integration"
-version = "0.1.0"
-dependencies = [
- "async-nats",
- "async-trait",
- "choreo-adapters",
- "choreo-app",
- "choreo-core",
- "choreo-embedded",
- "choreo-mcp",
- "choreo-proto",
- "futures",
- "prost-types",
- "rcgen",
- "serde_json",
- "testcontainers",
- "time",
- "tokio",
- "tokio-stream",
- "tonic",
- "uuid",
-]
-
-[[package]]
 name = "chrono"
 version = "0.4.44"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2024,6 +1774,256 @@ name = "lru-slab"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
+
+[[package]]
+name = "made"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "axum",
+ "figment",
+ "made-adapters",
+ "made-app",
+ "made-core",
+ "made-proto",
+ "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "tower 0.4.13",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "made-adapters"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "figment",
+ "futures",
+ "jsonschema",
+ "made-app",
+ "made-core",
+ "made-proto",
+ "mockall",
+ "opentelemetry",
+ "opentelemetry_sdk",
+ "prometheus",
+ "prost-types",
+ "redb",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sqlx",
+ "tempfile",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tonic",
+ "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
+ "uuid",
+ "wiremock",
+]
+
+[[package]]
+name = "made-api"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "made-app"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "criterion",
+ "made-core",
+ "mockall",
+ "serde",
+ "serde_json",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "made-consumer-smoke"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "async-trait",
+ "clap",
+ "futures",
+ "jsonschema",
+ "made-adapters",
+ "made-app",
+ "made-core",
+ "made-proto",
+ "made-tests-integration",
+ "prost-types",
+ "serde_json",
+ "time",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "made-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "criterion",
+ "futures",
+ "mockall",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 1.0.69",
+ "time",
+ "tokio",
+ "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "made-e2e-runner"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "async-nats",
+ "axum",
+ "futures",
+ "jsonschema",
+ "made-adapters",
+ "made-core",
+ "made-proto",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "time",
+ "tokio",
+ "tonic",
+ "tower 0.5.3",
+ "tracing",
+ "tracing-subscriber",
+]
+
+[[package]]
+name = "made-embedded"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "made-adapters",
+ "made-api",
+ "made-app",
+ "made-core",
+ "serde_json",
+ "tempfile",
+ "time",
+ "tokio",
+]
+
+[[package]]
+name = "made-mcp"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "futures",
+ "made-adapters",
+ "made-app",
+ "made-core",
+ "made-embedded",
+ "made-mcp-proto",
+ "opentelemetry",
+ "prost-types",
+ "serde",
+ "serde_json",
+ "serde_yaml",
+ "sha2",
+ "testcontainers",
+ "time",
+ "tokio",
+ "tonic",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+]
+
+[[package]]
+name = "made-mcp-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "made-proto"
+version = "0.1.0"
+dependencies = [
+ "prost",
+ "prost-types",
+ "tonic",
+ "tonic-build",
+]
+
+[[package]]
+name = "made-tests-integration"
+version = "0.1.0"
+dependencies = [
+ "async-nats",
+ "async-trait",
+ "futures",
+ "made-adapters",
+ "made-app",
+ "made-core",
+ "made-embedded",
+ "made-mcp",
+ "made-proto",
+ "prost-types",
+ "rcgen",
+ "serde_json",
+ "testcontainers",
+ "time",
+ "tokio",
+ "tokio-stream",
+ "tonic",
+ "uuid",
+]
 
 [[package]]
 name = "matchers"

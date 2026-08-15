@@ -4,9 +4,9 @@ Status: initial blueprint catalog. These are product-agnostic meeting designs
 optimized for the Underpass sibling capabilities: rehydration kernel as the
 context/scenario provider and runtime client as the governed tool runtime.
 
-Choreographer itself remains agnostic and independent. The sibling
+MADE itself remains agnostic and independent. The sibling
 systems named here are example providers for study and evaluation, not
-required dependencies of the Choreographer product.
+required dependencies of the MADE product.
 
 Date: 2026-04-26
 
@@ -743,5 +743,5 @@ highest leverage sequence is:
    runtime-client feasibility checks into an auditable decision.
 6. `Execution Readiness Meeting`: gates real tool/action execution.
 
-This sequence maximizes use of both siblings while keeping Choreographer
+This sequence maximizes use of both siblings while keeping MADE
 contracts generic.

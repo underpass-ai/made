@@ -15,7 +15,7 @@ The engine also has mechanisms that exist specifically to survive failure —
 step leases for failover, idempotency keys so a retry does not duplicate
 effects, human guards that block until a person decides. Their durability
 depends on the host composition. The deployable server uses in-memory ceremony
-state when `CHOREO_CEREMONY_STORE_PATH` is absent and Redb-backed ceremony
+state when `MADE_CEREMONY_STORE_PATH` is absent and Redb-backed ceremony
 state when it is configured. A guard that disappears on restart is not a guard;
 a lease that does not outlive the failure it exists for is decorative.
 
@@ -54,7 +54,7 @@ monotonic sequence and its uniqueness inherent rather than a declared
 constraint, and gives range scans for chain verification.
 
 **The deployable server currently uses Redb for ceremony state when
-`CHOREO_CEREMONY_STORE_PATH` is configured.** Redb takes an exclusive file
+`MADE_CEREMONY_STORE_PATH` is configured.** Redb takes an exclusive file
 lock and serves a single process, so the Helm composition pairs ceremony
 persistence with a single replica and a ReadWriteOnce volume. Without that
 variable, ceremony state remains in memory.
@@ -84,7 +84,7 @@ better evidence than one: they show the port is not shaped around a single
 store.
 
 The deployable server can resume Redb-backed ceremonies after restart when
-`CHOREO_CEREMONY_STORE_PATH` and its volume are configured. The default
+`MADE_CEREMONY_STORE_PATH` and its volume are configured. The default
 in-memory composition makes no restart-durability claim.
 
 The engine's public claim becomes precise: it defines, chains and verifies the

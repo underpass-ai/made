@@ -4,15 +4,15 @@
 - **Date:** 2026-04-18
 - **Status:** complete
 - **Related code:**
-  - `crates/choreo-app/benches/deliberate.rs`
-  - `crates/choreo-core/benches/trace_context.rs`
+  - `crates/made-app/benches/deliberate.rs`
+  - `crates/made-core/benches/trace_context.rs`
 
 ## 1. Hypothesis
 
 A single deliberation through `DeliberateUseCase` — with stub agents
 and every port replaced by an in-process no-op — completes in
 **under 10 µs** on commodity hardware for the canonical shape
-(3 agents, 0 or 2 rounds). The hot path the choreographer owns
+(3 agents, 0 or 2 rounds). The hot path MADE owns
 (seed → peer-review → validate → score → rank → save → publish →
 record statistics) should not exceed that budget; anything slower
 means the domain loop has acquired accidental overhead rather than
@@ -96,7 +96,7 @@ The supporting micro-hypothesis is also supported: every
 
 - **Stub agents hide the dominant real cost.** In production an
   agent call is an LLM HTTP round-trip (10–10 000 ms). This bench
-  measures the choreographer's *own* cost only — it is the
+  measures MADE's *own* cost only — it is the
   right question for "how much do we add?" but not the answer to
   "how long does a deliberation take?". Real-agent latencies will
   need their own experiment.
@@ -113,7 +113,7 @@ The supporting micro-hypothesis is also supported: every
 
 - **002** — scale experiment: sweep `rounds ∈ {0, 2, 4, 8}` and
   `agents ∈ {1, 3, 5, 10}` to confirm the linear model.
-- **003** — end-to-end through NATS + gRPC: puts the choreographer's
+- **003** — end-to-end through NATS + gRPC: puts MADE's
   ~3 µs in context next to the adapter + transport layer.
 - **004** — real-agent mix: parameterise with a mock HTTP agent
   stubbing realistic LLM latencies so the whole-system budget is

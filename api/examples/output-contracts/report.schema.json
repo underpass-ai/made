@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://underpass.ai/choreographer/output-contracts/report.schema.json",
-  "title": "Choreographer Report Output Contract",
+  "$id": "https://underpass.ai/made/output-contracts/report.schema.json",
+  "title": "MADE Report Output Contract",
   "description": "Canonical Report-shape JSON Schema for `OutputContract.json_schema`. Use this when a council should return a structured report (incident analysis, design review, post-action learning, escalation handoff, ...). Application-specific identifiers stay outside this schema — bind them via `Task.attributes` or `ExternalContextBundle.metadata`.",
   "type": "object",
   "additionalProperties": false,

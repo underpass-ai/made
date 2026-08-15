@@ -20,10 +20,10 @@ must not claim it or imply that the returned Markdown was persisted.
 
 The MCP server owns two backend-independent tools:
 
-- `choreo_discover_capabilities` projects identity, backend metadata,
+- `made_discover_capabilities` projects identity, backend metadata,
   capability groups, tools and artifact generators from the same
   backend-filtered catalog used by `tools/list`.
-- `choreo_get_help` returns structured and Markdown guidance for either a
+- `made_get_help` returns structured and Markdown guidance for either a
   `user` or an `agent`. Agent guidance includes preconditions, authority
   boundaries, the delegated-host sequence and error handling.
 
@@ -39,7 +39,7 @@ includes tool names embedded in prose and Markdown, so filtering a capability
 also removes recommendations and examples that depend on it.
 
 Execution guidance distinguishes two ownership paths. A server-owned step may
-use `choreo_run_ceremony_step` only when a real `CeremonyStepHandlerPort` is
+use `made_run_ceremony_step` only when a real `CeremonyStepHandlerPort` is
 configured; the embedded default can complete through
 `NoopCeremonyStepHandler`, which is wiring evidence rather than evidence of
 operational work. Delegated-host work instead follows claim, real external
@@ -47,8 +47,8 @@ host work, completion with observable output/evidence, refresh, and transition.
 
 The application layer already exposed `StartCeremonyStepUseCase` and
 `CompleteCeremonyStepUseCase`, but `origin/main` did not adapt them to MCP.
-The embedded MCP therefore exposes `choreo_claim_ceremony_step` and
-`choreo_complete_ceremony_step` as thin request/dispatch adapters. They add no
+The embedded MCP therefore exposes `made_claim_ceremony_step` and
+`made_complete_ceremony_step` as thin request/dispatch adapters. They add no
 domain authority or policy: the existing use cases retain lease, state,
 authorization, and result validation.
 

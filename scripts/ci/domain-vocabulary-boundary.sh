@@ -19,10 +19,10 @@ cd "${ROOT_DIR}"
 VERTICAL_TERMS='incident|outage|postmortem|on-call|oncall|pagerduty|sev[0-9]|runbook'
 
 GUARDED_PATHS=(
-  'crates/choreo-core/src'
-  'crates/choreo-api/src'
-  'crates/choreo-app/src'
-  'crates/choreo-mcp/src'
+  'crates/made-core/src'
+  'crates/made-api/src'
+  'crates/made-app/src'
+  'crates/made-mcp/src'
 )
 
 failed=0

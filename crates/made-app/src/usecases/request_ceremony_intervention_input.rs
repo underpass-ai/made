@@ -1,0 +1,65 @@
+use made_core::value_objects::{
+    AuditActorKind, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget, RoleId,
+};
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequestCeremonyInterventionInput {
+    pub(crate) instance_id: CeremonyId,
+    pub(crate) intervention_id: CeremonyInterventionId,
+    pub(crate) role_id: RoleId,
+    /// What kind of party fills that seat.
+    ///
+    /// Carried, never worked out. The engine sees a seat and cannot
+    /// see what fills it.
+    pub(crate) role_kind: AuditActorKind,
+    pub(crate) kind: CeremonyInterventionKind,
+    pub(crate) target: CeremonyInterventionTarget,
+    pub(crate) content: CeremonyInterventionContent,
+    pub(crate) provenance: Option<CeremonyInterventionProvenance>,
+}
+
+impl RequestCeremonyInterventionInput {
+    #[allow(clippy::too_many_arguments)]
+    #[must_use]
+    pub fn new(
+        instance_id: CeremonyId,
+        intervention_id: CeremonyInterventionId,
+        role_id: RoleId,
+        role_kind: AuditActorKind,
+        kind: CeremonyInterventionKind,
+        target: CeremonyInterventionTarget,
+        content: CeremonyInterventionContent,
+    ) -> Self {
+        Self {
+            instance_id,
+            intervention_id,
+            role_id,
+            role_kind,
+            kind,
+            target,
+            content,
+            provenance: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_provenance(mut self, provenance: CeremonyInterventionProvenance) -> Self {
+        self.provenance = Some(provenance);
+        self
+    }
+    #[must_use]
+    pub fn intervention_id(&self) -> &CeremonyInterventionId {
+        &self.intervention_id
+    }
+
+    #[must_use]
+    pub fn target(&self) -> &CeremonyInterventionTarget {
+        &self.target
+    }
+
+    #[must_use]
+    pub const fn kind(&self) -> CeremonyInterventionKind {
+        self.kind
+    }
+}

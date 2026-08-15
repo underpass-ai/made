@@ -1,8 +1,8 @@
-# End-to-end stack for the Choreographer.
+# End-to-end stack for MADE.
 #
 # Brings up:
 #   - nats:2 (trigger bus + outbound event bus)
-#   - choreographer (built from the root Dockerfile, seeded with one
+#   - MADE (built from the root Dockerfile, seeded with one
 #     `triage` council + one NoopAgent so the runner can exercise the
 #     gRPC surface without extra wiring)
 #   - e2e-runner  (drives scenarios via the public gRPC contract and
@@ -18,12 +18,12 @@ services:
     command: ["-js"]
     # No healthcheck: the upstream nats:2 image is distroless-ish and
     # ships no shell, wget, nc, or curl, so any compose-level probe
-    # would be brittle. The choreographer retries its NATS connection
+    # would be brittle. MADE retries its NATS connection
     # on startup (see `compose::wire_messaging`), which is the real
     # invariant we care about.
 
   # Canned-response stub of underpass.runtime.v1 — gives the
-  # choreographer's `RuntimeExecutor` a real gRPC peer to talk to so
+  # MADE's `RuntimeExecutor` a real gRPC peer to talk to so
   # the stack E2E can exercise the full Orchestrate path
   # (Deliberate -> winner -> RuntimeExecutor::execute) without pulling
   # the real underpass-runtime image into this repo.
@@ -37,7 +37,7 @@ services:
 
   # OpenAI-shaped stub LLM. Always returns a JSON Report payload that
   # satisfies `api/examples/output-contracts/report.schema.json`,
-  # giving the choreographer's `OpenAiAgent` adapter a deterministic
+  # giving MADE's `OpenAiAgent` adapter a deterministic
   # peer so scenario 8 can prove the positive structured-output path
   # end-to-end without a real provider in the test path.
   stub-llm:
@@ -48,33 +48,33 @@ services:
       STUB_LLM_LISTEN: "0.0.0.0:8000"
       RUST_LOG: "info"
 
-  choreographer:
+  made:
     build:
       context: ../..
       dockerfile: Dockerfile
     environment:
-      CHOREO_GRPC_PORT: "50055"
-      CHOREO_NATS_ENABLED: "true"
-      CHOREO_NATS_URL: "nats://nats:4222"
-      CHOREO_PUBLISH_PREFIX: "choreo"
-      CHOREO_TRIGGER_SUBJECT: "choreo.trigger.>"
-      CHOREO_SEED_SPECIALTIES: "triage"
-      CHOREO_EXECUTOR_KIND: "runtime"
-      CHOREO_RUNTIME_GRPC_ENDPOINT: "http://stub-runtime:50053"
+      MADE_GRPC_PORT: "50055"
+      MADE_NATS_ENABLED: "true"
+      MADE_NATS_URL: "nats://nats:4222"
+      MADE_PUBLISH_PREFIX: "made"
+      MADE_TRIGGER_SUBJECT: "made.trigger.>"
+      MADE_SEED_SPECIALTIES: "triage"
+      MADE_EXECUTOR_KIND: "runtime"
+      MADE_RUNTIME_GRPC_ENDPOINT: "http://stub-runtime:50053"
       # Required for `DispatchingAgentFactory::from_env` to enable the
       # `openai` kind so scenario 8 can register an OpenAI-backed agent
       # dynamically. The stub-llm sidecar ignores the bearer token, so
       # any non-empty value works — keep this dummy-typed and obvious
       # to operators reading compose logs.
-      CHOREO_OPENAI_API_KEY: "stub-key-not-used"
+      MADE_OPENAI_API_KEY: "stub-key-not-used"
       # Activates the `vllm` kind in the agent factory so scenario 9
       # can register a vLLM-backed agent against the same stub-llm
       # sidecar (both adapters speak `POST /v1/chat/completions`). The
       # factory needs both env vars present at boot before it accepts
       # the kind; per-descriptor `provider.endpoint` and
       # `provider.model` override at register time.
-      CHOREO_VLLM_MODEL: "stub-report-vllm-v1"
-      CHOREO_VLLM_ENDPOINT: "http://stub-llm:8000"
+      MADE_VLLM_MODEL: "stub-report-vllm-v1"
+      MADE_VLLM_ENDPOINT: "http://stub-llm:8000"
       RUST_LOG: "info"
     depends_on:
       - nats
@@ -86,24 +86,24 @@ services:
       context: ../..
       dockerfile: tests/e2e/runner.Dockerfile
     environment:
-      CHOREOGRAPHER_ENDPOINT: "http://choreographer:50055"
-      CHOREO_SEED_SPECIALTY: "triage"
+      MADE_ENDPOINT: "http://made:50055"
+      MADE_SEED_SPECIALTY: "triage"
       # Full 1-9 suite by default. Override from the host with, e.g.,
-      # `CHOREO_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
-      CHOREO_E2E_SCENARIOS: "${CHOREO_E2E_SCENARIOS:-compose}"
+      # `MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
+      MADE_E2E_SCENARIOS: "${MADE_E2E_SCENARIOS:-compose}"
       # Pinned to the path that runner.Dockerfile copies into the
       # image. Scenario 8 reads the canonical Report schema from
       # here; failing back to an env-overridable path keeps the
       # runner robust against operators who run the binary outside
       # the container.
-      CHOREO_REPORT_SCHEMA_PATH: "/etc/choreo/report.schema.json"
-      # Allows opt-in `CHOREO_E2E_SCENARIOS=ceremony-vllm make
+      MADE_REPORT_SCHEMA_PATH: "/etc/made/report.schema.json"
+      # Allows opt-in `MADE_E2E_SCENARIOS=ceremony-vllm make
       # e2e-compose` to render the vLLM-backed ceremony against the
       # deterministic stub-llm sidecar.
-      CHOREO_VLLM_MODEL: "stub-report-vllm-v1"
-      CHOREO_VLLM_ENDPOINT: "http://stub-llm:8000"
-      CHOREO_VLLM_MAX_TOKENS: "512"
-      CHOREO_VLLM_TIMEOUT_SECS: "30"
+      MADE_VLLM_MODEL: "stub-report-vllm-v1"
+      MADE_VLLM_ENDPOINT: "http://stub-llm:8000"
+      MADE_VLLM_MAX_TOKENS: "512"
+      MADE_VLLM_TIMEOUT_SECS: "30"
       RUST_LOG: "info"
     depends_on:
-      - choreographer
+      - made

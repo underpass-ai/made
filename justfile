@@ -1,4 +1,4 @@
-# Underpass Choreographer — developer recipes.
+# MADE — developer recipes.
 #
 # Every target here mirrors a CI gate (see scripts/ci/) so that
 # `just <target>` produces the same result a PR check will produce.
@@ -16,7 +16,7 @@ default:
 
 # Provider-feature matrix the linting/testing gates enable in CI.
 # Mirrors .github/workflows/quality-gate.yml.
-provider_features := "--features choreo-adapters/agent-anthropic --features choreo-adapters/agent-openai --features choreo-adapters/agent-vllm"
+provider_features := "--features made-adapters/agent-anthropic --features made-adapters/agent-openai --features made-adapters/agent-vllm"
 
 # -----------------------------------------------------------------------------
 # fast per-PR gates — match quality-gate.yml
@@ -40,7 +40,7 @@ embedded-boundary:
 
 # Build and exercise the repo-local Codex plugin through its MCP launcher.
 embedded-plugin-smoke:
-    bash scripts/ci/choreographer-plugin-smoke.sh
+    bash scripts/ci/made-plugin-smoke.sh
 
 # Clippy on the full provider matrix, warnings-as-errors. Mirrors CI.
 clippy:
@@ -98,12 +98,12 @@ build-provider-image:
 
 # Run the binary locally. Wrapper for development — config via env.
 run *ARGS='':
-    cargo run --locked -p choreo {{ARGS}}
+    cargo run --locked -p made {{ARGS}}
 
 # Run with the `otel` feature enabled so the OTLP exporter is
-# available when CHOREO_OTLP_ENDPOINT is set.
+# available when MADE_OTLP_ENDPOINT is set.
 run-otel *ARGS='':
-    cargo run --locked -p choreo --features otel {{ARGS}}
+    cargo run --locked -p made --features otel {{ARGS}}
 
 # -----------------------------------------------------------------------------
 # benches (manual — CI only compile-checks them)
@@ -112,11 +112,11 @@ run-otel *ARGS='':
 # Run the TraceContext micro-benches. Numbers land in
 # docs/experiments/001-baseline-deliberation-latency/results/.
 bench-trace:
-    cargo bench -p choreo-core --bench trace_context
+    cargo bench -p made-core --bench trace_context
 
 # Run the DeliberateUseCase end-to-end bench.
 bench-deliberate:
-    cargo bench -p choreo-app --bench deliberate
+    cargo bench -p made-app --bench deliberate
 
 # Reproduce experiment 001.
 bench-experiment-001:

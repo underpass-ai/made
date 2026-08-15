@@ -1,0 +1,40 @@
+[package]
+name = "made-consumer-smoke"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Generic consumer-shaped smoke harness for the MADE's public surface. Distributed as a CLI a consumer can point at a live cluster, plus a library the MADE's own integration tests reuse."
+publish = false
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "made-consumer-smoke"
+path = "src/main.rs"
+
+[dependencies]
+made-proto = { workspace = true }
+made-core = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+prost-types = { workspace = true }
+anyhow = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+async-nats = { workspace = true }
+serde_json = { workspace = true }
+jsonschema = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
+futures = { workspace = true }
+
+[dev-dependencies]
+made-adapters = { workspace = true, features = ["nats"] }
+made-app = { workspace = true }
+made-tests-integration = { workspace = true }
+async-trait = { workspace = true }

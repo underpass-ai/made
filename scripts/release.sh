@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Release helper for the Underpass Choreographer.
+# Release helper for MADE.
 #
 # Two verbs:
 #   version <X.Y.Z>   — rewrite every versioned artefact in the repo
@@ -73,7 +73,7 @@ cargo.write_text(new_text)
 
 # Chart.yaml: both `version:` (chart) and `appVersion:` (app) track
 # the binary's own version. Kept in lockstep intentionally.
-chart = pathlib.Path("charts/choreographer/Chart.yaml")
+chart = pathlib.Path("charts/made/Chart.yaml")
 text = chart.read_text()
 text, c1 = re.subn(r'^version:.*$', f'version: {version}', text, count=1, flags=re.MULTILINE)
 text, c2 = re.subn(r'^appVersion:.*$', f'appVersion: "{version}"', text, count=1, flags=re.MULTILINE)
@@ -81,11 +81,11 @@ if c1 == 0 or c2 == 0:
     sys.exit("Chart.yaml: version / appVersion line missing")
 chart.write_text(text)
 
-print(f"bumped to {version}: Cargo.toml, charts/choreographer/Chart.yaml")
+print(f"bumped to {version}: Cargo.toml, charts/made/Chart.yaml")
 PY
 
     # Surface what changed — caller reviews before committing.
-    git --no-pager diff -- Cargo.toml charts/choreographer/Chart.yaml
+    git --no-pager diff -- Cargo.toml charts/made/Chart.yaml
 }
 
 cmd_release() {
@@ -108,8 +108,8 @@ cmd_release() {
     # bump; `release` only tags.
     local cargo_version chart_version chart_app_version
     cargo_version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
-    chart_version="$(grep -m1 '^version:' charts/choreographer/Chart.yaml | awk '{print $2}')"
-    chart_app_version="$(grep -m1 '^appVersion:' charts/choreographer/Chart.yaml | awk '{print $2}' | tr -d '"')"
+    chart_version="$(grep -m1 '^version:' charts/made/Chart.yaml | awk '{print $2}')"
+    chart_app_version="$(grep -m1 '^appVersion:' charts/made/Chart.yaml | awk '{print $2}' | tr -d '"')"
 
     for field in cargo_version chart_version chart_app_version; do
         if [ "${!field}" != "${version}" ]; then

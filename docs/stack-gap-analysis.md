@@ -3,7 +3,7 @@
 Snapshot date: 2026-05-18 (ceremony engine + LLM-as-judge scorer added
 2026-06-09)
 
-This document records the remaining gaps for Choreographer as an
+This document records the remaining gaps for MADE as an
 independent, domain-agnostic coordination product. The following repos
 are referenced only as studied integrations and possible use cases:
 
@@ -12,7 +12,7 @@ are referenced only as studied integrations and possible use cases:
 
 The goal is not to market readiness. The goal is to state what is
 wired, what is intentionally out of scope, and what must still be
-proved by a downstream integration. Choreographer does not require
+proved by a downstream integration. MADE does not require
 KMP, PIR, or any specific downstream product to be usable.
 
 ## Scope
@@ -24,16 +24,16 @@ current implementation state of sibling repositories.
 ## What Is Wired Today
 
 - The Rust workspace keeps the intended dependency direction:
-  `choreo-core` -> `choreo-app` -> `choreo-adapters` -> `choreo`.
+  `made-core` -> `made-app` -> `made-adapters` -> `made`.
 - The gRPC service exposes and implements the full
-  `underpass.choreo.v1` surface: the generic deliberation/orchestration
+  `underpass.made.v1` surface: the generic deliberation/orchestration
   RPCs, council and agent registry RPCs, trigger ingest, status/metrics,
   `RunCouncilDecision`, contract CRUD, and `RunCeremony` ceremony
   execution.
-- Runtime execution is configurable: `CHOREO_EXECUTOR_KIND=noop|runtime`
+- Runtime execution is configurable: `MADE_EXECUTOR_KIND=noop|runtime`
   selects either `NoopExecutor` or the gRPC `RuntimeExecutor`.
 - The context boundary is caller-materialized and agnostic.
-  Choreographer accepts a typed `ExternalContextBundle` on tasks and
+  MADE accepts a typed `ExternalContextBundle` on tasks and
   triggers, regardless of whether the caller built it from KMP, RAG, a
   database, static fixtures, or another source.
 - Structured council outputs are first-class through `OutputContract`,
@@ -64,21 +64,21 @@ current implementation state of sibling repositories.
   pluggable handlers, multi-agent panels, context threading between
   steps, and a Mermaid diagram in the response.
 - Winner scoring is a pluggable `ScoringPort`: uniform pass-fraction by
-  default, or an opt-in LLM-as-judge (`CHOREO_JUDGE_ENABLED`) that ranks
+  default, or an opt-in LLM-as-judge (`MADE_JUDGE_ENABLED`) that ranks
   by intrinsic quality and fails fast without a vLLM endpoint/model.
-- The stdio MCP adapter exposes all 35 gRPC RPCs as `choreo_*` tools
+- The stdio MCP adapter exposes all 35 gRPC RPCs as `made_*` tools
   and has fixture + live gRPC backends.
 
 ## Remaining Gaps
 
-### 1. No Choreographer-owned Context Transport
+### 1. No MADE-owned Context Transport
 
 The current production boundary is explicit and domain-neutral:
 callers materialize context and pass an `ExternalContextBundle`.
 That keeps the core clean, but it also means the repo does not prove a
 direct transport integration to any specific context system.
 
-If a downstream product requires Choreographer to fetch context itself,
+If a downstream product requires MADE to fetch context itself,
 that should be a new port, adapter, and E2E slice for that product.
 Until then, the honest claim is caller-supplied context, not KMP client
 ownership.
@@ -95,7 +95,7 @@ network policy, TLS posture, and latency budget.
 
 ### 3. Consumer-smoke positive path is opt-in
 
-`choreo-consumer-smoke` exercises the public gRPC + optional NATS
+`made-consumer-smoke` exercises the public gRPC + optional NATS
 surface and proves the strict rejection path against a NoopAgent stack.
 The positive structured-output path now ships as
 `--chain positive-path`: it registers an `openai` or `vllm` agent
@@ -123,7 +123,7 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 2. Keep `make e2e-provider-vllm` as the explicit external-provider
    validation path and require downstream deployments to run it, or an
    equivalent provider smoke, before claiming provider readiness.
-3. Only add a Choreographer-owned context adapter if a concrete product
+3. Only add a MADE-owned context adapter if a concrete product
    needs that ownership boundary. Otherwise keep caller-materialized
    context as the documented contract.
 4. Treat per-proposal/per-critique/per-revision streaming as a separate
@@ -131,7 +131,7 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 
 ## Honest Current Position
 
-The Choreographer is now a real gRPC + NATS + persistence + Runtime
+MADE is now a real gRPC + NATS + persistence + Runtime
 executor + MCP application with structured-output validation, a
 declarative ceremony engine, an optional LLM judge, deliberation-native
 observability (Prometheus metrics + OTel traces of the debate), and

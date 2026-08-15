@@ -1,0 +1,81 @@
+#![cfg(feature = "redb")]
+
+use std::collections::BTreeMap;
+
+use made_api::{CeremonyEngineApi, StartCeremonyRequest};
+use made_core::value_objects::CeremonyId;
+use made_embedded::EmbeddedMade;
+
+const DEFINITION: &str = r#"
+version: "1.0"
+name: "durable_public_contract"
+states:
+  - id: OPEN
+    initial: true
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: OPEN
+    to: CLOSED
+    trigger: close
+    guards: []
+steps: []
+guards: {}
+roles: []
+"#;
+
+#[tokio::test]
+async fn published_definition_and_instance_survive_reopening_via_the_public_surface() {
+    let directory = tempfile::tempdir().expect("temporary state directory");
+    let path = directory.path().join("made.redb");
+
+    let engine = EmbeddedMade::open_redb(&path).expect("durable engine opens");
+    let analysis = engine
+        .analyze_definition(DEFINITION)
+        .await
+        .expect("definition analyzes");
+    assert_eq!(analysis.definition_name, "durable_public_contract");
+    assert_eq!(analysis.definition_version, "1.0");
+    assert!(analysis.publishable);
+    let analyzed_digest = analysis
+        .definition_digest
+        .clone()
+        .expect("a publishable analysis names the publication identity");
+    let published = CeremonyEngineApi::publish_definition(&engine, DEFINITION)
+        .await
+        .expect("definition publishes");
+    assert_eq!(published.digest, analyzed_digest);
+    engine
+        .start_ceremony(StartCeremonyRequest {
+            ceremony_id: "ceremony-1".to_owned(),
+            definition_name: analysis.definition_name,
+            definition_version: analysis.definition_version,
+            context: BTreeMap::new(),
+            actor_id: "host-1".to_owned(),
+            actor_kind: "service".to_owned(),
+        })
+        .await
+        .expect("published ceremony starts");
+    drop(engine);
+
+    let reopened = EmbeddedMade::open_redb(&path).expect("durable engine reopens");
+    let ceremony = reopened
+        .ceremony("ceremony-1")
+        .await
+        .expect("instance survives restart");
+    assert_eq!(ceremony.definition_name, "durable_public_contract");
+    assert_eq!(ceremony.definition_version, "1.0");
+    assert_eq!(
+        ceremony.definition_digest.as_deref(),
+        Some(analyzed_digest.as_str())
+    );
+    let journal = reopened
+        .audit_records(&CeremonyId::new("ceremony-1").unwrap())
+        .await
+        .expect("journal survives restart through the embedded facade");
+    assert_eq!(journal.len(), 1);
+    assert_eq!(
+        journal[0].event_type().as_str(),
+        "ceremony_instance_started"
+    );
+}

@@ -46,7 +46,7 @@ becomes a new numbered experiment, not an edit.
 
 ## 4. Use-case agnostic
 
-The Choreographer coordinates specialist agent councils in response to
+MADE coordinates specialist agent councils in response to
 events. It does not know what the domain is. The following words must
 not appear in the core, the protocol, the chart defaults, or the
 AsyncAPI spec:
@@ -70,8 +70,8 @@ behind its own Cargo feature. The core does not import any of them.
 
 Two specifications are the source of truth:
 
-- gRPC: `crates/choreo-proto/proto/underpass/choreo/v1/choreo.proto`
-- AsyncAPI: `specs/asyncapi/choreographer.asyncapi.yaml`
+- gRPC: `crates/made-proto/proto/underpass/made/v1/made.proto`
+- AsyncAPI: `specs/asyncapi/made.asyncapi.yaml`
 
 Rust code is generated from (or aligned with) these specs. Any change
 to public surface starts by editing the spec and passing the contract
@@ -84,8 +84,8 @@ validation run before Rust compiles in CI.
   `u32`, `f64` across boundaries — newtypes with invariants.
 - **Aggregates protect invariants.** State transitions happen through
   aggregate methods, not by mutating fields.
-- **Hexagonal.** `choreo-core` depends on nothing IO-shaped.
-  `choreo-app` depends on `choreo-core`. Adapters depend on both.
+- **Hexagonal.** `made-core` depends on nothing IO-shaped.
+  `made-app` depends on `made-core`. Adapters depend on both.
   The binary is the composition root. Arrows never reverse.
 - **SOLID.** Ports are narrow and segregated. Extension is by adding
   a new adapter / trait impl, not by editing the core.
@@ -95,7 +95,7 @@ validation run before Rust compiles in CI.
 The supported ways to run this service are:
 
 - A container image (`Dockerfile`, docker or podman).
-- The Helm chart (`charts/choreographer/`).
+- The Helm chart (`charts/made/`).
 
 Local runs from `cargo run` are fine for development but are not a
 product surface.
