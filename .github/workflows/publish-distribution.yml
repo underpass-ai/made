@@ -28,8 +28,9 @@ jobs:
   # Tag-only smoke gate: builds the compose stack and runs the
   # full compose e2e-runner end-to-end before any image / chart push.
   # Plain `main` pushes (which roll the `latest` / `main` image tags)
-  # skip this on purpose — GitHub Actions treats a skipped `needs` as
-  # success, so `publish-image` / `publish-helm-chart` keep firing.
+  # skip this on purpose. A skipped `needs` skips its dependents too, so
+  # the publish jobs below have to say out loud that a skipped gate is
+  # acceptable and a failed one is not.
   compose-smoke:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
@@ -61,6 +62,7 @@ jobs:
 
   publish-image:
     needs: [compose-smoke]
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     permissions:
@@ -122,6 +124,7 @@ jobs:
 
   publish-helm-chart:
     needs: [compose-smoke]
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
