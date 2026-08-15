@@ -10,11 +10,11 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-#[cfg(feature = "embedded")]
-use crate::backend::EMBEDDED_REDB_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
+#[cfg(feature = "embedded")]
+use crate::backend::{EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -91,6 +91,17 @@ impl MadeMcpServer {
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
+    /// Durable embedded engine imported from a legacy read-only source.
+    #[cfg(feature = "embedded")]
+    pub fn embedded_redb_from_legacy(
+        source: impl AsRef<std::path::Path>,
+        destination: impl AsRef<std::path::Path>,
+    ) -> Result<Self, String> {
+        let made = made_embedded::EmbeddedMade::open_redb_from_legacy(source, destination)
+            .map_err(|error| format!("failed to import the legacy redb ceremony store: {error}"))?;
+        Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
+    }
+
     /// Wrap an arbitrary backend.
     pub fn with_backend(backend: impl MadeMcpToolBackend + 'static) -> Self {
         Self {
@@ -142,7 +153,13 @@ impl MadeMcpServer {
                             "{EMBEDDED_REDB_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
                         )
                     })?;
-                Self::embedded_redb(path)
+                match std::env::var(LEGACY_REDB_PATH_ENV)
+                    .ok()
+                    .filter(|path| !path.trim().is_empty())
+                {
+                    Some(source) => Self::embedded_redb_from_legacy(source, path),
+                    None => Self::embedded_redb(path),
+                }
             }
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(

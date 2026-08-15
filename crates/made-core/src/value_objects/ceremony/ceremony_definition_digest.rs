@@ -11,6 +11,7 @@ const DIGEST_BYTES: usize = 32;
 /// versioned, and it keeps a digest computed under another scheme from
 /// ever colliding with one computed under this.
 const CANONICAL_SCHEME: &[u8] = b"underpass.made.ceremony-definition.v1";
+const LEGACY_CHOREOGRAPHER_SCHEME: &[u8] = b"underpass.choreo.ceremony-definition.v1";
 
 /// SHA-256 identity of a published ceremony definition.
 ///
@@ -51,8 +52,17 @@ impl CeremonyDefinitionDigest {
     /// Seal a canonical encoding into a digest.
     #[must_use]
     pub(crate) fn of_canonical_form(canonical: &[u8]) -> Self {
+        Self::of_scheme(CANONICAL_SCHEME, canonical)
+    }
+
+    #[must_use]
+    pub(crate) fn of_legacy_choreographer_canonical_form(canonical: &[u8]) -> Self {
+        Self::of_scheme(LEGACY_CHOREOGRAPHER_SCHEME, canonical)
+    }
+
+    fn of_scheme(scheme: &[u8], canonical: &[u8]) -> Self {
         let mut hasher = Sha256::new();
-        hasher.update(CANONICAL_SCHEME);
+        hasher.update(scheme);
         hasher.update(canonical);
         Self(hasher.finalize().into())
     }

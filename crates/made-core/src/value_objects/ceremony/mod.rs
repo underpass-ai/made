@@ -3,6 +3,7 @@
 mod ceremony_context;
 mod ceremony_definition_diff;
 mod ceremony_definition_digest;
+mod ceremony_definition_digest_migration;
 mod ceremony_description;
 mod ceremony_evidence_source_id;
 mod ceremony_guard;
@@ -68,6 +69,7 @@ pub use ceremony_definition_diff::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyDefinitionDiff,
 };
 pub use ceremony_definition_digest::CeremonyDefinitionDigest;
+pub use ceremony_definition_digest_migration::CeremonyDefinitionDigestMigration;
 pub use ceremony_description::CeremonyDescription;
 pub use ceremony_evidence_source_id::CeremonyEvidenceSourceId;
 pub use ceremony_guard::CeremonyGuard;

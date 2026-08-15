@@ -587,6 +587,7 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 |----------------------------------|--------------------------------------------------------------------------|
 | `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
 | `MADE_MCP_REDB_PATH`           | redb state file the embedded backend opens. Required when `BACKEND=embedded`. |
+| `MADE_MCP_LEGACY_REDB_PATH`    | Optional read-only Choreographer source imported once into a new `MADE_MCP_REDB_PATH`. |
 | `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
 | `MADE_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |
@@ -596,6 +597,9 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 
 `RUST_LOG=made_mcp=debug` enables structured per-tool-call tracing
 on stderr (stdout is reserved for JSON-RPC).
+Legacy migration events are visible at the default log level through the
+`made_adapters::redb=info` target. They report the migration id, source open
+mode, source SHA-256 and bounded row counts, never ceremony payloads.
 
 ## Smoke test
 

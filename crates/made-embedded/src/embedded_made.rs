@@ -89,6 +89,29 @@ impl EmbeddedMade {
             .build())
     }
 
+    /// Open a MADE store, importing a legacy Choreographer store on the first
+    /// start and verifying the durable receipt on later starts.
+    ///
+    /// The legacy source is opened read-only and is never used as the
+    /// destination. The destination must be absent for the first import.
+    #[cfg(feature = "redb")]
+    pub fn open_redb_from_legacy(
+        source: impl AsRef<std::path::Path>,
+        destination: impl AsRef<std::path::Path>,
+    ) -> Result<Self, ApiError> {
+        let store = Arc::new(
+            RedbCeremonyStore::open_or_import_legacy(source, destination).map_err(|error| {
+                ApiError::Unavailable {
+                    reason: format!("the legacy ceremony store could not be imported: {error}"),
+                }
+            })?,
+        );
+        Ok(Self::builder()
+            .with_ceremony_store(store.clone())
+            .with_definition_publications(store)
+            .build())
+    }
+
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,

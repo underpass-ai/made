@@ -11,7 +11,7 @@ use std::io::{self, BufRead, Write};
 use made_mcp::{
     MadeMcpServer, EMBEDDED_REDB_PATH_ENV, GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV,
     GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV,
-    MCP_BACKEND_ENV,
+    LEGACY_REDB_PATH_ENV, MCP_BACKEND_ENV,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -45,6 +45,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         eprintln!(
             "made-mcp: using durable embedded ceremony backend from {EMBEDDED_REDB_PATH_ENV}"
         );
+        if std::env::var_os(LEGACY_REDB_PATH_ENV).is_some() {
+            eprintln!("made-mcp: legacy import configured from read-only {LEGACY_REDB_PATH_ENV}");
+        }
     } else {
         eprintln!("made-mcp: using explicit fixture backend");
     }
@@ -64,8 +67,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn init_tracing() {
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("made_mcp=info"));
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new("made_mcp=info,made_adapters::redb=info"));
     tracing_subscriber::fmt()
         .json()
         .with_writer(io::stderr)

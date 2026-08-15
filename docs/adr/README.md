@@ -21,3 +21,5 @@ much as the decision itself.
   reports project persisted state and journal records without inferred prose
 - [ADR-007](007-mcp-self-description-uses-the-executable-catalog.md): MCP
   discovery and help are projections constrained by the executable catalog
+- [ADR-008](008-legacy-redb-migration-is-copy-on-write.md): legacy redb state
+  is imported read-only into a new, receipted MADE database

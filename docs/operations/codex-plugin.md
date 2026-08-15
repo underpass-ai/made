@@ -61,6 +61,23 @@ definition, and the listing marks it `"rehydratable": false`. Mounted
 definitions and transcripts stay in memory unless the host replaces those
 ports.
 
+On the first start after the Choreographer → MADE rename, the launcher looks
+for the former default
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-choreographer/ceremonies.redb`
+only when the MADE destination does not exist. It opens that source through a
+read-only file descriptor, clones it to the new MADE path, lets redb repair the
+clone if the old process did not shut down cleanly, and migrates publication
+digests and bound instances in one transaction. The source is never opened
+writable. An explicit `MADE_MCP_LEGACY_REDB_PATH` enables the same flow for a
+non-default source; `MADE_MCP_REDB_PATH` must name a new destination on the
+first run.
+
+Successful imports persist a `choreographer-v1-to-made-v1` receipt with the
+source SHA-256 and row counts. Startup emits the same bounded fields as the
+structured `made legacy state migration completed` event. Later starts verify
+the receipt and do not reopen the source. A destination that already exists
+without that receipt is refused instead of overwritten or silently adopted.
+
 The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
 three cases distinct: the bundled no-op handler, a configured real
 server-owned handler, and delegated-host work recorded only after a claim and
