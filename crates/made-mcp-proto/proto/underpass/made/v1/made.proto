@@ -563,7 +563,7 @@ message RunCouncilDecisionRequest {
   // Causal metadata MADE copies into the outbound
   // bus event when the deliberation completes.
   TaskMetadata metadata = 6;
-  // Free-form task description the council reads as context. 
+  // Free-form task description the council reads as context.
   // MADE itself does not parse it.
   string description = 7;
 }
