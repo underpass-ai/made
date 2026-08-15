@@ -6,6 +6,7 @@ rust-version.workspace = true
 license.workspace = true
 authors.workspace = true
 repository.workspace = true
+readme = "README.md"
 description = "Protobuf / tonic-generated gRPC bindings for underpass.made.v1."
 
 [lints]

@@ -1,11 +1,11 @@
 name: publish-distribution
 
-# The two `publish-crate-*` jobs at the bottom need the repo secret
-# `CARGO_REGISTRY_TOKEN` set; without it `cargo publish` fails at the
-# upload step. That is acceptable — the rest of the workflow (image
-# + chart push) still does its job. Tag pushes (`v*`) trigger the
-# crate publish; `workflow_dispatch` deliberately does NOT, so an
-# operator hitting "Run workflow" to re-roll an image cannot
+# The `publish-crates` job at the bottom needs the repo secret
+# `CARGO_REGISTRY_TOKEN`, set on an account with a verified email —
+# crates.io rejects the upload otherwise. Without it the rest of the
+# workflow (image + chart push) still does its job. Tag pushes (`v*`)
+# trigger the crate publish; `workflow_dispatch` deliberately does NOT, so
+# an operator hitting "Run workflow" to re-roll an image cannot
 # accidentally publish to crates.io.
 
 on:
@@ -151,15 +151,19 @@ jobs:
             helm push "${archive}" "${CHART_REGISTRY}"
           done
 
-  # crates.io publish for the standalone proto crate. Must land before
-  # `publish-crate-mcp` so the registry index has the dep when the MCP
-  # crate publishes. Tag-only on purpose — `workflow_dispatch` re-rolls
-  # are not allowed to mutate the registry.
-  publish-crate-proto:
+  # crates.io publish for every public crate, in dependency order.
+  # `made-mcp` carries the embedded engine, so the whole chain beneath it
+  # — core, api, proto, app, adapters, embedded — has to exist on the
+  # registry or cargo refuses the upload. The script owns the order, skips
+  # versions already published so a half-finished release can be resumed
+  # by re-running this job, and waits out the new-crate rate limit instead
+  # of failing the release over it. Tag-only on purpose: `workflow_dispatch`
+  # re-rolls are not allowed to mutate the registry.
+  publish-crates:
     needs: [compose-smoke]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
-    timeout-minutes: 15
+    timeout-minutes: 90
     permissions:
       contents: read
     steps:
@@ -179,42 +183,7 @@ jobs:
         with:
           shared-key: publish-crate
 
-      - name: Publish made-mcp-proto
+      - name: Publish crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p made-mcp-proto --token "${CARGO_REGISTRY_TOKEN}"
-
-  publish-crate-mcp:
-    needs: [publish-crate-proto]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-24.04
-    timeout-minutes: 15
-    permissions:
-      contents: read
-    steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
-        with:
-          toolchain: 1.97.1
-
-      - name: Install protoc
-        run: bash scripts/ci/install-protoc.sh
-
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
-        with:
-          shared-key: publish-crate
-
-      # Give the crates.io index time to propagate the new
-      # `made-mcp-proto` version before the MCP publish tries to
-      # resolve it from the registry.
-      - name: Wait for registry propagation
-        run: sleep 30
-
-      - name: Publish made-mcp
-        env:
-          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: cargo publish -p made-mcp --token "${CARGO_REGISTRY_TOKEN}"
+        run: bash scripts/ci/publish-crates.sh
