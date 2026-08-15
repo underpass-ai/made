@@ -14,7 +14,18 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Fixed
+
+- The Windows plugin package reaches the GitHub Release. Its attach step is
+  a bash script and `windows-latest` runs steps under PowerShell, which read
+  the line continuations as unary operators and failed to parse; the step
+  now declares `shell: bash`. The bundle itself always built and smoke-tested
+  correctly — only publication failed.
+- `scripts/plugin/package-made-plugin.sh` empties `dist/plugin` before it
+  builds. The release job globs that directory, so a leftover or stray
+  archive was published as if it belonged to the version being released.
+  The `v0.1.0` release carried one such archive, built from a different
+  commit; it has been removed from the release assets.
 
 ## 0.1.0 - 2026-08-15
 
