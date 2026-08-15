@@ -54,6 +54,11 @@ test:
 bench-compile:
     bash scripts/ci/bench-compile.sh
 
+# Unit coverage with its 80 % floor. Local only: CI does not run it, so
+# this recipe is the gate. `COVERAGE_MIN=n just coverage` moves the floor.
+coverage:
+    bash scripts/ci/rust-coverage.sh
+
 # Walk the entire fast-gate cascade locally. Use before opening a PR.
 check: contract fmt-check embedded-boundary embedded-plugin-smoke clippy test bench-compile
 

@@ -309,9 +309,12 @@ See [`docs/release.md`](release.md).
 | `helm-chart` | `helm lint` + hardened-render assertions | every PR |
 | `container-image` | image builds from `Dockerfile` | every PR |
 | `dependency-review` | GitHub dependency-review-action | every PR |
-| `sonarcloud` | coverage + quality gate | every PR (if token set) |
 | `e2e-compose` | full stack via docker compose + runner | **manual** |
 | `e2e-kubernetes` | kubernetes + chart + runner Job | **manual** |
+
+Coverage is not in that table on purpose: it is a local gate, `just
+coverage`, with an 80 % floor. CI stays fast and CodeQL covers static
+analysis.
 
 Every row except the last two gates a PR. E2E stays outside CI — the
 per-PR gates already cover the compile-and-unit surface, and E2E is
