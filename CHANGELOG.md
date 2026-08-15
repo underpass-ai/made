@@ -14,18 +14,7 @@ operator command.
 
 ## Unreleased
 
-### Fixed
-
-- The Windows plugin package reaches the GitHub Release. Its attach step is
-  a bash script and `windows-latest` runs steps under PowerShell, which read
-  the line continuations as unary operators and failed to parse; the step
-  now declares `shell: bash`. The bundle itself always built and smoke-tested
-  correctly — only publication failed.
-- `scripts/plugin/package-made-plugin.sh` empties `dist/plugin` before it
-  builds. The release job globs that directory, so a leftover or stray
-  archive was published as if it belonged to the version being released.
-  The `v0.1.0` release carried one such archive, built from a different
-  commit; it has been removed from the release assets.
+_Nothing yet._
 
 ## 0.1.0 - 2026-08-15
 
@@ -244,8 +233,39 @@ rename to MADE is itself the first entry under Changed.
   positive-path behavior against local MADE, NATS, and
   `made-stub-llm`.
 
+### Fixed
+
+
+- The Windows plugin package reaches the GitHub Release. Its attach step is
+  a bash script and `windows-latest` runs steps under PowerShell, which read
+  the line continuations as unary operators and failed to parse; the step
+  now declares `shell: bash`. The bundle itself always built and smoke-tested
+  correctly — only publication failed.
+- `scripts/plugin/package-made-plugin.sh` empties `dist/plugin` before it
+  builds. The release job globs that directory, so a leftover or stray
+  archive was published as if it belonged to the version being released.
+  The `v0.1.0` release carried one such archive, built from a different
+  commit; it has been removed from the release assets.
+
 ### Security
 
+- Dependencies refreshed against every advisory open at release time.
+  `async-nats` moves to 0.50, which drops the vulnerable `rustls-webpki`
+  0.102 line (GHSA-82j2-j2ch-gfr8 and three lower-severity advisories) with
+  no source change on our side, and the lockfile refresh takes `quinn-proto`
+  to 0.11.16 (GHSA-4w2j-m93h-cj5j), `rand` to 0.8.7 and `serde_with` to
+  3.22.0. Two advisories remain open and are not shipped defects:
+  - `tokio-tar` 0.3.1 (GHSA-j5gw-2vrg-8fgx) has no patched release. It
+    reaches us only through `testcontainers`, a dev-dependency of the
+    `publish = false` integration-test crate: it is in no image, no chart
+    and no published crate.
+  - `opentelemetry_sdk` 0.27.1 (GHSA-w9wp-h8wv-79jx) is an unbounded
+    allocation in **W3C Baggage** propagation. This workspace never
+    propagates baggage. The patched line is 0.32, and that migration was
+    measured rather than assumed: it compiles, but an incoming
+    `traceparent` stops being adopted as the parent span, which would
+    silently break the replayable-trace promise. It gets its own change,
+    not a release-day bump.
 - Provider credentials, Postgres DSNs, and TLS materials are documented
   as secret-managed inputs, not values-file or descriptor content.
 - Chart gates assert hardened pod defaults and prevent accidental
