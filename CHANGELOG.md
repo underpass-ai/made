@@ -16,6 +16,21 @@ operator command.
 
 ### Added
 
+- **Durable embedded MCP backend.** `MADE_MCP_BACKEND=embedded` now opens the
+  redb state file named by `MADE_MCP_REDB_PATH`, so ceremonies started through
+  the stdio adapter survive the MCP process. The variable is mandatory —
+  without it the binary exits with code 2 instead of inventing a location or
+  running on memory that dies with the process — and the Codex plugin launcher
+  supplies `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`
+  by default. `MadeMcpServer::embedded_redb(path)` exposes the same
+  composition to Rust hosts; `MadeMcpServer::embedded()` remains the in-memory
+  one. The plugin smoke now proves the claim across processes: one launcher
+  publishes and starts a ceremony, a second reopens the same file and reads it
+  back with its state, next step and bound definition digest intact.
+- An embedded ceremony execution runbook covering the delegated-host loop
+  (publish → start-published → claim → perform → complete → transition),
+  restart recovery, the durability boundary and its failure modes.
+
 - A capability-verification runbook that separates implemented engine features,
   the active MCP executable catalog, execution ownership and configured
   durability. Root, plugin and embedded documentation now direct agents to
@@ -144,6 +159,13 @@ operator command.
   containment.
 
 ### Changed
+
+- `made_list_ceremony_instances` no longer fails a whole listing because one
+  stored instance cannot be rehydrated. An instance whose definition was never
+  published — the documented published-definition restart boundary — comes
+  back as `{"ceremony_id": …, "rehydratable": false, "reason": …}` beside the
+  instances that did recover. Reading that instance by id still fails: the
+  listing degrades, the direct read does not pretend.
 
 - **Renamed: Underpass Choreographer is now MADE by Underpass** — the
   Multi-Agent Deliberation Engine. The repository moved to

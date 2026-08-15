@@ -4,6 +4,15 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 PLUGIN_DIR="${ROOT_DIR}/plugins/made"
 FIXTURE="${ROOT_DIR}/tests/plugin/made-smoke.jsonl"
+RESTART_START_FIXTURE="${ROOT_DIR}/tests/plugin/made-restart-start.jsonl"
+RESTART_RECOVERY_FIXTURE="${ROOT_DIR}/tests/plugin/made-restart-recovery.jsonl"
+
+# One state file per run, outside the operator's real state directory: a
+# smoke that inherited the launcher's default would read whatever a
+# previous run or a developer's own Codex session left behind.
+SMOKE_STATE_DIR="$(mktemp -d)"
+trap 'rm -rf "${SMOKE_STATE_DIR}"' EXIT
+export MADE_MCP_REDB_PATH="${SMOKE_STATE_DIR}/ceremonies.redb"
 
 cd "${ROOT_DIR}"
 python3 -m json.tool "${PLUGIN_DIR}/.codex-plugin/plugin.json" >/dev/null
@@ -128,6 +137,30 @@ fi
 
 if ! response_contains '"persisted":false' <<<"${responses}"; then
   echo "MADE plugin report did not expose its host-owned persistence boundary" >&2
+  exit 1
+fi
+
+# Durability is a separate claim from execution: prove it with two
+# processes over one file, not with one process asserting about itself.
+started="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${RESTART_START_FIXTURE}")"
+
+if ! response_contains '"ceremony_id":"codex-plugin-restart-smoke"' <<<"${started}"; then
+  echo "MADE plugin smoke did not start the published restart ceremony" >&2
+  exit 1
+fi
+
+recovered="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${RESTART_RECOVERY_FIXTURE}")"
+
+if ! response_contains '"ceremony_id":"codex-plugin-restart-smoke"' <<<"${recovered}" ||
+  ! response_contains '"definition_name":"codex_plugin_restart_smoke"' <<<"${recovered}" ||
+  ! response_contains '"current_state":"OPEN"' <<<"${recovered}" ||
+  ! response_contains '"bound_definition_digest":"' <<<"${recovered}"; then
+  echo "MADE plugin ceremony did not survive the process restart" >&2
+  exit 1
+fi
+
+if response_contains '"isError":true' <<<"${recovered}"; then
+  echo "MADE plugin restart recovery reported a tool error" >&2
   exit 1
 fi
 

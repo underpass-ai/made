@@ -21,9 +21,9 @@ pub mod protocol;
 pub mod server;
 
 pub use backend::{
-    MadeMcpGrpcTlsConfig, MadeMcpGrpcTlsMode, MadeMcpToolBackend, GRPC_ENDPOINT_ENV,
-    GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV,
-    GRPC_TLS_MODE_ENV, MCP_BACKEND_ENV,
+    MadeMcpGrpcTlsConfig, MadeMcpGrpcTlsMode, MadeMcpToolBackend, EMBEDDED_REDB_PATH_ENV,
+    GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV,
+    GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV, MCP_BACKEND_ENV,
 };
 #[cfg(feature = "embedded")]
 pub use embedded::EmbeddedMadeMcpBackend;

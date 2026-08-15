@@ -27,8 +27,9 @@ crates.io. The dev fallback against this repo's source tree is
 # fixture mode — no MADE needed
 MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
-# embedded ceremony mode — real engine, no external service
+# embedded ceremony mode — real engine, no external service, durable state
 MADE_MCP_BACKEND=embedded \
+MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
   cargo run -p made-mcp --no-default-features --features embedded --locked
 
 # live mode against a local MADE

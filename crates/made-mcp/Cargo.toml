@@ -54,6 +54,7 @@ embedded = [
     "dep:made-app",
     "dep:made-core",
     "dep:made-embedded",
+    "made-embedded/redb",
     "dep:serde",
     "dep:serde_yaml",
     "dep:time",
@@ -70,4 +71,5 @@ grpc = [
 container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { workspace = true, features = ["full", "test-util"] }

@@ -52,7 +52,7 @@ performs that work nor grants external credentials or authority.
 
 | Composition | Executable surface | Default execution | Ceremony durability |
 |---|---|---|---|
-| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | Process-local memory; restarting the MCP process loses its repositories |
+| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | Redb file named by `MADE_MCP_REDB_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); same durability and same published-definition boundary as `EmbeddedMade::open_redb` |
 | `EmbeddedMade::default()` | Rust embedded ceremony facade | `NoopCeremonyStepHandler` | In memory |
 | `EmbeddedMade::open_redb(path)` with feature `redb` | Same Rust facade | No-op unless the host injects a handler | Redb persists ceremony snapshots, unit-of-work state, audit journal, outbox and definition publications; mounted definitions and transcripts remain in memory unless replaced |
 | Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory; optional PostgreSQL covers other aggregates, not ceremonies |

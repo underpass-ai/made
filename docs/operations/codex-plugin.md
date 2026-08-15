@@ -33,7 +33,10 @@ The smoke builds an isolated release binary, places it at
 `plugins/made/bin/made-mcp`, starts it through the plugin's own
 launcher, and verifies initialization, the executable tool catalog, machine
 discovery, both help audiences, ceremony design and execution, and actual
-Markdown report generation. The binary is ignored by Git;
+Markdown report generation. It then proves durability the only way that
+counts: a second launcher process publishes and starts a ceremony, a third
+one reopens the same state file and reads that ceremony back with its state,
+next step and bound definition digest intact. The binary is ignored by Git;
 source, manifest, skill, launcher, and tests remain reviewable.
 
 ## Current capability
@@ -47,9 +50,16 @@ describes the exact running version, backend and executable surface, while
 surface. The smoke requires `made_generate_ceremony_report` to be advertised
 and to generate a real report from a ceremony completed in the same process.
 
-The embedded default is process-scoped memory. Tool discovery does not imply
-restart durability: a host must wire durable instance, definition and context
-repositories when state must survive the MCP process.
+The embedded backend opens the redb state file named by
+`MADE_MCP_REDB_PATH`; the launcher defaults it to
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`, and
+without a path the binary exits rather than run on memory that dies with the
+process. Durability is still not authority, and it is not unconditional
+recovery: an instance started from a published definition rehydrates, one
+started from supplied YAML keeps its snapshot but cannot reload its
+definition, and the listing marks it `"rehydratable": false`. Mounted
+definitions and transcripts stay in memory unless the host replaces those
+ports.
 
 The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
 three cases distinct: the bundled no-op handler, a configured real

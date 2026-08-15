@@ -9,8 +9,9 @@
 use std::io::{self, BufRead, Write};
 
 use made_mcp::{
-    MadeMcpServer, GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV, GRPC_TLS_CERT_PATH_ENV,
-    GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV, MCP_BACKEND_ENV,
+    MadeMcpServer, EMBEDDED_REDB_PATH_ENV, GRPC_ENDPOINT_ENV, GRPC_TLS_CA_PATH_ENV,
+    GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV,
+    MCP_BACKEND_ENV,
 };
 use tracing_subscriber::EnvFilter;
 
@@ -41,7 +42,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             );
         }
     } else if server.backend_name() == "embedded" {
-        eprintln!("made-mcp: using embedded in-process ceremony backend");
+        eprintln!(
+            "made-mcp: using durable embedded ceremony backend from {EMBEDDED_REDB_PATH_ENV}"
+        );
     } else {
         eprintln!("made-mcp: using explicit fixture backend");
     }

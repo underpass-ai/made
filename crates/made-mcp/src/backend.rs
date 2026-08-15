@@ -19,6 +19,10 @@ use serde_json::Value;
 pub const GRPC_ENDPOINT_ENV: &str = "MADE_MCP_GRPC_ENDPOINT";
 /// Backend selector: `grpc` (default), `embedded`, or `fixture`.
 pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
+/// redb database file the durable embedded backend opens. Required when
+/// the embedded backend is selected: where ceremony state survives a
+/// restart is an operator decision, never a default this crate invents.
+pub const EMBEDDED_REDB_PATH_ENV: &str = "MADE_MCP_REDB_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";
 /// PEM bundle the client should trust as a CA when verifying the

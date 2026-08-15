@@ -447,7 +447,11 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 
 - **`grpc`** (default) — talks to a real MADE. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
-- **`embedded`** — executes the real ceremony engine in process. The isolated
+- **`embedded`** — executes the real ceremony engine in process, on top of a
+  redb state file named by `MADE_MCP_REDB_PATH`. That variable is mandatory:
+  where ceremony state lives is an operator decision, and the binary exits
+  with code 2 rather than inventing a location or quietly running on memory
+  that dies with the process. The isolated
   build exposes one-shot execution plus persistent incremental controls for
   starting, inspecting, stepping, claiming/completing host-owned work,
   explicitly approving a human guard, and applying a transition. It can also
@@ -464,8 +468,19 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 MADE_MCP_BACKEND=embedded \
+MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
   cargo run -p made-mcp --no-default-features --features embedded --locked
 ```
+
+redb takes an exclusive lock on that file: one MCP process owns a given
+state file at a time. What survives a restart is bounded by the
+[published-definition boundary](./capability-verification.md) — an instance
+started from a published definition rehydrates, one started from supplied
+YAML keeps its snapshot but cannot reload its definition, and
+`made_list_ceremony_instances` reports the latter as
+`"rehydratable": false` instead of failing the whole listing. The full
+loop is in the
+[embedded ceremony execution runbook](./embedded-ceremony-execution.md).
 
 ### Embedded step execution ownership
 
@@ -571,6 +586,7 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 | Var                              | Purpose                                                                  |
 |----------------------------------|--------------------------------------------------------------------------|
 | `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
+| `MADE_MCP_REDB_PATH`           | redb state file the embedded backend opens. Required when `BACKEND=embedded`. |
 | `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
 | `MADE_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |

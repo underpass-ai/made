@@ -10,6 +10,8 @@ use std::time::Instant;
 
 use serde_json::Value;
 
+#[cfg(feature = "embedded")]
+use crate::backend::EMBEDDED_REDB_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
@@ -61,10 +63,32 @@ impl MadeMcpServer {
     }
 
     /// In-process ceremony engine with no network service dependency.
+    ///
+    /// State lives in memory and dies with the process. Use
+    /// [`Self::embedded_redb`] when ceremonies must survive a restart.
     #[cfg(feature = "embedded")]
     #[must_use]
     pub fn embedded() -> Self {
         Self::with_backend(EmbeddedMadeMcpBackend::default())
+    }
+
+    /// Durable in-process ceremony engine backed by one redb file.
+    ///
+    /// Published definitions and running ceremonies are read back from
+    /// `path` on start, so a restarted MCP process resumes the sessions a
+    /// client already opened instead of silently forgetting them.
+    ///
+    /// # Errors
+    ///
+    /// Returns the store's failure when the file cannot be opened —
+    /// unreadable path, incompatible database, or a lock held by another
+    /// process. A durable backend that cannot reach its state must not
+    /// degrade into an in-memory one.
+    #[cfg(feature = "embedded")]
+    pub fn embedded_redb(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        let made = made_embedded::EmbeddedMade::open_redb(path)
+            .map_err(|error| format!("failed to open the embedded redb ceremony store: {error}"))?;
+        Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
     /// Wrap an arbitrary backend.
@@ -109,7 +133,17 @@ impl MadeMcpServer {
                 Ok(Self::grpc_with_tls(endpoint, tls))
             }
             #[cfg(feature = "embedded")]
-            "embedded" | "in-process" => Ok(Self::embedded()),
+            "embedded" | "in-process" => {
+                let path = std::env::var(EMBEDDED_REDB_PATH_ENV)
+                    .ok()
+                    .filter(|path| !path.trim().is_empty())
+                    .ok_or_else(|| {
+                        format!(
+                            "{EMBEDDED_REDB_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
+                        )
+                    })?;
+                Self::embedded_redb(path)
+            }
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(
                 "unsupported {MCP_BACKEND_ENV} value `{other}`; compiled backends: {}",

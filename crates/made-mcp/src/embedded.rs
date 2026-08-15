@@ -101,8 +101,19 @@ impl EmbeddedMadeMcpBackend {
             .map_err(|error| error.to_string())?;
         let mut values = Vec::with_capacity(instances.len());
         for instance in instances {
-            values
-                .push(EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await?);
+            // An instance whose definition is not in this store cannot be
+            // rehydrated — the published-definition restart boundary. The
+            // state is still there, so the listing reports that one entry
+            // as unreadable instead of taking every readable ceremony down
+            // with it. Asking for it by id still fails loudly.
+            match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
+                Ok(value) => values.push(value),
+                Err(reason) => values.push(serde_json::json!({
+                    "ceremony_id": instance.id().as_str(),
+                    "rehydratable": false,
+                    "reason": reason,
+                })),
+            }
         }
         let count = values.len();
         Ok(tool_success_result(serde_json::json!({

@@ -38,6 +38,7 @@ does not require KMP, PIR, or any downstream product to run:
 | [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |
 | [`operations/deploy-kubernetes.md`](./operations/deploy-kubernetes.md) | Helm install guide, including minimal standalone install, embedded NATS, TLS/mTLS, Postgres secret, provider env secrets, Runtime executor, and the Underpass Runtime profile. |
 | [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter with backend-filtered tool discovery, audience help, every gRPC RPC, and embedded extensions. |
+| [`operations/embedded-ceremony-execution.md`](./operations/embedded-ceremony-execution.md) | Operating a ceremony through the local plugin when the host, not an engine handler, does the real work: publish → start → claim → perform → complete, restart recovery, and the durability boundary. |
 | [`operations/codex-plugin.md`](./operations/codex-plugin.md) | Cumulative acceptance ladder, report-generation smoke, bundle layout, and local installation boundary for the Codex plugin. |
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |
 | [`operations/mcp/claude-desktop.md`](./operations/mcp/claude-desktop.md) | `claude_desktop_config.json` snippets, per-OS paths, troubleshooting. |

@@ -1,0 +1,3 @@
+{"jsonrpc":"2.0","id":1,"method":"initialize"}
+{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"made_get_ceremony_instance","arguments":{"ceremony_id":"codex-plugin-restart-smoke"}}}
+{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"made_list_ceremony_instances","arguments":{}}}

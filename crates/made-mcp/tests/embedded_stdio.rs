@@ -1004,8 +1004,12 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
 
 #[tokio::test]
 async fn embedded_binary_completes_incremental_human_authorization_over_stdio() {
+    // The binary refuses to start an embedded backend without a state file,
+    // so the spawned process gets one of its own for the run.
+    let state = tempfile::tempdir().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
         .env("MADE_MCP_BACKEND", "embedded")
+        .env("MADE_MCP_REDB_PATH", state.path().join("ceremonies.redb"))
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

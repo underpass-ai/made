@@ -6,11 +6,17 @@ database.
 
 ## Capability truth
 
-This plugin selects the embedded MCP backend, but “embedded” does not by itself
-mean durable or externally authorized. The bundled composition uses
-process-local repositories and may use `NoopCeremonyStepHandler`. A terminal
-step from that default proves ceremony protocol and state-machine behavior, not
-that an agent, tool, API, or human performed the requested work.
+This plugin selects the embedded MCP backend, and the launcher points it at a
+redb state file — `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`
+unless `MADE_MCP_REDB_PATH` says otherwise — so ceremonies survive the MCP
+process. Durable is not the same as authorized, and not the same as fully
+recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
+terminal step from that default proves ceremony protocol and state-machine
+behavior, not that an agent, tool, API, or human performed the requested work.
+Only instances started from a *published* definition rehydrate after a
+restart; the listing reports the rest as `"rehydratable": false`. The
+[embedded ceremony execution runbook](../../docs/operations/embedded-ceremony-execution.md)
+walks the loop that keeps both claims honest.
 
 Treat the running executable as the source of truth for tool availability:
 inspect MCP `tools/list`, then call `made_discover_capabilities` when
