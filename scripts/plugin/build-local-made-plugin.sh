@@ -8,7 +8,12 @@ BINARY="${ROOT_DIR}/target/release/made-mcp"
 cd "${ROOT_DIR}"
 cargo build --release --locked -p made-mcp --no-default-features --features embedded
 mkdir -p "${PLUGIN_DIR}/bin"
-cp "${BINARY}" "${PLUGIN_DIR}/bin/made-mcp"
-chmod +x "${PLUGIN_DIR}/bin/made-mcp"
+if [[ -f "${BINARY}" ]]; then
+  cp "${BINARY}" "${PLUGIN_DIR}/bin/made-mcp"
+  chmod +x "${PLUGIN_DIR}/bin/made-mcp"
+fi
+if [[ -f "${BINARY}.exe" ]]; then
+  cp "${BINARY}.exe" "${PLUGIN_DIR}/bin/made-mcp.exe"
+fi
 
 echo "MADE plugin bundle ready at ${PLUGIN_DIR}"

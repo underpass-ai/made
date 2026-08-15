@@ -16,6 +16,19 @@ operator command.
 
 ### Added
 
+- **Plugin release packaging for Codex and Claude Code.** The bundle now
+  carries a Claude Code manifest (`.claude-plugin/plugin.json`) next to the
+  Codex one, both stamped from the workspace `Cargo.toml` version by
+  `scripts/plugin/package-made-plugin.sh`, which emits
+  `dist/plugin/made-plugin-<version>-<os>-<arch>.tar.gz` with a per-archive
+  `.sha256` checksum. On a `v*` tag the tag must equal the workspace version
+  or packaging fails; the `plugin-package` workflow smoke-tests and packages
+  the bundle on linux-x86_64, linux-arm64, macos-arm64 and windows-x86_64 —
+  Windows bundles carry `made-mcp.exe` and a `run-embedded-mcp.cmd` launcher
+  that defaults its state file under `%LOCALAPPDATA%` — and attaches the
+  tarballs to the GitHub Release for tag pushes. The plugin smoke now
+  rejects diverging manifest versions.
+
 - **Durable embedded MCP backend.** `MADE_MCP_BACKEND=embedded` now opens the
   redb state file named by `MADE_MCP_REDB_PATH`, so ceremonies started through
   the stdio adapter survive the MCP process. The variable is mandatory —

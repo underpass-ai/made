@@ -12,11 +12,32 @@ RESTART_RECOVERY_FIXTURE="${ROOT_DIR}/tests/plugin/made-restart-recovery.jsonl"
 # previous run or a developer's own Codex session left behind.
 SMOKE_STATE_DIR="$(mktemp -d)"
 trap 'rm -rf "${SMOKE_STATE_DIR}"' EXIT
-export MADE_MCP_REDB_PATH="${SMOKE_STATE_DIR}/ceremonies.redb"
+if command -v cygpath >/dev/null 2>&1; then
+  # Native Windows binary: it cannot open an MSYS path.
+  export MADE_MCP_REDB_PATH="$(cygpath -w "${SMOKE_STATE_DIR}/ceremonies.redb")"
+else
+  export MADE_MCP_REDB_PATH="${SMOKE_STATE_DIR}/ceremonies.redb"
+fi
 
 cd "${ROOT_DIR}"
 python3 -m json.tool "${PLUGIN_DIR}/.codex-plugin/plugin.json" >/dev/null
+python3 -m json.tool "${PLUGIN_DIR}/.claude-plugin/plugin.json" >/dev/null
 python3 -m json.tool "${PLUGIN_DIR}/.mcp.json" >/dev/null
+
+# Both host manifests must carry the same version: a bundle that tells
+# Codex one version and Claude Code another is a packaging defect.
+python3 - <<'EOF'
+import json
+import pathlib
+import sys
+
+plugin_dir = pathlib.Path("plugins/made")
+codex = json.loads((plugin_dir / ".codex-plugin/plugin.json").read_text())["version"]
+claude = json.loads((plugin_dir / ".claude-plugin/plugin.json").read_text())["version"]
+if codex != claude:
+    sys.exit(f"MADE plugin smoke: manifest versions diverge ({codex} != {claude})")
+EOF
+
 bash scripts/plugin/build-local-made-plugin.sh
 
 responses="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${FIXTURE}")"

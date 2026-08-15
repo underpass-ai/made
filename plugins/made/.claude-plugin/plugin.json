@@ -1,0 +1,15 @@
+{
+  "name": "made",
+  "version": "0.1.0",
+  "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Claude Code.",
+  "author": {
+    "name": "Underpass AI"
+  },
+  "repository": "https://github.com/underpass-ai/made",
+  "license": "Apache-2.0",
+  "keywords": [
+    "ceremonies",
+    "coordination",
+    "mcp"
+  ]
+}

@@ -12,3 +12,4 @@ Cargo.lock.bak
 .claude/
 .codex
 tests/e2e/compose.log
+/dist/

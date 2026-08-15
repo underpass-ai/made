@@ -42,6 +42,10 @@ embedded-boundary:
 embedded-plugin-smoke:
     bash scripts/ci/made-plugin-smoke.sh
 
+# Package the Codex / Claude Code plugin bundle into dist/plugin/.
+plugin-package:
+    bash scripts/plugin/package-made-plugin.sh
+
 # Clippy on the full provider matrix, warnings-as-errors. Mirrors CI.
 clippy:
     cargo clippy --workspace --all-targets --locked {{provider_features}} -- -D warnings

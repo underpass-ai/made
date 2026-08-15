@@ -1,8 +1,40 @@
-# MADE Codex plugin
+# MADE plugin — Codex and Claude Code
 
 This bundle runs the MADE ceremony engine as a local MCP stdio
 process. It does not require a MADE service, gRPC, NATS, or a
 database.
+
+## Installation
+
+The bundle installs into both certified hosts:
+
+- **Codex** reads `.codex-plugin/plugin.json` and starts the MCP server
+  through `.mcp.json`.
+- **Claude Code** reads `.claude-plugin/plugin.json` and the same
+  `.mcp.json`. The bundle layout is identical; only the manifest differs.
+
+Prebuilt packages are attached to each GitHub Release as
+`made-plugin-<version>-<os>-<arch>.tar.gz` with a per-archive `.sha256`
+checksum. Verify the checksum, unpack, and point the host at the
+resulting `made/` directory:
+
+```bash
+sha256sum -c made-plugin-<version>-<os>-<arch>.sha256
+tar -xzf made-plugin-<version>-<os>-<arch>.tar.gz
+```
+
+On Windows hosts, register the MCP server with
+`scripts\run-embedded-mcp.cmd` instead of the `.sh` launcher; the state
+file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.redb`.
+
+To build the package from a checkout instead:
+
+```bash
+just plugin-package   # writes dist/plugin/made-plugin-<version>-<os>-<arch>.tar.gz
+```
+
+The version stamped into both manifests comes from the workspace
+`Cargo.toml`; release tags (`v*`) must match it or packaging fails.
 
 ## Capability truth
 

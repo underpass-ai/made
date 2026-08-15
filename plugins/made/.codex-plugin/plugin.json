@@ -1,6 +1,6 @@
 {
   "name": "made",
-  "version": "0.1.0+codex.20260815104500",
+  "version": "0.1.0",
   "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Codex.",
   "author": {
     "name": "Underpass AI"
