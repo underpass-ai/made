@@ -7,6 +7,9 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "MADE binary: wires adapters and runs the gRPC + event-driven service."
+# Shipped as a container image, not a crate. The crates.io name `made` belongs
+# to an unrelated project, so an accidental publish would fail anyway.
+publish = false
 
 [lints]
 workspace = true
