@@ -484,6 +484,11 @@ The `sqlite` engine removes that. It is WAL-mode SQLite: readers never block
 the writer, and a second writer waits for the commit lock instead of being
 refused. Opt-in, because it brings a C toolchain into the build.
 
+The `sqlite` feature is newer than the published crate: against 0.1.4 from
+crates.io the flag does not exist yet, so until the next release build the
+binary from a checkout (`cargo build --release -p made-mcp --features sqlite`)
+and point the launcher at it with `MADE_MCP_BIN`.
+
 ```bash
 # a binary that carries the engine
 cargo install made-mcp --features sqlite
