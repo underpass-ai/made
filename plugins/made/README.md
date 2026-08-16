@@ -53,7 +53,12 @@ The version stamped into both manifests comes from the workspace
 This plugin selects the embedded MCP backend, and the launcher points it at a
 redb state file — `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`
 unless `MADE_MCP_REDB_PATH` says otherwise — so ceremonies survive the MCP
-process. Durable is not the same as authorized, and not the same as fully
+process. One path, one engine, and the default engine admits one process at a
+time: a second agent host started against the same store is refused rather
+than sharing it. [Sharing one ceremony store between two agent
+hosts](../../docs/operations/mcp-stdio.md#sharing-one-ceremony-store-between-two-agent-hosts)
+covers the `sqlite` engine that lifts that, and the conversion for a store
+that already exists. Durable is not the same as authorized, and not the same as fully
 recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
 terminal step from that default proves ceremony protocol and state-machine
 behavior, not that an agent, tool, API, or human performed the requested work.

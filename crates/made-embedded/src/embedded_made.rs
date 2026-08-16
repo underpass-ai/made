@@ -76,17 +76,29 @@ impl EmbeddedMade {
     /// receives only the embedded facade, so a storage refactor cannot leak
     /// provider implementation types into the consumer's dependency graph.
     #[cfg(feature = "redb")]
-    pub fn open_redb(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
+    /// Open on a chosen engine. `engine` decides only what a **new** store
+    /// becomes; an existing one opens on whatever wrote it.
+    pub fn open_engine(
+        path: impl AsRef<std::path::Path>,
+        engine: Option<made_adapters::StorageEngine>,
+    ) -> Result<Self, ApiError> {
         let store =
-            Arc::new(
-                RedbCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
-                    reason: format!("the durable ceremony store did not open: {error}"),
-                })?,
-            );
-        Ok(Self::builder()
+            RedbCeremonyStore::open_with(path, engine).map_err(|error| ApiError::Unavailable {
+                reason: format!("the durable ceremony store did not open: {error}"),
+            })?;
+        Ok(Self::over(store))
+    }
+
+    pub fn open_redb(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
+        Self::open_engine(path, None)
+    }
+
+    fn over(store: RedbCeremonyStore) -> Self {
+        let store = Arc::new(store);
+        Self::builder()
             .with_ceremony_store(store.clone())
             .with_definition_publications(store)
-            .build())
+            .build()
     }
 
     /// Open a MADE store, importing a legacy Choreographer store on the first

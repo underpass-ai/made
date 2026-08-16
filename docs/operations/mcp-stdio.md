@@ -472,6 +472,48 @@ MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremon
   cargo run -p made-mcp --locked
 ```
 
+### Sharing one ceremony store between two agent hosts
+
+The default engine takes one process at a time, and MADE's store is one file
+at one path rather than one per project, so two agent hosts — Claude Code and
+Codex CLI both running the plugin — collide unconditionally. Whichever starts
+first owns the store; the other reports `CONNECTION_CLOSED` and its ceremony
+engine never starts.
+
+The `sqlite` engine removes that. It is WAL-mode SQLite: readers never block
+the writer, and a second writer waits for the commit lock instead of being
+refused. Opt-in, because it brings a C toolchain into the build.
+
+```bash
+# a binary that carries the engine
+cargo install made-mcp --features sqlite
+
+# starting fresh: ask for sqlite when the store is created
+MADE_MCP_ENGINE=sqlite MADE_MCP_BACKEND=embedded \
+MADE_MCP_REDB_PATH=~/.local/state/underpass-made/ceremonies.sqlite3 made-mcp
+
+# already have ceremonies: convert, then point both hosts at the result
+made-mcp convert ceremonies.redb ceremonies.sqlite3 --engine sqlite
+```
+
+**A store is opened by the engine that wrote it, always.** Both formats
+announce themselves in their first bytes, so there is no marker file to keep
+in sync and no way to open a store with the wrong engine: `MADE_MCP_ENGINE`
+decides only what a *new* store becomes, and asking for a different engine
+than an existing store is refused by name.
+
+The conversion copies rows table by table rather than replaying the audit
+journal. That is not a shortcut: a ceremony store is state plus a journal, not
+a log with derived projections, so replaying would rebuild the facts and lose
+what they are evidence of. It reads its source only, refuses a destination
+that already holds a store, and prints a receipt of what moved.
+
+What it costs: a C dependency in the opt-in build. What it does not cost here
+is a new C library — `sqlx` already brings the same one, so the engine adds
+five pure-Rust crates and nothing else. A binary built without the feature
+still recognises a SQLite store and refuses it by name rather than failing
+obscurely.
+
 redb takes an exclusive lock on that file: one MCP process owns a given
 state file at a time. What survives a restart is bounded by the
 [published-definition boundary](./capability-verification.md) — an instance
@@ -586,7 +628,8 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 | Var                              | Purpose                                                                  |
 |----------------------------------|--------------------------------------------------------------------------|
 | `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
-| `MADE_MCP_REDB_PATH`           | redb state file the embedded backend opens. Required when `BACKEND=embedded`. |
+| `MADE_MCP_REDB_PATH`           | state file the embedded backend opens. Required when `BACKEND=embedded`. |
+| `MADE_MCP_ENGINE`              | engine for a **new** store: `redb` (default) or `sqlite`. An existing store always opens on whatever wrote it. |
 | `MADE_MCP_LEGACY_REDB_PATH`    | Optional read-only Choreographer source imported once into a new `MADE_MCP_REDB_PATH`. |
 | `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |

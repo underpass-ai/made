@@ -33,6 +33,7 @@ use std::fmt;
 
 use made_core::error::DomainError;
 
+pub mod detect;
 pub(crate) mod redb;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;

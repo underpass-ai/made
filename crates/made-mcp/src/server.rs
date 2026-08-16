@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
 #[cfg(feature = "embedded")]
-use crate::backend::{EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV};
+use crate::backend::{EMBEDDED_ENGINE_ENV, EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -86,8 +86,18 @@ impl MadeMcpServer {
     /// degrade into an in-memory one.
     #[cfg(feature = "embedded")]
     pub fn embedded_redb(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
+        Self::embedded_engine(path, None)
+    }
+
+    /// The embedded backend with a say in the engine a **new** store is
+    /// created with. An existing store opens on whatever wrote it.
+    #[cfg(feature = "embedded")]
+    pub fn embedded_engine(
+        path: impl AsRef<std::path::Path>,
+        engine: Option<made_adapters::StorageEngine>,
+    ) -> Result<Self, String> {
         let path = path.as_ref();
-        let made = made_embedded::EmbeddedMade::open_redb(path).map_err(|error| {
+        let made = made_embedded::EmbeddedMade::open_engine(path, engine).map_err(|error| {
             // A lock is the failure an operator actually hits, and the raw
             // redb text does not say why or what to do. Two agent hosts open
             // at once — Codex and Claude Code both running the plugin is the
@@ -96,10 +106,14 @@ impl MadeMcpServer {
                 .to_string()
                 .contains("already open by another process")
             {
+                // Only the redb engine takes this lock: on sqlite a second
+                // process waits for the commit lock instead of being refused,
+                // which is what migrating the store buys.
                 format!(
-                    "the embedded ceremony store at `{}` is already open by another process; \
-                     the store is single-writer, so close that session, or give this one its \
-                     own file with {EMBEDDED_REDB_PATH_ENV}",
+                    "the embedded ceremony store at `{}` is already open by another process. \
+                     The redb engine is single-writer, so close that session, give this one \
+                     its own file with {EMBEDDED_REDB_PATH_ENV}, or move the store to the \
+                     sqlite engine, which several processes can share",
                     path.display()
                 )
             } else {
@@ -174,12 +188,27 @@ impl MadeMcpServer {
                             "{EMBEDDED_REDB_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
                         )
                     })?;
+                let engine = match std::env::var(EMBEDDED_ENGINE_ENV)
+                    .ok()
+                    .filter(|value| !value.trim().is_empty())
+                {
+                    Some(value) => {
+                        Some(made_adapters::StorageEngine::parse(&value).map_err(|_| {
+                            format!(
+                                "unsupported {EMBEDDED_ENGINE_ENV} value `{}`; expected `redb` \
+                                 or `sqlite`",
+                                value.trim()
+                            )
+                        })?)
+                    }
+                    None => None,
+                };
                 match std::env::var(LEGACY_REDB_PATH_ENV)
                     .ok()
                     .filter(|path| !path.trim().is_empty())
                 {
                     Some(source) => Self::embedded_redb_from_legacy(source, path),
-                    None => Self::embedded_redb(path),
+                    None => Self::embedded_engine(path, engine),
                 }
             }
             "fixture" | "fixtures" => Ok(Self::fixture()),

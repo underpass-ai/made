@@ -62,6 +62,13 @@ command = "/home/YOU/.cargo/bin/made-mcp"
 env = { MADE_MCP_BACKEND = "embedded", MADE_MCP_REDB_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.redb" }
 ```
 
+Note that both registrations above name the *same* store. The default engine
+takes one process at a time, so running both hosts at once means the second
+one gets no ceremony tools at all. To share one store between them, build with
+`--features sqlite` and either start there or convert what you already have —
+[sharing one ceremony store between two agent hosts](docs/operations/mcp-stdio.md#sharing-one-ceremony-store-between-two-agent-hosts)
+has the recipe and what it costs.
+
 **Want the `design-ceremony` and `run-ceremony` skills too** — install the
 [MADE plugin](plugins/made/README.md). In Claude Code that is one line:
 
