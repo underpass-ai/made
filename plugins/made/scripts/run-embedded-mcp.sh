@@ -2,7 +2,20 @@
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BINARY="${PLUGIN_ROOT}/bin/made-mcp"
+
+# An explicit binary wins over everything below. The release bundle is built
+# without the sqlite engine — that is what keeps a default install free of a C
+# toolchain — and the bundle otherwise takes priority, so without this an
+# operator who deliberately built `cargo install made-mcp --features sqlite`
+# could not reach it through the plugin at all.
+# It selects the binary and nothing else: the state path, the engine and the
+# legacy import below still apply, because an operator overriding the
+# executable is not asking to configure the rest by hand.
+BINARY="${MADE_MCP_BIN:-${PLUGIN_ROOT}/bin/made-mcp}"
+if [[ -n "${MADE_MCP_BIN:-}" && ! -x "${MADE_MCP_BIN}" ]]; then
+  echo "MADE plugin: MADE_MCP_BIN is set to '${MADE_MCP_BIN}', which is not executable." >&2
+  exit 127
+fi
 
 if [[ ! -x "${BINARY}" && -x "${PLUGIN_ROOT}/bin/made-mcp.exe" ]]; then
   BINARY="${PLUGIN_ROOT}/bin/made-mcp.exe"
@@ -37,6 +50,21 @@ if [[ -z "${MADE_MCP_REDB_PATH:-}" ]]; then
   MADE_STATE_ROOT="${USER_STATE_ROOT}/underpass-made"
   mkdir -p "${MADE_STATE_ROOT}"
   export MADE_MCP_REDB_PATH="${MADE_STATE_ROOT}/ceremonies.redb"
+
+  # A store converted to the sqlite engine lives beside the redb one under a
+  # name of its own, and the whole point of converting is that both agent
+  # hosts open it. Making the operator also hand every host an explicit path
+  # would put the shared store out of reach of the install we document. So:
+  # asking for sqlite picks the sqlite name, and a converted store already
+  # sitting there is used without being asked for. If both files exist the
+  # default stays redb — that ambiguity is the operator's to resolve, not
+  # something to guess behind their back.
+  SQLITE_DEFAULT="${MADE_STATE_ROOT}/ceremonies.sqlite3"
+  if [[ "${MADE_MCP_ENGINE:-}" == "sqlite" ]]; then
+    export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
+  elif [[ -f "${SQLITE_DEFAULT}" && ! -e "${MADE_MCP_REDB_PATH}" ]]; then
+    export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
+  fi
 
   # First start after the rename imports the former default automatically.
   # The legacy file remains read-only evidence; MADE writes a separate file.

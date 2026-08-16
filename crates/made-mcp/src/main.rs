@@ -19,6 +19,16 @@ use tracing_subscriber::EnvFilter;
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     init_tracing();
 
+    // One maintenance command, and only because the feature is unusable
+    // without it: a store that already exists cannot reach the engine that
+    // lets two hosts share it. Everything else this binary does is MCP over
+    // stdio, and stays that way.
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    if let Some(command) = args.first() {
+        let code = run_cli_command(command, &args[1..]);
+        std::process::exit(code);
+    }
+
     let server = match MadeMcpServer::try_from_env() {
         Ok(server) => server,
         Err(message) => {
@@ -79,4 +89,87 @@ fn init_tracing() {
         .with_writer(io::stderr)
         .with_env_filter(filter)
         .init();
+}
+
+/// `convert <source> <destination> --engine redb|sqlite`.
+///
+/// Converting rather than migrating: a ceremony store is state plus an audit
+/// journal, so the copy moves rows, and replaying the journal would rebuild
+/// the facts while losing what they are evidence of.
+fn run_cli_command(command: &str, args: &[String]) -> i32 {
+    match command {
+        #[cfg(feature = "embedded")]
+        "convert" => run_convert_command(args),
+        // The command exists; this build has no store for it to act on.
+        // "unknown command" would send an operator looking for a typo.
+        #[cfg(not(feature = "embedded"))]
+        "convert" => {
+            let _ = args;
+            eprintln!(
+                "made-mcp: `convert` moves an embedded store between engines, and this \
+                 binary was built without the embedded backend"
+            );
+            2
+        }
+        "--version" | "-V" | "version" => {
+            println!("made-mcp {}", env!("CARGO_PKG_VERSION"));
+            0
+        }
+        other => {
+            eprintln!(
+                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio \
+                 mode, or use `convert <source> <destination> --engine redb|sqlite`"
+            );
+            2
+        }
+    }
+}
+
+#[cfg(feature = "embedded")]
+fn run_convert_command(args: &[String]) -> i32 {
+    use made_adapters::redb::RedbCeremonyStore;
+    use made_adapters::StorageEngine;
+
+    let [source, destination, rest @ ..] = args else {
+        eprintln!("made-mcp: convert requires <source> <destination> --engine redb|sqlite");
+        return 2;
+    };
+    let engine = match rest {
+        [flag, value] if flag == "--engine" => {
+            let Ok(engine) = StorageEngine::parse(value) else {
+                eprintln!("made-mcp: unknown engine `{value}`; expected `redb` or `sqlite`");
+                return 2;
+            };
+            engine
+        }
+        [] => {
+            eprintln!("made-mcp: convert needs --engine redb|sqlite: it is the whole point");
+            return 2;
+        }
+        _ => {
+            eprintln!("made-mcp: convert takes <source> <destination> --engine redb|sqlite");
+            return 2;
+        }
+    };
+
+    match RedbCeremonyStore::convert(source, destination, engine) {
+        Ok(receipt) => {
+            println!(
+                "{{\"source_engine\":\"{}\",\"destination_engine\":\"{}\",\
+                 \"ceremonies\":{},\"journal_records\":{},\"outbox_messages\":{},\
+                 \"publications\":{}}}",
+                receipt.source_engine,
+                receipt.destination_engine,
+                receipt.ceremonies,
+                receipt.journal_records,
+                receipt.outbox_messages,
+                receipt.publications
+            );
+            0
+        }
+        Err(error) => {
+            eprintln!("made-mcp: conversion failed: {error}");
+            2
+        }
+    }
 }

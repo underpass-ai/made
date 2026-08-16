@@ -13,6 +13,9 @@ description = "In-process composition and host adapters for MADE."
 default = []
 redb = ["made-adapters/redb"]
 
+# The opt-in second engine, so two agent hosts can share one ceremony store.
+sqlite = ["redb", "made-adapters/sqlite"]
+
 [lints]
 workspace = true
 

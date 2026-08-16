@@ -23,3 +23,5 @@ much as the decision itself.
   discovery and help are projections constrained by the executable catalog
 - [ADR-008](008-legacy-redb-migration-is-copy-on-write.md): legacy redb state
   is imported read-only into a new, receipted MADE database
+- [ADR-009](009-a-second-storage-engine-behind-one-seam.md): two storage
+  engines sit behind one seam, so two agent hosts can share one ceremony store

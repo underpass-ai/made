@@ -23,6 +23,15 @@ pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
 /// the embedded backend is selected: where ceremony state survives a
 /// restart is an operator decision, never a default this crate invents.
 pub const EMBEDDED_REDB_PATH_ENV: &str = "MADE_MCP_REDB_PATH";
+
+/// Which engine a **new** embedded store is created with: `redb` (default)
+/// or `sqlite`.
+///
+/// It decides nothing about an existing store. A ceremony store announces
+/// its own engine in its first bytes, so one that already exists is always
+/// opened by whatever wrote it; asking for a different engine is refused
+/// rather than quietly ignored.
+pub const EMBEDDED_ENGINE_ENV: &str = "MADE_MCP_ENGINE";
 /// Optional pre-rename Choreographer redb source. When set for the embedded
 /// backend, startup imports it read-only into [`EMBEDDED_REDB_PATH_ENV`].
 pub const LEGACY_REDB_PATH_ENV: &str = "MADE_MCP_LEGACY_REDB_PATH";

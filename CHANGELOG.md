@@ -14,7 +14,49 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- Two agent hosts can share one ceremony store. The default engine takes one
+  process at a time, so an operator running Claude Code and Codex CLI at once
+  — both pointed at the same default path by their own plugin registration —
+  got no ceremony tools in whichever started second. The opt-in `sqlite`
+  feature builds a WAL-mode engine that admits both. `MADE_MCP_ENGINE` picks
+  the engine for a new store; an existing store is always opened by the engine
+  that wrote it, detected from the file's first bytes. Gated by
+  `scripts/ci/embedded-sqlite-gates.sh`, which runs every store contract on
+  the new engine and proves two OS processes write one store without losing a
+  record. The default build is unchanged and still carries no C engine.
+  (ADR-009)
+
+- `made-mcp convert <source> <destination> --engine redb|sqlite` moves an
+  existing store between engines, so the feature above reaches a store that
+  already has ceremonies in it. Following ADR-008: source read only,
+  destination created rather than overwritten, a receipt of what moved. The
+  copy moves rows table by table rather than replaying the audit journal — a
+  ceremony store is state plus a journal of what happened to it, not a log
+  with derived projections.
+
+### Fixed
+
+- The Windows plugin launcher no longer points at `\ceremonies.redb` at the
+  drive root. `cmd` expands `%VAR%` for a whole parenthesised block when it
+  parses the block, so the state root set inside that block read back as its
+  previous — empty — value on the very next line. The launcher is flattened
+  with labels, so every read follows its write without depending on delayed
+  expansion.
+
+- Both plugin launchers can now reach a store converted to the sqlite engine.
+  `MADE_MCP_ENGINE=sqlite` selects `ceremonies.sqlite3` beside the default,
+  and a converted store already sitting there is opened without any path being
+  set — otherwise a shared store was out of reach of the documented install,
+  since each host would have needed an explicit path.
+
+- `MADE_MCP_BIN` lets the plugin launchers run an operator's own binary. The
+  release bundle is built without the sqlite engine — which is what keeps the
+  default install free of a C toolchain — and the launcher prefers the bundled
+  binary over `PATH`, so `cargo install made-mcp --features sqlite` was
+  unreachable through the plugin. The variable selects the executable and
+  nothing else.
 
 ## 0.1.4 - 2026-08-16
 
