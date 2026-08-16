@@ -58,10 +58,23 @@ store is state plus a journal of what happened to it, not a log with derived
 projections, so replaying would rebuild the facts while losing what they are
 evidence of.
 
-Entering WAL mode retries with bounded backoff. SQLite refuses a journal-mode
-conversion while another connection has the database open, and — unlike
-ordinary lock contention — does not consult the busy handler for it. A
-`busy_timeout` alone leaves exactly the race this ADR exists to remove.
+Entering WAL mode retries with bounded backoff, because `busy_timeout` alone
+leaves exactly the race this ADR exists to remove. Measured against the
+switch while another connection holds the database:
+
+| the other connection | switching to WAL |
+| --- | --- |
+| holds a **write** lock, database still in its default journal mode | fails **immediately** — the busy handler is not consulted |
+| holds a **read** lock, database still in its default journal mode | waits the whole timeout, then fails |
+| holds any lock, database **already** in WAL | succeeds; the switch is a no-op |
+| merely connected, no lock | succeeds |
+
+So the exposure is only the window between a store file being created and
+its switch to WAL — two processes opening a *fresh* store at the same
+instant, each holding what the other needs — and inside that window an armed
+timeout buys nothing. Once a store is in WAL the pragma takes no exclusive
+lock, so the retry loop never runs twice after the first open of a store's
+life. The same defect was latent in kmp and is fixed there by kmp#34.
 
 ## Consequences
 
