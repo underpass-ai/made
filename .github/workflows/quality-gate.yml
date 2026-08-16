@@ -78,9 +78,11 @@ jobs:
       - name: Lint embedded feature boundary
         run: cargo clippy -p made-embedded --all-targets --locked -- -D warnings
       # The binary forks on `embedded`, so a build without it is a distinct
-      # compilation. Nothing else in CI compiled that arm, and it broke.
+      # compilation. Nothing else in CI compiled that arm, and it broke. No
+      # features at all rather than `grpc`: it exercises the same fork and
+      # keeps this job free of protoc, which the grpc arm would drag in.
       - name: Lint the binary without the embedded backend
-        run: cargo clippy -p made-mcp --all-targets --locked --no-default-features --features grpc -- -D warnings
+        run: cargo clippy -p made-mcp --all-targets --locked --no-default-features -- -D warnings
 
   embedded-sqlite-gates:
     runs-on: ubuntu-24.04

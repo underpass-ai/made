@@ -2,7 +2,20 @@
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-BINARY="${PLUGIN_ROOT}/bin/made-mcp"
+
+# An explicit binary wins over everything below. The release bundle is built
+# without the sqlite engine — that is what keeps a default install free of a C
+# toolchain — and the bundle otherwise takes priority, so without this an
+# operator who deliberately built `cargo install made-mcp --features sqlite`
+# could not reach it through the plugin at all.
+# It selects the binary and nothing else: the state path, the engine and the
+# legacy import below still apply, because an operator overriding the
+# executable is not asking to configure the rest by hand.
+BINARY="${MADE_MCP_BIN:-${PLUGIN_ROOT}/bin/made-mcp}"
+if [[ -n "${MADE_MCP_BIN:-}" && ! -x "${MADE_MCP_BIN}" ]]; then
+  echo "MADE plugin: MADE_MCP_BIN is set to '${MADE_MCP_BIN}', which is not executable." >&2
+  exit 127
+fi
 
 if [[ ! -x "${BINARY}" && -x "${PLUGIN_ROOT}/bin/made-mcp.exe" ]]; then
   BINARY="${PLUGIN_ROOT}/bin/made-mcp.exe"

@@ -5,7 +5,26 @@ rem MADE_MCP_REDB_PATH always wins over the per-user default.
 setlocal
 
 set "PLUGIN_ROOT=%~dp0.."
+
+rem An explicit binary wins. The release bundle is built without the sqlite
+rem engine — that is what keeps a default install free of a C toolchain — and
+rem the bundle otherwise takes priority, so without this an operator who built
+rem `cargo install made-mcp --features sqlite` could not reach it through the
+rem plugin. It selects the binary and nothing else; the state path, the engine
+rem and the legacy import below still apply.
+if not "%MADE_MCP_BIN%"=="" goto :explicitBinary
 set "BINARY=%PLUGIN_ROOT%\bin\made-mcp.exe"
+goto :bundledBinary
+
+:explicitBinary
+set "BINARY=%MADE_MCP_BIN%"
+if not exist "%BINARY%" (
+  echo MADE plugin: MADE_MCP_BIN is set to "%BINARY%", which does not exist. 1>&2
+  exit /b 127
+)
+goto :haveBinary
+
+:bundledBinary
 
 rem The release bundle ships bin\made-mcp.exe and keeps priority. An install
 rem straight from the repository has no bin\ — that path is gitignored — so
