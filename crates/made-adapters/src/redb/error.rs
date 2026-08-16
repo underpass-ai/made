@@ -8,7 +8,18 @@
 use made_core::error::DomainError;
 
 pub(super) fn store_failure(error: impl std::fmt::Display, op: &'static str) -> DomainError {
-    tracing::error!(error = %error, operation = op, "redb operation failed");
+    let rendered = error.to_string();
+    tracing::error!(error = %rendered, operation = op, "redb operation failed");
+    // A lock held by another process is the one store failure an operator
+    // hits routinely and can act on — two agent hosts opening the same file
+    // — so it earns its own stable reason instead of being flattened into
+    // the generic one, which left the caller unable to say anything useful.
+    // Still a static string: no runtime detail crosses into the payload.
+    if rendered.contains("Cannot acquire lock") {
+        return DomainError::InvariantViolated {
+            reason: "redb: the store is already open by another process",
+        };
+    }
     DomainError::InvariantViolated {
         reason: "redb: persistence backend failed",
     }

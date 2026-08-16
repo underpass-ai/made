@@ -86,8 +86,29 @@ impl MadeMcpServer {
     /// degrade into an in-memory one.
     #[cfg(feature = "embedded")]
     pub fn embedded_redb(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        let made = made_embedded::EmbeddedMade::open_redb(path)
-            .map_err(|error| format!("failed to open the embedded redb ceremony store: {error}"))?;
+        let path = path.as_ref();
+        let made = made_embedded::EmbeddedMade::open_redb(path).map_err(|error| {
+            // A lock is the failure an operator actually hits, and the raw
+            // redb text does not say why or what to do. Two agent hosts open
+            // at once — Codex and Claude Code both running the plugin is the
+            // common case — and whichever started first keeps the store.
+            if error
+                .to_string()
+                .contains("already open by another process")
+            {
+                format!(
+                    "the embedded ceremony store at `{}` is already open by another process; \
+                     the store is single-writer, so close that session, or give this one its \
+                     own file with {EMBEDDED_REDB_PATH_ENV}",
+                    path.display()
+                )
+            } else {
+                format!(
+                    "failed to open the embedded redb ceremony store at `{}`: {error}",
+                    path.display()
+                )
+            }
+        })?;
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 

@@ -23,7 +23,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Ok(server) => server,
         Err(message) => {
             eprintln!("made-mcp: {message}");
-            eprintln!("made-mcp: select a compiled backend with {MCP_BACKEND_ENV}");
+            // Only a backend-selection failure is fixed by choosing a
+            // backend. Printing this after a store lock or a bad path sent
+            // operators to look exactly where the problem was not.
+            if message.contains(MCP_BACKEND_ENV) {
+                eprintln!("made-mcp: select a compiled backend with {MCP_BACKEND_ENV}");
+            }
             std::process::exit(2);
         }
     };
