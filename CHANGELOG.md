@@ -20,6 +20,17 @@ _Nothing yet._
 
 ### Fixed
 
+- `cargo install made-mcp` now produces a binary that can actually run the
+  embedded engine. `default = ["grpc"]` left the in-process backend behind a
+  feature that the registry build never enabled, so following the documented
+  install and then `MADE_MCP_BACKEND=embedded` got
+  `unsupported MADE_MCP_BACKEND value 'embedded'; compiled backends: fixture,
+  grpc`. The headline promise of the embedded edition — the real ceremony
+  engine with no service behind it — was the one thing the published crate
+  could not do. `embedded` is now a default feature; a lean embedded-only
+  binary is still `--no-default-features --features embedded`, which is what
+  the plugin bundle and the isolation gates build.
+
 - The plugin launcher no longer leaves the host with an MCP server that
   cannot start. It execs `bin/made-mcp` inside the plugin directory, and that
   path is gitignored, so it only exists in a release package — installing

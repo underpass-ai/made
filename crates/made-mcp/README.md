@@ -17,8 +17,10 @@ worth knowing when you touch the code.
 cargo install made-mcp --locked
 ```
 
-This pulls `made-mcp` + the vendored `made-mcp-proto` from
-crates.io. The dev fallback against this repo's source tree is
+This pulls `made-mcp` + the vendored `made-mcp-proto` from crates.io, with
+all three backends compiled in: `fixture`, `embedded` and `grpc`. For a lean
+binary that carries only the in-process engine, add
+`--no-default-features --features embedded`. The dev fallback against this repo's source tree is
 `MADE_MCP_INSTALL_MODE=git bash scripts/mcp/install-made-mcp.sh`.
 
 ## Run from a checkout
@@ -30,7 +32,7 @@ MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 # embedded ceremony mode — real engine, no external service, durable state
 MADE_MCP_BACKEND=embedded \
 MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
-  cargo run -p made-mcp --no-default-features --features embedded --locked
+  cargo run -p made-mcp --locked
 
 # live mode against a local MADE
 MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 \

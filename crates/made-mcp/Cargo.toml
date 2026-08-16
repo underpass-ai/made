@@ -48,7 +48,11 @@ uuid = { workspace = true, optional = true }
 testcontainers = { version = "0.28", optional = true }
 
 [features]
-default = ["grpc"]
+# The embedded engine ships by default: `cargo install made-mcp` is the
+# documented way to run a ceremony with no service behind it, and a binary
+# that cannot honour MADE_MCP_BACKEND=embedded makes that instruction a lie.
+# A cluster deployment uses the container image, not cargo install.
+default = ["embedded", "grpc"]
 embedded = [
     "dep:made-adapters",
     "dep:made-app",
