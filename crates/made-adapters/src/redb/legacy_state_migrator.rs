@@ -6,7 +6,9 @@ use made_core::error::DomainError;
 use redb::{Database, DatabaseError, ReadOnlyDatabase, ReadableTableMetadata};
 use sha2::{Digest, Sha256};
 
-use super::ceremony_store::{encode, JOURNAL, OUTBOX};
+use crate::engine::redb::{JOURNAL, OUTBOX};
+
+use super::ceremony_store::encode;
 use super::error::store_failure;
 use super::legacy_instance_migration::LegacyInstanceMigration;
 use super::legacy_publication_migration::LegacyPublicationMigration;
@@ -146,9 +148,8 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::*;
-    use crate::redb::ceremony_store::{
-        StoredCeremony, StoredPublication, CEREMONIES, PUBLICATIONS,
-    };
+    use crate::engine::redb::{CEREMONIES, PUBLICATIONS};
+    use crate::redb::ceremony_store::{StoredCeremony, StoredPublication};
     use crate::redb::legacy_definition_binding::LegacyDefinitionBinding;
     use crate::redb::RedbCeremonyStore;
 

@@ -28,21 +28,16 @@ use made_core::value_objects::{
     ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt, OutboxMessage,
     OutboxQuarantineReason,
 };
-use redb::{Database, ReadableDatabase, ReadableTable, TableDefinition};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use super::error::{encoding_failure, join_failure, store_failure};
-use super::keys::{ceremony_of, published, scope_range, scoped};
-use super::legacy_state_migration_receipt::{LegacyStateMigrationReceipt, LEGACY_STATE_MIGRATIONS};
-use super::legacy_state_migrator::LegacyStateMigrator;
+use crate::engine::redb::RedbEngine;
+use crate::engine::{Engine, Key, ReadTx, Table};
 
-pub(super) const CEREMONIES: TableDefinition<&str, &[u8]> =
-    TableDefinition::new("ceremony_instances");
-pub(super) const JOURNAL: TableDefinition<&[u8], &[u8]> = TableDefinition::new("audit_journal");
-pub(super) const OUTBOX: TableDefinition<&[u8], &[u8]> = TableDefinition::new("outbox");
-pub(super) const PUBLICATIONS: TableDefinition<&[u8], &[u8]> =
-    TableDefinition::new("published_definitions");
+use super::error::{encoding_failure, join_failure};
+use super::keys::{ceremony_of, published, scope_range, scoped};
+use super::legacy_state_migration_receipt::LegacyStateMigrationReceipt;
+use super::legacy_state_migrator::LegacyStateMigrator;
 
 /// A ceremony's stored state and the revision that guards it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,39 +78,14 @@ impl StoredOutboxMessage {
 
 #[derive(Debug, Clone)]
 pub struct RedbCeremonyStore {
-    database: Arc<Database>,
+    engine: Arc<dyn Engine>,
 }
 
 impl RedbCeremonyStore {
     /// Open, creating the database and its tables when absent.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
-        let database =
-            Database::create(path).map_err(|error| store_failure(error, "open database"))?;
-        let write = database
-            .begin_write()
-            .map_err(|error| store_failure(error, "open tables"))?;
-        {
-            write
-                .open_table(CEREMONIES)
-                .map_err(|error| store_failure(error, "open ceremonies table"))?;
-            write
-                .open_table(JOURNAL)
-                .map_err(|error| store_failure(error, "open journal table"))?;
-            write
-                .open_table(OUTBOX)
-                .map_err(|error| store_failure(error, "open outbox table"))?;
-            write
-                .open_table(PUBLICATIONS)
-                .map_err(|error| store_failure(error, "open publications table"))?;
-            write
-                .open_table(LEGACY_STATE_MIGRATIONS)
-                .map_err(|error| store_failure(error, "open state migrations table"))?;
-        }
-        write
-            .commit()
-            .map_err(|error| store_failure(error, "create tables"))?;
         Ok(Self {
-            database: Arc::new(database),
+            engine: Arc::new(RedbEngine::open(path)?),
         })
     }
 
@@ -210,27 +180,22 @@ impl RedbCeremonyStore {
     pub fn legacy_migration_receipt(
         &self,
     ) -> Result<Option<LegacyStateMigrationReceipt>, DomainError> {
-        let read = self
-            .database
-            .begin_read()
-            .map_err(|error| store_failure(error, "begin migration receipt read"))?;
-        let migrations = read
-            .open_table(LEGACY_STATE_MIGRATIONS)
-            .map_err(|error| store_failure(error, "open state migrations"))?;
-        migrations
-            .get(LegacyStateMigrationReceipt::MIGRATION_ID)
-            .map_err(|error| store_failure(error, "read legacy migration receipt"))?
-            .map(|value| decode(value.value(), "decode legacy migration receipt"))
-            .transpose()
+        let tx = self.engine.begin_read()?;
+        tx.get(
+            Table::LegacyStateMigrations,
+            Key::Str(LegacyStateMigrationReceipt::MIGRATION_ID),
+        )?
+        .map(|value| decode(&value, "decode legacy migration receipt"))
+        .transpose()
     }
 
     async fn blocking<T, F>(&self, op: &'static str, work: F) -> Result<T, DomainError>
     where
         T: Send + 'static,
-        F: FnOnce(&Database) -> Result<T, DomainError> + Send + 'static,
+        F: FnOnce(&dyn Engine) -> Result<T, DomainError> + Send + 'static,
     {
-        let database = Arc::clone(&self.database);
-        tokio::task::spawn_blocking(move || work(&database))
+        let engine = Arc::clone(&self.engine);
+        tokio::task::spawn_blocking(move || work(engine.as_ref()))
             .await
             .map_err(|error| join_failure(&error, op))?
     }
@@ -257,20 +222,12 @@ pub(super) fn decode<T: for<'de> Deserialize<'de>>(
     serde_json::from_slice(bytes).map_err(|error| encoding_failure(&error, op))
 }
 
-fn journal_of(
-    table: &impl ReadableTable<&'static [u8], &'static [u8]>,
-    ceremony_id: &CeremonyId,
-) -> Result<Vec<AuditRecord>, DomainError> {
+fn journal_of(tx: &dyn ReadTx, ceremony_id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
     let (start, end) = scope_range(ceremony_id);
-    let mut records = Vec::new();
-    for entry in table
-        .range(start.as_slice()..=end.as_slice())
-        .map_err(|error| store_failure(error, "scan journal"))?
-    {
-        let (_, value) = entry.map_err(|error| store_failure(error, "read journal entry"))?;
-        records.push(decode(value.value(), "decode audit record")?);
-    }
-    Ok(records)
+    tx.scan_bytes_range(Table::Journal, &start, &end)?
+        .into_iter()
+        .map(|(_, value)| decode(&value, "decode audit record"))
+        .collect()
 }
 
 #[async_trait]
@@ -278,80 +235,60 @@ impl CeremonyUnitOfWorkPort for RedbCeremonyStore {
     /// State, journal and outbox are written in one write transaction:
     /// redb commits all three tables together or none of them.
     async fn commit(&self, commit: CeremonyCommit) -> Result<CommitOutcome, DomainError> {
-        self.blocking("commit", move |database| {
+        self.blocking("commit", move |engine| {
             let ceremony_id = commit.instance().id().clone();
             let (instance, expected, facts, messages) = commit.into_parts();
 
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin commit"))?;
+            let mut tx = engine.begin_write()?;
             let outcome = {
-                let mut ceremonies = write
-                    .open_table(CEREMONIES)
-                    .map_err(|error| store_failure(error, "open ceremonies"))?;
-                let stored: Option<StoredCeremony> = ceremonies
-                    .get(ceremony_id.as_str())
-                    .map_err(|error| store_failure(error, "read ceremony"))?
-                    .map(|value| decode(value.value(), "decode ceremony"))
+                let stored: Option<StoredCeremony> = tx
+                    .get(Table::Ceremonies, Key::Str(ceremony_id.as_str()))?
+                    .map(|value| decode(&value, "decode ceremony"))
                     .transpose()?;
                 let stored_revision = stored.map(|stored| stored.revision);
 
                 if expected.matches(stored_revision) {
-                    let mut journal = write
-                        .open_table(JOURNAL)
-                        .map_err(|error| store_failure(error, "open journal"))?;
-                    let mut head = journal_of(&journal, &ceremony_id)?.pop();
+                    let mut head = journal_of(tx.as_ref(), &ceremony_id)?.pop();
                     let mut sealed = Vec::with_capacity(facts.len());
                     for fact in facts {
                         let record = match &head {
                             Some(previous) => AuditRecord::following(fact, previous)?,
                             None => AuditRecord::first(fact)?,
                         };
-                        journal
-                            .insert(
-                                scoped(&ceremony_id, record.sequence().value()).as_slice(),
-                                encode(&record, "encode audit record")?.as_slice(),
-                            )
-                            .map_err(|error| store_failure(error, "append journal"))?;
+                        tx.insert(
+                            Table::Journal,
+                            Key::Bytes(&scoped(&ceremony_id, record.sequence().value())),
+                            &encode(&record, "encode audit record")?,
+                        )?;
                         head = Some(record.clone());
                         sealed.push(record);
                     }
 
-                    let mut outbox = write
-                        .open_table(OUTBOX)
-                        .map_err(|error| store_failure(error, "open outbox"))?;
                     let (start, end) = scope_range(&ceremony_id);
-                    let enqueued = outbox
-                        .range(start.as_slice()..=end.as_slice())
-                        .map_err(|error| store_failure(error, "scan outbox"))?
-                        .count() as u64;
+                    let enqueued = tx.scan_bytes_range(Table::Outbox, &start, &end)?.len() as u64;
                     for (offset, message) in messages.into_iter().enumerate() {
-                        outbox
-                            .insert(
-                                scoped(&ceremony_id, enqueued + offset as u64).as_slice(),
-                                encode(
-                                    &StoredOutboxMessage::enqueued(message),
-                                    "encode outbox message",
-                                )?
-                                .as_slice(),
-                            )
-                            .map_err(|error| store_failure(error, "enqueue message"))?;
+                        tx.insert(
+                            Table::Outbox,
+                            Key::Bytes(&scoped(&ceremony_id, enqueued + offset as u64)),
+                            &encode(
+                                &StoredOutboxMessage::enqueued(message),
+                                "encode outbox message",
+                            )?,
+                        )?;
                     }
 
                     let revision = expected.resulting_revision();
-                    ceremonies
-                        .insert(
-                            ceremony_id.as_str(),
-                            encode(
-                                &StoredCeremony {
-                                    revision,
-                                    instance: instance.clone(),
-                                },
-                                "encode ceremony",
-                            )?
-                            .as_slice(),
-                        )
-                        .map_err(|error| store_failure(error, "store ceremony"))?;
+                    tx.insert(
+                        Table::Ceremonies,
+                        Key::Str(ceremony_id.as_str()),
+                        &encode(
+                            &StoredCeremony {
+                                revision,
+                                instance: instance.clone(),
+                            },
+                            "encode ceremony",
+                        )?,
+                    )?;
 
                     CommitOutcome::Committed {
                         revision,
@@ -370,9 +307,7 @@ impl CeremonyUnitOfWorkPort for RedbCeremonyStore {
             if outcome.is_conflict() {
                 return Ok(outcome);
             }
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit"))?;
+            tx.commit()?;
             Ok(outcome)
         })
         .await
@@ -383,17 +318,11 @@ impl CeremonyUnitOfWorkPort for RedbCeremonyStore {
         ceremony_id: &CeremonyId,
     ) -> Result<Option<CeremonyRevision>, DomainError> {
         let ceremony_id = ceremony_id.clone();
-        self.blocking("revision", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let ceremonies = read
-                .open_table(CEREMONIES)
-                .map_err(|error| store_failure(error, "open ceremonies"))?;
-            let stored: Option<StoredCeremony> = ceremonies
-                .get(ceremony_id.as_str())
-                .map_err(|error| store_failure(error, "read ceremony"))?
-                .map(|value| decode(value.value(), "decode ceremony"))
+        self.blocking("revision", move |engine| {
+            let tx = engine.begin_read()?;
+            let stored: Option<StoredCeremony> = tx
+                .get(Table::Ceremonies, Key::Str(ceremony_id.as_str()))?
+                .map(|value| decode(&value, "decode ceremony"))
                 .transpose()?;
             Ok(stored.map(|stored| stored.revision))
         })
@@ -404,31 +333,23 @@ impl CeremonyUnitOfWorkPort for RedbCeremonyStore {
 #[async_trait]
 impl AuditJournalPort for RedbCeremonyStore {
     async fn append(&self, fact: AuditFact) -> Result<AuditRecord, DomainError> {
-        self.blocking("append", move |database| {
+        self.blocking("append", move |engine| {
             let ceremony_id = fact.ceremony_id.clone();
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin append"))?;
+            let mut tx = engine.begin_write()?;
             let record = {
-                let mut journal = write
-                    .open_table(JOURNAL)
-                    .map_err(|error| store_failure(error, "open journal"))?;
-                let head = journal_of(&journal, &ceremony_id)?.pop();
+                let head = journal_of(tx.as_ref(), &ceremony_id)?.pop();
                 let record = match head {
                     Some(previous) => AuditRecord::following(fact, &previous)?,
                     None => AuditRecord::first(fact)?,
                 };
-                journal
-                    .insert(
-                        scoped(&ceremony_id, record.sequence().value()).as_slice(),
-                        encode(&record, "encode audit record")?.as_slice(),
-                    )
-                    .map_err(|error| store_failure(error, "append journal"))?;
+                tx.insert(
+                    Table::Journal,
+                    Key::Bytes(&scoped(&ceremony_id, record.sequence().value())),
+                    &encode(&record, "encode audit record")?,
+                )?;
                 record
             };
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit append"))?;
+            tx.commit()?;
             Ok(record)
         })
         .await
@@ -440,14 +361,9 @@ impl AuditJournalPort for RedbCeremonyStore {
 
     async fn records(&self, ceremony_id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
         let ceremony_id = ceremony_id.clone();
-        self.blocking("records", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let journal = read
-                .open_table(JOURNAL)
-                .map_err(|error| store_failure(error, "open journal"))?;
-            journal_of(&journal, &ceremony_id)
+        self.blocking("records", move |engine| {
+            let tx = engine.begin_read()?;
+            journal_of(tx.as_ref(), &ceremony_id)
         })
         .await
     }
@@ -467,15 +383,10 @@ impl OutboxPort for RedbCeremonyStore {
         lease: DurationMs,
     ) -> Result<Vec<ClaimedOutboxMessage>, DomainError> {
         let lease_until = now + Duration::from_millis(lease.get());
-        self.blocking("claim", move |database| {
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin claim"))?;
+        self.blocking("claim", move |engine| {
+            let mut tx = engine.begin_write()?;
             let claimed = {
-                let mut outbox = write
-                    .open_table(OUTBOX)
-                    .map_err(|error| store_failure(error, "open outbox"))?;
-                let entries = read_outbox(&outbox)?;
+                let entries = read_outbox(tx.as_ref())?;
 
                 let mut taken = Vec::new();
                 let mut decided: Option<Vec<u8>> = None;
@@ -499,19 +410,16 @@ impl OutboxPort for RedbCeremonyStore {
                 let mut claimed = Vec::with_capacity(taken.len());
                 for (key, mut stored) in taken {
                     stored.claimed_until = Some(lease_until);
-                    outbox
-                        .insert(
-                            key.as_slice(),
-                            encode(&stored, "encode outbox message")?.as_slice(),
-                        )
-                        .map_err(|error| store_failure(error, "record claim"))?;
+                    tx.insert(
+                        Table::Outbox,
+                        Key::Bytes(&key),
+                        &encode(&stored, "encode outbox message")?,
+                    )?;
                     claimed.push(ClaimedOutboxMessage::new(stored.message, stored.attempt));
                 }
                 claimed
             };
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit claim"))?;
+            tx.commit()?;
             Ok(claimed)
         })
         .await
@@ -561,14 +469,9 @@ impl OutboxPort for RedbCeremonyStore {
     }
 
     async fn quarantined(&self) -> Result<Vec<ClaimedOutboxMessage>, DomainError> {
-        self.blocking("quarantined", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let outbox = read
-                .open_table(OUTBOX)
-                .map_err(|error| store_failure(error, "open outbox"))?;
-            Ok(read_outbox(&outbox)?
+        self.blocking("quarantined", move |engine| {
+            let tx = engine.begin_read()?;
+            Ok(read_outbox(tx.as_ref())?
                 .into_iter()
                 .filter(|(_, stored)| stored.quarantine.is_some())
                 .map(|(_, stored)| ClaimedOutboxMessage::new(stored.message, stored.attempt))
@@ -585,53 +488,35 @@ impl RedbCeremonyStore {
     where
         F: Fn(&mut StoredOutboxMessage) -> bool + Send + 'static,
     {
-        self.blocking(op, move |database| {
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin update"))?;
+        self.blocking(op, move |engine| {
+            let mut tx = engine.begin_write()?;
             {
-                let mut outbox = write
-                    .open_table(OUTBOX)
-                    .map_err(|error| store_failure(error, "open outbox"))?;
                 let mut updates = Vec::new();
-                for (key, mut stored) in read_outbox(&outbox)? {
+                for (key, mut stored) in read_outbox(tx.as_ref())? {
                     if change(&mut stored) {
                         updates.push((key, stored));
                     }
                 }
                 for (key, stored) in updates {
-                    outbox
-                        .insert(
-                            key.as_slice(),
-                            encode(&stored, "encode outbox message")?.as_slice(),
-                        )
-                        .map_err(|error| store_failure(error, "update outbox message"))?;
+                    tx.insert(
+                        Table::Outbox,
+                        Key::Bytes(&key),
+                        &encode(&stored, "encode outbox message")?,
+                    )?;
                 }
             }
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit update"))?;
+            tx.commit()?;
             Ok(())
         })
         .await
     }
 }
 
-fn read_outbox(
-    table: &impl ReadableTable<&'static [u8], &'static [u8]>,
-) -> Result<Vec<(Vec<u8>, StoredOutboxMessage)>, DomainError> {
-    let mut entries = Vec::new();
-    for entry in table
-        .range::<&[u8]>(..)
-        .map_err(|error| store_failure(error, "scan outbox"))?
-    {
-        let (key, value) = entry.map_err(|error| store_failure(error, "read outbox entry"))?;
-        entries.push((
-            key.value().to_vec(),
-            decode(value.value(), "decode outbox message")?,
-        ));
-    }
-    Ok(entries)
+fn read_outbox(tx: &dyn ReadTx) -> Result<Vec<(Vec<u8>, StoredOutboxMessage)>, DomainError> {
+    tx.scan_bytes(Table::Outbox)?
+        .into_iter()
+        .map(|(key, value)| Ok((key, decode(&value, "decode outbox message")?)))
+        .collect()
 }
 
 /// A published definition and the digest it was sealed with.
@@ -674,19 +559,13 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
         &self,
         definition: PublishedCeremonyDefinition,
     ) -> Result<PublicationOutcome, DomainError> {
-        self.blocking("publish", move |database| {
+        self.blocking("publish", move |engine| {
             let key = published(definition.name(), definition.version());
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin publish"))?;
+            let mut tx = engine.begin_write()?;
             let outcome = {
-                let mut publications = write
-                    .open_table(PUBLICATIONS)
-                    .map_err(|error| store_failure(error, "open publications"))?;
-                let occupant: Option<StoredPublication> = publications
-                    .get(key.as_slice())
-                    .map_err(|error| store_failure(error, "read publication"))?
-                    .map(|value| decode(value.value(), "decode publication"))
+                let occupant: Option<StoredPublication> = tx
+                    .get(Table::Publications, Key::Bytes(&key))?
+                    .map(|value| decode(&value, "decode publication"))
                     .transpose()?;
 
                 match occupant {
@@ -698,16 +577,11 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
                         offered: definition.digest(),
                     },
                     None => {
-                        publications
-                            .insert(
-                                key.as_slice(),
-                                encode(
-                                    &StoredPublication::seal(&definition),
-                                    "encode publication",
-                                )?
-                                .as_slice(),
-                            )
-                            .map_err(|error| store_failure(error, "store publication"))?;
+                        tx.insert(
+                            Table::Publications,
+                            Key::Bytes(&key),
+                            &encode(&StoredPublication::seal(&definition), "encode publication")?,
+                        )?;
                         PublicationOutcome::Published(definition)
                     }
                 }
@@ -716,9 +590,7 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
             if outcome.is_conflict() {
                 return Ok(outcome);
             }
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit publish"))?;
+            tx.commit()?;
             Ok(outcome)
         })
         .await
@@ -730,17 +602,11 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
         version: &CeremonyVersion,
     ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
         let key = published(name, version);
-        self.blocking("published", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let publications = read
-                .open_table(PUBLICATIONS)
-                .map_err(|error| store_failure(error, "open publications"))?;
-            let stored: Option<StoredPublication> = publications
-                .get(key.as_slice())
-                .map_err(|error| store_failure(error, "read publication"))?
-                .map(|value| decode(value.value(), "decode publication"))
+        self.blocking("published", move |engine| {
+            let tx = engine.begin_read()?;
+            let stored: Option<StoredPublication> = tx
+                .get(Table::Publications, Key::Bytes(&key))?
+                .map(|value| decode(&value, "decode publication"))
                 .transpose()?;
             stored.map(StoredPublication::restore).transpose()
         })
@@ -748,24 +614,14 @@ impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
     }
 
     async fn catalogue(&self) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
-        self.blocking("catalogue", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let publications = read
-                .open_table(PUBLICATIONS)
-                .map_err(|error| store_failure(error, "open publications"))?;
-            let mut catalogue = Vec::new();
-            for entry in publications
-                .range::<&[u8]>(..)
-                .map_err(|error| store_failure(error, "scan publications"))?
-            {
-                let (_, value) =
-                    entry.map_err(|error| store_failure(error, "read publication entry"))?;
-                let stored: StoredPublication = decode(value.value(), "decode publication")?;
-                catalogue.push(stored.restore()?);
-            }
-            Ok(catalogue)
+        self.blocking("catalogue", move |engine| {
+            let tx = engine.begin_read()?;
+            tx.scan_bytes(Table::Publications)?
+                .into_iter()
+                .map(|(_, value)| {
+                    decode::<StoredPublication>(&value, "decode publication")?.restore()
+                })
+                .collect()
         })
         .await
     }
@@ -788,33 +644,23 @@ impl CeremonyInstanceRepositoryPort for RedbCeremonyStore {
     /// defeat the stronger one.
     async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
         let instance = instance.clone();
-        self.blocking("save instance", move |database| {
+        self.blocking("save instance", move |engine| {
             let key = instance.id().as_str().to_owned();
-            let write = database
-                .begin_write()
-                .map_err(|error| store_failure(error, "begin save"))?;
+            let mut tx = engine.begin_write()?;
             {
-                let mut ceremonies = write
-                    .open_table(CEREMONIES)
-                    .map_err(|error| store_failure(error, "open ceremonies"))?;
-                let stored: Option<StoredCeremony> = ceremonies
-                    .get(key.as_str())
-                    .map_err(|error| store_failure(error, "read ceremony"))?
-                    .map(|value| decode(value.value(), "decode ceremony"))
+                let stored: Option<StoredCeremony> = tx
+                    .get(Table::Ceremonies, Key::Str(&key))?
+                    .map(|value| decode(&value, "decode ceremony"))
                     .transpose()?;
                 let revision =
                     stored.map_or(CeremonyRevision::INITIAL, |stored| stored.revision.next());
-                ceremonies
-                    .insert(
-                        key.as_str(),
-                        encode(&StoredCeremony { revision, instance }, "encode ceremony")?
-                            .as_slice(),
-                    )
-                    .map_err(|error| store_failure(error, "store ceremony"))?;
+                tx.insert(
+                    Table::Ceremonies,
+                    Key::Str(&key),
+                    &encode(&StoredCeremony { revision, instance }, "encode ceremony")?,
+                )?;
             }
-            write
-                .commit()
-                .map_err(|error| store_failure(error, "commit save"))?;
+            tx.commit()?;
             Ok(())
         })
         .await
@@ -829,24 +675,14 @@ impl CeremonyInstanceRepositoryPort for RedbCeremonyStore {
     }
 
     async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
-        self.blocking("list instances", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let ceremonies = read
-                .open_table(CEREMONIES)
-                .map_err(|error| store_failure(error, "open ceremonies"))?;
-            let mut instances = Vec::new();
-            for entry in ceremonies
-                .range::<&str>(..)
-                .map_err(|error| store_failure(error, "scan ceremonies"))?
-            {
-                let (_, value) =
-                    entry.map_err(|error| store_failure(error, "read ceremony entry"))?;
-                let stored: StoredCeremony = decode(value.value(), "decode ceremony")?;
-                instances.push(stored.instance);
-            }
-            Ok(instances)
+        self.blocking("list instances", move |engine| {
+            let tx = engine.begin_read()?;
+            tx.scan_str(Table::Ceremonies)?
+                .into_iter()
+                .map(|(_, value)| {
+                    decode::<StoredCeremony>(&value, "decode ceremony").map(|s| s.instance)
+                })
+                .collect()
         })
         .await
     }
@@ -862,17 +698,11 @@ impl RedbCeremonyStore {
         id: &CeremonyId,
     ) -> Result<Option<CeremonyInstance>, DomainError> {
         let key = id.as_str().to_owned();
-        self.blocking("read instance", move |database| {
-            let read = database
-                .begin_read()
-                .map_err(|error| store_failure(error, "begin read"))?;
-            let ceremonies = read
-                .open_table(CEREMONIES)
-                .map_err(|error| store_failure(error, "open ceremonies"))?;
-            let stored: Option<StoredCeremony> = ceremonies
-                .get(key.as_str())
-                .map_err(|error| store_failure(error, "read ceremony"))?
-                .map(|value| decode(value.value(), "decode ceremony"))
+        self.blocking("read instance", move |engine| {
+            let tx = engine.begin_read()?;
+            let stored: Option<StoredCeremony> = tx
+                .get(Table::Ceremonies, Key::Str(&key))?
+                .map(|value| decode(&value, "decode ceremony"))
                 .transpose()?;
             Ok(stored.map(|stored| stored.instance))
         })

@@ -8,7 +8,7 @@
 //! redb takes an exclusive lock on its file and serves a single
 //! process. That is right for an embedded host and wrong for replicas.
 
-mod error;
+pub(crate) mod error;
 mod keys;
 mod legacy_definition_binding;
 mod legacy_instance_migration;

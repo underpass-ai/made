@@ -1,7 +1,9 @@
 use made_core::error::DomainError;
 use redb::ReadableTable;
 
-use super::ceremony_store::{decode, encode, StoredCeremony, CEREMONIES};
+use crate::engine::redb::CEREMONIES;
+
+use super::ceremony_store::{decode, encode, StoredCeremony};
 use super::error::store_failure;
 use super::legacy_publication_migration::LegacyPublicationMigration;
 
