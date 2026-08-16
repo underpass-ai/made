@@ -8,9 +8,21 @@ if [[ ! -x "${BINARY}" && -x "${PLUGIN_ROOT}/bin/made-mcp.exe" ]]; then
   BINARY="${PLUGIN_ROOT}/bin/made-mcp.exe"
 fi
 
+# The release bundle ships bin/made-mcp and keeps priority: it pins the binary
+# this plugin version was tested against. An install straight from the
+# repository has no bin/ — that path is gitignored — so fall back to an
+# installed made-mcp on PATH rather than leaving the host with a server that
+# cannot start.
 if [[ ! -x "${BINARY}" ]]; then
-  echo "MADE plugin: missing executable ${BINARY}" >&2
-  echo "MADE plugin: build the local plugin bundle before installing it" >&2
+  if PATH_BINARY="$(command -v made-mcp 2>/dev/null)"; then
+    BINARY="${PATH_BINARY}"
+  fi
+fi
+
+if [[ ! -x "${BINARY}" ]]; then
+  echo "MADE plugin: no made-mcp executable found." >&2
+  echo "MADE plugin: looked for ${PLUGIN_ROOT}/bin/made-mcp (release bundle) and made-mcp on PATH." >&2
+  echo "MADE plugin: install one with 'cargo install made-mcp', or install the plugin from a release package." >&2
   exit 127
 fi
 
