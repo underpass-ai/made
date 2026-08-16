@@ -86,4 +86,8 @@ if exist "%USER_STATE_ROOT%\underpass-choreographer\ceremonies.redb" set "MADE_M
 
 :havePath
 
-"%BINARY%" %*
+rem No %* — the launcher starts the MCP server and nothing else. The binary
+rem reads a leading argument as a maintenance command, so forwarding whatever
+rem a host happened to pass would exit 2 instead of serving, and only here.
+rem The POSIX launcher already drops them.
+"%BINARY%"
