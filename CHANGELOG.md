@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.1.5 - 2026-08-16
+
 ### Added
 
 - Two agent hosts can share one ceremony store. The default engine takes one

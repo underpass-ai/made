@@ -27,19 +27,18 @@ cargo test -p made-adapters --features sqlite --locked --test engine_conversion
 echo "sqlite-gates: the adapter suite with the engine in (the redb arm must be unchanged)"
 cargo test -p made-adapters --features sqlite --locked
 
-# `cargo install` and a registry build resolve features without the workspace
-# and without dev-dependencies. A feature that names a dev-dependency builds
-# and tests green here and fails for everyone installing it — the exact defect
-# kmp shipped and had to fix after the fact.
-echo "sqlite-gates: the feature resolves outside the workspace"
-cargo package -p made-adapters --features sqlite --locked --no-verify --allow-dirty >/dev/null
-
-# The engine reaches an operator through `cargo install made-mcp --features
-# sqlite`, so the feature has to forward all the way to the binary. Building
-# the leaf crate proves nothing about the chain above it: kmp's sqlite feature
-# was green at the adapter and still failed at install.
-echo "sqlite-gates: the feature forwards to the binary operators install"
-cargo build -p made-mcp --features sqlite --locked >/dev/null
+# `cargo install` resolves features without dev-dependencies. A feature that
+# names one builds and tests green here and fails for everyone installing it —
+# the exact defect kmp shipped and had to fix after the fact. This runs the
+# command a user actually runs, which is also the only form that survives a
+# version bump: `cargo package` would resolve the sibling crates against the
+# registry, where the version being released does not exist yet.
+echo "sqlite-gates: cargo install with the engine, the way a user gets it"
+INSTALL_ROOT="$(mktemp -d)"
+CONVERT_DIR="$(mktemp -d)"
+trap 'rm -rf "${INSTALL_ROOT}" "${CONVERT_DIR}"' EXIT
+cargo install --path crates/made-mcp --features sqlite --locked --root "${INSTALL_ROOT}" --quiet
+"${INSTALL_ROOT}/bin/made-mcp" --version
 
 # The conversion command is the only way an existing store reaches the engine
 # that lets two hosts share it. A feature nobody can reach is not shipped, so
@@ -47,12 +46,10 @@ cargo build -p made-mcp --features sqlite --locked >/dev/null
 # conversion would pass while moving nothing.
 echo "sqlite-gates: the conversion command moves a real store"
 cargo build -p made-adapters --features sqlite --locked --bin store_writer >/dev/null
-CONVERT_DIR="$(mktemp -d)"
-trap 'rm -rf "${CONVERT_DIR}"' EXIT
 TARGET_DIR="$(cargo metadata --format-version 1 --no-deps \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
 "${TARGET_DIR}/debug/store_writer" "${CONVERT_DIR}/from.redb" redb convert-gate 2 >/dev/null
-RECEIPT="$("${TARGET_DIR}/debug/made-mcp" convert \
+RECEIPT="$("${INSTALL_ROOT}/bin/made-mcp" convert \
   "${CONVERT_DIR}/from.redb" "${CONVERT_DIR}/to.sqlite3" --engine sqlite)"
 echo "  ${RECEIPT}"
 head -c 15 "${CONVERT_DIR}/to.sqlite3" | grep -q "SQLite format 3" \
@@ -62,7 +59,7 @@ echo "${RECEIPT}" | grep -q '"ceremonies":1' \
 
 # Converting again into the same destination has to be refused: an operator
 # who reruns the command must not silently half-merge two stores.
-"${TARGET_DIR}/debug/made-mcp" convert \
+"${INSTALL_ROOT}/bin/made-mcp" convert \
   "${CONVERT_DIR}/from.redb" "${CONVERT_DIR}/to.sqlite3" --engine sqlite >/dev/null 2>&1 \
   && { echo "sqlite-gates: convert overwrote an occupied destination" >&2; exit 1; }
 echo "  rerun into an occupied destination refused"
