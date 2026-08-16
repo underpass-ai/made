@@ -89,6 +89,18 @@ impl RedbCeremonyStore {
         })
     }
 
+    /// Open on the WAL-mode SQLite engine, which several processes can hold
+    /// at once. Only available when built with the `sqlite` feature.
+    ///
+    /// A store belongs to one engine: this opens a SQLite file, and pointing
+    /// it at a redb one fails rather than converting anything.
+    #[cfg(feature = "sqlite")]
+    pub fn open_sqlite(path: impl AsRef<Path>) -> Result<Self, DomainError> {
+        Ok(Self {
+            engine: Arc::new(crate::engine::sqlite::SqliteEngine::open(path)?),
+        })
+    }
+
     /// Import a pre-rename Choreographer redb file into a new MADE store.
     ///
     /// The source is opened with read-only file permissions. The destination

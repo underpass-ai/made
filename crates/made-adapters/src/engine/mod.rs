@@ -34,6 +34,8 @@ use std::fmt;
 use made_core::error::DomainError;
 
 pub(crate) mod redb;
+#[cfg(feature = "sqlite")]
+pub(crate) mod sqlite;
 
 /// The tables an embedded ceremony store consists of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]

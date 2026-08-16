@@ -31,9 +31,15 @@ runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
 postgres = ["dep:sqlx"]
 
 # Embedded persistence. redb is the store the embedded distribution
-# uses: pure Rust, no non-optional dependencies and no C toolchain, so
-# an embedded host stays free of system dependencies.
+# uses by default: pure Rust, no non-optional dependencies and no C
+# toolchain, so an embedded host stays free of system dependencies.
 redb = ["dep:redb", "dep:sha2"]
+
+# A second engine behind the same storage seam: WAL-mode SQLite, which
+# several processes can open at once. Off by default on purpose — it
+# brings a C toolchain into the build, and the default embedded binary
+# stays pure Rust. Turn it on to let two agent hosts share one store.
+sqlite = ["redb", "dep:rusqlite"]
 
 # Memory that outlives a session, kept by an external memory kernel
 # spoken to over its tool protocol. Deliberately dependency-free: a
@@ -86,6 +92,7 @@ async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }
 redb = { workspace = true, optional = true }
+rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
 sha2 = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
@@ -104,3 +111,11 @@ opentelemetry = { workspace = true }
 # asserted on what would reach a collector, not on a getter's opinion.
 opentelemetry_sdk = { workspace = true, features = ["testing"] }
 tracing-opentelemetry = { workspace = true }
+
+# A helper process for the two-hosts test. Not shipped: the property under
+# test is that two *processes* can hold one store, and only a second process
+# can demonstrate it.
+[[bin]]
+name = "store_writer"
+path = "src/bin/store_writer.rs"
+required-features = ["redb"]
