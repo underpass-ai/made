@@ -2,7 +2,9 @@ use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use redb::ReadableTable;
 
-use super::ceremony_store::{decode, encode, StoredPublication, PUBLICATIONS};
+use crate::engine::redb::PUBLICATIONS;
+
+use super::ceremony_store::{decode, encode, StoredPublication};
 use super::error::store_failure;
 use super::legacy_definition_binding::LegacyDefinitionBinding;
 

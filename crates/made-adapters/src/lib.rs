@@ -76,6 +76,10 @@ pub mod nats;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
+// The storage seam and its engines. Gated with the embedded store itself:
+// nothing else in this crate needs them.
+#[cfg(feature = "redb")]
+pub(crate) mod engine;
 #[cfg(feature = "redb")]
 pub mod redb;
 

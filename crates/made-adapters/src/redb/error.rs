@@ -7,7 +7,7 @@
 
 use made_core::error::DomainError;
 
-pub(super) fn store_failure(error: impl std::fmt::Display, op: &'static str) -> DomainError {
+pub(crate) fn store_failure(error: impl std::fmt::Display, op: &'static str) -> DomainError {
     let rendered = error.to_string();
     tracing::error!(error = %rendered, operation = op, "redb operation failed");
     // A lock held by another process is the one store failure an operator
