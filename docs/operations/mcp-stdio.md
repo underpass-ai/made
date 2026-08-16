@@ -496,6 +496,11 @@ MADE_MCP_REDB_PATH=~/.local/state/underpass-made/ceremonies.sqlite3 made-mcp
 made-mcp convert ceremonies.redb ceremonies.sqlite3 --engine sqlite
 ```
 
+Through the plugin there is no path to set: `MADE_MCP_ENGINE=sqlite` makes the
+launcher pick `ceremonies.sqlite3` beside the default, and a converted store
+already sitting there is opened without asking. With both files present the
+launcher keeps the redb default rather than choosing for you.
+
 **A store is opened by the engine that wrote it, always.** Both formats
 announce themselves in their first bytes, so there is no marker file to keep
 in sync and no way to open a store with the wrong engine: `MADE_MCP_ENGINE`
