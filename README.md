@@ -211,7 +211,7 @@ restart is an operator decision, never a default this crate invents.
 ```sh
 MADE_MCP_BACKEND=embedded \
 MADE_MCP_REDB_PATH="$PWD/target/ceremonies.redb" \
-  cargo run --locked -p made-mcp --no-default-features --features embedded
+  cargo run --locked -p made-mcp
 ```
 
 **MCP client wiring with no engine at all.** Fixture mode returns deterministic

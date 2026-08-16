@@ -469,7 +469,7 @@ MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 MADE_MCP_BACKEND=embedded \
 MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
-  cargo run -p made-mcp --no-default-features --features embedded --locked
+  cargo run -p made-mcp --locked
 ```
 
 redb takes an exclusive lock on that file: one MCP process owns a given
