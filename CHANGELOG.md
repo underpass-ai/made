@@ -16,6 +16,32 @@ operator command.
 
 _Nothing yet._
 
+## 0.1.4 - 2026-08-16
+
+### Fixed
+
+- The plugin launcher no longer leaves the host with an MCP server that
+  cannot start. It execs `bin/made-mcp` inside the plugin directory, and that
+  path is gitignored, so it only exists in a release package — installing
+  straight from the repository produced an exit 127 telling the user to
+  "build the local plugin bundle", which is not something they can act on.
+  Both launchers still prefer the bundled binary, since a release package
+  pins the one that plugin version was tested against, and now fall back to
+  `made-mcp` on `PATH`. When neither exists the error names both places it
+  looked and how to get one. Found by installing the sibling KMP plugin on a
+  clean machine and watching it fail the same way.
+
+### Changed
+
+- The README opens with the two editions and the host wiring for Claude Code
+  and Codex CLI. New `docs/editions.md` is the canonical embedded-vs-cluster
+  comparison, including the three things the embedded surface explicitly does
+  not prove; the operations index is grouped by edition.
+- Every embedded snippet now sets `MADE_MCP_REDB_PATH`. The backend requires
+  it and fail-fasts without it, so the previous example could not start.
+- Sibling-repo links point at `kmp` instead of the archived
+  `rehydration-kernel`.
+
 ## 0.1.3 - 2026-08-15
 
 The release that actually reaches crates.io.
