@@ -75,9 +75,10 @@ impl EmbeddedMade {
     /// The provider owns the concrete store and its internal ports. A host
     /// receives only the embedded facade, so a storage refactor cannot leak
     /// provider implementation types into the consumer's dependency graph.
-    #[cfg(feature = "redb")]
+    ///
     /// Open on a chosen engine. `engine` decides only what a **new** store
     /// becomes; an existing one opens on whatever wrote it.
+    #[cfg(feature = "redb")]
     pub fn open_engine(
         path: impl AsRef<std::path::Path>,
         engine: Option<made_adapters::StorageEngine>,
@@ -89,10 +90,14 @@ impl EmbeddedMade {
         Ok(Self::over(store))
     }
 
+    /// Open on whatever engine the store already uses, or the default for a
+    /// new one.
+    #[cfg(feature = "redb")]
     pub fn open_redb(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
         Self::open_engine(path, None)
     }
 
+    #[cfg(feature = "redb")]
     fn over(store: RedbCeremonyStore) -> Self {
         let store = Arc::new(store);
         Self::builder()

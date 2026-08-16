@@ -100,6 +100,17 @@ fn run_cli_command(command: &str, args: &[String]) -> i32 {
     match command {
         #[cfg(feature = "embedded")]
         "convert" => run_convert_command(args),
+        // The command exists; this build has no store for it to act on.
+        // "unknown command" would send an operator looking for a typo.
+        #[cfg(not(feature = "embedded"))]
+        "convert" => {
+            let _ = args;
+            eprintln!(
+                "made-mcp: `convert` moves an embedded store between engines, and this \
+                 binary was built without the embedded backend"
+            );
+            2
+        }
         "--version" | "-V" | "version" => {
             println!("made-mcp {}", env!("CARGO_PKG_VERSION"));
             0

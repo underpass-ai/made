@@ -36,6 +36,21 @@ operator command.
   ceremony store is state plus a journal of what happened to it, not a log
   with derived projections.
 
+### Fixed
+
+- The Windows plugin launcher no longer points at `\ceremonies.redb` at the
+  drive root. `cmd` expands `%VAR%` for a whole parenthesised block when it
+  parses the block, so the state root set inside that block read back as its
+  previous — empty — value on the very next line. The launcher is flattened
+  with labels, so every read follows its write without depending on delayed
+  expansion.
+
+- Both plugin launchers can now reach a store converted to the sqlite engine.
+  `MADE_MCP_ENGINE=sqlite` selects `ceremonies.sqlite3` beside the default,
+  and a converted store already sitting there is opened without any path being
+  set — otherwise a shared store was out of reach of the documented install,
+  since each host would have needed an explicit path.
+
 ## 0.1.4 - 2026-08-16
 
 ### Fixed

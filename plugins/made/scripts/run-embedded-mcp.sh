@@ -38,6 +38,21 @@ if [[ -z "${MADE_MCP_REDB_PATH:-}" ]]; then
   mkdir -p "${MADE_STATE_ROOT}"
   export MADE_MCP_REDB_PATH="${MADE_STATE_ROOT}/ceremonies.redb"
 
+  # A store converted to the sqlite engine lives beside the redb one under a
+  # name of its own, and the whole point of converting is that both agent
+  # hosts open it. Making the operator also hand every host an explicit path
+  # would put the shared store out of reach of the install we document. So:
+  # asking for sqlite picks the sqlite name, and a converted store already
+  # sitting there is used without being asked for. If both files exist the
+  # default stays redb — that ambiguity is the operator's to resolve, not
+  # something to guess behind their back.
+  SQLITE_DEFAULT="${MADE_STATE_ROOT}/ceremonies.sqlite3"
+  if [[ "${MADE_MCP_ENGINE:-}" == "sqlite" ]]; then
+    export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
+  elif [[ -f "${SQLITE_DEFAULT}" && ! -e "${MADE_MCP_REDB_PATH}" ]]; then
+    export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
+  fi
+
   # First start after the rename imports the former default automatically.
   # The legacy file remains read-only evidence; MADE writes a separate file.
   LEGACY_DEFAULT="${USER_STATE_ROOT}/underpass-choreographer/ceremonies.redb"

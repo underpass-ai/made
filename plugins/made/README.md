@@ -58,7 +58,10 @@ time: a second agent host started against the same store is refused rather
 than sharing it. [Sharing one ceremony store between two agent
 hosts](../../docs/operations/mcp-stdio.md#sharing-one-ceremony-store-between-two-agent-hosts)
 covers the `sqlite` engine that lifts that, and the conversion for a store
-that already exists. Durable is not the same as authorized, and not the same as fully
+that already exists. The launcher follows it: `MADE_MCP_ENGINE=sqlite` picks
+`ceremonies.sqlite3` beside the default, and a converted store already sitting
+there is opened without any path being set — so both hosts find the shared
+store on their own. Durable is not the same as authorized, and not the same as fully
 recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
 terminal step from that default proves ceremony protocol and state-machine
 behavior, not that an agent, tool, API, or human performed the requested work.
