@@ -29,7 +29,11 @@ IMAGE_TAG="${E2E_IMAGE_TAG:-e2e}"
 MADE_IMAGE="made:${IMAGE_TAG}"
 RUNNER_IMAGE="made-e2e-runner:${IMAGE_TAG}"
 CLUSTER_NAME="${KIND_CLUSTER_NAME:-made-e2e}"
-CURRENT_NAMESPACE="$(kubectl config view --minify --output 'jsonpath={..namespace}')"
+# In kind mode the cluster does not exist yet, so there is no current
+# context to minify and this would abort under `set -e` before the script
+# gets to create one. A missing context is not an error here; it is the
+# normal starting state on a machine that has never talked to a cluster.
+CURRENT_NAMESPACE="$(kubectl config view --minify --output 'jsonpath={..namespace}' 2>/dev/null || true)"
 NAMESPACE="${E2E_NAMESPACE:-${CURRENT_NAMESPACE:-default}}"
 CLUSTER_MODE="${E2E_CLUSTER_MODE:-auto}" # auto|kind|existing
 IMAGE_REPOSITORY_PREFIX="${E2E_IMAGE_REPOSITORY_PREFIX:-}"
@@ -225,6 +229,16 @@ if [ -n "${IMAGE_REPOSITORY_PREFIX}" ]; then
 else
   case "${EFFECTIVE_CLUSTER_MODE}" in
     kind)
+      # This script loads images into a cluster; it does not create one.
+      # Creating a cluster is the operator's call, so say what is missing
+      # and the exact command instead of failing eight lines later with
+      # "no nodes found".
+      if ! kind get clusters 2>/dev/null | grep -qx "${CLUSTER_NAME}"; then
+        echo "kind cluster '${CLUSTER_NAME}' does not exist." >&2
+        echo "create it first:  kind create cluster --name ${CLUSTER_NAME} --wait 120s" >&2
+        echo "delete it after:  kind delete cluster --name ${CLUSTER_NAME}" >&2
+        exit 1
+      fi
       echo ">>> loading images into kind cluster '${CLUSTER_NAME}'"
       kind load docker-image "${MADE_IMAGE}" --name "${CLUSTER_NAME}"
       kind load docker-image "${RUNNER_IMAGE}" --name "${CLUSTER_NAME}"
