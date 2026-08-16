@@ -8,7 +8,7 @@ independent, domain-agnostic coordination product. The following repos
 are referenced only as studied integrations and possible use cases:
 
 - [underpass-runtime](https://github.com/underpass-ai/underpass-runtime)
-- [rehydration-kernel](https://github.com/underpass-ai/rehydration-kernel)
+- [kmp](https://github.com/underpass-ai/kmp)
 
 The goal is not to market readiness. The goal is to state what is
 wired, what is intentionally out of scope, and what must still be

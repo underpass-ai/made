@@ -1,6 +1,6 @@
 # MADE by Underpass
 
-> Part of [Underpass AI](https://underpassai.com) — memory and execution infrastructure for reliable AI agents.
+> Part of [Underpass AI](https://underpassai.com) — memory, coordination, and execution infrastructure for reliable AI agents.
 
 **MADE is a ceremony-driven multi-agent deliberation engine.** The name is
 the description: **M**ulti-**A**gent **D**eliberation **E**ngine.
@@ -18,6 +18,72 @@ orchestrator service, and has since grown well beyond that port. It shipped
 as **Underpass Choreographer** until the rename to MADE; that was a naming
 change only — see [`CHANGELOG.md`](CHANGELOG.md) for every moved surface
 (crates, proto package, MCP tools, environment variables, chart, image).
+
+## Start here — pick an edition
+
+MADE ships as **two editions**. They share `made-core`, `made-app`, the domain
+invariants and the workspace release version; the embedded facade calls the same
+application use cases the deployable binary calls. Full comparison:
+**[docs/editions.md](docs/editions.md)**.
+
+### Embedded edition — inside your coding agent
+
+The ceremony engine runs in-process over MCP stdio. No service, no gRPC, no
+NATS, no database, no provider credentials.
+
+```bash
+cargo install made-mcp
+```
+
+The embedded backend **requires a state file**: where ceremonies survive a
+restart is an operator decision, never a default this crate invents.
+
+```bash
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made"
+MADE_MCP_BACKEND=embedded \
+MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
+  made-mcp
+```
+
+**Claude Code:**
+
+```bash
+claude mcp add made --scope user \
+  --env MADE_MCP_BACKEND=embedded \
+  --env MADE_MCP_REDB_PATH="$HOME/.local/state/underpass-made/ceremonies.redb" \
+  -- ~/.cargo/bin/made-mcp
+```
+
+**Codex CLI** (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.made]
+command = "/home/YOU/.cargo/bin/made-mcp"
+env = { MADE_MCP_BACKEND = "embedded", MADE_MCP_REDB_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.redb" }
+```
+
+**Want the `design-ceremony` and `run-ceremony` skills too** — install the
+[MADE plugin](plugins/made/README.md) from a GitHub Release package. Its
+launcher picks the state path for you and imports a pre-rename Choreographer
+store on first start. The archive carries the `made-mcp` binary in `bin/`,
+which is what the launcher executes; a checkout does not.
+
+Read [capability truth](#verify-capabilities-before-making-claims) before you
+build on what the embedded surface reports.
+
+### Cluster edition — a deployed service
+
+The full `underpass.made.v1` gRPC contract, optional NATS messaging and
+Postgres persistence, provider-backed agents, the LLM judge, Prometheus metrics
+and OTLP traces. Helm chart with pinned images and hardened manifests.
+
+```sh
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage just run
+# gRPC on localhost:50055, in-memory persistence, one exercisable council
+```
+
+Deploy guide:
+[docs/operations/deploy-kubernetes.md](docs/operations/deploy-kubernetes.md).
 
 ## What it does
 
@@ -68,7 +134,7 @@ Three planes, three repos:
 
 | Plane | Repo | Brand name | Role |
 |---|---|---|---|
-| Memory + context | [`rehydration-kernel`](https://github.com/underpass-ai/rehydration-kernel) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | One possible producer of LLM-ready context bundles from a typed knowledge graph. |
+| Memory + context | [`kmp`](https://github.com/underpass-ai/kmp) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | One possible producer of LLM-ready context bundles from a typed knowledge graph. |
 | Coordination | this repo | **MADE by Underpass** (Multi-Agent Deliberation Engine) | Composes councils, runs deliberations, validates outputs, hands winners to an executor. |
 | Execution + governed tools | [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime) | **Underpass Runtime** | Sessions, governed tool invocations, artifacts, policy decisions. |
 
@@ -80,7 +146,7 @@ the `RuntimeExecutor` adapter. MADE does **not** embed any
 product vocabulary (no stories, plans, incidents, claims hardcoded) —
 all that is injected via configuration and proto messages.
 
-## Start here
+## Where the documentation lives
 
 - [`docs/index.md`](docs/index.md) — full navigation hub for every
   doc in this repo, grouped by audience.
@@ -122,44 +188,47 @@ all that is injected via configuration and proto messages.
 
 ## Run Locally Without External Services
 
-```sh
-MADE_NATS_ENABLED=false just run
-```
+Installation and host wiring are in
+[Start here](#start-here--pick-an-edition); this section is the developer loop
+for running the pieces from a checkout.
 
-This starts the MADE binary with in-memory persistence,
-noop messaging, and the default noop executor. It serves the gRPC API
-on `localhost:50055` without requiring NATS, Postgres, Runtime, KMP,
-PIR, or provider credentials. For an immediately exercisable local
-council, add `MADE_SEED_SPECIALTIES=triage`.
-
-If `just` is not installed:
+**The service, with nothing behind it.** In-memory persistence, noop messaging,
+the default noop executor. No NATS, Postgres, Runtime, KMP, PIR, or provider
+credentials. `MADE_SEED_SPECIALTIES=triage` makes it exercisable end to end
+immediately.
 
 ```sh
-MADE_NATS_ENABLED=false cargo run --locked -p made
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage just run
+# without just:
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage cargo run --locked -p made
 ```
 
-For MCP client wiring without a running MADE:
+**The real ceremony engine over MCP, no service.** The embedded backend
+fail-fasts without `MADE_MCP_REDB_PATH`: where ceremony state survives a
+restart is an operator decision, never a default this crate invents.
+
+```sh
+MADE_MCP_BACKEND=embedded \
+MADE_MCP_REDB_PATH="$PWD/target/ceremonies.redb" \
+  cargo run --locked -p made-mcp --no-default-features --features embedded
+```
+
+**MCP client wiring with no engine at all.** Fixture mode returns deterministic
+canned responses; it must be selected explicitly and is not a live integration
+test.
 
 ```sh
 MADE_MCP_BACKEND=fixture made-mcp
 ```
 
-That starts the stdio MCP adapter in fixture mode. See
-[`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md) for
-terminal smoke commands and live gRPC configuration.
-
-To execute the real ceremony engine over MCP without a service:
-
-```sh
-MADE_MCP_BACKEND=embedded \
-  cargo run --locked -p made-mcp --no-default-features --features embedded
-```
-
-To point MCP at the local MADE from a second terminal:
+**MCP against the local service** from a second terminal:
 
 ```sh
 MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 ```
+
+Backend matrix and TLS configuration:
+[`docs/operations/mcp-stdio.md`](docs/operations/mcp-stdio.md).
 
 ## Workspace
 
@@ -181,7 +250,7 @@ MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 This project follows the same discipline as its siblings
 [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime) and
-[`rehydration-kernel`](https://github.com/underpass-ai/rehydration-kernel):
+[`kmp`](https://github.com/underpass-ai/kmp):
 
 - **Honest documentation.** No marketing claims in code, docs, or commit
   messages. If a capability is not implemented and exercised, it is not
