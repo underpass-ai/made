@@ -6,6 +6,18 @@ database.
 
 ## Installation
 
+**Claude Code** — from the Underpass marketplace, which carries both plugins:
+
+```text
+/plugin marketplace add underpass-ai/plugins
+/plugin install made@underpass
+```
+
+That brings the skills, the commands and the launcher, but not the binary:
+`bin/made-mcp` is gitignored and exists only in a release package. The
+launcher falls back to `made-mcp` on `PATH`, so `cargo install made-mcp` is
+enough to complete the install.
+
 The bundle installs into both certified hosts:
 
 - **Codex** reads `.codex-plugin/plugin.json` and starts the MCP server
