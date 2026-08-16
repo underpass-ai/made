@@ -94,11 +94,43 @@ if c1 == 0 or c2 == 0:
     sys.exit("Chart.yaml: version / appVersion line missing")
 chart.write_text(text)
 
-print(f"bumped to {version}: Cargo.toml, charts/made/Chart.yaml")
+# The plugin host manifests. The packaging script stamps these when it
+# builds a release bundle, but a host can also install straight from this
+# repository, so whatever is committed here is the version those users
+# see. Left behind, it pins them at the first release forever: a plugin
+# update reports "already at the latest version" no matter what ships,
+# because the number never moves.
+manifests = [
+    pathlib.Path("plugins/made/.claude-plugin/plugin.json"),
+    pathlib.Path("plugins/made/.codex-plugin/plugin.json"),
+]
+for manifest in manifests:
+    text = manifest.read_text()
+    text, c = re.subn(
+        r'(^  "version": )"[^"]+"',
+        rf'\1"{version}"',
+        text,
+        count=1,
+        flags=re.MULTILINE,
+    )
+    if c == 0:
+        sys.exit(f"{manifest}: no version line matched")
+    manifest.write_text(text)
+
+print(
+    f"bumped to {version}: Cargo.toml, charts/made/Chart.yaml, "
+    f"{len(manifests)} plugin manifests"
+)
 PY
 
     # Surface what changed — caller reviews before committing.
-    git --no-pager diff -- Cargo.toml charts/made/Chart.yaml
+    # Cargo.lock records the workspace members' own versions. Without this
+    # the very next `cargo test --locked` — which is what CI runs — fails
+    # with "cannot update the lock file because --locked was passed".
+    cargo metadata --format-version 1 >/dev/null
+
+    git --no-pager diff --stat -- Cargo.toml Cargo.lock charts/made/Chart.yaml \
+        plugins/made/.claude-plugin/plugin.json plugins/made/.codex-plugin/plugin.json
 }
 
 cmd_release() {
