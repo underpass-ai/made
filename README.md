@@ -63,11 +63,18 @@ env = { MADE_MCP_BACKEND = "embedded", MADE_MCP_REDB_PATH = "/home/YOU/.local/st
 ```
 
 **Want the `design-ceremony` and `run-ceremony` skills too** — install the
-[MADE plugin](plugins/made/README.md). Its launcher picks the state path for
-you and imports a pre-rename Choreographer store on first start, so none of the
-environment above is needed. It runs `bin/made-mcp` from a release package when
-there is one, and otherwise falls back to the `made-mcp` you installed on
-`PATH`.
+[MADE plugin](plugins/made/README.md). In Claude Code that is one line:
+
+```text
+/plugin marketplace add underpass-ai/plugins
+/plugin install made@underpass
+```
+
+Its launcher picks the state path for you and imports a pre-rename
+Choreographer store on first start, so none of the environment above is
+needed. It runs `bin/made-mcp` from a release package when there is one, and
+otherwise falls back to the `made-mcp` you installed on `PATH`. The same
+marketplace also carries the sibling `kmp@underpass`.
 
 Read [capability truth](#verify-capabilities-before-making-claims) before you
 build on what the embedded surface reports.
