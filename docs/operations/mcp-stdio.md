@@ -501,6 +501,21 @@ launcher pick `ceremonies.sqlite3` beside the default, and a converted store
 already sitting there is opened without asking. With both files present the
 launcher keeps the redb default rather than choosing for you.
 
+One thing the plugin does need to be told. A release bundle ships its own
+`bin/made-mcp`, built without the sqlite engine — that is what keeps the
+default install free of a C toolchain — and the launcher prefers it over
+anything on `PATH`. So an operator who built the engine has to say which
+binary to run:
+
+```bash
+MADE_MCP_BIN="$HOME/.cargo/bin/made-mcp" MADE_MCP_ENGINE=sqlite  # in both hosts' registrations
+```
+
+It selects the executable and nothing else; the state path, the engine and the
+legacy import still apply. Installing the plugin straight from the repository
+has no `bin/`, so there the `PATH` binary is used already and this is not
+needed.
+
 **A store is opened by the engine that wrote it, always.** Both formats
 announce themselves in their first bytes, so there is no marker file to keep
 in sync and no way to open a store with the wrong engine: `MADE_MCP_ENGINE`
@@ -635,6 +650,7 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 | `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
 | `MADE_MCP_REDB_PATH`           | state file the embedded backend opens. Required when `BACKEND=embedded`. |
 | `MADE_MCP_ENGINE`              | engine for a **new** store: `redb` (default) or `sqlite`. An existing store always opens on whatever wrote it. |
+| `MADE_MCP_BIN`                 | plugin launchers only: the executable to run, overriding the bundled binary. Needed to reach a `--features sqlite` build from a release bundle. |
 | `MADE_MCP_LEGACY_REDB_PATH`    | Optional read-only Choreographer source imported once into a new `MADE_MCP_REDB_PATH`. |
 | `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |

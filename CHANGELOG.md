@@ -51,6 +51,13 @@ operator command.
   set — otherwise a shared store was out of reach of the documented install,
   since each host would have needed an explicit path.
 
+- `MADE_MCP_BIN` lets the plugin launchers run an operator's own binary. The
+  release bundle is built without the sqlite engine — which is what keeps the
+  default install free of a C toolchain — and the launcher prefers the bundled
+  binary over `PATH`, so `cargo install made-mcp --features sqlite` was
+  unreachable through the plugin. The variable selects the executable and
+  nothing else.
+
 ## 0.1.4 - 2026-08-16
 
 ### Fixed

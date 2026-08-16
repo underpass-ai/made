@@ -61,7 +61,10 @@ covers the `sqlite` engine that lifts that, and the conversion for a store
 that already exists. The launcher follows it: `MADE_MCP_ENGINE=sqlite` picks
 `ceremonies.sqlite3` beside the default, and a converted store already sitting
 there is opened without any path being set — so both hosts find the shared
-store on their own. Durable is not the same as authorized, and not the same as fully
+store on their own. A release bundle ships its own binary built without that
+engine, so point the launcher at the one you built with
+`MADE_MCP_BIN=$HOME/.cargo/bin/made-mcp`; it selects the executable only, and
+an install straight from the repository already uses `PATH`. Durable is not the same as authorized, and not the same as fully
 recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
 terminal step from that default proves ceremony protocol and state-machine
 behavior, not that an agent, tool, API, or human performed the requested work.
