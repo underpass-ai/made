@@ -91,6 +91,9 @@ jobs:
         with:
           toolchain: 1.97.1
           components: clippy
+      # The gate runs the whole adapter suite, which builds made-proto.
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
       # The opt-in SQLite engine: every store contract on it, plus the
       # two-processes-one-store scenario it exists for. The default jobs
       # above prove it did not leak into the default build.
