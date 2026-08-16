@@ -7,11 +7,24 @@ setlocal
 set "PLUGIN_ROOT=%~dp0.."
 set "BINARY=%PLUGIN_ROOT%\bin\made-mcp.exe"
 
+rem The release bundle ships bin\made-mcp.exe and keeps priority. An install
+rem straight from the repository has no bin\ — that path is gitignored — so
+rem fall back to an installed made-mcp on PATH rather than failing to start.
 if not exist "%BINARY%" (
-  echo MADE plugin: missing executable %BINARY% 1>&2
-  echo MADE plugin: build the local plugin bundle before installing it 1>&2
-  exit /b 127
+  for %%I in (made-mcp.exe) do set "BINARY=%%~$PATH:I"
 )
+
+if not defined BINARY goto :nobinary
+if not exist "%BINARY%" goto :nobinary
+goto :haveBinary
+
+:nobinary
+echo MADE plugin: no made-mcp executable found. 1>&2
+echo MADE plugin: looked for %PLUGIN_ROOT%\bin\made-mcp.exe and made-mcp on PATH. 1>&2
+echo MADE plugin: install one with "cargo install made-mcp", or install the plugin from a release package. 1>&2
+exit /b 127
+
+:haveBinary
 
 set "MADE_MCP_BACKEND=embedded"
 

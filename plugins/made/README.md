@@ -57,7 +57,11 @@ present. Establish execution ownership and durability separately. The
 defines the required checks and wording for agents and documentation.
 
 The repository packaging script places the isolated embedded binary at
-`bin/made-mcp`. Codex starts it through `scripts/run-embedded-mcp.sh`.
+`bin/made-mcp`, and the launcher prefers it — a release bundle pins the binary
+that plugin version was tested against. When `bin/` is absent, as it is in an
+install straight from the repository, the launcher falls back to `made-mcp` on
+`PATH`, so `cargo install made-mcp` is enough. If neither is present it fails
+with an explicit message naming both places it looked.
 
 On a first start with no MADE state file, the launcher imports the former
 `underpass-choreographer/ceremonies.redb` default automatically when present.
