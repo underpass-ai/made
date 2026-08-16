@@ -31,15 +31,28 @@ fn spawn(path: &Path, engine: &str, ceremony: &str) -> std::process::Child {
         .expect("the writer spawns")
 }
 
-/// Runs two writers concurrently on one store and returns how many finished.
-fn run_two_writers(path: &Path, engine: &str) -> usize {
+/// Runs two writers concurrently on one store and reports how many finished,
+/// carrying the losers' stderr with the count.
+///
+/// The stderr matters: "1 != 2" is not a diagnosis, and a concurrency test
+/// that fails without saying which call was refused sends the next reader to
+/// guess.
+fn run_two_writers(path: &Path, engine: &str) -> (usize, String) {
     let first = spawn(path, engine, "writer-a");
     let second = spawn(path, engine, "writer-b");
-    [first, second]
+    let outputs: Vec<_> = [first, second]
         .into_iter()
         .map(|child| child.wait_with_output().expect("the writer exits"))
-        .filter(|output| output.status.success())
-        .count()
+        .collect();
+
+    let finished = outputs.iter().filter(|o| o.status.success()).count();
+    let complaints = outputs
+        .iter()
+        .filter(|o| !o.status.success())
+        .map(|o| String::from_utf8_lossy(&o.stderr).trim().to_string())
+        .collect::<Vec<_>>()
+        .join("\n");
+    (finished, complaints)
 }
 
 #[tokio::test]
@@ -47,10 +60,10 @@ async fn two_processes_write_one_sqlite_store_and_nothing_is_lost() {
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("ceremonies.sqlite3");
 
-    let finished = run_two_writers(&path, "sqlite");
+    let (finished, complaints) = run_two_writers(&path, "sqlite");
     assert_eq!(
         finished, 2,
-        "both writers must finish on the sqlite engine; that is what it is for"
+        "both writers must finish on the sqlite engine; that is what it is for.\n{complaints}"
     );
 
     let store = RedbCeremonyStore::open_sqlite(&path).expect("the store reopens");
@@ -87,10 +100,10 @@ async fn on_redb_the_second_process_is_refused_and_the_first_loses_nothing() {
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("ceremonies.redb");
 
-    let finished = run_two_writers(&path, "redb");
+    let (finished, complaints) = run_two_writers(&path, "redb");
     assert_eq!(
         finished, 1,
-        "redb is single-process: exactly one writer holds the store"
+        "redb is single-process: exactly one writer holds the store.\n{complaints}"
     );
 
     // The one that got in must have lost nothing to the one that did not.

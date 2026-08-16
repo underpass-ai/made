@@ -103,20 +103,50 @@ impl Engine for SqliteEngine {
 
 fn open_connection(path: &Path) -> Result<Connection, DomainError> {
     let connection = Connection::open(path).map_err(|error| failure(&error, "open database"))?;
-    // busy_timeout FIRST. Switching the journal mode takes a brief exclusive
-    // lock, so two processes opening at the same instant collide there —
-    // before WAL is even in effect. Without the timeout already armed, the
-    // loser gets SQLITE_BUSY instead of waiting a few milliseconds.
+    // busy_timeout first, so every ordinary lock contention becomes a wait.
     connection
         .busy_timeout(BUSY_TIMEOUT)
         .map_err(|error| failure(&error, "set busy timeout"))?;
-    connection
-        .pragma_update(None, "journal_mode", "WAL")
-        .map_err(|error| failure(&error, "set journal mode"))?;
+    enter_wal(&connection)?;
     connection
         .pragma_update(None, "synchronous", "FULL")
         .map_err(|error| failure(&error, "set synchronous"))?;
     Ok(connection)
+}
+
+/// Puts the connection in WAL mode, waiting out the one case `busy_timeout`
+/// does not cover.
+///
+/// SQLite will not move a database into or out of WAL while another
+/// connection has it open: that conversion takes an exclusive lock, and the
+/// busy handler is not consulted for it. So two processes opening a *fresh*
+/// store at the same instant both try to convert, and the loser gets
+/// SQLITE_BUSY immediately however long its timeout is.
+///
+/// The wait is all that is needed, because the winner's conversion is what
+/// resolves it: once the file is in WAL, this pragma is a no-op that takes no
+/// exclusive lock, so the retry succeeds the moment the other side finishes.
+/// After the first open of a store's life the loop never runs twice.
+fn enter_wal(connection: &Connection) -> Result<(), DomainError> {
+    let deadline = std::time::Instant::now() + BUSY_TIMEOUT;
+    let mut backoff = Duration::from_millis(2);
+    loop {
+        match connection.pragma_update(None, "journal_mode", "WAL") {
+            Ok(()) => return Ok(()),
+            Err(error) if is_busy(&error) && std::time::Instant::now() < deadline => {
+                std::thread::sleep(backoff);
+                backoff = (backoff * 2).min(Duration::from_millis(64));
+            }
+            Err(error) => return Err(failure(&error, "set journal mode")),
+        }
+    }
+}
+
+fn is_busy(error: &rusqlite::Error) -> bool {
+    matches!(
+        error.sqlite_error_code(),
+        Some(rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked)
+    )
 }
 
 fn create_tables(connection: &Connection) -> Result<(), DomainError> {
