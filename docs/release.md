@@ -41,8 +41,16 @@ mirrors the CI gate.
 5. **End-to-end** (skipped on per-PR CI, run here):
    ```bash
    make e2e-compose         # full stack
+
+   # e2e-kubernetes loads images into a cluster; it does not create one.
+   kind create cluster --name made-e2e --wait 120s
    make e2e-kubernetes      # kubernetes + chart + runner
+   kind delete cluster --name made-e2e
    ```
+
+   Needs `kind`, `kubectl` and `helm` on PATH. On a machine that has never
+   talked to a cluster this is the whole prerequisite list; there is no
+   other hidden state.
 
    For an existing cluster, mirror the sibling-repo pattern:
    authenticate to `ghcr.io`, ensure an `imagePullSecrets` named
