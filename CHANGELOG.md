@@ -14,7 +14,27 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- Two agent hosts can share one ceremony store. The default engine takes one
+  process at a time, so an operator running Claude Code and Codex CLI at once
+  — both pointed at the same default path by their own plugin registration —
+  got no ceremony tools in whichever started second. The opt-in `sqlite`
+  feature builds a WAL-mode engine that admits both. `MADE_MCP_ENGINE` picks
+  the engine for a new store; an existing store is always opened by the engine
+  that wrote it, detected from the file's first bytes. Gated by
+  `scripts/ci/embedded-sqlite-gates.sh`, which runs every store contract on
+  the new engine and proves two OS processes write one store without losing a
+  record. The default build is unchanged and still carries no C engine.
+  (ADR-009)
+
+- `made-mcp convert <source> <destination> --engine redb|sqlite` moves an
+  existing store between engines, so the feature above reaches a store that
+  already has ceremonies in it. Following ADR-008: source read only,
+  destination created rather than overwritten, a receipt of what moved. The
+  copy moves rows table by table rather than replaying the audit journal — a
+  ceremony store is state plus a journal of what happened to it, not a log
+  with derived projections.
 
 ## 0.1.4 - 2026-08-16
 
