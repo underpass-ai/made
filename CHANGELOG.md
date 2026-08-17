@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.1.6 - 2026-08-17
+
 ### Added
 
 - `made-mcp share-store [path]` converts a ceremony store to the shared sqlite
