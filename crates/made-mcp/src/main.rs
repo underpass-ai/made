@@ -25,7 +25,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // stdio, and stays that way.
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(command) = args.first() {
-        let code = run_cli_command(command, &args[1..]);
+        let code = run_cli_command(command, &args[1..]).await;
         std::process::exit(code);
     }
 
@@ -96,12 +96,16 @@ fn init_tracing() {
 /// Converting rather than migrating: a ceremony store is state plus an audit
 /// journal, so the copy moves rows, and replaying the journal would rebuild
 /// the facts while losing what they are evidence of.
-fn run_cli_command(command: &str, args: &[String]) -> i32 {
+// `share-store` awaits the store it verifies, and that arm only exists in an
+// embedded build — so without it this function has nothing to await. It stays
+// async either way rather than forking the dispatch on a cargo feature.
+#[cfg_attr(not(feature = "embedded"), allow(clippy::unused_async))]
+async fn run_cli_command(command: &str, args: &[String]) -> i32 {
     match command {
         #[cfg(feature = "embedded")]
         "convert" => run_convert_command(args),
         #[cfg(feature = "embedded")]
-        "share-store" => run_share_store_command(args),
+        "share-store" => run_share_store_command(args).await,
         // The command exists; this build has no store for it to act on.
         // "unknown command" would send an operator looking for a typo.
         #[cfg(not(feature = "embedded"))]
@@ -219,7 +223,7 @@ fn share_store_target(args: &[String]) -> Result<Option<std::path::PathBuf>, i32
 ///
 /// Nothing is deleted: the original is kept beside the new one.
 #[cfg(feature = "embedded")]
-fn run_share_store_command(args: &[String]) -> i32 {
+async fn run_share_store_command(args: &[String]) -> i32 {
     use made_adapters::redb::RedbCeremonyStore;
     use made_adapters::StorageEngine;
     use std::path::PathBuf;
@@ -289,7 +293,7 @@ fn run_share_store_command(args: &[String]) -> i32 {
 
     // Verify before swapping, not after. A conversion that reports success
     // and drops ceremonies would otherwise be found by an operator, later.
-    match verify_same_ceremonies(&snapshot, &converted) {
+    match verify_same_ceremonies(&snapshot, &converted).await {
         Ok(count) => println!("verified: {count} ceremonies on both engines"),
         Err(error) => {
             let _ = std::fs::remove_file(&snapshot);
@@ -376,22 +380,24 @@ fn sibling(store: &std::path::Path, suffix: &str) -> std::path::PathBuf {
 
 /// Both stores must hold the same ceremonies.
 #[cfg(feature = "embedded")]
-fn verify_same_ceremonies(
+async fn verify_same_ceremonies(
     original: &std::path::Path,
     converted: &std::path::Path,
 ) -> Result<usize, String> {
-    use made_adapters::redb::RedbCeremonyStore;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
+    async fn count(path: &std::path::Path) -> Result<usize, String> {
+        use made_adapters::redb::RedbCeremonyStore;
+        use made_core::ports::CeremonyInstanceRepositoryPort;
 
-    let count = |path: &std::path::Path| -> Result<usize, String> {
         let store = RedbCeremonyStore::open(path)
             .map_err(|error| format!("could not open `{}`: {error}", path.display()))?;
-        futures::executor::block_on(store.list())
+        store
+            .list()
+            .await
             .map(|instances| instances.len())
             .map_err(|error| format!("could not list `{}`: {error}", path.display()))
-    };
-    let before = count(original)?;
-    let after = count(converted)?;
+    }
+    let before = count(original).await?;
+    let after = count(converted).await?;
     if before != after {
         return Err(format!(
             "original holds {before} ceremonies, converted holds {after}"
