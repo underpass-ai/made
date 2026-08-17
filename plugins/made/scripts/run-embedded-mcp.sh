@@ -41,6 +41,25 @@ fi
 
 export MADE_MCP_BACKEND=embedded
 
+# The binary and the plugin update through different commands — `cargo
+# install --force` and `/plugin update` — and neither knows about the other.
+# A stale plugin with a fresh binary keeps working by luck, because this
+# launcher falls back to PATH, so the engine updates silently while the
+# launcher and skills stay old. Say it once, on stderr, where a host shows
+# server output; never fail on it, since the mismatch is usually harmless.
+PLUGIN_MANIFEST="${PLUGIN_ROOT}/.claude-plugin/plugin.json"
+if [[ -f "${PLUGIN_MANIFEST}" ]] && command -v python3 >/dev/null 2>&1; then
+  PLUGIN_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' \
+    "${PLUGIN_MANIFEST}" 2>/dev/null)"
+  BINARY_VERSION="$("${BINARY}" --version 2>/dev/null | sed -E 's/^made-mcp ([^ ]+).*/\1/')"
+  if [[ -n "${PLUGIN_VERSION}" && -n "${BINARY_VERSION}" && "${PLUGIN_VERSION}" != "${BINARY_VERSION}" ]]; then
+    echo "MADE plugin: plugin files are ${PLUGIN_VERSION}, binary is ${BINARY_VERSION}." >&2
+    echo "MADE plugin: they update separately — 'cargo install made-mcp --force' and" >&2
+    echo "MADE plugin: '/plugin update made@underpass' — and fixes that live in this" >&2
+    echo "MADE plugin: launcher or the skills come with the plugin, not the binary." >&2
+  fi
+fi
+
 # The embedded backend refuses to start without a state file: where
 # ceremonies survive a restart is an operator decision. A plugin has no
 # operator to ask, so it picks the conventional per-user state directory
@@ -60,9 +79,20 @@ if [[ -z "${MADE_MCP_REDB_PATH:-}" ]]; then
   # default stays redb — that ambiguity is the operator's to resolve, not
   # something to guess behind their back.
   SQLITE_DEFAULT="${MADE_STATE_ROOT}/ceremonies.sqlite3"
+  if [[ -f "${SQLITE_DEFAULT}" && -e "${MADE_MCP_REDB_PATH}" ]]; then
+    # Two stores, and picking one silently means writing ceremonies into a
+    # file the operator is not reading. `share-store` leaves exactly one; if
+    # both are here, something else put them here and only a human knows
+    # which is live.
+    echo "MADE plugin: two ceremony stores are present and only one can be live:" >&2
+    echo "MADE plugin:   ${MADE_MCP_REDB_PATH}" >&2
+    echo "MADE plugin:   ${SQLITE_DEFAULT}" >&2
+    echo "MADE plugin: move the stale one aside, or name the live one in MADE_MCP_REDB_PATH." >&2
+    exit 2
+  fi
   if [[ "${MADE_MCP_ENGINE:-}" == "sqlite" ]]; then
     export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
-  elif [[ -f "${SQLITE_DEFAULT}" && ! -e "${MADE_MCP_REDB_PATH}" ]]; then
+  elif [[ -f "${SQLITE_DEFAULT}" ]]; then
     export MADE_MCP_REDB_PATH="${SQLITE_DEFAULT}"
   fi
 
