@@ -489,6 +489,29 @@ crate the flag does not exist, so pin at least that version, or build the
 binary from a checkout (`cargo build --release -p made-mcp --features sqlite`).
 
 ```bash
+# the short way, once you have a binary with the engine:
+cargo install made-mcp --features sqlite
+made-mcp share-store            # snapshots, converts, verifies, installs, keeps the original
+# then restart both hosts
+```
+
+`share-store` exists because doing it with `convert` by hand means knowing
+three things nobody wrote down: the live store is locked by the session
+asking for the conversion, so it has to be snapshotted first; nothing checks
+that the converted store still holds every ceremony; and getting the swap
+order wrong leaves two live stores or none. It refuses rather than guesses —
+no engine in the binary, leftover working files, a store already on sqlite, a
+verification that does not match — and it never deletes: the original is kept
+beside the new one as `<name>.redb-before-share`.
+
+It also names the result by its engine. A SQLite store living at
+`ceremonies.redb` works, since the engine is read from the file's first bytes
+and never from its name, but anyone who lists that directory will conclude the
+conversion failed.
+
+The long way, when you want each step in your own hands:
+
+```bash
 # a binary that carries the engine
 cargo install made-mcp --features sqlite
 

@@ -64,4 +64,28 @@ echo "${RECEIPT}" | grep -q '"ceremonies":1' \
   && { echo "sqlite-gates: convert overwrote an occupied destination" >&2; exit 1; }
 echo "  rerun into an occupied destination refused"
 
+# `share-store` is the command that exists so nobody repeats the manual
+# sequence. It earns its place only if it verifies, refuses and keeps the
+# original, so drive all three rather than the happy path alone.
+echo "sqlite-gates: share-store converts, verifies, names by engine and keeps the original"
+SHARE_DIR="$(mktemp -d)"
+trap 'rm -rf "${INSTALL_ROOT}" "${CONVERT_DIR}" "${SHARE_DIR}"' EXIT
+"${TARGET_DIR}/debug/store_writer" "${SHARE_DIR}/ceremonies.redb" redb share-gate 3 >/dev/null
+
+OUTPUT="$("${INSTALL_ROOT}/bin/made-mcp" share-store "${SHARE_DIR}/ceremonies.redb")"
+echo "${OUTPUT}" | sed 's/^/    /'
+echo "${OUTPUT}" | grep -q "verified:" \
+  || { echo "sqlite-gates: share-store installed without verifying" >&2; exit 1; }
+head -c 15 "${SHARE_DIR}/ceremonies.sqlite3" | grep -q "SQLite format 3" \
+  || { echo "sqlite-gates: the converted store is not named by its engine" >&2; exit 1; }
+[ -f "${SHARE_DIR}/ceremonies.redb.redb-before-share" ] \
+  || { echo "sqlite-gates: share-store did not keep the original" >&2; exit 1; }
+[ -f "${SHARE_DIR}/ceremonies.redb" ] \
+  && { echo "sqlite-gates: two live stores were left behind" >&2; exit 1; }
+
+"${INSTALL_ROOT}/bin/made-mcp" share-store "${SHARE_DIR}/ceremonies.sqlite3" \
+  | grep -q "already shareable" \
+  || { echo "sqlite-gates: share-store is not idempotent" >&2; exit 1; }
+echo "    rerun: already shareable"
+
 echo "sqlite-gates: passed"

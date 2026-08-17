@@ -14,7 +14,36 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- `made-mcp share-store [path]` converts a ceremony store to the shared sqlite
+  engine in one command, with the three things the manual sequence required
+  you to know already handled: it snapshots first (the live store is locked by
+  the session asking), it verifies that the converted store holds the same
+  ceremonies **before** installing it, and it keeps the original beside the new
+  one as `<name>.redb-before-share`. Nothing is ever deleted, and a store
+  already on sqlite is a no-op that says so. (#22)
+
+- `made-mcp --version` reports which engines the build carries — `made-mcp
+  0.1.5 (engines: redb, sqlite)`. Whether a binary has the sqlite engine
+  decides whether two hosts can share a store, and it used to take a failed
+  store open to find out. (#23)
+
+### Changed
+
+- A converted store is named for its engine. A SQLite store at
+  `ceremonies.redb` works — the engine is read from the file's first bytes,
+  never from the name — but anyone listing that directory concludes the
+  conversion failed. (#22)
+
+- The plugin launcher refuses to start when both a redb and a sqlite store are
+  present at the default location, instead of silently preferring one. Picking
+  one means writing ceremonies into a file the operator is not reading. (#22)
+
+- The plugin launcher says so when its files and the binary are different
+  versions. They update through different commands and neither announced the
+  other, so a stale plugin with a fresh binary kept working by luck — the
+  engine updating silently while the launcher and skills stayed old. (#23)
 
 ## 0.1.5 - 2026-08-16
 
