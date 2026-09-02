@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.2.0 - 2026-09-02
+
 ### Added
 
 - Ceremony steps can repeat after a successful result until a top-level
