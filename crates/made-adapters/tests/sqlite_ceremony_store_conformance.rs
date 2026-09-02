@@ -249,5 +249,5 @@ async fn it_serves_both_session_ports_over_one_storage() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 3, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 4, "properties run: {passed:?}");
 }

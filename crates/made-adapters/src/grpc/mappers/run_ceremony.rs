@@ -74,6 +74,7 @@ pub fn run_ceremony_response_from(output: &RunCeremonyOutput) -> pb::RunCeremony
                     .and_then(|value| value.as_str())
                     .unwrap_or_default()
                     .to_owned(),
+                iteration: trace.iteration().get(),
             })
             .collect(),
         mermaid_sequence: CeremonyConversationDiagram::render(definition),
@@ -218,6 +219,8 @@ roles:
         assert_eq!(response.final_state, "DONE");
         assert_eq!(response.steps.len(), 1);
         assert_eq!(response.steps[0].status, "COMPLETED");
+        assert_eq!(response.steps[0].iteration, 1);
+        assert_eq!(response.steps[0].attempt, 1);
         assert_eq!(response.steps[0].output, "the agreed build plan");
         assert!(response.mermaid_sequence.contains("sequenceDiagram"));
     }

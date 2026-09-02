@@ -98,9 +98,17 @@ impl RunCeremonyStepUseCase {
             lease,
             now,
         )?;
+        let iteration = session
+            .instance
+            .step_record(&input.step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_step",
+            })?
+            .iteration();
         let started = session_facts::step_started(
             &session.instance,
             &input.step_id,
+            iteration,
             attempt,
             &input.role_id,
             input.role_kind,
@@ -140,6 +148,7 @@ impl RunCeremonyStepUseCase {
         let finished = session_facts::step_finished(
             &session.instance,
             &input.step_id,
+            iteration,
             attempt,
             &result,
             &input.role_id,
@@ -179,21 +188,34 @@ impl RunCeremonyStepUseCase {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use made_core::error::DomainError;
     use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
-        AuditActorKind, AuditEventType, StepAttempt, StepErrorMessage, StepOutput, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, StepAttempt, StepErrorMessage, StepOutput,
+        StepStatus,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, definition_resolver, idempotency_key,
-        journal, journal_over, lease_owner, lease_ttl, now, resolver_with, role_id,
-        started_instance, step_id, ContextStoreFake, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake, PublicationsFake, StepHandlerFake,
+        journal, journal_over, lease_owner, lease_ttl, now, repeating_approval_definition,
+        resolver_with, role_id, started_instance, step_id, ContextStoreFake,
+        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake, PublicationsFake,
+        SequenceStepHandlerFake, StepHandlerFake,
     };
+
+    fn readiness_output(ready: bool) -> StepOutput {
+        StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "ready".to_owned(),
+                serde_json::json!(ready),
+            )]))
+            .unwrap(),
+        )
+    }
 
     /// The regression this whole change exists for. Publishing writes
     /// to the catalogue and nowhere else, so a session bound to a
@@ -302,6 +324,73 @@ mod tests {
                 .status(),
             StepStatus::Completed
         );
+    }
+
+    #[tokio::test]
+    async fn incremental_execution_exposes_same_step_as_next_iteration() {
+        let definition = repeating_approval_definition(3);
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let handler = Arc::new(SequenceStepHandlerFake::new([
+            StepResult::completed(readiness_output(false)).unwrap(),
+            StepResult::completed(readiness_output(true)).unwrap(),
+        ]));
+        let usecase = RunCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            journal(instances),
+            handler,
+            Arc::new(FixedClock::new(now())),
+        )
+        .with_transcript_store(Arc::new(ContextStoreFake::default()));
+
+        let first = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                lease_owner(),
+                idempotency_key("repeat-run-1"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+        let first_view =
+            crate::usecases::CeremonyInstanceView::project(first.instance(), &definition).unwrap();
+        assert_eq!(first_view.next_step_id(), Some(&step_id()));
+        assert!(first_view.waiting_for_human().is_empty());
+        assert_eq!(
+            first
+                .instance()
+                .step_record(&step_id())
+                .unwrap()
+                .iteration()
+                .get(),
+            2
+        );
+
+        let second = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                lease_owner(),
+                idempotency_key("repeat-run-2"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+        let second_view =
+            crate::usecases::CeremonyInstanceView::project(second.instance(), &definition).unwrap();
+        assert_eq!(second_view.next_step_id(), None);
+        assert!(second_view.steps()[0].repeat_condition_satisfied());
+        assert!(!second_view.steps()[0].repeat_limit_reached());
+        assert_eq!(second_view.waiting_for_human().len(), 1);
     }
 
     #[tokio::test]

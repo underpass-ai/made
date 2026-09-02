@@ -21,20 +21,26 @@ short operational guidance without replacing this design policy.
    external mutation.
 4. Use `review_rounds` only with `num_agents >= 2`. Keep one agent for a stage
    that needs no peer exchange.
-5. Add `final_approval` when completion depends on a person's explicit
+5. Use `repeat` only when the same stage must run again after a successful
+   result until a structured stop condition is true. Always provide
+   `max_iterations` (1–1000), `output_field`, and `equals`. The field is a
+   top-level step-output field and equality is exact JSON equality. Repetition
+   is not a retry: a retry re-attempts failed work; a repeat consumes the
+   successful output as prior context and starts a new semantic iteration.
+6. Add `final_approval` when completion depends on a person's explicit
    decision. This creates a human guard; it does not approve it.
-6. Call `made_design_ceremony`. Treat its `definition_yaml` as a draft even
+7. Call `made_design_ceremony`. Treat its `definition_yaml` as a draft even
    when `publishable` is true. The tool neither publishes nor starts anything.
-7. Read the returned design and analysis back to the user. Check that stage
+8. Read the returned design and analysis back to the user. Check that stage
    ownership, sequence, instructions, outputs and approval boundary match their
    intent. Use `made_explain_ceremony_draft` when a prose explanation helps.
-8. Revise by calling `made_design_ceremony` again with changed intent. Use
+9. Revise by calling `made_design_ceremony` again with changed intent. Use
    `made_diff_ceremony_definitions` when comparing an existing draft or
    published definition.
-9. Call `made_publish_ceremony_definition` only after the user explicitly
+10. Call `made_publish_ceremony_definition` only after the user explicitly
    asks to publish the exact reviewed YAML. Publication is immutable by name
    and version; changed content requires a new version.
-10. Start the published ceremony only when the user asks to run it. Follow the
+11. Start the published ceremony only when the user asks to run it. Follow the
     incremental flow in `run-ceremony` whenever a human guard exists.
 
 The design tool currently produces linear ceremonies. If the request requires

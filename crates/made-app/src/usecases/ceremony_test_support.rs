@@ -1,4 +1,4 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, VecDeque};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -18,9 +18,11 @@ use made_core::value_objects::{
     CeremonyState, CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
     CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
     MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite,
-    RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
-    StepId, StepResult, StepStatus, TransitionTrigger,
+    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig,
+    StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult,
+    StepStatus, TransitionTrigger,
 };
+use serde_json::json;
 use time::macros::datetime;
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -200,6 +202,42 @@ impl CeremonyStepHandlerPort for StepHandlerFake {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct SequenceStepHandlerFake {
+    results: RwLock<VecDeque<StepResult>>,
+    requests: RwLock<Vec<CeremonyStepHandlerRequest>>,
+}
+
+impl SequenceStepHandlerFake {
+    pub(super) fn new(results: impl IntoIterator<Item = StepResult>) -> Self {
+        Self {
+            results: RwLock::new(results.into_iter().collect()),
+            requests: RwLock::new(Vec::new()),
+        }
+    }
+
+    pub(super) async fn requests(&self) -> Vec<CeremonyStepHandlerRequest> {
+        self.requests.read().await.clone()
+    }
+}
+
+#[async_trait]
+impl CeremonyStepHandlerPort for SequenceStepHandlerFake {
+    async fn execute(
+        &self,
+        request: CeremonyStepHandlerRequest,
+    ) -> Result<StepResult, DomainError> {
+        self.requests.write().await.push(request);
+        self.results
+            .write()
+            .await
+            .pop_front()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "sequence step handler exhausted",
+            })
+    }
+}
+
 #[derive(Debug, Default)]
 pub(super) struct ContextStoreFake {
     inner: RwLock<BTreeMap<CeremonyId, Vec<CeremonyStepContribution>>>,
@@ -293,6 +331,83 @@ pub(super) fn definition() -> CeremonyDefinition {
         RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
         None,
     );
+    definition_with_step(step)
+}
+
+pub(super) fn repeating_definition(max_iterations: u32) -> CeremonyDefinition {
+    let step = CeremonyStep::new(
+        step_id(),
+        StateId::new("COLLECTING_VOICES").unwrap(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+        None,
+    )
+    .with_repeat_policy(StepRepeatPolicy::new(
+        RepeatUntilCondition::output_field_equals(
+            StepOutputField::new("ready").unwrap(),
+            json!(true),
+        ),
+        StepIteration::new(max_iterations).unwrap(),
+    ));
+    definition_with_step(step)
+}
+
+pub(super) fn repeating_approval_definition(max_iterations: u32) -> CeremonyDefinition {
+    let step = CeremonyStep::new(
+        step_id(),
+        StateId::new("COLLECTING_VOICES").unwrap(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+        None,
+    )
+    .with_repeat_policy(StepRepeatPolicy::new(
+        RepeatUntilCondition::output_field_equals(
+            StepOutputField::new("ready").unwrap(),
+            json!(true),
+        ),
+        StepIteration::new(max_iterations).unwrap(),
+    ));
+    let guard = CeremonyGuard::new(
+        GuardName::new("human_approved").unwrap(),
+        GuardCondition::HumanApproval,
+    );
+    let transition = CeremonyTransition::new(
+        StateId::new("COLLECTING_VOICES").unwrap(),
+        StateId::new("COMPLETED").unwrap(),
+        trigger(),
+        vec![guard.name().clone()],
+    )
+    .unwrap();
+    let role = CeremonyRole::new(
+        role_id(),
+        vec![
+            RoleAction::step(step.id().clone()),
+            RoleAction::transition(transition.trigger().clone()),
+        ],
+    )
+    .unwrap();
+
+    CeremonyDefinition::new(
+        CeremonyName::new("repeating_approval_ceremony").unwrap(),
+        version(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(StateId::new("COLLECTING_VOICES").unwrap()),
+            CeremonyState::terminal(StateId::new("COMPLETED").unwrap()),
+        ],
+        vec![transition],
+        vec![step],
+        vec![guard],
+        vec![role],
+    )
+    .unwrap()
+}
+
+fn definition_with_step(step: CeremonyStep) -> CeremonyDefinition {
     let guard = CeremonyGuard::new(
         GuardName::new("roundtable_completed").unwrap(),
         GuardCondition::StepStatus {

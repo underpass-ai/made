@@ -12,6 +12,7 @@ mod ceremony_transition_document;
 mod file_system_ceremony_definition_source;
 mod retry_policies_document;
 mod retry_policy_document;
+mod step_repeat_policy_document;
 
 pub use ceremony_definition_yaml::CeremonyDefinitionYaml;
 pub use file_system_ceremony_definition_source::FileSystemCeremonyDefinitionSource;

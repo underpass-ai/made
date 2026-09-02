@@ -14,7 +14,13 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- Ceremony steps can repeat after a successful result until a top-level
+  structured output field equals a declared JSON value. Every repeat requires
+  a maximum iteration count; semantic iterations are persisted separately
+  from technical retry attempts, projected through gRPC/MCP, and stop with an
+  explicit repeat-limit error and outcome metric instead of spinning. (#29)
 
 ## 0.1.6 - 2026-08-17
 

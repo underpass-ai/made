@@ -3,8 +3,9 @@
 //! A ceremony driven to a stop ends in exactly one of these. Unlike a
 //! step's [`StepStatus`](super::StepStatus), this names *why the whole
 //! ceremony stopped*: it completed, a step failed, no transition could
-//! fire, the safety iteration cap was hit, or the instance already
-//! existed. Adapter-shaped aborts (persistence/transport errors) are not
+//! fire, the transition safety cap was hit, a step exhausted its semantic
+//! repeat limit, or the instance already existed. Adapter-shaped aborts
+//! (persistence/transport errors) are not
 //! outcomes — they surface as errors, not as a recorded end-state.
 
 /// How a ceremony run terminated.
@@ -20,6 +21,9 @@ pub enum CeremonyOutcome {
     /// The transition safety cap was hit without reaching a terminal
     /// state.
     IterationLimit,
+    /// A bounded semantic step repeat used every permitted iteration without
+    /// satisfying its declared stop condition.
+    RepeatLimit,
     /// An instance with the same id already existed; the run was rejected.
     AlreadyExists,
 }
@@ -34,6 +38,7 @@ impl CeremonyOutcome {
             Self::StepFailed => "step_failed",
             Self::NoTransition => "no_transition",
             Self::IterationLimit => "iteration_limit",
+            Self::RepeatLimit => "repeat_limit",
             Self::AlreadyExists => "already_exists",
         }
     }
@@ -50,6 +55,7 @@ mod tests {
             CeremonyOutcome::StepFailed,
             CeremonyOutcome::NoTransition,
             CeremonyOutcome::IterationLimit,
+            CeremonyOutcome::RepeatLimit,
             CeremonyOutcome::AlreadyExists,
         ];
         let labels: std::collections::BTreeSet<&str> =

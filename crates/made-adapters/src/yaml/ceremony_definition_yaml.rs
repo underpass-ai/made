@@ -145,6 +145,54 @@ retry_policies:
     }
 
     #[test]
+    fn parses_bounded_structured_repeat_policy() {
+        let yaml = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 4\n      until:\n        output_field: ready\n        equals: true",
+        );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let policy = definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .unwrap();
+
+        assert_eq!(policy.max_iterations().get(), 4);
+        let output = made_core::value_objects::StepOutput::new(
+            made_core::value_objects::Attributes::new(std::collections::BTreeMap::from([(
+                "ready".to_owned(),
+                serde_json::json!(true),
+            )]))
+            .unwrap(),
+        );
+        assert!(policy.is_satisfied(&output));
+    }
+
+    #[test]
+    fn rejects_zero_or_unbounded_repeat_policy() {
+        let zero = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 0\n      until:\n        output_field: ready\n        equals: true",
+        );
+        let missing_limit = MULTI_STEP.replace(
+            "      prompt: \"Deliberate on inputs\"",
+            "      prompt: \"Deliberate on inputs\"\n    repeat:\n      until:\n        output_field: ready\n        equals: true",
+        );
+
+        assert!(matches!(
+            CeremonyDefinitionYaml::parse_str(&zero),
+            Err(DomainError::MustBeNonZero {
+                field: "step_iteration"
+            })
+        ));
+        assert!(matches!(
+            CeremonyDefinitionYaml::parse_str(&missing_limit),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    #[test]
     fn human_guard_is_typed() {
         let yaml = r#"
 version: "1.0"

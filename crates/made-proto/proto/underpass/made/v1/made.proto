@@ -667,6 +667,9 @@ message CeremonyStepExecution {
   // role contributed) straight from the response. Empty for steps that
   // produce no textual output.
   string output = 6;
+  // Semantic repeat iteration. Starts at one and is independent of the
+  // technical retry attempt above.
+  uint32 iteration = 7;
 }
 
 message RunCeremonyResponse {
@@ -698,6 +701,16 @@ message CeremonyStepState {
   google.protobuf.Struct output = 5;
   // Why the step failed, when it did. Empty otherwise.
   string error = 6;
+  // Current semantic repeat iteration. One for a non-repeating step.
+  uint32 iteration = 7;
+  // True when the step has no repeat policy or its declared structured stop
+  // condition currently holds.
+  bool repeat_condition_satisfied = 8;
+  // True when the condition is still false after the last permitted
+  // iteration. The step cannot be run or transitioned past in this state.
+  bool repeat_limit_reached = 9;
+  // Zero for a non-repeating step; otherwise the declared hard cap.
+  uint32 repeat_max_iterations = 10;
 }
 
 // A guard on an outgoing transition.

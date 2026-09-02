@@ -35,6 +35,22 @@ impl<'a> CeremonyStepView<'a> {
     pub fn record(&self) -> &'a StepExecutionRecord {
         self.record
     }
+
+    #[must_use]
+    pub fn repeat_condition_satisfied(&self) -> bool {
+        self.step
+            .repeat_policy()
+            .is_none_or(|policy| policy.is_satisfied(self.record.output()))
+    }
+
+    #[must_use]
+    pub fn repeat_limit_reached(&self) -> bool {
+        self.step.repeat_policy().is_some_and(|policy| {
+            self.record.status().is_success()
+                && !policy.is_satisfied(self.record.output())
+                && !policy.permits_another_iteration(self.record.iteration())
+        })
+    }
 }
 
 /// A guard on a transition, and whether it holds right now.
@@ -69,6 +85,7 @@ impl<'a> CeremonyGuardView<'a> {
 pub struct CeremonyTransitionView<'a> {
     transition: &'a CeremonyTransition,
     enabled: bool,
+    repeat_requirements_satisfied: bool,
     guards: Vec<CeremonyGuardView<'a>>,
 }
 
@@ -93,10 +110,12 @@ impl<'a> CeremonyTransitionView<'a> {
     /// thing left is a person.
     #[must_use]
     fn waits_only_on_people(&self) -> bool {
-        self.guards
-            .iter()
-            .filter(|guard| !guard.human)
-            .all(CeremonyGuardView::is_satisfied)
+        self.repeat_requirements_satisfied
+            && self
+                .guards
+                .iter()
+                .filter(|guard| !guard.human)
+                .all(CeremonyGuardView::is_satisfied)
     }
 }
 
@@ -148,8 +167,11 @@ impl<'a> CeremonyInstanceView<'a> {
                         Ok(CeremonyGuardView {
                             name,
                             human: matches!(guard.condition(), GuardCondition::HumanApproval),
-                            satisfied: guard
-                                .is_satisfied(instance.step_records(), instance.context()),
+                            satisfied: definition.guard_is_satisfied(
+                                guard,
+                                instance.step_records(),
+                                instance.context(),
+                            ),
                         })
                     })
                     .collect::<Result<Vec<_>, DomainError>>()?;
@@ -159,6 +181,10 @@ impl<'a> CeremonyInstanceView<'a> {
                         transition,
                         instance.step_records(),
                         instance.context(),
+                    ),
+                    repeat_requirements_satisfied: definition.repeat_requirements_are_satisfied(
+                        transition.from(),
+                        instance.step_records(),
                     ),
                     guards,
                 })

@@ -4,7 +4,7 @@ use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, GuardName, InputName, OutputName, RoleId,
-    StepHandlerKind, StepId, TransitionTrigger,
+    StepHandlerKind, StepId, StepIteration, StepOutputField, TransitionTrigger,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -110,6 +110,16 @@ struct StageIntent {
     num_agents: u64,
     #[serde(default)]
     review_rounds: u64,
+    #[serde(default)]
+    repeat: Option<RepeatIntent>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RepeatIntent {
+    max_iterations: u32,
+    output_field: String,
+    equals: Value,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -226,6 +236,10 @@ impl EmbeddedDesignCeremonyRequest {
                     "stage `{}` requests review rounds with fewer than two agents",
                     stage.id
                 ));
+            }
+            if let Some(repeat) = &stage.repeat {
+                StepIteration::new(repeat.max_iterations).map_err(|error| error.to_string())?;
+                StepOutputField::new(&repeat.output_field).map_err(|error| error.to_string())?;
             }
         }
         reject_duplicates(&stage_ids, "stages.id")?;
@@ -415,6 +429,13 @@ impl EmbeddedDesignCeremonyRequest {
                 state: stage_state_ids[index].clone(),
                 handler: stage.handler.trim().to_owned(),
                 config: stage_config(stage, index),
+                repeat: stage.repeat.as_ref().map(|repeat| StepRepeatDocument {
+                    max_iterations: repeat.max_iterations,
+                    until: RepeatUntilDocument {
+                        output_field: repeat.output_field.trim().to_owned(),
+                        equals: repeat.equals.clone(),
+                    },
+                }),
             });
         }
 
@@ -618,6 +639,20 @@ struct StepDocument {
     state: String,
     handler: String,
     config: BTreeMap<String, Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    repeat: Option<StepRepeatDocument>,
+}
+
+#[derive(Debug, Serialize)]
+struct StepRepeatDocument {
+    max_iterations: u32,
+    until: RepeatUntilDocument,
+}
+
+#[derive(Debug, Serialize)]
+struct RepeatUntilDocument {
+    output_field: String,
+    equals: Value,
 }
 
 #[derive(Debug, Serialize)]
@@ -700,6 +735,46 @@ mod tests {
             .contains("check: manual_approval"));
         assert!(designed.definition_yaml().contains("rounds: 1"));
         assert!(designed.final_approval_required());
+    }
+
+    #[test]
+    fn designs_a_bounded_repeating_stage() {
+        let mut value = intent();
+        value["stages"][0]["repeat"] = json!({
+            "max_iterations": 5,
+            "output_field": "ready",
+            "equals": true
+        });
+
+        let designed = EmbeddedDesignCeremonyRequest::try_from(&value)
+            .unwrap()
+            .design()
+            .unwrap();
+        let yaml = designed.definition_yaml();
+
+        assert!(yaml.contains("max_iterations: 5"), "{yaml}");
+        assert!(yaml.contains("output_field: ready"), "{yaml}");
+        assert!(designed
+            .draft()
+            .steps()
+            .iter()
+            .find(|step| step.id() == &StepId::new("compose").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .is_some());
+    }
+
+    #[test]
+    fn refuses_an_unbounded_repeating_stage() {
+        let mut value = intent();
+        value["stages"][0]["repeat"] = json!({
+            "output_field": "ready",
+            "equals": true
+        });
+
+        let error = EmbeddedDesignCeremonyRequest::try_from(&value).unwrap_err();
+
+        assert!(error.contains("max_iterations"), "{error}");
     }
 
     #[test]

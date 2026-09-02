@@ -48,9 +48,10 @@ pub use ceremony::{
     CeremonyTransition, CeremonyTransitionRecord, CeremonyValidationFinding,
     CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
     ExpectedRevision, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,
-    LeaseOwnerId, OutputName, ReasonAsserter, RetryPolicy, RoleAction, RoleId, StateId,
-    StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId,
-    StepLease, StepOutput, StepResult, StepStatus, StepTimeout, TransitionTrigger,
+    LeaseOwnerId, OutputName, ReasonAsserter, RepeatUntilCondition, RetryPolicy, RoleAction,
+    RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepIteration, StepLease, StepOutput, StepOutputField,
+    StepRepeatPolicy, StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use council_selector::CouncilSelector;

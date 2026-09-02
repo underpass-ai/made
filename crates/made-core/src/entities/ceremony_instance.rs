@@ -33,6 +33,14 @@ pub struct CeremonyInstance {
     definition_version: CeremonyVersion,
     current_state: StateId,
     step_records: BTreeMap<StepId, StepExecutionRecord>,
+    /// Finished semantic iterations preceding each step's current record.
+    ///
+    /// Technical retries remain represented by their attempt number and the
+    /// audit journal. Semantic repetition needs its own durable history: one
+    /// successful iteration must not overwrite the output that made MADE run
+    /// the next one.
+    #[serde(default)]
+    step_record_history: BTreeMap<StepId, Vec<StepExecutionRecord>>,
     #[serde(default)]
     interventions: Vec<CeremonyIntervention>,
     #[serde(default)]
@@ -146,6 +154,7 @@ impl CeremonyInstance {
             definition_version: definition.version().clone(),
             current_state: definition.initial_state_id().clone(),
             step_records,
+            step_record_history: BTreeMap::new(),
             interventions: Vec::new(),
             guard_deferrals: Vec::new(),
             guard_approvals: Vec::new(),
@@ -234,6 +243,37 @@ impl CeremonyInstance {
     #[must_use]
     pub fn step_record(&self, step_id: &StepId) -> Option<&StepExecutionRecord> {
         self.step_records.get(step_id)
+    }
+
+    /// Finished iterations before the current record, in execution order.
+    #[must_use]
+    pub fn step_record_history(&self, step_id: &StepId) -> &[StepExecutionRecord] {
+        self.step_record_history
+            .get(step_id)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    }
+
+    /// Whether a repeating step consumed its last permitted iteration without
+    /// satisfying its declared stop condition.
+    #[must_use]
+    pub fn step_repeat_limit_reached(
+        &self,
+        definition: &CeremonyDefinition,
+        step_id: &StepId,
+    ) -> bool {
+        let Some(step) = definition.step(step_id) else {
+            return false;
+        };
+        let Some(policy) = step.repeat_policy() else {
+            return false;
+        };
+        let Some(record) = self.step_record(step_id) else {
+            return false;
+        };
+        record.status().is_success()
+            && !policy.is_satisfied(record.output())
+            && !policy.permits_another_iteration(record.iteration())
     }
 
     #[must_use]
@@ -414,8 +454,23 @@ impl CeremonyInstance {
             });
         }
 
-        self.step_records
-            .insert(step_id.clone(), record.with_result(result));
+        let finished = record.with_result(result);
+        let repeat = step.repeat_policy().filter(|policy| {
+            finished.status().is_success() && !policy.is_satisfied(finished.output())
+        });
+        if repeat.is_some_and(|policy| policy.permits_another_iteration(finished.iteration())) {
+            let next_iteration = finished.iteration().next()?;
+            self.step_record_history
+                .entry(step_id.clone())
+                .or_default()
+                .push(finished);
+            self.step_records.insert(
+                step_id.clone(),
+                StepExecutionRecord::pending_iteration(next_iteration),
+            );
+        } else {
+            self.step_records.insert(step_id.clone(), finished);
+        }
         self.updated_at = now;
         Ok(())
     }
@@ -946,6 +1001,11 @@ impl CeremonyInstance {
                 from: "ceremony_instance.current_state",
                 to: "transition_trigger",
             })?;
+        if !definition.repeat_requirements_are_satisfied(&self.current_state, &self.step_records) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony step repeat condition is not satisfied",
+            });
+        }
         if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony transition guards are not satisfied",
@@ -1122,8 +1182,10 @@ mod tests {
     use super::*;
     use crate::value_objects::{
         Attributes, CeremonyGuard, CeremonyState, CeremonyStep, CeremonyTransition, GuardCondition,
-        GuardName, LeaseOwnerId, RetryPolicy, StepHandlerConfig, StepHandlerKind, StepOutput,
+        GuardName, LeaseOwnerId, RepeatUntilCondition, RetryPolicy, StepHandlerConfig,
+        StepHandlerKind, StepIteration, StepOutput, StepOutputField, StepRepeatPolicy,
     };
+    use serde_json::json;
     use time::macros::datetime;
 
     fn now() -> OffsetDateTime {
@@ -1176,6 +1238,26 @@ mod tests {
             StepHandlerConfig::empty(),
             RetryPolicy::single_attempt(),
             None,
+        )
+    }
+
+    fn repeating_plan(max_iterations: u32) -> CeremonyStep {
+        retrying_step("plan", "drafting").with_repeat_policy(StepRepeatPolicy::new(
+            RepeatUntilCondition::output_field_equals(
+                StepOutputField::new("ready").unwrap(),
+                json!(true),
+            ),
+            StepIteration::new(max_iterations).unwrap(),
+        ))
+    }
+
+    fn readiness_output(ready: bool) -> StepOutput {
+        StepOutput::new(
+            Attributes::new(std::collections::BTreeMap::from([(
+                "ready".to_owned(),
+                json!(ready),
+            )]))
+            .unwrap(),
         )
     }
 
@@ -1357,6 +1439,24 @@ mod tests {
     }
 
     #[test]
+    fn instances_without_iteration_fields_load_as_the_first_iteration() {
+        let definition = definition();
+        let mut value = serde_json::to_value(instance(&definition)).unwrap();
+        value.as_object_mut().unwrap().remove("step_record_history");
+        for record in value["step_records"].as_object_mut().unwrap().values_mut() {
+            record.as_object_mut().unwrap().remove("iteration");
+        }
+
+        let restored: CeremonyInstance = serde_json::from_value(value).unwrap();
+
+        assert!(restored.step_record_history(&step_id("plan")).is_empty());
+        assert_eq!(
+            restored.step_record(&step_id("plan")).unwrap().iteration(),
+            StepIteration::FIRST
+        );
+    }
+
+    #[test]
     fn dynamic_intervention_collects_role_scoped_response_and_requester_closes_it() {
         let definition = definition();
         let mut instance = instance(&definition);
@@ -1510,6 +1610,136 @@ mod tests {
 
         assert_eq!(state, state_id("done"));
         assert!(instance.is_completed(&definition));
+    }
+
+    #[test]
+    fn false_repeat_condition_archives_iteration_and_schedules_the_next() {
+        let definition = definition_with_steps(vec![repeating_plan(3)]);
+        let mut instance = instance(&definition);
+
+        instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "repeat-1",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .unwrap();
+        instance
+            .apply_step_result(
+                &definition,
+                &step_id("plan"),
+                StepResult::completed(readiness_output(false)).unwrap(),
+                datetime!(2026-06-06 12:01:00 UTC),
+            )
+            .unwrap();
+
+        let current = instance.step_record(&step_id("plan")).unwrap();
+        assert_eq!(current.status(), StepStatus::Pending);
+        assert_eq!(current.iteration().get(), 2);
+        assert_eq!(current.attempt(), StepAttempt::FIRST);
+        let history = instance.step_record_history(&step_id("plan"));
+        assert_eq!(history.len(), 1);
+        assert_eq!(history[0].iteration(), StepIteration::FIRST);
+        assert_eq!(history[0].output(), &readiness_output(false));
+        assert!(instance
+            .apply_transition(&definition, &trigger("finish"), now())
+            .is_err());
+
+        instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "repeat-2",
+                    datetime!(2026-06-06 12:02:00 UTC),
+                    datetime!(2026-06-06 12:07:00 UTC),
+                ),
+                datetime!(2026-06-06 12:02:00 UTC),
+            )
+            .unwrap();
+        instance
+            .apply_step_result(
+                &definition,
+                &step_id("plan"),
+                StepResult::completed(readiness_output(true)).unwrap(),
+                datetime!(2026-06-06 12:03:00 UTC),
+            )
+            .unwrap();
+
+        let current = instance.step_record(&step_id("plan")).unwrap();
+        assert_eq!(current.status(), StepStatus::Completed);
+        assert_eq!(current.iteration().get(), 2);
+        assert!(!instance.step_repeat_limit_reached(&definition, &step_id("plan")));
+        assert_eq!(
+            instance
+                .apply_transition(&definition, &trigger("finish"), now())
+                .unwrap(),
+            state_id("done")
+        );
+    }
+
+    #[test]
+    fn repeat_limit_is_terminal_for_the_step_and_blocks_transition() {
+        let definition = definition_with_steps(vec![repeating_plan(2)]);
+        let mut instance = instance(&definition);
+
+        for iteration in 1..=2 {
+            instance
+                .start_step(
+                    &definition,
+                    &step_id("plan"),
+                    lease(
+                        "runner-1",
+                        &format!("limit-{iteration}"),
+                        now(),
+                        datetime!(2026-06-06 12:05:00 UTC),
+                    ),
+                    now(),
+                )
+                .unwrap();
+            instance
+                .apply_step_result(
+                    &definition,
+                    &step_id("plan"),
+                    StepResult::completed(readiness_output(false)).unwrap(),
+                    now(),
+                )
+                .unwrap();
+        }
+
+        assert!(instance.step_repeat_limit_reached(&definition, &step_id("plan")));
+        assert_eq!(
+            instance
+                .step_record(&step_id("plan"))
+                .unwrap()
+                .iteration()
+                .get(),
+            2
+        );
+        assert_eq!(instance.step_record_history(&step_id("plan")).len(), 1);
+        assert!(instance
+            .apply_transition(&definition, &trigger("finish"), now())
+            .is_err());
+        assert!(instance
+            .start_step(
+                &definition,
+                &step_id("plan"),
+                lease(
+                    "runner-1",
+                    "limit-3",
+                    now(),
+                    datetime!(2026-06-06 12:05:00 UTC),
+                ),
+                now(),
+            )
+            .is_err());
     }
 
     #[test]

@@ -324,7 +324,8 @@ fn ceremony_design_schema() -> Value {
                             "type": "integer",
                             "minimum": 0,
                             "description": "Adversarial peer-review rounds. A positive value requires at least two agents."
-                        }
+                        },
+                        "repeat": repeat_stage_schema()
                     }
                 }
             },
@@ -355,6 +356,27 @@ fn ceremony_design_schema() -> Value {
                 "description": "Default retry backoff written into the draft. Defaults to one."
             }
         }
+    })
+}
+
+fn repeat_stage_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["max_iterations", "output_field", "equals"],
+        "properties": {
+            "max_iterations": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "description": "Hard cap on semantic executions of this stage, including the first."
+            },
+            "output_field": string_schema("Top-level structured step-output field tested after each successful iteration."),
+            "equals": {
+                "description": "Exact JSON value that ends repetition. Missing or unequal output repeats the stage."
+            }
+        },
+        "description": "Optional bounded repeat-until policy. Iterations are distinct from technical retry attempts."
     })
 }
 

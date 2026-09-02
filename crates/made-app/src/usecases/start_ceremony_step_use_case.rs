@@ -67,11 +67,19 @@ impl StartCeremonyStepUseCase {
             lease,
             now,
         )?;
+        let iteration = session
+            .instance
+            .step_record(&input.step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_step",
+            })?
+            .iteration();
         // The claim and the record of a seat having made it land
         // together, before any work starts against it.
         let fact = session_facts::step_started(
             &session.instance,
             &input.step_id,
+            iteration,
             attempt,
             &input.role_id,
             input.role_kind,

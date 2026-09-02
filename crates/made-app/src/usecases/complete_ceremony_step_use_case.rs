@@ -61,23 +61,23 @@ impl CompleteCeremonyStepUseCase {
         let finished_by = definition.role_id_for_step(&input.step_id)?;
         let now = self.clock.now();
         let result = input.result;
-        session
-            .instance
-            .apply_step_result(&definition, &input.step_id, result.clone(), now)?;
-        // Read back rather than carried in: the attempt this result
-        // belongs to is the one the session recorded when the step was
-        // claimed, and a caller reporting a result is in no position to
-        // say which attempt it was.
-        let attempt = session
+        // Capture both coordinates before applying the result: a successful
+        // repeat advances the current record to the next semantic iteration.
+        let record = session
             .instance
             .step_record(&input.step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
-            })?
-            .attempt();
+            })?;
+        let iteration = record.iteration();
+        let attempt = record.attempt();
+        session
+            .instance
+            .apply_step_result(&definition, &input.step_id, result.clone(), now)?;
         let fact = session_facts::step_finished(
             &session.instance,
             &input.step_id,
+            iteration,
             attempt,
             &result,
             &finished_by,
@@ -93,19 +93,30 @@ impl CompleteCeremonyStepUseCase {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
-        AuditActorKind, AuditEventType, StepOutput, StepResult, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, StepOutput, StepResult, StepStatus,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
         ceremony_id, definition, definition_resolver, idempotency_key, journal, journal_over,
-        lease_owner, now, role_id, started_instance, step_id, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake,
+        lease_owner, now, repeating_definition, role_id, started_instance, step_id,
+        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
     };
+
+    fn readiness_output(ready: bool) -> StepOutput {
+        StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "ready".to_owned(),
+                serde_json::json!(ready),
+            )]))
+            .unwrap(),
+        )
+    }
 
     #[tokio::test]
     async fn applies_step_result_and_clears_lease() {
@@ -220,5 +231,52 @@ mod tests {
             facts[0].actor.role_id(),
             Some(&definition.role_id_for_step(&step_id()).unwrap())
         );
+    }
+
+    #[tokio::test]
+    async fn delegated_completion_exposes_the_next_semantic_iteration() {
+        let definition = repeating_definition(3);
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step(
+                &definition,
+                &step_id(),
+                made_core::value_objects::StepLease::new(
+                    lease_owner(),
+                    idempotency_key("delegated-repeat-1"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let (journal, unit_of_work) = journal_over(instances);
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            journal,
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let updated = usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(readiness_output(false)).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .unwrap();
+
+        let record = updated.step_record(&step_id()).unwrap();
+        assert_eq!(record.status(), StepStatus::Pending);
+        assert_eq!(record.iteration().get(), 2);
+        assert_eq!(updated.step_record_history(&step_id()).len(), 1);
+        let facts = unit_of_work.facts().await;
+        assert_eq!(facts.len(), 1);
+        assert!(facts[0].event_id.as_str().contains("iteration:1"));
     }
 }
