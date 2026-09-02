@@ -141,66 +141,79 @@ impl RunCeremonyUseCase {
                 .map(|step| step.id().clone())
                 .collect::<Vec<_>>();
             for step_id in step_ids {
-                if session
-                    .instance
-                    .step_record(&step_id)
-                    .is_some_and(|record| record.status().is_success())
-                {
-                    continue;
-                }
-                let role_id = definition.role_id_for_step(&step_id)?;
-                let transcript = self.transcript_store.transcript(&id).await?;
-                let step_started = self.clock.now();
-                let (moved_on, attempt, step_result) = self
-                    .run_step(
-                        &definition,
-                        session,
-                        &role_id,
-                        actor_kind,
-                        &step_id,
-                        &lease_owner_id,
-                        lease_ttl,
-                        step_traces.len(),
-                        transcript,
-                    )
-                    .await?;
-                session = moved_on;
-                self.metrics.observe_ceremony_step_duration(
-                    &ceremony_name,
-                    step_id.as_str(),
-                    ms_since(step_started, self.clock.now()),
-                );
-                self.metrics.record_ceremony_step(
-                    &ceremony_name,
-                    step_id.as_str(),
-                    step_result.status(),
-                );
-                if step_result.is_success() {
-                    self.transcript_store
-                        .append(
-                            &id,
-                            CeremonyStepContribution::new(
-                                step_id.clone(),
-                                role_id.clone(),
-                                step_result.output().clone(),
-                            ),
+                loop {
+                    if session
+                        .instance
+                        .step_record(&step_id)
+                        .is_some_and(|record| record.status().is_success())
+                    {
+                        break;
+                    }
+                    let role_id = definition.role_id_for_step(&step_id)?;
+                    let transcript = self.transcript_store.transcript(&id).await?;
+                    let step_started = self.clock.now();
+                    let (moved_on, iteration, attempt, step_result) = self
+                        .run_step(
+                            &definition,
+                            session,
+                            &role_id,
+                            actor_kind,
+                            &step_id,
+                            &lease_owner_id,
+                            lease_ttl,
+                            step_traces.len(),
+                            transcript,
                         )
                         .await?;
-                }
-                step_traces.push(CeremonyStepTrace::new(
-                    state_id.clone(),
-                    step_id,
-                    role_id,
-                    attempt,
-                    step_result.status(),
-                    step_result.output().clone(),
-                ));
-                if !step_result.is_success() {
-                    self.metrics
-                        .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::StepFailed);
-                    return Err(DomainError::InvariantViolated {
-                        reason: "ceremony step did not complete successfully",
-                    });
+                    session = moved_on;
+                    self.metrics.observe_ceremony_step_duration(
+                        &ceremony_name,
+                        step_id.as_str(),
+                        ms_since(step_started, self.clock.now()),
+                    );
+                    self.metrics.record_ceremony_step(
+                        &ceremony_name,
+                        step_id.as_str(),
+                        step_result.status(),
+                    );
+                    if step_result.is_success() {
+                        self.transcript_store
+                            .append(
+                                &id,
+                                CeremonyStepContribution::new(
+                                    step_id.clone(),
+                                    role_id.clone(),
+                                    step_result.output().clone(),
+                                ),
+                            )
+                            .await?;
+                    }
+                    step_traces.push(CeremonyStepTrace::for_iteration(
+                        state_id.clone(),
+                        step_id.clone(),
+                        role_id,
+                        iteration,
+                        attempt,
+                        step_result.status(),
+                        step_result.output().clone(),
+                    ));
+                    if !step_result.is_success() {
+                        self.metrics
+                            .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::StepFailed);
+                        return Err(DomainError::InvariantViolated {
+                            reason: "ceremony step did not complete successfully",
+                        });
+                    }
+                    if session
+                        .instance
+                        .step_repeat_limit_reached(&definition, &step_id)
+                    {
+                        self.metrics
+                            .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::RepeatLimit);
+                        return Err(DomainError::InvariantViolated {
+                            reason: "ceremony step repeat limit exhausted",
+                        });
+                    }
                 }
             }
 
@@ -266,7 +279,15 @@ impl RunCeremonyUseCase {
         lease_ttl: DurationMs,
         trace_index: usize,
         transcript: CeremonyTranscript,
-    ) -> Result<(LoadedSession, StepAttempt, StepResult), DomainError> {
+    ) -> Result<
+        (
+            LoadedSession,
+            made_core::value_objects::StepIteration,
+            StepAttempt,
+            StepResult,
+        ),
+        DomainError,
+    > {
         let step = definition
             .step(step_id)
             .cloned()
@@ -289,9 +310,17 @@ impl RunCeremonyUseCase {
         let attempt = session
             .instance
             .start_step_as(definition, role_id, step_id, lease, now)?;
+        let iteration = session
+            .instance
+            .step_record(step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_step",
+            })?
+            .iteration();
         let claimed = session_facts::step_started(
             &session.instance,
             step_id,
+            iteration,
             attempt,
             role_id,
             actor_kind,
@@ -332,6 +361,7 @@ impl RunCeremonyUseCase {
         let finished = session_facts::step_finished(
             &finished_session.instance,
             step_id,
+            iteration,
             attempt,
             &step_result,
             role_id,
@@ -343,7 +373,7 @@ impl RunCeremonyUseCase {
             .commit(finished_session, vec![finished])
             .await?;
 
-        Ok((session, attempt, step_result))
+        Ok((session, iteration, attempt, step_result))
     }
 
     async fn execute_handler(
@@ -362,20 +392,33 @@ impl RunCeremonyUseCase {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use made_core::error::DomainError;
     use made_core::ports::{CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort};
     use made_core::value_objects::{
-        AuditActorKind, AuditEventType, CeremonyContext, StepOutput, StepResult, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, CeremonyContext, StepOutput, StepResult,
+        StepStatus,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, journal, journal_over, lease_owner,
-        lease_ttl, now, started_instance, step_id, two_step_definition, ContextStoreFake,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake, StepHandlerFake,
+        lease_ttl, now, repeating_definition, started_instance, step_id, two_step_definition,
+        ContextStoreFake, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        SequenceStepHandlerFake, StepHandlerFake,
     };
+
+    fn readiness_output(ready: bool) -> StepOutput {
+        StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "ready".to_owned(),
+                serde_json::json!(ready),
+            )]))
+            .unwrap(),
+        )
+    }
 
     #[tokio::test]
     async fn executes_linear_ceremony_to_terminal_state() {
@@ -415,6 +458,112 @@ mod tests {
             .saved(&ceremony_id())
             .await
             .is_completed(&definition));
+    }
+
+    #[tokio::test]
+    async fn repeats_successful_step_until_structured_condition_is_true() {
+        let definition = repeating_definition(3);
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let (journal, unit_of_work) = journal_over(instances.clone());
+        let handler = Arc::new(SequenceStepHandlerFake::new([
+            StepResult::completed(readiness_output(false)).unwrap(),
+            StepResult::completed(readiness_output(true)).unwrap(),
+        ]));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            journal,
+            handler.clone(),
+            Arc::new(ContextStoreFake::default()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let output = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap();
+
+        assert!(output.instance().is_completed(&definition));
+        assert_eq!(output.step_traces().len(), 2);
+        assert_eq!(output.step_traces()[0].iteration().get(), 1);
+        assert_eq!(output.step_traces()[1].iteration().get(), 2);
+        assert_eq!(output.instance().step_record_history(&step_id()).len(), 1);
+        let requests = handler.requests().await;
+        assert_eq!(requests.len(), 2);
+        assert_eq!(requests[1].transcript().len(), 1);
+        let step_event_ids = unit_of_work
+            .facts()
+            .await
+            .into_iter()
+            .filter(|fact| {
+                matches!(
+                    fact.event_type,
+                    AuditEventType::StepStarted | AuditEventType::StepCompleted
+                )
+            })
+            .map(|fact| fact.event_id.as_str().to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(step_event_ids.len(), 4);
+        assert!(step_event_ids.iter().any(|id| id.contains("iteration:1")));
+        assert!(step_event_ids.iter().any(|id| id.contains("iteration:2")));
+        assert_eq!(
+            step_event_ids
+                .iter()
+                .collect::<std::collections::BTreeSet<_>>()
+                .len(),
+            4,
+            "each iteration start and completion needs its own audit identity"
+        );
+    }
+
+    #[tokio::test]
+    async fn reports_repeat_limit_instead_of_spinning_or_transitioning() {
+        let definition = repeating_definition(2);
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(InstanceRepositoryFake::default());
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(readiness_output(false)).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            journal(instances.clone()),
+            handler.clone(),
+            Arc::new(ContextStoreFake::default()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let error = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony step repeat limit exhausted"
+            }
+        ));
+        assert_eq!(handler.requests().await.len(), 2);
+        let saved = instances.saved(&ceremony_id()).await;
+        assert!(!saved.is_completed(&definition));
+        assert!(saved.step_repeat_limit_reached(&definition, &step_id()));
+        assert_eq!(saved.step_record_history(&step_id()).len(), 1);
     }
 
     #[tokio::test]

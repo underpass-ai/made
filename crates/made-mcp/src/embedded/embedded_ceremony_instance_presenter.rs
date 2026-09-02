@@ -36,6 +36,13 @@ impl EmbeddedCeremonyInstancePresenter {
                     "attempt": step.record().attempt().get(),
                     "output": step.record().output().attributes().as_map(),
                     "error": step.record().error_message().map(ToString::to_string),
+                    "iteration": step.record().iteration().get(),
+                    "repeat_condition_satisfied": step.repeat_condition_satisfied(),
+                    "repeat_limit_reached": step.repeat_limit_reached(),
+                    "repeat_max_iterations": step
+                        .step()
+                        .repeat_policy()
+                        .map(|policy| policy.max_iterations().get()),
                 })
             })
             .collect::<Vec<_>>();

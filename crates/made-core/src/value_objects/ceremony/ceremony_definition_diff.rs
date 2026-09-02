@@ -312,13 +312,16 @@ fn diff_steps(
                 "how the work is asked for",
             );
         }
-        if now.retry_policy() != old.retry_policy() || now.timeout() != old.timeout() {
+        if now.retry_policy() != old.retry_policy()
+            || now.timeout() != old.timeout()
+            || now.repeat_policy() != old.repeat_policy()
+        {
             record(
                 changes,
                 CeremonyChangeKind::Altered,
                 locus,
                 CeremonyChangeImpact::Carries,
-                "how long it may take and how often it may be retried",
+                "how long it may take, how often it may be retried, or when repetition stops",
             );
         }
     }
@@ -512,8 +515,9 @@ mod tests {
     use super::*;
     use crate::value_objects::{
         CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-        CeremonyVersion, GuardCondition, GuardName, RetryPolicy, RoleAction, RoleId,
-        StepHandlerConfig, StepHandlerKind, StepId,
+        CeremonyVersion, GuardCondition, GuardName, RepeatUntilCondition, RetryPolicy, RoleAction,
+        RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField,
+        StepRepeatPolicy,
     };
 
     fn state(id: &str) -> StateId {
@@ -712,6 +716,28 @@ mod tests {
         );
         assert_eq!(diff.changes().len(), 1);
         assert_eq!(diff.changes()[0].detail(), "who does the work");
+    }
+
+    #[test]
+    fn changing_repeat_policy_is_a_material_step_change() {
+        let mut draft = Draft::baseline();
+        draft.steps = vec![
+            step("work", "OPEN", "noop").with_repeat_policy(StepRepeatPolicy::new(
+                RepeatUntilCondition::output_field_equals(
+                    StepOutputField::new("ready").unwrap(),
+                    serde_json::json!(true),
+                ),
+                StepIteration::new(3).unwrap(),
+            )),
+        ];
+
+        let diff = CeremonyDefinitionDiff::between(&baseline(), &draft.build());
+
+        assert_eq!(diff.changes().len(), 1);
+        assert_eq!(
+            diff.changes()[0].detail(),
+            "how long it may take, how often it may be retried, or when repetition stops"
+        );
     }
 
     #[test]

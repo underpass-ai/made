@@ -353,9 +353,10 @@ gate in this repository):
   so a fresh deployment is immediately exercisable end-to-end.
 - Ceremony orchestration: `RunCeremony` executes a YAML-defined ceremony
   as a finite-state machine — states, steps with pluggable handlers,
-  guarded transitions, and roles. A step can drive a full council
-  deliberation; prior turns thread into later steps' briefs; the
-  response carries a Mermaid sequence diagram of the conversation.
+  guarded transitions, roles, and bounded repeat-until steps over structured
+  output. Semantic iterations are durable and separate from technical retry
+  attempts. A step can drive a full council deliberation; prior turns thread
+  into later steps' briefs; the response carries a Mermaid sequence diagram.
   Catalog ceremonies (daily standup, technical debate, sprint planning,
   speaker + Q&A) run end-to-end in CI.
 - Scoring: the winner of a deliberation is chosen by a pluggable

@@ -1,10 +1,13 @@
-use made_core::value_objects::{RoleId, StateId, StepAttempt, StepId, StepOutput, StepStatus};
+use made_core::value_objects::{
+    RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput, StepStatus,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CeremonyStepTrace {
     state_id: StateId,
     step_id: StepId,
     role_id: RoleId,
+    iteration: StepIteration,
     attempt: StepAttempt,
     status: StepStatus,
     output: StepOutput,
@@ -20,14 +23,41 @@ impl CeremonyStepTrace {
         status: StepStatus,
         output: StepOutput,
     ) -> Self {
+        Self::for_iteration(
+            state_id,
+            step_id,
+            role_id,
+            StepIteration::FIRST,
+            attempt,
+            status,
+            output,
+        )
+    }
+
+    #[must_use]
+    pub fn for_iteration(
+        state_id: StateId,
+        step_id: StepId,
+        role_id: RoleId,
+        iteration: StepIteration,
+        attempt: StepAttempt,
+        status: StepStatus,
+        output: StepOutput,
+    ) -> Self {
         Self {
             state_id,
             step_id,
             role_id,
+            iteration,
             attempt,
             status,
             output,
         }
+    }
+
+    #[must_use]
+    pub fn iteration(&self) -> StepIteration {
+        self.iteration
     }
 
     #[must_use]

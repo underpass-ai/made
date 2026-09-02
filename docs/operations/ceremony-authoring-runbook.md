@@ -1,9 +1,9 @@
 # Ceremony authoring runbook — building multi-agent meetings that actually work
 
-*Status: every mechanic below verified end-to-end on 2026-07-03 against a live
-installation (chart + `RunCeremony`), including a 7-participant, 31-LLM-call
-ceremony with two 2-agent councils running three adversarial peer-review
-rounds each.*
+*Status: the original mechanics were verified end-to-end on 2026-07-03 against
+a live installation (chart + `RunCeremony`), including a 7-participant,
+31-LLM-call ceremony. Bounded repetition (§6) was verified on 2026-09-02 by
+the core, adapter, application, MCP and contract gates.*
 
 The architecture docs explain *how the engine deliberates*
 ([made-architecture-and-differentiation.md](../made-architecture-and-differentiation.md));
@@ -136,7 +136,44 @@ investigation fail?"* with 3 peer-review rounds each:
    [observability runbook](./observability-runbook.md). If `rounds` was
    silently no-opped (§2), this is where you notice.
 
-## 6. Dynamic participant interventions
+## 6. Bounded `repeat` — successful iteration until a condition
+
+Use `repeat` when a step can succeed operationally but its structured result
+says the work is not finished yet:
+
+```yaml
+steps:
+  - id: refresh_and_validate
+    state: COORDINATING
+    handler: evidence_reviewer
+    repeat:
+      max_iterations: 4
+      until:
+        output_field: ready
+        equals: true
+    config:
+      see_prior: true
+      prompt: "Refresh the evidence and return a top-level ready boolean."
+```
+
+`output_field` addresses one top-level field in the successful step output;
+`equals` is compared using exact JSON equality, so `true` is different from
+`"true"`. A missing field does not satisfy the condition. `max_iterations` is
+mandatory, must be between 1 and 1000, and is the safety bound that prevents a
+ceremony from spinning forever.
+
+A **repeat iteration** follows a successful result whose condition is false.
+Its output is retained in durable history and included in the transcript for
+the next iteration. A **retry attempt** re-drives failed or expired work inside
+the same semantic iteration. Runtime views expose both `iteration` and
+`attempt`, plus `repeat_condition_satisfied` and `repeat_limit_reached`.
+
+When the condition becomes true, normal guards and transitions may fire. When
+the final permitted iteration still returns false, the transition remains
+blocked; one-shot execution records the `repeat_limit` outcome metric and
+returns a repeat-limit error instead of silently completing or looping.
+
+## 7. Dynamic participant interventions
 
 An embedded incremental ceremony can accept new agenda items after it starts;
 the YAML remains the stable frame while the running `CeremonyInstance` owns

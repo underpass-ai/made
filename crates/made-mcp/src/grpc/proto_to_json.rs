@@ -303,6 +303,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         status,
         attempt,
         output,
+        iteration,
     } = step;
     json!({
         "state_id": state_id,
@@ -310,6 +311,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         "role_id": role_id,
         "status": status,
         "attempt": attempt,
+        "iteration": iteration,
         "output": output,
     })
 }
@@ -442,6 +444,14 @@ fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
         "attempt": step.attempt,
         "output": optional_pb_struct_to_json(step.output),
         "error": empty_as_null(step.error),
+        "iteration": step.iteration,
+        "repeat_condition_satisfied": step.repeat_condition_satisfied,
+        "repeat_limit_reached": step.repeat_limit_reached,
+        "repeat_max_iterations": if step.repeat_max_iterations == 0 {
+            Value::Null
+        } else {
+            json!(step.repeat_max_iterations)
+        },
     })
 }
 

@@ -4,6 +4,11 @@ Status: initial blueprint catalog. These are product-agnostic meeting designs
 optimized for the Underpass sibling capabilities: rehydration kernel as the
 context/scenario provider and runtime client as the governed tool runtime.
 
+Blueprint phases that say “repeat until” can be encoded as a bounded MADE
+step repeat: the step declares a top-level structured output condition and a
+mandatory maximum iteration count. This is executable control flow, distinct
+from retrying a failed handler call.
+
 MADE itself remains agnostic and independent. The sibling
 systems named here are example providers for study and evaluation, not
 required dependencies of the MADE product.
@@ -601,7 +606,9 @@ Phases:
 3. `propose`: choose next step.
 4. `validate`: invoke governed tool or retrieve artifact.
 5. `revise`: update claim ledger, context needs, and action plan.
-6. Repeat `rehydrate` through `revise` until stop criteria.
+6. Repeat `rehydrate` through `revise` until stop criteria. Implement the
+   repeated unit as a step whose output reports the stop criterion and whose
+   `repeat.max_iterations` sets the risk-budget bound.
 7. `decide`: finalize, defer, escalate, or hand off.
 8. `record`: emit phase log, artifacts, and open actions.
 

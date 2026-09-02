@@ -8,6 +8,8 @@ use made_core::value_objects::{
 use serde::Deserialize;
 use serde_json::Value;
 
+use super::step_repeat_policy_document::StepRepeatPolicyDocument;
+
 #[derive(Debug, Clone, Deserialize)]
 pub(super) struct CeremonyStepDocument {
     id: String,
@@ -15,6 +17,8 @@ pub(super) struct CeremonyStepDocument {
     handler: String,
     #[serde(default)]
     config: BTreeMap<String, Value>,
+    #[serde(default)]
+    repeat: Option<StepRepeatPolicyDocument>,
 }
 
 impl CeremonyStepDocument {
@@ -23,13 +27,17 @@ impl CeremonyStepDocument {
         retry_policy: RetryPolicy,
         timeout: Option<StepTimeout>,
     ) -> Result<CeremonyStep, DomainError> {
-        Ok(CeremonyStep::new(
+        let step = CeremonyStep::new(
             StepId::new(self.id)?,
             StateId::new(self.state)?,
             StepHandlerKind::new(self.handler)?,
             StepHandlerConfig::new(Attributes::new(self.config)?),
             retry_policy,
             timeout,
-        ))
+        );
+        match self.repeat {
+            Some(repeat) => Ok(step.with_repeat_policy(repeat.into_domain()?)),
+            None => Ok(step),
+        }
     }
 }

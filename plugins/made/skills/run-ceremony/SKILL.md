@@ -57,7 +57,8 @@ an external system.
    Mermaid sequence when it materially helps explain the execution.
 
 Do not claim that a ceremony completed if the tool returned `isError: true` or
-`completed: false`.
+`completed: false`. A bounded repeat that exhausts `max_iterations` returns an
+explicit repeat-limit error; it must not be described as a completed step loop.
 
 ## Incremental ceremonies with human authorization
 
@@ -67,7 +68,11 @@ Do not claim that a ceremony completed if the tool returned `isError: true` or
 2. While `next_step_id` is present, choose the verified server-owned handler
    path or the delegated-host claim/work/complete path above for that exact
    step, declaring `actor_kind`. Re-read the returned instance after every
-   action.
+   action. The same `next_step_id` can legitimately appear again with a higher
+   `iteration` when its successful output has not met a declared `repeat`
+   condition. Inspect `repeat_condition_satisfied` and
+   `repeat_limit_reached`; never confuse the semantic iteration with the
+   technical retry `attempt`.
 3. When `waiting_for_human` contains guard names, pause the ceremony and ask
    the user to authorize or reject the concrete decision. Explain what
    transition the approval would enable.

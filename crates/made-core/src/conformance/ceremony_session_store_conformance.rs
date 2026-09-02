@@ -28,7 +28,14 @@ use time::OffsetDateTime;
 use crate::entities::CeremonyInstance;
 use crate::error::DomainError;
 use crate::ports::{CeremonyInstanceRepositoryPort, CeremonyUnitOfWorkPort};
-use crate::value_objects::{CeremonyContext, CeremonyId, ExpectedRevision};
+use crate::value_objects::{
+    Attributes, CeremonyContext, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
+    CeremonyStep, CeremonyTransition, CeremonyVersion, ExpectedRevision, IdempotencyKey,
+    LeaseOwnerId, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId,
+    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
+    StepOutputField, StepRepeatPolicy, StepResult, TransitionTrigger,
+};
+use serde_json::json;
 
 use super::conformance_fixtures::{commit_with, definition};
 use super::ConformanceFailure;
@@ -53,6 +60,8 @@ impl CeremonySessionStoreConformance {
         passed.push("a_committed_session_can_be_read_back");
         Self::a_plain_save_is_visible_to_the_next_commit(instances, unit_of_work).await?;
         passed.push("a_plain_save_is_visible_to_the_next_commit");
+        Self::semantic_iteration_history_survives_storage(instances).await?;
+        passed.push("semantic_iteration_history_survives_storage");
         Ok(passed)
     }
 
@@ -182,6 +191,114 @@ impl CeremonySessionStoreConformance {
         }
         Ok(())
     }
+
+    /// A successful semantic iteration is history, not scratch space for the
+    /// next record. Stores must preserve both after serialization.
+    async fn semantic_iteration_history_survives_storage(
+        instances: &dyn CeremonyInstanceRepositoryPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "semantic_iteration_history_survives_storage";
+        let ceremony = ceremony_id(PROPERTY, "repeat")?;
+        let (definition, mut instance, step_id) = repeating_session(PROPERTY, ceremony)?;
+        let now = OffsetDateTime::UNIX_EPOCH;
+        let lease = call(
+            PROPERTY,
+            LeaseOwnerId::new("conformance-runner").and_then(|owner| {
+                IdempotencyKey::new("semantic-iteration-1").and_then(|key| {
+                    StepLease::new(owner, key, now, now + time::Duration::seconds(60))
+                })
+            }),
+        )?;
+        call(
+            PROPERTY,
+            instance.start_step(&definition, &step_id, lease, now),
+        )?;
+        let result = call(
+            PROPERTY,
+            Attributes::new([("ready".to_owned(), json!(false))].into_iter().collect())
+                .map(StepOutput::new)
+                .and_then(StepResult::completed),
+        )?;
+        call(
+            PROPERTY,
+            instance.apply_step_result(&definition, &step_id, result, now),
+        )?;
+
+        call(PROPERTY, instances.save(&instance).await)?;
+        let restored = call(PROPERTY, instances.get(instance.id()).await)?;
+
+        if restored != instance
+            || restored.step_record_history(&step_id).len() != 1
+            || restored
+                .step_record(&step_id)
+                .is_none_or(|record| record.iteration().get() != 2)
+        {
+            return Err(failure(
+                PROPERTY,
+                "the current semantic iteration or its preceding record changed in storage",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn repeating_session(
+    property: &'static str,
+    ceremony_id: CeremonyId,
+) -> Result<
+    (
+        crate::entities::CeremonyDefinition,
+        CeremonyInstance,
+        StepId,
+    ),
+    ConformanceFailure,
+> {
+    let build = || -> Result<_, DomainError> {
+        let open = StateId::new("OPEN")?;
+        let done = StateId::new("DONE")?;
+        let step_id = StepId::new("observe")?;
+        let trigger = TransitionTrigger::new("finish")?;
+        let step = CeremonyStep::new(
+            step_id.clone(),
+            open.clone(),
+            StepHandlerKind::new("noop")?,
+            StepHandlerConfig::empty(),
+            RetryPolicy::single_attempt(),
+            None,
+        )
+        .with_repeat_policy(StepRepeatPolicy::new(
+            RepeatUntilCondition::output_field_equals(StepOutputField::new("ready")?, json!(true)),
+            StepIteration::new(3)?,
+        ));
+        let transition =
+            CeremonyTransition::new(open.clone(), done.clone(), trigger.clone(), Vec::new())?;
+        let definition = crate::entities::CeremonyDefinition::new(
+            CeremonyName::new("repeat_conformance")?,
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyState::initial(open), CeremonyState::terminal(done)],
+            vec![transition],
+            vec![step],
+            Vec::new(),
+            vec![CeremonyRole::new(
+                RoleId::new("runner")?,
+                vec![
+                    RoleAction::step(step_id.clone()),
+                    RoleAction::transition(trigger),
+                ],
+            )?],
+        )?;
+        let instance = CeremonyInstance::start(
+            ceremony_id,
+            &definition,
+            CeremonyContext::empty(),
+            OffsetDateTime::UNIX_EPOCH,
+        );
+        Ok((definition, instance, step_id))
+    };
+    build().map_err(|error| failure(property, format!("repeat fixture rejected: {error}")))
 }
 
 fn call<T>(

@@ -17,7 +17,7 @@ use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     AuditActor, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId, CeremonyInterventionId,
-    EventId, GuardName, RoleId, Specialty, StepAttempt, StepId, StepResult,
+    EventId, GuardName, RoleId, Specialty, StepAttempt, StepId, StepIteration, StepResult,
 };
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
@@ -278,6 +278,7 @@ pub(crate) fn reason_asserted(
 pub(crate) fn step_started(
     instance: &CeremonyInstance,
     step_id: &StepId,
+    iteration: StepIteration,
     attempt: StepAttempt,
     started_by: &RoleId,
     started_by_kind: AuditActorKind,
@@ -287,6 +288,7 @@ pub(crate) fn step_started(
         instance,
         AuditEventType::StepStarted,
         step_id,
+        iteration,
         attempt,
         started_by,
         started_by_kind,
@@ -303,6 +305,7 @@ pub(crate) fn step_started(
 pub(crate) fn step_finished(
     instance: &CeremonyInstance,
     step_id: &StepId,
+    iteration: StepIteration,
     attempt: StepAttempt,
     result: &StepResult,
     finished_by: &RoleId,
@@ -318,6 +321,7 @@ pub(crate) fn step_finished(
         instance,
         event_type,
         step_id,
+        iteration,
         attempt,
         finished_by,
         finished_by_kind,
@@ -325,16 +329,17 @@ pub(crate) fn step_finished(
     )
 }
 
-/// Keyed on the attempt as well as the step.
+/// Keyed on the semantic iteration and technical attempt as well as the step.
 ///
-/// A step that failed and was run again is two starts and two endings,
-/// and a scheme that only knew which step it was would fold the retry
-/// into the first attempt — losing exactly the history somebody
-/// investigating a flaky step came for.
+/// A retry and a successful repeat are both distinct starts and endings. A
+/// scheme that only knew the step and attempt would fold iteration two,
+/// attempt one into iteration one, attempt one — losing exactly the history
+/// the repeat policy exists to preserve.
 fn step_fact(
     instance: &CeremonyInstance,
     event_type: AuditEventType,
     step_id: &StepId,
+    iteration: StepIteration,
     attempt: StepAttempt,
     actor_role: &RoleId,
     actor_kind: AuditActorKind,
@@ -343,7 +348,11 @@ fn step_fact(
     fact(
         instance,
         event_type,
-        &format!("step:{step_id}:attempt:{}", attempt.get()),
+        &format!(
+            "step:{step_id}:iteration:{}:attempt:{}",
+            iteration.get(),
+            attempt.get()
+        ),
         actor(actor_role, actor_kind)?,
         occurred_at,
     )

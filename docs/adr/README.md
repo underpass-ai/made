@@ -25,3 +25,5 @@ much as the decision itself.
   is imported read-only into a new, receipted MADE database
 - [ADR-009](009-a-second-storage-engine-behind-one-seam.md): two storage
   engines sit behind one seam, so two agent hosts can share one ceremony store
+- [ADR-010](010-bounded-step-repetition-is-not-retry.md): successful semantic
+  repetition is bounded, durable and distinct from technical retry
