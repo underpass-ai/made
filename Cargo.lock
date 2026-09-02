@@ -1969,7 +1969,7 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "made"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2000,7 +2000,7 @@ dependencies = [
 
 [[package]]
 name = "made-adapters"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2041,7 +2041,7 @@ dependencies = [
 
 [[package]]
 name = "made-api"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "serde",
@@ -2051,7 +2051,7 @@ dependencies = [
 
 [[package]]
 name = "made-app"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "criterion",
@@ -2070,7 +2070,7 @@ dependencies = [
 
 [[package]]
 name = "made-consumer-smoke"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2095,7 +2095,7 @@ dependencies = [
 
 [[package]]
 name = "made-core"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "criterion",
@@ -2113,7 +2113,7 @@ dependencies = [
 
 [[package]]
 name = "made-e2e-runner"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "anyhow",
  "async-nats",
@@ -2136,7 +2136,7 @@ dependencies = [
 
 [[package]]
 name = "made-embedded"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "made-adapters",
@@ -2151,7 +2151,7 @@ dependencies = [
 
 [[package]]
 name = "made-mcp"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-trait",
  "futures",
@@ -2178,7 +2178,7 @@ dependencies = [
 
 [[package]]
 name = "made-mcp-proto"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "prost 0.13.5",
  "prost-types 0.13.5",
@@ -2188,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "made-proto"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "prost 0.13.5",
  "prost-types 0.13.5",
@@ -2198,7 +2198,7 @@ dependencies = [
 
 [[package]]
 name = "made-tests-integration"
-version = "0.1.6"
+version = "0.2.0"
 dependencies = [
  "async-nats",
  "async-trait",
