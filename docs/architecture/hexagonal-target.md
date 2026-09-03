@@ -53,11 +53,14 @@ inventory, not an exemption: it can shrink but CI rejects growth or new debt.
 
 On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
 
-- All 637 Rust source files have at most one primary public type. The gate also
+- All 643 Rust source files have at most one primary public type. The gate also
   rejects any regression in that rule for production and test code.
 - `made-core` has typed agent, execution, evidence, support and contract
   boundaries, no public primitive fields, and no deployment configuration
-  port. Only the ceremony aggregate remains above the 600-line budget.
+  port. `CeremonyInstance` keeps its aggregate boundary while delegating step
+  execution, guard decisions, participant seating, interventions, transitions
+  and invariant checks to cohesive internal modules; the crate has no
+  remaining structural debt.
 - `made-api` has one public contract DTO per source file and remains independent
   from the domain crate.
 - `made-app` separates production use cases from their inputs and outputs and
@@ -68,7 +71,7 @@ On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
 - `made`, `made-api`, `made-embedded`, proto and test-driver crates have no
   remaining structural debt. `made-mcp` has two large transport modules left.
 
-The current baseline contains 7 large-file debt entries, down from 70 at the
+The current baseline contains 6 large-file debt entries, down from 70 at the
 start of this branch. They are recorded in `conformance.tsv` and cannot grow;
 new debt is rejected. A migration slice is complete only when the normal gate
 passes and its paid entries are removed by refreshing the baseline.
