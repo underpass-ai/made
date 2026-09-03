@@ -53,7 +53,7 @@ inventory, not an exemption: it can shrink but CI rejects growth or new debt.
 
 On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
 
-- All 663 Rust source files have at most one primary public type. The gate also
+- All 666 Rust source files have at most one primary public type. The gate also
   rejects any regression in that rule for production and test code.
 - `made-core` has typed agent, execution, evidence, support and contract
   boundaries, no public primitive fields, and no deployment configuration
@@ -70,9 +70,9 @@ On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
   validators, persistence responsibilities and gRPC handlers are split by
   role; the crate has no remaining structural debt in the baseline.
 - `made`, `made-api`, `made-embedded`, proto and test-driver crates have no
-  remaining structural debt. `made-mcp` has two large transport modules left.
+  remaining structural debt. `made-mcp` has one large transport module left.
 
-The current baseline contains 2 large-file debt entries, down from 70 at the
+The current baseline contains 1 large-file debt entry, down from 70 at the
 start of this branch. They are recorded in `conformance.tsv` and cannot grow;
 new debt is rejected. A migration slice is complete only when the normal gate
 passes and its paid entries are removed by refreshing the baseline.
