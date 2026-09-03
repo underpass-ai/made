@@ -1,7 +1,4 @@
-//! Composite keys for the redb tables.
-//!
-//! redb has no key impl for tuples, so a key that scopes a record to a
-//! ceremony and orders it within that scope is encoded by hand.
+//! Composite keys for the canonical embedded store tables.
 //!
 //! `ceremony_id` is followed by a `0x00` separator and a big-endian
 //! ordinal. Big-endian is what makes byte order match numeric order, so

@@ -8,11 +8,11 @@
 //! two threads sharing one handle would prove nothing about a store that two
 //! agent hosts open independently.
 //!
-//! Usage: store_writer <path> <engine: redb|sqlite> <ceremony-id> <count>
+//! Usage: store_writer <path> <ceremony-id> <count>
 
 use std::io::Write;
 
-use made_adapters::redb::RedbCeremonyStore;
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::entities::{AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance};
 use made_core::ports::CeremonyUnitOfWorkPort;
 use made_core::value_objects::{
@@ -79,25 +79,13 @@ async fn main() {
     let mut args = std::env::args().skip(1);
     let path = args
         .next()
-        .expect("usage: store_writer <path> <engine> <ceremony-id> <count>");
-    let engine = args.next().expect("engine: redb|sqlite");
+        .expect("usage: store_writer <path> <ceremony-id> <count>");
     let ceremony_id = CeremonyId::new(args.next().expect("ceremony id")).expect("valid id");
     let count: u64 = args.next().expect("count").parse().expect("count");
 
-    let store = match engine.as_str() {
-        #[cfg(feature = "sqlite")]
-        "sqlite" => RedbCeremonyStore::open_sqlite(&path),
-        "redb" => RedbCeremonyStore::open(&path),
-        other => {
-            eprintln!("store_writer: unknown engine `{other}`");
-            std::process::exit(2);
-        }
-    };
-    let store = match store {
+    let store = match SqliteCeremonyStore::open(&path) {
         Ok(store) => store,
         Err(error) => {
-            // The refusal is the result on redb, so report it and leave
-            // without a zero exit: the parent counts who got in.
             eprintln!("store_writer: could not open the store: {error}");
             std::process::exit(1);
         }

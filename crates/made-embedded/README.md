@@ -15,13 +15,13 @@ use made_embedded::EmbeddedMade;
 // Everything in memory, dies with the process.
 let engine = EmbeddedMade::default();
 
-// Or durable, with the `redb` feature: state survives a restart.
-let engine = EmbeddedMade::open_redb("ceremonies.redb")?;
+// Or durable on the canonical SQLite WAL store: state survives a restart.
+let engine = EmbeddedMade::open("ceremonies.sqlite3")?;
 ```
 
 ## What durable does and does not mean
 
-With `redb`, ceremony snapshots, the unit of work, the audit journal, the
+With SQLite, ceremony snapshots, the unit of work, the audit journal, the
 outbox and definition publications are persisted. Mounted definitions and
 transcripts stay in memory unless the host replaces those ports.
 

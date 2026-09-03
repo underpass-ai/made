@@ -20,9 +20,9 @@ use made_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresStatistics,
 };
-use made_adapters::redb::RedbCeremonyStore;
 use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::validators::{
     AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -171,7 +171,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc<dyn CeremonyDefinitionPublicationPort>,
     ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
         let store = Arc::new(
-            RedbCeremonyStore::open(path)
+            SqliteCeremonyStore::open(path)
                 .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
         );
         info!(path, "ceremony state is durable");

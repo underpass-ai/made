@@ -1,25 +1,24 @@
-//! The storage seam.
+//! The internal storage seam for the SQLite ceremony store.
 //!
-//! Everything the ceremony store needs from a storage engine, and nothing an
-//! engine needs to know about ceremonies: five key-to-bytes maps, two key
+//! Everything the ceremony store needs from storage, and nothing SQLite
+//! needs to know about ceremonies: five key-to-bytes maps, two key
 //! shapes, transactions over them. The store's logic — revision guards,
 //! outbox claiming, journal ordering — is written once against this and never
 //! names an engine type.
 //!
 //! The seam is deliberately narrow. Every method corresponds to an operation
-//! the store already performed against redb, and no more: point get, insert,
+//! the store performs: point get, insert,
 //! a full ordered scan, and a scan of an inclusive byte range. There is no
 //! remove and no count because the ceremony store does neither — a seam wider
-//! than its callers is a second engine's worth of surface nobody asked for,
-//! and every method of it has to be right in both engines forever.
+//! than its callers is surface nobody asked for, and every method of it has
+//! to preserve the store's transactional contract.
 //!
-//! Two contracts the store relies on, stated here because a second engine has
-//! to honour them:
+//! Two contracts the store relies on:
 //!
 //!   * **Rows come back in ascending key order, compared byte by byte.** The
 //!     journal and the outbox key on a ceremony id, a `0x00` separator and a
 //!     big-endian ordinal precisely so byte order is write order
-//!     ([`super::redb::keys`]). An engine that ordered text keys by locale, or
+//!     ([`super::sqlite::keys`]). An engine that ordered text keys by locale, or
 //!     blobs by anything but memcmp, would return a ceremony's history
 //!     shuffled.
 //!   * **A table that has never been written reads as empty**, never as
@@ -32,12 +31,9 @@
 use made_core::error::DomainError;
 
 mod bytes_row;
-pub mod detect;
 mod key;
 mod key_shape;
 mod read_tx;
-pub(crate) mod redb;
-#[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
 mod storage_engine;
 mod str_row;

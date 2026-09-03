@@ -448,7 +448,7 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 - **`grpc`** (default) — talks to a real MADE. The endpoint
   env var is mandatory; the binary exits with code 2 if it is missing.
 - **`embedded`** — executes the real ceremony engine in process, on top of a
-  redb state file named by `MADE_MCP_REDB_PATH`. That variable is mandatory:
+  SQLite state file named by `MADE_MCP_STORE_PATH`. That variable is mandatory:
   where ceremony state lives is an operator decision, and the binary exits
   with code 2 rather than inventing a location or quietly running on memory
   that dies with the process. The isolated
@@ -468,101 +468,39 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
 MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
   cargo run -p made-mcp --locked
 ```
 
 ### Sharing one ceremony store between two agent hosts
 
-The default engine takes one process at a time, and MADE's store is one file
-at one path rather than one per project, so two agent hosts — Claude Code and
-Codex CLI both running the plugin — collide unconditionally. Whichever starts
-first owns the store; the other reports `CONNECTION_CLOSED` and its ceremony
-engine never starts.
+SQLite is the only embedded storage engine and is enabled in the normal build.
+It uses WAL mode, so multiple MCP processes can open the same store: readers do
+not block a writer, and concurrent writers serialize at commit. Point every
+host at the same `MADE_MCP_STORE_PATH`; do not create one store per host.
 
-The `sqlite` engine removes that. It is WAL-mode SQLite: readers never block
-the writer, and a second writer waits for the commit lock instead of being
-refused. Opt-in, because it brings a C toolchain into the build.
+### Upgrading an existing Redb store
 
-The `sqlite` feature ships from **0.1.5** on. Against an earlier published
-crate the flag does not exist, so pin at least that version, or build the
-binary from a checkout (`cargo build --release -p made-mcp --features sqlite`).
+The current binary neither links Redb nor converts it. It refuses a `.redb`
+path or Redb file before modifying it. Stop every process using the old store,
+then use the last dual-engine release to perform the one-time conversion:
 
 ```bash
-# the short way, once you have a binary with the engine:
-cargo install made-mcp --features sqlite
-made-mcp share-store            # snapshots, converts, verifies, installs, keeps the original
-# then restart both hosts
+cargo install made-mcp --version 0.2.0 --features sqlite --locked \
+  --root /tmp/made-mcp-0.2.0
+/tmp/made-mcp-0.2.0/bin/made-mcp share-store \
+  "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb"
 ```
 
-`share-store` exists because doing it with `convert` by hand means knowing
-three things nobody wrote down: the live store is locked by the session
-asking for the conversion, so it has to be snapshotted first; nothing checks
-that the converted store still holds every ceremony; and getting the swap
-order wrong leaves two live stores or none. It refuses rather than guesses —
-no engine in the binary, leftover working files, a store already on sqlite, a
-verification that does not match — and it never deletes: the original is kept
-beside the new one as `<name>.redb-before-share`.
+Version 0.2.0 snapshots the source, copies and verifies every store table,
+installs `ceremonies.sqlite3`, and preserves the original as a backup. Review
+the command's receipt, then start the current binary with
+`MADE_MCP_STORE_PATH` pointing at that `.sqlite3` file. The new binary has no
+engine selector, `convert`, or `share-store` command; those remain available
+only in the migration release so the production dependency graph contains no
+Redb library or engine.
 
-It also names the result by its engine. A SQLite store living at
-`ceremonies.redb` works, since the engine is read from the file's first bytes
-and never from its name, but anyone who lists that directory will conclude the
-conversion failed.
-
-The long way, when you want each step in your own hands:
-
-```bash
-# a binary that carries the engine
-cargo install made-mcp --features sqlite
-
-# starting fresh: ask for sqlite when the store is created
-MADE_MCP_ENGINE=sqlite MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH=~/.local/state/underpass-made/ceremonies.sqlite3 made-mcp
-
-# already have ceremonies: convert, then point both hosts at the result
-made-mcp convert ceremonies.redb ceremonies.sqlite3 --engine sqlite
-```
-
-Through the plugin there is no path to set: `MADE_MCP_ENGINE=sqlite` makes the
-launcher pick `ceremonies.sqlite3` beside the default, and a converted store
-already sitting there is opened without asking. With both files present the
-launcher keeps the redb default rather than choosing for you.
-
-One thing the plugin does need to be told. A release bundle ships its own
-`bin/made-mcp`, built without the sqlite engine — that is what keeps the
-default install free of a C toolchain — and the launcher prefers it over
-anything on `PATH`. So an operator who built the engine has to say which
-binary to run:
-
-```bash
-MADE_MCP_BIN="$HOME/.cargo/bin/made-mcp" MADE_MCP_ENGINE=sqlite  # in both hosts' registrations
-```
-
-It selects the executable and nothing else; the state path, the engine and the
-legacy import still apply. Installing the plugin straight from the repository
-has no `bin/`, so there the `PATH` binary is used already and this is not
-needed.
-
-**A store is opened by the engine that wrote it, always.** Both formats
-announce themselves in their first bytes, so there is no marker file to keep
-in sync and no way to open a store with the wrong engine: `MADE_MCP_ENGINE`
-decides only what a *new* store becomes, and asking for a different engine
-than an existing store is refused by name.
-
-The conversion copies rows table by table rather than replaying the audit
-journal. That is not a shortcut: a ceremony store is state plus a journal, not
-a log with derived projections, so replaying would rebuild the facts and lose
-what they are evidence of. It reads its source only, refuses a destination
-that already holds a store, and prints a receipt of what moved.
-
-What it costs: a C dependency in the opt-in build. What it does not cost here
-is a new C library — `sqlx` already brings the same one, so the engine adds
-five pure-Rust crates and nothing else. A binary built without the feature
-still recognises a SQLite store and refuses it by name rather than failing
-obscurely.
-
-redb takes an exclusive lock on that file: one MCP process owns a given
-state file at a time. What survives a restart is bounded by the
+What survives a restart is bounded by the
 [published-definition boundary](./capability-verification.md) — an instance
 started from a published definition rehydrates, one started from supplied
 YAML keeps its snapshot but cannot reload its definition, and
@@ -675,10 +613,8 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 | Var                              | Purpose                                                                  |
 |----------------------------------|--------------------------------------------------------------------------|
 | `MADE_MCP_BACKEND`             | `grpc` (default), `embedded`, or `fixture`; the selected backend must be compiled. |
-| `MADE_MCP_REDB_PATH`           | state file the embedded backend opens. Required when `BACKEND=embedded`. |
-| `MADE_MCP_ENGINE`              | engine for a **new** store: `redb` (default) or `sqlite`. An existing store always opens on whatever wrote it. |
-| `MADE_MCP_BIN`                 | plugin launchers only: the executable to run, overriding the bundled binary. Needed to reach a `--features sqlite` build from a release bundle. |
-| `MADE_MCP_LEGACY_REDB_PATH`    | Optional read-only Choreographer source imported once into a new `MADE_MCP_REDB_PATH`. |
+| `MADE_MCP_STORE_PATH`           | state file the embedded backend opens. Required when `BACKEND=embedded`. |
+| `MADE_MCP_BIN`                 | plugin launchers only: the executable to run, overriding the bundled binary. |
 | `MADE_MCP_GRPC_ENDPOINT`       | URL the MCP connects to. Required when `BACKEND=grpc`.                   |
 | `MADE_MCP_GRPC_TLS_MODE`       | `disabled` / `server` / `mutual`. Auto-derived when omitted.             |
 | `MADE_MCP_GRPC_TLS_CA_PATH`    | PEM CA bundle. Implies `server` mode when set.                           |
@@ -687,10 +623,8 @@ MADE_MCP_GRPC_TLS_DOMAIN_NAME=made-grpc \
 | `MADE_MCP_GRPC_TLS_DOMAIN_NAME`| TLS SNI/domain override when cert CN/SAN differs from the URL host.      |
 
 `RUST_LOG=made_mcp=debug` enables structured per-tool-call tracing
-on stderr (stdout is reserved for JSON-RPC).
-Legacy migration events are visible at the default log level through the
-`made_adapters::redb=info` target. They report the migration id, source open
-mode, source SHA-256 and bounded row counts, never ceremony payloads.
+on stderr (stdout is reserved for JSON-RPC). SQLite adapter diagnostics use
+the `made_adapters::sqlite` target.
 
 ## Smoke test
 

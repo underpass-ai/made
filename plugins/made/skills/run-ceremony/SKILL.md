@@ -113,7 +113,7 @@ When the host restarted or no longer has the ceremony id:
 
 Discovery and refresh are read-only. They never approve a guard, close an
 intervention, or replay an operational action. The bundled launcher keeps
-ceremony state in a redb file, so a restarted MCP process finds its
+ceremony state in a SQLite file, so a restarted MCP process finds its
 instances again — but only those started from a *published* definition come
 back whole. An instance started from supplied YAML is listed with
 `"rehydratable": false` and cannot be resumed: treat it as evidence that the

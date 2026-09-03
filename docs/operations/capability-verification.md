@@ -52,11 +52,11 @@ performs that work nor grants external credentials or authority.
 
 | Composition | Executable surface | Default execution | Ceremony durability |
 |---|---|---|---|
-| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | Redb file named by `MADE_MCP_REDB_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); same durability and same published-definition boundary as `EmbeddedMade::open_redb` |
+| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | SQLite file named by `MADE_MCP_STORE_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); same durability and same published-definition boundary as `EmbeddedMade::open` |
 | `EmbeddedMade::default()` | Rust embedded ceremony facade | `NoopCeremonyStepHandler` | In memory |
-| `EmbeddedMade::open_redb(path)` with feature `redb` | Same Rust facade | No-op unless the host injects a handler | Redb persists ceremony snapshots, unit-of-work state, audit journal, outbox and definition publications; mounted definitions and transcripts remain in memory unless replaced |
+| `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists ceremony snapshots, unit-of-work state, audit journal, outbox and definition publications; mounted definitions and transcripts remain in memory unless replaced |
 | Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory; optional PostgreSQL covers other aggregates, not ceremonies |
-| Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state and publications use Redb; the supported Helm shape is one process with a ReadWriteOnce volume |
+| Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state and publications use SQLite; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
 | MCP gRPC backend | Remote RPC-derived catalog; embedded-only extensions may be absent | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
 
 For the current repository composition, PostgreSQL persists deliberations,
@@ -65,7 +65,7 @@ councils, agents and related statistics. It is not the ceremony-state adapter.
 ### The published-definition restart boundary
 
 Durable ceremony state alone does not guarantee restart recovery of every
-instance. In the Redb compositions, published definitions are durable but
+instance. In the SQLite compositions, published definitions are durable but
 mounted definitions are not, so:
 
 - an instance started from a **published** definition
@@ -78,7 +78,7 @@ mounted definitions are not, so:
   memory.
 
 Verify restart claims with the publish → start-published → reopen sequence;
-`crates/made-embedded/tests/redb_engine_api.rs` exercises the recovering
+`crates/made-embedded/tests/sqlite_store_api.rs` exercises the recovering
 path. A host that must resume instances across restarts starts them from
 published definitions.
 
@@ -107,7 +107,7 @@ Avoid unqualified sentences such as “MADE persists ceremonies” or
   installed backend.”
 - “The host executes the claimed step through its separately authorized
   worker.”
-- “The deployable process persists ceremony state in Redb when
+- “The deployable process persists ceremony state in SQLite when
   `MADE_CEREMONY_STORE_PATH` is configured.”
 - “The default embedded handler can complete protocol transitions without
   performing external work.”

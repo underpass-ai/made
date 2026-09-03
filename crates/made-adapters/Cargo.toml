@@ -30,16 +30,9 @@ runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
 # later slices.
 postgres = ["dep:sqlx"]
 
-# Embedded persistence. redb is the store the embedded distribution
-# uses by default: pure Rust, no non-optional dependencies and no C
-# toolchain, so an embedded host stays free of system dependencies.
-redb = ["dep:redb", "dep:sha2"]
-
-# A second engine behind the same storage seam: WAL-mode SQLite, which
-# several processes can open at once. Off by default on purpose — it
-# brings a C toolchain into the build, and the default embedded binary
-# stays pure Rust. Turn it on to let two agent hosts share one store.
-sqlite = ["redb", "dep:rusqlite"]
+# Canonical embedded persistence: WAL-mode SQLite, shared safely by several
+# agent hosts.
+sqlite = ["dep:rusqlite"]
 
 # Memory that outlives a session, kept by an external memory kernel
 # spoken to over its tool protocol. Deliberately dependency-free: a
@@ -91,9 +84,7 @@ prost-types = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }
-redb = { workspace = true, optional = true }
 rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
-sha2 = { workspace = true, optional = true }
 sqlx = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }
@@ -118,4 +109,4 @@ tracing-opentelemetry = { workspace = true }
 [[bin]]
 name = "store_writer"
 path = "src/bin/store_writer.rs"
-required-features = ["redb"]
+required-features = ["sqlite"]

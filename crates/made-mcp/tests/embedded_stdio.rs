@@ -1009,7 +1009,10 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let state = tempfile::tempdir().unwrap();
     let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
         .env("MADE_MCP_BACKEND", "embedded")
-        .env("MADE_MCP_REDB_PATH", state.path().join("ceremonies.redb"))
+        .env(
+            "MADE_MCP_STORE_PATH",
+            state.path().join("ceremonies.sqlite3"),
+        )
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

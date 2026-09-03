@@ -1,6 +1,6 @@
 # ADR-006: Ceremony reports are persisted-state projections
 
-Status: Accepted
+Status: Accepted; storage example superseded by ADR-011
 
 ## Context
 

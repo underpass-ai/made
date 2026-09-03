@@ -7,13 +7,13 @@ use made_core::value_objects::{ClaimedOutboxMessage, DurationMs, EventId, Outbox
 use time::OffsetDateTime;
 
 use crate::engine::{Key, ReadTx, Table};
-use crate::redb::keys::ceremony_of;
+use crate::sqlite::keys::ceremony_of;
 
 use super::stored_outbox_message::StoredOutboxMessage;
-use super::{decode, encode, RedbCeremonyStore};
+use super::{decode, encode, SqliteCeremonyStore};
 
 #[async_trait]
-impl OutboxPort for RedbCeremonyStore {
+impl OutboxPort for SqliteCeremonyStore {
     /// Keys are grouped by ceremony and ordered within it, so one pass
     /// in key order visits each ceremony's queue in the order it was
     /// written. The first undelivered entry of a ceremony is its head,
@@ -124,7 +124,7 @@ impl OutboxPort for RedbCeremonyStore {
     }
 }
 
-impl RedbCeremonyStore {
+impl SqliteCeremonyStore {
     /// Apply `change` to every stored message it accepts, in one write
     /// transaction.
     async fn update_messages<F>(&self, op: &'static str, change: F) -> Result<(), DomainError>

@@ -45,7 +45,7 @@ made-adapters = { workspace = true, features = [
     "grpc",
     "nats",
     "postgres",
-    "redb",
+    "sqlite",
     "runtime-grpc",
 ] }
 made-proto = { workspace = true }

@@ -50,9 +50,9 @@ describes the exact running version, backend and executable surface, while
 surface. The smoke requires `made_generate_ceremony_report` to be advertised
 and to generate a real report from a ceremony completed in the same process.
 
-The embedded backend opens the redb state file named by
-`MADE_MCP_REDB_PATH`; the launcher defaults it to
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`, and
+The embedded backend opens the SQLite state file named by
+`MADE_MCP_STORE_PATH`; the launcher defaults it to
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`, and
 without a path the binary exits rather than run on memory that dies with the
 process. Durability is still not authority, and it is not unconditional
 recovery: an instance started from a published definition rehydrates, one
@@ -61,22 +61,12 @@ definition, and the listing marks it `"rehydratable": false`. Mounted
 definitions and transcripts stay in memory unless the host replaces those
 ports.
 
-On the first start after the Choreographer → MADE rename, the launcher looks
-for the former default
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-choreographer/ceremonies.redb`
-only when the MADE destination does not exist. It opens that source through a
-read-only file descriptor, clones it to the new MADE path, lets redb repair the
-clone if the old process did not shut down cleanly, and migrates publication
-digests and bound instances in one transaction. The source is never opened
-writable. An explicit `MADE_MCP_LEGACY_REDB_PATH` enables the same flow for a
-non-default source; `MADE_MCP_REDB_PATH` must name a new destination on the
-first run.
-
-Successful imports persist a `choreographer-v1-to-made-v1` receipt with the
-source SHA-256 and row counts. Startup emits the same bounded fields as the
-structured `made legacy state migration completed` event. Later starts verify
-the receipt and do not reopen the source. A destination that already exists
-without that receipt is refused instead of overwritten or silently adopted.
+The current launcher never opens or imports Redb. If the SQLite default is
+absent and the former `ceremonies.redb` default exists, startup stops before
+creating a replacement store and prints the exact v0.2.0 `share-store` command
+for the one-time conversion. The migration release preserves the source and
+verifies the copied rows; the current release then opens only the resulting
+`ceremonies.sqlite3` file.
 
 The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
 three cases distinct: the bundled no-op handler, a configured real

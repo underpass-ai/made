@@ -1,16 +1,11 @@
-//! The embedded store on the SQLite engine, against every contract the
-//! engine defines — the same suites the redb arm runs, on the same store
-//! type, one constructor apart.
+//! The canonical embedded SQLite store against every persistence contract.
 //!
-//! This file is the acceptance criterion for the second engine. An engine
-//! that cannot pass every property here is not a valid backend, whatever
-//! else it can do: the point of a seam is that the store's behaviour does
-//! not depend on which engine is underneath, and nothing but running the
-//! same contracts proves that.
+//! Nothing but running the full contract proves that the durable adapter
+//! preserves journal, unit-of-work, outbox and publication semantics.
 
 #![cfg(feature = "sqlite")]
 
-use made_adapters::redb::RedbCeremonyStore;
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::conformance::{
     AuditJournalConformance, CeremonyDefinitionPublicationConformance,
     CeremonySessionStoreConformance, CeremonyUnitOfWorkConformance, OutboxConformance,
@@ -19,9 +14,9 @@ use tempfile::TempDir;
 
 /// Each suite gets its own database: several of them require a store
 /// that nothing else has written to.
-fn store() -> (TempDir, RedbCeremonyStore) {
+fn store() -> (TempDir, SqliteCeremonyStore) {
     let directory = TempDir::new().expect("a temporary directory");
-    let store = RedbCeremonyStore::open_sqlite(directory.path().join("ceremonies.sqlite3"))
+    let store = SqliteCeremonyStore::open(directory.path().join("ceremonies.sqlite3"))
         .expect("the store opens");
     (directory, store)
 }
@@ -83,7 +78,7 @@ async fn a_reopened_store_still_holds_its_journal_and_verifies() {
     let ceremony = CeremonyId::new("survives-restart").unwrap();
 
     {
-        let store = RedbCeremonyStore::open_sqlite(&path).expect("the store opens");
+        let store = SqliteCeremonyStore::open(&path).expect("the store opens");
         let mut expected = ExpectedRevision::New;
         for ordinal in 1..=3_u64 {
             let outcome = store
@@ -94,7 +89,7 @@ async fn a_reopened_store_still_holds_its_journal_and_verifies() {
         }
     }
 
-    let reopened = RedbCeremonyStore::open_sqlite(&path).expect("the store reopens");
+    let reopened = SqliteCeremonyStore::open(&path).expect("the store reopens");
 
     assert_eq!(
         reopened.revision(&ceremony).await.unwrap(),
@@ -190,14 +185,14 @@ async fn instances_survive_reopening_the_store() {
     let ceremony = CeremonyId::new("survives-as-instance").unwrap();
 
     {
-        let store = RedbCeremonyStore::open_sqlite(&path).expect("the store opens");
+        let store = SqliteCeremonyStore::open(&path).expect("the store opens");
         store
             .save(&support::instance(&ceremony))
             .await
             .expect("the instance is stored");
     }
 
-    let reopened = RedbCeremonyStore::open_sqlite(&path).expect("the store reopens");
+    let reopened = SqliteCeremonyStore::open(&path).expect("the store reopens");
 
     assert!(reopened.exists(&ceremony).await.unwrap());
     assert_eq!(reopened.get(&ceremony).await.unwrap().id(), &ceremony);

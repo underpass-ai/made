@@ -10,11 +10,11 @@ use std::time::Instant;
 
 use serde_json::Value;
 
+#[cfg(feature = "embedded")]
+use crate::backend::EMBEDDED_STORE_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
-#[cfg(feature = "embedded")]
-use crate::backend::{EMBEDDED_ENGINE_ENV, EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -65,14 +65,14 @@ impl MadeMcpServer {
     /// In-process ceremony engine with no network service dependency.
     ///
     /// State lives in memory and dies with the process. Use
-    /// [`Self::embedded_redb`] when ceremonies must survive a restart.
+    /// [`Self::embedded_sqlite`] when ceremonies must survive a restart.
     #[cfg(feature = "embedded")]
     #[must_use]
     pub fn embedded() -> Self {
         Self::with_backend(EmbeddedMadeMcpBackend::default())
     }
 
-    /// Durable in-process ceremony engine backed by one redb file.
+    /// Durable in-process ceremony engine backed by one SQLite file.
     ///
     /// Published definitions and running ceremonies are read back from
     /// `path` on start, so a restarted MCP process resumes the sessions a
@@ -81,59 +81,17 @@ impl MadeMcpServer {
     /// # Errors
     ///
     /// Returns the store's failure when the file cannot be opened —
-    /// unreadable path, incompatible database, or a lock held by another
-    /// process. A durable backend that cannot reach its state must not
-    /// degrade into an in-memory one.
+    /// unreadable path or incompatible database. A durable backend that
+    /// cannot reach its state must not degrade into an in-memory one.
     #[cfg(feature = "embedded")]
-    pub fn embedded_redb(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
-        Self::embedded_engine(path, None)
-    }
-
-    /// The embedded backend with a say in the engine a **new** store is
-    /// created with. An existing store opens on whatever wrote it.
-    #[cfg(feature = "embedded")]
-    pub fn embedded_engine(
-        path: impl AsRef<std::path::Path>,
-        engine: Option<made_adapters::StorageEngine>,
-    ) -> Result<Self, String> {
+    pub fn embedded_sqlite(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         let path = path.as_ref();
-        let made = made_embedded::EmbeddedMade::open_engine(path, engine).map_err(|error| {
-            // A lock is the failure an operator actually hits, and the raw
-            // redb text does not say why or what to do. Two agent hosts open
-            // at once — Codex and Claude Code both running the plugin is the
-            // common case — and whichever started first keeps the store.
-            if error
-                .to_string()
-                .contains("already open by another process")
-            {
-                // Only the redb engine takes this lock: on sqlite a second
-                // process waits for the commit lock instead of being refused,
-                // which is what migrating the store buys.
-                format!(
-                    "the embedded ceremony store at `{}` is already open by another process. \
-                     The redb engine is single-writer, so close that session, give this one \
-                     its own file with {EMBEDDED_REDB_PATH_ENV}, or move the store to the \
-                     sqlite engine, which several processes can share",
-                    path.display()
-                )
-            } else {
-                format!(
-                    "failed to open the embedded redb ceremony store at `{}`: {error}",
-                    path.display()
-                )
-            }
+        let made = made_embedded::EmbeddedMade::open(path).map_err(|error| {
+            format!(
+                "failed to open the embedded SQLite ceremony store at `{}`: {error}",
+                path.display()
+            )
         })?;
-        Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
-    }
-
-    /// Durable embedded engine imported from a legacy read-only source.
-    #[cfg(feature = "embedded")]
-    pub fn embedded_redb_from_legacy(
-        source: impl AsRef<std::path::Path>,
-        destination: impl AsRef<std::path::Path>,
-    ) -> Result<Self, String> {
-        let made = made_embedded::EmbeddedMade::open_redb_from_legacy(source, destination)
-            .map_err(|error| format!("failed to import the legacy redb ceremony store: {error}"))?;
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
@@ -180,36 +138,15 @@ impl MadeMcpServer {
             }
             #[cfg(feature = "embedded")]
             "embedded" | "in-process" => {
-                let path = std::env::var(EMBEDDED_REDB_PATH_ENV)
+                let path = std::env::var(EMBEDDED_STORE_PATH_ENV)
                     .ok()
                     .filter(|path| !path.trim().is_empty())
                     .ok_or_else(|| {
                         format!(
-                            "{EMBEDDED_REDB_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
+                            "{EMBEDDED_STORE_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
                         )
                     })?;
-                let engine = match std::env::var(EMBEDDED_ENGINE_ENV)
-                    .ok()
-                    .filter(|value| !value.trim().is_empty())
-                {
-                    Some(value) => {
-                        Some(made_adapters::StorageEngine::parse(&value).map_err(|_| {
-                            format!(
-                                "unsupported {EMBEDDED_ENGINE_ENV} value `{}`; expected `redb` \
-                                 or `sqlite`",
-                                value.trim()
-                            )
-                        })?)
-                    }
-                    None => None,
-                };
-                match std::env::var(LEGACY_REDB_PATH_ENV)
-                    .ok()
-                    .filter(|path| !path.trim().is_empty())
-                {
-                    Some(source) => Self::embedded_redb_from_legacy(source, path),
-                    None => Self::embedded_engine(path, engine),
-                }
+                Self::embedded_sqlite(path)
             }
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(

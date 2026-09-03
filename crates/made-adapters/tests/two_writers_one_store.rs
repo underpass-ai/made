@@ -1,28 +1,20 @@
-//! The reason the SQLite engine exists: two OS processes open one store and
-//! both work.
-//!
-//! On redb this is the failure a MADE user actually hits — a Codex session
-//! holding the store while Claude Code starts, or the reverse — and the test
-//! says so on purpose. Pinning the difference between the engines with an
-//! assertion rather than prose means the day redb grows multi-process
-//! support, this fails loudly instead of quietly staying true.
+//! Two OS processes open the canonical SQLite store and both work.
 
 #![cfg(feature = "sqlite")]
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 
-use made_adapters::redb::RedbCeremonyStore;
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::ports::{AuditJournalPort, CeremonyInstanceRepositoryPort};
 use made_core::value_objects::CeremonyId;
 use tempfile::TempDir;
 
 const COMMITS_PER_WRITER: u64 = 40;
 
-fn spawn(path: &Path, engine: &str, ceremony: &str) -> std::process::Child {
+fn spawn(path: &Path, ceremony: &str) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_store_writer"))
         .arg(path)
-        .arg(engine)
         .arg(ceremony)
         .arg(COMMITS_PER_WRITER.to_string())
         .stdout(Stdio::piped())
@@ -37,9 +29,9 @@ fn spawn(path: &Path, engine: &str, ceremony: &str) -> std::process::Child {
 /// The stderr matters: "1 != 2" is not a diagnosis, and a concurrency test
 /// that fails without saying which call was refused sends the next reader to
 /// guess.
-fn run_two_writers(path: &Path, engine: &str) -> (usize, String) {
-    let first = spawn(path, engine, "writer-a");
-    let second = spawn(path, engine, "writer-b");
+fn run_two_writers(path: &Path) -> (usize, String) {
+    let first = spawn(path, "writer-a");
+    let second = spawn(path, "writer-b");
     let outputs: Vec<_> = [first, second]
         .into_iter()
         .map(|child| child.wait_with_output().expect("the writer exits"))
@@ -60,13 +52,13 @@ async fn two_processes_write_one_sqlite_store_and_nothing_is_lost() {
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("ceremonies.sqlite3");
 
-    let (finished, complaints) = run_two_writers(&path, "sqlite");
+    let (finished, complaints) = run_two_writers(&path);
     assert_eq!(
         finished, 2,
-        "both writers must finish on the sqlite engine; that is what it is for.\n{complaints}"
+        "both writers must finish on the SQLite store.\n{complaints}"
     );
 
-    let store = RedbCeremonyStore::open_sqlite(&path).expect("the store reopens");
+    let store = SqliteCeremonyStore::open(&path).expect("the store reopens");
     for name in ["writer-a", "writer-b"] {
         let ceremony = CeremonyId::new(name).unwrap();
 
@@ -93,32 +85,4 @@ async fn two_processes_write_one_sqlite_store_and_nothing_is_lost() {
             );
         }
     }
-}
-
-#[tokio::test]
-async fn on_redb_the_second_process_is_refused_and_the_first_loses_nothing() {
-    let directory = TempDir::new().expect("a temporary directory");
-    let path = directory.path().join("ceremonies.redb");
-
-    let (finished, complaints) = run_two_writers(&path, "redb");
-    assert_eq!(
-        finished, 1,
-        "redb is single-process: exactly one writer holds the store.\n{complaints}"
-    );
-
-    // The one that got in must have lost nothing to the one that did not.
-    let store = RedbCeremonyStore::open(&path).expect("the store reopens");
-    let mut total = 0u64;
-    for name in ["writer-a", "writer-b"] {
-        let ceremony = CeremonyId::new(name).unwrap();
-        total += store
-            .records(&ceremony)
-            .await
-            .expect("the journal reads")
-            .len() as u64;
-    }
-    assert_eq!(
-        total, COMMITS_PER_WRITER,
-        "the surviving writer's records are all there, and only those"
-    );
 }

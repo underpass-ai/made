@@ -18,8 +18,8 @@ cargo install made-mcp --locked
 ```
 
 This pulls `made-mcp` + the vendored `made-mcp-proto` from crates.io, with
-all three backends compiled in: `fixture`, `embedded` and `grpc`. For a lean
-binary that carries only the in-process engine, add
+all three backends compiled in: `fixture`, SQLite-backed `embedded`, and
+`grpc`. For a lean binary that carries only the in-process engine, add
 `--no-default-features --features embedded`. The dev fallback against this repo's source tree is
 `MADE_MCP_INSTALL_MODE=git bash scripts/mcp/install-made-mcp.sh`.
 
@@ -31,7 +31,7 @@ MADE_MCP_BACKEND=fixture cargo run -p made-mcp --locked
 
 # embedded ceremony mode — real engine, no external service, durable state
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
   cargo run -p made-mcp --locked
 
 # live mode against a local MADE
@@ -141,9 +141,11 @@ step, perform the real work through authorized host capabilities, complete it
 with observable output/evidence, refresh the instance, and only then apply an
 enabled transition. These adapters invoke existing application use cases and
 add no external authority or approval policy.
-The default embedded composition stores state in memory. Process-restart
-recovery requires the host to supply durable repositories for ceremony
-instances, mounted definitions, and transcript context.
+The MCP embedded composition stores ceremony instances, published definitions,
+the audit journal and outbox in the SQLite file named by
+`MADE_MCP_STORE_PATH`. Mounted definitions and transcripts remain in memory;
+start from a published definition when an instance must rehydrate after a
+process restart.
 
 `made_generate_ceremony_report` accepts a non-empty, duplicate-free
 `ceremony_ids` array and an optional presentation title. Unknown ids fail the

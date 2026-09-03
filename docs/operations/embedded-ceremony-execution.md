@@ -8,20 +8,20 @@ whole runtime is embedded:
 Codex host
 └── made-mcp (stdio)
     ├── ceremony engine
-    ├── redb state, journal and published definitions
+    ├── SQLite state, journal and published definitions
     └── claim / complete protocol
 ```
 
 There is no MADE service, gRPC, NATS or PostgreSQL in this mode. The
 plugin launcher selects `MADE_MCP_BACKEND=embedded` and defaults
-`MADE_MCP_REDB_PATH` to:
+`MADE_MCP_STORE_PATH` to:
 
 ```text
-${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb
+${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3
 ```
 
-Set `MADE_MCP_REDB_PATH` before startup to use a different file. `redb`
-takes an exclusive lock: one MCP process owns a given file at a time.
+Set `MADE_MCP_STORE_PATH` before startup to use a different file. SQLite WAL
+allows multiple MCP processes to share it and serializes concurrent writes.
 
 ## The truthful execution contract
 
@@ -81,7 +81,7 @@ context, outputs or the audit journal.
 
 ## Recovery after restart
 
-1. Start the plugin against the same `MADE_MCP_REDB_PATH`.
+1. Start the plugin against the same `MADE_MCP_STORE_PATH`.
 2. Call `made_list_ceremony_instances`; do not create a replacement first.
    Entries the store cannot rehydrate come back as
    `{"ceremony_id": …, "rehydratable": false, "reason": …}` instead of
@@ -93,7 +93,7 @@ context, outputs or the audit journal.
    intervention.
 
 A published instance reloads both its snapshot and immutable definition from
-`redb`. An ad-hoc supplied definition does not make that durability claim; use
+SQLite. An ad-hoc supplied definition does not make that durability claim; use
 the publication path for autonomous machinery.
 
 ## Human guards and interventions
@@ -110,7 +110,7 @@ guard.
 ## Observability and completion events
 
 The durable audit journal is the source for semantic ceremony history. Claim
-and completion produce the engine's step lifecycle records in the same `redb`
+and completion produce the engine's step lifecycle records in the same SQLite
 unit of work as the instance snapshot. `RUST_LOG=made_mcp=debug` adds MCP
 tool-call diagnostics on stderr; stdout is reserved for JSON-RPC.
 
@@ -123,17 +123,16 @@ Use both layers deliberately:
 A consumer that needs a finalization notification should observe the terminal
 ceremony event from the audit/outbox contract, not infer completion from a UI
 window closing. Exporting that event to an external observer is a separate host
-integration; embedded `redb` remains the authoritative local record.
+integration; embedded SQLite remains the authoritative local record.
 
 ## Troubleshooting
 
 | Symptom | Meaning / action |
 |---|---|
-| `MADE_MCP_REDB_PATH` is missing | Direct embedded binary startup is incomplete. Set an explicit path; the plugin launcher supplies the default. |
-| database lock error | Another process owns the same `redb` file. Find the owning MCP process; do not start a second writer. |
+| `MADE_MCP_STORE_PATH` is missing | Direct embedded binary startup is incomplete. Set an explicit path; the plugin launcher supplies the default. |
+| database busy/locked error | A write held the SQLite commit lock longer than the configured timeout. Retry the operation and inspect the competing process if it persists. |
 | `not found: ceremony_definition` after restart | The instance was started from supplied YAML. Publish it and start a new bound instance with explicit recovery provenance. |
 | listing shows `"rehydratable": false` | Same boundary, seen from the listing: that instance's definition was never published, so only its stored snapshot remains. Reading it by id still fails. |
 | completion rejected | The step was not claimed, is no longer in progress, or the result shape is invalid. Refresh the instance before retrying. |
 | failed result rejected | Supply a non-empty `error`; non-failed statuses must omit it. |
 | ceremony says complete but no real artifact exists | The no-op handler path was used or the host filed a false completion. Treat the run as invalid and use claim/perform/complete. |
-
