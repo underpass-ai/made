@@ -14,110 +14,11 @@
 
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
-use made_core::value_objects::{
-    CeremonyStep, CeremonyTransition, GuardCondition, GuardName, StepExecutionRecord, StepId,
-};
+use made_core::value_objects::{CeremonyStep, GuardCondition, GuardName, StepId};
 
-/// A declared step paired with what has happened to it.
-#[derive(Debug, Clone, Copy)]
-pub struct CeremonyStepView<'a> {
-    step: &'a CeremonyStep,
-    record: &'a StepExecutionRecord,
-}
-
-impl<'a> CeremonyStepView<'a> {
-    #[must_use]
-    pub fn step(&self) -> &'a CeremonyStep {
-        self.step
-    }
-
-    #[must_use]
-    pub fn record(&self) -> &'a StepExecutionRecord {
-        self.record
-    }
-
-    #[must_use]
-    pub fn repeat_condition_satisfied(&self) -> bool {
-        self.step
-            .repeat_policy()
-            .is_none_or(|policy| policy.is_satisfied(self.record.output()))
-    }
-
-    #[must_use]
-    pub fn repeat_limit_reached(&self) -> bool {
-        self.step.repeat_policy().is_some_and(|policy| {
-            self.record.status().is_success()
-                && !policy.is_satisfied(self.record.output())
-                && !policy.permits_another_iteration(self.record.iteration())
-        })
-    }
-}
-
-/// A guard on a transition, and whether it holds right now.
-#[derive(Debug, Clone, Copy)]
-pub struct CeremonyGuardView<'a> {
-    name: &'a GuardName,
-    human: bool,
-    satisfied: bool,
-}
-
-impl<'a> CeremonyGuardView<'a> {
-    #[must_use]
-    pub fn name(&self) -> &'a GuardName {
-        self.name
-    }
-
-    /// Whether only a person can satisfy it. This is what separates
-    /// "blocked on work" from "blocked on you".
-    #[must_use]
-    pub fn is_human(&self) -> bool {
-        self.human
-    }
-
-    #[must_use]
-    pub fn is_satisfied(&self) -> bool {
-        self.satisfied
-    }
-}
-
-/// A transition leaving the current state.
-#[derive(Debug, Clone)]
-pub struct CeremonyTransitionView<'a> {
-    transition: &'a CeremonyTransition,
-    enabled: bool,
-    repeat_requirements_satisfied: bool,
-    guards: Vec<CeremonyGuardView<'a>>,
-}
-
-impl<'a> CeremonyTransitionView<'a> {
-    #[must_use]
-    pub fn transition(&self) -> &'a CeremonyTransition {
-        self.transition
-    }
-
-    /// Whether every guard holds, so this transition can be applied.
-    #[must_use]
-    pub fn is_enabled(&self) -> bool {
-        self.enabled
-    }
-
-    #[must_use]
-    pub fn guards(&self) -> &[CeremonyGuardView<'a>] {
-        &self.guards
-    }
-
-    /// Whether everything a machine can settle is settled, so the only
-    /// thing left is a person.
-    #[must_use]
-    fn waits_only_on_people(&self) -> bool {
-        self.repeat_requirements_satisfied
-            && self
-                .guards
-                .iter()
-                .filter(|guard| !guard.human)
-                .all(CeremonyGuardView::is_satisfied)
-    }
-}
+use super::ceremony_guard_view::CeremonyGuardView;
+use super::ceremony_step_view::CeremonyStepView;
+use super::ceremony_transition_view::CeremonyTransitionView;
 
 /// The derived state of one working session.
 #[derive(Debug, Clone)]
@@ -147,7 +48,7 @@ impl<'a> CeremonyInstanceView<'a> {
             .map(|step| {
                 instance
                     .step_record(step.id())
-                    .map(|record| CeremonyStepView { step, record })
+                    .map(|record| CeremonyStepView::new(step, record))
                     .ok_or(DomainError::NotFound {
                         what: "ceremony_step_record",
                     })
@@ -164,30 +65,30 @@ impl<'a> CeremonyInstanceView<'a> {
                         let guard = definition.guards().get(name).ok_or(DomainError::NotFound {
                             what: "ceremony_transition.guard",
                         })?;
-                        Ok(CeremonyGuardView {
+                        Ok(CeremonyGuardView::new(
                             name,
-                            human: matches!(guard.condition(), GuardCondition::HumanApproval),
-                            satisfied: definition.guard_is_satisfied(
+                            matches!(guard.condition(), GuardCondition::HumanApproval),
+                            definition.guard_is_satisfied(
                                 guard,
                                 instance.step_records(),
                                 instance.context(),
                             ),
-                        })
+                        ))
                     })
                     .collect::<Result<Vec<_>, DomainError>>()?;
-                Ok(CeremonyTransitionView {
+                Ok(CeremonyTransitionView::new(
                     transition,
-                    enabled: definition.guards_are_satisfied(
+                    definition.guards_are_satisfied(
                         transition,
                         instance.step_records(),
                         instance.context(),
                     ),
-                    repeat_requirements_satisfied: definition.repeat_requirements_are_satisfied(
+                    definition.repeat_requirements_are_satisfied(
                         transition.from(),
                         instance.step_records(),
                     ),
                     guards,
-                })
+                ))
             })
             .collect::<Result<Vec<_>, DomainError>>()?;
 
@@ -199,7 +100,7 @@ impl<'a> CeremonyInstanceView<'a> {
             .iter()
             .filter(|transition| transition.waits_only_on_people())
             .flat_map(CeremonyTransitionView::guards)
-            .filter(|guard| guard.human && !guard.satisfied)
+            .filter(|guard| guard.is_human() && !guard.is_satisfied())
             .map(CeremonyGuardView::name)
             .collect::<Vec<_>>();
 

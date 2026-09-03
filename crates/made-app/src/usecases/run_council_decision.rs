@@ -27,46 +27,16 @@
 
 use std::sync::Arc;
 
-use made_core::entities::{
-    Council, Deliberation, ExternalContextBundle, RankedOutcome, Task, TaskConstraints,
-    TaskMetadata,
-};
+use made_core::entities::{Council, Deliberation, Task, TaskConstraints};
 use made_core::error::DomainError;
 use made_core::ports::{ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort};
 use made_core::value_objects::{
-    Attributes, CouncilSelector, DurationMs, Specialty, TaskDescription, TaskId, ValidationMode,
+    Attributes, CouncilSelector, DurationMs, Specialty, TaskId, ValidationMode,
 };
 use tracing::info;
 use uuid::Uuid;
 
-use crate::usecases::DeliberateUseCase;
-
-/// Input to [`RunCouncilDecisionUseCase::execute`].
-#[derive(Debug, Clone)]
-pub struct RunCouncilDecisionInput {
-    pub council_selector: CouncilSelector,
-    pub contract_id: String,
-    pub task_description: TaskDescription,
-    pub external_context: Option<ExternalContextBundle>,
-    pub validation_mode: ValidationMode,
-    pub metadata: TaskMetadata,
-}
-
-/// Validated council decision plus the candidate set the caller
-/// needs to reason about the validation outcome.
-#[derive(Debug, Clone)]
-pub struct RunCouncilDecisionOutput {
-    pub task_id: TaskId,
-    pub winner: RankedOutcome,
-    pub candidates: Vec<RankedOutcome>,
-    pub validation_mode: ValidationMode,
-    /// `true` iff at least the winning proposal passed every
-    /// validator. In `Strict` mode this is always `true` (the use
-    /// case wouldn't return `Ok` otherwise); in `Warn` mode it can
-    /// be `false` when no candidate satisfied the contract.
-    pub passed: bool,
-    pub duration_ms: DurationMs,
-}
+use crate::usecases::{DeliberateUseCase, RunCouncilDecisionInput, RunCouncilDecisionOutput};
 
 pub struct RunCouncilDecisionUseCase {
     contracts: Arc<dyn ContractRegistryPort>,

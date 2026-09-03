@@ -1,45 +1,40 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_core::entities::CeremonyDefinitionDraft;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, GuardName, InputName, OutputName, RoleId,
     StepHandlerKind, StepId, StepIteration, StepOutputField, TransitionTrigger,
 };
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json::{json, Value};
 
-/// The result of turning structured authoring intent into an analysable draft.
-#[derive(Debug)]
-pub(super) struct DesignedCeremonyDraft {
-    definition_yaml: String,
-    draft: CeremonyDefinitionDraft,
-    stage_count: usize,
-    participant_count: usize,
-    final_approval_required: bool,
-}
+use super::DesignedCeremonyDraft;
 
-impl DesignedCeremonyDraft {
-    pub(super) fn definition_yaml(&self) -> &str {
-        &self.definition_yaml
-    }
+mod ceremony_document;
+mod guard_document;
+mod inputs_document;
+mod repeat_until_document;
+mod retry_policies_document;
+mod retry_policy_document;
+mod role_document;
+mod state_document;
+mod step_document;
+mod step_repeat_document;
+mod timeouts_document;
+mod transition_document;
 
-    pub(super) fn draft(&self) -> &CeremonyDefinitionDraft {
-        &self.draft
-    }
-
-    pub(super) const fn stage_count(&self) -> usize {
-        self.stage_count
-    }
-
-    pub(super) const fn participant_count(&self) -> usize {
-        self.participant_count
-    }
-
-    pub(super) const fn final_approval_required(&self) -> bool {
-        self.final_approval_required
-    }
-}
+use ceremony_document::CeremonyDocument;
+use guard_document::GuardDocument;
+use inputs_document::InputsDocument;
+use repeat_until_document::RepeatUntilDocument;
+use retry_policies_document::RetryPoliciesDocument;
+use retry_policy_document::RetryPolicyDocument;
+use role_document::RoleDocument;
+use state_document::StateDocument;
+use step_document::StepDocument;
+use step_repeat_document::StepRepeatDocument;
+use timeouts_document::TimeoutsDocument;
+use transition_document::TransitionDocument;
 
 /// Structured intent accepted by `made_design_ceremony`.
 ///
@@ -592,101 +587,6 @@ fn default_approval_guard() -> String {
 
 fn default_approval_trigger() -> String {
     "approve_outcome".to_owned()
-}
-
-#[derive(Debug, Serialize)]
-struct CeremonyDocument {
-    version: String,
-    name: String,
-    description: String,
-    inputs: InputsDocument,
-    outputs: BTreeMap<String, Value>,
-    states: Vec<StateDocument>,
-    transitions: Vec<TransitionDocument>,
-    steps: Vec<StepDocument>,
-    guards: BTreeMap<String, GuardDocument>,
-    roles: Vec<RoleDocument>,
-    timeouts: TimeoutsDocument,
-    retry_policies: RetryPoliciesDocument,
-}
-
-#[derive(Debug, Serialize)]
-struct InputsDocument {
-    required: Vec<String>,
-    optional: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct StateDocument {
-    id: String,
-    #[serde(skip_serializing_if = "is_false")]
-    initial: bool,
-    #[serde(skip_serializing_if = "is_false")]
-    terminal: bool,
-}
-
-#[derive(Debug, Serialize)]
-struct TransitionDocument {
-    from: String,
-    to: String,
-    trigger: String,
-    guards: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct StepDocument {
-    id: String,
-    state: String,
-    handler: String,
-    config: BTreeMap<String, Value>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    repeat: Option<StepRepeatDocument>,
-}
-
-#[derive(Debug, Serialize)]
-struct StepRepeatDocument {
-    max_iterations: u32,
-    until: RepeatUntilDocument,
-}
-
-#[derive(Debug, Serialize)]
-struct RepeatUntilDocument {
-    output_field: String,
-    equals: Value,
-}
-
-#[derive(Debug, Serialize)]
-struct GuardDocument {
-    #[serde(rename = "type")]
-    guard_type: String,
-    check: String,
-}
-
-#[derive(Debug, Serialize)]
-struct RoleDocument {
-    id: String,
-    allowed_actions: Vec<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct TimeoutsDocument {
-    step_default: u64,
-}
-
-#[derive(Debug, Serialize)]
-struct RetryPoliciesDocument {
-    default: RetryPolicyDocument,
-}
-
-#[derive(Debug, Serialize)]
-struct RetryPolicyDocument {
-    max_attempts: u32,
-    backoff_seconds: u64,
-}
-
-#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip predicate receives a reference.
-const fn is_false(value: &bool) -> bool {
-    !*value
 }
 
 #[cfg(test)]

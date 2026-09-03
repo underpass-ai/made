@@ -25,6 +25,7 @@ does not require KMP, PIR, or any downstream product to run:
 |---|---|
 | [`editions.md`](./editions.md) | **Start here.** Embedded vs cluster: which one to run, what each guarantees, what the embedded surface explicitly does *not* prove, and how to move. |
 | [`made-architecture-and-differentiation.md`](./made-architecture-and-differentiation.md) | Code-grounded walkthrough of the hexagonal core, council deliberation pipeline, the declarative ceremony engine, and the LLM-as-judge scorer — and where the design diverges from common agent-orchestration patterns. |
+| [`architecture/hexagonal-target.md`](./architecture/hexagonal-target.md) | Enforced crate dependency direction, DDD/SOLID rules, structural debt ratchet and crate-by-crate migration order. |
 | [`embedded-made.md`](./embedded-made.md) | Two-distribution architecture and the implemented in-process ceremony API, injectable ports, local defaults and current limits. |
 | [`made-observability-design.md`](./made-observability-design.md) | The observability design and the shipped metric catalogue served at `/metrics`: deliberation/judge/provider/ceremony Prometheus families, the differentiating signals (judge discrimination, winner-score distribution, vLLM serial saturation, token cost), and the alert/SLO + dashboard design. |
 | [`adr/`](./adr/README.md) | Architecture decision records: what was decided, and what it costs. Public vocabulary, definition analysis and authoring, and where the audit contract ends and host durability begins. |

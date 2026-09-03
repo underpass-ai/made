@@ -30,11 +30,13 @@ pub mod bundle;
 pub mod chain1;
 pub mod chain2;
 pub mod harness;
+pub mod harness_config;
 pub mod outcome;
 pub mod positive;
 
 pub use chain1::run_chain_1;
 pub use chain2::{run_chain_2, run_chain_2_with_schema};
-pub use harness::{Harness, HarnessConfig};
+pub use harness::Harness;
+pub use harness_config::HarnessConfig;
 pub use outcome::{AssertionRecord, AssertionStatus, BusEnvelopeRecord, ChainOutcome};
 pub use positive::{run_positive_path, PositivePathConfig};

@@ -30,15 +30,7 @@ use made_core::error::DomainError;
 use made_core::ports::{CeremonyInstanceRepositoryPort, CeremonyUnitOfWorkPort};
 use made_core::value_objects::{CeremonyId, ExpectedRevision};
 
-/// A session as it was read, and what the store believed at the time.
-///
-/// The two travel together because using one without the other is the
-/// mistake this type exists to prevent.
-#[derive(Debug)]
-pub struct LoadedSession {
-    pub instance: CeremonyInstance,
-    pub expected: ExpectedRevision,
-}
+use super::LoadedSession;
 
 /// Reads a session with its revision, and stores it with its facts.
 pub struct SessionJournal {

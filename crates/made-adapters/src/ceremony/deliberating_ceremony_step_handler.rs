@@ -624,27 +624,28 @@ mod tests {
                     ],
                     "decision": "accept",
                 })
-                .to_string(),
+                .to_string()
+                .into(),
             })
         }
 
         async fn critique(
             &self,
-            _peer_content: &str,
+            _peer_content: &made_core::value_objects::ProposalContent,
             _constraints: &made_core::entities::TaskConstraints,
         ) -> Result<made_core::ports::Critique, DomainError> {
             Ok(made_core::ports::Critique {
-                feedback: "looks fine".to_owned(),
+                feedback: "looks fine".into(),
             })
         }
 
         async fn revise(
             &self,
-            own_content: &str,
+            own_content: &made_core::value_objects::ProposalContent,
             _critique: &made_core::ports::Critique,
         ) -> Result<made_core::ports::Revision, DomainError> {
             Ok(made_core::ports::Revision {
-                content: own_content.to_owned(),
+                content: own_content.clone(),
             })
         }
     }
@@ -751,14 +752,16 @@ mod tests {
     impl made_core::ports::EvidenceSupportJudgePort for RefutingJudge {
         async fn assess(
             &self,
-            _claim_text: &str,
-            _evidence: &[made_core::ports::EvidenceExcerpt],
-        ) -> Result<made_core::ports::SupportVerdict, DomainError> {
-            Ok(made_core::ports::SupportVerdict {
-                supported: false,
-                confidence: 95,
-                rationale: "the cited excerpt does not state this".to_owned(),
-            })
+            _claim: &made_core::value_objects::ClaimText,
+            _evidence: &[made_core::value_objects::EvidenceExcerpt],
+        ) -> Result<made_core::value_objects::SupportVerdict, DomainError> {
+            Ok(made_core::value_objects::SupportVerdict::new(
+                made_core::value_objects::SupportDecision::Unsupported,
+                made_core::value_objects::SupportConfidence::new(95).unwrap(),
+                made_core::value_objects::SupportRationale::new(
+                    "the cited excerpt does not state this",
+                ),
+            ))
         }
     }
 
@@ -794,27 +797,28 @@ mod tests {
                     ],
                     "decision": "accept",
                 })
-                .to_string(),
+                .to_string()
+                .into(),
             })
         }
 
         async fn critique(
             &self,
-            _peer_content: &str,
+            _peer_content: &made_core::value_objects::ProposalContent,
             _constraints: &made_core::entities::TaskConstraints,
         ) -> Result<made_core::ports::Critique, DomainError> {
             Ok(made_core::ports::Critique {
-                feedback: "looks fine".to_owned(),
+                feedback: "looks fine".into(),
             })
         }
 
         async fn revise(
             &self,
-            own_content: &str,
+            own_content: &made_core::value_objects::ProposalContent,
             _critique: &made_core::ports::Critique,
         ) -> Result<made_core::ports::Revision, DomainError> {
             Ok(made_core::ports::Revision {
-                content: own_content.to_owned(),
+                content: own_content.clone(),
             })
         }
     }

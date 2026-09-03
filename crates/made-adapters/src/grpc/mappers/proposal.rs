@@ -10,7 +10,7 @@ pub fn proposal_to_proto(p: &Proposal) -> pb::Proposal {
     pb::Proposal {
         proposal_id: p.id().as_str().to_owned(),
         author_agent_id: p.author().as_str().to_owned(),
-        content: p.content().to_owned(),
+        content: p.content().as_str().to_owned(),
         metadata: Some(attributes_to_struct(p.attributes())),
         revision_count: p.revision_count(),
     }

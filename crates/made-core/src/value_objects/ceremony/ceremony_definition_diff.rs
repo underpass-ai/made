@@ -1,92 +1,12 @@
 use crate::entities::CeremonyDefinition;
 
 use super::{
-    CeremonyInputDefinition, CeremonyValidationLocus, InputRequirement, StateId, TransitionTrigger,
+    CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyInputDefinition,
+    CeremonyValidationLocus, InputRequirement, StateId, TransitionTrigger,
 };
 
 fn is_required(input: &CeremonyInputDefinition) -> bool {
     matches!(input.requirement(), InputRequirement::Required)
-}
-
-/// What happened to one element between two definitions.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CeremonyChangeKind {
-    Added,
-    Removed,
-    Altered,
-}
-
-impl CeremonyChangeKind {
-    #[must_use]
-    pub const fn as_label(self) -> &'static str {
-        match self {
-            Self::Added => "added",
-            Self::Removed => "removed",
-            Self::Altered => "altered",
-        }
-    }
-}
-
-/// Whether a session already running the earlier definition could go
-/// on if it were pointed at the later one.
-///
-/// This is the question a diff is asked in practice. "What changed" is
-/// answerable by reading both documents; "can the meeting that is
-/// happening right now still finish" is not, and it is the one that
-/// decides whether a new version may be adopted mid-flight.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-pub enum CeremonyChangeImpact {
-    /// A running session is unaffected.
-    Carries,
-    /// A running session could be left with nowhere to go.
-    Strands,
-}
-
-impl CeremonyChangeImpact {
-    #[must_use]
-    pub const fn as_label(self) -> &'static str {
-        match self {
-            Self::Carries => "carries",
-            Self::Strands => "strands",
-        }
-    }
-
-    #[must_use]
-    pub const fn strands(self) -> bool {
-        matches!(self, Self::Strands)
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CeremonyDefinitionChange {
-    kind: CeremonyChangeKind,
-    locus: CeremonyValidationLocus,
-    impact: CeremonyChangeImpact,
-    detail: &'static str,
-}
-
-impl CeremonyDefinitionChange {
-    #[must_use]
-    pub const fn kind(&self) -> CeremonyChangeKind {
-        self.kind
-    }
-
-    #[must_use]
-    pub const fn locus(&self) -> &CeremonyValidationLocus {
-        &self.locus
-    }
-
-    #[must_use]
-    pub const fn impact(&self) -> CeremonyChangeImpact {
-        self.impact
-    }
-
-    /// What changed about the element, in words. The locus says which
-    /// element; this says what about it.
-    #[must_use]
-    pub const fn detail(&self) -> &'static str {
-        self.detail
-    }
 }
 
 /// Everything that differs between two definitions of one ceremony.
@@ -129,14 +49,14 @@ impl CeremonyDefinitionDiff {
     /// mid-flight, however much else about it is harmless.
     #[must_use]
     pub fn strands_running_sessions(&self) -> bool {
-        self.changes.iter().any(|change| change.impact.strands())
+        self.changes.iter().any(|change| change.impact().strands())
     }
 
     #[must_use]
     pub fn strand_count(&self) -> usize {
         self.changes
             .iter()
-            .filter(|change| change.impact.strands())
+            .filter(|change| change.impact().strands())
             .count()
     }
 }
@@ -148,12 +68,7 @@ fn record(
     impact: CeremonyChangeImpact,
     detail: &'static str,
 ) {
-    changes.push(CeremonyDefinitionChange {
-        kind,
-        locus,
-        impact,
-        detail,
-    });
+    changes.push(CeremonyDefinitionChange::new(kind, locus, impact, detail));
 }
 
 fn diff_states(

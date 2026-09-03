@@ -5,7 +5,7 @@ use std::sync::Arc;
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
-use made_adapters::config::EnvConfiguration;
+use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
@@ -18,10 +18,10 @@ use made_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use made_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
-    PostgresPool, PostgresPoolError, PostgresStatistics,
+    PostgresPool, PostgresStatistics,
 };
 use made_adapters::redb::RedbCeremonyStore;
-use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor, RuntimeExecutorConnectError};
+use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
 use made_adapters::validators::{
     AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
@@ -47,58 +47,13 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ConfigurationPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MessagingPort,
-    MetricsRecorderPort, ScoringPort, ServiceConfig, StatisticsPort, ValidatorPort,
+    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ContractRegistryPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort,
+    StatisticsPort, ValidatorPort,
 };
-use thiserror::Error;
 use tracing::{info, warn};
 
-use crate::seeding::SeedingError;
-
-/// Aggregate of every handle the composition root produces.
-pub struct Application {
-    pub service_config: ServiceConfig,
-    pub agent_registry: Arc<dyn AgentRegistryPort>,
-    pub agent_resolver: Arc<dyn AgentResolverPort>,
-    pub council_registry: Arc<dyn CouncilRegistryPort>,
-    pub contract_registry: Arc<dyn ContractRegistryPort>,
-    pub repository: Arc<dyn DeliberationRepositoryPort>,
-    pub grpc_service: made_adapters::grpc::MadeGrpcService,
-    pub nats_subscriber: Option<NatsTriggerSubscriber>,
-    pub health_state: crate::health::HealthState,
-}
-
-impl std::fmt::Debug for Application {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Application")
-            .field("service_config", &self.service_config)
-            .field("nats_subscriber_enabled", &self.nats_subscriber.is_some())
-            .finish()
-    }
-}
-
-/// Errors produced while composing the application.
-#[derive(Debug, Error)]
-pub enum ComposeError {
-    #[error("domain error during wiring: {0}")]
-    Domain(#[from] DomainError),
-
-    #[error("nats connection failed: {0}")]
-    NatsConnect(#[source] async_nats::ConnectError),
-
-    #[error("postgres setup failed: {0}")]
-    Postgres(#[from] PostgresPoolError),
-
-    #[error("seeding failed: {0}")]
-    Seeding(#[from] SeedingError),
-
-    #[error("runtime executor setup failed: {0}")]
-    RuntimeExecutor(#[from] RuntimeExecutorConnectError),
-
-    #[error("ceremony store setup failed: {0}")]
-    CeremonyStore(String),
-}
+use crate::{Application, ComposeError};
 
 /// Pick the scoring policy and wire the optional LLM judge.
 ///
@@ -134,7 +89,7 @@ fn wire_scoring(
 ///   the AsyncAPI / gRPC contract.
 #[allow(clippy::too_many_lines)]
 pub async fn compose() -> Result<Application, ComposeError> {
-    let service_config = EnvConfiguration::new().load().await?;
+    let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
     // One Prometheus registry for the whole process, shared between the

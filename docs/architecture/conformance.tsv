@@ -1,0 +1,11 @@
+# MADE architecture debt. Values may shrink and must never grow silently.
+# Budget: one primary type per source file; at most 600 production lines (test drivers/support exempt from size only).
+# Public primitive fields are additionally counted in made-core.
+path	debt
+crates/made-adapters/src/grpc/service.rs	lines=1248
+crates/made-adapters/src/redb/ceremony_store.rs	lines=830
+crates/made-adapters/src/runtime.rs	lines=845
+crates/made-adapters/src/validators.rs	lines=1176
+crates/made-core/src/entities/ceremony_instance.rs	lines=1179
+crates/made-mcp/src/grpc/tools.rs	lines=1115
+crates/made-mcp/src/protocol.rs	lines=1409

@@ -124,37 +124,3 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// judge silently is not scoring — an otherwise-undetectable misconfig.
     fn record_scoring_mode(&self, mode: ScoringMode);
 }
-
-/// A [`MetricsRecorderPort`] that discards every observation.
-///
-/// The default sink wherever metrics are not the subject under test:
-/// unit tests, benches, and any composition that does not export
-/// Prometheus. Mirrors [`NullObserver`](super::NullObserver) for the
-/// observer port.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct NoopMetricsRecorder;
-
-impl MetricsRecorderPort for NoopMetricsRecorder {
-    fn observe_deliberation_duration(&self, _specialty: &Specialty, _duration: DurationMs) {}
-    fn record_deliberation_outcome(&self, _specialty: &Specialty, _outcome: DeliberationOutcome) {}
-    fn observe_winner_score(&self, _specialty: &Specialty, _score: Score) {}
-    fn observe_judge_latency(&self, _model: &str, _duration: DurationMs) {}
-    fn observe_judge_score(&self, _model: &str, _score: Score) {}
-    fn record_judge_error(&self, _model: &str, _kind: LlmErrorKind) {}
-    fn record_provider_error(&self, _provider: &str, _kind: LlmErrorKind) {}
-    fn record_judge_tokens(&self, _model: &str, _usage: TokenUsage) {}
-    fn record_provider_tokens(&self, _provider: &str, _usage: TokenUsage) {}
-    fn observe_provider_request(&self, _provider: &str, _operation: &str, _duration: DurationMs) {}
-    fn inc_provider_in_flight(&self, _provider: &str) {}
-    fn dec_provider_in_flight(&self, _provider: &str) {}
-    fn record_discrimination(&self, _specialty: &Specialty, _result: Discrimination) {}
-    fn record_ceremony_outcome(&self, _ceremony: &str, _outcome: CeremonyOutcome) {}
-    fn observe_ceremony_duration(&self, _ceremony: &str, _duration: DurationMs) {}
-    fn observe_ceremony_step_duration(&self, _ceremony: &str, _step: &str, _duration: DurationMs) {}
-    fn record_ceremony_step(&self, _ceremony: &str, _step: &str, _status: StepStatus) {}
-    fn record_ceremony_transition_blocked(&self, _ceremony: &str, _from_state: &str) {}
-    fn observe_nats_publish(&self, _subject_kind: &str, _duration: DurationMs) {}
-    fn record_nats_publish_error(&self, _subject_kind: &str, _reason: &str) {}
-    fn set_postgres_pool_in_use(&self, _connections: i64) {}
-    fn record_scoring_mode(&self, _mode: ScoringMode) {}
-}

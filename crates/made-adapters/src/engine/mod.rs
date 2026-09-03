@@ -29,121 +29,29 @@
 //! this seam existed, so nothing is lost, and it keeps the traits object-safe
 //! without a lifetime tying a row to its transaction.
 
-use std::fmt;
-
 use made_core::error::DomainError;
 
+mod bytes_row;
 pub mod detect;
+mod key;
+mod key_shape;
+mod read_tx;
 pub(crate) mod redb;
 #[cfg(feature = "sqlite")]
 pub(crate) mod sqlite;
+mod storage_engine;
+mod str_row;
+mod table;
+mod write_tx;
 
-/// The tables an embedded ceremony store consists of.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub(crate) enum Table {
-    /// Ceremony state: `ceremony_id -> StoredCeremony`.
-    Ceremonies,
-    /// Audit journal: `(ceremony_id, 0x00, ordinal) -> AuditRecord`.
-    Journal,
-    /// Outbox: `(ceremony_id, 0x00, ordinal) -> StoredOutboxMessage`.
-    Outbox,
-    /// Published definitions: `(len, name, version) -> SealedDefinition`.
-    Publications,
-    /// Receipts of the pre-rename Choreographer import.
-    LegacyStateMigrations,
-}
-
-impl Table {
-    /// The key shape this table is defined with. A call carrying another
-    /// shape is a programming error inside this crate, and the engine reports
-    /// it as one instead of guessing.
-    pub(crate) const fn key_shape(self) -> KeyShape {
-        match self {
-            Table::Ceremonies | Table::LegacyStateMigrations => KeyShape::Str,
-            Table::Journal | Table::Outbox | Table::Publications => KeyShape::Bytes,
-        }
-    }
-}
-
-impl fmt::Display for Table {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Table::Ceremonies => "ceremony_instances",
-            Table::Journal => "audit_journal",
-            Table::Outbox => "outbox",
-            Table::Publications => "published_definitions",
-            Table::LegacyStateMigrations => "state_migrations",
-        })
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum KeyShape {
-    Str,
-    Bytes,
-}
-
-/// A borrowed key in one of the two shapes the tables use.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Key<'a> {
-    Str(&'a str),
-    Bytes(&'a [u8]),
-}
-
-impl Key<'_> {
-    pub(crate) const fn shape(&self) -> KeyShape {
-        match self {
-            Key::Str(_) => KeyShape::Str,
-            Key::Bytes(_) => KeyShape::Bytes,
-        }
-    }
-}
-
-/// A row from a `Str`-keyed table.
-pub(crate) type StrRow = (String, Vec<u8>);
-/// A row from a `Bytes`-keyed table.
-pub(crate) type BytesRow = (Vec<u8>, Vec<u8>);
-
-/// A read transaction: a consistent snapshot of every table.
-pub(crate) trait ReadTx {
-    fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError>;
-
-    /// Every row of a `Str`-keyed table, ascending.
-    fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError>;
-
-    /// Every row of a `Bytes`-keyed table, ascending by memcmp.
-    fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError>;
-
-    /// Rows of a `Bytes`-keyed table in `[start, end]`, ascending — **both
-    /// ends inclusive**. This is the scope scan: every journal or outbox
-    /// record of one ceremony.
-    ///
-    /// Inclusive because `keys::scope_range` names the upper bound as the
-    /// ordinal `u64::MAX`, and that record is inside the scope, not past it.
-    /// A half-open range would drop it — a row lost only at a boundary no
-    /// test reaches, which is the worst kind to get wrong.
-    fn scan_bytes_range(
-        &self,
-        table: Table,
-        start: &[u8],
-        end: &[u8],
-    ) -> Result<Vec<BytesRow>, DomainError>;
-}
-
-/// A write transaction. Reads see this transaction's own writes; nothing is
-/// durable until [`commit`](WriteTx::commit) returns, and dropping the
-/// transaction discards everything it did.
-pub(crate) trait WriteTx: ReadTx {
-    fn insert(&mut self, table: Table, key: Key<'_>, value: &[u8]) -> Result<(), DomainError>;
-
-    fn commit(self: Box<Self>) -> Result<(), DomainError>;
-}
-
-/// One opened ceremony store, shareable across tasks.
-pub(crate) trait Engine: fmt::Debug + Send + Sync {
-    fn begin_read(&self) -> Result<Box<dyn ReadTx + '_>, DomainError>;
-    fn begin_write(&self) -> Result<Box<dyn WriteTx + '_>, DomainError>;
-}
+pub(crate) use bytes_row::BytesRow;
+pub(crate) use key::Key;
+pub(crate) use key_shape::KeyShape;
+pub(crate) use read_tx::ReadTx;
+pub(crate) use storage_engine::Engine;
+pub(crate) use str_row::StrRow;
+pub(crate) use table::Table;
+pub(crate) use write_tx::WriteTx;
 
 pub(crate) fn key_shape_mismatch(table: Table, key: KeyShape) -> DomainError {
     tracing::error!(

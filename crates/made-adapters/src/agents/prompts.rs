@@ -68,7 +68,7 @@ pub(super) fn system_prompt_revise(id: &str, specialty: &str) -> String {
 
 pub(super) fn user_prompt_generate(request: &DraftRequest) -> String {
     let rubric = serialize_rubric(&request.constraints);
-    let diverse_note = if request.diverse {
+    let diverse_note = if request.diversity.is_diverse() {
         "You are one of several peers; propose a distinctive angle rather than a safest-seeming default."
     } else {
         "Propose the option you judge best on the merits."
@@ -214,11 +214,11 @@ mod tests {
 
     #[test]
     fn user_prompt_generate_embeds_task_and_diversity_hint() {
-        use made_core::value_objects::TaskDescription;
+        use made_core::value_objects::{DiversityPreference, TaskDescription};
         let req = DraftRequest {
             task: TaskDescription::new("describe the alert").unwrap(),
             constraints: TaskConstraints::default(),
-            diverse: true,
+            diversity: DiversityPreference::Diverse,
             external_context: None,
         };
         let s = user_prompt_generate(&req);
@@ -228,12 +228,12 @@ mod tests {
 
     #[test]
     fn user_prompt_generate_embeds_external_context_bundle_when_present() {
-        use made_core::value_objects::TaskDescription;
+        use made_core::value_objects::{DiversityPreference, TaskDescription};
 
         let req = DraftRequest {
             task: TaskDescription::new("describe the alert").unwrap(),
             constraints: TaskConstraints::default(),
-            diverse: false,
+            diversity: DiversityPreference::Standard,
             external_context: Some(sample_external_context()),
         };
         let s = user_prompt_generate(&req);
@@ -245,7 +245,9 @@ mod tests {
 
     #[test]
     fn user_prompt_generate_embeds_structured_output_contract_when_present() {
-        use made_core::value_objects::{OutputContract, OutputFieldRule, TaskDescription};
+        use made_core::value_objects::{
+            DiversityPreference, OutputContract, OutputFieldRule, TaskDescription,
+        };
 
         let constraints = TaskConstraints::default().with_output_contract(
             OutputContract::json_object(
@@ -260,7 +262,7 @@ mod tests {
         let req = DraftRequest {
             task: TaskDescription::new("describe the alert").unwrap(),
             constraints,
-            diverse: false,
+            diversity: DiversityPreference::Standard,
             external_context: None,
         };
         let s = user_prompt_generate(&req);
@@ -301,7 +303,7 @@ mod tests {
         let s = user_prompt_revise(
             "v1 body",
             &Critique {
-                feedback: "tighten the rubric".to_owned(),
+                feedback: "tighten the rubric".into(),
             },
         );
         assert!(s.contains("v1 body"));

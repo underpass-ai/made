@@ -1,17 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// One defect found in a definition draft.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DefinitionDefectView {
-    /// `error` or `warning`.
-    pub severity: String,
-    /// Where, in the author's terms: "state `X`", "guard `Y`", …
-    pub locus: String,
-    /// What is wrong, in a sentence.
-    pub defect: String,
-    /// Whether this alone prevents publication.
-    pub blocking: bool,
-}
+use crate::DefinitionDefectView;
 
 /// What analysis found — all of it.
 ///
@@ -33,23 +22,10 @@ pub struct DefinitionAnalysisView {
     pub defects: Vec<DefinitionDefectView>,
 }
 
-/// A definition that is now published, or already was.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PublishedDefinitionView {
-    pub name: String,
-    pub version: String,
-    /// Hex digest of the published content — what an instance binds to, and
-    /// what makes "this exact procedure ran" provable.
-    pub digest: String,
-    /// True when the identical content was already published under this name
-    /// and version. Nothing changed, and nothing needed to — which is what
-    /// makes a retried publish safe.
-    pub already_published: bool,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::PublishedDefinitionView;
 
     #[test]
     fn an_analysis_survives_the_wire() {

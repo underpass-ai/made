@@ -42,7 +42,7 @@ pub(super) fn pick_winner<'a>(
             .iter()
             .find(|candidate| candidate.outcome().all_passed())
             .ok_or(DomainError::NoValidProposal {
-                contract_id: contract.contract_id().to_owned(),
+                contract_id: contract.contract_id().as_str().to_owned(),
             });
     }
 

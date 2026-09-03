@@ -3,7 +3,8 @@
 use made_core::entities::{Task, TaskConstraints, TaskMetadata};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    DurationMs, EventId, NumAgents, Rounds, Specialty, TaskDescription, TaskId,
+    CouncilContractId, DurationMs, EventId, NumAgents, OutputContractId, Rounds, Specialty,
+    TaskDescription, TaskId,
 };
 use made_proto::v1 as pb;
 
@@ -66,14 +67,18 @@ pub(crate) fn metadata_from_proto(
         return Ok(TaskMetadata::default());
     };
 
-    TaskMetadata::new(
+    Ok(TaskMetadata::new(
         optional_event_id(&metadata.source_event_id)?,
         optional_event_id(&metadata.causation_id)?,
         optional_event_id(&metadata.correlation_id)?,
-        optional_text(&metadata.council_contract_id),
-        optional_text(&metadata.output_contract_id),
+        optional_text(&metadata.council_contract_id)
+            .map(CouncilContractId::new)
+            .transpose()?,
+        optional_text(&metadata.output_contract_id)
+            .map(OutputContractId::new)
+            .transpose()?,
         attributes_from_struct(metadata.execution_profile)?,
-    )
+    ))
 }
 
 fn optional_event_id(value: &str) -> Result<Option<EventId>, DomainError> {
@@ -232,12 +237,12 @@ mod tests {
         assert_eq!(task.metadata().causation_id().unwrap().as_str(), "cause-1");
         assert_eq!(task.metadata().correlation_id().unwrap().as_str(), "corr-1");
         assert_eq!(
-            task.metadata().council_contract_id(),
-            Some("council-contract")
+            task.metadata().council_contract_id().unwrap().as_str(),
+            "council-contract"
         );
         assert_eq!(
-            task.metadata().output_contract_id(),
-            Some("output-contract")
+            task.metadata().output_contract_id().unwrap().as_str(),
+            "output-contract"
         );
     }
 }

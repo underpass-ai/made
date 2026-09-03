@@ -285,8 +285,14 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(contracts.len().await, 2);
-        assert!(contracts.contains("first").await.unwrap());
-        assert!(contracts.contains("second").await.unwrap());
+        assert!(contracts
+            .contains(&made_core::value_objects::OutputContractId::new("first").unwrap())
+            .await
+            .unwrap());
+        assert!(contracts
+            .contains(&made_core::value_objects::OutputContractId::new("second").unwrap())
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
@@ -303,7 +309,10 @@ mod tests {
         apply_contract_seeding_from_dir(&contracts, tmp.path())
             .await
             .unwrap();
-        assert!(contracts.contains("good").await.unwrap());
+        assert!(contracts
+            .contains(&made_core::value_objects::OutputContractId::new("good").unwrap())
+            .await
+            .unwrap());
         assert_eq!(contracts.len().await, 1);
     }
 

@@ -13,6 +13,7 @@
 //! be read but not followed.
 
 mod memory_capabilities;
+mod memory_capability;
 mod memory_confidence;
 mod memory_dimension;
 mod memory_entry;
@@ -27,7 +28,8 @@ mod memory_relation_kind;
 mod memory_scope;
 mod memory_write;
 
-pub use memory_capabilities::{MemoryCapabilities, MemoryCapability};
+pub use memory_capabilities::MemoryCapabilities;
+pub use memory_capability::MemoryCapability;
 pub use memory_confidence::MemoryConfidence;
 pub use memory_dimension::MemoryDimension;
 pub use memory_entry::MemoryEntry;

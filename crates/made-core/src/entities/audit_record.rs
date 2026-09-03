@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use crate::entities::AuditFact;
 use crate::error::DomainError;
 use crate::value_objects::{
     AuditActor, AuditEventType, AuditRecordHash, AuditSequence, CeremonyId, CeremonyName,
-    CeremonyVersion, EventId, TraceContext,
+    CeremonyVersion, EventId,
 };
 
 /// Domain separator. A digest computed under a different scheme can
@@ -52,25 +53,6 @@ pub struct AuditRecord {
     #[serde(default)]
     previous_record_hash: Option<AuditRecordHash>,
     record_hash: AuditRecordHash,
-}
-
-/// Everything a record states except its position and its digest.
-///
-/// Separating the fact from its place in the chain keeps the caller
-/// from choosing either: the journal assigns the sequence and the
-/// record computes its own digest.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct AuditFact {
-    pub event_id: EventId,
-    pub event_type: AuditEventType,
-    pub ceremony_id: CeremonyId,
-    pub definition_name: CeremonyName,
-    pub definition_version: CeremonyVersion,
-    pub occurred_at: OffsetDateTime,
-    pub actor: AuditActor,
-    pub correlation_id: Option<EventId>,
-    pub causation_id: Option<EventId>,
-    pub trace: Option<TraceContext>,
 }
 
 impl AuditRecord {

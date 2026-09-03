@@ -13,8 +13,10 @@
 
 mod config;
 mod messaging;
+mod nats_subjects;
 mod subscriber;
 
-pub use config::{NatsConfig, NatsSubjects};
+pub use config::NatsConfig;
 pub use messaging::NatsMessaging;
+pub use nats_subjects::NatsSubjects;
 pub use subscriber::NatsTriggerSubscriber;

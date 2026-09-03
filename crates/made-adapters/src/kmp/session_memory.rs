@@ -28,7 +28,7 @@ use made_core::value_objects::{
 
 use super::error::{refused, unreachable_kernel};
 use super::mapping;
-use super::transport::{KernelAnswer, KernelTransport};
+use super::{KernelAnswer, KernelTransport};
 
 /// How many pages of one temporal read to walk before giving up.
 ///

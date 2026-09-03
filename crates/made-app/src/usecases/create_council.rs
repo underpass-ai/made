@@ -10,15 +10,12 @@ use std::sync::Arc;
 use made_core::entities::Council;
 use made_core::error::DomainError;
 use made_core::ports::{AgentResolverPort, ClockPort, CouncilRegistryPort};
-use made_core::value_objects::{AgentId, CouncilId, Specialty};
 use tracing::info;
 
-#[derive(Debug, Clone)]
-pub struct CreateCouncilInput {
-    pub council_id: CouncilId,
-    pub specialty: Specialty,
-    pub agents: Vec<AgentId>,
-}
+#[cfg(test)]
+use made_core::value_objects::{AgentId, CouncilId, Specialty};
+
+use super::create_council_input::CreateCouncilInput;
 
 pub struct CreateCouncilUseCase {
     clock: Arc<dyn ClockPort>,

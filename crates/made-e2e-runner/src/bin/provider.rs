@@ -29,7 +29,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use made_adapters::agents::vllm::{VllmAgent, VllmBearerToken, VllmClientIdentity, VllmConfig};
 use made_core::entities::TaskConstraints;
 use made_core::ports::{AgentPort, Critique, DraftRequest};
-use made_core::value_objects::{AgentId, NumAgents, Rounds, Rubric, Specialty, TaskDescription};
+use made_core::value_objects::{
+    AgentId, DiversityPreference, NumAgents, Rounds, Rubric, Specialty, TaskDescription,
+};
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
@@ -122,7 +124,7 @@ async fn main() -> Result<()> {
         .generate(DraftRequest {
             task: task.clone(),
             constraints: constraints.clone(),
-            diverse: true,
+            diversity: DiversityPreference::Diverse,
             external_context: None,
         })
         .await

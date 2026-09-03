@@ -36,11 +36,17 @@
 //! that works around it.
 
 mod error;
+mod kernel_answer;
+mod kernel_transport_error;
 mod mapping;
 mod session_memory;
 mod stdio;
+mod stdio_kernel_transport_config;
 mod transport;
 
+pub use kernel_answer::KernelAnswer;
+pub use kernel_transport_error::KernelTransportError;
 pub use session_memory::KernelSessionMemory;
-pub use stdio::{StdioKernelTransport, StdioKernelTransportConfig};
-pub use transport::{KernelAnswer, KernelTransport, KernelTransportError};
+pub use stdio::StdioKernelTransport;
+pub use stdio_kernel_transport_config::StdioKernelTransportConfig;
+pub use transport::KernelTransport;

@@ -16,7 +16,7 @@ use made_core::ports::{
     AgentDescriptor, AgentFactoryPort, AgentPort, AgentRegistryPort, AgentResolverPort, Critique,
     DraftRequest, Revision,
 };
-use made_core::value_objects::{AgentId, AgentKind, Attributes, Specialty};
+use made_core::value_objects::{AgentId, AgentKind, Attributes, ProposalContent, Specialty};
 use made_tests_integration::postgres_fixture;
 
 fn factory() -> Arc<dyn AgentFactoryPort> {
@@ -47,17 +47,21 @@ impl AgentPort for StubAgent {
     }
     async fn generate(&self, _: DraftRequest) -> Result<Revision, DomainError> {
         Ok(Revision {
-            content: String::new(),
+            content: String::new().into(),
         })
     }
-    async fn critique(&self, _: &str, _: &TaskConstraints) -> Result<Critique, DomainError> {
+    async fn critique(
+        &self,
+        _: &ProposalContent,
+        _: &TaskConstraints,
+    ) -> Result<Critique, DomainError> {
         Ok(Critique {
-            feedback: String::new(),
+            feedback: String::new().into(),
         })
     }
-    async fn revise(&self, own: &str, _: &Critique) -> Result<Revision, DomainError> {
+    async fn revise(&self, own: &ProposalContent, _: &Critique) -> Result<Revision, DomainError> {
         Ok(Revision {
-            content: own.to_owned(),
+            content: own.clone(),
         })
     }
 }

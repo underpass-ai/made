@@ -4,9 +4,10 @@ use redb::ReadableTable;
 
 use crate::engine::redb::PUBLICATIONS;
 
-use super::ceremony_store::{decode, encode, StoredPublication};
+use super::ceremony_store::{decode, encode};
 use super::error::store_failure;
 use super::legacy_definition_binding::LegacyDefinitionBinding;
+use super::StoredPublication;
 
 /// Verified publication mappings imported into the MADE digest scheme.
 #[derive(Debug)]

@@ -4,34 +4,14 @@
 //! shared-handle so it can be passed into multiple adapters (repository,
 //! future registries) without re-dialing the database.
 
-use std::time::Duration;
-
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use thiserror::Error;
+
+use super::{PostgresConfig, PostgresPoolError};
 
 /// sqlx ships a migrator keyed on the workspace-relative path. The
 /// `.sql` files live next to this crate's `Cargo.toml`.
 static MIGRATOR: Migrator = sqlx::migrate!("./migrations/postgres");
-
-/// How the pool is configured.
-#[derive(Debug, Clone)]
-pub struct PostgresConfig {
-    pub url: String,
-    pub max_connections: u32,
-    pub acquire_timeout: Duration,
-}
-
-impl PostgresConfig {
-    #[must_use]
-    pub fn from_url(url: impl Into<String>) -> Self {
-        Self {
-            url: url.into(),
-            max_connections: 10,
-            acquire_timeout: Duration::from_secs(5),
-        }
-    }
-}
 
 /// Clone-friendly handle to a configured [`sqlx::PgPool`].
 #[derive(Clone)]
@@ -91,19 +71,10 @@ impl PostgresPool {
     }
 }
 
-#[derive(Debug, Error)]
-pub enum PostgresPoolError {
-    #[error("postgres connect failed: {0}")]
-    Connect(#[source] sqlx::Error),
-    #[error("postgres migrations failed: {0}")]
-    Migrate(#[source] sqlx::migrate::MigrateError),
-    #[error("postgres health check failed: {0}")]
-    HealthCheck(#[source] sqlx::Error),
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::Duration;
 
     #[test]
     fn config_from_url_sets_sensible_defaults() {

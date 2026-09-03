@@ -7,7 +7,7 @@
 
 use made_core::error::DomainError;
 
-use super::transport::KernelTransportError;
+use super::KernelTransportError;
 
 pub(super) fn unreachable_kernel(error: &KernelTransportError, tool: &'static str) -> DomainError {
     tracing::error!(error = %error, tool, "the memory kernel could not be reached");

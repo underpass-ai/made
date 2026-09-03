@@ -61,17 +61,25 @@ impl AgentPort for StubAgent {
     }
     async fn generate(&self, _: DraftRequest) -> Result<Revision, DomainError> {
         Ok(Revision {
-            content: "bench-content".to_owned(),
+            content: "bench-content".into(),
         })
     }
-    async fn critique(&self, _: &str, _: &TaskConstraints) -> Result<Critique, DomainError> {
+    async fn critique(
+        &self,
+        _: &made_core::value_objects::ProposalContent,
+        _: &TaskConstraints,
+    ) -> Result<Critique, DomainError> {
         Ok(Critique {
-            feedback: String::new(),
+            feedback: String::new().into(),
         })
     }
-    async fn revise(&self, own: &str, _: &Critique) -> Result<Revision, DomainError> {
+    async fn revise(
+        &self,
+        own: &made_core::value_objects::ProposalContent,
+        _: &Critique,
+    ) -> Result<Revision, DomainError> {
         Ok(Revision {
-            content: own.to_owned(),
+            content: own.clone(),
         })
     }
 }

@@ -10,17 +10,34 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::entities::{TaskConstraints, ValidatorReport};
 use made_core::error::DomainError;
-use made_core::ports::{EvidenceExcerpt, EvidenceSupportJudgePort, ValidatorPort};
-use made_core::value_objects::Attributes;
+use made_core::ports::{EvidenceSupportJudgePort, ValidatorPort};
+use made_core::value_objects::{
+    Attributes, ClaimText, EvidenceBody, EvidenceExcerpt, EvidenceReference,
+};
 use serde_json::{json, Map, Value};
+
+mod allowed_string_values_validator;
+mod bounded_event_shape_validator;
+mod claims_evidence_grounded_validator;
+mod claims_evidence_supported_validator;
+mod content_non_empty_validator;
+mod json_object_output_validator;
+mod json_schema_validator;
+mod required_fields_validator;
+
+pub use allowed_string_values_validator::AllowedStringValuesValidator;
+pub use bounded_event_shape_validator::BoundedEventShapeValidator;
+pub use claims_evidence_grounded_validator::ClaimsEvidenceGroundedValidator;
+pub use claims_evidence_supported_validator::ClaimsEvidenceSupportedValidator;
+pub use content_non_empty_validator::ContentNonEmptyValidator;
+pub use json_object_output_validator::JsonObjectOutputValidator;
+pub use json_schema_validator::JsonSchemaValidator;
+pub use required_fields_validator::RequiredFieldsValidator;
 
 /// A validator that fails a proposal only when its content is empty
 /// (after trimming). The thinnest possible "is there anything here"
 /// check — useful as a default so operators who do not configure a
 /// richer validator still get a meaningful ranking signal.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ContentNonEmptyValidator;
-
 impl ContentNonEmptyValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -52,9 +69,6 @@ impl ValidatorPort for ContentNonEmptyValidator {
 
 /// A validator that requires structured-output proposals to be valid
 /// JSON objects at the root.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct JsonObjectOutputValidator;
-
 impl JsonObjectOutputValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -101,9 +115,6 @@ impl ValidatorPort for JsonObjectOutputValidator {
 
 /// A validator that enforces required fields declared in the output
 /// contract.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct RequiredFieldsValidator;
-
 impl RequiredFieldsValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -174,9 +185,6 @@ impl ValidatorPort for RequiredFieldsValidator {
 
 /// A validator that enforces allowed string sets declared for one or
 /// more fields in the output contract.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct AllowedStringValuesValidator;
-
 impl AllowedStringValuesValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -279,9 +287,6 @@ impl ValidatorPort for AllowedStringValuesValidator {
 ///   compilation cost is dwarfed by an LLM-generated proposal — if
 ///   profiling later says otherwise, the validator can grow a
 ///   schema-text cache without changing the port surface.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct JsonSchemaValidator;
-
 impl JsonSchemaValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -428,22 +433,6 @@ impl ValidatorPort for JsonSchemaValidator {
 /// the validator counts at most one violation per dimension so a
 /// huge payload that breaks several limits still produces a small,
 /// human-readable report.
-#[derive(Debug, Clone, Copy)]
-#[allow(clippy::struct_field_names)] // every limit IS a "max_*" budget; renaming muddies intent
-pub struct BoundedEventShapeValidator {
-    /// Total UTF-8 byte length of the proposal content. Caps the
-    /// envelope size a single deliberation can place on the bus.
-    max_total_size_bytes: usize,
-    /// Maximum nesting depth of objects + arrays combined.
-    max_depth: usize,
-    /// Maximum number of keys in any single object.
-    max_object_keys: usize,
-    /// Maximum number of elements in any single array.
-    max_array_len: usize,
-    /// Maximum UTF-8 byte length of any single string value.
-    max_string_len: usize,
-}
-
 impl BoundedEventShapeValidator {
     /// Defaults chosen for use cases where the output is fed into a
     /// downstream event bus or audit log:
@@ -677,9 +666,6 @@ impl ShapeViolation {
 ///   name the claim index, a text preview and the orphan refs — that
 ///   detail lands in spans/logs and becomes part of the decision
 ///   record.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct ClaimsEvidenceGroundedValidator;
-
 impl ClaimsEvidenceGroundedValidator {
     #[must_use]
     pub const fn new() -> Self {
@@ -895,10 +881,6 @@ const MAX_JUDGED_CLAIMS: usize = 64;
 /// - claims citing refs the rule has no body for produce a violation
 ///   (those refs are outside the pack — the grounding gate names them;
 ///   this gate refuses to judge on nothing).
-pub struct ClaimsEvidenceSupportedValidator {
-    judge: Option<Arc<dyn EvidenceSupportJudgePort>>,
-}
-
 impl std::fmt::Debug for ClaimsEvidenceSupportedValidator {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("ClaimsEvidenceSupportedValidator")
@@ -961,8 +943,7 @@ impl ValidatorPort for ClaimsEvidenceSupportedValidator {
         let contract_id = constraints
             .output_contract()
             .map(made_core::value_objects::OutputContract::contract_id)
-            .unwrap_or_default()
-            .to_owned();
+            .map_or_else(String::new, |id| id.as_str().to_owned());
 
         let object = match parse_json_object(proposal_content) {
             Ok(object) => object,
@@ -1076,27 +1057,29 @@ async fn judge_claims(
                 str::to_owned,
             );
 
+        let claim_text = ClaimText::new(claim_text)?;
         let verdict = judge.assess(&claim_text, &excerpts).await?;
-        let accepted = verdict.supported && verdict.confidence >= support.min_confidence();
+        let accepted = verdict.decision().is_supported()
+            && verdict.confidence().meets(support.min_confidence());
         verdicts.push(json!({
             "claim_index": index,
             "claim_preview": preview,
             "refs": excerpts
                 .iter()
-                .map(|excerpt| excerpt.reference.clone())
+                .map(|excerpt| excerpt.reference().as_str())
                 .collect::<Vec<_>>(),
-            "supported": verdict.supported,
-            "confidence": verdict.confidence,
-            "rationale": verdict.rationale,
+            "supported": verdict.decision().is_supported(),
+            "confidence": verdict.confidence().percent(),
+            "rationale": verdict.rationale().as_str(),
         }));
         if !accepted {
             violations.push(json!({
                 "claim_index": index,
                 "claim_preview": preview,
-                "problem": if verdict.supported {
+                "problem": if verdict.decision().is_supported() {
                     format!(
                         "supported but confidence {} is below min_confidence {}",
-                        verdict.confidence,
+                        verdict.confidence().percent(),
                         support.min_confidence()
                     )
                 } else {
@@ -1124,9 +1107,11 @@ fn cited_excerpts(
             refs.iter()
                 .filter_map(Value::as_str)
                 .filter_map(|reference| {
-                    support.body(reference).map(|body| EvidenceExcerpt {
-                        reference: reference.to_owned(),
-                        body: body.to_owned(),
+                    support.body(reference).and_then(|body| {
+                        Some(EvidenceExcerpt::new(
+                            EvidenceReference::new(reference).ok()?,
+                            EvidenceBody::new(body).ok()?,
+                        ))
                     })
                 })
                 .collect()
@@ -1337,8 +1322,9 @@ mod tests {
 
     // ---- ClaimsEvidenceSupportedValidator ------------------------------
 
-    use made_core::ports::SupportVerdict;
-    use made_core::value_objects::SemanticSupportRule;
+    use made_core::value_objects::{
+        SemanticSupportRule, SupportConfidence, SupportDecision, SupportRationale, SupportVerdict,
+    };
 
     /// Scripted judge: answers by looking the claim text up in a
     /// verdict table; records what it was asked so tests can assert the
@@ -1353,18 +1339,18 @@ mod tests {
     impl EvidenceSupportJudgePort for ScriptedJudge {
         async fn assess(
             &self,
-            claim_text: &str,
+            claim: &ClaimText,
             evidence: &[EvidenceExcerpt],
         ) -> Result<SupportVerdict, DomainError> {
             self.asked.lock().unwrap().push((
-                claim_text.to_owned(),
+                claim.as_str().to_owned(),
                 evidence
                     .iter()
-                    .map(|excerpt| excerpt.reference.clone())
+                    .map(|excerpt| excerpt.reference().as_str().to_owned())
                     .collect(),
             ));
             self.verdicts
-                .get(claim_text)
+                .get(claim.as_str())
                 .cloned()
                 .ok_or(DomainError::InvariantViolated {
                     reason: "scripted judge: unexpected claim",
@@ -1373,11 +1359,11 @@ mod tests {
     }
 
     fn verdict(supported: bool, confidence: u8) -> SupportVerdict {
-        SupportVerdict {
-            supported,
-            confidence,
-            rationale: "scripted".to_owned(),
-        }
+        SupportVerdict::new(
+            SupportDecision::from(supported),
+            SupportConfidence::new(confidence).unwrap(),
+            SupportRationale::new("scripted"),
+        )
     }
 
     fn supported_constraints(min_confidence: u8) -> TaskConstraints {

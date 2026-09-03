@@ -12,14 +12,31 @@ use std::time::Duration;
 use async_trait::async_trait;
 use made_core::entities::Proposal;
 use made_core::error::DomainError;
-use made_core::ports::{ExecutionOutcome, ExecutorPort};
-use made_core::value_objects::{Attributes, DurationMs};
+use made_core::ports::ExecutorPort;
+use made_core::value_objects::{
+    Attributes, DurationMs, ExecutionId, ExecutionOutcome, ExecutionStatus,
+};
 use made_proto::runtime_v1 as runtime_pb;
 use prost_types::{value::Kind as PbKind, ListValue, Struct as PbStruct, Value as PbValue};
 use serde_json::{Map as JsonMap, Number as JsonNumber, Value as JsonValue};
-use thiserror::Error;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tracing::{debug, warn};
+
+mod executor_backend_config;
+mod runtime_client_tls_config;
+mod runtime_client_tls_mode;
+mod runtime_executor;
+mod runtime_executor_config;
+mod runtime_executor_connect_error;
+mod runtime_principal;
+
+pub use executor_backend_config::ExecutorBackendConfig;
+pub use runtime_client_tls_config::RuntimeClientTlsConfig;
+pub use runtime_client_tls_mode::RuntimeClientTlsMode;
+pub use runtime_executor::RuntimeExecutor;
+pub use runtime_executor_config::RuntimeExecutorConfig;
+pub use runtime_executor_connect_error::RuntimeExecutorConnectError;
+pub use runtime_principal::RuntimePrincipal;
 
 /// Max time to establish the TCP+TLS connection to the runtime.
 const RUNTIME_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -57,13 +74,6 @@ const KEY_SESSION_ALLOWED_PATHS: &str = "runtime.session.allowed_paths";
 const KEY_SESSION_METADATA: &str = "runtime.session.metadata";
 const KEY_SESSION_EXPIRES_IN_SECONDS: &str = "runtime.session.expires_in_seconds";
 
-/// Binary-level execution backend selection.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ExecutorBackendConfig {
-    Noop,
-    Runtime(RuntimeExecutorConfig),
-}
-
 impl ExecutorBackendConfig {
     /// Load executor selection from `MADE_*` environment variables.
     ///
@@ -90,15 +100,6 @@ impl ExecutorBackendConfig {
     }
 }
 
-/// Static technical identity used when the adapter creates ephemeral
-/// Runtime sessions on behalf of MADE.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimePrincipal {
-    pub tenant_id: String,
-    pub actor_id: String,
-    pub roles: Vec<String>,
-}
-
 impl RuntimePrincipal {
     fn to_proto(&self) -> runtime_pb::Principal {
         runtime_pb::Principal {
@@ -107,14 +108,6 @@ impl RuntimePrincipal {
             roles: self.roles.clone(),
         }
     }
-}
-
-/// Configuration for the Runtime executor adapter.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeExecutorConfig {
-    pub grpc_endpoint: String,
-    pub principal: RuntimePrincipal,
-    pub tls: RuntimeClientTlsConfig,
 }
 
 impl RuntimeExecutorConfig {
@@ -139,29 +132,6 @@ impl RuntimeExecutorConfig {
             tls,
         })
     }
-}
-
-/// TLS posture for the outbound gRPC client to underpass-runtime.
-///
-/// Mirrors the shape used by the MCP adapter: `Disabled` (plain
-/// HTTP/2), `Server` (one-way TLS), or `Mutual` (mTLS). Auto-detected
-/// from environment but every variant is also constructable directly
-/// so tests stay independent of process env.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct RuntimeClientTlsConfig {
-    pub mode: RuntimeClientTlsMode,
-    pub ca_path: Option<PathBuf>,
-    pub cert_path: Option<PathBuf>,
-    pub key_path: Option<PathBuf>,
-    pub domain_name: Option<String>,
-}
-
-/// Operator-visible TLS posture options for the Runtime client.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RuntimeClientTlsMode {
-    Disabled,
-    Server,
-    Mutual,
 }
 
 impl RuntimeClientTlsMode {
@@ -305,29 +275,6 @@ fn endpoint_uri_for_tls_mode(endpoint: &str, mode: RuntimeClientTlsMode) -> Stri
         || endpoint.to_string(),
         |without_scheme| format!("https://{without_scheme}"),
     )
-}
-
-#[derive(Debug, Error)]
-pub enum RuntimeExecutorConnectError {
-    #[error("invalid runtime gRPC endpoint")]
-    InvalidEndpoint,
-
-    #[error("runtime gRPC connection failed: {0}")]
-    Transport(#[from] tonic::transport::Error),
-
-    #[error("failed to read runtime TLS material at {path}: {source}")]
-    TlsReadFailed {
-        path: String,
-        #[source]
-        source: std::io::Error,
-    },
-}
-
-/// Runtime-backed executor.
-#[derive(Debug, Clone)]
-pub struct RuntimeExecutor {
-    channel: Channel,
-    config: RuntimeExecutorConfig,
 }
 
 impl RuntimeExecutor {
@@ -663,12 +610,17 @@ fn execution_outcome_from_invocation(
         output.insert("runtime.artifacts".to_owned(), JsonValue::Array(artifacts));
     }
 
-    Ok(ExecutionOutcome {
-        execution_id: invocation.id,
-        succeeded: matches!(status, runtime_pb::InvocationStatus::Succeeded),
-        duration: DurationMs::try_from(invocation.duration_ms)?,
-        output: Attributes::new(output)?,
-    })
+    let execution_status = if matches!(status, runtime_pb::InvocationStatus::Succeeded) {
+        ExecutionStatus::Succeeded
+    } else {
+        ExecutionStatus::Failed
+    };
+    Ok(ExecutionOutcome::new(
+        ExecutionId::new(invocation.id)?,
+        execution_status,
+        DurationMs::try_from(invocation.duration_ms)?,
+        Attributes::new(output)?,
+    ))
 }
 
 fn map_runtime_status(status: &tonic::Status) -> DomainError {
@@ -1150,15 +1102,15 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(outcome.succeeded);
-        assert_eq!(outcome.execution_id, "inv-456");
-        assert_eq!(outcome.duration, DurationMs::from_millis(321));
+        assert!(outcome.status().is_success());
+        assert_eq!(outcome.id().as_str(), "inv-456");
+        assert_eq!(outcome.duration(), DurationMs::from_millis(321));
         assert_eq!(
-            outcome.output.get("runtime.status"),
+            outcome.output().get("runtime.status"),
             Some(&json!("succeeded"))
         );
         assert_eq!(
-            outcome.output.get("runtime.tool_name"),
+            outcome.output().get("runtime.tool_name"),
             Some(&json!("fs.write_file"))
         );
 
@@ -1207,10 +1159,13 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(!outcome.succeeded);
-        assert_eq!(outcome.output.get("runtime.status"), Some(&json!("denied")));
+        assert!(!outcome.status().is_success());
         assert_eq!(
-            outcome.output.get("runtime.error"),
+            outcome.output().get("runtime.status"),
+            Some(&json!("denied"))
+        );
+        assert_eq!(
+            outcome.output().get("runtime.error"),
             Some(&json!({"code": "policy_denied", "message": "approval required"}))
         );
 

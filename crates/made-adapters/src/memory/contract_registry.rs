@@ -6,7 +6,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::ContractRegistryPort;
-use made_core::value_objects::OutputContract;
+use made_core::value_objects::{OutputContract, OutputContractId};
 use tokio::sync::RwLock;
 
 /// In-memory contract registry keyed by `contract_id`.
@@ -14,7 +14,7 @@ use tokio::sync::RwLock;
 /// Cheap to `Clone`; internal state is shared through `Arc<RwLock>`.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryContractRegistry {
-    inner: Arc<RwLock<BTreeMap<String, OutputContract>>>,
+    inner: Arc<RwLock<BTreeMap<OutputContractId, OutputContract>>>,
 }
 
 impl InMemoryContractRegistry {
@@ -45,7 +45,7 @@ impl ContractRegistryPort for InMemoryContractRegistry {
         Ok(())
     }
 
-    async fn get(&self, contract_id: &str) -> Result<OutputContract, DomainError> {
+    async fn get(&self, contract_id: &OutputContractId) -> Result<OutputContract, DomainError> {
         self.inner
             .read()
             .await
@@ -58,7 +58,7 @@ impl ContractRegistryPort for InMemoryContractRegistry {
         Ok(self.inner.read().await.values().cloned().collect())
     }
 
-    async fn delete(&self, contract_id: &str) -> Result<(), DomainError> {
+    async fn delete(&self, contract_id: &OutputContractId) -> Result<(), DomainError> {
         self.inner
             .write()
             .await
@@ -67,7 +67,7 @@ impl ContractRegistryPort for InMemoryContractRegistry {
             .ok_or(DomainError::NotFound { what: "contract" })
     }
 
-    async fn contains(&self, contract_id: &str) -> Result<bool, DomainError> {
+    async fn contains(&self, contract_id: &OutputContractId) -> Result<bool, DomainError> {
         Ok(self.inner.read().await.contains_key(contract_id))
     }
 }
@@ -82,11 +82,15 @@ mod tests {
         OutputContract::new(id, OutputFormat::JsonObject, BTreeMap::new()).unwrap()
     }
 
+    fn id(value: &str) -> OutputContractId {
+        OutputContractId::new(value).unwrap()
+    }
+
     #[tokio::test]
     async fn register_then_get_roundtrips() {
         let reg = InMemoryContractRegistry::new();
         reg.register(contract("triage-v1")).await.unwrap();
-        let got = reg.get("triage-v1").await.unwrap();
+        let got = reg.get(&id("triage-v1")).await.unwrap();
         assert_eq!(got.contract_id(), "triage-v1");
     }
 
@@ -104,7 +108,7 @@ mod tests {
     #[tokio::test]
     async fn missing_get_is_not_found() {
         let reg = InMemoryContractRegistry::new();
-        let err = reg.get("nope").await.unwrap_err();
+        let err = reg.get(&id("nope")).await.unwrap_err();
         assert!(matches!(err, DomainError::NotFound { what: "contract" }));
     }
 
@@ -121,19 +125,19 @@ mod tests {
     async fn delete_removes_entry_and_then_404s() {
         let reg = InMemoryContractRegistry::new();
         reg.register(contract("x")).await.unwrap();
-        reg.delete("x").await.unwrap();
+        reg.delete(&id("x")).await.unwrap();
         assert!(reg.is_empty().await);
 
-        let err = reg.delete("x").await.unwrap_err();
+        let err = reg.delete(&id("x")).await.unwrap_err();
         assert!(matches!(err, DomainError::NotFound { what: "contract" }));
     }
 
     #[tokio::test]
     async fn contains_reflects_state() {
         let reg = InMemoryContractRegistry::new();
-        assert!(!reg.contains("x").await.unwrap());
+        assert!(!reg.contains(&id("x")).await.unwrap());
         reg.register(contract("x")).await.unwrap();
-        assert!(reg.contains("x").await.unwrap());
+        assert!(reg.contains(&id("x")).await.unwrap());
     }
 
     #[tokio::test]

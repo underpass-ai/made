@@ -22,7 +22,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentDescriptor, CeremonyDefinitionRepositoryPort, ContractRegistryPort, StatisticsPort,
 };
-use made_core::value_objects::{AgentId, AgentKind, CeremonyId, Specialty, TaskId};
+use made_core::value_objects::{
+    AgentId, AgentKind, CeremonyId, OutputContractId, Specialty, TaskId,
+};
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
 use tonic::{Request, Response, Status};
@@ -45,6 +47,7 @@ use super::mappers::{
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
+use super::MadeGrpcServiceBuilder;
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
 
@@ -177,45 +180,6 @@ impl MadeGrpcService {
     pub fn into_server(self) -> MadeServiceServer<Self> {
         MadeServiceServer::new(self)
     }
-}
-
-/// Builder so composition-root wiring is readable even as the number
-/// of use cases grows.
-#[derive(Default)]
-pub struct MadeGrpcServiceBuilder {
-    deliberate: Option<Arc<DeliberateUseCase>>,
-    orchestrate: Option<Arc<OrchestrateUseCase>>,
-    create_council: Option<Arc<CreateCouncilUseCase>>,
-    delete_council: Option<Arc<DeleteCouncilUseCase>>,
-    list_councils: Option<Arc<ListCouncilsUseCase>>,
-    get_deliberation: Option<Arc<GetDeliberationUseCase>>,
-    register_agent: Option<Arc<RegisterAgentUseCase>>,
-    unregister_agent: Option<Arc<UnregisterAgentUseCase>>,
-    run_council_decision: Option<Arc<RunCouncilDecisionUseCase>>,
-    run_ceremony: Option<Arc<RunCeremonyUseCase>>,
-    get_ceremony_instance: Option<Arc<GetCeremonyInstanceUseCase>>,
-    list_ceremony_instances: Option<Arc<ListCeremonyInstancesUseCase>>,
-    resolve_ceremony_definition: Option<Arc<ResolveCeremonyDefinitionUseCase>>,
-    start_ceremony: Option<Arc<StartCeremonyUseCase>>,
-    start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
-    run_ceremony_step: Option<Arc<RunCeremonyStepUseCase>>,
-    apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
-    approve_ceremony_guard: Option<Arc<ApproveCeremonyGuardUseCase>>,
-    defer_ceremony_guard: Option<Arc<DeferCeremonyGuardUseCase>>,
-    assert_ceremony_reason: Option<Arc<AssertCeremonyReasonUseCase>>,
-    request_ceremony_intervention: Option<Arc<RequestCeremonyInterventionUseCase>>,
-    respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
-    close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
-    collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
-    diff_ceremony_definitions: Option<Arc<DiffCeremonyDefinitionsUseCase>>,
-    bind_ceremony_participants: Option<Arc<BindCeremonyParticipantsUseCase>>,
-    publish_ceremony_definition: Option<Arc<PublishCeremonyDefinitionUseCase>>,
-    ceremony_definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
-    prepare_ceremony_participants: Option<Arc<PrepareCeremonyParticipantsUseCase>>,
-    contract_registry: Option<Arc<dyn ContractRegistryPort>>,
-    auto_dispatch: Option<Arc<AutoDispatchService>>,
-    statistics: Option<Arc<dyn StatisticsPort>>,
-    service_version: Option<&'static str>,
 }
 
 impl std::fmt::Debug for MadeGrpcServiceBuilder {
@@ -711,7 +675,9 @@ impl MadeService for MadeGrpcService {
             .register(contract)
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::RegisterContractResponse { contract_id }))
+        Ok(Response::new(pb::RegisterContractResponse {
+            contract_id: contract_id.as_str().to_owned(),
+        }))
     }
 
     #[tracing::instrument(name = "rpc.list_contracts", skip_all)]
@@ -737,7 +703,8 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::DeleteContractRequest>,
     ) -> GrpcResult<pb::DeleteContractResponse> {
         link_span_to_metadata(&request);
-        let contract_id = request.into_inner().contract_id;
+        let contract_id = OutputContractId::new(request.into_inner().contract_id)
+            .map_err(domain_error_to_status)?;
         match self.contract_registry.delete(&contract_id).await {
             Ok(()) => Ok(Response::new(pb::DeleteContractResponse { deleted: true })),
             Err(DomainError::NotFound { .. }) => {

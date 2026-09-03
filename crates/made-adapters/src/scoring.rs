@@ -6,188 +6,25 @@
 //! policy (weighted average, fail-fast, learned combinator, …) by
 //! implementing `ScoringPort` elsewhere.
 
-use std::sync::Arc;
+mod judge_aware_scoring;
+mod uniform_scoring;
 
-use async_trait::async_trait;
-use made_core::entities::{RankedOutcome, ValidatorReport};
-use made_core::error::DomainError;
-use made_core::ports::{MetricsRecorderPort, NoopMetricsRecorder, ScoringPort};
-use made_core::value_objects::{Discrimination, ProposalId, Score, ScoringMode};
-use serde_json::Value;
+pub use judge_aware_scoring::JudgeAwareScoring;
+pub use uniform_scoring::UniformScoring;
 
 /// Details key under which an LLM judge writes its 0.0–1.0 verdict. This
 /// is the contract between [`crate::agents::judge::LlmJudgeValidator`]
 /// (writer) and [`JudgeAwareScoring`] (reader).
 pub const JUDGE_SCORE_DETAIL_KEY: &str = "judge.score";
 
-/// Uniform scoring: the score is the fraction of reports that passed.
-///
-/// With zero reports the score is [`Score::MIN`] — no evidence means
-/// no confidence. That choice biases operators to configure at least
-/// one validator rather than silently returning a perfect score from
-/// thin air.
-#[derive(Debug, Default, Clone, Copy)]
-pub struct UniformScoring;
-
-impl UniformScoring {
-    #[must_use]
-    pub const fn new() -> Self {
-        Self
-    }
-}
-
-#[async_trait]
-impl ScoringPort for UniformScoring {
-    async fn score(&self, reports: &[ValidatorReport]) -> Result<Score, DomainError> {
-        if reports.is_empty() {
-            return Ok(Score::MIN);
-        }
-        let passed = reports.iter().filter(|r| r.passed()).count();
-        let total = reports.len();
-        #[allow(clippy::cast_precision_loss)]
-        let value = passed as f64 / total as f64;
-        Score::new(value)
-    }
-}
-
-/// Scoring that lets an LLM judge decide the ranking.
-///
-/// If any report carries a numeric verdict under
-/// [`JUDGE_SCORE_DETAIL_KEY`] (written by `LlmJudgeValidator`), that
-/// value *is* the proposal's score — so the strongest proposal wins,
-/// not an arbitrary one among those that merely passed the structural
-/// validators. When no judge ran, it falls back to the same
-/// pass-fraction policy as [`UniformScoring`], so it is a safe default.
-#[derive(Clone)]
-pub struct JudgeAwareScoring {
-    metrics: Arc<dyn MetricsRecorderPort>,
-}
-
-impl std::fmt::Debug for JudgeAwareScoring {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("JudgeAwareScoring").finish()
-    }
-}
-
-impl Default for JudgeAwareScoring {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl JudgeAwareScoring {
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            metrics: Arc::new(NoopMetricsRecorder),
-        }
-    }
-
-    /// Attach a metrics recorder so the scoring-mode split (judge verdict
-    /// vs uniform fallback) is counted. The composition root wires the
-    /// real recorder; the default no-op keeps tests free of one.
-    #[must_use]
-    pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
-        self.metrics = metrics;
-        self
-    }
-}
-
-#[async_trait]
-impl ScoringPort for JudgeAwareScoring {
-    async fn score(&self, reports: &[ValidatorReport]) -> Result<Score, DomainError> {
-        if let Some(verdict) = reports
-            .iter()
-            .find_map(|report| report.details().get(JUDGE_SCORE_DETAIL_KEY))
-            .and_then(Value::as_f64)
-        {
-            self.metrics.record_scoring_mode(ScoringMode::JudgeVerdict);
-            return Score::new(verdict.clamp(0.0, 1.0));
-        }
-        // No judge verdict on this proposal: the score (empty -> MIN, or
-        // pass-fraction) is the uniform fallback.
-        self.metrics
-            .record_scoring_mode(ScoringMode::UniformFallback);
-        if reports.is_empty() {
-            return Ok(Score::MIN);
-        }
-        let passed = reports.iter().filter(|report| report.passed()).count();
-        #[allow(clippy::cast_precision_loss)]
-        let value = passed as f64 / reports.len() as f64;
-        Score::new(value)
-    }
-
-    /// Whether the judge's verdict changed the winner. Compares the
-    /// score-ranked top (the judge's pick) against the *structural
-    /// baseline*: the proposal a judge-free ranking would choose — the
-    /// smallest-id proposal among those passing every non-judge report,
-    /// which is exactly the arbitrary id tie-break the judge replaces.
-    ///
-    /// Returns `None` when no judge actually scored (so the metric stays
-    /// judge-specific) or when there are fewer than two proposals (nothing
-    /// to discriminate among).
-    fn discrimination(&self, ranked: &[RankedOutcome]) -> Option<Discrimination> {
-        if ranked.len() < 2 || !ranked.iter().any(has_judge_verdict) {
-            return None;
-        }
-        // A shared top score means the judge did not separate the leaders.
-        let top_score = ranked[0].outcome().score();
-        if ranked
-            .iter()
-            .filter(|outcome| outcome.outcome().score() == top_score)
-            .count()
-            > 1
-        {
-            return Some(Discrimination::Tie);
-        }
-        let judge_winner = ranked[0].proposal().id();
-        let baseline_winner = structural_baseline_winner(ranked)?;
-        Some(if judge_winner == baseline_winner {
-            Discrimination::Agreed
-        } else {
-            Discrimination::Reranked
-        })
-    }
-}
-
-/// Whether a ranked outcome carries the LLM judge's verdict.
-fn has_judge_verdict(outcome: &RankedOutcome) -> bool {
-    outcome.outcome().reports().iter().any(is_judge_report)
-}
-
-/// A report is the judge's iff it carries the judge-score detail key —
-/// the contract between the judge validator and this scorer.
-fn is_judge_report(report: &ValidatorReport) -> bool {
-    report.details().get(JUDGE_SCORE_DETAIL_KEY).is_some()
-}
-
-/// The proposal a judge-free ranking would pick: the smallest-id proposal
-/// among those passing every structural (non-judge) report. Falls back to
-/// the smallest id overall when none pass the structural validators.
-fn structural_baseline_winner(ranked: &[RankedOutcome]) -> Option<&ProposalId> {
-    ranked
-        .iter()
-        .filter(|outcome| structurally_valid(outcome))
-        .map(|outcome| outcome.proposal().id())
-        .min()
-        .or_else(|| ranked.iter().map(|outcome| outcome.proposal().id()).min())
-}
-
-/// Whether every non-judge report on this proposal passed.
-fn structurally_valid(outcome: &RankedOutcome) -> bool {
-    outcome
-        .outcome()
-        .reports()
-        .iter()
-        .filter(|report| !is_judge_report(report))
-        .all(ValidatorReport::passed)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use made_core::entities::{Proposal, ValidationOutcome};
-    use made_core::value_objects::{AgentId, Attributes, Specialty};
+    use made_core::entities::{Proposal, RankedOutcome, ValidationOutcome, ValidatorReport};
+    use made_core::ports::ScoringPort;
+    use made_core::value_objects::{
+        AgentId, Attributes, Discrimination, ProposalId, Score, Specialty,
+    };
     use serde_json::json;
     use std::collections::BTreeMap;
     use time::macros::datetime;

@@ -22,90 +22,19 @@
 //! and a configuration surface built for an absent case is one nobody
 //! has run.
 
-use std::collections::BTreeMap;
-use std::path::PathBuf;
 use std::process::Stdio;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use made_core::error::DomainError;
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::Mutex;
 
-use super::transport::{KernelAnswer, KernelTransport, KernelTransportError};
+use super::{KernelAnswer, KernelTransport, KernelTransportError, StdioKernelTransportConfig};
 
 /// The version of the tool protocol this client speaks.
 const PROTOCOL_VERSION: &str = "2025-06-18";
-
-const DEFAULT_BINARY: &str = "rehydration-mcp";
-const DEFAULT_CALL_TIMEOUT: Duration = Duration::from_secs(30);
-
-/// Where the kernel is and how patient to be with it.
-#[derive(Debug, Clone)]
-pub struct StdioKernelTransportConfig {
-    binary: String,
-    data_dir: PathBuf,
-    call_timeout: Duration,
-}
-
-impl StdioKernelTransportConfig {
-    /// A kernel keeping its memory in `data_dir`.
-    ///
-    /// The directory is the unit of exclusion: one kernel process per
-    /// directory, so two hosts pointed at the same one is a
-    /// configuration mistake the kernel will refuse rather than
-    /// silently share.
-    pub fn new(data_dir: impl Into<PathBuf>) -> Result<Self, DomainError> {
-        let data_dir = data_dir.into();
-        if data_dir.as_os_str().is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "kmp.data_dir",
-            });
-        }
-        Ok(Self {
-            binary: DEFAULT_BINARY.to_owned(),
-            data_dir,
-            call_timeout: DEFAULT_CALL_TIMEOUT,
-        })
-    }
-
-    /// Run a particular binary rather than whatever is on the path.
-    #[must_use]
-    pub fn with_binary(mut self, binary: impl Into<String>) -> Self {
-        self.binary = binary.into();
-        self
-    }
-
-    /// How long a single tool call may take before the caller is told
-    /// the kernel went silent.
-    #[must_use]
-    pub const fn with_call_timeout(mut self, call_timeout: Duration) -> Self {
-        self.call_timeout = call_timeout;
-        self
-    }
-
-    #[must_use]
-    pub fn binary(&self) -> &str {
-        &self.binary
-    }
-
-    #[must_use]
-    pub fn data_dir(&self) -> &PathBuf {
-        &self.data_dir
-    }
-
-    fn environment(&self) -> BTreeMap<&'static str, String> {
-        BTreeMap::from([
-            ("REHYDRATION_MCP_BACKEND", "embedded".to_owned()),
-            (
-                "REHYDRATION_MCP_DATA_DIR",
-                self.data_dir.display().to_string(),
-            ),
-        ])
-    }
-}
 
 /// The pipes to one running kernel.
 #[derive(Debug)]
@@ -170,7 +99,7 @@ impl StdioKernelTransport {
                 stdout: BufReader::new(stdout),
                 next_id: 0,
             }),
-            call_timeout: config.call_timeout,
+            call_timeout: config.call_timeout(),
         };
         transport.handshake().await?;
         Ok(transport)

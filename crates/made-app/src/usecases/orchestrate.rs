@@ -7,23 +7,22 @@
 
 use std::sync::Arc;
 
-use made_core::entities::{Deliberation, Proposal, Task, TaskMetadata};
+use made_core::entities::{Task, TaskMetadata};
 use made_core::error::DomainError;
 use made_core::events::{EventEnvelope, TaskCompletedEvent, TaskDispatchedEvent, TaskFailedEvent};
-use made_core::ports::{ClockPort, ExecutionOutcome, ExecutorPort, MessagingPort};
+use made_core::ports::{ClockPort, ExecutorPort, MessagingPort};
 use made_core::value_objects::{Attributes, EventId};
 use time::OffsetDateTime;
 use tracing::{error, info, warn};
 use uuid::Uuid;
 
 use super::deliberate::DeliberateUseCase;
+use super::orchestrate_output::OrchestrateOutput;
 
-#[derive(Debug, Clone)]
-pub struct OrchestrateOutput {
-    pub deliberation: Deliberation,
-    pub winner: Proposal,
-    pub execution: ExecutionOutcome,
-}
+#[cfg(test)]
+use made_core::entities::Proposal;
+#[cfg(test)]
+use made_core::value_objects::ExecutionOutcome;
 
 pub struct OrchestrateUseCase {
     deliberate: Arc<DeliberateUseCase>,
@@ -127,22 +126,22 @@ impl OrchestrateUseCase {
                 // which for the noop executor is just the executor
                 // call's reported duration.
                 self.statistics
-                    .record_orchestration(execution.duration)
+                    .record_orchestration(execution.duration())
                     .await?;
 
-                if execution.succeeded {
+                if execution.status().is_success() {
                     self.messaging
                         .publish_task_completed(&TaskCompletedEvent::new(
                             self.envelope(self.clock.now(), &metadata)?,
                             task_id.clone(),
                             specialty.clone(),
                             Some(winner.author().clone()),
-                            execution.duration,
+                            execution.duration(),
                         ))
                         .await?;
                     info!(
                         task_id = task_id.as_str(),
-                        execution_id = execution.execution_id.as_str(),
+                        execution_id = execution.id().as_str(),
                         "orchestration completed"
                     );
                 } else {
@@ -156,7 +155,7 @@ impl OrchestrateUseCase {
                     self.messaging.publish_task_failed(&event).await?;
                     warn!(
                         task_id = task_id.as_str(),
-                        execution_id = execution.execution_id.as_str(),
+                        execution_id = execution.id().as_str(),
                         "orchestration finished with unsuccessful execution outcome"
                     );
                 }
@@ -228,8 +227,8 @@ mod tests {
         DraftRequest, Revision, ScoringPort, ValidatorPort,
     };
     use made_core::value_objects::{
-        AgentId, Attributes, CouncilId, DurationMs, EventId, OutputContract, OutputFieldRule,
-        Rounds, Rubric, Score, Specialty, TaskDescription, TaskId,
+        AgentId, Attributes, CouncilId, DurationMs, EventId, ExecutionId, ExecutionStatus,
+        OutputContract, OutputFieldRule, Rounds, Rubric, Score, Specialty, TaskDescription, TaskId,
     };
     use time::macros::datetime;
 
@@ -272,27 +271,27 @@ mod tests {
 
         async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
             Ok(Revision {
-                content: self.draft.clone(),
+                content: self.draft.clone().into(),
             })
         }
 
         async fn critique(
             &self,
-            _peer_content: &str,
+            _peer_content: &made_core::value_objects::ProposalContent,
             _constraints: &TaskConstraints,
         ) -> Result<Critique, DomainError> {
             Ok(Critique {
-                feedback: "ok".to_owned(),
+                feedback: "ok".into(),
             })
         }
 
         async fn revise(
             &self,
-            own_content: &str,
+            own_content: &made_core::value_objects::ProposalContent,
             _critique: &Critique,
         ) -> Result<Revision, DomainError> {
             Ok(Revision {
-                content: own_content.to_owned(),
+                content: own_content.clone(),
             })
         }
     }
@@ -680,12 +679,12 @@ mod tests {
     async fn unsuccessful_execution_publishes_task_failed_but_returns_output() {
         let (deliberate, bus) = deliberate_fixture();
         let executor = Arc::new(StubExecutor {
-            outcome: ExecutionOutcome {
-                execution_id: "exec-1".to_owned(),
-                succeeded: false,
-                duration: DurationMs::from_millis(50),
-                output: Attributes::empty(),
-            },
+            outcome: ExecutionOutcome::new(
+                ExecutionId::new("exec-1").unwrap(),
+                ExecutionStatus::Failed,
+                DurationMs::from_millis(50),
+                Attributes::empty(),
+            ),
         });
         let clock = Arc::new(FrozenClock {
             now: datetime!(2026-04-25 12:00:01 UTC),
@@ -696,7 +695,7 @@ mod tests {
 
         let out = usecase.execute(task(), Attributes::empty()).await.unwrap();
 
-        assert!(!out.execution.succeeded);
+        assert!(!out.execution.status().is_success());
         assert_eq!(bus.dispatched.lock().unwrap().len(), 1);
         assert_eq!(bus.completed.lock().unwrap().len(), 0);
         assert_eq!(bus.failed.lock().unwrap().len(), 1);
@@ -708,12 +707,12 @@ mod tests {
     async fn lifecycle_events_preserve_task_causal_metadata() {
         let (deliberate, bus) = deliberate_fixture();
         let executor = Arc::new(StubExecutor {
-            outcome: ExecutionOutcome {
-                execution_id: "exec-1".to_owned(),
-                succeeded: true,
-                duration: DurationMs::from_millis(50),
-                output: Attributes::empty(),
-            },
+            outcome: ExecutionOutcome::new(
+                ExecutionId::new("exec-1").unwrap(),
+                ExecutionStatus::Succeeded,
+                DurationMs::from_millis(50),
+                Attributes::empty(),
+            ),
         });
         let clock = Arc::new(FrozenClock {
             now: datetime!(2026-04-25 12:00:01 UTC),
@@ -728,8 +727,7 @@ mod tests {
             None,
             None,
             Attributes::empty(),
-        )
-        .unwrap();
+        );
 
         usecase
             .execute(task_with_metadata(metadata), Attributes::empty())
@@ -785,12 +783,12 @@ mod tests {
     async fn execution_profile_is_merged_with_explicit_execution_options() {
         let (deliberate, bus) = deliberate_fixture();
         let executor = Arc::new(RecordingExecutor {
-            outcome: ExecutionOutcome {
-                execution_id: "exec-1".to_owned(),
-                succeeded: true,
-                duration: DurationMs::from_millis(50),
-                output: Attributes::empty(),
-            },
+            outcome: ExecutionOutcome::new(
+                ExecutionId::new("exec-1").unwrap(),
+                ExecutionStatus::Succeeded,
+                DurationMs::from_millis(50),
+                Attributes::empty(),
+            ),
             seen_options: Mutex::new(Vec::new()),
         });
         let clock = Arc::new(FrozenClock {
@@ -813,8 +811,7 @@ mod tests {
                 ("runtime.approved".to_owned(), serde_json::json!(false)),
             ]))
             .unwrap(),
-        )
-        .unwrap();
+        );
         let explicit = Attributes::new(std::collections::BTreeMap::from([(
             "runtime.approved".to_owned(),
             serde_json::json!(true),
@@ -842,12 +839,12 @@ mod tests {
         let (deliberate, bus) =
             deliberate_fixture_with_validators("plain text", vec![Arc::new(JsonObjectValidator)]);
         let executor = Arc::new(StubExecutor {
-            outcome: ExecutionOutcome {
-                execution_id: "exec-1".to_owned(),
-                succeeded: true,
-                duration: DurationMs::from_millis(50),
-                output: Attributes::empty(),
-            },
+            outcome: ExecutionOutcome::new(
+                ExecutionId::new("exec-1").unwrap(),
+                ExecutionStatus::Succeeded,
+                DurationMs::from_millis(50),
+                Attributes::empty(),
+            ),
         });
         let clock = Arc::new(FrozenClock {
             now: datetime!(2026-04-25 12:00:01 UTC),

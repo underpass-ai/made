@@ -24,9 +24,8 @@ use made_core::ports::{
     CeremonyUnitOfWorkPort, OutboxPort,
 };
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyId, CeremonyName, CeremonyRevision, CeremonyVersion,
-    ClaimedOutboxMessage, DurationMs, EventId, OutboxAttempt, OutboxMessage,
-    OutboxQuarantineReason,
+    CeremonyId, CeremonyName, CeremonyRevision, CeremonyVersion, ClaimedOutboxMessage, DurationMs,
+    EventId, OutboxAttempt, OutboxMessage, OutboxQuarantineReason,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -39,13 +38,7 @@ use super::error::{encoding_failure, join_failure};
 use super::keys::{ceremony_of, published, scope_range, scoped};
 use super::legacy_state_migration_receipt::LegacyStateMigrationReceipt;
 use super::legacy_state_migrator::LegacyStateMigrator;
-
-/// A ceremony's stored state and the revision that guards it.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct StoredCeremony {
-    pub(super) revision: CeremonyRevision,
-    pub(super) instance: CeremonyInstance,
-}
+use super::{ConversionReceipt, StoredCeremony, StoredPublication};
 
 /// A committed message and everything the store knows about getting it
 /// out.
@@ -580,37 +573,6 @@ fn read_outbox(tx: &dyn ReadTx) -> Result<Vec<(Vec<u8>, StoredOutboxMessage)>, D
         .collect()
 }
 
-/// A published definition and the digest it was sealed with.
-///
-/// The digest is stored beside the definition rather than recomputed on
-/// read: a stored definition whose recomputed digest disagrees with the
-/// stored one is evidence the file was edited, and that is worth being
-/// able to see.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub(super) struct StoredPublication {
-    pub(super) definition: made_core::entities::CeremonyDefinition,
-    pub(super) digest: CeremonyDefinitionDigest,
-}
-
-impl StoredPublication {
-    pub(super) fn seal(published: &PublishedCeremonyDefinition) -> Self {
-        Self {
-            definition: published.definition().clone(),
-            digest: published.digest(),
-        }
-    }
-
-    fn restore(self) -> Result<PublishedCeremonyDefinition, DomainError> {
-        let restored = PublishedCeremonyDefinition::seal(self.definition)?;
-        if restored.digest() != self.digest {
-            return Err(DomainError::InvariantViolated {
-                reason: "the stored publication digest does not match its definition",
-            });
-        }
-        Ok(restored)
-    }
-}
-
 #[async_trait]
 impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
     /// The occupant is read and the slot written inside one write
@@ -865,15 +827,4 @@ impl RedbCeremonyStore {
         write.commit()?;
         Ok(receipt)
     }
-}
-
-/// What a conversion moved, for an operator who has to believe it.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConversionReceipt {
-    pub source_engine: StorageEngine,
-    pub destination_engine: StorageEngine,
-    pub ceremonies: u64,
-    pub journal_records: u64,
-    pub outbox_messages: u64,
-    pub publications: u64,
 }

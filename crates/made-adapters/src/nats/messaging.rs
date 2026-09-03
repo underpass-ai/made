@@ -28,7 +28,7 @@ use made_core::value_objects::{DurationMs, TraceContext};
 use serde::Serialize;
 use tracing::debug;
 
-use super::config::NatsSubjects;
+use super::NatsSubjects;
 
 /// NATS header name for W3C Trace Context propagation.
 pub(super) const TRACEPARENT_HEADER: &str = "traceparent";

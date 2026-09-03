@@ -1,12 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// One answer given at the table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct InterventionResponseView {
-    pub role_id: String,
-    pub content: String,
-    pub responded_at_millis: i64,
-}
+use crate::InterventionResponseView;
 
 /// One intervention — a question, investigation or proposed action put to the
 /// table — as a consumer sees it.
@@ -29,38 +23,10 @@ pub struct InterventionView {
     pub closed_at_millis: Option<i64>,
 }
 
-/// Put a question, investigation or proposed action to the table.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RaiseInterventionRequest {
-    pub ceremony_id: String,
-    /// Chosen by the caller so a retried request raises the same intervention,
-    /// not a second one.
-    pub intervention_id: String,
-    /// The seat speaking. A seat, not a person: the engine sees roles and
-    /// cannot see what fills them.
-    pub role_id: String,
-    /// One of `human`, `agent`, `service`, `engine`.
-    pub role_kind: String,
-    /// One of `opinion`, `investigation`, `action`.
-    pub kind: String,
-    /// The seats asked. Empty asks the whole table.
-    pub target_role_ids: Vec<String>,
-    pub request: String,
-}
-
-/// Answer an open intervention.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RespondToInterventionRequest {
-    pub ceremony_id: String,
-    pub intervention_id: String,
-    pub role_id: String,
-    pub role_kind: String,
-    pub content: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::RaiseInterventionRequest;
 
     #[test]
     fn an_intervention_survives_the_wire() {

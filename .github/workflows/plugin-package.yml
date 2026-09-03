@@ -9,6 +9,8 @@ name: plugin-package
 
 on:
   pull_request:
+    branches:
+      - main
     paths:
       - "plugins/made/**"
       - "scripts/plugin/**"

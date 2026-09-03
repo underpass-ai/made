@@ -2,52 +2,7 @@ use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
-/// One thing a memory backend can do.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum MemoryCapability {
-    /// Keeps what it is given.
-    Remembering,
-    /// Gives back what it kept.
-    Recalling,
-    /// Answers a question put in words, rather than returning
-    /// everything and leaving the caller to read it.
-    AnsweringQuestions,
-    /// Reads memory as it stood at a moment, excluding what was
-    /// learned afterwards.
-    TravellingInTime,
-    /// Keeps the evidence attached to an entry, not only the claim.
-    KeepingEvidence,
-    /// Keeps the reasons between entries, and gives them back.
-    ///
-    /// The one capability a caller should look for before deciding
-    /// this memory is worth writing to: entries without their edges
-    /// can be read and not followed, and following is how a later
-    /// session works out why something was done.
-    KeepingReasons,
-    /// Finds the chain of reasons between two entries.
-    ///
-    /// Keeping reasons and being able to follow them are not the same
-    /// capability: one is storage, the other is search. A backend may
-    /// hold every edge and still be unable to answer "how did this come
-    /// from that", which is the question the memory exists for.
-    FollowingReasons,
-}
-
-impl MemoryCapability {
-    #[must_use]
-    pub const fn as_label(self) -> &'static str {
-        match self {
-            Self::Remembering => "remembering",
-            Self::Recalling => "recalling",
-            Self::AnsweringQuestions => "answering_questions",
-            Self::TravellingInTime => "travelling_in_time",
-            Self::KeepingEvidence => "keeping_evidence",
-            Self::KeepingReasons => "keeping_reasons",
-            Self::FollowingReasons => "following_reasons",
-        }
-    }
-}
+use super::MemoryCapability;
 
 /// What a memory backend can actually do.
 ///
