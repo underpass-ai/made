@@ -3,6 +3,5 @@
 # Public primitive fields are additionally counted in made-core.
 path	debt
 crates/made-adapters/src/grpc/service.rs	lines=1248
-crates/made-adapters/src/redb/ceremony_store.rs	lines=830
 crates/made-mcp/src/grpc/tools.rs	lines=1115
 crates/made-mcp/src/protocol.rs	lines=1409
