@@ -12,32 +12,9 @@ use std::sync::Arc;
 use made_core::entities::CeremonyDefinition;
 use made_core::error::DomainError;
 use made_core::ports::CeremonyDefinitionPublicationPort;
-use made_core::value_objects::{CeremonyDefinitionDiff, CeremonyName, CeremonyVersion};
+use made_core::value_objects::CeremonyDefinitionDiff;
 
-/// Where one side of a comparison comes from.
-///
-/// YAML never appears here: parsing is an adapter's job, and by the
-/// time a definition reaches this layer it is a definition.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum CeremonyDefinitionSource {
-    Published {
-        name: CeremonyName,
-        version: CeremonyVersion,
-    },
-    Supplied(Box<CeremonyDefinition>),
-}
-
-impl CeremonyDefinitionSource {
-    #[must_use]
-    pub fn published(name: CeremonyName, version: CeremonyVersion) -> Self {
-        Self::Published { name, version }
-    }
-
-    #[must_use]
-    pub fn supplied(definition: CeremonyDefinition) -> Self {
-        Self::Supplied(Box::new(definition))
-    }
-}
+use super::ceremony_definition_source::CeremonyDefinitionSource;
 
 pub struct DiffCeremonyDefinitionsUseCase {
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,

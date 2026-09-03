@@ -3,15 +3,19 @@
 //! Loads [`ServiceConfig`] from environment variables prefixed with
 //! `MADE_`. Defaults match the chart's `values.yaml`.
 
-use async_trait::async_trait;
 use figment::{
     providers::{Env, Serialized},
     Figment,
 };
 use made_core::error::DomainError;
-use made_core::ports::{ConfigurationPort, GrpcTlsConfig, ServiceConfig};
 use serde::{Deserialize, Serialize};
 use tracing::debug;
+
+mod grpc_tls_config;
+mod service_config;
+
+pub use grpc_tls_config::GrpcTlsConfig;
+pub use service_config::ServiceConfig;
 
 /// Read-only configuration adapter backed by process environment.
 ///
@@ -47,46 +51,9 @@ impl EnvConfiguration {
     pub const fn new() -> Self {
         Self
     }
-}
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Defaults {
-    grpc_port: u16,
-    http_port: u16,
-    nats_enabled: bool,
-    nats_url: String,
-    trigger_subject: String,
-    publish_prefix: String,
-    postgres_url: String,
-    ceremony_store_path: String,
-    grpc_tls_mode: String,
-    grpc_tls_cert_path: String,
-    grpc_tls_key_path: String,
-    grpc_tls_client_ca_path: String,
-}
-
-impl Default for Defaults {
-    fn default() -> Self {
-        Self {
-            grpc_port: 50055,
-            http_port: 8080,
-            nats_enabled: true,
-            nats_url: "nats://nats:4222".to_owned(),
-            trigger_subject: "made.trigger.>".to_owned(),
-            publish_prefix: "made".to_owned(),
-            postgres_url: String::new(),
-            ceremony_store_path: String::new(),
-            grpc_tls_mode: "none".to_owned(),
-            grpc_tls_cert_path: String::new(),
-            grpc_tls_key_path: String::new(),
-            grpc_tls_client_ca_path: String::new(),
-        }
-    }
-}
-
-#[async_trait]
-impl ConfigurationPort for EnvConfiguration {
-    async fn load(&self) -> Result<ServiceConfig, DomainError> {
+    /// Read and validate a snapshot of the current process environment.
+    pub fn load(&self) -> Result<ServiceConfig, DomainError> {
         let figment = Figment::from(Serialized::defaults(Defaults::default()))
             .merge(Env::prefixed("MADE_").split("__"));
 
@@ -123,6 +90,41 @@ impl ConfigurationPort for EnvConfiguration {
             ceremony_store_path,
             grpc_tls,
         })
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Defaults {
+    grpc_port: u16,
+    http_port: u16,
+    nats_enabled: bool,
+    nats_url: String,
+    trigger_subject: String,
+    publish_prefix: String,
+    postgres_url: String,
+    ceremony_store_path: String,
+    grpc_tls_mode: String,
+    grpc_tls_cert_path: String,
+    grpc_tls_key_path: String,
+    grpc_tls_client_ca_path: String,
+}
+
+impl Default for Defaults {
+    fn default() -> Self {
+        Self {
+            grpc_port: 50055,
+            http_port: 8080,
+            nats_enabled: true,
+            nats_url: "nats://nats:4222".to_owned(),
+            trigger_subject: "made.trigger.>".to_owned(),
+            publish_prefix: "made".to_owned(),
+            postgres_url: String::new(),
+            ceremony_store_path: String::new(),
+            grpc_tls_mode: "none".to_owned(),
+            grpc_tls_cert_path: String::new(),
+            grpc_tls_key_path: String::new(),
+            grpc_tls_client_ca_path: String::new(),
+        }
     }
 }
 
@@ -201,7 +203,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().await;
         clear_env();
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.grpc_port, 50055);
         assert_eq!(cfg.http_port, 8080);
         assert!(cfg.nats_enabled);
@@ -218,7 +220,7 @@ mod tests {
         std::env::set_var("MADE_NATS_ENABLED", "false");
         std::env::set_var("MADE_PUBLISH_PREFIX", "made.prod");
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.grpc_port, 50099);
         assert!(!cfg.nats_enabled);
         assert_eq!(cfg.publish_prefix, "made.prod");
@@ -231,18 +233,18 @@ mod tests {
         let _guard = ENV_LOCK.lock().await;
         clear_env();
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert!(cfg.postgres_url.is_none());
 
         std::env::set_var("MADE_POSTGRES_URL", "   ");
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert!(
             cfg.postgres_url.is_none(),
             "whitespace-only must be treated as unset"
         );
 
         std::env::set_var("MADE_POSTGRES_URL", "postgres://x/y");
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.postgres_url.as_deref(), Some("postgres://x/y"));
 
         clear_env();
@@ -254,7 +256,7 @@ mod tests {
         clear_env();
         std::env::set_var("MADE_GRPC_PORT", "not-a-port");
 
-        let err = EnvConfiguration::new().load().await.unwrap_err();
+        let err = EnvConfiguration::new().load().unwrap_err();
         assert!(matches!(err, DomainError::InvariantViolated { .. }));
 
         clear_env();
@@ -265,7 +267,7 @@ mod tests {
         let _guard = ENV_LOCK.lock().await;
         clear_env();
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.grpc_tls, GrpcTlsConfig::Disabled);
         assert_eq!(cfg.grpc_tls.mode_name(), "none");
     }
@@ -276,7 +278,7 @@ mod tests {
         clear_env();
         std::env::set_var("MADE_GRPC_TLS_MODE", "server");
         // cert + key missing
-        let err = EnvConfiguration::new().load().await.unwrap_err();
+        let err = EnvConfiguration::new().load().unwrap_err();
         assert!(matches!(
             err,
             DomainError::EmptyField {
@@ -294,7 +296,7 @@ mod tests {
         std::env::set_var("MADE_GRPC_TLS_CERT_PATH", "/etc/tls/tls.crt");
         std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(
             cfg.grpc_tls,
             GrpcTlsConfig::Server {
@@ -315,7 +317,7 @@ mod tests {
         std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
         // client CA missing
 
-        let err = EnvConfiguration::new().load().await.unwrap_err();
+        let err = EnvConfiguration::new().load().unwrap_err();
         assert!(matches!(
             err,
             DomainError::EmptyField {
@@ -334,7 +336,7 @@ mod tests {
         std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "/etc/tls/tls.key");
         std::env::set_var("MADE_GRPC_TLS_CLIENT_CA_PATH", "/etc/tls/ca.crt");
 
-        let cfg = EnvConfiguration::new().load().await.unwrap();
+        let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(
             cfg.grpc_tls,
             GrpcTlsConfig::Mutual {
@@ -353,7 +355,7 @@ mod tests {
         clear_env();
         std::env::set_var("MADE_GRPC_TLS_MODE", "weird");
 
-        let err = EnvConfiguration::new().load().await.unwrap_err();
+        let err = EnvConfiguration::new().load().unwrap_err();
         assert!(matches!(
             err,
             DomainError::InvariantViolated {

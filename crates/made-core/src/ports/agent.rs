@@ -11,32 +11,9 @@
 
 use async_trait::async_trait;
 
-use crate::entities::{ExternalContextBundle, TaskConstraints};
 use crate::error::DomainError;
-use crate::value_objects::{AgentId, Specialty, TaskDescription};
-
-/// Input for a fresh proposal.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct DraftRequest {
-    pub task: TaskDescription,
-    pub constraints: TaskConstraints,
-    pub diverse: bool,
-    pub external_context: Option<ExternalContextBundle>,
-}
-
-/// A critique is a piece of free-form feedback targeting a peer's
-/// proposal content.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Critique {
-    pub feedback: String,
-}
-
-/// A revised proposal content. The caller wraps the new content into
-/// a [`crate::entities::Proposal`] with identity preserved.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Revision {
-    pub content: String,
-}
+use crate::ports::{Critique, DraftRequest, Revision};
+use crate::value_objects::{AgentId, ProposalContent, Specialty};
 
 #[async_trait]
 pub trait AgentPort: std::fmt::Debug + Send + Sync {
@@ -53,11 +30,14 @@ pub trait AgentPort: std::fmt::Debug + Send + Sync {
     /// Produce a critique of a peer's proposal content.
     async fn critique(
         &self,
-        peer_content: &str,
-        constraints: &TaskConstraints,
+        peer_content: &ProposalContent,
+        constraints: &crate::entities::TaskConstraints,
     ) -> Result<Critique, DomainError>;
 
     /// Produce a revised content given a peer's critique.
-    async fn revise(&self, own_content: &str, critique: &Critique)
-        -> Result<Revision, DomainError>;
+    async fn revise(
+        &self,
+        own_content: &ProposalContent,
+        critique: &Critique,
+    ) -> Result<Revision, DomainError>;
 }

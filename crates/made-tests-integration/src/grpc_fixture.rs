@@ -59,23 +59,7 @@ use made_core::ports::{
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
 
-/// TLS posture the fixture's gRPC server should present. Passed to
-/// [`GrpcFixture::start_with_tls`]. Materials are PEM-encoded bytes —
-/// the caller mints them in memory (typically via
-/// `tls_fixture::mint_tls`) so no temp files or env mutation are
-/// involved.
-#[derive(Debug, Clone)]
-pub enum TlsServerSetup {
-    Server {
-        cert: Vec<u8>,
-        key: Vec<u8>,
-    },
-    Mutual {
-        cert: Vec<u8>,
-        key: Vec<u8>,
-        client_ca: Vec<u8>,
-    },
-}
+pub use crate::tls_server_setup::TlsServerSetup;
 
 /// Handles a test needs to drive the in-process made:
 /// the gRPC channel for issuing RPCs and the registries for seeding

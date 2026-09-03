@@ -38,14 +38,8 @@ use time::OffsetDateTime;
 use tracing::{debug, info};
 use uuid::Uuid;
 
+use super::deliberate_output::DeliberateOutput;
 use super::winner_selection;
-
-/// Result returned by [`DeliberateUseCase::execute`].
-#[derive(Debug, Clone)]
-pub struct DeliberateOutput {
-    pub deliberation: Deliberation,
-    pub winner_proposal_id: ProposalId,
-}
 
 /// The peer deliberation use case.
 pub struct DeliberateUseCase {
@@ -305,7 +299,7 @@ impl DeliberateUseCase {
                 .generate(DraftRequest {
                     task: task.description().clone(),
                     constraints: task.constraints().clone(),
-                    diverse: true,
+                    diversity: made_core::value_objects::DiversityPreference::Diverse,
                     external_context: task.external_context().cloned(),
                 })
                 .await?;
@@ -540,31 +534,31 @@ mod tests {
         }
         async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
             Ok(Revision {
-                content: self.draft.clone(),
+                content: self.draft.clone().into(),
             })
         }
         async fn critique(
             &self,
-            _peer_content: &str,
+            _peer_content: &made_core::value_objects::ProposalContent,
             _constraints: &TaskConstraints,
         ) -> Result<Critique, DomainError> {
             Ok(Critique {
-                feedback: format!("feedback from {}", self.id),
+                feedback: format!("feedback from {}", self.id).into(),
             })
         }
         async fn revise(
             &self,
-            own_content: &str,
+            own_content: &made_core::value_objects::ProposalContent,
             _critique: &Critique,
         ) -> Result<Revision, DomainError> {
             let mut v = self.revise_to.lock().unwrap();
             if v.is_empty() {
                 Ok(Revision {
-                    content: format!("{own_content}*"),
+                    content: format!("{own_content}*").into(),
                 })
             } else {
                 Ok(Revision {
-                    content: v.remove(0),
+                    content: v.remove(0).into(),
                 })
             }
         }
@@ -1201,25 +1195,25 @@ mod tests {
             }
             async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
                 Ok(Revision {
-                    content: self.draft.clone(),
+                    content: self.draft.clone().into(),
                 })
             }
             async fn critique(
                 &self,
-                _peer_content: &str,
+                _peer_content: &made_core::value_objects::ProposalContent,
                 _constraints: &TaskConstraints,
             ) -> Result<Critique, DomainError> {
                 Ok(Critique {
-                    feedback: String::new(),
+                    feedback: String::new().into(),
                 })
             }
             async fn revise(
                 &self,
-                own_content: &str,
+                own_content: &made_core::value_objects::ProposalContent,
                 _critique: &Critique,
             ) -> Result<Revision, DomainError> {
                 Ok(Revision {
-                    content: format!("{}_saw:{own_content}", self.id),
+                    content: format!("{}_saw:{own_content}", self.id).into(),
                 })
             }
         }
@@ -1253,7 +1247,12 @@ mod tests {
             .deliberation
             .proposals()
             .values()
-            .map(|p| (p.author().as_str().to_owned(), p.content().to_owned()))
+            .map(|p| {
+                (
+                    p.author().as_str().to_owned(),
+                    p.content().as_str().to_owned(),
+                )
+            })
             .collect();
 
         // Expected rotation:
@@ -1376,27 +1375,27 @@ mod tests {
             async fn generate(&self, request: DraftRequest) -> Result<Revision, DomainError> {
                 self.seen_requests.lock().unwrap().push(request);
                 Ok(Revision {
-                    content: "captured".to_owned(),
+                    content: "captured".into(),
                 })
             }
 
             async fn critique(
                 &self,
-                _peer_content: &str,
+                _peer_content: &made_core::value_objects::ProposalContent,
                 _constraints: &TaskConstraints,
             ) -> Result<Critique, DomainError> {
                 Ok(Critique {
-                    feedback: "ok".to_owned(),
+                    feedback: "ok".into(),
                 })
             }
 
             async fn revise(
                 &self,
-                own_content: &str,
+                own_content: &made_core::value_objects::ProposalContent,
                 _critique: &Critique,
             ) -> Result<Revision, DomainError> {
                 Ok(Revision {
-                    content: own_content.to_owned(),
+                    content: own_content.clone(),
                 })
             }
         }

@@ -19,6 +19,8 @@ use made_core::value_objects::{
 };
 use serde_json::Value;
 
+use super::{EvidenceGroundingSpec, SemanticSupportSpec};
+
 /// Agent kind assumed when a step does not declare one.
 const DEFAULT_AGENT_KIND: &str = "noop";
 
@@ -102,29 +104,6 @@ mod field {
 const DEFAULT_CLAIMS_FIELD: &str = "claims";
 /// Default per-claim field carrying the evidence references.
 const DEFAULT_REFS_FIELD: &str = "evidence_refs";
-
-/// Declared evidence-grounding configuration for a step, before the
-/// context-borne refs are resolved. The step config owns the schema;
-/// the transport layer — which holds the ceremony context — resolves
-/// `context_key` into concrete refs and builds the domain rule.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct EvidenceGroundingSpec {
-    pub(crate) claims_field: String,
-    pub(crate) refs_field: String,
-    pub(crate) static_refs: Vec<String>,
-    pub(crate) context_key: Option<String>,
-    pub(crate) semantic: Option<SemanticSupportSpec>,
-}
-
-/// Declared semantic-support configuration for a step, before the
-/// context-borne evidence bodies are resolved. `bodies_context_key`
-/// defaults to the grounding spec's `context_key` when absent — the
-/// pack that names the refs usually also carries their text.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct SemanticSupportSpec {
-    pub(crate) min_confidence: Option<u8>,
-    pub(crate) bodies_context_key: Option<String>,
-}
 
 /// A validated, typed view over one ceremony step's handler configuration.
 #[derive(Debug, Clone, Copy)]

@@ -1,5 +1,4 @@
-//! [`AgentFactoryPort`] — materialize an [`AgentPort`] from a typed
-//! descriptor.
+//! [`AgentFactoryPort`] — materialize an [`AgentPort`] from a typed descriptor.
 //!
 //! Callers (the composition root and the `RegisterAgent` RPC) do not
 //! construct agent implementations directly; they hand a descriptor to
@@ -16,23 +15,10 @@
 
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-
 use crate::error::DomainError;
 use crate::ports::agent::AgentPort;
-use crate::value_objects::{AgentId, AgentKind, Attributes, Specialty};
-
-/// Everything the factory needs to build a live agent. Mirrors the
-/// `AgentSummary` proto, but kept in domain shapes so use cases never
-/// touch wire types.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct AgentDescriptor {
-    pub id: AgentId,
-    pub specialty: Specialty,
-    pub kind: AgentKind,
-    pub attributes: Attributes,
-}
+use crate::ports::AgentDescriptor;
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait AgentFactoryPort: Send + Sync {

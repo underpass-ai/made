@@ -4,66 +4,17 @@
 //! it in this session, and it is per session on purpose: the same
 //! ceremony run twice can and should be able to seat different people.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
+
+use super::bind_ceremony_participants_input::BindCeremonyParticipantsInput;
+use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
+use crate::services::{session_facts, SessionJournal};
 
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
-use made_core::value_objects::{AuditActorKind, CeremonyId, RoleId, Specialty};
-
-use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, SessionJournal};
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BindCeremonyParticipantsInput {
-    pub(crate) instance_id: CeremonyId,
-    pub(crate) seating: BTreeMap<RoleId, Specialty>,
-    /// Who is seating them, in the caller's own terms.
-    ///
-    /// Not a role from the definition: seating the table is done to a
-    /// session rather than in it, and whoever does it need hold no
-    /// seat at all.
-    pub(crate) actor_id: String,
-    /// What kind of party that is.
-    ///
-    /// Carried, never worked out.
-    pub(crate) actor_kind: AuditActorKind,
-}
-
-impl BindCeremonyParticipantsInput {
-    /// Seating with nobody in it is a call that would change nothing,
-    /// and answering "done" to it would be a small lie.
-    pub fn new(
-        instance_id: CeremonyId,
-        seating: impl IntoIterator<Item = (RoleId, Specialty)>,
-        actor_id: impl Into<String>,
-        actor_kind: AuditActorKind,
-    ) -> Result<Self, DomainError> {
-        let seating: BTreeMap<RoleId, Specialty> = seating.into_iter().collect();
-        if seating.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "ceremony_participant_binding.seating",
-            });
-        }
-        Ok(Self {
-            instance_id,
-            seating,
-            actor_id: actor_id.into(),
-            actor_kind,
-        })
-    }
-
-    #[must_use]
-    pub fn instance_id(&self) -> &CeremonyId {
-        &self.instance_id
-    }
-
-    #[must_use]
-    pub fn seating(&self) -> &BTreeMap<RoleId, Specialty> {
-        &self.seating
-    }
-}
+#[cfg(test)]
+use made_core::value_objects::{AuditActorKind, Specialty};
 
 pub struct BindCeremonyParticipantsUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,

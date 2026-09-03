@@ -13,11 +13,13 @@
 //!
 //! [`DomainError`]: made_core::error::DomainError
 
+mod made_grpc_service_builder;
 mod mappers;
 mod service;
 mod status;
 mod stream;
 pub(crate) mod tracecontext;
 
-pub use service::{MadeGrpcService, MadeGrpcServiceBuilder};
+pub use made_grpc_service_builder::MadeGrpcServiceBuilder;
+pub use service::MadeGrpcService;
 pub use status::domain_error_to_status;

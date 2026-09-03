@@ -16,8 +16,8 @@ use made_core::value_objects::TraceContext;
 use tokio::task::JoinHandle;
 use tracing::{error, info, warn};
 
-use super::config::NatsSubjects;
 use super::messaging::TRACEPARENT_HEADER;
+use super::NatsSubjects;
 
 /// Spawns a background task that consumes trigger events from NATS
 /// and forwards them to the application's `AutoDispatchService`.

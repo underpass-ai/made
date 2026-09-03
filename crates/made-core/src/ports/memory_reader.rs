@@ -1,72 +1,10 @@
 use async_trait::async_trait;
 
 use crate::error::DomainError;
+use crate::ports::MemoryRecollection;
 use crate::value_objects::{
-    MemoryCapabilities, MemoryEntry, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryRelation,
-    MemoryScope,
+    MemoryCapabilities, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryScope,
 };
-
-/// What memory gave back.
-///
-/// `Unsupported` is a first-class answer rather than an error because
-/// a backend that cannot travel in time is not misbehaving — it is a
-/// smaller backend, and a caller told so plainly can offer the person
-/// something else instead of showing them a failure.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum MemoryRecollection {
-    /// What was remembered, and what connects it.
-    ///
-    /// Both, always. Handing back entries alone would answer "what
-    /// happened here" and silently refuse "how did this come about",
-    /// and a caller has no way to tell a memory with no reasons from a
-    /// reader that dropped them.
-    Recalled {
-        entries: Vec<MemoryEntry>,
-        relations: Vec<MemoryRelation>,
-    },
-    /// The backend does not do this, and said so in its capabilities.
-    Unsupported,
-}
-
-impl MemoryRecollection {
-    /// Entries with nothing connecting them yet.
-    #[must_use]
-    pub fn of(entries: Vec<MemoryEntry>) -> Self {
-        Self::Recalled {
-            entries,
-            relations: Vec::new(),
-        }
-    }
-
-    /// Nothing is remembered here.
-    #[must_use]
-    pub fn nothing() -> Self {
-        Self::of(Vec::new())
-    }
-
-    #[must_use]
-    pub fn entries(&self) -> &[MemoryEntry] {
-        match self {
-            Self::Recalled { entries, .. } => entries,
-            Self::Unsupported => &[],
-        }
-    }
-
-    /// The reasons between what came back — the part that can be
-    /// followed rather than only read.
-    #[must_use]
-    pub fn relations(&self) -> &[MemoryRelation] {
-        match self {
-            Self::Recalled { relations, .. } => relations,
-            Self::Unsupported => &[],
-        }
-    }
-
-    #[must_use]
-    pub const fn is_supported(&self) -> bool {
-        matches!(self, Self::Recalled { .. })
-    }
-}
 
 /// Reading what earlier sessions learned, and why.
 ///

@@ -11,38 +11,15 @@
 
 use std::sync::Arc;
 
-use made_core::entities::{
-    Deliberation, ExternalContextBundle, Task, TaskConstraints, TaskMetadata,
-};
+use made_core::entities::{ExternalContextBundle, Task, TaskConstraints, TaskMetadata};
 use made_core::error::DomainError;
 use made_core::events::TriggerEvent;
 use made_core::value_objects::{Attributes, Specialty, TaskDescription, TaskId};
 use tracing::{error, info};
 use uuid::Uuid;
 
+use crate::services::AutoDispatchOutcome;
 use crate::usecases::DeliberateUseCase;
-
-/// Outcome of processing one trigger event.
-#[derive(Debug, Clone, Default)]
-pub struct AutoDispatchOutcome {
-    pub successes: Vec<(Specialty, Deliberation)>,
-    pub failures: Vec<(Specialty, DomainError)>,
-}
-
-impl AutoDispatchOutcome {
-    #[must_use]
-    pub fn accepted(&self) -> bool {
-        !self.successes.is_empty()
-    }
-
-    #[must_use]
-    pub fn dispatched_task_ids(&self) -> Vec<TaskId> {
-        self.successes
-            .iter()
-            .map(|(_, d)| d.task_id().clone())
-            .collect()
-    }
-}
 
 pub struct AutoDispatchService {
     deliberate: Arc<DeliberateUseCase>,

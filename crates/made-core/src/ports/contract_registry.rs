@@ -11,7 +11,7 @@
 use async_trait::async_trait;
 
 use crate::error::DomainError;
-use crate::value_objects::OutputContract;
+use crate::value_objects::{OutputContract, OutputContractId};
 
 #[async_trait]
 pub trait ContractRegistryPort: Send + Sync {
@@ -22,15 +22,15 @@ pub trait ContractRegistryPort: Send + Sync {
 
     /// Fetch the contract for an id. Returns
     /// [`DomainError::NotFound`] when absent.
-    async fn get(&self, contract_id: &str) -> Result<OutputContract, DomainError>;
+    async fn get(&self, contract_id: &OutputContractId) -> Result<OutputContract, DomainError>;
 
     /// Enumerate every registered contract. Ordering is unspecified.
     async fn list(&self) -> Result<Vec<OutputContract>, DomainError>;
 
     /// Remove the contract for an id. Returns
     /// [`DomainError::NotFound`] when absent.
-    async fn delete(&self, contract_id: &str) -> Result<(), DomainError>;
+    async fn delete(&self, contract_id: &OutputContractId) -> Result<(), DomainError>;
 
     /// Cheap existence check that avoids materialising the contract.
-    async fn contains(&self, contract_id: &str) -> Result<bool, DomainError>;
+    async fn contains(&self, contract_id: &OutputContractId) -> Result<bool, DomainError>;
 }

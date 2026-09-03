@@ -1,26 +1,8 @@
 use async_trait::async_trait;
 
 use crate::error::DomainError;
+use crate::ports::MemoryWriteOutcome;
 use crate::value_objects::{MemoryCapabilities, MemoryScope, MemoryWrite};
-
-/// What became of a write.
-///
-/// Retrying is a normal thing for a caller to do — a network gave up,
-/// a process restarted — and the second attempt must not double the
-/// memory. Saying which of the two happened, rather than answering
-/// "fine" both times, is what lets a caller tell a retry that worked
-/// from a write it never sent.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum MemoryWriteOutcome {
-    /// The entries are now in memory, put there by this call.
-    Remembered,
-    /// This exact write had already been made. Nothing changed.
-    AlreadyRemembered,
-    /// The backend does not keep memory, and said so in its
-    /// capabilities. Not an error: a session with nowhere to record
-    /// what it decided still runs, it just forgets.
-    NotRemembered,
-}
 
 /// Writing what a working session decided into memory that outlives it.
 ///

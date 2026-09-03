@@ -49,10 +49,10 @@ pub fn orchestrate_response_from(out: &OrchestrateOutput) -> pb::OrchestrateResp
 
     pb::OrchestrateResponse {
         task_id: out.deliberation.task_id().as_str().to_owned(),
-        execution_id: out.execution.execution_id.clone(),
+        execution_id: out.execution.id().as_str().to_owned(),
         winner,
         candidates: results,
-        duration_ms: out.execution.duration.get(),
+        duration_ms: out.execution.duration().get(),
         metadata: Some(PbStruct::default()),
     }
 }
@@ -85,10 +85,9 @@ mod tests {
     use made_core::entities::{
         Deliberation, Proposal, TaskConstraints, ValidationOutcome, ValidatorReport,
     };
-    use made_core::ports::ExecutionOutcome;
     use made_core::value_objects::{
-        AgentId, Attributes, DurationMs, ProposalId, Rounds, Score, Specialty, TaskDescription,
-        TaskId,
+        AgentId, Attributes, DurationMs, ExecutionId, ExecutionOutcome, ExecutionStatus,
+        ProposalId, Rounds, Score, Specialty, TaskDescription, TaskId,
     };
     use time::macros::datetime;
 
@@ -168,12 +167,12 @@ mod tests {
         let out = OrchestrateOutput {
             deliberation: d,
             winner: winner_proposal,
-            execution: ExecutionOutcome {
-                execution_id: "e-1".to_owned(),
-                succeeded: true,
-                duration: DurationMs::from_millis(250),
-                output: Attributes::empty(),
-            },
+            execution: ExecutionOutcome::new(
+                ExecutionId::new("e-1").unwrap(),
+                ExecutionStatus::Succeeded,
+                DurationMs::from_millis(250),
+                Attributes::empty(),
+            ),
         };
         let resp = orchestrate_response_from(&out);
         assert_eq!(resp.execution_id, "e-1");

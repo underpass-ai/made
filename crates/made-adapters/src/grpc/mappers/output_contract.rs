@@ -30,7 +30,7 @@ pub fn output_contract_to_proto(contract: &OutputContract) -> pb::OutputContract
         OutputFormat::JsonObject => pb::OutputFormat::JsonObject as i32,
     };
     pb::OutputContract {
-        contract_id: contract.contract_id().to_owned(),
+        contract_id: contract.contract_id().as_str().to_owned(),
         format,
         fields,
         json_schema: contract.json_schema().to_owned(),

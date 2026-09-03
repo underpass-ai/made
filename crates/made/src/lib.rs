@@ -5,13 +5,17 @@
 //! resulting [`Application`]. All wiring logic lives here so it can
 //! be unit-tested without starting a server.
 
+mod application;
 pub mod compose;
+mod compose_error;
 pub mod health;
 pub mod runtime;
 pub mod seeding;
 pub mod telemetry;
 
-pub use compose::{compose, Application, ComposeError};
+pub use application::Application;
+pub use compose::compose;
+pub use compose_error::ComposeError;
 pub use health::{router as health_router, HealthState};
 pub use runtime::serve;
 pub use telemetry::{init_tracing, TelemetryGuard};

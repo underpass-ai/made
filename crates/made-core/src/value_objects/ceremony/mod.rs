@@ -1,6 +1,9 @@
 //! Value objects for declarative ceremony execution.
 
+mod ceremony_change_impact;
+mod ceremony_change_kind;
 mod ceremony_context;
+mod ceremony_definition_change;
 mod ceremony_definition_diff;
 mod ceremony_definition_digest;
 mod ceremony_definition_digest_migration;
@@ -47,6 +50,7 @@ mod input_name;
 mod input_requirement;
 mod lease_owner_id;
 mod output_name;
+mod reason_asserter;
 mod repeat_until_condition;
 mod retry_policy;
 mod role_action;
@@ -68,10 +72,11 @@ mod step_status;
 mod step_timeout;
 mod transition_trigger;
 
+pub use ceremony_change_impact::CeremonyChangeImpact;
+pub use ceremony_change_kind::CeremonyChangeKind;
 pub use ceremony_context::CeremonyContext;
-pub use ceremony_definition_diff::{
-    CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyDefinitionDiff,
-};
+pub use ceremony_definition_change::CeremonyDefinitionChange;
+pub use ceremony_definition_diff::CeremonyDefinitionDiff;
 pub use ceremony_definition_digest::CeremonyDefinitionDigest;
 pub use ceremony_definition_digest_migration::CeremonyDefinitionDigestMigration;
 pub use ceremony_description::CeremonyDescription;
@@ -93,7 +98,7 @@ pub use ceremony_name::CeremonyName;
 pub use ceremony_output_definition::CeremonyOutputDefinition;
 pub use ceremony_participant_binding::CeremonyParticipantBinding;
 pub use ceremony_reason::CeremonyReason;
-pub use ceremony_reason_kind::{CeremonyReasonKind, ReasonAsserter};
+pub use ceremony_reason_kind::CeremonyReasonKind;
 pub use ceremony_record_ref::CeremonyRecordRef;
 pub use ceremony_revision::CeremonyRevision;
 pub use ceremony_role::CeremonyRole;
@@ -117,6 +122,7 @@ pub use input_name::InputName;
 pub use input_requirement::InputRequirement;
 pub use lease_owner_id::LeaseOwnerId;
 pub use output_name::OutputName;
+pub use reason_asserter::ReasonAsserter;
 pub use repeat_until_condition::RepeatUntilCondition;
 pub use retry_policy::RetryPolicy;
 pub use role_action::RoleAction;

@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use made_core::entities::TaskConstraints;
 use made_core::error::DomainError;
 use made_core::ports::{AgentPort, Critique, DraftRequest, Revision};
-use made_core::value_objects::{AgentId, Specialty};
+use made_core::value_objects::{AgentId, ProposalContent, Specialty};
 
 /// A deterministic agent that composes its own `id` and the task
 /// description into its proposal / critique / revision outputs. Safe
@@ -43,13 +43,14 @@ impl AgentPort for NoopAgent {
                 "noop-proposal[{id}] for task: {task}",
                 id = self.id,
                 task = request.task.as_str(),
-            ),
+            )
+            .into(),
         })
     }
 
     async fn critique(
         &self,
-        peer_content: &str,
+        peer_content: &ProposalContent,
         _constraints: &TaskConstraints,
     ) -> Result<Critique, DomainError> {
         Ok(Critique {
@@ -57,17 +58,18 @@ impl AgentPort for NoopAgent {
                 "noop-critique[{id}] on peer content of length {n}",
                 id = self.id,
                 n = peer_content.len(),
-            ),
+            )
+            .into(),
         })
     }
 
     async fn revise(
         &self,
-        own_content: &str,
+        own_content: &ProposalContent,
         _critique: &Critique,
     ) -> Result<Revision, DomainError> {
         Ok(Revision {
-            content: format!("{own_content}[revised-by:{id}]", id = self.id),
+            content: format!("{own_content}[revised-by:{id}]", id = self.id).into(),
         })
     }
 }
@@ -75,7 +77,7 @@ impl AgentPort for NoopAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use made_core::value_objects::TaskDescription;
+    use made_core::value_objects::{DiversityPreference, TaskDescription};
 
     fn agent(id: &str) -> NoopAgent {
         NoopAgent::new(AgentId::new(id).unwrap(), Specialty::new("triage").unwrap())
@@ -88,7 +90,7 @@ mod tests {
             .generate(DraftRequest {
                 task: TaskDescription::new("hello").unwrap(),
                 constraints: TaskConstraints::default(),
-                diverse: true,
+                diversity: DiversityPreference::Diverse,
                 external_context: None,
             })
             .await
@@ -101,7 +103,7 @@ mod tests {
     async fn critique_mentions_reviewer_id() {
         let a = agent("a1");
         let out = a
-            .critique("abc", &TaskConstraints::default())
+            .critique(&"abc".into(), &TaskConstraints::default())
             .await
             .unwrap();
         assert!(out.feedback.contains("a1"));
@@ -112,9 +114,9 @@ mod tests {
         let a = agent("a1");
         let out = a
             .revise(
-                "seed-content",
+                &"seed-content".into(),
                 &Critique {
-                    feedback: String::new(),
+                    feedback: String::new().into(),
                 },
             )
             .await

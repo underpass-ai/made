@@ -2,15 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::InterventionView;
-
-/// One seat at a ceremony, as a consumer sees it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct CeremonyParticipant {
-    pub role_id: String,
-    pub specialty: String,
-    pub bound_at_millis: i64,
-}
+use crate::{CeremonyParticipant, InterventionView};
 
 /// One ceremony instance, as a consumer sees it.
 ///

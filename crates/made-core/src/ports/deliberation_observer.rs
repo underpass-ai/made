@@ -13,8 +13,8 @@
 //! can stay oblivious to whether a caller is listening on a stream,
 //! and messaging adapters stay oblivious to live stream semantics.
 //!
-//! The port is implementation-optional: callers that do not care pass
-//! [`NullObserver`], which discards every event.
+//! The port is implementation-optional: callers that do not care pass a
+//! no-op adapter.
 
 use async_trait::async_trait;
 use time::OffsetDateTime;
@@ -36,19 +36,4 @@ pub trait DeliberationObserverPort: Send + Sync {
         phase: DeliberationPhase,
         emitted_at: OffsetDateTime,
     );
-}
-
-/// No-op observer. Use this in composition when no stream is active.
-#[derive(Debug, Default, Clone)]
-pub struct NullObserver;
-
-#[async_trait]
-impl DeliberationObserverPort for NullObserver {
-    async fn on_phase_changed(
-        &self,
-        _task_id: &TaskId,
-        _phase: DeliberationPhase,
-        _emitted_at: OffsetDateTime,
-    ) {
-    }
 }

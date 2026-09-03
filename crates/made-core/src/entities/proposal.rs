@@ -9,7 +9,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::error::DomainError;
-use crate::value_objects::{AgentId, Attributes, ProposalId, Specialty};
+use crate::value_objects::{AgentId, Attributes, ProposalContent, ProposalId, Specialty};
 
 /// Authored proposal inside a deliberation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -17,7 +17,7 @@ pub struct Proposal {
     id: ProposalId,
     author: AgentId,
     specialty: Specialty,
-    content: String,
+    content: ProposalContent,
     attributes: Attributes,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
@@ -34,12 +34,12 @@ impl Proposal {
         id: ProposalId,
         author: AgentId,
         specialty: Specialty,
-        content: impl Into<String>,
+        content: impl Into<ProposalContent>,
         attributes: Attributes,
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
         let content = content.into();
-        if content.trim().is_empty() {
+        if content.as_str().trim().is_empty() {
             return Err(DomainError::EmptyField {
                 field: "proposal.content",
             });
@@ -60,11 +60,11 @@ impl Proposal {
     /// Increments the revision counter and refreshes `updated_at`.
     pub fn revise(
         &mut self,
-        new_content: impl Into<String>,
+        new_content: impl Into<ProposalContent>,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         let content = new_content.into();
-        if content.trim().is_empty() {
+        if content.as_str().trim().is_empty() {
             return Err(DomainError::EmptyField {
                 field: "proposal.content",
             });
@@ -88,7 +88,7 @@ impl Proposal {
         &self.specialty
     }
     #[must_use]
-    pub fn content(&self) -> &str {
+    pub const fn content(&self) -> &ProposalContent {
         &self.content
     }
     #[must_use]

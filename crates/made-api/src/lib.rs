@@ -20,19 +20,28 @@ mod api_capabilities;
 mod api_error;
 mod authoring_views;
 mod ceremony_engine_api;
+mod ceremony_participant;
 mod ceremony_summary;
+mod definition_defect_view;
+mod intervention_response_view;
 mod intervention_views;
+mod published_definition_view;
+mod raise_intervention_request;
+mod respond_to_intervention_request;
 mod start_ceremony_request;
 
 pub use api_capabilities::ApiCapabilities;
 pub use api_error::ApiError;
-pub use authoring_views::{DefinitionAnalysisView, DefinitionDefectView, PublishedDefinitionView};
+pub use authoring_views::DefinitionAnalysisView;
 pub use ceremony_engine_api::CeremonyEngineApi;
-pub use ceremony_summary::{CeremonyParticipant, CeremonySummary};
-pub use intervention_views::{
-    InterventionResponseView, InterventionView, RaiseInterventionRequest,
-    RespondToInterventionRequest,
-};
+pub use ceremony_participant::CeremonyParticipant;
+pub use ceremony_summary::CeremonySummary;
+pub use definition_defect_view::DefinitionDefectView;
+pub use intervention_response_view::InterventionResponseView;
+pub use intervention_views::InterventionView;
+pub use published_definition_view::PublishedDefinitionView;
+pub use raise_intervention_request::RaiseInterventionRequest;
+pub use respond_to_intervention_request::RespondToInterventionRequest;
 pub use start_ceremony_request::StartCeremonyRequest;
 
 /// The revision of this contract.

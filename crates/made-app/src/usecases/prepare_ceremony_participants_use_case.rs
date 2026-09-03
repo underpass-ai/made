@@ -130,27 +130,27 @@ mod tests {
 
         async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
             Ok(Revision {
-                content: String::new(),
+                content: String::new().into(),
             })
         }
 
         async fn critique(
             &self,
-            _peer_content: &str,
+            _peer_content: &made_core::value_objects::ProposalContent,
             _constraints: &TaskConstraints,
         ) -> Result<Critique, DomainError> {
             Ok(Critique {
-                feedback: String::new(),
+                feedback: String::new().into(),
             })
         }
 
         async fn revise(
             &self,
-            own_content: &str,
+            own_content: &made_core::value_objects::ProposalContent,
             _critique: &Critique,
         ) -> Result<Revision, DomainError> {
             Ok(Revision {
-                content: own_content.to_owned(),
+                content: own_content.clone(),
             })
         }
     }

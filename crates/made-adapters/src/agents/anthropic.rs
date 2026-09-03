@@ -20,6 +20,7 @@
 
 use std::fmt;
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -28,7 +29,7 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
 };
-use made_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
+use made_core::value_objects::{AgentId, LlmErrorKind, ProposalContent, Specialty, TokenUsage};
 use reqwest::{Client, StatusCode};
 use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
@@ -36,113 +37,16 @@ use tracing::{debug, warn};
 use super::instrument::ProviderCallGuard;
 use super::prompts;
 
+mod anthropic_api_key;
+mod anthropic_config;
+
+pub use anthropic_api_key::AnthropicApiKey;
+pub use anthropic_config::AnthropicConfig;
+
 /// Provider label for this adapter's error metrics.
 const PROVIDER: &str = "anthropic";
 
 const ANTHROPIC_VERSION_HEADER: &str = "2023-06-01";
-const DEFAULT_ENDPOINT: &str = "https://api.anthropic.com";
-const DEFAULT_MODEL: &str = "claude-haiku-4-5-20251001";
-const DEFAULT_MAX_TOKENS: u32 = 1024;
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-// ---------------------------------------------------------------------------
-// Secret wrapper
-// ---------------------------------------------------------------------------
-
-/// Opaque API key. Its `Debug` impl is a fixed redaction so the
-/// secret value cannot slip into logs, event payloads, or test
-/// snapshots by accident.
-#[derive(Clone)]
-pub struct AnthropicApiKey(String);
-
-impl AnthropicApiKey {
-    /// Validate and construct. Empty / whitespace-only keys are
-    /// rejected at the boundary so a misconfigured deployment fails
-    /// fast instead of receiving a 401 on the first request.
-    pub fn new(raw: impl Into<String>) -> Result<Self, DomainError> {
-        let trimmed = raw.into().trim().to_owned();
-        if trimmed.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "anthropic.api_key",
-            });
-        }
-        Ok(Self(trimmed))
-    }
-
-    fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for AnthropicApiKey {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("AnthropicApiKey(**redacted**)")
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-/// Static configuration for the Anthropic adapter.
-///
-/// All fields are validated on construction. Defaults match the
-/// Messages API's current conventions.
-#[derive(Debug, Clone)]
-pub struct AnthropicConfig {
-    api_key: AnthropicApiKey,
-    endpoint: String,
-    model: String,
-    max_tokens: u32,
-    timeout: Duration,
-}
-
-impl AnthropicConfig {
-    #[must_use]
-    pub fn new(api_key: AnthropicApiKey) -> Self {
-        Self {
-            api_key,
-            endpoint: DEFAULT_ENDPOINT.to_owned(),
-            model: DEFAULT_MODEL.to_owned(),
-            max_tokens: DEFAULT_MAX_TOKENS,
-            timeout: DEFAULT_TIMEOUT,
-        }
-    }
-
-    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Result<Self, DomainError> {
-        self.endpoint =
-            super::endpoint::validate_provider_endpoint("anthropic.endpoint", endpoint)?;
-        Ok(self)
-    }
-
-    pub fn with_model(mut self, model: impl Into<String>) -> Result<Self, DomainError> {
-        let value = model.into().trim().to_owned();
-        if value.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "anthropic.model",
-            });
-        }
-        self.model = value;
-        Ok(self)
-    }
-
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Result<Self, DomainError> {
-        if max_tokens == 0 {
-            return Err(DomainError::MustBeNonZero {
-                field: "anthropic.max_tokens",
-            });
-        }
-        self.max_tokens = max_tokens;
-        Ok(self)
-    }
-
-    #[must_use]
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Agent
 // ---------------------------------------------------------------------------
@@ -314,29 +218,35 @@ impl AgentPort for AnthropicAgent {
         let system = prompts::system_prompt_generate(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_generate(&request);
         let content = self.complete(system, user, "generate").await?;
-        Ok(Revision { content })
+        Ok(Revision {
+            content: content.into(),
+        })
     }
 
     async fn critique(
         &self,
-        peer_content: &str,
+        peer_content: &ProposalContent,
         constraints: &TaskConstraints,
     ) -> Result<Critique, DomainError> {
         let system = prompts::system_prompt_critique(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_critique(peer_content, constraints);
         let feedback = self.complete(system, user, "critique").await?;
-        Ok(Critique { feedback })
+        Ok(Critique {
+            feedback: feedback.into(),
+        })
     }
 
     async fn revise(
         &self,
-        own_content: &str,
+        own_content: &ProposalContent,
         critique: &Critique,
     ) -> Result<Revision, DomainError> {
         let system = prompts::system_prompt_revise(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_revise(own_content, critique);
         let content = self.complete(system, user, "revise").await?;
-        Ok(Revision { content })
+        Ok(Revision {
+            content: content.into(),
+        })
     }
 }
 
@@ -445,7 +355,7 @@ fn classify_error(status: StatusCode) -> DomainError {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use made_core::value_objects::{Rounds, Rubric, TaskDescription};
+    use made_core::value_objects::{DiversityPreference, Rounds, Rubric, TaskDescription};
     use serde_json::json;
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -471,7 +381,7 @@ mod tests {
         DraftRequest {
             task: TaskDescription::new("Investigate the incoming alert.").unwrap(),
             constraints: TaskConstraints::new(Rubric::empty(), Rounds::default(), None, None),
-            diverse: true,
+            diversity: DiversityPreference::Diverse,
             external_context: None,
         }
     }
@@ -589,7 +499,7 @@ mod tests {
 
         let agent = test_agent(&server);
         let out = agent
-            .critique("peer proposal", &TaskConstraints::default())
+            .critique(&"peer proposal".into(), &TaskConstraints::default())
             .await
             .unwrap();
         assert_eq!(out.feedback, "consider edge case X");
@@ -610,9 +520,9 @@ mod tests {
         let agent = test_agent(&server);
         let out = agent
             .revise(
-                "old proposal",
+                &"old proposal".into(),
                 &Critique {
-                    feedback: "tighten X".to_owned(),
+                    feedback: "tighten X".into(),
                 },
             )
             .await

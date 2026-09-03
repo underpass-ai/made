@@ -15,10 +15,14 @@ mod council_registry;
 mod deliberation_repository;
 mod error;
 mod pool;
+mod postgres_config;
+mod postgres_pool_error;
 mod statistics;
 
 pub use agent_registry::PostgresAgentRegistry;
 pub use council_registry::PostgresCouncilRegistry;
 pub use deliberation_repository::PostgresDeliberationRepository;
-pub use pool::{PostgresConfig, PostgresPool, PostgresPoolError};
+pub use pool::PostgresPool;
+pub use postgres_config::PostgresConfig;
+pub use postgres_pool_error::PostgresPoolError;
 pub use statistics::PostgresStatistics;

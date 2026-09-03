@@ -149,9 +149,9 @@ mod tests {
 
     use super::*;
     use crate::engine::redb::{CEREMONIES, PUBLICATIONS};
-    use crate::redb::ceremony_store::{StoredCeremony, StoredPublication};
     use crate::redb::legacy_definition_binding::LegacyDefinitionBinding;
     use crate::redb::RedbCeremonyStore;
+    use crate::redb::{StoredCeremony, StoredPublication};
 
     #[tokio::test]
     async fn imports_an_open_legacy_store_without_mutating_the_source() {

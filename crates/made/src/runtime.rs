@@ -15,13 +15,13 @@
 use std::net::SocketAddr;
 
 use anyhow::{Context, Result};
-use made_core::ports::GrpcTlsConfig;
+use made_adapters::config::GrpcTlsConfig;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio::sync::watch;
 use tonic::transport::{Certificate, Identity, Server, ServerTlsConfig};
 use tracing::{error, info};
 
-use crate::compose::Application;
+use crate::Application;
 
 /// Bind gRPC + HTTP, spawn the optional NATS subscriber, and serve
 /// until SIGTERM or SIGINT.

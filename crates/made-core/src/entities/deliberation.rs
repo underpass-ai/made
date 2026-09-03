@@ -22,83 +22,9 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-use crate::entities::proposal::Proposal;
-use crate::entities::validation::ValidationOutcome;
+use crate::entities::{DeliberationPhase, Proposal, RankedOutcome, ValidationOutcome};
 use crate::error::DomainError;
-use crate::value_objects::{DurationMs, ProposalId, Rounds, Specialty, TaskId};
-
-/// Lifecycle phases of a deliberation.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-pub enum DeliberationPhase {
-    /// Agents are producing their initial proposals.
-    Proposing,
-    /// Peer-review rounds are running: critique → revise, possibly
-    /// many times within this single phase.
-    Revising,
-    /// Validators are running against proposals.
-    Validating,
-    /// Validator reports are being aggregated into a final ranking.
-    Scoring,
-    /// The deliberation is finished; ranked outcomes are immutable.
-    Completed,
-}
-
-impl DeliberationPhase {
-    fn name(self) -> &'static str {
-        match self {
-            Self::Proposing => "Proposing",
-            Self::Revising => "Revising",
-            Self::Validating => "Validating",
-            Self::Scoring => "Scoring",
-            Self::Completed => "Completed",
-        }
-    }
-
-    fn next(self) -> Option<Self> {
-        Some(match self {
-            Self::Proposing => Self::Revising,
-            Self::Revising => Self::Validating,
-            Self::Validating => Self::Scoring,
-            Self::Scoring => Self::Completed,
-            Self::Completed => return None,
-        })
-    }
-}
-
-/// A proposal paired with its validation outcome and final rank.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct RankedOutcome {
-    proposal: Proposal,
-    outcome: ValidationOutcome,
-    rank: u32,
-}
-
-impl RankedOutcome {
-    /// Pair a proposal with its validation outcome and a rank. The real
-    /// ranking is produced by [`Deliberation::complete`]; this constructor
-    /// also lets scoring policies and tests assemble outcomes directly.
-    #[must_use]
-    pub fn new(proposal: Proposal, outcome: ValidationOutcome, rank: u32) -> Self {
-        Self {
-            proposal,
-            outcome,
-            rank,
-        }
-    }
-
-    #[must_use]
-    pub fn proposal(&self) -> &Proposal {
-        &self.proposal
-    }
-    #[must_use]
-    pub fn outcome(&self) -> &ValidationOutcome {
-        &self.outcome
-    }
-    #[must_use]
-    pub fn rank(&self) -> u32 {
-        self.rank
-    }
-}
+use crate::value_objects::{DurationMs, ProposalContent, ProposalId, Rounds, Specialty, TaskId};
 
 /// Aggregate root: one deliberation over one task.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -189,7 +115,7 @@ impl Deliberation {
     pub fn revise_proposal(
         &mut self,
         proposal_id: &ProposalId,
-        new_content: impl Into<String>,
+        new_content: impl Into<ProposalContent>,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         self.require_phase(DeliberationPhase::Revising)?;
@@ -278,10 +204,8 @@ impl Deliberation {
         Ok(ranked
             .into_iter()
             .enumerate()
-            .map(|(i, (_, proposal, outcome))| RankedOutcome {
-                proposal,
-                outcome,
-                rank: u32::try_from(i).unwrap_or(u32::MAX),
+            .map(|(i, (_, proposal, outcome))| {
+                RankedOutcome::new(proposal, outcome, u32::try_from(i).unwrap_or(u32::MAX))
             })
             .collect())
     }
@@ -309,10 +233,8 @@ impl Deliberation {
         Ok(ranked
             .into_iter()
             .enumerate()
-            .map(|(i, (_, proposal, outcome))| RankedOutcome {
-                proposal,
-                outcome,
-                rank: u32::try_from(i).unwrap_or(u32::MAX),
+            .map(|(i, (_, proposal, outcome))| {
+                RankedOutcome::new(proposal, outcome, u32::try_from(i).unwrap_or(u32::MAX))
             })
             .collect())
     }
@@ -347,10 +269,8 @@ impl Deliberation {
             .materialize_ranked_tuples(&self.ranking)?
             .into_iter()
             .enumerate()
-            .map(|(i, (_, proposal, outcome))| RankedOutcome {
-                proposal,
-                outcome,
-                rank: u32::try_from(i).unwrap_or(u32::MAX),
+            .map(|(i, (_, proposal, outcome))| {
+                RankedOutcome::new(proposal, outcome, u32::try_from(i).unwrap_or(u32::MAX))
             })
             .collect())
     }
@@ -396,7 +316,7 @@ impl Deliberation {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::validation::ValidatorReport;
+    use crate::entities::ValidatorReport;
     use crate::value_objects::{AgentId, Attributes, Score, TaskId};
     use time::macros::datetime;
 

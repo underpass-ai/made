@@ -3,9 +3,10 @@ use redb::ReadableTable;
 
 use crate::engine::redb::CEREMONIES;
 
-use super::ceremony_store::{decode, encode, StoredCeremony};
+use super::ceremony_store::{decode, encode};
 use super::error::store_failure;
 use super::legacy_publication_migration::LegacyPublicationMigration;
+use super::StoredCeremony;
 
 /// Counts and applies instance binding changes for one legacy import.
 #[derive(Debug)]

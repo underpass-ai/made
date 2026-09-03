@@ -1,0 +1,87 @@
+name: dev-loop
+
+# Fast feedback for the integration branch. The full quality, integration,
+# packaging and coverage gates remain mandatory on pull requests to main.
+on:
+  pull_request:
+    branches:
+      - develop
+  push:
+    branches:
+      - develop
+    paths:
+      - "crates/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "rust-toolchain.toml"
+      - "scripts/ci/architecture-gate.sh"
+      - "docs/architecture/conformance.tsv"
+      - ".github/workflows/dev-loop.yml"
+  workflow_dispatch:
+
+concurrency:
+  group: dev-loop-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  architecture-and-lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.97.1
+          components: rustfmt, clippy
+
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        with:
+          shared-key: develop-lint
+
+      - name: Check architecture
+        run: bash scripts/ci/architecture-gate.sh
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint library targets
+        run: cargo clippy --workspace --lib --locked -- -D warnings
+
+  unit-tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.97.1
+
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        with:
+          shared-key: develop-test
+
+      - name: Run workspace unit tests
+        run: cargo test --workspace --lib --locked

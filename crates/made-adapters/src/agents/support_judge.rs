@@ -19,10 +19,11 @@ use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use made_core::error::DomainError;
-use made_core::ports::{
-    EvidenceExcerpt, EvidenceSupportJudgePort, MetricsRecorderPort, SupportVerdict,
+use made_core::ports::{EvidenceSupportJudgePort, MetricsRecorderPort};
+use made_core::value_objects::{
+    ClaimText, DurationMs, EvidenceExcerpt, LlmErrorKind, SupportConfidence, SupportDecision,
+    SupportRationale, SupportVerdict, TokenUsage,
 };
-use made_core::value_objects::{DurationMs, LlmErrorKind, TokenUsage};
 use reqwest::Client;
 use serde_json::Value;
 use tracing::warn;
@@ -110,20 +111,26 @@ impl LlmEvidenceSupportJudge {
 
     async fn assess_inner(
         &self,
-        claim_text: &str,
+        claim: &ClaimText,
         evidence: &[EvidenceExcerpt],
     ) -> Result<SupportVerdict, DomainError> {
         use std::fmt::Write as _;
         let mut excerpts = String::new();
         for excerpt in evidence {
             // Writing to a String is infallible; ignore the Ok.
-            let _ = writeln!(excerpts, "[{}] {}", excerpt.reference, excerpt.body);
+            let _ = writeln!(
+                excerpts,
+                "[{}] {}",
+                excerpt.reference().as_str(),
+                excerpt.body().as_str()
+            );
         }
         let user = format!(
-            "CLAIM:\n{claim_text}\n\nCITED EVIDENCE (the only admissible support):\n{excerpts}\n\
+            "CLAIM:\n{}\n\nCITED EVIDENCE (the only admissible support):\n{excerpts}\n\
              Does the cited evidence, on its own, support the claim? Respond with ONLY a JSON \
              object: {{\"supported\": true|false, \"confidence\": <integer 0-100>, \"reason\": \
-             \"<one short sentence>\"}}. Do not wrap it in markdown."
+             \"<one short sentence>\"}}. Do not wrap it in markdown.",
+            claim.as_str()
         );
         let body = ChatRequest {
             model: &self.model,
@@ -200,11 +207,11 @@ impl LlmEvidenceSupportJudge {
 impl EvidenceSupportJudgePort for LlmEvidenceSupportJudge {
     async fn assess(
         &self,
-        claim_text: &str,
+        claim: &ClaimText,
         evidence: &[EvidenceExcerpt],
     ) -> Result<SupportVerdict, DomainError> {
         let started = Instant::now();
-        let outcome = self.assess_inner(claim_text, evidence).await;
+        let outcome = self.assess_inner(claim, evidence).await;
         self.metrics
             .observe_judge_latency(&self.model, elapsed_ms(started));
         outcome
@@ -263,11 +270,11 @@ fn parse_verdict(text: &str) -> Result<SupportVerdict, DomainError> {
         .and_then(Value::as_str)
         .unwrap_or_default()
         .to_owned();
-    Ok(SupportVerdict {
-        supported,
-        confidence,
-        rationale,
-    })
+    Ok(SupportVerdict::new(
+        SupportDecision::from(supported),
+        SupportConfidence::new(confidence)?,
+        SupportRationale::new(rationale),
+    ))
 }
 
 #[cfg(test)]
@@ -290,10 +297,13 @@ mod tests {
     }
 
     fn excerpt() -> Vec<EvidenceExcerpt> {
-        vec![EvidenceExcerpt {
-            reference: "ev-1".to_owned(),
-            body: "journalctl: typha (pid 4830) holds 0.0.0.0:5473".to_owned(),
-        }]
+        vec![EvidenceExcerpt::new(
+            made_core::value_objects::EvidenceReference::new("ev-1").unwrap(),
+            made_core::value_objects::EvidenceBody::new(
+                "journalctl: typha (pid 4830) holds 0.0.0.0:5473",
+            )
+            .unwrap(),
+        )]
     }
 
     fn chat_response(text: &str) -> serde_json::Value {
@@ -311,17 +321,17 @@ mod tests {
     fn parse_verdict_handles_plain_json() {
         let verdict =
             parse_verdict(r#"{"supported": true, "confidence": 90, "reason": "matches"}"#).unwrap();
-        assert!(verdict.supported);
-        assert_eq!(verdict.confidence, 90);
-        assert_eq!(verdict.rationale, "matches");
+        assert!(verdict.decision().is_supported());
+        assert_eq!(verdict.confidence().percent(), 90);
+        assert_eq!(verdict.rationale().as_str(), "matches");
     }
 
     #[test]
     fn parse_verdict_handles_markdown_fences_and_prose() {
         let reply = "Sure!\n```json\n{\"supported\": false, \"confidence\": 80, \"reason\": \"unrelated\"}\n```";
         let verdict = parse_verdict(reply).unwrap();
-        assert!(!verdict.supported);
-        assert_eq!(verdict.confidence, 80);
+        assert!(!verdict.decision().is_supported());
+        assert_eq!(verdict.confidence().percent(), 80);
     }
 
     #[test]
@@ -329,7 +339,8 @@ mod tests {
         assert_eq!(
             parse_verdict(r#"{"supported": true, "confidence": 130}"#)
                 .unwrap()
-                .confidence,
+                .confidence()
+                .percent(),
             100
         );
     }
@@ -354,12 +365,12 @@ mod tests {
             .await;
 
         let verdict = judge(&server)
-            .assess("typha holds the port", &excerpt())
+            .assess(&ClaimText::new("typha holds the port").unwrap(), &excerpt())
             .await
             .unwrap();
-        assert!(verdict.supported);
-        assert_eq!(verdict.confidence, 88);
-        assert_eq!(verdict.rationale, "the excerpt states it");
+        assert!(verdict.decision().is_supported());
+        assert_eq!(verdict.confidence().percent(), 88);
+        assert_eq!(verdict.rationale().as_str(), "the excerpt states it");
     }
 
     #[tokio::test]
@@ -372,7 +383,7 @@ mod tests {
             .await;
 
         let err = judge(&server)
-            .assess("anything", &excerpt())
+            .assess(&ClaimText::new("anything").unwrap(), &excerpt())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -396,7 +407,7 @@ mod tests {
             .await;
 
         let err = judge(&server)
-            .assess("anything", &excerpt())
+            .assess(&ClaimText::new("anything").unwrap(), &excerpt())
             .await
             .unwrap_err();
         assert!(matches!(err, DomainError::InvariantViolated { .. }));

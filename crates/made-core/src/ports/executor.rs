@@ -6,22 +6,10 @@
 //! …). MADE does not know what execution means beyond
 //! "adapter runs it and reports an outcome".
 
-use async_trait::async_trait;
-use serde::{Deserialize, Serialize};
-
 use crate::entities::Proposal;
 use crate::error::DomainError;
-use crate::value_objects::{Attributes, DurationMs};
-
-/// Result returned by an executor. Opaque `output` carried back for
-/// the caller to surface.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ExecutionOutcome {
-    pub execution_id: String,
-    pub succeeded: bool,
-    pub duration: DurationMs,
-    pub output: Attributes,
-}
+use crate::value_objects::{Attributes, ExecutionOutcome};
+use async_trait::async_trait;
 
 #[async_trait]
 pub trait ExecutorPort: Send + Sync {

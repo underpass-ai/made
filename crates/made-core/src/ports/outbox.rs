@@ -10,9 +10,7 @@ use async_trait::async_trait;
 use time::OffsetDateTime;
 
 use crate::error::DomainError;
-use crate::value_objects::{
-    ClaimedOutboxMessage, DurationMs, EventId, OutboxMessage, OutboxQuarantineReason,
-};
+use crate::value_objects::{ClaimedOutboxMessage, DurationMs, EventId, OutboxQuarantineReason};
 
 #[async_trait]
 pub trait OutboxPort: Send + Sync {
@@ -66,14 +64,4 @@ pub trait OutboxPort: Send + Sync {
     /// Quarantine is only defensible if it is visible; an unreadable
     /// dead-letter set is a silent discard with extra steps.
     async fn quarantined(&self) -> Result<Vec<ClaimedOutboxMessage>, DomainError>;
-}
-
-/// Where a message goes once it leaves the outbox.
-///
-/// Deliberately not the typed [`MessagingPort`](crate::ports::MessagingPort):
-/// an outbox message is already serialized and addressed, and a host
-/// that dispatches in process should not need a broker to satisfy this.
-#[async_trait]
-pub trait OutboxTransportPort: Send + Sync {
-    async fn deliver(&self, message: &OutboxMessage) -> Result<(), DomainError>;
 }

@@ -12,17 +12,7 @@ use made_core::value_objects::{
     CeremonyName, CeremonyValidationFinding, CeremonyValidationReport, CeremonyVersion,
 };
 
-/// How many of each element a draft declares.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CeremonyDraftSummary {
-    pub states: usize,
-    pub initial_states: usize,
-    pub terminal_states: usize,
-    pub transitions: usize,
-    pub steps: usize,
-    pub guards: usize,
-    pub roles: usize,
-}
+use super::ceremony_draft_summary::CeremonyDraftSummary;
 
 pub struct CeremonyDraftView<'a> {
     draft: &'a CeremonyDefinitionDraft,

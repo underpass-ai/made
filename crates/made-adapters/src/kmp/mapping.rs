@@ -17,12 +17,18 @@ use std::collections::BTreeMap;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyId, MemoryConfidence, MemoryDimension, MemoryEntry, MemoryEntryId,
-    MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryRelation,
-    MemoryRelationKind, MemoryScope, MemoryWrite, RoleId,
+    MemoryEntryKind, MemoryEvidence, MemoryProvenance, MemoryRelation, MemoryRelationKind,
+    MemoryScope, MemoryWrite, RoleId,
 };
 use serde_json::{json, Map, Value};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
+
+mod recalled_page;
+mod temporal_arguments;
+
+pub(super) use recalled_page::RecalledPage;
+pub(super) use temporal_arguments::{end_of_time, goto_arguments, trace_arguments};
 
 /// The dimension a session's own memory runs along.
 const DIMENSION_SESSION: &str = "session";
@@ -38,30 +44,6 @@ const DIMENSION_ROLE: &str = "role";
 /// The kernel returns a single entry when not told otherwise, so this
 /// is not a limit being imposed but one being lifted.
 pub(super) const PAGE_SIZE: u64 = 500;
-
-/// Reading everything is reading as of the end of time.
-///
-/// The kernel's temporal read wants a cursor and has no "everything"
-/// form, and inventing one here would mean a second code path that
-/// could drift from the first. Recall is the same journey with the
-/// destination set past any session that will ever be written.
-pub(super) fn end_of_time() -> MemoryMoment {
-    MemoryMoment::at(time::macros::datetime!(9999-12-31 00:00:00 UTC))
-}
-
-/// What one page of a temporal read yielded.
-///
-/// Entries keep the reference they came back under, because paging
-/// through a temporal read can show the same entry twice and the
-/// reference is the only thing that says so.
-#[derive(Debug, Default)]
-pub(super) struct RecalledPage {
-    pub(super) entries: Vec<(String, MemoryEntry)>,
-    pub(super) relations: Vec<MemoryRelation>,
-    pub(super) next_cursor: Option<String>,
-    /// Entries the kernel returned that this engine cannot represent.
-    pub(super) unreadable: usize,
-}
 
 /// The arguments for writing `entries` about `scope`.
 pub(super) fn ingest_arguments(
@@ -167,36 +149,6 @@ pub(super) fn ingest_arguments(
             "observed_at": observed_at,
         },
     }))
-}
-
-/// The arguments for reading `scope` as it stood at `moment`.
-pub(super) fn goto_arguments(
-    scope: &MemoryScope,
-    moment: MemoryMoment,
-    cursor: Option<&str>,
-) -> Result<Value, DomainError> {
-    let at = match cursor {
-        Some(reference) => json!({ "ref": reference }),
-        None => json!({ "time": timestamp(moment.instant())? }),
-    };
-    Ok(json!({
-        "about": scope.as_str(),
-        "at": at,
-        "include": { "evidence": true, "relations": true },
-        "limit": { "entries": PAGE_SIZE },
-    }))
-}
-
-/// The arguments for asking how one entry came from another.
-pub(super) fn trace_arguments(
-    scope: &MemoryScope,
-    from: &MemoryEntryId,
-    to: &MemoryEntryId,
-) -> Value {
-    json!({
-        "from": entry_ref(scope, from),
-        "to": entry_ref(scope, to),
-    })
 }
 
 /// The chain a trace came back with, in the order it connects.

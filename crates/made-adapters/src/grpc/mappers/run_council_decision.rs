@@ -20,7 +20,7 @@ use made_app::usecases::{RunCouncilDecisionInput, RunCouncilDecisionOutput};
 use made_core::entities::RankedOutcome;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CouncilId, CouncilSelector, Specialty, TaskDescription, ValidationMode,
+    CouncilId, CouncilSelector, OutputContractId, Specialty, TaskDescription, ValidationMode,
 };
 use made_proto::v1 as pb;
 use tonic::Status;
@@ -100,7 +100,7 @@ pub fn run_council_decision_input_from_proto(
 
     Ok(RunCouncilDecisionInput {
         council_selector,
-        contract_id: proto.contract_id,
+        contract_id: OutputContractId::new(proto.contract_id)?,
         task_description,
         external_context,
         validation_mode,

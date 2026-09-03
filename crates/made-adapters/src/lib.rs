@@ -10,7 +10,7 @@
 //! | Adapter                             | Port                              |
 //! |-------------------------------------|-----------------------------------|
 //! | [`clock::SystemClock`]              | `ClockPort`                       |
-//! | [`config::EnvConfiguration`]        | `ConfigurationPort`               |
+//! | [`config::EnvConfiguration`]        | deployable configuration loader   |
 //! | [`memory::InMemoryCouncilRegistry`] | `CouncilRegistryPort`             |
 //! | [`memory::InMemoryDeliberationRepository`] | `DeliberationRepositoryPort` |
 //! | [`memory::InMemoryAgentRegistry`]   | `AgentResolverPort` (+ writes)    |

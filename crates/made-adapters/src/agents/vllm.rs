@@ -22,6 +22,7 @@
 
 use std::fmt;
 use std::sync::Arc;
+#[cfg(test)]
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -30,13 +31,21 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentPort, Critique, DraftRequest, MetricsRecorderPort, NoopMetricsRecorder, Revision,
 };
-use made_core::value_objects::{AgentId, LlmErrorKind, Specialty, TokenUsage};
+use made_core::value_objects::{AgentId, LlmErrorKind, ProposalContent, Specialty, TokenUsage};
 use reqwest::{Client, RequestBuilder};
 use tracing::{debug, warn};
 
 use super::instrument::ProviderCallGuard;
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 use super::prompts;
+
+mod vllm_bearer_token;
+mod vllm_client_identity;
+mod vllm_config;
+
+pub use vllm_bearer_token::VllmBearerToken;
+pub use vllm_client_identity::VllmClientIdentity;
+pub use vllm_config::VllmConfig;
 
 /// Provider label for this adapter's error metrics.
 const PROVIDER: &str = "vllm";
@@ -52,178 +61,6 @@ const VLLM_ERRORS: ErrorStrings = ErrorStrings {
     missing_content: "vllm: choice has no message.content",
     empty_content: "vllm: empty text content",
 };
-
-const DEFAULT_ENDPOINT: &str = "http://vllm-server:8000";
-const DEFAULT_MAX_TOKENS: u32 = 1024;
-const DEFAULT_TIMEOUT: Duration = Duration::from_secs(30);
-
-// ---------------------------------------------------------------------------
-// Optional bearer token
-// ---------------------------------------------------------------------------
-
-/// Opaque bearer token for vLLM deployments fronted by an auth proxy.
-/// Its `Debug` impl is a fixed redaction. Construction rejects empty
-/// values; if authentication is not needed, do not construct one.
-#[derive(Clone)]
-pub struct VllmBearerToken(String);
-
-impl VllmBearerToken {
-    pub fn new(raw: impl Into<String>) -> Result<Self, DomainError> {
-        let trimmed = raw.into().trim().to_owned();
-        if trimmed.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "vllm.bearer_token",
-            });
-        }
-        Ok(Self(trimmed))
-    }
-
-    fn expose(&self) -> &str {
-        &self.0
-    }
-}
-
-impl fmt::Debug for VllmBearerToken {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("VllmBearerToken(**redacted**)")
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Optional mTLS client identity
-// ---------------------------------------------------------------------------
-
-/// Client certificate + private key (PEM-encoded) for mTLS-protected
-/// vLLM endpoints. The bytes are held in memory and fed to
-/// [`reqwest::Identity`] when the HTTP client is built; they never
-/// appear in `Debug` output.
-#[derive(Clone)]
-pub struct VllmClientIdentity {
-    pem_bundle: Vec<u8>,
-}
-
-impl VllmClientIdentity {
-    /// Build an identity from concatenated cert + key PEM. The two
-    /// inputs are joined with a newline so the PEM separators stay
-    /// well-formed even if the caller forgot the trailing `\n`.
-    pub fn from_cert_and_key(cert_pem: &[u8], key_pem: &[u8]) -> Result<Self, DomainError> {
-        if cert_pem.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "vllm.client_cert_pem",
-            });
-        }
-        if key_pem.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "vllm.client_key_pem",
-            });
-        }
-        let mut bundle = Vec::with_capacity(cert_pem.len() + key_pem.len() + 1);
-        bundle.extend_from_slice(cert_pem);
-        if !cert_pem.ends_with(b"\n") {
-            bundle.push(b'\n');
-        }
-        bundle.extend_from_slice(key_pem);
-        Ok(Self { pem_bundle: bundle })
-    }
-
-    fn expose(&self) -> &[u8] {
-        &self.pem_bundle
-    }
-}
-
-impl fmt::Debug for VllmClientIdentity {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str("VllmClientIdentity(**redacted**)")
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Config
-// ---------------------------------------------------------------------------
-
-/// Static configuration for the vLLM adapter. Every field is
-/// validated on construction.
-///
-/// Unlike `OpenAiConfig` this has no mandatory credential. Model
-/// must be explicitly set — vLLM deployments serve whichever weights
-/// the operator loaded; there is no sensible default.
-#[derive(Debug, Clone)]
-pub struct VllmConfig {
-    endpoint: String,
-    model: String,
-    bearer: Option<VllmBearerToken>,
-    client_identity: Option<VllmClientIdentity>,
-    max_tokens: u32,
-    timeout: Duration,
-}
-
-impl VllmConfig {
-    /// Build a config. Model must be non-empty.
-    pub fn new(model: impl Into<String>) -> Result<Self, DomainError> {
-        let model = model.into().trim().to_owned();
-        if model.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "vllm.model",
-            });
-        }
-        Ok(Self {
-            endpoint: DEFAULT_ENDPOINT.to_owned(),
-            model,
-            bearer: None,
-            client_identity: None,
-            max_tokens: DEFAULT_MAX_TOKENS,
-            timeout: DEFAULT_TIMEOUT,
-        })
-    }
-
-    pub fn with_endpoint(mut self, endpoint: impl Into<String>) -> Result<Self, DomainError> {
-        self.endpoint = super::endpoint::validate_provider_endpoint("vllm.endpoint", endpoint)?;
-        Ok(self)
-    }
-
-    pub fn with_model(mut self, model: impl Into<String>) -> Result<Self, DomainError> {
-        let value = model.into().trim().to_owned();
-        if value.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "vllm.model",
-            });
-        }
-        self.model = value;
-        Ok(self)
-    }
-
-    #[must_use]
-    pub fn with_bearer(mut self, bearer: VllmBearerToken) -> Self {
-        self.bearer = Some(bearer);
-        self
-    }
-
-    /// Attach a client certificate + private key for mTLS-protected
-    /// endpoints. The identity is handed to `reqwest` when the
-    /// agent's HTTP client is built; if the PEM is malformed, the
-    /// error surfaces at agent construction time.
-    #[must_use]
-    pub fn with_client_identity(mut self, identity: VllmClientIdentity) -> Self {
-        self.client_identity = Some(identity);
-        self
-    }
-
-    pub fn with_max_tokens(mut self, max_tokens: u32) -> Result<Self, DomainError> {
-        if max_tokens == 0 {
-            return Err(DomainError::MustBeNonZero {
-                field: "vllm.max_tokens",
-            });
-        }
-        self.max_tokens = max_tokens;
-        Ok(self)
-    }
-
-    #[must_use]
-    pub fn with_timeout(mut self, timeout: Duration) -> Self {
-        self.timeout = timeout;
-        self
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Agent
@@ -394,29 +231,35 @@ impl AgentPort for VllmAgent {
         let system = prompts::system_prompt_generate(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_generate(&request);
         let content = self.complete(system, user, "generate").await?;
-        Ok(Revision { content })
+        Ok(Revision {
+            content: content.into(),
+        })
     }
 
     async fn critique(
         &self,
-        peer_content: &str,
+        peer_content: &ProposalContent,
         constraints: &TaskConstraints,
     ) -> Result<Critique, DomainError> {
         let system = prompts::system_prompt_critique(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_critique(peer_content, constraints);
         let feedback = self.complete(system, user, "critique").await?;
-        Ok(Critique { feedback })
+        Ok(Critique {
+            feedback: feedback.into(),
+        })
     }
 
     async fn revise(
         &self,
-        own_content: &str,
+        own_content: &ProposalContent,
         critique: &Critique,
     ) -> Result<Revision, DomainError> {
         let system = prompts::system_prompt_revise(self.id.as_str(), self.specialty.as_str());
         let user = prompts::user_prompt_revise(own_content, critique);
         let content = self.complete(system, user, "revise").await?;
-        Ok(Revision { content })
+        Ok(Revision {
+            content: content.into(),
+        })
     }
 }
 
@@ -431,7 +274,7 @@ impl AgentPort for VllmAgent {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use made_core::value_objects::{Rounds, Rubric, TaskDescription};
+    use made_core::value_objects::{DiversityPreference, Rounds, Rubric, TaskDescription};
     use serde_json::json;
     use wiremock::matchers::{any, header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
@@ -569,7 +412,7 @@ mod tests {
         DraftRequest {
             task: TaskDescription::new("Investigate the incoming alert.").unwrap(),
             constraints: TaskConstraints::new(Rubric::empty(), Rounds::default(), None, None),
-            diverse: true,
+            diversity: DiversityPreference::Diverse,
             external_context: None,
         }
     }
@@ -759,7 +602,7 @@ mod tests {
 
         let agent = test_agent(&server);
         let out = agent
-            .critique("peer", &TaskConstraints::default())
+            .critique(&"peer".into(), &TaskConstraints::default())
             .await
             .unwrap();
         assert_eq!(out.feedback, "tighten x");
@@ -778,9 +621,9 @@ mod tests {
         let agent = test_agent(&server);
         let out = agent
             .revise(
-                "v1",
+                &"v1".into(),
                 &Critique {
-                    feedback: "more detail".to_owned(),
+                    feedback: "more detail".into(),
                 },
             )
             .await

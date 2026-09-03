@@ -1,5 +1,6 @@
 //! Embedded MCP backend.
 
+mod designed_ceremony_draft;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_assert_ceremony_reason_request;
@@ -46,6 +47,7 @@ use crate::protocol::{
     VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
+use self::designed_ceremony_draft::DesignedCeremonyDraft;
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
 use self::embedded_assert_ceremony_reason_request::EmbeddedAssertCeremonyReasonRequest;

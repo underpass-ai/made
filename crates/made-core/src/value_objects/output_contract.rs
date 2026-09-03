@@ -5,311 +5,22 @@
 //! the shape that a proposal must satisfy when a caller requires a
 //! structured output instead of free-form text.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
+use super::output_contract_validation::{
+    normalize_optional_schema, validate_text, MAX_FIELDS, MAX_FIELD_NAME_LEN,
+};
 use crate::error::DomainError;
-
-const MAX_CONTRACT_ID_LEN: usize = 128;
-const MAX_FIELDS: usize = 128;
-const MAX_FIELD_NAME_LEN: usize = 128;
-const MAX_ALLOWED_VALUES_PER_FIELD: usize = 128;
-const MAX_ALLOWED_VALUE_LEN: usize = 256;
-/// Cap on the embedded JSON Schema body. 256 KiB is enough for an
-/// elaborate Report-shape schema with nested objects and several
-/// dozen enums; anything larger should live behind a `$ref` and be
-/// fetched by the validator if/when remote schemas are supported.
-const MAX_JSON_SCHEMA_LEN: usize = 256 * 1024;
-/// Cap on the evidence pack an evidence-grounding rule may carry. An
-/// evidence pack is a curated set of reference ids for one
-/// deliberation, not a corpus; anything larger belongs in an external
-/// store that the pack entries reference.
-const MAX_ALLOWED_EVIDENCE_REFS: usize = 1024;
-/// Cap on one evidence body a semantic-support rule may carry. Bodies
-/// are curated excerpts a judge reads per claim, not documents; a
-/// larger source belongs in an external store, with the excerpt that
-/// actually supports the claim quoted here.
-const MAX_EVIDENCE_BODY_LEN: usize = 16 * 1024;
-/// Default minimum confidence (percent) a support verdict must reach
-/// before a claim counts as semantically supported.
-pub const DEFAULT_SUPPORT_MIN_CONFIDENCE: u8 = 70;
-
-/// Wire- and storage-stable structured output format selector.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub enum OutputFormat {
-    /// A single JSON object at the root.
-    #[default]
-    JsonObject,
-}
-
-impl OutputFormat {
-    #[must_use]
-    pub const fn as_str(self) -> &'static str {
-        match self {
-            Self::JsonObject => "json_object",
-        }
-    }
-}
-
-/// Validation rules for one named field in a structured output object.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-pub struct OutputFieldRule {
-    required: bool,
-    #[serde(default)]
-    allowed_string_values: BTreeSet<String>,
-}
-
-impl OutputFieldRule {
-    pub fn new(
-        required: bool,
-        allowed_string_values: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<Self, DomainError> {
-        let values = allowed_string_values
-            .into_iter()
-            .map(|value| {
-                let value = value.into();
-                validate_text(
-                    &value,
-                    "output_contract.field.allowed_value",
-                    MAX_ALLOWED_VALUE_LEN,
-                )
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?;
-        if values.len() > MAX_ALLOWED_VALUES_PER_FIELD {
-            return Err(DomainError::OutOfRange {
-                field: "output_contract.field.allowed_values",
-                value: values.len() as f64,
-                min: 0.0,
-                max: MAX_ALLOWED_VALUES_PER_FIELD as f64,
-            });
-        }
-        Ok(Self {
-            required,
-            allowed_string_values: values,
-        })
-    }
-
-    #[must_use]
-    pub const fn required(&self) -> bool {
-        self.required
-    }
-
-    #[must_use]
-    pub fn allowed_string_values(&self) -> &BTreeSet<String> {
-        &self.allowed_string_values
-    }
-}
-
-/// Semantic-support rule for one invocation: the evidence *bodies*
-/// (ref id → excerpt text) a support judge reads to decide whether a
-/// claim's cited evidence actually supports what the claim says, and
-/// the minimum confidence (percent, 0–100) a verdict must reach.
-///
-/// This is the second gate behind [`EvidenceGroundingRule`]: grounding
-/// checks that the citation *exists*; semantic support checks that the
-/// citation *holds*. The judgment itself comes from a wired
-/// `EvidenceSupportJudgePort` implementation — the rule only carries
-/// what the judge needs and the deterministic acceptance threshold, so
-/// the decision stays a rule even when the signal comes from a model.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct SemanticSupportRule {
-    min_confidence: u8,
-    bodies: BTreeMap<String, String>,
-}
-
-impl SemanticSupportRule {
-    /// Build a semantic-support rule. `bodies` must be non-empty: a
-    /// support gate with nothing to read is a configuration error, not
-    /// a stricter gate (mirroring the grounding rule's posture on an
-    /// empty pack).
-    pub fn new(
-        min_confidence: u8,
-        bodies: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
-    ) -> Result<Self, DomainError> {
-        if min_confidence > 100 {
-            return Err(DomainError::OutOfRange {
-                field: "output_contract.evidence.semantic_support.min_confidence",
-                value: f64::from(min_confidence),
-                min: 0.0,
-                max: 100.0,
-            });
-        }
-        let bodies = bodies
-            .into_iter()
-            .map(|(reference, body)| {
-                let reference = validate_text(
-                    &reference.into(),
-                    "output_contract.evidence.semantic_support.body_ref",
-                    MAX_ALLOWED_VALUE_LEN,
-                )?;
-                let body = validate_text(
-                    &body.into(),
-                    "output_contract.evidence.semantic_support.body",
-                    MAX_EVIDENCE_BODY_LEN,
-                )?;
-                Ok::<_, DomainError>((reference, body))
-            })
-            .collect::<Result<BTreeMap<_, _>, _>>()?;
-        if bodies.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "output_contract.evidence.semantic_support.bodies",
-            });
-        }
-        if bodies.len() > MAX_ALLOWED_EVIDENCE_REFS {
-            return Err(DomainError::OutOfRange {
-                field: "output_contract.evidence.semantic_support.bodies",
-                value: bodies.len() as f64,
-                min: 1.0,
-                max: MAX_ALLOWED_EVIDENCE_REFS as f64,
-            });
-        }
-        Ok(Self {
-            min_confidence,
-            bodies,
-        })
-    }
-
-    /// Minimum confidence (percent, 0–100) a support verdict must
-    /// reach for the claim to count as supported.
-    #[must_use]
-    pub const fn min_confidence(&self) -> u8 {
-        self.min_confidence
-    }
-
-    /// Evidence bodies by reference id.
-    #[must_use]
-    pub fn bodies(&self) -> &BTreeMap<String, String> {
-        &self.bodies
-    }
-
-    /// The body for one evidence reference, when the rule carries it.
-    #[must_use]
-    pub fn body(&self, reference: &str) -> Option<&str> {
-        self.bodies.get(reference).map(String::as_str)
-    }
-}
-
-/// Evidence-grounding rule for one invocation: which output field
-/// carries the claims, which per-claim field carries the evidence
-/// references, and the closed set of reference ids that count as real
-/// evidence for this deliberation (the "evidence pack").
-///
-/// The rule is deliberately shape-only: the core does not know what an
-/// evidence ref points at (a document, a trace, a metric snapshot) —
-/// only that a claim citing a ref outside the pack is ungrounded. When
-/// a [`SemanticSupportRule`] is attached the contract additionally
-/// demands that every claim's cited evidence *supports* the claim, as
-/// judged through the `EvidenceSupportJudgePort`.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct EvidenceGroundingRule {
-    claims_field: String,
-    refs_field: String,
-    allowed_refs: BTreeSet<String>,
-    /// Optional second gate: semantic support of each claim by its
-    /// cited evidence bodies. `None` keeps the historical
-    /// citation-existence semantics (and the historical wire shape).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    semantic_support: Option<SemanticSupportRule>,
-}
-
-impl EvidenceGroundingRule {
-    /// Build a grounding rule. `allowed_refs` must be non-empty: an
-    /// evidence-bound deliberation with an empty pack is a
-    /// configuration error, not a stricter gate.
-    pub fn new(
-        claims_field: impl Into<String>,
-        refs_field: impl Into<String>,
-        allowed_refs: impl IntoIterator<Item = impl Into<String>>,
-    ) -> Result<Self, DomainError> {
-        let claims_field = validate_text(
-            &claims_field.into(),
-            "output_contract.evidence.claims_field",
-            MAX_FIELD_NAME_LEN,
-        )?;
-        let refs_field = validate_text(
-            &refs_field.into(),
-            "output_contract.evidence.refs_field",
-            MAX_FIELD_NAME_LEN,
-        )?;
-        let allowed_refs = allowed_refs
-            .into_iter()
-            .map(|reference| {
-                let reference = reference.into();
-                validate_text(
-                    &reference,
-                    "output_contract.evidence.allowed_ref",
-                    MAX_ALLOWED_VALUE_LEN,
-                )
-            })
-            .collect::<Result<BTreeSet<_>, _>>()?;
-        if allowed_refs.is_empty() {
-            return Err(DomainError::EmptyField {
-                field: "output_contract.evidence.allowed_refs",
-            });
-        }
-        if allowed_refs.len() > MAX_ALLOWED_EVIDENCE_REFS {
-            return Err(DomainError::OutOfRange {
-                field: "output_contract.evidence.allowed_refs",
-                value: allowed_refs.len() as f64,
-                min: 1.0,
-                max: MAX_ALLOWED_EVIDENCE_REFS as f64,
-            });
-        }
-        Ok(Self {
-            claims_field,
-            refs_field,
-            allowed_refs,
-            semantic_support: None,
-        })
-    }
-
-    /// Attach a semantic-support rule. Every allowed reference must
-    /// carry a body: a pack entry the judge cannot read would make the
-    /// gate's outcome depend on which ref a proposal happens to cite —
-    /// a config gap must fail loudly at wiring time, not at judgment
-    /// time.
-    pub fn with_semantic_support(mut self, rule: SemanticSupportRule) -> Result<Self, DomainError> {
-        if self
-            .allowed_refs
-            .iter()
-            .any(|reference| !rule.bodies.contains_key(reference))
-        {
-            return Err(DomainError::EmptyField {
-                field: "output_contract.evidence.semantic_support.bodies",
-            });
-        }
-        self.semantic_support = Some(rule);
-        Ok(self)
-    }
-
-    #[must_use]
-    pub fn claims_field(&self) -> &str {
-        &self.claims_field
-    }
-
-    #[must_use]
-    pub fn refs_field(&self) -> &str {
-        &self.refs_field
-    }
-
-    #[must_use]
-    pub fn allowed_refs(&self) -> &BTreeSet<String> {
-        &self.allowed_refs
-    }
-
-    /// Semantic-support rule, when the contract demands one. `None`
-    /// means the support validator is a no-op for this invocation.
-    #[must_use]
-    pub fn semantic_support(&self) -> Option<&SemanticSupportRule> {
-        self.semantic_support.as_ref()
-    }
-}
+use crate::value_objects::{
+    EvidenceGroundingRule, OutputContractId, OutputFieldRule, OutputFormat,
+};
 
 /// Typed structured-output contract attached to one invocation.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct OutputContract {
-    contract_id: String,
+    contract_id: OutputContractId,
     format: OutputFormat,
     #[serde(default)]
     fields: BTreeMap<String, OutputFieldRule>,
@@ -348,12 +59,7 @@ impl OutputContract {
         fields: BTreeMap<String, OutputFieldRule>,
         json_schema: impl Into<String>,
     ) -> Result<Self, DomainError> {
-        let contract_id = contract_id.into();
-        let contract_id = validate_text(
-            &contract_id,
-            "output_contract.contract_id",
-            MAX_CONTRACT_ID_LEN,
-        )?;
+        let contract_id = OutputContractId::new(contract_id)?;
         if fields.len() > MAX_FIELDS {
             return Err(DomainError::OutOfRange {
                 field: "output_contract.fields",
@@ -389,7 +95,7 @@ impl OutputContract {
     }
 
     #[must_use]
-    pub fn contract_id(&self) -> &str {
+    pub const fn contract_id(&self) -> &OutputContractId {
         &self.contract_id
     }
 
@@ -426,39 +132,11 @@ impl OutputContract {
     }
 }
 
-fn normalize_optional_schema(raw: &str) -> Result<String, DomainError> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return Ok(String::new());
-    }
-    if trimmed.len() > MAX_JSON_SCHEMA_LEN {
-        return Err(DomainError::FieldTooLong {
-            field: "output_contract.json_schema",
-            actual: trimmed.len(),
-            max: MAX_JSON_SCHEMA_LEN,
-        });
-    }
-    Ok(trimmed.to_owned())
-}
-
-fn validate_text(value: &str, field: &'static str, max_len: usize) -> Result<String, DomainError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Err(DomainError::EmptyField { field });
-    }
-    if trimmed.len() > max_len {
-        return Err(DomainError::FieldTooLong {
-            field,
-            actual: trimmed.len(),
-            max: max_len,
-        });
-    }
-    Ok(trimmed.to_owned())
-}
-
 #[cfg(test)]
 mod tests {
+    use super::super::output_contract_validation::MAX_JSON_SCHEMA_LEN;
     use super::*;
+    use crate::value_objects::SemanticSupportRule;
 
     fn sample_rule() -> OutputFieldRule {
         OutputFieldRule::new(true, ["emit_event", "escalate"]).unwrap()

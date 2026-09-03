@@ -19,11 +19,10 @@
 //! adapter actually appears. Genuine multi-threaded contention against
 //! a shared store is again the host's to exercise.
 
-use std::fmt;
-
 use futures::future::join_all;
 use time::OffsetDateTime;
 
+use crate::conformance::ConformanceFailure;
 use crate::entities::{AuditChain, AuditFact, AuditRecord};
 use crate::error::DomainError;
 use crate::ports::AuditJournalPort;
@@ -33,44 +32,6 @@ use crate::value_objects::{
 
 /// Number of appends the concurrency property drives at once.
 const CONCURRENT_APPENDS: usize = 16;
-
-/// A property the adapter under test failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConformanceFailure {
-    property: &'static str,
-    detail: String,
-}
-
-impl ConformanceFailure {
-    pub(super) fn new(property: &'static str, detail: impl Into<String>) -> Self {
-        Self {
-            property,
-            detail: detail.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn property(&self) -> &'static str {
-        self.property
-    }
-
-    #[must_use]
-    pub fn detail(&self) -> &str {
-        &self.detail
-    }
-}
-
-impl fmt::Display for ConformanceFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "audit journal conformance failed: {} — {}",
-            self.property, self.detail
-        )
-    }
-}
-
-impl std::error::Error for ConformanceFailure {}
 
 /// Every property an [`AuditJournalPort`] implementation must satisfy.
 #[derive(Debug)]
@@ -315,10 +276,7 @@ fn call<T>(
 }
 
 fn failure(property: &'static str, detail: impl Into<String>) -> ConformanceFailure {
-    ConformanceFailure {
-        property,
-        detail: detail.into(),
-    }
+    ConformanceFailure::new(property, detail)
 }
 
 fn ceremony_id(property: &'static str, suffix: &str) -> Result<CeremonyId, ConformanceFailure> {

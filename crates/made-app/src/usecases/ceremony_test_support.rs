@@ -1,4 +1,4 @@
-use std::collections::{BTreeMap, VecDeque};
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -30,10 +30,27 @@ use tokio::sync::RwLock;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use crate::services::{SessionJournal, SessionMemoryRecorder};
 
-#[derive(Debug, Clone, Copy)]
-pub(super) struct FixedClock {
-    now: OffsetDateTime,
-}
+mod context_store_fake;
+mod definition_repository_fake;
+mod fixed_clock;
+mod instance_repository_fake;
+mod publications_fake;
+mod recording_memory;
+mod repository_that_loses_the_race;
+mod sequence_step_handler_fake;
+mod step_handler_fake;
+mod unit_of_work_fake;
+
+pub(super) use context_store_fake::ContextStoreFake;
+pub(super) use definition_repository_fake::DefinitionRepositoryFake;
+pub(super) use fixed_clock::FixedClock;
+pub(super) use instance_repository_fake::InstanceRepositoryFake;
+pub(super) use publications_fake::PublicationsFake;
+pub(super) use recording_memory::RecordingMemory;
+pub(super) use repository_that_loses_the_race::ARepositoryThatLosesTheRace;
+pub(super) use sequence_step_handler_fake::SequenceStepHandlerFake;
+pub(super) use step_handler_fake::StepHandlerFake;
+pub(super) use unit_of_work_fake::UnitOfWorkFake;
 
 impl FixedClock {
     pub(super) fn new(now: OffsetDateTime) -> Self {
@@ -45,11 +62,6 @@ impl ClockPort for FixedClock {
     fn now(&self) -> OffsetDateTime {
         self.now
     }
-}
-
-#[derive(Debug, Default)]
-pub(super) struct DefinitionRepositoryFake {
-    inner: RwLock<BTreeMap<(CeremonyName, CeremonyVersion), CeremonyDefinition>>,
 }
 
 impl DefinitionRepositoryFake {
@@ -93,20 +105,6 @@ impl CeremonyDefinitionRepositoryPort for DefinitionRepositoryFake {
     async fn list(&self) -> Result<Vec<CeremonyDefinition>, DomainError> {
         Ok(self.inner.read().await.values().cloned().collect())
     }
-}
-
-#[derive(Debug, Default)]
-pub(super) struct InstanceRepositoryFake {
-    inner: RwLock<BTreeMap<CeremonyId, CeremonyInstance>>,
-    /// Revisions live here, not in the unit of work over this store.
-    ///
-    /// The conformance suite requires a plain save to advance the
-    /// revision, so that a commit holding an expectation from before it
-    /// conflicts instead of overwriting. A fake that kept revisions to
-    /// one side would let every test seed a session by saving it and
-    /// then commit against `New` — passing while exercising the easy
-    /// path of the very machinery under test.
-    revisions: RwLock<BTreeMap<CeremonyId, CeremonyRevision>>,
 }
 
 impl InstanceRepositoryFake {
@@ -165,12 +163,6 @@ impl CeremonyInstanceRepositoryPort for InstanceRepositoryFake {
     }
 }
 
-#[derive(Debug)]
-pub(super) struct StepHandlerFake {
-    result: Result<StepResult, DomainError>,
-    requests: RwLock<Vec<CeremonyStepHandlerRequest>>,
-}
-
 impl StepHandlerFake {
     pub(super) fn succeeding(result: StepResult) -> Self {
         Self {
@@ -202,12 +194,6 @@ impl CeremonyStepHandlerPort for StepHandlerFake {
     }
 }
 
-#[derive(Debug)]
-pub(super) struct SequenceStepHandlerFake {
-    results: RwLock<VecDeque<StepResult>>,
-    requests: RwLock<Vec<CeremonyStepHandlerRequest>>,
-}
-
 impl SequenceStepHandlerFake {
     pub(super) fn new(results: impl IntoIterator<Item = StepResult>) -> Self {
         Self {
@@ -236,11 +222,6 @@ impl CeremonyStepHandlerPort for SequenceStepHandlerFake {
                 reason: "sequence step handler exhausted",
             })
     }
-}
-
-#[derive(Debug, Default)]
-pub(super) struct ContextStoreFake {
-    inner: RwLock<BTreeMap<CeremonyId, Vec<CeremonyStepContribution>>>,
 }
 
 #[async_trait]
@@ -574,11 +555,6 @@ pub(super) fn started_instance(definition: &CeremonyDefinition) -> CeremonyInsta
 /// The published catalogue. Empty by default, because most tests run
 /// an unbound session; seed it when the point of the test is a session
 /// that is bound to what it runs.
-#[derive(Debug, Default)]
-pub(super) struct PublicationsFake {
-    published: RwLock<BTreeMap<(String, String), PublishedCeremonyDefinition>>,
-}
-
 impl PublicationsFake {
     pub(super) async fn seed(&self, definition: CeremonyDefinition) -> PublishedCeremonyDefinition {
         let sealed = PublishedCeremonyDefinition::seal(definition).unwrap();
@@ -657,11 +633,6 @@ pub(super) fn resolver_with(
 /// Not a stand-in for a kernel. What is worth checking here is the
 /// engine's judgement, and that is the same whatever backend receives
 /// it.
-#[derive(Debug, Default)]
-pub(super) struct RecordingMemory {
-    written: RwLock<Vec<(MemoryScope, MemoryWrite, String)>>,
-}
-
 impl RecordingMemory {
     pub(super) async fn entries(&self) -> Vec<MemoryEntry> {
         self.written
@@ -723,12 +694,6 @@ pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
 /// ports over a single database, and a fake that kept its own copy
 /// would let a committed session be invisible to the next read — a
 /// failure no adapter can actually have.
-#[derive(Debug)]
-pub(super) struct UnitOfWorkFake {
-    instances: Arc<InstanceRepositoryFake>,
-    facts: RwLock<Vec<AuditFact>>,
-}
-
 impl UnitOfWorkFake {
     pub(super) fn over(instances: Arc<InstanceRepositoryFake>) -> Self {
         Self {
@@ -810,12 +775,6 @@ pub(super) fn journal_over(
 /// as fresh as the state, the commit is accepted, and the other
 /// writer's work is gone with nothing logged. The two orders are told
 /// apart here and nowhere else.
-#[derive(Debug)]
-pub(super) struct ARepositoryThatLosesTheRace {
-    instances: Arc<InstanceRepositoryFake>,
-    unit_of_work: Arc<UnitOfWorkFake>,
-}
-
 #[async_trait]
 impl CeremonyInstanceRepositoryPort for ARepositoryThatLosesTheRace {
     async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {

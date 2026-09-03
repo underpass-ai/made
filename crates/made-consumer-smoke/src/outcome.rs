@@ -11,121 +11,18 @@
 //! when every assertion was skipped — at least one assertion must be
 //! `Passed` for the chain to count as exercising anything.
 
+#[cfg(test)]
 use std::time::Duration;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AssertionStatus {
-    Passed,
-    Skipped { reason: String },
-    Failed { detail: String },
-}
+mod assertion_record;
+mod assertion_status;
+mod bus_envelope_record;
+mod chain_outcome;
 
-#[derive(Debug, Clone)]
-pub struct AssertionRecord {
-    pub name: &'static str,
-    pub status: AssertionStatus,
-    pub duration: Duration,
-}
-
-impl AssertionRecord {
-    #[must_use]
-    pub fn passed(name: &'static str, duration: Duration) -> Self {
-        Self {
-            name,
-            status: AssertionStatus::Passed,
-            duration,
-        }
-    }
-
-    #[must_use]
-    pub fn skipped(name: &'static str, reason: impl Into<String>) -> Self {
-        Self {
-            name,
-            status: AssertionStatus::Skipped {
-                reason: reason.into(),
-            },
-            duration: Duration::ZERO,
-        }
-    }
-
-    #[must_use]
-    pub fn failed(name: &'static str, detail: impl Into<String>, duration: Duration) -> Self {
-        Self {
-            name,
-            status: AssertionStatus::Failed {
-                detail: detail.into(),
-            },
-            duration,
-        }
-    }
-
-    #[must_use]
-    pub fn is_passed(&self) -> bool {
-        matches!(self.status, AssertionStatus::Passed)
-    }
-
-    #[must_use]
-    pub fn is_failed(&self) -> bool {
-        matches!(self.status, AssertionStatus::Failed { .. })
-    }
-
-    #[must_use]
-    pub fn is_skipped(&self) -> bool {
-        matches!(self.status, AssertionStatus::Skipped { .. })
-    }
-}
-
-/// Snapshot of a bus envelope observed on a subscription during a
-/// chain run. Captures only the fields the harness asserts on.
-#[derive(Debug, Clone)]
-pub struct BusEnvelopeRecord {
-    pub subject: String,
-    pub event_id: String,
-    pub correlation_id: Option<String>,
-    pub causation_id: Option<String>,
-}
-
-/// Aggregate outcome of a single chain run. Carries everything a
-/// caller needs to decide pass/fail without parsing strings.
-#[derive(Debug, Clone)]
-pub struct ChainOutcome {
-    pub chain: &'static str,
-    pub contract_id: String,
-    pub task_id: Option<String>,
-    pub winner_proposal_id: Option<String>,
-    /// `Some(true)` — the winning proposal satisfied every validator.
-    /// `Some(false)` — Warn mode surfaced a top-ranked candidate that
-    ///                 did not satisfy the contract (escalation).
-    /// `None` — the chain never reached a deliberation result (e.g.
-    ///          the gRPC call errored before the council ran).
-    pub validation_passed: Option<bool>,
-    pub assertions: Vec<AssertionRecord>,
-    pub bus_envelopes: Vec<BusEnvelopeRecord>,
-    pub total_duration: Duration,
-}
-
-impl ChainOutcome {
-    #[must_use]
-    pub fn passed(&self) -> bool {
-        !self.assertions.iter().any(AssertionRecord::is_failed)
-            && self.assertions.iter().any(AssertionRecord::is_passed)
-    }
-
-    #[must_use]
-    pub fn failed_count(&self) -> usize {
-        self.assertions.iter().filter(|a| a.is_failed()).count()
-    }
-
-    #[must_use]
-    pub fn passed_count(&self) -> usize {
-        self.assertions.iter().filter(|a| a.is_passed()).count()
-    }
-
-    #[must_use]
-    pub fn skipped_count(&self) -> usize {
-        self.assertions.iter().filter(|a| a.is_skipped()).count()
-    }
-}
+pub use assertion_record::AssertionRecord;
+pub use assertion_status::AssertionStatus;
+pub use bus_envelope_record::BusEnvelopeRecord;
+pub use chain_outcome::ChainOutcome;
 
 #[cfg(test)]
 mod tests {

@@ -14,84 +14,19 @@
 
 use made_core::error::DomainError;
 use reqwest::StatusCode;
-use serde::{Deserialize, Serialize};
 
-/// Per-provider static error reasons.
-///
-/// Every adapter owns a `const` instance of this table and threads
-/// it through [`classify_error`] and [`extract_text`]. The constant
-/// makes it impossible to format a provider prefix at runtime —
-/// which is what keeps `DomainError::InvariantViolated { reason }`
-/// a `&'static str` across the board.
-pub(super) struct ErrorStrings {
-    pub unauthorized: &'static str,
-    pub rate_limited: &'static str,
-    pub bad_request: &'static str,
-    pub upstream_error: &'static str,
-    pub malformed_body: &'static str,
-    pub no_choices: &'static str,
-    pub missing_content: &'static str,
-    pub empty_content: &'static str,
-}
+mod chat_choice;
+mod chat_message;
+mod chat_request;
+mod chat_response;
+mod chat_response_message;
+mod error_strings;
+mod usage;
 
-// ---------------------------------------------------------------------------
-// Wire types
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-pub(super) struct ChatRequest<'a> {
-    pub model: &'a str,
-    pub max_tokens: u32,
-    pub messages: Vec<ChatMessage<'a>>,
-}
-
-#[derive(Serialize)]
-pub(super) struct ChatMessage<'a> {
-    pub role: &'a str,
-    pub content: String,
-}
-
-#[derive(Deserialize)]
-pub(super) struct ChatResponse {
-    #[serde(default)]
-    pub choices: Vec<ChatChoice>,
-    /// Token accounting. Present on a successful completion for OpenAI
-    /// and vLLM; absent on some streamed or error-shaped bodies, hence
-    /// `Option`. Dropped before this change — the reason judge/provider
-    /// token cost was previously unreadable.
-    #[serde(default)]
-    pub usage: Option<Usage>,
-}
-
-/// Token usage block of a Chat Completions response.
-#[derive(Deserialize, Clone, Copy, Default)]
-pub(super) struct Usage {
-    #[serde(default)]
-    pub prompt_tokens: u32,
-    #[serde(default)]
-    pub completion_tokens: u32,
-}
-
-#[derive(Deserialize)]
-pub(super) struct ChatChoice {
-    #[serde(default)]
-    pub message: Option<ChatResponseMessage>,
-}
-
-#[derive(Deserialize)]
-pub(super) struct ChatResponseMessage {
-    #[serde(default)]
-    pub content: Option<String>,
-    /// Qwen3 (and other reasoning-parser-enabled models) split their
-    /// output between `content` (the final answer) and `reasoning`
-    /// (the chain-of-thought). When the token budget is consumed by
-    /// reasoning and `content` comes back null, we still have the
-    /// reasoning text — fall back to it rather than erroring, so the
-    /// deliberation keeps working against reasoning-configured vLLM
-    /// deployments.
-    #[serde(default)]
-    pub reasoning: Option<String>,
-}
+pub(super) use chat_message::ChatMessage;
+pub(super) use chat_request::ChatRequest;
+pub(super) use chat_response::ChatResponse;
+pub(super) use error_strings::ErrorStrings;
 
 // ---------------------------------------------------------------------------
 // Helpers

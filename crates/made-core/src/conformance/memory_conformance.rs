@@ -21,95 +21,16 @@
 //! **Survival.** An in-process backend loses everything on restart, so
 //! no property runnable against every implementation could assert it.
 
-use std::fmt;
-
-use time::OffsetDateTime;
-
+use crate::conformance::MemoryConformanceFailure;
 use crate::ports::{MemoryReaderPort, MemoryWriteOutcome, MemoryWriterPort};
 use crate::value_objects::{
-    Attributes, CeremonyId, MemoryConfidence, MemoryEntry, MemoryEntryId, MemoryEntryKind,
-    MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryQuestion, MemoryRelation,
-    MemoryRelationKind, MemoryScope, MemoryWrite,
+    Attributes, MemoryConfidence, MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryQuestion,
+    MemoryRelation, MemoryRelationKind, MemoryWrite,
 };
 
-/// A property the adapter under test failed.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct MemoryConformanceFailure {
-    property: &'static str,
-    detail: String,
-}
+mod support;
 
-impl MemoryConformanceFailure {
-    fn new(property: &'static str, detail: impl Into<String>) -> Self {
-        Self {
-            property,
-            detail: detail.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn property(&self) -> &'static str {
-        self.property
-    }
-
-    #[must_use]
-    pub fn detail(&self) -> &str {
-        &self.detail
-    }
-}
-
-impl fmt::Display for MemoryConformanceFailure {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            formatter,
-            "memory conformance failed: {} — {}",
-            self.property, self.detail
-        )
-    }
-}
-
-impl std::error::Error for MemoryConformanceFailure {}
-
-type Checked = Result<(), MemoryConformanceFailure>;
-
-fn scope(name: &str) -> MemoryScope {
-    MemoryScope::new(format!("ceremony:conformance-{name}")).expect("scope should be valid")
-}
-
-fn entry(summary: &str, kind: MemoryEntryKind, observed_at: OffsetDateTime) -> MemoryEntry {
-    named(summary, summary, kind, observed_at)
-}
-
-fn named(
-    id: &str,
-    summary: &str,
-    kind: MemoryEntryKind,
-    observed_at: OffsetDateTime,
-) -> MemoryEntry {
-    MemoryEntry::new(
-        MemoryEntryId::new(id).expect("entry id should be valid"),
-        kind,
-        summary,
-        None,
-        MemoryProvenance::new(
-            CeremonyId::new("conformance").expect("ceremony id should be valid"),
-            None,
-            observed_at,
-        ),
-        Attributes::empty(),
-    )
-    .expect("entry should be valid")
-}
-
-/// Entries with nothing connecting them, for the properties that are
-/// not about reasons.
-fn write(entries: Vec<MemoryEntry>) -> MemoryWrite {
-    MemoryWrite::unexplained(entries).expect("a write with entries should be valid")
-}
-
-fn moment(seconds: i64) -> OffsetDateTime {
-    OffsetDateTime::UNIX_EPOCH + time::Duration::seconds(seconds)
-}
+use support::{entry, expect_unsupported, moment, named, scope, write, Checked};
 
 /// Every property a memory adapter must satisfy.
 #[derive(Debug)]
@@ -158,28 +79,6 @@ impl MemoryConformance {
         passed.push("time_travel_is_honoured_or_declined");
 
         Ok(passed)
-    }
-
-    /// Capabilities are read more than once, and a backend whose
-    /// answer wanders cannot be relied on for any of the checks below.
-    fn capabilities_are_stable(
-        writer: &dyn MemoryWriterPort,
-        reader: &dyn MemoryReaderPort,
-    ) -> Checked {
-        const PROPERTY: &str = "capabilities_are_stable";
-        if writer.capabilities() != writer.capabilities() {
-            return Err(MemoryConformanceFailure::new(
-                PROPERTY,
-                "the writer answered its own capabilities differently twice",
-            ));
-        }
-        if reader.capabilities() != reader.capabilities() {
-            return Err(MemoryConformanceFailure::new(
-                PROPERTY,
-                "the reader answered its own capabilities differently twice",
-            ));
-        }
-        Ok(())
     }
 
     async fn an_unwritten_scope_recalls_nothing(reader: &dyn MemoryReaderPort) -> Checked {
@@ -686,20 +585,5 @@ impl MemoryConformance {
                 "reading memory as of a moment lost what was already known then",
             ))
         }
-    }
-}
-
-fn expect_unsupported(
-    property: &'static str,
-    recollection: &crate::ports::MemoryRecollection,
-    operation: &str,
-) -> Checked {
-    if recollection.is_supported() {
-        Err(MemoryConformanceFailure::new(
-            property,
-            format!("`{operation}` answered as supported by a backend that does not declare it"),
-        ))
-    } else {
-        Ok(())
     }
 }

@@ -7,8 +7,10 @@
 use async_trait::async_trait;
 use made_core::entities::Proposal;
 use made_core::error::DomainError;
-use made_core::ports::{ExecutionOutcome, ExecutorPort};
-use made_core::value_objects::{Attributes, DurationMs};
+use made_core::ports::ExecutorPort;
+use made_core::value_objects::{
+    Attributes, DurationMs, ExecutionId, ExecutionOutcome, ExecutionStatus,
+};
 use tracing::debug;
 use uuid::Uuid;
 
@@ -33,12 +35,12 @@ impl ExecutorPort for NoopExecutor {
             proposal_id = winner.id().as_str(),
             "noop executor: skipping execution"
         );
-        Ok(ExecutionOutcome {
-            execution_id: Uuid::new_v4().to_string(),
-            succeeded: true,
-            duration: DurationMs::ZERO,
-            output: Attributes::empty(),
-        })
+        Ok(ExecutionOutcome::new(
+            ExecutionId::new(Uuid::new_v4().to_string())?,
+            ExecutionStatus::Succeeded,
+            DurationMs::ZERO,
+            Attributes::empty(),
+        ))
     }
 }
 
@@ -66,9 +68,9 @@ mod tests {
             .execute(&proposal(), &Attributes::empty())
             .await
             .unwrap();
-        assert!(out.succeeded);
-        assert_eq!(out.duration, DurationMs::ZERO);
-        assert!(!out.execution_id.is_empty());
+        assert!(out.status().is_success());
+        assert_eq!(out.duration(), DurationMs::ZERO);
+        assert!(!out.id().as_str().is_empty());
     }
 
     #[tokio::test]
@@ -82,6 +84,6 @@ mod tests {
             .execute(&proposal(), &Attributes::empty())
             .await
             .unwrap();
-        assert_ne!(a.execution_id, b.execution_id);
+        assert_ne!(a.id(), b.id());
     }
 }

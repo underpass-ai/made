@@ -1,32 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-/// Who is in a position to assert a reason.
-///
-/// The difference between a reason and a guess, made checkable. It is
-/// not a permission model bolted on — it follows from what each kind
-/// of claim is *about*, and so it cuts both ways: the engine may not
-/// assert what only a participant can know, and a participant may not
-/// assert what only the engine can see.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ReasonAsserter {
-    /// The engine, and nobody else.
-    ///
-    /// These say what the session *is* rather than what anyone
-    /// concluded. A participant able to assert them could rewrite the
-    /// shape of the session by relabelling it.
-    TheEngine,
-    /// Whoever produced the record the reason starts from.
-    ///
-    /// Testimony about one's own reasoning or one's own doing. Nobody
-    /// else has access to it, so nobody else may claim it.
-    ItsAuthor,
-    /// Any seat at this session, saying how sure it is.
-    ///
-    /// Claims about the world rather than about a mind. Anyone may
-    /// make one and everyone may weigh it.
-    AnySeat,
-}
+use super::ReasonAsserter;
 
 /// How one thing a session produced explains another.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

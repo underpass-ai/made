@@ -6,9 +6,9 @@
 //! reports something that was never stored. They travel together so
 //! they can land together.
 
-use crate::entities::{AuditFact, AuditRecord, CeremonyInstance};
+use crate::entities::{AuditFact, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{CeremonyRevision, ExpectedRevision, OutboxMessage};
+use crate::value_objects::{ExpectedRevision, OutboxMessage};
 
 /// The unit that is committed, all of it or none of it.
 #[derive(Debug, Clone, PartialEq)]
@@ -82,46 +82,5 @@ impl CeremonyCommit {
             self.facts,
             self.messages,
         )
-    }
-}
-
-/// What a commit did.
-///
-/// A revision conflict is an outcome, not an error: it is the expected
-/// result of two callers working on the same ceremony, and the caller
-/// must reload and decide rather than treat it as a defect. Making it a
-/// variant of the return type is what stops it from being ignored.
-#[derive(Debug, Clone, PartialEq)]
-pub enum CommitOutcome {
-    Committed {
-        revision: CeremonyRevision,
-        records: Vec<AuditRecord>,
-    },
-    Conflict {
-        expected: ExpectedRevision,
-        stored: Option<CeremonyRevision>,
-    },
-}
-
-impl CommitOutcome {
-    #[must_use]
-    pub fn committed_revision(&self) -> Option<CeremonyRevision> {
-        match self {
-            Self::Committed { revision, .. } => Some(*revision),
-            Self::Conflict { .. } => None,
-        }
-    }
-
-    #[must_use]
-    pub fn records(&self) -> &[AuditRecord] {
-        match self {
-            Self::Committed { records, .. } => records,
-            Self::Conflict { .. } => &[],
-        }
-    }
-
-    #[must_use]
-    pub fn is_conflict(&self) -> bool {
-        matches!(self, Self::Conflict { .. })
     }
 }
