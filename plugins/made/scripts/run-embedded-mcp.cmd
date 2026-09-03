@@ -35,7 +35,7 @@ goto :haveBinary
 :nobinary
 echo MADE plugin: no made-mcp executable found. 1>&2
 echo MADE plugin: looked for %PLUGIN_ROOT%\bin\made-mcp.exe and made-mcp on PATH. 1>&2
-echo MADE plugin: install one with "cargo install made-mcp", or install the plugin from a release package. 1>&2
+echo MADE plugin: run /made:setup in Claude Code or the made-setup skill in Codex. 1>&2
 exit /b 127
 
 :haveBinary

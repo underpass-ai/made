@@ -6,17 +6,33 @@ database.
 
 ## Installation
 
-**Claude Code** — from the Underpass marketplace, which carries both plugins:
+**Claude Code** — from this repository's stable marketplace branch:
 
 ```text
-/plugin marketplace add underpass-ai/plugins
+/plugin marketplace add underpass-ai/made@marketplace
 /plugin install made@underpass
+/made:setup
 ```
 
-That brings the skills, the commands and the launcher, but not the binary:
-`bin/made-mcp` is gitignored and exists only in a release package. The
-launcher falls back to `made-mcp` on `PATH`, so `cargo install made-mcp` is
-enough to complete the install.
+**Codex:**
+
+```text
+codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin add made@underpass
+```
+
+Then ask Codex to run `made-setup`. Setup downloads the `made-mcp` executable
+from the immutable release matching the plugin manifest, verifies its
+published SHA-256 checksum, and installs it into the plugin's ignored `bin/`
+directory. No Rust toolchain is required. Start a new host thread after first
+setup or an update so the MCP server and skills reload together.
+
+To update Claude Code, run `/plugin marketplace update underpass`,
+`/plugin update made@underpass`, and `/made:setup`. For Codex, run
+`codex plugin marketplace upgrade underpass`, reinstall with
+`codex plugin add made@underpass`, then run `made-setup`. The marketplace and
+engine therefore move to the same immutable release before the new thread
+starts.
 
 The bundle installs into both certified hosts:
 
@@ -27,8 +43,10 @@ The bundle installs into both certified hosts:
 
 Prebuilt packages are attached to each GitHub Release as
 `made-plugin-<version>-<os>-<arch>.tar.gz` with a per-archive `.sha256`
-checksum. Verify the checksum, unpack, and point the host at the
-resulting `made/` directory:
+checksum. The same release carries standalone
+`made-mcp-v<version>-<target>` executables and checksums used by `made-setup`.
+To install an archive manually, verify it, unpack it, and point the host at
+the resulting `made/` directory:
 
 ```bash
 sha256sum -c made-plugin-<version>-<os>-<arch>.sha256
@@ -71,11 +89,10 @@ present. Establish execution ownership and durability separately. The
 defines the required checks and wording for agents and documentation.
 
 The repository packaging script places the isolated embedded binary at
-`bin/made-mcp`, and the launcher prefers it — a release bundle pins the binary
-that plugin version was tested against. When `bin/` is absent, as it is in an
-install straight from the repository, the launcher falls back to `made-mcp` on
-`PATH`, so `cargo install made-mcp` is enough. If neither is present it fails
-with an explicit message naming both places it looked.
+`bin/made-mcp`, and the launcher prefers it — a release bundle or `made-setup`
+pins the binary that plugin version was tested against. The launcher retains a
+`made-mcp` on `PATH` as a manual-development fallback. If neither is present it
+fails with an explicit setup command instead of requiring Cargo.
 
 The launcher never silently creates a fresh SQLite store beside the former
 Redb default. If it finds that legacy file, startup stops with the exact

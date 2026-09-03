@@ -9,10 +9,9 @@ set -euo pipefail
 #                       Idempotent; safe to re-run.
 #
 #   release <X.Y.Z>   — verify the tree is clean + versions already
-#                       point at X.Y.Z, then create a signed `vX.Y.Z`
-#                       tag at HEAD and push it. The publish-
-#                       distribution workflow takes it from there
-#                       (container image + Helm chart to ghcr).
+#                       point at X.Y.Z, create an annotated `vX.Y.Z`
+#                       tag at HEAD, wait for the complete public release,
+#                       then fast-forward the `marketplace` branch.
 #
 # Typical flow:
 #   just version 0.2.0
@@ -117,9 +116,23 @@ for manifest in manifests:
         sys.exit(f"{manifest}: no version line matched")
     manifest.write_text(text)
 
+# Claude clones the plugin from an immutable tag. Move that reference with
+# every version source; leaving it behind would make the repository advertise
+# the prior plugin even after the manifests and binaries moved on.
+catalog = pathlib.Path(".claude-plugin/marketplace.json")
+payload = __import__("json").loads(catalog.read_text())
+plugins = [entry for entry in payload.get("plugins", []) if entry.get("name") == "made"]
+if len(plugins) != 1:
+    sys.exit(".claude-plugin/marketplace.json must contain exactly one made entry")
+source = plugins[0].get("source")
+if not isinstance(source, dict) or "ref" not in source:
+    sys.exit(".claude-plugin/marketplace.json made source has no ref")
+source["ref"] = f"v{version}"
+catalog.write_text(__import__("json").dumps(payload, indent=2) + "\n")
+
 print(
     f"bumped to {version}: Cargo.toml, charts/made/Chart.yaml, "
-    f"{len(manifests)} plugin manifests"
+    f"{len(manifests)} plugin manifests, Claude marketplace ref"
 )
 PY
 
@@ -130,7 +143,8 @@ PY
     cargo metadata --format-version 1 >/dev/null
 
     git --no-pager diff --stat -- Cargo.toml Cargo.lock charts/made/Chart.yaml \
-        plugins/made/.claude-plugin/plugin.json plugins/made/.codex-plugin/plugin.json
+        plugins/made/.claude-plugin/plugin.json plugins/made/.codex-plugin/plugin.json \
+        .claude-plugin/marketplace.json
 }
 
 cmd_release() {
@@ -164,12 +178,9 @@ cmd_release() {
         fi
     done
 
-    local tag="v${version}"
-    if git rev-parse -q --verify "refs/tags/${tag}" >/dev/null; then
-        echo "error: tag ${tag} already exists" >&2
-        exit 1
-    fi
+    python3 scripts/ci/made-marketplace-contract.py --allow-unpublished-tag
 
+    local tag="v${version}"
     # Current branch must be main — release tags only come off the
     # reviewed history.
     local branch
@@ -179,9 +190,22 @@ cmd_release() {
         exit 1
     fi
 
-    git tag -a "${tag}" -m "Release ${tag}"
-    git push origin "${tag}"
-    echo "tagged ${tag} and pushed. publish-distribution will build image + chart."
+    local head existing_tag
+    head="$(git rev-parse HEAD)"
+    existing_tag="$(git rev-parse -q --verify "refs/tags/${tag}^{commit}" 2>/dev/null || true)"
+    if [ -n "${existing_tag}" ]; then
+        if [ "${existing_tag}" != "${head}" ]; then
+            echo "error: tag ${tag} already points at ${existing_tag}, not HEAD ${head}" >&2
+            exit 1
+        fi
+        echo "tag ${tag} already exists at HEAD; resuming publication"
+    else
+        git tag -a "${tag}" -m "Release ${tag}"
+        git push origin "${tag}"
+        echo "tagged ${tag} and pushed; waiting for public release assets"
+    fi
+
+    bash scripts/release/advance-marketplace.sh "${version}"
 }
 
 if [ $# -lt 1 ]; then

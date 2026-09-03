@@ -14,7 +14,18 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Added
+
+- MADE now ships co-located Codex and Claude Code marketplace catalogs, a
+  `made-setup` skill and `/made:setup` command, and checksummed standalone MCP
+  executables. A clean marketplace install downloads its release-matched
+  engine without requiring Cargo. (#36)
+
+### Changed
+
+- Release publication now validates marketplace parity, waits for the exact
+  plugin archive and standalone-binary asset set, and only then fast-forwards
+  the stable `marketplace` branch. (#36)
 
 ## 0.3.0 - 2026-09-03
 

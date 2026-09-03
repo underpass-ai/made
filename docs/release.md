@@ -7,10 +7,12 @@ A release cuts versioned container images + a Helm chart to
 
 ## Versioning
 
-Semver. Two places must stay in lockstep:
+Semver. These version sources stay in lockstep:
 
 - `Cargo.toml` → `[workspace.package].version`
 - `charts/made/Chart.yaml` → `version` + `appVersion`
+- both plugin manifests → `version`
+- `.claude-plugin/marketplace.json` → immutable `vX.Y.Z` source ref
 
 `scripts/release.sh version <X.Y.Z>` (or `just version 0.2.0`)
 rewrites both in one pass and is idempotent.
@@ -74,7 +76,10 @@ mirrors the CI gate.
    git checkout main && git pull --ff-only
    just release 0.2.0
    ```
-8. **Verify the publish-distribution workflow succeeded**:
+8. **Wait for publication to finish.** `just release` does not return until
+   the complete checksummed plugin asset set is public and `marketplace`
+   fast-forwards to the released commit. Then verify the other distribution
+   workflow succeeded:
    ```bash
    gh run watch $(gh run list --workflow publish-distribution.yml --json databaseId -q '.[0].databaseId')
    ```
@@ -86,6 +91,8 @@ After step 8, the release artefacts are live:
 - `oci://ghcr.io/underpass-ai/charts/made:0.2.0`
 - the plugin bundles, attached to the GitHub Release for linux-x86_64,
   linux-arm64, macos-arm64 and windows-x86_64
+- standalone `made-mcp-vX.Y.Z-<target>` executables and SHA-256 files for
+  those same four platforms
 - every public crate on crates.io
 
 ## What reaches crates.io
@@ -111,8 +118,12 @@ Two operational notes about that step:
 2. Asserts `Cargo.toml` and `Chart.yaml` already reflect the
    target version (the bump must have happened + merged first).
 3. Asserts the current branch is `main`.
-4. Asserts the tag does not exist yet.
-5. Creates an annotated `vX.Y.Z` tag at HEAD and pushes it.
+4. Validates both co-located marketplace catalogs and the immutable source
+   ref.
+5. Creates an annotated `vX.Y.Z` tag at HEAD and pushes it. If an earlier run
+   already tagged this exact commit, it resumes without moving the tag.
+6. Waits for the exact release asset set to become public.
+7. Fast-forwards `marketplace` to the released commit without force.
 
 The script does **not** push the tag without every gate passing —
 the actual gates are your local `just check && just integration &&
