@@ -134,8 +134,9 @@ def verify(allow_unpublished_tag: bool) -> str:
     for relative in required:
         if not (ROOT / relative).is_file():
             fail(f"missing {relative}")
-    if not ((ROOT / required[0]).stat().st_mode & 0o111):
-        fail("POSIX setup adapter must be executable")
+    setup_index_entry = git_output("ls-files", "-s", "--", required[0])
+    if not setup_index_entry or not setup_index_entry.startswith("100755 "):
+        fail("POSIX setup adapter must be tracked as executable")
 
     package_text = (ROOT / "scripts/plugin/package-made-plugin.sh").read_text()
     posix_setup = (ROOT / required[0]).read_text()
