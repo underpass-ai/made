@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+_Nothing yet._
+
+## 0.3.0 - 2026-09-03
+
 ### Changed
 
 - SQLite is now the sole canonical embedded ceremony store and ships in the
