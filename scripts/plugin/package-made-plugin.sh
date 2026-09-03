@@ -43,6 +43,44 @@ fi
 # Build the embedded binary and place it at bin/made-mcp.
 bash scripts/plugin/build-local-made-plugin.sh
 
+SYSTEM="$(uname -s)-$(uname -m)"
+case "${SYSTEM}" in
+  Linux-x86_64)
+    OS_LABEL="linux"
+    ARCH_LABEL="x86_64"
+    TARGET_TRIPLE="x86_64-unknown-linux-gnu"
+    BINARY_NAME="made-mcp"
+    ;;
+  Linux-aarch64)
+    OS_LABEL="linux"
+    ARCH_LABEL="arm64"
+    TARGET_TRIPLE="aarch64-unknown-linux-gnu"
+    BINARY_NAME="made-mcp"
+    ;;
+  Darwin-arm64)
+    OS_LABEL="macos"
+    ARCH_LABEL="arm64"
+    TARGET_TRIPLE="aarch64-apple-darwin"
+    BINARY_NAME="made-mcp"
+    ;;
+  Darwin-x86_64)
+    OS_LABEL="macos"
+    ARCH_LABEL="x86_64"
+    TARGET_TRIPLE="x86_64-apple-darwin"
+    BINARY_NAME="made-mcp"
+    ;;
+  MINGW*-x86_64|MSYS*-x86_64|CYGWIN*-x86_64)
+    OS_LABEL="windows"
+    ARCH_LABEL="x86_64"
+    TARGET_TRIPLE="x86_64-pc-windows-msvc"
+    BINARY_NAME="made-mcp.exe"
+    ;;
+  *)
+    echo "MADE plugin package: unsupported release platform ${SYSTEM}" >&2
+    exit 1
+    ;;
+esac
+
 # Stamp the resolved version into both host manifests.
 python3 - "${PACKAGE_VERSION}" <<'EOF'
 import json
@@ -66,35 +104,34 @@ cp -R "${PLUGIN_DIR}/.codex-plugin" "${STAGE_DIR}/made/.codex-plugin"
 cp -R "${PLUGIN_DIR}/.claude-plugin" "${STAGE_DIR}/made/.claude-plugin"
 cp -R "${PLUGIN_DIR}/.mcp.json" "${STAGE_DIR}/made/.mcp.json"
 cp -R "${PLUGIN_DIR}/README.md" "${STAGE_DIR}/made/README.md"
+cp -R "${PLUGIN_DIR}/claude" "${STAGE_DIR}/made/claude"
 cp -R "${PLUGIN_DIR}/skills" "${STAGE_DIR}/made/skills"
 cp -R "${PLUGIN_DIR}/scripts" "${STAGE_DIR}/made/scripts"
 cp "${PLUGIN_DIR}/bin/made-mcp"* "${STAGE_DIR}/made/bin/"
 chmod +x "${STAGE_DIR}/made/scripts/run-embedded-mcp.sh"
 [[ -f "${STAGE_DIR}/made/bin/made-mcp" ]] && chmod +x "${STAGE_DIR}/made/bin/made-mcp"
 
-OS_NAME="$(uname -s | tr '[:upper:]' '[:lower:]')"
-case "${OS_NAME}" in
-  linux)              OS_LABEL="linux" ;;
-  darwin)             OS_LABEL="macos" ;;
-  mingw*|msys*|cygwin*) OS_LABEL="windows" ;;
-  *)                  OS_LABEL="${OS_NAME}" ;;
-esac
-ARCH_NAME="$(uname -m)"
-case "${ARCH_NAME}" in
-  aarch64) ARCH_LABEL="arm64" ;;
-  *)       ARCH_LABEL="${ARCH_NAME}" ;;
-esac
-
 ARCHIVE_NAME="made-plugin-${PACKAGE_VERSION}-${OS_LABEL}-${ARCH_LABEL}.tar.gz"
+STANDALONE_NAME="made-mcp-v${PACKAGE_VERSION}-${TARGET_TRIPLE}"
+[[ "${BINARY_NAME}" == "made-mcp.exe" ]] && STANDALONE_NAME="${STANDALONE_NAME}.exe"
 mkdir -p "${DIST_DIR}"
 tar -czf "${DIST_DIR}/${ARCHIVE_NAME}" -C "${STAGE_DIR}" made
+cp "${PLUGIN_DIR}/bin/${BINARY_NAME}" "${DIST_DIR}/${STANDALONE_NAME}"
+[[ "${BINARY_NAME}" == "made-mcp" ]] && chmod +x "${DIST_DIR}/${STANDALONE_NAME}"
 rm -rf "${STAGE_DIR}"
 
-if command -v sha256sum >/dev/null 2>&1; then
-  (cd "${DIST_DIR}" && sha256sum "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256")
-else
-  (cd "${DIST_DIR}" && shasum -a 256 "${ARCHIVE_NAME}" > "${ARCHIVE_NAME}.sha256")
-fi
+checksum() {
+  local filename="$1"
+  if command -v sha256sum >/dev/null 2>&1; then
+    (cd "${DIST_DIR}" && sha256sum "${filename}" > "${filename}.sha256")
+  else
+    (cd "${DIST_DIR}" && shasum -a 256 "${filename}" > "${filename}.sha256")
+  fi
+}
+
+checksum "${ARCHIVE_NAME}"
+checksum "${STANDALONE_NAME}"
 
 echo "MADE plugin package: ${DIST_DIR}/${ARCHIVE_NAME}"
+echo "MADE standalone engine: ${DIST_DIR}/${STANDALONE_NAME}"
 echo "MADE plugin package version: ${PACKAGE_VERSION}"

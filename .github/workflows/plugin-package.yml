@@ -12,8 +12,15 @@ on:
     branches:
       - main
     paths:
+      - ".agents/plugins/marketplace.json"
+      - ".claude-plugin/marketplace.json"
       - "plugins/made/**"
       - "scripts/plugin/**"
+      - "scripts/release/**"
+      - "scripts/release.sh"
+      - "scripts/ci/made-marketplace-contract.py"
+      - "scripts/ci/made-plugin-bootstrap.sh"
+      - "scripts/ci/made-plugin-bootstrap-windows.ps1"
       - "scripts/ci/made-plugin-smoke.sh"
       - "tests/plugin/**"
       - "crates/made-mcp/**"
@@ -62,8 +69,25 @@ jobs:
         with:
           shared-key: plugin-package
 
+      - name: Verify the co-located marketplace contract
+        shell: bash
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            python3 scripts/ci/made-marketplace-contract.py
+          else
+            python3 scripts/ci/made-marketplace-contract.py --allow-unpublished-tag
+          fi
+
       - name: Smoke-test the plugin bundle
         run: bash scripts/ci/made-plugin-smoke.sh
+
+      - name: Prove clean checksummed setup without Cargo
+        run: bash scripts/ci/made-plugin-bootstrap.sh
+
+      - name: Prove native Windows checksummed setup
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/ci/made-plugin-bootstrap-windows.ps1
 
       - name: Package the plugin bundle
         run: bash scripts/plugin/package-made-plugin.sh
@@ -72,9 +96,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: made-plugin-${{ matrix.label }}
-          path: |
-            dist/plugin/*.tar.gz
-            dist/plugin/*.sha256
+          path: dist/plugin/*
           if-no-files-found: error
 
       - name: Attach package to the GitHub Release
@@ -86,6 +108,6 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release create "${TAG}" dist/plugin/*.tar.gz dist/plugin/*.sha256 \
+          gh release create "${TAG}" dist/plugin/* \
             --title "${TAG}" --generate-notes --verify-tag \
-            || gh release upload "${TAG}" dist/plugin/*.tar.gz dist/plugin/*.sha256 --clobber
+            || gh release upload "${TAG}" dist/plugin/* --clobber

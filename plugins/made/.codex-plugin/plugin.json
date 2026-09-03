@@ -1,6 +1,6 @@
 {
   "name": "made",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Codex.",
   "author": {
     "name": "Underpass AI"
@@ -26,9 +26,7 @@
     "defaultPrompt": [
       "Discover the capabilities and report generator exposed by this MADE plugin.",
       "Show me MADE help for a user or an autonomous agent.",
-      "Design a ceremony from this objective and explain the draft before publication.",
-      "Run a local ceremony from this YAML definition.",
-      "Generate a Markdown report for these ceremony ids."
+      "Design or run a ceremony and report the governed result."
     ]
   }
 }

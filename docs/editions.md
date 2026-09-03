@@ -69,10 +69,10 @@ MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremo
 
 Host wiring for Claude Code and Codex CLI is in the
 [README](../README.md#start-here--pick-an-edition). The
-[MADE plugin](../plugins/made/README.md) picks the state path for you, ships
-the `design-ceremony` and `run-ceremony` skills. Its launcher executes `bin/made-mcp` inside
-the plugin directory, so install it from a release package rather than a bare
-checkout.
+[MADE plugin](../plugins/made/README.md) picks the state path for you and ships
+the ceremony skills. Its `made-setup` skill downloads and verifies the
+release-matched `bin/made-mcp` after a repository-marketplace install, so a
+Rust toolchain is not required.
 
 ### Embedding it in your own Rust host
 

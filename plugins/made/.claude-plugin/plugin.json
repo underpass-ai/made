@@ -1,6 +1,6 @@
 {
   "name": "made",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Claude Code.",
   "author": {
     "name": "Underpass AI"
@@ -11,5 +11,6 @@
     "ceremonies",
     "coordination",
     "mcp"
-  ]
+  ],
+  "commands": "./claude/commands/"
 }

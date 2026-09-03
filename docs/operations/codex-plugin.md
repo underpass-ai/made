@@ -13,7 +13,7 @@ not considered valid unless every earlier level remains green.
 | 3 | MCP binary over stdio | A child process completes `initialize`, `tools/list`, and `tools/call`. |
 | 4 | Dependency isolation | The embedded binary tree contains no gRPC, protobuf, NATS, or SQL client. |
 | 5 | Plugin bundle | The manifest validates and the bundle launcher completes the same ceremony. |
-| 6 | Codex installation | Codex installs the local marketplace entry and discovers the bundled MCP server in a new thread. |
+| 6 | Marketplace setup | Codex or Claude installs from this repo, verifies the release binary, and discovers the MCP server in a new thread. |
 
 Run levels 2–4 directly:
 
@@ -75,8 +75,18 @@ an evidence-bearing completion.
 
 ## Installation boundary
 
-The repo-local bundle is installed only after levels 1–5 pass. Installation
-copies the validated bundle to a personal local plugin source, adds the
-personal marketplace entry, and runs `codex plugin add`. Codex loads new plugin
-skills and MCP tools at the start of a new thread, so the final functional
-check intentionally happens there.
+The repo-local bundle is installed only after levels 1–5 pass. The public path
+uses the co-located `underpass` marketplace:
+
+```text
+codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin add made@underpass
+```
+
+Run `made-setup` next. It selects the supported target, downloads the
+standalone executable and checksum from the release pinned by the plugin,
+rejects a digest mismatch, and installs atomically into that plugin's ignored
+`bin/` directory. `scripts/ci/made-plugin-bootstrap.sh` proves this from a
+clean plugin tree with Cargo absent from `PATH`, then initializes the MCP
+server through the normal launcher. Codex loads new plugin skills and MCP tools
+at the start of a new thread, so the final functional check happens there.

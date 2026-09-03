@@ -1,0 +1,20 @@
+{
+  "name": "underpass",
+  "description": "MADE by Underpass",
+  "owner": {
+    "name": "Underpass AI",
+    "url": "https://underpassai.com"
+  },
+  "plugins": [
+    {
+      "name": "made",
+      "description": "Design and run governed multi-agent ceremonies through a durable local MCP server.",
+      "source": {
+        "source": "git-subdir",
+        "url": "https://github.com/underpass-ai/made.git",
+        "path": "plugins/made",
+        "ref": "v0.3.1"
+      }
+    }
+  ]
+}

@@ -67,17 +67,18 @@ Both registrations name the *same* SQLite WAL store, so Codex and Claude Code
 can use it concurrently.
 
 **Want the `design-ceremony` and `run-ceremony` skills too** — install the
-[MADE plugin](plugins/made/README.md). In Claude Code that is one line:
+[MADE plugin](plugins/made/README.md) from this repository's marketplace:
 
 ```text
-/plugin marketplace add underpass-ai/plugins
+/plugin marketplace add underpass-ai/made@marketplace
 /plugin install made@underpass
+/made:setup
 ```
 
-Its launcher picks the state path for you, so none of the environment above
-is needed. It runs `bin/made-mcp` from a release package when there is one, and
-otherwise falls back to the `made-mcp` you installed on `PATH`. The same
-marketplace also carries the sibling `kmp@underpass`.
+Codex uses `codex plugin marketplace add underpass-ai/made --ref marketplace`,
+then `codex plugin add made@underpass`; ask it to run `made-setup` afterwards.
+The checksummed setup installs the release-matched binary without Cargo, and
+the launcher picks the state path, so none of the environment above is needed.
 
 Read [capability truth](#verify-capabilities-before-making-claims) before you
 build on what the embedded surface reports.

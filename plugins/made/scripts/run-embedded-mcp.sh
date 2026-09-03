@@ -28,17 +28,14 @@ fi
 if [[ ! -x "${BINARY}" ]]; then
   echo "MADE plugin: no made-mcp executable found." >&2
   echo "MADE plugin: looked for ${PLUGIN_ROOT}/bin/made-mcp (release bundle) and made-mcp on PATH." >&2
-  echo "MADE plugin: install one with 'cargo install made-mcp', or install the plugin from a release package." >&2
+  echo "MADE plugin: run /made:setup in Claude Code or the made-setup skill in Codex." >&2
   exit 127
 fi
 
 export MADE_MCP_BACKEND=embedded
 
-# The binary and the plugin update through different commands — `cargo
-# install --force` and `/plugin update` — and neither knows about the other.
-# A stale plugin with a fresh binary keeps working by luck because this
-# launcher falls back to PATH. Say it once, on stderr, where a host shows
-# server output; never fail on it, since the mismatch is usually harmless.
+# A PATH fallback can differ from the plugin version. Say it once, on stderr,
+# where a host shows server output; setup restores the release-matched binary.
 PLUGIN_MANIFEST="${PLUGIN_ROOT}/.claude-plugin/plugin.json"
 if [[ -f "${PLUGIN_MANIFEST}" ]] && command -v python3 >/dev/null 2>&1; then
   PLUGIN_VERSION="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["version"])' \
@@ -46,9 +43,8 @@ if [[ -f "${PLUGIN_MANIFEST}" ]] && command -v python3 >/dev/null 2>&1; then
   BINARY_VERSION="$("${BINARY}" --version 2>/dev/null | sed -E 's/^made-mcp ([^ ]+).*/\1/')"
   if [[ -n "${PLUGIN_VERSION}" && -n "${BINARY_VERSION}" && "${PLUGIN_VERSION}" != "${BINARY_VERSION}" ]]; then
     echo "MADE plugin: plugin files are ${PLUGIN_VERSION}, binary is ${BINARY_VERSION}." >&2
-    echo "MADE plugin: they update separately — 'cargo install made-mcp --force' and" >&2
-    echo "MADE plugin: '/plugin update made@underpass' — and fixes that live in this" >&2
-    echo "MADE plugin: launcher or the skills come with the plugin, not the binary." >&2
+    echo "MADE plugin: update the plugin, then run /made:setup in Claude Code" >&2
+    echo "MADE plugin: or the made-setup skill in Codex to restore release parity." >&2
   fi
 fi
 
