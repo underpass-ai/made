@@ -5,13 +5,13 @@ use made_core::ports::CeremonyDefinitionPublicationPort;
 use made_core::value_objects::{CeremonyName, CeremonyVersion};
 
 use crate::engine::{Key, Table};
-use crate::redb::keys::published;
-use crate::redb::StoredPublication;
+use crate::sqlite::keys::published;
+use crate::sqlite::StoredPublication;
 
-use super::{decode, encode, RedbCeremonyStore};
+use super::{decode, encode, SqliteCeremonyStore};
 
 #[async_trait]
-impl CeremonyDefinitionPublicationPort for RedbCeremonyStore {
+impl CeremonyDefinitionPublicationPort for SqliteCeremonyStore {
     /// The occupant is read and the slot written inside one write
     /// transaction, so two callers cannot publish different content
     /// under one version.

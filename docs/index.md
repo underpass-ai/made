@@ -47,7 +47,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 
 | Doc | Purpose |
 |---|---|
-| [`embedded-made.md`](./embedded-made.md) | The in-process ceremony API: injectable ports, host callback adapter, local defaults, durable redb composition and its boundary. |
+| [`embedded-made.md`](./embedded-made.md) | The in-process ceremony API: injectable ports, host callback adapter, local defaults, durable SQLite composition and its boundary. |
 | [`operations/embedded-ceremony-execution.md`](./operations/embedded-ceremony-execution.md) | Operating a ceremony through the local plugin when the host, not an engine handler, does the real work: publish → start → claim → perform → complete, restart recovery, and the durability boundary. |
 | [`operations/codex-plugin.md`](./operations/codex-plugin.md) | Cumulative acceptance ladder, report-generation smoke, bundle layout, and local installation boundary for the plugin. |
 | [`operations/mcp/codex.md`](./operations/mcp/codex.md) | Codex CLI specifics: `codex mcp add`, dev-from-checkout, mTLS, fixture. |

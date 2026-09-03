@@ -31,7 +31,7 @@ version and definition version solve different compatibility problems.
 | Who it is for | one developer running a working session | a team whose deliberations must outlive a process |
 | Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
 | Surface today | the **ceremony engine** | the full `underpass.made.v1` gRPC contract |
-| Persistence | one local redb state file | Postgres, or in-memory |
+| Persistence | one local SQLite state file | SQLite for ceremonies; Postgres or memory for other aggregates |
 | Messaging | none | optional NATS |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
@@ -55,23 +55,22 @@ deliberation APIs are **not claimed**.
 cargo install made-mcp
 ```
 
-The embedded backend **requires** `MADE_MCP_REDB_PATH`. This is deliberate:
+The embedded backend **requires** `MADE_MCP_STORE_PATH`. This is deliberate:
 where ceremony state survives a restart is an operator decision, never a
 default this crate invents. Starting without it fails fast with
-`MADE_MCP_REDB_PATH is required when MADE_MCP_BACKEND=embedded`.
+`MADE_MCP_STORE_PATH is required when MADE_MCP_BACKEND=embedded`.
 
 ```bash
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made"
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
   made-mcp
 ```
 
 Host wiring for Claude Code and Codex CLI is in the
 [README](../README.md#start-here--pick-an-edition). The
 [MADE plugin](../plugins/made/README.md) picks the state path for you, ships
-the `design-ceremony` and `run-ceremony` skills, and imports a pre-rename
-Choreographer store on first start. Its launcher executes `bin/made-mcp` inside
+the `design-ceremony` and `run-ceremony` skills. Its launcher executes `bin/made-mcp` inside
 the plugin directory, so install it from a release package rather than a bare
 checkout.
 
@@ -100,17 +99,17 @@ everything it injects. Details: [embedded-made.md](embedded-made.md).
 
 - **The real engine.** Same use cases, same domain invariants, same FSM as the
   deployable binary.
-- **Durable ceremony state** with the `redb` feature: ceremony snapshots,
+- **Durable ceremony state** in SQLite: ceremony snapshots,
   unit-of-work state, the audit journal, outbox rows and published definitions
   survive process restarts. Crash/reopen behaviour is exercised by
-  `crates/made-embedded/tests/redb_engine_api.rs`.
+  `crates/made-embedded/tests/sqlite_store_api.rs`.
 
 ### What it explicitly does not prove
 
 These three are the reason this repo ships a
 [capability-verification runbook](operations/capability-verification.md).
 
-1. **Durable is not authorized.** `EmbeddedMade::open_redb(path)` makes the
+1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
    ceremony store durable. It does **not** silently make every port durable:
    mounted definition repositories and transcripts keep their in-memory
    defaults, and step execution and evidence collection keep their no-op
@@ -211,7 +210,7 @@ Two caveats that make this less symmetric than the KMP equivalent:
   running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
   reason.
-- **Ceremony state does not migrate itself.** A local redb store is not a
+- **Ceremony state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.
 

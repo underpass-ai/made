@@ -1,4 +1,4 @@
-//! [`RedbCeremonyStore`] — the embedded durable store.
+//! [`SqliteCeremonyStore`] — the embedded durable store.
 //!
 //! Ceremony state, the audit journal and the outbox live in tables of one
 //! database, so a commit that touches all three is one write transaction.
@@ -17,19 +17,16 @@ mod audit_journal;
 mod ceremony_unit_of_work;
 mod definition_publication;
 mod instance_repository;
-mod legacy_import;
 mod lifecycle;
 mod outbox;
-mod path_identity;
-mod store_conversion;
 mod stored_outbox_message;
 
 #[derive(Debug, Clone)]
-pub struct RedbCeremonyStore {
+pub struct SqliteCeremonyStore {
     engine: Arc<dyn Engine>,
 }
 
-impl RedbCeremonyStore {
+impl SqliteCeremonyStore {
     async fn blocking<T, F>(&self, op: &'static str, work: F) -> Result<T, DomainError>
     where
         T: Send + 'static,

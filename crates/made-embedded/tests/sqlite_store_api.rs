@@ -1,5 +1,3 @@
-#![cfg(feature = "redb")]
-
 use std::collections::BTreeMap;
 
 use made_api::{CeremonyEngineApi, StartCeremonyRequest};
@@ -27,9 +25,9 @@ roles: []
 #[tokio::test]
 async fn published_definition_and_instance_survive_reopening_via_the_public_surface() {
     let directory = tempfile::tempdir().expect("temporary state directory");
-    let path = directory.path().join("made.redb");
+    let path = directory.path().join("made.sqlite3");
 
-    let engine = EmbeddedMade::open_redb(&path).expect("durable engine opens");
+    let engine = EmbeddedMade::open(&path).expect("durable engine opens");
     let analysis = engine
         .analyze_definition(DEFINITION)
         .await
@@ -58,7 +56,7 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
         .expect("published ceremony starts");
     drop(engine);
 
-    let reopened = EmbeddedMade::open_redb(&path).expect("durable engine reopens");
+    let reopened = EmbeddedMade::open(&path).expect("durable engine reopens");
     let ceremony = reopened
         .ceremony("ceremony-1")
         .await

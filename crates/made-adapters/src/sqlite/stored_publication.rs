@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 
 /// A published definition and the digest it was sealed with.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(in crate::redb) struct StoredPublication {
+pub(in crate::sqlite) struct StoredPublication {
     pub(super) definition: CeremonyDefinition,
     pub(super) digest: CeremonyDefinitionDigest,
 }

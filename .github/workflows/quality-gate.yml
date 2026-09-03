@@ -117,9 +117,8 @@ jobs:
       # The gate runs the whole adapter suite, which builds made-proto.
       - name: Install protoc
         run: bash scripts/ci/install-protoc.sh
-      # The opt-in SQLite engine: every store contract on it, plus the
-      # two-processes-one-store scenario it exists for. The default jobs
-      # above prove it did not leak into the default build.
+      # The canonical SQLite adapter: every store contract plus the
+      # two-processes-one-store scenario.
       - name: Enforce embedded SQLite engine gates
         run: bash scripts/ci/embedded-sqlite-gates.sh
       - name: Lint embedded MCP backend
@@ -150,7 +149,7 @@ jobs:
       - name: Run clippy
         # Enable every provider / transport / persistence feature
         # explicitly so feature-gated adapters (agent-anthropic,
-        # agent-openai, agent-vllm, grpc, nats, redb, kmp, otel) are
+        # agent-openai, agent-vllm, grpc, nats, sqlite, kmp, otel) are
         # linted. A feature CI never turns on is code CI never checks —
         # `otel` was outside this list while the trace bridge silently
         # stopped adopting incoming traceparents.
@@ -159,11 +158,10 @@ jobs:
         # runtime.
         run: |
           cargo clippy --workspace --all-targets --locked \
-            --features made-embedded/redb \
             --features made-adapters/agent-anthropic \
             --features made-adapters/agent-openai \
             --features made-adapters/agent-vllm \
-            --features made-adapters/redb \
+            --features made-adapters/sqlite \
             --features made-adapters/kmp \
             --features made-adapters/otel \
             --features made/otel \
@@ -201,11 +199,10 @@ jobs:
         # success without it.
         run: |
           cargo test --workspace --locked \
-            --features made-embedded/redb \
             --features made-adapters/agent-anthropic \
             --features made-adapters/agent-openai \
             --features made-adapters/agent-vllm \
-            --features made-adapters/redb \
+            --features made-adapters/sqlite \
             --features made-adapters/kmp \
             --features made-adapters/otel \
             --features made/otel

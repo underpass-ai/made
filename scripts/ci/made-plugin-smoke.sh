@@ -14,9 +14,9 @@ SMOKE_STATE_DIR="$(mktemp -d)"
 trap 'rm -rf "${SMOKE_STATE_DIR}"' EXIT
 if command -v cygpath >/dev/null 2>&1; then
   # Native Windows binary: it cannot open an MSYS path.
-  export MADE_MCP_REDB_PATH="$(cygpath -w "${SMOKE_STATE_DIR}/ceremonies.redb")"
+  export MADE_MCP_STORE_PATH="$(cygpath -w "${SMOKE_STATE_DIR}/ceremonies.sqlite3")"
 else
-  export MADE_MCP_REDB_PATH="${SMOKE_STATE_DIR}/ceremonies.redb"
+  export MADE_MCP_STORE_PATH="${SMOKE_STATE_DIR}/ceremonies.sqlite3"
 fi
 
 cd "${ROOT_DIR}"
@@ -39,6 +39,30 @@ if codex != claude:
 EOF
 
 bash scripts/plugin/build-local-made-plugin.sh
+
+# A legacy default must stop the SQLite-only launcher before it creates a
+# second live store. The message is the supported, release-pinned migration
+# route; the current binary never opens the old bytes.
+LEGACY_STATE_HOME="${SMOKE_STATE_DIR}/legacy-state"
+LEGACY_STATE_DIR="${LEGACY_STATE_HOME}/underpass-made"
+mkdir -p "${LEGACY_STATE_DIR}"
+printf 'redb legacy smoke' >"${LEGACY_STATE_DIR}/ceremonies.redb"
+if legacy_refusal="$(
+  env -u MADE_MCP_STORE_PATH \
+    XDG_STATE_HOME="${LEGACY_STATE_HOME}" \
+    "${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" </dev/null 2>&1
+)"; then
+  echo "MADE plugin smoke opened a legacy Redb default" >&2
+  exit 1
+fi
+if [[ "${legacy_refusal}" != *"v0.2.0"* || "${legacy_refusal}" != *"share-store"* ]]; then
+  echo "MADE plugin legacy refusal omitted the supported conversion command" >&2
+  exit 1
+fi
+if [[ -e "${LEGACY_STATE_DIR}/ceremonies.sqlite3" ]]; then
+  echo "MADE plugin legacy refusal created a split-brain SQLite store" >&2
+  exit 1
+fi
 
 responses="$("${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" <"${FIXTURE}")"
 

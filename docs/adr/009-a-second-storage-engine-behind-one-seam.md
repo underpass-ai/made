@@ -1,6 +1,6 @@
 # ADR-009: A second storage engine behind one seam
 
-Status: Accepted
+Status: Superseded by ADR-011
 
 Implementation status last verified: 2026-08-16
 

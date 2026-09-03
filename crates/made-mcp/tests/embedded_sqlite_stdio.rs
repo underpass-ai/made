@@ -4,7 +4,7 @@
 //! processes, one state file, and the question of what the second one can
 //! still see.
 
-use made_mcp::{MadeMcpServer, EMBEDDED_REDB_PATH_ENV, LEGACY_REDB_PATH_ENV, MCP_BACKEND_ENV};
+use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
 const CEREMONY_YAML: &str = r#"
@@ -33,10 +33,10 @@ roles:
 #[tokio::test]
 async fn a_started_ceremony_is_read_back_by_the_next_process() {
     let state = tempfile::tempdir().unwrap();
-    let path = state.path().join("ceremonies.redb");
+    let path = state.path().join("ceremonies.sqlite3");
 
     let ceremony_id = {
-        let first = MadeMcpServer::embedded_redb(&path).expect("the store must open");
+        let first = MadeMcpServer::embedded_sqlite(&path).expect("the store must open");
 
         let published = send(
             &first,
@@ -79,7 +79,7 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
     };
 
     // The first server is gone. Everything below is a cold read of the file.
-    let second = MadeMcpServer::embedded_redb(&path).expect("the store must reopen");
+    let second = MadeMcpServer::embedded_sqlite(&path).expect("the store must reopen");
 
     let recovered = send(
         &second,
@@ -121,7 +121,7 @@ async fn a_started_ceremony_is_read_back_by_the_next_process() {
 async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
     let state = tempfile::tempdir().unwrap();
 
-    let first = MadeMcpServer::embedded_redb(state.path().join("one.redb")).unwrap();
+    let first = MadeMcpServer::embedded_sqlite(state.path().join("one.sqlite3")).unwrap();
     let published = send(
         &first,
         tool_call(
@@ -151,7 +151,7 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
     )
     .await;
 
-    let other = MadeMcpServer::embedded_redb(state.path().join("two.redb")).unwrap();
+    let other = MadeMcpServer::embedded_sqlite(state.path().join("two.sqlite3")).unwrap();
     let listed = send(
         &other,
         tool_call(1, "made_list_ceremony_instances", &json!({})),
@@ -166,10 +166,10 @@ async fn a_separate_state_file_does_not_see_another_one_s_ceremonies() {
 #[tokio::test]
 async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_that_can() {
     let state = tempfile::tempdir().unwrap();
-    let path = state.path().join("ceremonies.redb");
+    let path = state.path().join("ceremonies.sqlite3");
 
     {
-        let first = MadeMcpServer::embedded_redb(&path).unwrap();
+        let first = MadeMcpServer::embedded_sqlite(&path).unwrap();
         // A one-shot run mounts its definition for this process only: the
         // instance is committed to the store, the definition is not.
         let ran = send(
@@ -224,7 +224,7 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
         );
     }
 
-    let second = MadeMcpServer::embedded_redb(&path).unwrap();
+    let second = MadeMcpServer::embedded_sqlite(&path).unwrap();
     let listed = send(
         &second,
         tool_call(1, "made_list_ceremony_instances", &json!({})),
@@ -268,11 +268,11 @@ async fn an_instance_that_cannot_rehydrate_is_reported_without_hiding_the_ones_t
 #[tokio::test]
 async fn opening_the_store_over_a_directory_fails_instead_of_degrading_to_memory() {
     let state = tempfile::tempdir().unwrap();
-    let Err(error) = MadeMcpServer::embedded_redb(state.path()) else {
+    let Err(error) = MadeMcpServer::embedded_sqlite(state.path()) else {
         panic!("a directory is not a ceremony store");
     };
     assert!(
-        error.contains("embedded redb ceremony store"),
+        error.contains("embedded SQLite ceremony store"),
         "the failure must name what did not open: {error}"
     );
 }
@@ -282,24 +282,25 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
     // One test owns the process environment for both directions: the
     // variables are global, so splitting this would race with itself.
     std::env::set_var(MCP_BACKEND_ENV, "embedded");
-    std::env::remove_var(EMBEDDED_REDB_PATH_ENV);
-    std::env::remove_var(LEGACY_REDB_PATH_ENV);
+    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
 
     let Err(refused) = MadeMcpServer::try_from_env() else {
         panic!("embedded must demand a state file");
     };
-    assert!(refused.contains(EMBEDDED_REDB_PATH_ENV), "{refused}");
+    assert!(refused.contains(EMBEDDED_STORE_PATH_ENV), "{refused}");
 
     let state = tempfile::tempdir().unwrap();
-    std::env::set_var(EMBEDDED_REDB_PATH_ENV, state.path().join("ceremonies.redb"));
+    std::env::set_var(
+        EMBEDDED_STORE_PATH_ENV,
+        state.path().join("ceremonies.sqlite3"),
+    );
     let Ok(server) = MadeMcpServer::try_from_env() else {
         panic!("a named state file must be accepted");
     };
     assert_eq!(server.backend_name(), "embedded");
 
     std::env::remove_var(MCP_BACKEND_ENV);
-    std::env::remove_var(EMBEDDED_REDB_PATH_ENV);
-    std::env::remove_var(LEGACY_REDB_PATH_ENV);
+    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
 }
 
 async fn send(server: &MadeMcpServer, request: Value) -> Value {

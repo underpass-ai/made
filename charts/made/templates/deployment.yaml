@@ -195,7 +195,7 @@ spec:
             {{- end }}
             {{- if .Values.persistence.ceremonies.enabled }}
             - name: MADE_CEREMONY_STORE_PATH
-              value: {{ printf "%s/ceremonies.redb" .Values.persistence.ceremonies.mountPath | quote }}
+              value: {{ printf "%s/ceremonies.sqlite3" .Values.persistence.ceremonies.mountPath | quote }}
             {{- end }}
             {{- if .Values.persistence.postgres.enabled }}
             {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}

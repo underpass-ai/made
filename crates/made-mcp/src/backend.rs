@@ -13,22 +13,10 @@
 pub const GRPC_ENDPOINT_ENV: &str = "MADE_MCP_GRPC_ENDPOINT";
 /// Backend selector: `grpc` (default), `embedded`, or `fixture`.
 pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
-/// redb database file the durable embedded backend opens. Required when
+/// SQLite database file the durable embedded backend opens. Required when
 /// the embedded backend is selected: where ceremony state survives a
 /// restart is an operator decision, never a default this crate invents.
-pub const EMBEDDED_REDB_PATH_ENV: &str = "MADE_MCP_REDB_PATH";
-
-/// Which engine a **new** embedded store is created with: `redb` (default)
-/// or `sqlite`.
-///
-/// It decides nothing about an existing store. A ceremony store announces
-/// its own engine in its first bytes, so one that already exists is always
-/// opened by whatever wrote it; asking for a different engine is refused
-/// rather than quietly ignored.
-pub const EMBEDDED_ENGINE_ENV: &str = "MADE_MCP_ENGINE";
-/// Optional pre-rename Choreographer redb source. When set for the embedded
-/// backend, startup imports it read-only into [`EMBEDDED_REDB_PATH_ENV`].
-pub const LEGACY_REDB_PATH_ENV: &str = "MADE_MCP_LEGACY_REDB_PATH";
+pub const EMBEDDED_STORE_PATH_ENV: &str = "MADE_MCP_STORE_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";
 /// PEM bundle the client should trust as a CA when verifying the

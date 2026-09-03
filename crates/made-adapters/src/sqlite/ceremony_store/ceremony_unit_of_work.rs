@@ -5,17 +5,17 @@ use made_core::ports::CeremonyUnitOfWorkPort;
 use made_core::value_objects::{CeremonyId, CeremonyRevision};
 
 use crate::engine::{Key, Table};
-use crate::redb::keys::{scope_range, scoped};
-use crate::redb::StoredCeremony;
+use crate::sqlite::keys::{scope_range, scoped};
+use crate::sqlite::StoredCeremony;
 
 use super::audit_journal::journal_of;
 use super::stored_outbox_message::StoredOutboxMessage;
-use super::{decode, encode, RedbCeremonyStore};
+use super::{decode, encode, SqliteCeremonyStore};
 
 #[async_trait]
-impl CeremonyUnitOfWorkPort for RedbCeremonyStore {
+impl CeremonyUnitOfWorkPort for SqliteCeremonyStore {
     /// State, journal and outbox are written in one write transaction:
-    /// redb commits all three tables together or none of them.
+    /// SQLite commits all three tables together or none of them.
     async fn commit(&self, commit: CeremonyCommit) -> Result<CommitOutcome, DomainError> {
         self.blocking("commit", move |engine| {
             let ceremony_id = commit.instance().id().clone();

@@ -1,4 +1,4 @@
-//! The SQLite engine behind the seam. Opt-in via the `sqlite` feature.
+//! The SQLite engine behind the canonical embedded store.
 //!
 //! One SQL table per seam table, keyed by the seam's key shape. Text keys are
 //! `TEXT PRIMARY KEY`, byte keys `BLOB PRIMARY KEY`, both `WITHOUT ROWID` so
@@ -7,8 +7,8 @@
 //! Ordering matches the seam contract with no collation work, and that is
 //! load-bearing rather than convenient: the journal and outbox keys end in a
 //! big-endian ordinal so byte order is write order, and SQLite compares BLOBs
-//! with `memcmp` — byte by byte, exactly as redb does. Text keys use the
-//! default `BINARY` collation, which is also bytewise. An engine that sorted
+//! with `memcmp` — byte by byte. Text keys use the default `BINARY`
+//! collation, which is also bytewise. An engine that sorted
 //! either by locale would hand back a ceremony's history shuffled.
 //!
 //! What makes this engine worth having: WAL mode. Readers never block the
@@ -16,7 +16,7 @@
 //! instead of being refused, so two agent hosts can hold one store.
 //!
 //! Durability is `synchronous=FULL`: every commit reaches the disk before it
-//! returns, matching the crash contract redb gives.
+//! returns.
 
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -403,7 +403,7 @@ fn poisoned() -> DomainError {
     }
 }
 
-/// Maps a rusqlite failure the way the redb adapter maps its own: the runtime
+/// Maps a rusqlite failure into the stable domain error used by the runtime:
 /// detail goes to the structured log, and a small stable set of static
 /// reasons crosses into the domain.
 fn failure(error: &rusqlite::Error, op: &'static str) -> DomainError {

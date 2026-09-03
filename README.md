@@ -29,7 +29,8 @@ application use cases the deployable binary calls. Full comparison:
 ### Embedded edition — inside your coding agent
 
 The ceremony engine runs in-process over MCP stdio. No service, no gRPC, no
-NATS, no database, no provider credentials.
+NATS, no external database, no provider credentials. Durable state uses one
+canonical SQLite WAL store that agent hosts can share.
 
 ```bash
 cargo install made-mcp
@@ -41,7 +42,7 @@ restart is an operator decision, never a default this crate invents.
 ```bash
 mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made"
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb" \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
   made-mcp
 ```
 
@@ -50,7 +51,7 @@ MADE_MCP_REDB_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremon
 ```bash
 claude mcp add made --scope user \
   --env MADE_MCP_BACKEND=embedded \
-  --env MADE_MCP_REDB_PATH="$HOME/.local/state/underpass-made/ceremonies.redb" \
+  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
   -- ~/.cargo/bin/made-mcp
 ```
 
@@ -59,15 +60,11 @@ claude mcp add made --scope user \
 ```toml
 [mcp_servers.made]
 command = "/home/YOU/.cargo/bin/made-mcp"
-env = { MADE_MCP_BACKEND = "embedded", MADE_MCP_REDB_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.redb" }
+env = { MADE_MCP_BACKEND = "embedded", MADE_MCP_STORE_PATH = "/home/YOU/.local/state/underpass-made/ceremonies.sqlite3" }
 ```
 
-Note that both registrations above name the *same* store. The default engine
-takes one process at a time, so running both hosts at once means the second
-one gets no ceremony tools at all. To share one store between them, build with
-`--features sqlite` and either start there or convert what you already have —
-[sharing one ceremony store between two agent hosts](docs/operations/mcp-stdio.md#sharing-one-ceremony-store-between-two-agent-hosts)
-has the recipe and what it costs.
+Both registrations name the *same* SQLite WAL store, so Codex and Claude Code
+can use it concurrently.
 
 **Want the `design-ceremony` and `run-ceremony` skills too** — install the
 [MADE plugin](plugins/made/README.md). In Claude Code that is one line:
@@ -77,9 +74,8 @@ has the recipe and what it costs.
 /plugin install made@underpass
 ```
 
-Its launcher picks the state path for you and imports a pre-rename
-Choreographer store on first start, so none of the environment above is
-needed. It runs `bin/made-mcp` from a release package when there is one, and
+Its launcher picks the state path for you, so none of the environment above
+is needed. It runs `bin/made-mcp` from a release package when there is one, and
 otherwise falls back to the `made-mcp` you installed on `PATH`. The same
 marketplace also carries the sibling `kmp@underpass`.
 
@@ -219,12 +215,12 @@ MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage cargo run --locked -p made
 ```
 
 **The real ceremony engine over MCP, no service.** The embedded backend
-fail-fasts without `MADE_MCP_REDB_PATH`: where ceremony state survives a
+fails fast without `MADE_MCP_STORE_PATH`: where ceremony state survives a
 restart is an operator decision, never a default this crate invents.
 
 ```sh
 MADE_MCP_BACKEND=embedded \
-MADE_MCP_REDB_PATH="$PWD/target/ceremonies.redb" \
+MADE_MCP_STORE_PATH="$PWD/target/ceremonies.sqlite3" \
   cargo run --locked -p made-mcp
 ```
 
@@ -369,6 +365,9 @@ gate in this repository):
 
 **Persistence**:
 
+- When `MADE_CEREMONY_STORE_PATH` is set, ceremony state, its audit journal,
+  outbox and published definitions persist in the canonical SQLite store;
+  otherwise those ceremony ports remain in memory.
 - When `MADE_POSTGRES_URL` is set, deliberations, councils, the
   agent registry, and operational statistics persist to Postgres;
   otherwise the in-memory defaults are wired. Persistence choice is

@@ -1,9 +1,7 @@
 use std::fmt;
 use std::sync::Arc;
 
-#[cfg(feature = "redb")]
-use made_adapters::redb::RedbCeremonyStore;
-#[cfg(feature = "redb")]
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{SessionJournal, SessionMemoryRecorder};
 use made_app::usecases::{
@@ -76,57 +74,20 @@ impl EmbeddedMade {
     /// receives only the embedded facade, so a storage refactor cannot leak
     /// provider implementation types into the consumer's dependency graph.
     ///
-    /// Open on a chosen engine. `engine` decides only what a **new** store
-    /// becomes; an existing one opens on whatever wrote it.
-    #[cfg(feature = "redb")]
-    pub fn open_engine(
-        path: impl AsRef<std::path::Path>,
-        engine: Option<made_adapters::StorageEngine>,
-    ) -> Result<Self, ApiError> {
-        let store =
-            RedbCeremonyStore::open_with(path, engine).map_err(|error| ApiError::Unavailable {
-                reason: format!("the durable ceremony store did not open: {error}"),
-            })?;
+    /// Open the canonical durable SQLite store.
+    pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
+        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        })?;
         Ok(Self::over(store))
     }
 
-    /// Open on whatever engine the store already uses, or the default for a
-    /// new one.
-    #[cfg(feature = "redb")]
-    pub fn open_redb(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
-        Self::open_engine(path, None)
-    }
-
-    #[cfg(feature = "redb")]
-    fn over(store: RedbCeremonyStore) -> Self {
+    fn over(store: SqliteCeremonyStore) -> Self {
         let store = Arc::new(store);
         Self::builder()
             .with_ceremony_store(store.clone())
             .with_definition_publications(store)
             .build()
-    }
-
-    /// Open a MADE store, importing a legacy Choreographer store on the first
-    /// start and verifying the durable receipt on later starts.
-    ///
-    /// The legacy source is opened read-only and is never used as the
-    /// destination. The destination must be absent for the first import.
-    #[cfg(feature = "redb")]
-    pub fn open_redb_from_legacy(
-        source: impl AsRef<std::path::Path>,
-        destination: impl AsRef<std::path::Path>,
-    ) -> Result<Self, ApiError> {
-        let store = Arc::new(
-            RedbCeremonyStore::open_or_import_legacy(source, destination).map_err(|error| {
-                ApiError::Unavailable {
-                    reason: format!("the legacy ceremony store could not be imported: {error}"),
-                }
-            })?,
-        );
-        Ok(Self::builder()
-            .with_ceremony_store(store.clone())
-            .with_definition_publications(store)
-            .build())
     }
 
     pub(crate) fn new(

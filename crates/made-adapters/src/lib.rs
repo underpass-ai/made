@@ -76,15 +76,11 @@ pub mod nats;
 #[cfg(feature = "postgres")]
 pub mod postgres;
 
-// The storage seam and its engines. Gated with the embedded store itself:
-// nothing else in this crate needs them. The seam is internal; which engine
-// a store file runs on is not, because a caller choosing where to open one
-// has to be able to ask.
-#[cfg(feature = "redb")]
+// The canonical embedded SQLite store and its internal storage seam.
+// Nothing else in this crate needs them.
+#[cfg(feature = "sqlite")]
 pub(crate) mod engine;
-#[cfg(feature = "redb")]
-pub use engine::detect::{engine_of, StorageEngine};
-#[cfg(feature = "redb")]
-pub mod redb;
+#[cfg(feature = "sqlite")]
+pub mod sqlite;
 
 pub mod agents;

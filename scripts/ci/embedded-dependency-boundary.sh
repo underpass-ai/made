@@ -38,25 +38,28 @@ assert_embedded_boundary \
   --no-default-features \
   --features embedded
 
-# The SQLite engine is opt-in precisely so the default embedded build stays
-# pure Rust with no C toolchain. A C dependency reaching it — through a
-# feature-unification accident, a `default = ["sqlite"]` slip, anything — is
-# the regression this check exists to catch.
-assert_no_c_engine() {
+# SQLite is the canonical embedded store. The dependency boundary must include
+# it and must never regain the retired Redb engine.
+assert_canonical_sqlite() {
   local label="$1"
   shift
+  local tree
 
-  if cargo tree --locked "$@" -e normal --prefix none --format '{p}' \
-    | grep -qE '^(rusqlite|libsqlite3-sys) '; then
-    echo "${label} carries the SQLite C engine; it must stay behind --features sqlite" >&2
+  tree="$(cargo tree --locked "$@" -e normal --prefix none --format '{p}')"
+  if ! grep -qE '^rusqlite ' <<<"${tree}"; then
+    echo "${label} does not carry the canonical SQLite store" >&2
+    exit 1
+  fi
+  if grep -qE '^redb ' <<<"${tree}"; then
+    echo "${label} still carries the retired Redb engine" >&2
     exit 1
   fi
 
-  echo "${label} carries no C storage engine"
+  echo "${label} carries SQLite and no Redb"
 }
 
-assert_no_c_engine "made-embedded" -p made-embedded
-assert_no_c_engine \
+assert_canonical_sqlite "made-embedded" -p made-embedded
+assert_canonical_sqlite \
   "made-mcp embedded backend" \
   -p made-mcp \
   --no-default-features \

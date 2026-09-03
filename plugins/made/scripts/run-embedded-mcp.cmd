@@ -1,17 +1,12 @@
 @echo off
 rem MADE plugin launcher for Windows hosts. Mirrors run-embedded-mcp.sh:
 rem the embedded backend needs a state file, and an explicit
-rem MADE_MCP_REDB_PATH always wins over the per-user default.
+rem MADE_MCP_STORE_PATH always wins over the per-user default.
 setlocal
 
 set "PLUGIN_ROOT=%~dp0.."
 
-rem An explicit binary wins. The release bundle is built without the sqlite
-rem engine — that is what keeps a default install free of a C toolchain — and
-rem the bundle otherwise takes priority, so without this an operator who built
-rem `cargo install made-mcp --features sqlite` could not reach it through the
-rem plugin. It selects the binary and nothing else; the state path, the engine
-rem and the legacy import below still apply.
+rem An explicit binary wins over everything below.
 if not "%MADE_MCP_BIN%"=="" goto :explicitBinary
 set "BINARY=%PLUGIN_ROOT%\bin\made-mcp.exe"
 goto :bundledBinary
@@ -52,7 +47,7 @@ rem when it parses the block, so a variable set inside one reads back as its
 rem *previous* value on the next line — which left this launcher pointing at
 rem `\ceremonies.redb` at the drive root. Labels keep every read after its
 rem write without depending on delayed expansion.
-if not "%MADE_MCP_REDB_PATH%"=="" goto :havePath
+if not "%MADE_MCP_STORE_PATH%"=="" goto :havePath
 
 rem The embedded backend refuses to start without a state file: where
 rem ceremonies survive a restart is an operator decision. A plugin has no
@@ -67,22 +62,16 @@ set "USER_STATE_ROOT=%USERPROFILE%\.local\state"
 :haveStateRoot
 set "MADE_STATE_ROOT=%USER_STATE_ROOT%\underpass-made"
 if not exist "%MADE_STATE_ROOT%" mkdir "%MADE_STATE_ROOT%"
-set "MADE_MCP_REDB_PATH=%MADE_STATE_ROOT%\ceremonies.redb"
+set "MADE_MCP_STORE_PATH=%MADE_STATE_ROOT%\ceremonies.sqlite3"
+if not exist "%MADE_MCP_STORE_PATH%" if exist "%MADE_STATE_ROOT%\ceremonies.redb" goto :legacyStore
+goto :havePath
 
-rem A store converted to the sqlite engine has a name of its own, and both
-rem agent hosts have to find it without the operator handing each one a path.
-rem Asking for sqlite picks that name; a converted store already sitting there
-rem is opened as is. Both present keeps the redb default — that ambiguity is
-rem the operator's to resolve, not something to guess behind their back.
-set "MADE_SQLITE_DEFAULT=%MADE_STATE_ROOT%\ceremonies.sqlite3"
-if /i "%MADE_MCP_ENGINE%"=="sqlite" set "MADE_MCP_REDB_PATH=%MADE_SQLITE_DEFAULT%"
-if exist "%MADE_SQLITE_DEFAULT%" if not exist "%MADE_MCP_REDB_PATH%" set "MADE_MCP_REDB_PATH=%MADE_SQLITE_DEFAULT%"
-
-rem First start after the rename imports the former default automatically.
-rem The legacy file remains read-only evidence; MADE writes a separate file.
-if exist "%MADE_MCP_REDB_PATH%" goto :havePath
-if not "%MADE_MCP_LEGACY_REDB_PATH%"=="" goto :havePath
-if exist "%USER_STATE_ROOT%\underpass-choreographer\ceremonies.redb" set "MADE_MCP_LEGACY_REDB_PATH=%USER_STATE_ROOT%\underpass-choreographer\ceremonies.redb"
+:legacyStore
+echo MADE plugin: legacy Redb store found at "%MADE_STATE_ROOT%\ceremonies.redb". 1>&2
+echo MADE plugin: convert it before upgrading with made-mcp v0.2.0: 1>&2
+echo MADE plugin:   made-mcp share-store "%MADE_STATE_ROOT%\ceremonies.redb" 1>&2
+echo MADE plugin: the original is kept as a backup; no new store was created. 1>&2
+exit /b 2
 
 :havePath
 

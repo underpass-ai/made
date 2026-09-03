@@ -1,7 +1,7 @@
 # MADE Embedded
 
 Status: implemented first slice. The embedded surface currently covers the
-ceremony engine, with process-local defaults and an opt-in durable Redb
+ceremony engine, with process-local defaults and a durable SQLite
 composition. Native embedded facades for the broader council and deliberation
 APIs are not claimed yet.
 
@@ -67,21 +67,20 @@ single-process workflows, tests and hosts that begin with ephemeral state.
 They are not a durability claim: a host that must resume after process loss
 injects persistent implementations of the same repositories and context port.
 
-## Durable Redb composition
+## Durable SQLite composition
 
-With the `redb` feature enabled,
-`EmbeddedMade::open_redb(path)` supplies a
-`RedbCeremonyStore` to the ceremony-store and definition-publication ports.
+`EmbeddedMade::open(path)` supplies a
+`SqliteCeremonyStore` to the ceremony-store and definition-publication ports.
 That composition persists ceremony snapshots, unit-of-work state, the audit
 journal, outbox rows and published definitions across process restarts. Its
 crash/reopen behavior is exercised by
-`crates/made-embedded/tests/redb_engine_api.rs`.
+`crates/made-embedded/tests/sqlite_store_api.rs`.
 
 The constructor does not silently make every port durable. Mounted definition
 repositories and ceremony transcripts still use their default in-memory
 adapters unless the host injects replacements. Step execution and evidence
 collection also keep their default no-op adapters unless the host supplies real
-implementations. Redb persistence therefore proves durable ceremony state; it
+implementations. SQLite persistence therefore proves durable ceremony state; it
 does not prove that external work occurred.
 
 One consequence deserves emphasis: an instance started from a mounted
@@ -154,7 +153,7 @@ explicitly, preserving its existing deployment capabilities.
 
 - The embedded facade currently covers ceremonies, not every public gRPC RPC.
 - `EmbeddedMade::default()` is process-local and ephemeral.
-  `open_redb(path)` persists the ceremony store and definition publications,
+  `EmbeddedMade::open(path)` persists the ceremony store and definition publications,
   but mounted definitions and transcripts remain host-configured boundaries.
 - Callbacks execute on the caller's async runtime; MADE does not create
   or hide a runtime.

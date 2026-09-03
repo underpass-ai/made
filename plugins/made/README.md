@@ -37,7 +37,7 @@ tar -xzf made-plugin-<version>-<os>-<arch>.tar.gz
 
 On Windows hosts, register the MCP server with
 `scripts\run-embedded-mcp.cmd` instead of the `.sh` launcher; the state
-file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.redb`.
+file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`.
 
 To build the package from a checkout instead:
 
@@ -50,21 +50,12 @@ The version stamped into both manifests comes from the workspace
 
 ## Capability truth
 
-This plugin selects the embedded MCP backend, and the launcher points it at a
-redb state file — `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`
-unless `MADE_MCP_REDB_PATH` says otherwise — so ceremonies survive the MCP
-process. One path, one engine, and the default engine admits one process at a
-time: a second agent host started against the same store is refused rather
-than sharing it. [Sharing one ceremony store between two agent
-hosts](../../docs/operations/mcp-stdio.md#sharing-one-ceremony-store-between-two-agent-hosts)
-covers the `sqlite` engine that lifts that, and the conversion for a store
-that already exists. The launcher follows it: `MADE_MCP_ENGINE=sqlite` picks
-`ceremonies.sqlite3` beside the default, and a converted store already sitting
-there is opened without any path being set — so both hosts find the shared
-store on their own. A release bundle ships its own binary built without that
-engine, so point the launcher at the one you built with
-`MADE_MCP_BIN=$HOME/.cargo/bin/made-mcp`; it selects the executable only, and
-an install straight from the repository already uses `PATH`. Durable is not the same as authorized, and not the same as fully
+This plugin selects the embedded MCP backend, and the launcher points it at
+the canonical SQLite WAL store —
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`
+unless `MADE_MCP_STORE_PATH` says otherwise — so ceremonies survive the MCP
+process and multiple agent hosts can share one path. Durable is not the same
+as authorized, and not the same as fully
 recoverable: the bundled composition may use `NoopCeremonyStepHandler`, so a
 terminal step from that default proves ceremony protocol and state-machine
 behavior, not that an agent, tool, API, or human performed the requested work.
@@ -86,11 +77,9 @@ install straight from the repository, the launcher falls back to `made-mcp` on
 `PATH`, so `cargo install made-mcp` is enough. If neither is present it fails
 with an explicit message naming both places it looked.
 
-On a first start with no MADE state file, the launcher imports the former
-`underpass-choreographer/ceremonies.redb` default automatically when present.
-The source is read-only; recovery and digest migration happen only in the new
-MADE file. Set `MADE_MCP_LEGACY_REDB_PATH` explicitly for any other legacy
-location.
+The launcher never silently creates a fresh SQLite store beside the former
+Redb default. If it finds that legacy file, startup stops with the exact
+`made-mcp` v0.2.0 conversion command; the old file remains intact as a backup.
 
 Executable scope:
 
@@ -120,10 +109,11 @@ Executable scope:
   `made_close_ceremony_intervention` for participant-created live agenda
   items controlled by the requesting role.
 
-The bundled zero-infrastructure process keeps its repositories in memory.
-`made_list_ceremony_instances` can recover host-side conversation loss while
-that process remains alive. Surviving a process restart requires a host to wire
-durable instance, definition, and context repositories.
+The bundled zero-infrastructure process persists ceremony instances, published
+definitions, the audit journal and outbox in SQLite. Mounted definitions and
+transcripts remain in memory. `made_list_ceremony_instances` therefore recovers
+published-definition sessions after a process restart and marks ad-hoc sessions
+as unrehydratable instead of hiding their persisted snapshots.
 
 Start an unfamiliar session with `made_discover_capabilities`. Its
 `artifact_generators` array marks `made_generate_ceremony_report`, including

@@ -18,7 +18,7 @@ one you picked.
 | `grpc`, `runtime-grpc` | tonic clients for the engine and the Underpass Runtime executor |
 | `nats` | NATS messaging: trigger subjects in, outcome events out |
 | `postgres` | SQLx-backed repositories |
-| `redb` | Durable local ceremony store, journal, outbox and publications |
+| `sqlite` | Canonical durable SQLite WAL ceremony store, journal, outbox and publications |
 | `kmp` | Context bundles from a Kernel Memory Plane producer |
 | `otel` | W3C trace context extraction on inbound gRPC |
 | `agent-vllm`, `agent-anthropic`, `agent-openai` | LLM agent adapters, one per vendor |

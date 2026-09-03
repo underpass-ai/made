@@ -1,6 +1,6 @@
 # ADR-003: The engine owns the audit contract; the host owns durability
 
-Status: Accepted
+Status: Accepted; embedded storage choice superseded by ADR-011
 
 Implementation status last verified: 2026-08-14
 

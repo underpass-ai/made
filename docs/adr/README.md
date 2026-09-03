@@ -21,9 +21,11 @@ much as the decision itself.
   reports project persisted state and journal records without inferred prose
 - [ADR-007](007-mcp-self-description-uses-the-executable-catalog.md): MCP
   discovery and help are projections constrained by the executable catalog
-- [ADR-008](008-legacy-redb-migration-is-copy-on-write.md): legacy redb state
-  is imported read-only into a new, receipted MADE database
-- [ADR-009](009-a-second-storage-engine-behind-one-seam.md): two storage
-  engines sit behind one seam, so two agent hosts can share one ceremony store
+- [ADR-008](008-legacy-redb-migration-is-copy-on-write.md), superseded by
+  ADR-011: legacy redb state was imported read-only into a new, receipted MADE database
+- [ADR-009](009-a-second-storage-engine-behind-one-seam.md), superseded by
+  ADR-011: two storage engines sat behind one seam
 - [ADR-010](010-bounded-step-repetition-is-not-retry.md): successful semantic
   repetition is bounded, durable and distinct from technical retry
+- [ADR-011](011-sqlite-is-the-only-embedded-ceremony-store.md): SQLite is the
+  sole canonical embedded ceremony store; Redb is a release-bound migration input

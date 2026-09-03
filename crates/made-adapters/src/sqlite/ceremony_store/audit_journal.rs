@@ -5,9 +5,9 @@ use made_core::ports::AuditJournalPort;
 use made_core::value_objects::CeremonyId;
 
 use crate::engine::{Key, ReadTx, Table};
-use crate::redb::keys::{scope_range, scoped};
+use crate::sqlite::keys::{scope_range, scoped};
 
-use super::{decode, encode, RedbCeremonyStore};
+use super::{decode, encode, SqliteCeremonyStore};
 
 pub(super) fn journal_of(
     tx: &dyn ReadTx,
@@ -21,7 +21,7 @@ pub(super) fn journal_of(
 }
 
 #[async_trait]
-impl AuditJournalPort for RedbCeremonyStore {
+impl AuditJournalPort for SqliteCeremonyStore {
     async fn append(&self, fact: AuditFact) -> Result<AuditRecord, DomainError> {
         self.blocking("append", move |engine| {
             let ceremony_id = fact.ceremony_id.clone();

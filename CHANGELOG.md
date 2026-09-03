@@ -14,7 +14,19 @@ operator command.
 
 ## Unreleased
 
-_Nothing yet._
+### Changed
+
+- SQLite is now the sole canonical embedded ceremony store and ships in the
+  normal build. `EmbeddedMade::open`, embedded MCP and the deployable ceremony
+  path all open SQLite directly; the runtime engine selector is gone. (#32)
+
+### Removed
+
+- Removed the Redb dependency, feature, adapter, constructors, environment
+  variables and conversion commands from current binaries. Existing Redb
+  stores are refused without modification and must be converted once with the
+  verified `made-mcp v0.2.0 share-store` workflow before upgrading. (ADR-011,
+  #32)
 
 ## 0.2.0 - 2026-09-02
 

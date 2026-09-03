@@ -54,17 +54,11 @@ testcontainers = { version = "0.28", optional = true }
 # A cluster deployment uses the container image, not cargo install.
 default = ["embedded", "grpc"]
 
-# The opt-in SQLite engine, so two agent hosts can share one ceremony store.
-# Forwarded through made-embedded only: made-adapters is reachable here, but
-# naming a crate that is optional for a consumer is how a feature resolves
-# inside a workspace and fails for anyone installing from a registry.
-sqlite = ["embedded", "made-embedded/sqlite"]
 embedded = [
     "dep:made-adapters",
     "dep:made-app",
     "dep:made-core",
     "dep:made-embedded",
-    "made-embedded/redb",
     "dep:serde",
     "dep:serde_yaml",
     "dep:time",

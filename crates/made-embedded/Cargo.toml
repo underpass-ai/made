@@ -9,13 +9,6 @@ repository.workspace = true
 readme = "README.md"
 description = "In-process composition and host adapters for MADE."
 
-[features]
-default = []
-redb = ["made-adapters/redb"]
-
-# The opt-in second engine, so two agent hosts can share one ceremony store.
-sqlite = ["redb", "made-adapters/sqlite"]
-
 [lints]
 workspace = true
 
@@ -23,7 +16,7 @@ workspace = true
 made-api = { workspace = true }
 made-core = { workspace = true }
 made-app = { workspace = true }
-made-adapters = { workspace = true, default-features = false }
+made-adapters = { workspace = true, default-features = false, features = ["sqlite"] }
 async-trait = { workspace = true }
 time = { workspace = true }
 

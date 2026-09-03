@@ -1,6 +1,6 @@
 # ADR-008: Legacy redb migration is copy-on-write
 
-Status: Accepted
+Status: Superseded by ADR-011
 
 Implementation status last verified: 2026-08-15
 

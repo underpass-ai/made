@@ -5,12 +5,12 @@ use made_core::ports::CeremonyInstanceRepositoryPort;
 use made_core::value_objects::{CeremonyId, CeremonyRevision};
 
 use crate::engine::{Key, Table};
-use crate::redb::StoredCeremony;
+use crate::sqlite::StoredCeremony;
 
-use super::{decode, encode, RedbCeremonyStore};
+use super::{decode, encode, SqliteCeremonyStore};
 
 #[async_trait]
-impl CeremonyInstanceRepositoryPort for RedbCeremonyStore {
+impl CeremonyInstanceRepositoryPort for SqliteCeremonyStore {
     /// Store an instance outside a unit of work.
     ///
     /// This is the path every ceremony use case takes today, and it
@@ -74,7 +74,7 @@ impl CeremonyInstanceRepositoryPort for RedbCeremonyStore {
     }
 }
 
-impl RedbCeremonyStore {
+impl SqliteCeremonyStore {
     async fn stored_instance(
         &self,
         id: &CeremonyId,
