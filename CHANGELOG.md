@@ -26,6 +26,11 @@ operator command.
 - Release publication now validates marketplace parity, waits for the exact
   plugin archive and standalone-binary asset set, and only then fast-forwards
   the stable `marketplace` branch. (#36)
+- Audit journal records are now schema version 2 and carry the ceremony
+  event — its full payload and its own schema version — inside the sealed
+  envelope; the record digest covers the payload, so `AuditChain::verify`
+  detects an edited event. Version-1 records from earlier stores still read
+  and verify unchanged.
 
 ## 0.3.0 - 2026-09-03
 
