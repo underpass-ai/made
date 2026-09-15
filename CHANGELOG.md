@@ -20,12 +20,25 @@ operator command.
   `made-setup` skill and `/made:setup` command, and checksummed standalone MCP
   executables. A clean marketplace install downloads its release-matched
   engine without requiring Cargo. (#36)
+- The domain vocabulary gate (`scripts/ci/domain-vocabulary-boundary.sh`)
+  now also refuses other products' vocabulary (`kmp`, `kernel`,
+  `rehydration`) in `made-core`, `made-app`, `made-api`, `made-mcp`,
+  `made-embedded` and `made-adapters` sources, per ADR-013.
 
 ### Changed
 
 - Release publication now validates marketplace parity, waits for the exact
   plugin archive and standalone-binary asset set, and only then fast-forwards
   the stable `marketplace` branch. (#36)
+
+### Removed
+
+- The in-tree KMP memory adapter: the `made-adapters` feature `kmp`, its
+  `kmp` module, the CI matrix arm that built it and its live-kernel test.
+  Nothing wired it; both composition roots use `ForgetfulMemory`. Memory
+  backends other than the in-tree ones are out-of-tree adapters gated by
+  the memory conformance suite. The last in-tree revision is `c7dad9f`
+  at `crates/made-adapters/src/kmp/` for anyone who needs it.
 
 ## 0.3.0 - 2026-09-03
 

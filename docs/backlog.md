@@ -993,7 +993,7 @@ Current state:
   sync.
 - 7 env vars (`MADE_MCP_BACKEND`, `MADE_MCP_GRPC_ENDPOINT`, and
   5 `MADE_MCP_GRPC_TLS_*`) with the same auto-detection pattern as
-  the sibling rehydration-mcp.
+  the sibling kmp-mcp (then named rehydration-mcp).
 - 21 unit tests + workspace clippy clean.
 
 Distribution UX slice (done 2026-05-14; registry-readiness extended
