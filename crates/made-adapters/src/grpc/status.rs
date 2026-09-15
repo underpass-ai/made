@@ -24,9 +24,12 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         | DomainError::OutOfRange { .. }
         | DomainError::MustBeNonZero { .. }
         | DomainError::EmptyCollection { .. } => Status::invalid_argument(msg),
+        // A stored event this engine cannot read is not the client's
+        // doing and retrying changes nothing until a reader exists.
         DomainError::InvalidTransition { .. }
         | DomainError::InvariantViolated { .. }
-        | DomainError::NoValidProposal { .. } => Status::failed_precondition(msg),
+        | DomainError::NoValidProposal { .. }
+        | DomainError::UnreadableCeremonyEvent { .. } => Status::failed_precondition(msg),
         // Aborted rather than failed_precondition: the canonical
         // meaning is "you raced somebody and lost, read again and
         // retry", where a failed precondition tells a client that
@@ -79,6 +82,15 @@ mod tests {
         assert_eq!(
             domain_error_to_status(DomainError::NoValidProposal {
                 contract_id: "decision-contract".to_owned(),
+            })
+            .code(),
+            Code::FailedPrecondition
+        );
+        assert_eq!(
+            domain_error_to_status(DomainError::UnreadableCeremonyEvent {
+                event_type: "step_completed",
+                version: 2,
+                reason: "no reader exists for this schema version",
             })
             .code(),
             Code::FailedPrecondition
