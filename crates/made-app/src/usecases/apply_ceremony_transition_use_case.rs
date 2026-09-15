@@ -84,6 +84,7 @@ impl ApplyCeremonyTransitionUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use std::sync::Arc;
 
     use made_core::error::DomainError;
@@ -245,7 +246,15 @@ mod tests {
             .unwrap();
 
         let facts = unit_of_work.facts().await;
-        let sealed = facts.iter().map(|fact| fact.event_type).collect::<Vec<_>>();
+        let sealed = facts
+            .iter()
+            .map(|fact| fact.event.event_type())
+            .collect::<Vec<_>>();
+        let CeremonyEvent::TransitionApplied(moved) = &facts[0].event else {
+            panic!("a move seals the transition: {:?}", facts[0].event);
+        };
+        assert_eq!(moved.transition.trigger(), &trigger());
+        assert_eq!(moved.transition.applied_by(), Some(&role_id()));
         assert_eq!(
             sealed,
             vec![

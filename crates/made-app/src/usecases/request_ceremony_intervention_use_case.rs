@@ -93,6 +93,7 @@ impl RequestCeremonyInterventionUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyInterventionContent,
@@ -187,7 +188,18 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one request, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::InterventionRequested);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::InterventionRequested
+        );
+        let CeremonyEvent::InterventionRequested(requested) = &facts[0].event else {
+            panic!("a request seals the item it opened: {:?}", facts[0].event);
+        };
+        assert_eq!(requested.intervention.requested_by(), &role_id());
+        assert_eq!(
+            requested.intervention.request().message(),
+            "What does the table think?"
+        );
         // Declared by the caller and carried through. A guard requiring
         // a human says one was required; this says an agent asked.
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Agent);

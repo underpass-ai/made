@@ -13,14 +13,16 @@
 //! each time would turn one approval into two entries in a chain that
 //! is supposed to be the record of what happened.
 
-use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyInstance};
+use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId, CeremonyInterventionId,
-    EventId, GuardName, RoleId, Specialty, StepAttempt, StepId, StepIteration, StepResult,
+    AuditActor, AuditActorKind, CeremonyEvidenceSourceId, CeremonyInterventionId, EventId,
+    GuardName, RoleId, Specialty, StepAttempt, StepId, StepIteration, StepResult,
 };
 use std::collections::BTreeMap;
 use time::OffsetDateTime;
+
+use super::session_events;
 
 /// The fact that a human guard was let through.
 pub(crate) fn guard_approved(
@@ -32,7 +34,7 @@ pub(crate) fn guard_approved(
 ) -> Result<AuditFact, DomainError> {
     fact(
         instance,
-        AuditEventType::HumanApprovalRecorded,
+        session_events::guard_approved(instance, guard_name)?,
         &format!("guard:{guard_name}"),
         actor(approved_by, approved_by_kind)?,
         occurred_at,
@@ -49,7 +51,7 @@ pub(crate) fn guard_deferred(
 ) -> Result<AuditFact, DomainError> {
     fact(
         instance,
-        AuditEventType::HumanDeferralRecorded,
+        session_events::guard_deferred(instance, guard_name)?,
         &format!("guard:{guard_name}"),
         actor(deferred_by, deferred_by_kind)?,
         occurred_at,
@@ -65,9 +67,10 @@ fn actor(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor, DomainErr
     AuditActor::new(role_id.as_str(), kind, Some(role_id.clone()))
 }
 
+/// The envelope around an event: its derived id, who did it and when.
 fn fact(
     instance: &CeremonyInstance,
-    event_type: AuditEventType,
+    event: CeremonyEvent,
     about: &str,
     actor: AuditActor,
     occurred_at: OffsetDateTime,
@@ -76,9 +79,9 @@ fn fact(
         event_id: EventId::new(format!(
             "{}:{}:{about}",
             instance.id().as_str(),
-            event_type.as_str()
+            event.event_type().as_str()
         ))?,
-        event_type,
+        event,
         ceremony_id: instance.id().clone(),
         definition_name: instance.definition_name().clone(),
         definition_version: instance.definition_version().clone(),
@@ -116,7 +119,7 @@ pub(crate) fn transition_applied(
     let ordinal = instance.transitions().len();
     let mut facts = vec![fact(
         instance,
-        AuditEventType::TransitionApplied,
+        session_events::transition_applied(instance)?,
         &format!("transition:{ordinal}"),
         actor.clone(),
         occurred_at,
@@ -137,7 +140,7 @@ pub(crate) fn transition_applied(
     if instance.is_terminal(definition) {
         facts.push(fact(
             instance,
-            AuditEventType::CeremonyCompleted,
+            session_events::ceremony_completed(instance)?,
             &format!("transition:{ordinal}"),
             actor,
             occurred_at,
@@ -156,7 +159,7 @@ pub(crate) fn intervention_requested(
 ) -> Result<AuditFact, DomainError> {
     fact(
         instance,
-        AuditEventType::InterventionRequested,
+        session_events::intervention_requested(instance, intervention_id)?,
         &format!("intervention:{intervention_id}"),
         actor(requested_by, requested_by_kind)?,
         occurred_at,
@@ -176,7 +179,7 @@ pub(crate) fn intervention_responded(
     // those are separate facts.
     fact(
         instance,
-        AuditEventType::InterventionResponded,
+        session_events::intervention_responded(instance, intervention_id, responded_by)?,
         &format!("intervention:{intervention_id}:{responded_by}"),
         actor(responded_by, responded_by_kind)?,
         occurred_at,
@@ -196,7 +199,7 @@ pub(crate) fn intervention_closed(
     // the same id — or something the session refuses outright.
     fact(
         instance,
-        AuditEventType::InterventionClosed,
+        session_events::intervention_closed(instance, intervention_id, closed_by)?,
         &format!("intervention:{intervention_id}"),
         actor(closed_by, closed_by_kind)?,
         occurred_at,
@@ -225,7 +228,13 @@ pub(crate) fn evidence_collected(
         // things to have happened.
         fact(
             instance,
-            AuditEventType::EvidenceCollected,
+            session_events::evidence_collected(
+                instance,
+                intervention_id,
+                source_id,
+                collected_by,
+                occurred_at,
+            )?,
             &format!("intervention:{intervention_id}:source:{source_id}"),
             actor(collected_by, collected_by_kind)?,
             occurred_at,
@@ -259,7 +268,7 @@ pub(crate) fn reason_asserted(
     let ordinal = instance.reasons().len();
     fact(
         instance,
-        AuditEventType::ReasonAsserted,
+        session_events::reason_asserted(instance)?,
         &format!("reason:{ordinal}"),
         actor(asserted_by, asserted_by_kind)?,
         occurred_at,
@@ -286,7 +295,14 @@ pub(crate) fn step_started(
 ) -> Result<AuditFact, DomainError> {
     step_fact(
         instance,
-        AuditEventType::StepStarted,
+        session_events::step_started(
+            instance,
+            step_id,
+            iteration,
+            attempt,
+            started_by,
+            occurred_at,
+        )?,
         step_id,
         iteration,
         attempt,
@@ -312,14 +328,17 @@ pub(crate) fn step_finished(
     finished_by_kind: AuditActorKind,
     occurred_at: OffsetDateTime,
 ) -> Result<AuditFact, DomainError> {
-    let event_type = if result.is_success() {
-        AuditEventType::StepCompleted
-    } else {
-        AuditEventType::StepFailed
-    };
     step_fact(
         instance,
-        event_type,
+        session_events::step_finished(
+            instance,
+            step_id,
+            iteration,
+            attempt,
+            result,
+            finished_by,
+            occurred_at,
+        ),
         step_id,
         iteration,
         attempt,
@@ -337,7 +356,7 @@ pub(crate) fn step_finished(
 /// the repeat policy exists to preserve.
 fn step_fact(
     instance: &CeremonyInstance,
-    event_type: AuditEventType,
+    event: CeremonyEvent,
     step_id: &StepId,
     iteration: StepIteration,
     attempt: StepAttempt,
@@ -347,7 +366,7 @@ fn step_fact(
 ) -> Result<AuditFact, DomainError> {
     fact(
         instance,
-        event_type,
+        event,
         &format!(
             "step:{step_id}:iteration:{}:attempt:{}",
             iteration.get(),
@@ -377,7 +396,7 @@ pub(crate) fn ceremony_started(
 ) -> Result<AuditFact, DomainError> {
     fact(
         instance,
-        AuditEventType::CeremonyInstanceStarted,
+        session_events::ceremony_started(instance),
         "session",
         AuditActor::new(started_by, started_by_kind, None)?,
         occurred_at,
@@ -416,7 +435,7 @@ pub(crate) fn participants_bound(
         .join(",");
     fact(
         instance,
-        AuditEventType::ParticipantsBound,
+        session_events::participants_bound(instance, seating)?,
         &format!("seating:{seated}"),
         AuditActor::new(seated_by, seated_by_kind, None)?,
         occurred_at,

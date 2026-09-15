@@ -112,6 +112,7 @@ impl CollectCeremonyEvidenceUseCase {
 #[cfg(test)]
 mod tests {
     use async_trait::async_trait;
+    use made_core::entities::CeremonyEvent;
     use made_core::entities::{
         CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
     };
@@ -292,7 +293,24 @@ mod tests {
             .unwrap();
 
         let facts = unit_of_work.facts().await;
-        let sealed = facts.iter().map(|fact| fact.event_type).collect::<Vec<_>>();
+        let sealed = facts
+            .iter()
+            .map(|fact| fact.event.event_type())
+            .collect::<Vec<_>>();
+        let CeremonyEvent::EvidenceCollected(collected) = &facts[0].event else {
+            panic!("collecting seals the pack it fetched: {:?}", facts[0].event);
+        };
+        assert_eq!(
+            collected.source_id,
+            CeremonyEvidenceSourceId::new("observability").unwrap()
+        );
+        let CeremonyEvent::InterventionResponded(responded) = &facts[1].event else {
+            panic!(
+                "collecting seals the answer it produced: {:?}",
+                facts[1].event
+            );
+        };
+        assert!(responded.response.evidence_pack().is_some());
         assert_eq!(
             sealed,
             vec![
