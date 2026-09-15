@@ -1,7 +1,7 @@
 //! An in-process memory backend.
 //!
 //! Real memory outlives the process that wrote it; this does not. It
-//! exists so the engine has something to run against when no kernel is
+//! exists so the engine has something to run against when no durable memory is
 //! configured, and so the conformance suite has a reference the rest
 //! can be judged against.
 

@@ -111,7 +111,7 @@ mod tests {
             Some(
                 ContextSummary::new(
                     "Complex state assembled from external systems",
-                    attrs("source", json!("kernel")),
+                    attrs("source", json!("external")),
                 )
                 .unwrap(),
             ),

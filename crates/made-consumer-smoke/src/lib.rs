@@ -6,7 +6,7 @@
 //! and subscriber) and report a typed [`ChainOutcome`] so callers can
 //! assert against structured fields rather than parse strings.
 //!
-//! - [`chain1`] — trigger event → (kernel bundle, simulated) →
+//! - [`chain1`] — trigger event → (context bundle, simulated) →
 //!   `RunCouncilDecision` reevaluation → validated remedy proposal
 //!   OR escalation decision (in `Warn` mode, an unsatisfied contract
 //!   still surfaces a top-ranked candidate with `passed = false` —

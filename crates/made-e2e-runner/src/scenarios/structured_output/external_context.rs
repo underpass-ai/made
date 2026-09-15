@@ -11,7 +11,7 @@ use tracing::{info, warn};
 /// asserts that the outbound `made.deliberation.completed` envelope
 /// carries the bundle id back. Closes the round-trip gap that
 /// scenario 4 leaves open (scenario 4 covers causal ids; this one
-/// covers the bundle pointer the kernel-shaped consumer would feed
+/// covers the bundle pointer a context-producing consumer would feed
 /// in).
 pub(crate) async fn verify_external_context_bundle_round_trips(
     client: &mut MadeServiceClient<Channel>,

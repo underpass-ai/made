@@ -1,11 +1,11 @@
 //! What a working session remembers, and what it may ask of memory.
 //!
-//! These types are shaped by what a memory kernel actually offers —
+//! These types are shaped by what a memory backend actually offers —
 //! a scope the memory is about, axes within it, entries carrying
 //! provenance, evidence backing them, and movement through time — but
-//! they name none of it in a kernel's terms. An engine that spoke a
-//! particular kernel's vocabulary would have to change when that
-//! kernel did, and would be unusable with anything else.
+//! they name none of it in any backend's terms. An engine that spoke a
+//! particular backend's vocabulary would have to change when that
+//! backend did, and would be unusable with anything else.
 //!
 //! Entries are the *what* and relations are the *why*. That split is
 //! the whole design: an entry states something, and only an edge says

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 /// How one remembered thing explains another.
 ///
 /// Named in this engine's terms and not a memory backend's. What a
-/// particular kernel calls these, and how it classes them, is a
+/// particular backend calls these, and how it classes them, is a
 /// mapping an adapter owns — an engine that spoke one backend's
 /// taxonomy would have to change when that backend did.
 ///
@@ -29,7 +29,6 @@ pub enum MemoryRelationKind {
     /// coincidence becomes a precedent.
     /// That decision is what permitted this action.
     ///
-    /// The kernel's `authorizes`, which its parser learned in #146.
     /// Causal rather than motivational: a decision that permits an
     /// action is part of why the action was possible, not part of why
     /// anybody wanted it.
@@ -103,7 +102,7 @@ impl MemoryRelationKind {
 
     /// Whether this says **how** something was done rather than why.
     ///
-    /// Worth telling apart: a memory kernel measuring how explanatory
+    /// Worth telling apart: a memory backend measuring how explanatory
     /// a memory is counts causes, motives and evidence, and does not
     /// count method. A session with method and no cause scores zero on
     /// that measure and is not thereby worthless — it is repeatable

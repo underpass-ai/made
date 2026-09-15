@@ -1,17 +1,17 @@
-//! Deterministic stub of the kernel rehydration bundle.
+//! Deterministic stub of an external context bundle.
 //!
 //! **This is the seam where a real consumer would fetch a bundle
 //! from Underpass KMP** (or any other context source) before calling
 //! `RunCouncilDecision`. The smoke harness keeps that fetch out of
-//! its dependency surface — adding a kernel client here would force
-//! the binary to ship a kernel adapter, which couples Epic 12 to
+//! its dependency surface — adding a KMP client here would force
+//! the binary to ship a KMP adapter, which couples Epic 12 to
 //! Epic 2's runtime. Instead, the deterministic literal below stands
 //! in for that fetch.
 //!
 //! A real consumer integration would replace this with:
 //!
 //! ```text
-//!   let bundle = kernel.rehydrate(...).await?;
+//!   let bundle = context_source.fetch_bundle(...).await?;
 //!   harness.grpc.run_council_decision(req.with_external_context(bundle)).await
 //! ```
 //!
@@ -31,7 +31,7 @@ pub fn deterministic_bundle() -> pb::ExternalContextBundle {
         bundle_id: BUNDLE_ID.to_owned(),
         schema_version: SCHEMA_VERSION.to_owned(),
         summary: Some(pb::ContextSummary {
-            text: "Deterministic stand-in for a real kernel rehydration bundle. \
+            text: "Deterministic stand-in for a real external context bundle. \
                 Used by Epic 12's consumer-smoke harness."
                 .to_owned(),
             attributes: None,
@@ -41,15 +41,15 @@ pub fn deterministic_bundle() -> pb::ExternalContextBundle {
             kind: "note".to_owned(),
             title: "Stub item".to_owned(),
             narrative: "This bundle is synthetic. The real consumer would replace it \
-                with a kernel rehydration payload."
+                with a bundle fetched from its context source."
                 .to_owned(),
             attributes: None,
-            reference_ids: vec!["kernel-seam".to_owned()],
+            reference_ids: vec!["context-seam".to_owned()],
         }],
         references: vec![pb::ContextReference {
-            reference_id: "kernel-seam".to_owned(),
+            reference_id: "context-seam".to_owned(),
             uri: "stub://consumer-smoke/seam".to_owned(),
-            title: "kernel rehydration seam".to_owned(),
+            title: "context bundle seam".to_owned(),
             media_type: "text/plain".to_owned(),
             attributes: None,
         }],
@@ -80,11 +80,11 @@ mod tests {
     }
 
     #[test]
-    fn references_carry_a_kernel_seam_label() {
+    fn references_carry_a_context_seam_label() {
         let bundle = deterministic_bundle();
         assert!(bundle
             .references
             .iter()
-            .any(|r| r.reference_id == "kernel-seam"));
+            .any(|r| r.reference_id == "context-seam"));
     }
 }

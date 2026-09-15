@@ -5,7 +5,7 @@
 //!   1. Pool dial + migration runner.
 //!   2. `save` as upsert (insert + overwrite paths).
 //!   3. `get` returns a structurally equal aggregate after JSONB
-//!      serialisation and rehydration.
+//!      serialisation and deserialisation.
 //!   4. `exists` reflects presence / absence truthfully.
 //!   5. `get` for a missing task id surfaces `DomainError::NotFound`.
 //!

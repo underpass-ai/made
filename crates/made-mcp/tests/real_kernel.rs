@@ -1,4 +1,4 @@
-//! Real-kernel container integration test for the MCP adapter.
+//! Real-server container integration test for the MCP adapter.
 //!
 //! Spins up a published MADE image via `testcontainers`,
 //! spawns the locally-built `made-mcp` binary in gRPC mode pointing

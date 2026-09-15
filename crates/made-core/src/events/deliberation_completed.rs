@@ -17,7 +17,7 @@ pub struct DeliberationCompletedEvent {
     duration: DurationMs,
     /// `bundle_id` of the [`ExternalContextBundle`] the task carried,
     /// when present. Lets a downstream consumer correlate this
-    /// completion back to the context payload it (or the kernel)
+    /// completion back to the context payload it (or its context source)
     /// fed in. Omitted from the serialized envelope when `None`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     external_context_bundle_id: Option<String>,
