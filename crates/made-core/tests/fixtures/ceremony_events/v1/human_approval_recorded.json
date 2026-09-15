@@ -1,0 +1,9 @@
+{
+  "type": "human_approval_recorded",
+  "approval": {
+    "guard_name": "release",
+    "approved_by": "reviewer",
+    "approved_by_kind": "human",
+    "approved_at": "2026-07-29T09:05:00Z"
+  }
+}

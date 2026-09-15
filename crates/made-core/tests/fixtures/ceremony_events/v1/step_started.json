@@ -1,0 +1,14 @@
+{
+  "type": "step_started",
+  "step_id": "draft",
+  "iteration": 1,
+  "attempt": 2,
+  "lease": {
+    "owner_id": "host-1",
+    "idempotency_key": "ceremony-1:draft:1",
+    "acquired_at": "2026-07-29T09:00:00Z",
+    "expires_at": "2026-07-29T09:05:00Z"
+  },
+  "started_by": "author",
+  "started_at": "2026-07-29T09:00:00Z"
+}

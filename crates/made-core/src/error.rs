@@ -81,4 +81,17 @@ pub enum DomainError {
     /// No candidate satisfied the structured output contract.
     #[error("no valid proposal satisfied output contract `{contract_id}`")]
     NoValidProposal { contract_id: String },
+
+    /// A sealed ceremony event could not be read back as the type and
+    /// payload schema version its record names.
+    ///
+    /// Names both so an operator can tell which record and which reader
+    /// disagree: a version no reader exists for, a payload that is not
+    /// an event, or a payload tagged as a different type.
+    #[error("ceremony event `{event_type}` at schema version {version} cannot be read: {reason}")]
+    UnreadableCeremonyEvent {
+        event_type: &'static str,
+        version: u32,
+        reason: &'static str,
+    },
 }

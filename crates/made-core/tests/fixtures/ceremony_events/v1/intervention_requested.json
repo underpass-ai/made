@@ -1,0 +1,30 @@
+{
+  "type": "intervention_requested",
+  "intervention": {
+    "id": "item-1",
+    "kind": "opinion",
+    "requested_by": "author",
+    "target": {
+      "kind": "roles",
+      "role_ids": [
+        "reviewer"
+      ]
+    },
+    "request": {
+      "message": "Is the scope right?",
+      "details": {
+        "topic": "scope"
+      }
+    },
+    "provenance": {
+      "source_intervention_id": "item-0",
+      "source_response_role_id": "reviewer",
+      "selected_role_id": "reviewer"
+    },
+    "responses": [],
+    "status": "open",
+    "created_at": "2026-07-29T09:00:00Z",
+    "updated_at": "2026-07-29T09:00:00Z",
+    "closed_at": null
+  }
+}
