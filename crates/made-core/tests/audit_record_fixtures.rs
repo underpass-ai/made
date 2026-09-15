@@ -1,0 +1,153 @@
+//! Stored shapes pinned as fixtures.
+//!
+//! Two claims that must fall if broken: a record sealed under schema
+//! version 1 — by the code that shipped before events travelled inside
+//! records — still reads and verifies; and every event payload at
+//! schema version 1 reads through the reader and re-serializes to the
+//! bytes it was pinned with, so a payload cannot change shape without
+//! bumping its version.
+
+use made_core::entities::{AuditChain, AuditRecord, CeremonyEventReader};
+use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion};
+
+/// Two records sealed by the schema-version-1 code, captured verbatim.
+const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
+
+const EVERY_EVENT_TYPE: [AuditEventType; 17] = [
+    AuditEventType::CeremonyDefinitionValidated,
+    AuditEventType::CeremonyDefinitionPublished,
+    AuditEventType::CeremonyInstanceStarted,
+    AuditEventType::StepStarted,
+    AuditEventType::StepCompleted,
+    AuditEventType::StepFailed,
+    AuditEventType::TransitionApplied,
+    AuditEventType::InterventionRequested,
+    AuditEventType::InterventionResponded,
+    AuditEventType::InterventionClosed,
+    AuditEventType::EvidenceCollected,
+    AuditEventType::ParticipantsBound,
+    AuditEventType::ReasonAsserted,
+    AuditEventType::HumanApprovalRecorded,
+    AuditEventType::HumanDeferralRecorded,
+    AuditEventType::CeremonyCompleted,
+    AuditEventType::CeremonyFailed,
+];
+
+/// The pinned version-1 payload of each event type a stream can hold.
+///
+/// Exhaustive on purpose: a new catalogue entry does not compile until
+/// it either gets a golden or is named here as having no payload.
+fn golden(event_type: AuditEventType) -> Option<&'static str> {
+    match event_type {
+        AuditEventType::CeremonyDefinitionValidated
+        | AuditEventType::CeremonyDefinitionPublished
+        | AuditEventType::CeremonyFailed => None,
+        AuditEventType::CeremonyInstanceStarted => Some(include_str!(
+            "fixtures/ceremony_events/v1/ceremony_instance_started.json"
+        )),
+        AuditEventType::StepStarted => Some(include_str!(
+            "fixtures/ceremony_events/v1/step_started.json"
+        )),
+        AuditEventType::StepCompleted => Some(include_str!(
+            "fixtures/ceremony_events/v1/step_completed.json"
+        )),
+        AuditEventType::StepFailed => {
+            Some(include_str!("fixtures/ceremony_events/v1/step_failed.json"))
+        }
+        AuditEventType::TransitionApplied => Some(include_str!(
+            "fixtures/ceremony_events/v1/transition_applied.json"
+        )),
+        AuditEventType::InterventionRequested => Some(include_str!(
+            "fixtures/ceremony_events/v1/intervention_requested.json"
+        )),
+        AuditEventType::InterventionResponded => Some(include_str!(
+            "fixtures/ceremony_events/v1/intervention_responded.json"
+        )),
+        AuditEventType::InterventionClosed => Some(include_str!(
+            "fixtures/ceremony_events/v1/intervention_closed.json"
+        )),
+        AuditEventType::EvidenceCollected => Some(include_str!(
+            "fixtures/ceremony_events/v1/evidence_collected.json"
+        )),
+        AuditEventType::ParticipantsBound => Some(include_str!(
+            "fixtures/ceremony_events/v1/participants_bound.json"
+        )),
+        AuditEventType::ReasonAsserted => Some(include_str!(
+            "fixtures/ceremony_events/v1/reason_asserted.json"
+        )),
+        AuditEventType::HumanApprovalRecorded => Some(include_str!(
+            "fixtures/ceremony_events/v1/human_approval_recorded.json"
+        )),
+        AuditEventType::HumanDeferralRecorded => Some(include_str!(
+            "fixtures/ceremony_events/v1/human_deferral_recorded.json"
+        )),
+        AuditEventType::CeremonyCompleted => Some(include_str!(
+            "fixtures/ceremony_events/v1/ceremony_completed.json"
+        )),
+    }
+}
+
+#[test]
+fn version_one_records_still_read_and_verify() {
+    let records: Vec<AuditRecord> = serde_json::from_str(AUDIT_RECORDS_V1).unwrap();
+
+    assert_eq!(records.len(), 2);
+    for record in &records {
+        assert_eq!(record.schema_version(), 1);
+        assert!(record.event().is_none());
+        assert!(record.event_schema_version().is_none());
+        assert!(record.digest_is_intact().unwrap());
+    }
+    assert_eq!(
+        records[0].event_type(),
+        AuditEventType::CeremonyInstanceStarted
+    );
+    assert_eq!(records[1].event_type(), AuditEventType::StepCompleted);
+    assert_eq!(
+        records[1].correlation_id().map(EventId::as_str),
+        Some("corr-1")
+    );
+    assert_eq!(
+        records[1].trace_id(),
+        Some("4bf92f3577b34da6a3ce929d0e0e4736")
+    );
+    assert!(AuditChain::verify(&records).is_intact());
+}
+
+#[test]
+fn a_version_one_record_is_still_tamper_evident() {
+    let mut json: serde_json::Value = serde_json::from_str(AUDIT_RECORDS_V1).unwrap();
+    json[1]["actor"]["actor_id"] = "someone-else".into();
+    let records: Vec<AuditRecord> = serde_json::from_value(json).unwrap();
+
+    assert!(!AuditChain::verify(&records).is_intact());
+}
+
+#[test]
+fn every_version_one_payload_reads_and_reserializes_unchanged() {
+    let mut pinned = 0;
+    for event_type in EVERY_EVENT_TYPE {
+        let Some(text) = golden(event_type) else {
+            continue;
+        };
+        let stored: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(
+            stored["type"],
+            event_type.as_str(),
+            "{event_type:?}: the golden's tag is not the event type's wire name"
+        );
+
+        let event = CeremonyEventReader::read(event_type, EventSchemaVersion::V1, stored.clone())
+            .unwrap_or_else(|error| panic!("{event_type:?}: {error}"));
+
+        assert_eq!(event.event_type(), event_type);
+        assert_eq!(event.schema_version(), EventSchemaVersion::V1);
+        assert_eq!(
+            serde_json::to_value(&event).unwrap(),
+            stored,
+            "{event_type:?}: re-serializes differently from its version-1 golden"
+        );
+        pinned += 1;
+    }
+    assert_eq!(pinned, 14);
+}

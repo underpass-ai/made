@@ -6,12 +6,15 @@
 use serde_json::json;
 use time::OffsetDateTime;
 
-use crate::entities::{AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance};
+use crate::entities::ceremony_events::StepCompleted;
+use crate::entities::{
+    AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
+};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyState, CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, OutboxMessage,
-    OutboxSubject, StateId, TransitionTrigger,
+    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyState,
+    CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, OutboxMessage, OutboxSubject,
+    RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput, StepResult, TransitionTrigger,
 };
 
 pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
@@ -37,6 +40,19 @@ pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
     )
 }
 
+/// The one event the suites seal: a step that completed with no output.
+pub(super) fn ceremony_event() -> Result<CeremonyEvent, DomainError> {
+    Ok(CeremonyEvent::StepCompleted(StepCompleted {
+        step_id: StepId::new("conformance_step")?,
+        iteration: StepIteration::FIRST,
+        attempt: StepAttempt::FIRST,
+        result: StepResult::completed(StepOutput::empty())?,
+        next_iteration: None,
+        finished_by: RoleId::new("conformance")?,
+        finished_at: OffsetDateTime::UNIX_EPOCH,
+    }))
+}
+
 pub(super) fn audit_fact(
     event: &str,
     ceremony_id: &CeremonyId,
@@ -44,7 +60,7 @@ pub(super) fn audit_fact(
 ) -> Result<AuditFact, DomainError> {
     Ok(AuditFact {
         event_id: EventId::new(event)?,
-        event_type: AuditEventType::StepCompleted,
+        event: ceremony_event()?,
         ceremony_id: ceremony_id.clone(),
         definition_name: definition.name().clone(),
         definition_version: definition.version().clone(),
