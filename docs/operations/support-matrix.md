@@ -9,6 +9,118 @@ endpoints, and downstream products may be useful integration cases, but
 they do not define this repository's support matrix unless this chart,
 binary, or API requires them.
 
+## Editions
+
+MADE ships two editions ([`editions.md`](../editions.md)), and the ceremony
+engine is reachable through four surfaces: the `underpass.made.v1` proto
+contract, the MCP server on the gRPC backend, the MCP server on the embedded
+backend, and the `EmbeddedMade` Rust facade. Which surface serves what is not
+prose: the source of truth is
+[`../architecture/parity.tsv`](../architecture/parity.tsv), one row per
+capability and one column per surface (ADR-014), and the table below is that
+file grouped the way `made_discover_capabilities` groups it.
+
+Rows are the capability groups declared in
+`crates/made-mcp/src/guidance/capability_group.rs`. A cell says `supported`
+when the surface serves **every** capability of the row, and `not supported`
+with the reason otherwise; the reason is quoted verbatim from `parity.tsv`,
+which is why it carries no markup. A group whose capabilities disagree about a
+surface is not written as one row — "partially supported" is not a support
+claim — so such a group is split per capability. `ceremony_design` is the only
+group split today.
+
+The last column names the gates that keep the row true:
+
+- **F1 set equality** — `crates/made-mcp/src/protocol/parity_tests.rs`:
+  `parity.tsv` against the proto RPC list, both MCP catalogs and the public
+  methods of `EmbeddedMade`, in both directions. No server, milliseconds.
+- **catalog ⇔ proto** — `crates/made-mcp/src/protocol/tests.rs`: one MCP tool
+  per RPC, and no catalog entry without one except the two the MCP server
+  answers itself.
+- **F4 session parity** —
+  `crates/made-tests-integration/tests/mcp_parity_session.rs`: one working
+  session driven through every shared tool on both MCP backends, the two
+  answers compared field for field.
+
+The table itself is checked against `parity.tsv` by
+`crates/made-mcp/src/protocol/editions_matrix_tests.rs`, which needs no server
+and runs in `cargo test -p made-mcp`: a cell that claims what the TSV denies
+fails by name, in either direction.
+
+<!-- editions:begin -->
+
+| Capability group | proto | MCP on gRPC | MCP embedded | `EmbeddedMade` facade | Proved by |
+|---|---|---|---|---|---|
+| `self_description` | not supported — server tool: the MCP server answers it itself on every backend, so it has no RPC and no parity.tsv row | supported | supported | not supported — server tool: it describes the running server rather than the engine, so the facade has no method for it | catalog ⇔ proto (`protocol/tests.rs`), which pins these as the only catalog entries with no RPC |
+| `council_deliberation` | supported | supported | not supported — council surface: cluster-only until B3 (ADR-014) | not supported — council surface: cluster-only until B3 (ADR-014) | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`) |
+| `council_configuration` | supported | supported | not supported — council configuration: cluster-only until B3 (ADR-014); contract registry: cluster-only until B3 (ADR-014) | not supported — council configuration: cluster-only until B3 (ADR-014); contract registry: cluster-only until B3 (ADR-014) | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`) |
+| `ceremony_design` / `design_ceremony` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `validate_ceremony_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (CeremonyDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `explain_ceremony_draft` | supported | supported | supported | not supported — decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `publish_ceremony_definition` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_design` / `diff_ceremony_definitions` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_execution` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_recovery` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `human_authorization` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_participation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `service_observability` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `ceremony_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+
+Two capabilities are in no group, because no MCP tool serves them:
+`list_ceremony_definitions` and `mount_definition` are `EmbeddedMade` host
+affordances — the definition catalog a host mounts into is local to its
+process — and `parity.tsv` carries the reason for each.
+
+<!-- editions:end -->
+
+### Supported
+
+- Every cell above that says `supported`, on the surface that carries it. The
+  cluster edition serves the proto contract and MCP on the gRPC backend; the
+  embedded edition serves MCP on the embedded backend and the `EmbeddedMade`
+  facade.
+- `tools/list` on the running executable as the authority for what that build
+  serves. `made_discover_capabilities` filters the catalog by backend and
+  answers with these same group ids.
+- `made-api`'s `CeremonyEngineApi` as a versioned, read-mostly subset
+  (ADR-004), not a fifth surface. `parity.tsv` carries it in an `api` column
+  that is allowed to be smaller without a reason.
+
+### Not Supported
+
+- Every cell above that says `not supported`, for the reason the cell gives:
+  the council surface — deliberation, and council, agent and contract
+  configuration — outside the cluster edition; `made_validate_ceremony_draft`
+  and `made_explain_ceremony_draft` as facade methods;
+  `made_discover_capabilities` and `made_get_help` as an RPC or a facade
+  method.
+- A capability claimed on a surface with no row in `parity.tsv` behind it, or
+  with a row that says otherwise. The gates above fail it; this page does not
+  arbitrate.
+- "Partially supported" as a row. A group whose capabilities disagree is split
+  per capability, so that no claim covers a capability it is not true of.
+- "MADE supports X" without naming the edition, the surface, and the build
+  that serves it. See
+  [capability-verification.md](./capability-verification.md).
+
+### Change Rule
+
+A capability changes surface only with its `parity.tsv` row and this table in
+the same PR. That PR updates together:
+
+- the code on the surface that gains or loses the capability;
+- its row in `docs/architecture/parity.tsv`;
+- this table, including the gate column;
+- `docs/editions.md`, wherever its prose names the gap;
+- `CHANGELOG.md`.
+
+Nothing here is trusted to a reviewer's memory: `parity_tests.rs` fails when
+the code and `parity.tsv` disagree, and `editions_matrix_tests.rs` fails when
+`parity.tsv` and this table disagree. Both run in
+`cargo test -p made-mcp --locked` and in the `test` job of
+`.github/workflows/quality-gate.yml`.
+
 ## Rust Toolchain
 
 Current support is exact-version support, not a broad Rust range.
