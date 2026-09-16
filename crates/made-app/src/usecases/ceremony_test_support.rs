@@ -11,17 +11,17 @@ use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
     CeremonySnapshot, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome,
-    MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
+    CeremonyStepHandlerRequest, ClockPort, MemoryWriteOutcome, MemoryWriterPort,
+    NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
-    CeremonyVersion, DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey,
-    LeaseOwnerId, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope,
-    MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy,
-    StepResult, StepStatus, StreamVersion, TransitionTrigger,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GlobalPosition,
+    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability,
+    MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy,
+    RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+    StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion,
+    TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -31,7 +31,6 @@ use tokio::sync::RwLock;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use crate::services::{session_facts, SessionMemoryRecorder, SessionStream};
 
-mod context_store_fake;
 mod definition_repository_fake;
 mod event_store_fake;
 mod fixed_clock;
@@ -42,7 +41,6 @@ mod step_handler_fake;
 mod store_that_conflicts_once;
 mod store_that_loses_every_race;
 
-pub(super) use context_store_fake::ContextStoreFake;
 pub(super) use definition_repository_fake::DefinitionRepositoryFake;
 pub(super) use event_store_fake::EventStoreFake;
 pub(super) use fixed_clock::FixedClock;
@@ -166,37 +164,6 @@ impl CeremonyStepHandlerPort for SequenceStepHandlerFake {
             .ok_or(DomainError::InvariantViolated {
                 reason: "sequence step handler exhausted",
             })
-    }
-}
-
-#[async_trait]
-impl CeremonyTranscriptStorePort for ContextStoreFake {
-    async fn append(
-        &self,
-        instance_id: &CeremonyId,
-        contribution: CeremonyStepContribution,
-    ) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
-            .entry(instance_id.clone())
-            .or_default()
-            .push(contribution);
-        Ok(())
-    }
-
-    async fn transcript(
-        &self,
-        instance_id: &CeremonyId,
-    ) -> Result<CeremonyTranscript, DomainError> {
-        Ok(CeremonyTranscript::new(
-            self.inner
-                .read()
-                .await
-                .get(instance_id)
-                .cloned()
-                .unwrap_or_default(),
-        ))
     }
 }
 

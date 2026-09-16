@@ -3,6 +3,7 @@
 mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod ceremony_event_fanout;
+pub(crate) mod ceremony_transcript_projection;
 mod conflict_policy;
 mod loaded_session;
 mod retry_attempts;

@@ -8,7 +8,7 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyEventStore,
 };
 use made_adapters::noop::NoopCeremonyStepHandler;
 use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
@@ -96,7 +96,6 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         store,
         Arc::new(NoopCeremonyEventSubscriber),
     ));
-    let transcript_store = Arc::new(InMemoryCeremonyTranscriptStore::new());
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());
 
@@ -139,8 +138,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         journal.clone(),
         handler,
         clock.clone(),
-    )
-    .with_transcript_store(transcript_store);
+    );
     let step_output = run_step
         .execute(RunCeremonyStepInput::new(
             CeremonyId::new("meeting-1").unwrap(),

@@ -33,7 +33,6 @@ mod ceremony_snapshot;
 mod ceremony_snapshot_store;
 mod ceremony_step_handler;
 mod ceremony_step_handler_request;
-mod ceremony_transcript_store;
 mod ceremony_unit_of_work;
 mod clock;
 mod contract_registry;
@@ -52,7 +51,6 @@ mod memory_writer;
 mod messaging;
 mod metrics_recorder;
 mod noop_ceremony_event_subscriber;
-mod noop_ceremony_transcript_store;
 mod noop_metrics_recorder;
 mod null_observer;
 mod outbox;
@@ -71,7 +69,6 @@ pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use append_outcome::AppendOutcome;
 pub use audit_journal::AuditJournalPort;
-pub use ceremony_transcript_store::CeremonyTranscriptStorePort;
 
 pub use ceremony_definition_publication::CeremonyDefinitionPublicationPort;
 pub use ceremony_definition_repository::CeremonyDefinitionRepositoryPort;
@@ -85,17 +82,6 @@ pub use ceremony_snapshot::CeremonySnapshot;
 pub use ceremony_snapshot_store::CeremonySnapshotStorePort;
 pub use ceremony_step_handler::CeremonyStepHandlerPort;
 pub use ceremony_step_handler_request::CeremonyStepHandlerRequest;
-/// Former name of [`CeremonyTranscriptStorePort`].
-///
-/// Kept so a host can move at its own pace rather than in lockstep
-/// with this repository. Due for removal before the first public tag —
-/// a compatibility alias that outlives its migration is just a second
-/// name for the same thing.
-#[deprecated(
-    since = "0.1.0",
-    note = "renamed to CeremonyTranscriptStorePort: the port appends and replays a transcript, nothing more"
-)]
-pub use ceremony_transcript_store::CeremonyTranscriptStorePort as CeremonyContextStorePort;
 pub use ceremony_unit_of_work::CeremonyUnitOfWorkPort;
 pub use clock::ClockPort;
 pub use contract_registry::ContractRegistryPort;
@@ -114,7 +100,6 @@ pub use memory_writer::MemoryWriterPort;
 pub use messaging::MessagingPort;
 pub use metrics_recorder::MetricsRecorderPort;
 pub use noop_ceremony_event_subscriber::NoopCeremonyEventSubscriber;
-pub use noop_ceremony_transcript_store::NoopCeremonyTranscriptStore;
 pub use noop_metrics_recorder::NoopMetricsRecorder;
 pub use null_observer::NullObserver;
 pub use outbox::OutboxPort;
