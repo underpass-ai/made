@@ -35,12 +35,16 @@ use super::{
 /// side is stuck, not busy.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
-const ALL_TABLES: [Table; 5] = [
+const ALL_TABLES: [Table; 9] = [
     Table::Ceremonies,
     Table::Journal,
     Table::Outbox,
     Table::Publications,
     Table::LegacyStateMigrations,
+    Table::Events,
+    Table::EventLog,
+    Table::Snapshots,
+    Table::Meta,
 ];
 
 /// One open SQLite file, with a small pool so concurrent blocking tasks each
@@ -303,6 +307,18 @@ impl Ops<'_> {
         done.map(drop).map_err(|error| failure(&error, "write row"))
     }
 
+    fn remove(&self, table: Table, key: Key<'_>) -> Result<(), DomainError> {
+        check_key(table, key)?;
+        let sql = format!("DELETE FROM \"{table}\" WHERE k = ?1");
+        let mut statement = self.prepare(&sql)?;
+        let done = match key {
+            Key::Str(k) => statement.execute(params![k]),
+            Key::Bytes(k) => statement.execute(params![k]),
+        };
+        done.map(drop)
+            .map_err(|error| failure(&error, "delete row"))
+    }
+
     fn prepare(&self, sql: &str) -> Result<rusqlite::CachedStatement<'_>, DomainError> {
         // The statement cache is per connection; with a fixed table set the
         // handful of distinct SQL strings compile once per connection.
@@ -383,6 +399,10 @@ impl ReadTx for SqliteWrite<'_> {
 impl WriteTx for SqliteWrite<'_> {
     fn insert(&mut self, table: Table, key: Key<'_>, value: &[u8]) -> Result<(), DomainError> {
         self.ops().insert(table, key, value)
+    }
+
+    fn remove(&mut self, table: Table, key: Key<'_>) -> Result<(), DomainError> {
+        self.ops().remove(table, key)
     }
 
     fn commit(self: Box<Self>) -> Result<(), DomainError> {

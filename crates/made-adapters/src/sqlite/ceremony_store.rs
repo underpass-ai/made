@@ -1,8 +1,10 @@
 //! [`SqliteCeremonyStore`] — the embedded durable store.
 //!
 //! Ceremony state, the audit journal and the outbox live in tables of one
-//! database, so a commit that touches all three is one write transaction.
-//! Synchronous engine work always runs on Tokio's blocking pool.
+//! database, so a commit that touches all three is one write transaction;
+//! the event streams, their global log and the snapshots share it, and an
+//! append lands its three tables the same way. Synchronous engine work
+//! always runs on Tokio's blocking pool.
 
 use std::sync::Arc;
 
@@ -16,10 +18,14 @@ use super::error::{encoding_failure, join_failure};
 mod audit_journal;
 mod ceremony_unit_of_work;
 mod definition_publication;
+mod event_store;
 mod instance_repository;
 mod lifecycle;
 mod outbox;
+mod snapshot_store;
+mod stored_event;
 mod stored_outbox_message;
+mod stored_snapshot;
 
 #[derive(Debug, Clone)]
 pub struct SqliteCeremonyStore {
