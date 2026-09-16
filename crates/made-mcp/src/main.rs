@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(command) = args.first() {
-        std::process::exit(run_cli_command(command, &args[1..]));
+        std::process::exit(run_cli_command(command, &args[1..]).await);
     }
 
     let server = match MadeMcpServer::try_from_env() {
@@ -77,7 +77,7 @@ fn init_tracing() {
         .init();
 }
 
-fn run_cli_command(command: &str, args: &[String]) -> i32 {
+async fn run_cli_command(command: &str, args: &[String]) -> i32 {
     match command {
         "--version" | "-V" | "version" if args.is_empty() => {
             println!(
@@ -87,13 +87,53 @@ fn run_cli_command(command: &str, args: &[String]) -> i32 {
             );
             0
         }
+        "migrate-store" => {
+            if let [path] = args {
+                run_migrate_store(path).await
+            } else {
+                eprintln!("made-mcp: usage: made-mcp migrate-store <path-to-ceremony-store>");
+                2
+            }
+        }
         other => {
             eprintln!(
-                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`"
+                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version` or `migrate-store <path>`"
             );
             2
         }
     }
+}
+
+/// Bring the sessions of a pre-stream store into their own streams
+/// (ADR-012), copy-on-write.
+#[cfg(feature = "embedded")]
+async fn run_migrate_store(path: &str) -> i32 {
+    let path = std::path::Path::new(path);
+    match made_mcp::migrate_store(path).await {
+        Ok(outcome) => {
+            for line in made_mcp::migrate_store_report(path, &outcome) {
+                println!("{line}");
+            }
+            0
+        }
+        Err(message) => {
+            eprintln!("made-mcp: migrate-store: {message}");
+            eprintln!("made-mcp: the store was not changed");
+            1
+        }
+    }
+}
+
+/// Without the embedded engine there is no store to migrate: this
+/// binary speaks to a service, and a service's store is migrated where
+/// it lives.
+#[cfg(not(feature = "embedded"))]
+#[allow(clippy::unused_async)]
+async fn run_migrate_store(_path: &str) -> i32 {
+    eprintln!(
+        "made-mcp: migrate-store needs the embedded engine; this binary was built without it"
+    );
+    2
 }
 
 #[cfg(feature = "embedded")]

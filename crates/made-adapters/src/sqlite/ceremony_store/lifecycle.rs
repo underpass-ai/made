@@ -32,7 +32,9 @@ impl SqliteCeremonyStore {
                 path = %path.display(),
                 count = stranded,
                 "ceremony instances from an earlier store have no event stream and are not \
-                 visible to the event-sourced engine until `made-mcp migrate-store` exists (A7)"
+                 visible to the event-sourced engine; run `made-mcp migrate-store <path>` to \
+                 import them, which copies the store, verifies every session and keeps the \
+                 original beside the new file"
             );
         }
         Ok(store)
@@ -44,9 +46,9 @@ impl SqliteCeremonyStore {
     /// Stores written before ceremonies became event streams (v0.3.0
     /// and earlier) kept an instance and a journal, not a stream. The
     /// event-sourced engine reads streams only, so those instances are
-    /// there but unreachable until the migration command imports them.
-    /// Counted at open so an operator is told, rather than finding an
-    /// empty list and a full file.
+    /// there but unreachable until `made-mcp migrate-store` imports
+    /// them. Counted at open so an operator is told, rather than
+    /// finding an empty list and a full file.
     pub fn legacy_instances_without_a_stream(&self) -> Result<usize, DomainError> {
         let tx = self.engine.begin_read()?;
         let mut stranded = 0;
