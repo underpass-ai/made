@@ -1,6 +1,9 @@
+use crate::entities::ceremony_commands::ApplyTransition;
+use crate::entities::CeremonyCommand;
+
 use super::{
-    CeremonyDefinition, CeremonyInstance, CeremonyTransitionRecord, DomainError, OffsetDateTime,
-    RoleAction, RoleId, StateId, TransitionTrigger,
+    CeremonyDefinition, CeremonyEvent, CeremonyInstance, DomainError, OffsetDateTime, RoleId,
+    StateId, TransitionTrigger,
 };
 
 impl CeremonyInstance {
@@ -11,11 +14,6 @@ impl CeremonyInstance {
         trigger: &TransitionTrigger,
         now: OffsetDateTime,
     ) -> Result<StateId, DomainError> {
-        self.require_role(
-            definition,
-            role_id,
-            &RoleAction::transition(trigger.clone()),
-        )?;
         self.move_on(definition, trigger, Some(role_id.clone()), now)
     }
 
@@ -28,8 +26,6 @@ impl CeremonyInstance {
         self.move_on(definition, trigger, None, now)
     }
 
-    /// The one place a session moves.
-    ///
     /// `applied_by` is absent when the engine took the move itself,
     /// and naming somebody would be inventing them.
     fn move_on(
@@ -39,43 +35,24 @@ impl CeremonyInstance {
         applied_by: Option<RoleId>,
         now: OffsetDateTime,
     ) -> Result<StateId, DomainError> {
-        self.require_definition(definition)?;
-        if self.is_terminal(definition) {
-            return Err(DomainError::InvariantViolated {
-                reason: "terminal ceremony instances cannot transition",
-            });
-        }
-
-        let transition = definition
-            .transition_for_trigger(&self.current_state, trigger)
-            .ok_or(DomainError::InvalidTransition {
-                from: "ceremony_instance.current_state",
-                to: "transition_trigger",
-            })?;
-        if !definition.repeat_requirements_are_satisfied(&self.current_state, &self.step_records) {
-            return Err(DomainError::InvariantViolated {
-                reason: "ceremony step repeat condition is not satisfied",
-            });
-        }
-        if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
-            return Err(DomainError::InvariantViolated {
-                reason: "ceremony transition guards are not satisfied",
-            });
-        }
-
-        let from_state = self.current_state.clone();
-        self.current_state = transition.to().clone();
-        self.transitions.push(CeremonyTransitionRecord::record(
-            trigger.clone(),
-            from_state,
-            self.current_state.clone(),
-            applied_by,
+        let command = CeremonyCommand::ApplyTransition(ApplyTransition {
+            role_id: applied_by,
+            trigger: trigger.clone(),
             now,
-        ));
-        self.updated_at = now;
-        if definition.is_terminal_state(&self.current_state) {
-            self.completed_at = Some(now);
-        }
-        Ok(self.current_state.clone())
+        });
+        let events = self.decide(&command, definition)?;
+        let to_state = events
+            .iter()
+            .find_map(|event| match event {
+                CeremonyEvent::TransitionApplied(applied) => {
+                    Some(applied.transition.to_state().clone())
+                }
+                _ => None,
+            })
+            .ok_or(DomainError::InvariantViolated {
+                reason: "moving decides a transition",
+            })?;
+        self.apply_all(&events);
+        Ok(to_state)
     }
 }

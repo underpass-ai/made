@@ -1,3 +1,6 @@
+use crate::entities::ceremony_commands::BindParticipant;
+use crate::entities::CeremonyCommand;
+
 use super::{
     BTreeMap, CeremonyDefinition, CeremonyInstance, CeremonyParticipantBinding, DomainError,
     OffsetDateTime, RoleId, Specialty,
@@ -19,21 +22,13 @@ impl CeremonyInstance {
         specialty: Specialty,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
-        self.require_active(
-            definition,
-            "terminal ceremony instances cannot be re-seated",
-        )?;
-        // A seat that the ceremony never declared is not a seat.
-        if definition.role(&role_id).is_none() {
-            return Err(DomainError::NotFound {
-                what: "ceremony_role",
-            });
-        }
-        self.participant_bindings.insert(
-            role_id.clone(),
-            CeremonyParticipantBinding::record(role_id, specialty, now),
-        );
-        self.updated_at = now;
+        let command = CeremonyCommand::BindParticipant(BindParticipant {
+            role_id,
+            specialty,
+            now,
+        });
+        let events = self.decide(&command, definition)?;
+        self.apply_all(&events);
         Ok(())
     }
 
