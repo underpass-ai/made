@@ -22,7 +22,7 @@
 //! contribution carries the item as its own axis and can be found
 //! along it.
 
-use made_core::entities::{CeremonyDefinition, CeremonyInstance};
+use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyInterventionKind,
@@ -199,9 +199,13 @@ fn deferral_entry(
 /// possible.
 pub(super) fn ending_entry(
     instance: &CeremonyInstance,
-    definition: &CeremonyDefinition,
 ) -> Result<Option<(CeremonyRecordRef, MemoryEntry)>, DomainError> {
-    if !instance.is_terminal(definition) {
+    // Asked of the session rather than of the definition it runs: a
+    // session is stamped completed by the one event that says it
+    // reached a terminal state, and that event is what brings the
+    // recorder here. Reading it off the session is also what lets this
+    // be decided without a definition to consult.
+    if instance.completed_at().is_none() {
         return Ok(None);
     }
     let Some(ordinal) = u32::try_from(instance.transitions().len())

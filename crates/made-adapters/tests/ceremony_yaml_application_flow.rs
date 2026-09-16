@@ -18,7 +18,7 @@ use made_app::usecases::{
     ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
     StartCeremonyInput, StartCeremonyUseCase,
 };
-use made_core::ports::{CeremonyDefinitionRepositoryPort, NoopCeremonyEventSubscriber};
+use made_core::ports::CeremonyDefinitionRepositoryPort;
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
     IdempotencyKey, LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus,
@@ -93,8 +93,11 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     let store = Arc::new(InMemoryCeremonyEventStore::new());
     let journal = Arc::new(SessionStream::new(
         store.clone(),
-        store,
-        Arc::new(NoopCeremonyEventSubscriber),
+        store.clone(),
+        Arc::new(SessionMemoryRecorder::new(
+            Arc::new(ForgetfulMemory::new()),
+            store,
+        )),
     ));
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());
@@ -154,12 +157,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     assert_eq!(step_output.attempt(), StepAttempt::FIRST);
     assert_eq!(step_output.result().status(), StepStatus::Completed);
 
-    let transition = ApplyCeremonyTransitionUseCase::new(
-        resolve_definition,
-        journal,
-        clock,
-        Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new()))),
-    );
+    let transition = ApplyCeremonyTransitionUseCase::new(resolve_definition, journal, clock);
     let completed = transition
         .execute(ApplyCeremonyTransitionInput::new(
             CeremonyId::new("meeting-1").unwrap(),

@@ -9,13 +9,12 @@ use made_core::ports::ClockPort;
 
 use super::apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct ApplyCeremonyTransitionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
-    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for ApplyCeremonyTransitionUseCase {
@@ -30,13 +29,11 @@ impl ApplyCeremonyTransitionUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
-        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             stream,
             clock,
-            memory,
         }
     }
 
@@ -78,10 +75,6 @@ impl ApplyCeremonyTransitionUseCase {
             })
             .await?
             .instance;
-        // A transition is how a session reaches its end, so this is
-        // where an ending becomes something a later session can weigh.
-        // Nothing is written while it is still running.
-        self.memory.remember_ending(&instance, &definition).await;
         Ok(instance)
     }
 }
@@ -98,7 +91,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, ceremony_id, definition, definition_resolver, now, recorder, recording_memory,
+        ceremony_id, definition, definition_resolver, now, recording_memory, remembering_stream,
         role_id, started_instance, step_id, stream, stream_conflicting_once,
         stream_losing_every_race, stream_over, trigger, DefinitionRepositoryFake, EventStoreFake,
         FixedClock,
@@ -137,7 +130,6 @@ mod tests {
             definition_resolver(definitions),
             stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let transitioned = usecase
@@ -173,7 +165,6 @@ mod tests {
             definition_resolver(definitions),
             stream(instances),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let err = usecase
@@ -235,7 +226,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         usecase
@@ -292,7 +282,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         usecase
@@ -319,7 +308,6 @@ mod tests {
             definition_resolver(definitions),
             stream_losing_every_race(instances),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let refused = usecase
@@ -357,7 +345,6 @@ mod tests {
             definition_resolver(definitions),
             stream_conflicting_once(instances.clone()),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let refused = usecase
@@ -409,7 +396,6 @@ mod tests {
             definition_resolver(definitions),
             stream(instances),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let ended = usecase
@@ -440,9 +426,8 @@ mod tests {
         let memory = recording_memory();
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            stream(instances),
+            remembering_stream(instances, memory.clone()),
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         );
 
         usecase

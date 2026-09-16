@@ -33,8 +33,7 @@ use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
-    NoopCeremonyEventSubscriber, StatisticsPort,
+    CeremonyStepHandlerPort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -68,12 +67,6 @@ pub struct EmbeddedMade {
     /// When this engine was built. Monotonic, so uptime does not
     /// move when the host's wall clock does.
     started_at: Instant,
-    /// What a session leaves behind.
-    ///
-    /// A host that configures no memory gets one that forgets and says
-    /// so, which is the honest shape of "not turned on". Handing it a
-    /// durable writer instead is the whole of turning it on.
-    session_memory: Arc<SessionMemoryRecorder>,
 }
 
 impl EmbeddedMade {
@@ -112,14 +105,14 @@ impl EmbeddedMade {
         memory: Arc<dyn MemoryWriterPort>,
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     ) -> Self {
-        let session_memory = Arc::new(SessionMemoryRecorder::new(memory));
-        // The engine's own projections first, the host's after: what a
-        // host reads from a projection of its own is a session the
-        // engine has already finished recording.
-        let subscribers = Arc::new(CeremonyEventFanout::of(
-            Arc::new(NoopCeremonyEventSubscriber),
-            subscriber,
-        ));
+        // What a session leaves behind is a projection of its stream,
+        // so it is a subscriber rather than something a use case
+        // holds. A host that configures no memory gets one that
+        // forgets and says so; handing in a durable writer is the
+        // whole of turning it on. The host's own subscriber comes
+        // after the engine's.
+        let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
+        let subscribers = Arc::new(CeremonyEventFanout::of(session_memory, subscriber));
         Self {
             definitions,
             publications,
@@ -131,7 +124,6 @@ impl EmbeddedMade {
             metrics_recorder,
             statistics,
             started_at: Instant::now(),
-            session_memory,
         }
     }
 
@@ -420,7 +412,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -434,7 +425,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -448,7 +438,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -475,7 +464,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -490,7 +478,6 @@ impl EmbeddedMade {
             self.stream.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -557,7 +544,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await

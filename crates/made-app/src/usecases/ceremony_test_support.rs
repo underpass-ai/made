@@ -591,13 +591,20 @@ pub(super) fn recording_memory() -> Arc<RecordingMemory> {
     Arc::new(RecordingMemory::default())
 }
 
-pub(super) fn recorder(memory: Arc<RecordingMemory>) -> Arc<SessionMemoryRecorder> {
-    Arc::new(SessionMemoryRecorder::new(memory))
-}
-
-/// The recorder for the many tests that do not care about memory.
-pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
-    recorder(recording_memory())
+/// A stream whose sessions are recorded into `memory`, the way a
+/// composition root wires one.
+///
+/// The recorder is a subscriber of the stream, not something a use
+/// case holds, so this is the whole of turning memory on in a test:
+/// the use cases under it are built exactly as they are in production.
+pub(super) fn remembering_stream(
+    store: Arc<EventStoreFake>,
+    memory: Arc<RecordingMemory>,
+) -> Arc<SessionStream> {
+    stream_watched_by(
+        store.clone(),
+        Arc::new(SessionMemoryRecorder::new(memory, store)),
+    )
 }
 
 /// The store every session test reads from and appends to.
