@@ -95,7 +95,8 @@ pub use llm_error_kind::LlmErrorKind;
 pub use memory::{
     MemoryCapabilities, MemoryCapability, MemoryConfidence, MemoryEntry, MemoryEntryId,
     MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryProvenance, MemoryRelation,
-    MemoryRelationKind, MemoryScope, MemoryWrite,
+    MemoryRelationKind, MemoryScope, MemoryWrite, RecalledEntry, RecollectionBudget,
+    RecollectionCompleteness, SessionRecollection,
 };
 pub use num_agents::NumAgents;
 pub use outbox::{

@@ -25,6 +25,10 @@ mod memory_relation;
 mod memory_relation_kind;
 mod memory_scope;
 mod memory_write;
+mod recalled_entry;
+mod recollection_budget;
+mod recollection_completeness;
+mod session_recollection;
 
 pub use memory_capabilities::MemoryCapabilities;
 pub use memory_capability::MemoryCapability;
@@ -39,3 +43,7 @@ pub use memory_relation::MemoryRelation;
 pub use memory_relation_kind::MemoryRelationKind;
 pub use memory_scope::MemoryScope;
 pub use memory_write::MemoryWrite;
+pub use recalled_entry::RecalledEntry;
+pub use recollection_budget::RecollectionBudget;
+pub use recollection_completeness::RecollectionCompleteness;
+pub use session_recollection::SessionRecollection;
