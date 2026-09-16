@@ -545,8 +545,10 @@ What survives a restart is bounded by the
 started from a published definition rehydrates, one started from supplied
 YAML keeps its snapshot but cannot reload its definition, and
 `made_list_ceremony_instances` reports the latter as
-`"rehydratable": false` instead of failing the whole listing. The full
-loop is in the
+`"rehydratable": false` instead of failing the whole listing. Every
+entry of that listing carries `rehydratable` and `reason`, readable or
+not, on either backend — test one field rather than inferring
+readability from a field that is not there. The full loop is in the
 [embedded ceremony execution runbook](./embedded-ceremony-execution.md).
 
 ### Who holds a step lease
