@@ -38,6 +38,12 @@ pub(super) fn ceremony_of(key: &[u8]) -> Option<&[u8]> {
         .map(|end| &key[..end])
 }
 
+/// Key of a row in the global event log: the position, big-endian, so a
+/// range over `[from, from + limit)` walks the log in order.
+pub(super) fn position(value: u64) -> [u8; ORDINAL_BYTES] {
+    value.to_be_bytes()
+}
+
 /// Key for a published definition: the name length-prefixed, then the
 /// version.
 ///
@@ -100,6 +106,13 @@ mod tests {
         );
 
         assert_ne!(left, right);
+    }
+
+    #[test]
+    fn position_keys_order_like_their_positions() {
+        assert!(position(1) < position(2));
+        assert!(position(255) < position(256));
+        assert!(position(u64::MAX - 1) < position(u64::MAX));
     }
 
     #[test]

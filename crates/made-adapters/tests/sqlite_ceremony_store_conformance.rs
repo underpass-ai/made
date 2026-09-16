@@ -1,14 +1,16 @@
 //! The canonical embedded SQLite store against every persistence contract.
 //!
 //! Nothing but running the full contract proves that the durable adapter
-//! preserves journal, unit-of-work, outbox and publication semantics.
+//! preserves journal, unit-of-work, outbox, publication, event-stream and
+//! snapshot semantics.
 
 #![cfg(feature = "sqlite")]
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::conformance::{
     AuditJournalConformance, CeremonyDefinitionPublicationConformance,
-    CeremonySessionStoreConformance, CeremonyUnitOfWorkConformance, OutboxConformance,
+    CeremonyEventStoreConformance, CeremonySessionStoreConformance,
+    CeremonySnapshotStoreConformance, CeremonyUnitOfWorkConformance, OutboxConformance,
 };
 use tempfile::TempDir;
 
@@ -63,6 +65,96 @@ async fn sqlite_satisfies_the_publication_contract() {
         .unwrap_or_else(|failure| panic!("{failure}"));
 
     assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+}
+
+#[tokio::test]
+async fn sqlite_satisfies_the_event_store_contract() {
+    let (_directory, store) = store();
+
+    let passed = CeremonyEventStoreConformance::run(&store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
+
+    assert_eq!(passed.len(), 13, "properties run: {passed:?}");
+}
+
+#[tokio::test]
+async fn sqlite_satisfies_the_snapshot_store_contract() {
+    let (_directory, store) = store();
+
+    let passed = CeremonySnapshotStoreConformance::run(&store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
+
+    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+}
+
+/// The stream, its place in the global order and its snapshot all live
+/// in the file, not in the process that wrote them.
+#[tokio::test]
+async fn a_reopened_store_still_holds_its_streams_positions_and_snapshots() {
+    use made_core::entities::AuditChain;
+    use made_core::ports::{CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort};
+    use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+
+    let directory = TempDir::new().expect("a temporary directory");
+    let path = directory.path().join("ceremonies.sqlite3");
+    let ceremony = CeremonyId::new("survives-as-stream").unwrap();
+
+    {
+        let store = SqliteCeremonyStore::open(&path).expect("the store opens");
+        let facts = (1..=3)
+            .map(|ordinal| support::fact(&ceremony, ordinal))
+            .collect();
+        let outcome = store
+            .append(&ceremony, StreamVersion::EMPTY, facts)
+            .await
+            .unwrap();
+        assert_eq!(outcome.appended_version(), Some(StreamVersion::new(3)));
+        store
+            .save(CeremonySnapshot {
+                version: StreamVersion::new(3),
+                instance: support::instance(&ceremony),
+            })
+            .await
+            .unwrap();
+    }
+
+    let reopened = SqliteCeremonyStore::open(&path).expect("the store reopens");
+
+    assert_eq!(reopened.streams().await.unwrap(), vec![ceremony.clone()]);
+    assert_eq!(
+        reopened.head(&ceremony).await.unwrap(),
+        StreamVersion::new(3),
+        "the head did not survive reopening"
+    );
+    let records = reopened
+        .read(&ceremony, StreamVersion::EMPTY)
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 3);
+    assert!(
+        AuditChain::verify(&records).is_intact(),
+        "the stream did not survive reopening"
+    );
+    let positions: Vec<u64> = reopened
+        .read_all(GlobalPosition::FIRST, usize::MAX)
+        .await
+        .unwrap()
+        .iter()
+        .map(|row| row.position.value())
+        .collect();
+    assert_eq!(
+        positions,
+        [1, 2, 3],
+        "the global order did not survive reopening"
+    );
+    let latest = reopened.latest(&ceremony).await.unwrap();
+    assert_eq!(
+        latest.map(|snapshot| snapshot.version),
+        Some(StreamVersion::new(3)),
+        "the snapshot did not survive reopening"
+    );
 }
 
 /// What no in-memory adapter can be asked: does anything survive the
@@ -131,14 +223,18 @@ mod support {
         expected: ExpectedRevision,
         ordinal: u64,
     ) -> CeremonyCommit {
+        CeremonyCommit::new(
+            instance(ceremony_id),
+            expected,
+            [fact(ceremony_id, ordinal)],
+            [],
+        )
+        .unwrap()
+    }
+
+    pub fn fact(ceremony_id: &CeremonyId, ordinal: u64) -> AuditFact {
         let definition = definition();
-        let instance = CeremonyInstance::start(
-            ceremony_id.clone(),
-            &definition,
-            CeremonyContext::empty(),
-            OffsetDateTime::UNIX_EPOCH,
-        );
-        let fact = AuditFact {
+        AuditFact {
             event_id: EventId::new(format!("restart-{ordinal}")).unwrap(),
             event: CeremonyEvent::StepCompleted(StepCompleted {
                 step_id: StepId::new("conformance_step").unwrap(),
@@ -157,8 +253,7 @@ mod support {
             correlation_id: None,
             causation_id: None,
             trace: None,
-        };
-        CeremonyCommit::new(instance, expected, [fact], []).unwrap()
+        }
     }
 
     fn definition() -> CeremonyDefinition {

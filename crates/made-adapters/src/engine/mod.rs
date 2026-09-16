@@ -1,17 +1,18 @@
 //! The internal storage seam for the SQLite ceremony store.
 //!
 //! Everything the ceremony store needs from storage, and nothing SQLite
-//! needs to know about ceremonies: five key-to-bytes maps, two key
-//! shapes, transactions over them. The store's logic — revision guards,
+//! needs to know about ceremonies: a handful of key-to-bytes maps, two
+//! key shapes, transactions over them. The store's logic — revision guards,
 //! outbox claiming, journal ordering — is written once against this and never
 //! names an engine type.
 //!
 //! The seam is deliberately narrow. Every method corresponds to an operation
-//! the store performs: point get, insert,
-//! a full ordered scan, and a scan of an inclusive byte range. There is no
-//! remove and no count because the ceremony store does neither — a seam wider
-//! than its callers is surface nobody asked for, and every method of it has
-//! to preserve the store's transactional contract.
+//! the store performs: point get, insert, remove, a full ordered scan, and a
+//! scan of an inclusive byte range. Remove exists for one caller — dropping
+//! a stream's snapshots, which are a cache — and there is no count because
+//! the ceremony store never needs one: a seam wider than its callers is
+//! surface nobody asked for, and every method of it has to preserve the
+//! store's transactional contract.
 //!
 //! Two contracts the store relies on:
 //!
