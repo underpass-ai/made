@@ -1,24 +1,29 @@
 name: dev-loop
 
-# Fast feedback for the integration branch. The full quality, integration,
-# packaging and coverage gates remain mandatory on pull requests to main.
+# Development mode. While a pull request is a draft, the full quality gate
+# stands down and this loop is the answer — formatting, lint and tests for
+# the crates named in DEV_PACKAGES, the three architecture gates that cost
+# seconds, and a made-mcp embedded binary built for the maintainer's
+# linux-arm64 machine and uploaded as an artifact.
+#
+# Nothing merges on this loop's word. Marking the pull request ready for
+# review wakes the full gate, and the required checks on main keep every
+# one of them — coverage included — between a ready pull request and a
+# merge.
+#
+# The loop runs only for draft pull requests or an explicit manual
+# request: a merge to main, a release bump or a ready pull request must
+# not start another development build. The `develop` branch this workflow
+# used to watch no longer exists on the remote.
+#
+# Every job runs bash scripts/ci/dev-loop.sh, which is also what
+# `just dev` runs. There is no second list to keep in sync.
+
 on:
   pull_request:
-    branches:
-      - develop
-  push:
-    branches:
-      - develop
-    paths:
-      - "crates/**"
-      - "Cargo.toml"
-      - "Cargo.lock"
-      - "rust-toolchain.toml"
-      - "scripts/ci/architecture-gate.sh"
-      - "docs/architecture/conformance.tsv"
-      - ".github/workflows/dev-loop.yml"
   workflow_dispatch:
 
+# One lane per ref; a new draft iteration replaces its previous run.
 concurrency:
   group: dev-loop-${{ github.ref }}
   cancel-in-progress: true
@@ -27,9 +32,15 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+  # The crates the current phase iterates on — the parity workstream
+  # (WS-F) surface. Widen or narrow per phase; the default inside
+  # scripts/ci/dev-loop.sh must stay identical, and
+  # scripts/ci/dev-loop-workflow-contract.py fails if it drifts.
+  DEV_PACKAGES: -p made-mcp -p made-embedded -p made-adapters -p made-proto -p made-api
 
 jobs:
-  architecture-and-lint:
+  dev-lint:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == true
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -50,18 +61,14 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
-          shared-key: develop-lint
+          cache-on-failure: true
+          shared-key: dev-lint
 
-      - name: Check architecture
-        run: bash scripts/ci/architecture-gate.sh
+      - name: Format and lint the crates under work
+        run: bash scripts/ci/dev-loop.sh lint
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Lint library targets
-        run: cargo clippy --workspace --lib --locked -- -D warnings
-
-  unit-tests:
+  dev-test:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == true
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -81,7 +88,77 @@ jobs:
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
-          shared-key: develop-test
+          cache-on-failure: true
+          shared-key: dev-test
 
-      - name: Run workspace unit tests
-        run: cargo test --workspace --lib --locked
+      # The parity gate lives in made-mcp's test suite, so it rides along
+      # here; it needs no step of its own.
+      - name: Test the crates under work
+        run: bash scripts/ci/dev-loop.sh test
+
+  dev-architecture:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.97.1
+
+      # The embedded dependency boundary reads `cargo tree --locked`, which
+      # resolves made-adapters' default `grpc` feature through made-proto.
+      - name: Install protoc
+        run: bash scripts/ci/install-protoc.sh
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        with:
+          cache-on-failure: true
+          shared-key: dev-architecture
+
+      - name: Architecture, vocabulary and embedded boundaries
+        run: bash scripts/ci/dev-loop.sh gates
+
+      - name: Prove the workflow contract
+        run: python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+
+  dev-binary:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == true
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@efa25f7f19611383d5b0ccf2d1c8914531636bf9
+        with:
+          toolchain: 1.97.1
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+        with:
+          cache-on-failure: true
+          shared-key: dev-binary-arm64
+
+      # Exactly the feature set scripts/plugin/build-local-made-plugin.sh
+      # ships in the plugin bundle: the embedded engine, no gRPC. The
+      # maintainer's machine is linux aarch64, so this runner is the target
+      # and no cross toolchain is involved.
+      - name: Build made-mcp for linux-arm64
+        run: cargo build --release -p made-mcp --locked --no-default-features --features embedded
+
+      - name: Upload linux-arm64 binary
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: made-mcp-dev-linux-arm64
+          path: target/release/made-mcp
+          if-no-files-found: error

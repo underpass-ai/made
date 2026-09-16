@@ -11,6 +11,9 @@ on:
   pull_request:
     branches:
       - main
+    # ready_for_review is the handover moment from the dev loop to the
+    # full gates; without it this workflow would wait for the next push.
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - ".agents/plugins/marketplace.json"
       - ".claude-plugin/marketplace.json"
@@ -38,7 +41,11 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # A draft pull request is development mode: dev-loop.yml answers it, and
+  # this four-host packaging matrix stands down until the pull request is
+  # marked ready for review. Tag and main pushes are unaffected.
   package:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
       matrix:
