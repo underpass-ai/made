@@ -5,6 +5,8 @@
 //! leave a journal that disagrees with the state, or a message that
 //! reports something that was never stored. They travel together so
 //! they can land together.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use crate::entities::{AuditFact, CeremonyInstance};
 use crate::error::DomainError;

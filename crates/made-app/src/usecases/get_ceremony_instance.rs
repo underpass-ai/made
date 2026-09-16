@@ -3,12 +3,13 @@ use std::sync::Arc;
 
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
-use made_core::ports::CeremonyInstanceRepositoryPort;
 use made_core::value_objects::CeremonyId;
 
-/// Retrieves a ceremony instance without exposing its persistence adapter.
+use crate::services::SessionStream;
+
+/// Retrieves a ceremony instance as the fold of its stream.
 pub struct GetCeremonyInstanceUseCase {
-    repository: Arc<dyn CeremonyInstanceRepositoryPort>,
+    stream: Arc<SessionStream>,
 }
 
 impl fmt::Debug for GetCeremonyInstanceUseCase {
@@ -21,12 +22,12 @@ impl fmt::Debug for GetCeremonyInstanceUseCase {
 
 impl GetCeremonyInstanceUseCase {
     #[must_use]
-    pub fn new(repository: Arc<dyn CeremonyInstanceRepositoryPort>) -> Self {
-        Self { repository }
+    pub fn new(stream: Arc<SessionStream>) -> Self {
+        Self { stream }
     }
 
     #[tracing::instrument(name = "get_ceremony_instance", skip_all, fields(ceremony_id = %id))]
     pub async fn execute(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
-        self.repository.get(id).await
+        self.stream.load(id).await.map(|session| session.instance)
     }
 }

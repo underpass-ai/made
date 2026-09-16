@@ -10,6 +10,8 @@
 //! **Publisher crash mid-delivery.** The lease properties show that a
 //! claim expires and the message returns. Whether a store survives the
 //! process holding that claim is the host's to prove.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use time::{Duration, OffsetDateTime};
 

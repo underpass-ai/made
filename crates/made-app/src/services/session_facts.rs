@@ -1,8 +1,8 @@
 //! What a session did, in the journal's terms.
 //!
-//! One place turns a thing that happened into a fact that can be
-//! sealed, so the shape of a fact is decided once instead of at every
-//! call site.
+//! One place turns an event a decision produced into a fact that can
+//! be sealed, so the shape of a fact is decided once instead of at
+//! every call site.
 //!
 //! # The event id is derived, not generated
 //!
@@ -12,75 +12,82 @@
 //! makes a retry idempotent by construction, where a fresh identifier
 //! each time would turn one approval into two entries in a chain that
 //! is supposed to be the record of what happened.
+//!
+//! What a fact is about is read off the event itself, and for the two
+//! kinds numbered by position, off the session the event was decided
+//! against. Every derivation below is the one the journal used before
+//! sessions were folded from their streams, so the same fact keeps the
+//! same id.
 
-use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyEvidenceSourceId, CeremonyInterventionId, EventId,
-    GuardName, RoleId, Specialty, StepAttempt, StepId, StepIteration, StepResult,
+    AuditActor, AuditActorKind, AuditEventType, CeremonyId, EventId, RoleId,
 };
-use std::collections::BTreeMap;
 use time::OffsetDateTime;
 
-use super::session_events;
-
-/// The fact that a human guard was let through.
-pub(crate) fn guard_approved(
-    instance: &CeremonyInstance,
-    guard_name: &GuardName,
-    approved_by: &RoleId,
-    approved_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    fact(
-        instance,
-        session_events::guard_approved(instance, guard_name)?,
-        &format!("guard:{guard_name}"),
-        actor(approved_by, approved_by_kind)?,
-        occurred_at,
+/// The id of the record that opens a stream.
+///
+/// Derived rather than read because every fact of a stream names it
+/// as its correlation, and the opening is the one fact whose identity
+/// follows from the ceremony alone.
+pub(crate) fn opening_event_id(ceremony_id: &CeremonyId) -> Result<EventId, DomainError> {
+    event_id(
+        ceremony_id,
+        AuditEventType::CeremonyInstanceStarted,
+        "session",
     )
 }
 
-/// The fact that a human guard was left undecided, on purpose.
-pub(crate) fn guard_deferred(
-    instance: &CeremonyInstance,
-    guard_name: &GuardName,
-    deferred_by: &RoleId,
-    deferred_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    fact(
-        instance,
-        session_events::guard_deferred(instance, guard_name)?,
-        &format!("guard:{guard_name}"),
-        actor(deferred_by, deferred_by_kind)?,
-        occurred_at,
-    )
-}
-
-/// Who did it, as the journal records actors.
+/// Who did it, as a seat at this table.
 ///
 /// The kind is carried through from what the caller declared. This
 /// engine sees a seat and cannot see what fills it, so the one thing
 /// it must not do here is decide.
-fn actor(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor, DomainError> {
+pub(crate) fn seat(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor, DomainError> {
     AuditActor::new(role_id.as_str(), kind, Some(role_id.clone()))
 }
 
+/// Who did it, holding no seat.
+///
+/// Whoever opens a session or seats its table may be a participant,
+/// an operator, or a scheduler that will never take part. The caller
+/// declares an identity of their own choosing and what kind of party
+/// it is, and the fact records both without pretending either is a
+/// role this ceremony declared.
+pub(crate) fn party(actor_id: &str, kind: AuditActorKind) -> Result<AuditActor, DomainError> {
+    AuditActor::new(actor_id, kind, None)
+}
+
+/// The facts of one decision, in the order it produced them.
+///
+/// `instance` is the session the events were decided against, before
+/// any of them is folded. The two facts numbered by position — a move
+/// and a reason — take their ordinal from it.
+pub(crate) fn facts(
+    instance: &CeremonyInstance,
+    events: Vec<CeremonyEvent>,
+    actor: &AuditActor,
+    occurred_at: OffsetDateTime,
+) -> Result<Vec<AuditFact>, DomainError> {
+    events
+        .into_iter()
+        .map(|event| fact(instance, event, actor.clone(), occurred_at))
+        .collect()
+}
+
 /// The envelope around an event: its derived id, who did it and when.
-fn fact(
+///
+/// Correlation and causation are left empty on purpose; the stream
+/// fills them at commit, because only it knows the head.
+pub(crate) fn fact(
     instance: &CeremonyInstance,
     event: CeremonyEvent,
-    about: &str,
     actor: AuditActor,
     occurred_at: OffsetDateTime,
 ) -> Result<AuditFact, DomainError> {
     Ok(AuditFact {
-        event_id: EventId::new(format!(
-            "{}:{}:{about}",
-            instance.id().as_str(),
-            event.event_type().as_str()
-        ))?,
+        event_id: event_id(instance.id(), event.event_type(), &about(instance, &event))?,
         event,
         ceremony_id: instance.id().clone(),
         definition_name: instance.definition_name().clone(),
@@ -93,351 +100,101 @@ fn fact(
     })
 }
 
-/// The facts a session produces by moving.
-///
-/// A move is one fact, and reaching an end is another, because they
-/// are two different things to have happened: a session that moved and
-/// a session that is over are separate claims, and a reader asking
-/// "did this finish?" should not have to work it out from the state a
-/// move happened to land in.
-///
-/// Returned together so the caller cannot seal one without the other.
-/// Committed apart, a crash between them leaves a session recorded as
-/// finished with no move that finished it, or the reverse.
-pub(crate) fn transition_applied(
-    instance: &CeremonyInstance,
-    definition: &CeremonyDefinition,
-    applied_by: &RoleId,
-    applied_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<Vec<AuditFact>, DomainError> {
-    let actor = actor(applied_by, applied_by_kind)?;
-    // Numbered by how many moves the session has made, so successive
-    // transitions are distinct facts while a retry of the same one —
-    // which reloads the same session and moves it again from the same
-    // place — derives the same id.
-    let ordinal = instance.transitions().len();
-    let mut facts = vec![fact(
-        instance,
-        session_events::transition_applied(instance)?,
-        &format!("transition:{ordinal}"),
-        actor.clone(),
-        occurred_at,
-    )?];
+fn event_id(
+    ceremony_id: &CeremonyId,
+    event_type: AuditEventType,
+    about: &str,
+) -> Result<EventId, DomainError> {
+    EventId::new(format!(
+        "{}:{}:{about}",
+        ceremony_id.as_str(),
+        event_type.as_str()
+    ))
+}
 
-    // Only one kind of ending is reachable today.
-    //
-    // `AuditEventType` also has `CeremonyFailed`, and it is tempting to
-    // branch on `is_completed` here — but a session reaches a terminal
-    // state only by moving into one, and moving into one always stamps
-    // it completed. A branch for the other case would be a receipt that
-    // can never be issued, which is worse than none: it reads as if the
-    // audit distinguishes an abandoned session from a finished one.
-    //
-    // `a_terminal_session_is_always_a_finished_one` pins that, so the
-    // day an ending arrives that is not a completion, this stops being
-    // true rather than staying quietly wrong.
-    if instance.is_terminal(definition) {
-        facts.push(fact(
-            instance,
-            session_events::ceremony_completed(instance)?,
-            &format!("transition:{ordinal}"),
-            actor,
-            occurred_at,
-        )?);
+/// Which thing the event happened to, as the id names it.
+///
+/// Each rule is the one the journal always used for that fact:
+///
+/// - A seating is identified by the seating itself — which roles, to
+///   which specialties. A role can be seated more than once, and the
+///   session keeps only the current seating, so there is no position
+///   to number; re-seating a role to the specialty it already had
+///   derives the same id, and seating it elsewhere a different one.
+/// - A step start and ending are keyed on the semantic iteration and
+///   the technical attempt as well as the step. A retry and a
+///   successful repeat are both distinct starts and endings; a scheme
+///   that only knew the step and attempt would fold iteration two,
+///   attempt one into iteration one, attempt one.
+/// - A move is numbered by how many moves the session had made, so
+///   successive transitions are distinct facts while a retry of the
+///   same one — decided again against the same session — derives the
+///   same id. The completion a move into a terminal state produces
+///   shares its ordinal: they are two facts about one move.
+/// - A response is keyed on the seat as well as the item, because an
+///   item put to the whole table is answered by more than one of them;
+///   a closing on the item alone, because an item is closed once; the
+///   evidence behind an answer on the source as well as the item, since
+///   an item answered out of two sources was looked into twice.
+/// - A reason is numbered by how many the session held, not keyed on
+///   the edge: two seats can reach the same conclusion, and one seat
+///   can say it again with a different why.
+/// - A guard decision is keyed on the guard.
+fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
+    match event {
+        CeremonyEvent::CeremonyInstanceStarted(_) => "session".to_owned(),
+        CeremonyEvent::ParticipantsBound(bound) => {
+            let seated = bound
+                .bindings
+                .iter()
+                .map(|binding| format!("{}={}", binding.role_id(), binding.specialty()))
+                .collect::<Vec<_>>()
+                .join(",");
+            format!("seating:{seated}")
+        }
+        CeremonyEvent::StepStarted(started) => step_about(
+            &started.step_id,
+            started.iteration.get(),
+            started.attempt.get(),
+        ),
+        CeremonyEvent::StepCompleted(completed) => step_about(
+            &completed.step_id,
+            completed.iteration.get(),
+            completed.attempt.get(),
+        ),
+        CeremonyEvent::StepFailed(failed) => step_about(
+            &failed.step_id,
+            failed.iteration.get(),
+            failed.attempt.get(),
+        ),
+        CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
+            format!("transition:{}", instance.transitions().len() + 1)
+        }
+        CeremonyEvent::InterventionRequested(requested) => {
+            format!("intervention:{}", requested.intervention.id())
+        }
+        CeremonyEvent::InterventionResponded(responded) => format!(
+            "intervention:{}:{}",
+            responded.intervention_id,
+            responded.response.role_id()
+        ),
+        CeremonyEvent::InterventionClosed(closed) => {
+            format!("intervention:{}", closed.intervention_id)
+        }
+        CeremonyEvent::EvidenceCollected(collected) => format!(
+            "intervention:{}:source:{}",
+            collected.intervention_id, collected.source_id
+        ),
+        CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
+        CeremonyEvent::HumanApprovalRecorded(recorded) => {
+            format!("guard:{}", recorded.approval.guard_name())
+        }
+        CeremonyEvent::HumanDeferralRecorded(recorded) => {
+            format!("guard:{}", recorded.deferral.guard_name())
+        }
     }
-    Ok(facts)
 }
 
-/// The fact that a session asked the table for something.
-pub(crate) fn intervention_requested(
-    instance: &CeremonyInstance,
-    intervention_id: &CeremonyInterventionId,
-    requested_by: &RoleId,
-    requested_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    fact(
-        instance,
-        session_events::intervention_requested(instance, intervention_id)?,
-        &format!("intervention:{intervention_id}"),
-        actor(requested_by, requested_by_kind)?,
-        occurred_at,
-    )
-}
-
-/// The fact that a seat answered something the session had asked.
-pub(crate) fn intervention_responded(
-    instance: &CeremonyInstance,
-    intervention_id: &CeremonyInterventionId,
-    responded_by: &RoleId,
-    responded_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    // Keyed on the seat as well as the item, because an agenda item
-    // put to the whole table is answered by more than one of them and
-    // those are separate facts.
-    fact(
-        instance,
-        session_events::intervention_responded(instance, intervention_id, responded_by)?,
-        &format!("intervention:{intervention_id}:{responded_by}"),
-        actor(responded_by, responded_by_kind)?,
-        occurred_at,
-    )
-}
-
-/// The fact that a seat judged an agenda item answered enough.
-pub(crate) fn intervention_closed(
-    instance: &CeremonyInstance,
-    intervention_id: &CeremonyInterventionId,
-    closed_by: &RoleId,
-    closed_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    // Keyed on the item alone, unlike a response: an item is closed
-    // once, and a second attempt is either a retry — which must derive
-    // the same id — or something the session refuses outright.
-    fact(
-        instance,
-        session_events::intervention_closed(instance, intervention_id, closed_by)?,
-        &format!("intervention:{intervention_id}"),
-        actor(closed_by, closed_by_kind)?,
-        occurred_at,
-    )
-}
-
-/// The facts produced by answering an item out of a configured source.
-///
-/// Two, because two things happened: a source was consulted, and the
-/// item was answered. The answer is sealed exactly as a plain response
-/// is — same event type, same derived id — so a reader counting what
-/// the table said gets the same number however the answer arrived. A
-/// path that only recorded the fetching would leave contributions that
-/// no response fact accounts for.
-pub(crate) fn evidence_collected(
-    instance: &CeremonyInstance,
-    intervention_id: &CeremonyInterventionId,
-    source_id: &CeremonyEvidenceSourceId,
-    collected_by: &RoleId,
-    collected_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<Vec<AuditFact>, DomainError> {
-    Ok(vec![
-        // Keyed on the source as well as the item: an item answered out
-        // of two sources was looked into twice, and those are two
-        // things to have happened.
-        fact(
-            instance,
-            session_events::evidence_collected(
-                instance,
-                intervention_id,
-                source_id,
-                collected_by,
-                occurred_at,
-            )?,
-            &format!("intervention:{intervention_id}:source:{source_id}"),
-            actor(collected_by, collected_by_kind)?,
-            occurred_at,
-        )?,
-        intervention_responded(
-            instance,
-            intervention_id,
-            collected_by,
-            collected_by_kind,
-            occurred_at,
-        )?,
-    ])
-}
-
-/// The fact that a seat said why one thing here led to another.
-///
-/// A judgement is the kind of entry a later reader weighs hardest, and
-/// weighing it starts with who made it.
-pub(crate) fn reason_asserted(
-    instance: &CeremonyInstance,
-    asserted_by: &RoleId,
-    asserted_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    // Numbered by how many reasons the session holds, not keyed on the
-    // edge itself. The session accepts the same edge asserted twice —
-    // two seats can reach the same conclusion, and one seat can say it
-    // again with a different why — so an id derived from the edge would
-    // fold two claims into one entry. A retry reloads the same session
-    // and lands at the same position, which is what keeps it idempotent.
-    let ordinal = instance.reasons().len();
-    fact(
-        instance,
-        session_events::reason_asserted(instance)?,
-        &format!("reason:{ordinal}"),
-        actor(asserted_by, asserted_by_kind)?,
-        occurred_at,
-    )
-}
-
-/// The fact that a seat took a step to run.
-///
-/// # Who this names, and who it does not
-///
-/// The party that ran the step, as they declared themselves — not the
-/// handler that did the work. A step names its handler by a kind the
-/// host defines, an open string this engine does not interpret, and
-/// classifying somebody else's vocabulary into `human` or `agent` is
-/// the same guess the whole field exists to refuse.
-pub(crate) fn step_started(
-    instance: &CeremonyInstance,
-    step_id: &StepId,
-    iteration: StepIteration,
-    attempt: StepAttempt,
-    started_by: &RoleId,
-    started_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    step_fact(
-        instance,
-        session_events::step_started(
-            instance,
-            step_id,
-            iteration,
-            attempt,
-            started_by,
-            occurred_at,
-        )?,
-        step_id,
-        iteration,
-        attempt,
-        started_by,
-        started_by_kind,
-        occurred_at,
-    )
-}
-
-/// The fact that a step ended, and how.
-///
-/// Sealed as two different events rather than one carrying an outcome,
-/// because "did anything fail here" is the first question asked of a
-/// session that went wrong, and answering it should not require
-/// reading into every entry.
-pub(crate) fn step_finished(
-    instance: &CeremonyInstance,
-    step_id: &StepId,
-    iteration: StepIteration,
-    attempt: StepAttempt,
-    result: &StepResult,
-    finished_by: &RoleId,
-    finished_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    step_fact(
-        instance,
-        session_events::step_finished(
-            instance,
-            step_id,
-            iteration,
-            attempt,
-            result,
-            finished_by,
-            occurred_at,
-        ),
-        step_id,
-        iteration,
-        attempt,
-        finished_by,
-        finished_by_kind,
-        occurred_at,
-    )
-}
-
-/// Keyed on the semantic iteration and technical attempt as well as the step.
-///
-/// A retry and a successful repeat are both distinct starts and endings. A
-/// scheme that only knew the step and attempt would fold iteration two,
-/// attempt one into iteration one, attempt one — losing exactly the history
-/// the repeat policy exists to preserve.
-fn step_fact(
-    instance: &CeremonyInstance,
-    event: CeremonyEvent,
-    step_id: &StepId,
-    iteration: StepIteration,
-    attempt: StepAttempt,
-    actor_role: &RoleId,
-    actor_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    fact(
-        instance,
-        event,
-        &format!(
-            "step:{step_id}:iteration:{}:attempt:{}",
-            iteration.get(),
-            attempt.get()
-        ),
-        actor(actor_role, actor_kind)?,
-        occurred_at,
-    )
-}
-
-/// The fact that somebody opened this session.
-///
-/// # Why the actor has no seat
-///
-/// Every other fact names a seat from the definition, because by then
-/// the session exists and its roles mean something. At the start they
-/// do not: whoever opens a session may be a participant, or an
-/// operator, or a scheduler that will never take part. So the caller
-/// declares an identity of their own choosing and what kind of party
-/// it is, and the fact records both without pretending either is a
-/// role this ceremony declared.
-pub(crate) fn ceremony_started(
-    instance: &CeremonyInstance,
-    started_by: &str,
-    started_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    fact(
-        instance,
-        session_events::ceremony_started(instance),
-        "session",
-        AuditActor::new(started_by, started_by_kind, None)?,
-        occurred_at,
-    )
-}
-
-/// The fact that somebody seated the table.
-///
-/// # Why the id is the seating itself
-///
-/// A role can be seated more than once — `bind_participant` replaces
-/// rather than refuses — so an id keyed on the roles alone would fold a
-/// genuine re-seating into the first one. But the session keeps only
-/// the current seating, never a history of them, so there is no
-/// position to number either.
-///
-/// So the seating *is* the identity: which roles, to which specialties.
-/// A retry derives the same id, which is what keeps it idempotent, and
-/// seating a role somewhere else derives a different one.
-///
-/// What this folds, on purpose: re-seating a role to the specialty it
-/// already had. That call changes a timestamp and nothing an auditor
-/// would ask about, and one entry saying the table is seated thus is
-/// the truer record of it.
-pub(crate) fn participants_bound(
-    instance: &CeremonyInstance,
-    seating: &BTreeMap<RoleId, Specialty>,
-    seated_by: &str,
-    seated_by_kind: AuditActorKind,
-    occurred_at: OffsetDateTime,
-) -> Result<AuditFact, DomainError> {
-    let seated = seating
-        .iter()
-        .map(|(role_id, specialty)| format!("{role_id}={specialty}"))
-        .collect::<Vec<_>>()
-        .join(",");
-    fact(
-        instance,
-        session_events::participants_bound(instance, seating)?,
-        &format!("seating:{seated}"),
-        AuditActor::new(seated_by, seated_by_kind, None)?,
-        occurred_at,
-    )
+fn step_about(step_id: &made_core::value_objects::StepId, iteration: u32, attempt: u32) -> String {
+    format!("step:{step_id}:iteration:{iteration}:attempt:{attempt}")
 }

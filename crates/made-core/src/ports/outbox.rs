@@ -5,6 +5,8 @@
 //! produced them. The transport takes one somewhere. Neither knows
 //! about retries, ordering or exhaustion: that is the publisher's, so
 //! a host does not reimplement it.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use async_trait::async_trait;
 use time::OffsetDateTime;

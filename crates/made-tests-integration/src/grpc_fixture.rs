@@ -26,9 +26,9 @@ use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
-    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
-    InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore,
+    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use made_adapters::scoring::UniformScoring;
@@ -37,8 +37,8 @@ use made_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::services::AutoDispatchService;
-use made_app::services::SessionJournal;
 use made_app::services::SessionMemoryRecorder;
+use made_app::services::SessionStream;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
@@ -53,8 +53,8 @@ use made_app::usecases::{
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
+    CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, CeremonyTranscriptStorePort,
+    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
 };
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
@@ -105,12 +105,8 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_store = Arc::new(InMemoryCeremonyStore::new());
-        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> = ceremony_store.clone();
-        let ceremony_journal = Arc::new(SessionJournal::new(
-            ceremony_store,
-            ceremony_instances.clone(),
-        ));
+        let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
+        let ceremony_stream = Arc::new(SessionStream::new(ceremony_store.clone(), ceremony_store));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -155,25 +151,25 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyTranscriptStore::new());
         let run_ceremony = Arc::new(RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             ceremony_step_handler.clone(),
             ceremony_transcript_store.clone(),
             clock.clone(),
         ));
         let start_ceremony = Arc::new(StartCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
             ceremony_publications.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
                 resolve_ceremony_definition.clone(),
-                ceremony_journal.clone(),
+                ceremony_stream.clone(),
                 ceremony_step_handler,
                 clock.clone(),
             )
@@ -183,42 +179,42 @@ impl GrpcFixture {
         let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         // No evidence source ships with the server, so this answers
@@ -226,7 +222,7 @@ impl GrpcFixture {
         // a missing method or an invented answer.
         let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
             session_memory.clone(),
@@ -239,7 +235,7 @@ impl GrpcFixture {
         ));
         let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -296,10 +292,10 @@ impl GrpcFixture {
             .bind_ceremony_participants(bind_ceremony_participants)
             .ceremony_definitions(ceremony_definitions.clone())
             .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
-                ceremony_instances.clone(),
+                ceremony_stream.clone(),
             )))
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
-                ceremony_instances.clone(),
+                ceremony_stream.clone(),
             )))
             .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
@@ -383,12 +379,8 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_store = Arc::new(InMemoryCeremonyStore::new());
-        let ceremony_instances: Arc<dyn CeremonyInstanceRepositoryPort> = ceremony_store.clone();
-        let ceremony_journal = Arc::new(SessionJournal::new(
-            ceremony_store,
-            ceremony_instances.clone(),
-        ));
+        let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
+        let ceremony_stream = Arc::new(SessionStream::new(ceremony_store.clone(), ceremony_store));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -431,25 +423,25 @@ impl GrpcFixture {
             Arc::new(InMemoryCeremonyTranscriptStore::new());
         let run_ceremony = Arc::new(RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             ceremony_step_handler.clone(),
             ceremony_transcript_store.clone(),
             clock.clone(),
         ));
         let start_ceremony = Arc::new(StartCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
             ceremony_publications.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
                 resolve_ceremony_definition.clone(),
-                ceremony_journal.clone(),
+                ceremony_stream.clone(),
                 ceremony_step_handler,
                 clock.clone(),
             )
@@ -459,42 +451,42 @@ impl GrpcFixture {
         let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
             session_memory.clone(),
         ));
         let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         // No evidence source ships with the server, so this answers
@@ -502,7 +494,7 @@ impl GrpcFixture {
         // a missing method or an invented answer.
         let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             Arc::new(NoopCeremonyEvidenceSource::new()),
             clock.clone(),
             session_memory.clone(),
@@ -515,7 +507,7 @@ impl GrpcFixture {
         ));
         let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
         let create_council = Arc::new(CreateCouncilUseCase::new(
@@ -573,10 +565,10 @@ impl GrpcFixture {
             .ceremony_definitions(ceremony_definitions.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
             .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
-                ceremony_instances.clone(),
+                ceremony_stream.clone(),
             )))
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
-                ceremony_instances.clone(),
+                ceremony_stream.clone(),
             )))
             .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .contract_registry(contract_registry.clone())

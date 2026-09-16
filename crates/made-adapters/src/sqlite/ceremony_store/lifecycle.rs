@@ -3,9 +3,11 @@ use std::path::Path;
 use std::sync::Arc;
 
 use made_core::error::DomainError;
+use made_core::value_objects::CeremonyId;
 
 use crate::engine::sqlite::SqliteEngine;
-use crate::engine::Engine;
+use crate::engine::{Engine, Key, Table};
+use crate::sqlite::keys::scoped;
 
 use super::SqliteCeremonyStore;
 
@@ -23,7 +25,39 @@ impl SqliteCeremonyStore {
         let path = path.as_ref();
         refuse_legacy_redb(path)?;
         let engine: Arc<dyn Engine> = Arc::new(SqliteEngine::open(path)?);
-        Ok(Self { engine })
+        let store = Self { engine };
+        let stranded = store.legacy_instances_without_a_stream()?;
+        if stranded > 0 {
+            tracing::warn!(
+                path = %path.display(),
+                count = stranded,
+                "ceremony instances from an earlier store have no event stream and are not \
+                 visible to the event-sourced engine until `made-mcp migrate-store` exists (A7)"
+            );
+        }
+        Ok(store)
+    }
+
+    /// How many instances the legacy `ceremony_instances` table holds
+    /// that have no stream in `ceremony_events`.
+    ///
+    /// Stores written before ceremonies became event streams (v0.3.0
+    /// and earlier) kept an instance and a journal, not a stream. The
+    /// event-sourced engine reads streams only, so those instances are
+    /// there but unreachable until the migration command imports them.
+    /// Counted at open so an operator is told, rather than finding an
+    /// empty list and a full file.
+    pub fn legacy_instances_without_a_stream(&self) -> Result<usize, DomainError> {
+        let tx = self.engine.begin_read()?;
+        let mut stranded = 0;
+        for (id, _) in tx.scan_str(Table::Ceremonies)? {
+            let ceremony_id = CeremonyId::new(id)?;
+            let opening = scoped(&ceremony_id, 1);
+            if tx.get(Table::Events, Key::Bytes(&opening))?.is_none() {
+                stranded += 1;
+            }
+        }
+        Ok(stranded)
     }
 }
 
@@ -57,7 +91,140 @@ fn legacy_store_error(path: &Path) -> Result<(), DomainError> {
 
 #[cfg(test)]
 mod tests {
+    use made_app::services::SessionStream;
+    use made_core::entities::ceremony_events::CeremonyCompleted;
+    use made_core::entities::{
+        AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
+    };
+    use made_core::ports::{
+        CeremonyEventStorePort, CeremonySnapshotStorePort, CeremonyUnitOfWorkPort,
+    };
+    use made_core::value_objects::{
+        AuditActor, AuditActorKind, CeremonyContext, CeremonyName, CeremonyState,
+        CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId, StreamVersion,
+        TransitionTrigger,
+    };
+    use time::OffsetDateTime;
+
     use super::*;
+
+    fn definition() -> CeremonyDefinition {
+        CeremonyDefinition::new(
+            CeremonyName::new("legacy_ceremony").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![
+                CeremonyState::initial(StateId::new("OPEN").unwrap()),
+                CeremonyState::terminal(StateId::new("DONE").unwrap()),
+            ],
+            vec![CeremonyTransition::new(
+                StateId::new("OPEN").unwrap(),
+                StateId::new("DONE").unwrap(),
+                TransitionTrigger::new("finish").unwrap(),
+                Vec::new(),
+            )
+            .unwrap()],
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        )
+        .unwrap()
+    }
+
+    /// An instance and a journal fact, written the way v0.3.0 wrote
+    /// them: through the unit of work, into `ceremony_instances` and
+    /// `audit_journal`, with no stream.
+    async fn write_legacy_instance(store: &SqliteCeremonyStore, id: &CeremonyId) {
+        let definition = definition();
+        let instance = CeremonyInstance::start(
+            id.clone(),
+            &definition,
+            CeremonyContext::empty(),
+            OffsetDateTime::UNIX_EPOCH,
+        );
+        let fact = AuditFact {
+            event_id: EventId::new(format!("{}:legacy", id.as_str())).unwrap(),
+            event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+                final_state: StateId::new("DONE").unwrap(),
+                completed_at: OffsetDateTime::UNIX_EPOCH,
+            }),
+            ceremony_id: id.clone(),
+            definition_name: definition.name().clone(),
+            definition_version: definition.version().clone(),
+            occurred_at: OffsetDateTime::UNIX_EPOCH,
+            actor: AuditActor::new("legacy", AuditActorKind::Engine, None).unwrap(),
+            correlation_id: None,
+            causation_id: None,
+            trace: None,
+        };
+        let commit = CeremonyCommit::new(instance, ExpectedRevision::New, [fact], []).unwrap();
+        store
+            .commit(commit)
+            .await
+            .expect("the legacy path still writes");
+    }
+
+    /// An instance the old path stored is counted at open and is not a
+    /// session the event-sourced path can load: no stream, no
+    /// snapshot, `NotFound`.
+    #[tokio::test]
+    async fn a_legacy_instance_without_a_stream_is_counted_and_not_loadable() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ceremonies.sqlite3");
+        let id = CeremonyId::new("stranded-1").unwrap();
+        {
+            let store = SqliteCeremonyStore::open(&path).unwrap();
+            assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 0);
+            write_legacy_instance(&store, &id).await;
+        }
+
+        let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+        assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 1);
+        assert_eq!(store.head(&id).await.unwrap(), StreamVersion::EMPTY);
+        assert_eq!(store.latest(&id).await.unwrap(), None);
+        let loaded = SessionStream::new(store.clone(), store.clone())
+            .load(&id)
+            .await;
+        assert!(
+            matches!(
+                loaded,
+                Err(DomainError::NotFound {
+                    what: "ceremony_instance"
+                })
+            ),
+            "a stranded instance must not load as a session, got {loaded:?}"
+        );
+    }
+
+    /// A ceremony opened as a stream is not a stranded instance, even
+    /// with a legacy row beside it.
+    #[tokio::test]
+    async fn an_instance_with_a_stream_is_not_counted() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("ceremonies.sqlite3");
+        let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+        let streamed = CeremonyId::new("streamed-1").unwrap();
+        let stream = SessionStream::new(store.clone(), store.clone());
+        stream
+            .open(
+                CeremonyInstance::decide_start(
+                    streamed.clone(),
+                    &definition(),
+                    CeremonyContext::empty(),
+                    OffsetDateTime::UNIX_EPOCH,
+                ),
+                AuditActor::new("test", AuditActorKind::Service, None).unwrap(),
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .await
+            .unwrap();
+        write_legacy_instance(&store, &CeremonyId::new("stranded-2").unwrap()).await;
+
+        assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 1);
+        assert!(stream.load(&streamed).await.is_ok());
+    }
 
     #[test]
     fn a_legacy_extension_is_refused_without_creating_a_store() {

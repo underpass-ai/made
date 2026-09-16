@@ -5,6 +5,8 @@
 //! is verified. The host owns where records live. This port is that
 //! boundary, and the conformance suite is what keeps it from being an
 //! unverifiable promise.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use async_trait::async_trait;
 

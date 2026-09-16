@@ -2,17 +2,18 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::ApplyTransition;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 
 use super::apply_ceremony_transition_input::ApplyCeremonyTransitionInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, SessionJournal, SessionMemoryRecorder};
+use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
 
 pub struct ApplyCeremonyTransitionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
     memory: Arc<SessionMemoryRecorder>,
 }
@@ -27,13 +28,13 @@ impl ApplyCeremonyTransitionUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
         memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
             memory,
         }
@@ -48,10 +49,7 @@ impl ApplyCeremonyTransitionUseCase {
         &self,
         input: ApplyCeremonyTransitionInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
@@ -59,21 +57,27 @@ impl ApplyCeremonyTransitionUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
-        session
-            .instance
-            .apply_transition_as(&definition, &input.role_id, &input.trigger, now)?;
-        let facts = session_facts::transition_applied(
-            &session.instance,
-            &definition,
-            &input.role_id,
-            input.role_kind,
+        let command = CeremonyCommand::ApplyTransition(ApplyTransition {
+            role_id: Some(input.role_id),
+            trigger: input.trigger,
             now,
-        )?;
-        // The move and the state it moved to land together. Apart, a
-        // crash between them leaves a session sitting in a state no
-        // recorded move can account for.
-        let instance = self.journal.commit(session, facts).await?.instance;
+        });
+        // Fail fast, on purpose. A move changes which commands are
+        // legal next, so a caller whose session moved under them
+        // decided against a state that is gone; they are told, rather
+        // than moved on their behalf. The move and the state it moved
+        // to still land together: a crash between them would leave a
+        // session sitting in a state no recorded move accounts for.
+        let instance = self
+            .stream
+            .execute(session, ConflictPolicy::FailFast, |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?
+            .instance;
         // A transition is how a session reaches its end, so this is
         // where an ending becomes something a later session can weigh.
         // Nothing is written while it is still running.
@@ -88,24 +92,23 @@ mod tests {
     use std::sync::Arc;
 
     use made_core::error::DomainError;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         AuditActorKind, AuditEventType, StateId, StepOutput, StepResult,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, ceremony_id, definition, definition_resolver, journal,
-        journal_losing_every_race, journal_over, now, recorder, recording_memory, role_id,
-        started_instance, step_id, trigger, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake,
+        a_recorder, ceremony_id, definition, definition_resolver, now, recorder, recording_memory,
+        role_id, started_instance, step_id, stream, stream_conflicting_once,
+        stream_losing_every_race, stream_over, trigger, DefinitionRepositoryFake, EventStoreFake,
+        FixedClock,
     };
 
     #[tokio::test]
     async fn applies_guarded_transition_after_step_completion() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let mut instance = started_instance(&definition);
         instance
             .start_step(
@@ -132,7 +135,7 @@ mod tests {
         instances.save(&instance).await.unwrap();
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -161,14 +164,14 @@ mod tests {
     async fn unsatisfied_guard_is_rejected() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -187,10 +190,10 @@ mod tests {
     }
 
     /// A session ready to make its last move.
-    async fn ready_to_finish() -> (Arc<DefinitionRepositoryFake>, Arc<InstanceRepositoryFake>) {
+    async fn ready_to_finish() -> (Arc<DefinitionRepositoryFake>, Arc<EventStoreFake>) {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let mut instance = started_instance(&definition);
         instance
             .start_step(
@@ -227,10 +230,10 @@ mod tests {
     #[tokio::test]
     async fn seals_the_move_and_the_end_it_reached() {
         let (definitions, instances) = ready_to_finish().await;
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -245,7 +248,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         let sealed = facts
             .iter()
             .map(|fact| fact.event.event_type())
@@ -279,15 +282,15 @@ mod tests {
     async fn a_refused_move_seals_nothing() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -303,21 +306,18 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            unit_of_work.facts().await.is_empty(),
+            store.facts().await.is_empty(),
             "an unsatisfied guard sealed a fact"
         );
     }
 
     /// The same race the guards refuse, refused here too.
-    ///
-    /// Swap the two reads in `SessionJournal::load` and this fails,
-    /// because the move then lands over the other writer's.
     #[tokio::test]
     async fn refuses_to_move_a_session_someone_else_moved_on() {
         let (definitions, instances) = ready_to_finish().await;
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal_losing_every_race(instances),
+            stream_losing_every_race(instances),
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -342,6 +342,56 @@ mod tests {
         );
     }
 
+    /// A move fails fast: one conflict is the answer, not a reason to
+    /// decide again.
+    ///
+    /// The store here refuses exactly one append and would take the
+    /// next. A retrying command lands on its second attempt against
+    /// it; a transition must not, because the state it was chosen
+    /// against is gone and the caller — not the engine — decides what
+    /// to do about that. Nothing lands.
+    #[tokio::test]
+    async fn a_move_that_lost_one_race_is_not_decided_again() {
+        let (definitions, instances) = ready_to_finish().await;
+        let usecase = ApplyCeremonyTransitionUseCase::new(
+            definition_resolver(definitions),
+            stream_conflicting_once(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+            a_recorder(),
+        );
+
+        let refused = usecase
+            .execute(ApplyCeremonyTransitionInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                trigger(),
+            ))
+            .await;
+
+        assert!(
+            matches!(
+                refused,
+                Err(DomainError::Conflict {
+                    what: "ceremony_instance"
+                })
+            ),
+            "a transition fails fast on a conflict, got {refused:?}"
+        );
+        assert!(
+            instances.facts().await.is_empty(),
+            "a refused move must leave nothing in the stream"
+        );
+        assert!(
+            instances
+                .saved(&ceremony_id())
+                .await
+                .transitions()
+                .is_empty(),
+            "a refused move must not have moved the session"
+        );
+    }
+
     /// The assumption `session_facts` rests on.
     ///
     /// `AuditEventType::CeremonyFailed` has no producer, because a
@@ -357,7 +407,7 @@ mod tests {
         let definition = definition();
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -390,7 +440,7 @@ mod tests {
         let memory = recording_memory();
         let usecase = ApplyCeremonyTransitionUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         );

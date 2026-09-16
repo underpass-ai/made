@@ -3,24 +3,24 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::entities::{
-    AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance, CommitOutcome,
+    AuditFact, AuditRecord, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
     PublicationOutcome, PublishedCeremonyDefinition,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
-    CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort, MemoryWriteOutcome,
-    MemoryWriterPort,
+    seal_continuation, AppendOutcome, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshot,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome, MemoryWriterPort, PositionedRecord,
 };
 use made_core::value_objects::{
-    CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRevision, CeremonyRole,
+    AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
-    CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite,
-    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig,
-    StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult,
-    StepStatus, TransitionTrigger,
+    CeremonyVersion, DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey,
+    LeaseOwnerId, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope,
+    MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
+    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy,
+    StepResult, StepStatus, StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -28,29 +28,29 @@ use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{SessionJournal, SessionMemoryRecorder};
+use crate::services::{session_facts, SessionMemoryRecorder, SessionStream};
 
 mod context_store_fake;
 mod definition_repository_fake;
+mod event_store_fake;
 mod fixed_clock;
-mod instance_repository_fake;
 mod publications_fake;
 mod recording_memory;
-mod repository_that_loses_the_race;
 mod sequence_step_handler_fake;
 mod step_handler_fake;
-mod unit_of_work_fake;
+mod store_that_conflicts_once;
+mod store_that_loses_every_race;
 
 pub(super) use context_store_fake::ContextStoreFake;
 pub(super) use definition_repository_fake::DefinitionRepositoryFake;
+pub(super) use event_store_fake::EventStoreFake;
 pub(super) use fixed_clock::FixedClock;
-pub(super) use instance_repository_fake::InstanceRepositoryFake;
 pub(super) use publications_fake::PublicationsFake;
 pub(super) use recording_memory::RecordingMemory;
-pub(super) use repository_that_loses_the_race::ARepositoryThatLosesTheRace;
 pub(super) use sequence_step_handler_fake::SequenceStepHandlerFake;
 pub(super) use step_handler_fake::StepHandlerFake;
-pub(super) use unit_of_work_fake::UnitOfWorkFake;
+pub(super) use store_that_conflicts_once::StoreThatConflictsOnce;
+pub(super) use store_that_loses_every_race::StoreThatLosesEveryRace;
 
 impl FixedClock {
     pub(super) fn new(now: OffsetDateTime) -> Self {
@@ -104,62 +104,6 @@ impl CeremonyDefinitionRepositoryPort for DefinitionRepositoryFake {
 
     async fn list(&self) -> Result<Vec<CeremonyDefinition>, DomainError> {
         Ok(self.inner.read().await.values().cloned().collect())
-    }
-}
-
-impl InstanceRepositoryFake {
-    pub(super) async fn revision_of(&self, id: &CeremonyId) -> Option<CeremonyRevision> {
-        self.revisions.read().await.get(id).copied()
-    }
-
-    pub(super) async fn advance(&self, id: &CeremonyId) -> CeremonyRevision {
-        let mut revisions = self.revisions.write().await;
-        let next = revisions
-            .get(id)
-            .map_or(CeremonyRevision::INITIAL, |revision| revision.next());
-        revisions.insert(id.clone(), next);
-        next
-    }
-
-    pub(super) async fn set_revision(&self, id: &CeremonyId, revision: CeremonyRevision) {
-        self.revisions.write().await.insert(id.clone(), revision);
-    }
-}
-
-impl InstanceRepositoryFake {
-    pub(super) async fn saved(&self, id: &CeremonyId) -> CeremonyInstance {
-        self.get(id).await.unwrap()
-    }
-}
-
-#[async_trait]
-impl CeremonyInstanceRepositoryPort for InstanceRepositoryFake {
-    async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
-        self.advance(instance.id()).await;
-        self.inner
-            .write()
-            .await
-            .insert(instance.id().clone(), instance.clone());
-        Ok(())
-    }
-
-    async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
-        self.inner
-            .read()
-            .await
-            .get(id)
-            .cloned()
-            .ok_or(DomainError::NotFound {
-                what: "ceremony_instance",
-            })
-    }
-
-    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
-        Ok(self.inner.read().await.values().cloned().collect())
-    }
-
-    async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
-        Ok(self.inner.read().await.contains_key(id))
     }
 }
 
@@ -688,123 +632,342 @@ pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
     recorder(recording_memory())
 }
 
-/// A unit of work over the same storage the repository reads.
+/// The store every session test reads from and appends to.
 ///
-/// Sharing the store is not a shortcut: the real one implements both
-/// ports over a single database, and a fake that kept its own copy
-/// would let a committed session be invisible to the next read — a
-/// failure no adapter can actually have.
-impl UnitOfWorkFake {
-    pub(super) fn over(instances: Arc<InstanceRepositoryFake>) -> Self {
-        Self {
-            instances,
-            facts: RwLock::new(Vec::new()),
-        }
+/// `save` seeds a session the way the old repository fake did: the
+/// stream gets the opening record the instance would have produced,
+/// and the instance as handed in rides in a snapshot at version one.
+/// For a freshly started instance that snapshot is exactly the fold;
+/// for one a test mutated before seeding, it is the state the test
+/// wants the use case to find, which the real store would only hold
+/// after the events that produced it. Nothing seeded lands in `facts`,
+/// so a test that counts what a use case sealed counts only that.
+impl EventStoreFake {
+    pub(super) async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
+        let started = CeremonyEvent::CeremonyInstanceStarted(
+            made_core::entities::ceremony_events::CeremonyInstanceStarted {
+                ceremony_id: instance.id().clone(),
+                definition_name: instance.definition_name().clone(),
+                definition_version: instance.definition_version().clone(),
+                initial_state: instance.current_state().clone(),
+                step_ids: instance.step_records().keys().cloned().collect(),
+                context: instance.context().clone(),
+                bound_definition: instance.bound_definition(),
+                created_at: instance.created_at(),
+            },
+        );
+        let mut opening = session_facts::fact(
+            instance,
+            started,
+            session_facts::party("fixture", AuditActorKind::Service)?,
+            instance.created_at(),
+        )?;
+        opening.correlation_id = Some(opening.event_id.clone());
+        let outcome = self
+            .append(instance.id(), StreamVersion::EMPTY, vec![opening])
+            .await?;
+        let Some(version) = outcome.appended_version() else {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_instance",
+            });
+        };
+        // Seeded, not sealed: the fixture's opening is not something
+        // the use case under test did.
+        self.facts.write().await.clear();
+        self.snapshots
+            .write()
+            .await
+            .entry(instance.id().clone())
+            .or_default()
+            .insert(version, instance.clone());
+        Ok(())
     }
 
+    /// The session as the engine would load it now.
+    pub(super) async fn saved(self: &Arc<Self>, id: &CeremonyId) -> CeremonyInstance {
+        stream(self.clone()).load(id).await.unwrap().instance
+    }
+
+    /// Whether a stream was ever opened for this id.
+    pub(super) async fn exists(&self, id: &CeremonyId) -> bool {
+        !self.head(id).await.unwrap().is_empty()
+    }
+
+    /// Every fact appended through the port, in order.
     pub(super) async fn facts(&self) -> Vec<AuditFact> {
         self.facts.read().await.clone()
     }
 
-    /// Move a session on behind the caller's back, the way another
-    /// writer would.
-    pub(super) async fn someone_else_writes(&self, ceremony_id: &CeremonyId) {
-        self.instances.advance(ceremony_id).await;
+    /// The sealed records of one stream, in order.
+    pub(super) async fn records(&self, id: &CeremonyId) -> Vec<AuditRecord> {
+        self.streams
+            .read()
+            .await
+            .get(id)
+            .cloned()
+            .unwrap_or_default()
     }
 }
 
-#[async_trait]
-impl CeremonyUnitOfWorkPort for UnitOfWorkFake {
-    async fn commit(&self, commit: CeremonyCommit) -> Result<CommitOutcome, DomainError> {
-        let ceremony_id = commit.instance().id().clone();
-        let stored = self.instances.revision_of(&ceremony_id).await;
-        if !commit.expected_revision().matches(stored) {
-            return Ok(CommitOutcome::Conflict {
-                expected: commit.expected_revision(),
-                stored,
-            });
-        }
+fn version_of(records: &[AuditRecord]) -> StreamVersion {
+    records.last().map_or(StreamVersion::EMPTY, |record| {
+        StreamVersion::from_sequence(record.sequence())
+    })
+}
 
-        let revision = commit.expected_revision().resulting_revision();
-        self.instances.save(commit.instance()).await?;
-        // Set rather than advanced: the save above already moved it,
-        // and the commit decides what the resulting revision is.
-        self.instances.set_revision(&ceremony_id, revision).await;
-        self.facts.write().await.extend(commit.facts().to_vec());
-        Ok(CommitOutcome::Committed {
-            revision,
-            records: Vec::new(),
+#[async_trait]
+impl CeremonyEventStorePort for EventStoreFake {
+    async fn append(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        let mut streams = self.streams.write().await;
+        let existing = streams.entry(stream.clone()).or_default();
+        let actual = version_of(existing);
+        if actual != expected {
+            return Ok(AppendOutcome::Conflict { expected, actual });
+        }
+        let sealed = seal_continuation(stream, existing, facts.clone())?;
+        let mut log = self.log.write().await;
+        let first_position = GlobalPosition::new(u64::try_from(log.len()).unwrap() + 1).unwrap();
+        for record in &sealed {
+            log.push((stream.clone(), record.sequence()));
+        }
+        existing.extend(sealed.iter().cloned());
+        self.facts.write().await.extend(facts);
+        Ok(AppendOutcome::Appended {
+            version: version_of(existing),
+            records: sealed,
+            first_position,
         })
     }
 
-    async fn revision(
+    async fn read(
         &self,
-        ceremony_id: &CeremonyId,
-    ) -> Result<Option<CeremonyRevision>, DomainError> {
-        Ok(self.instances.revision_of(ceremony_id).await)
+        stream: &CeremonyId,
+        after: StreamVersion,
+    ) -> Result<Vec<AuditRecord>, DomainError> {
+        Ok(self
+            .streams
+            .read()
+            .await
+            .get(stream)
+            .map(|records| {
+                records
+                    .iter()
+                    .filter(|record| record.sequence().value() > after.value())
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default())
+    }
+
+    async fn read_all(
+        &self,
+        from: GlobalPosition,
+        limit: usize,
+    ) -> Result<Vec<PositionedRecord>, DomainError> {
+        let streams = self.streams.read().await;
+        let log = self.log.read().await;
+        Ok(log
+            .iter()
+            .enumerate()
+            .map(|(index, entry)| (GlobalPosition::new(index as u64 + 1).unwrap(), entry))
+            .filter(|(position, _)| *position >= from)
+            .take(limit)
+            .map(|(position, (stream, sequence))| PositionedRecord {
+                position,
+                record: streams[stream][usize::try_from(sequence.value()).unwrap() - 1].clone(),
+            })
+            .collect())
+    }
+
+    async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+        Ok(self
+            .streams
+            .read()
+            .await
+            .get(stream)
+            .map_or(StreamVersion::EMPTY, |records| version_of(records)))
+    }
+
+    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+        Ok(self
+            .streams
+            .read()
+            .await
+            .iter()
+            .filter(|(_, records)| !records.is_empty())
+            .map(|(id, _)| id.clone())
+            .collect())
     }
 }
 
-pub(super) fn journal(instances: Arc<InstanceRepositoryFake>) -> Arc<SessionJournal> {
-    Arc::new(SessionJournal::new(
-        Arc::new(UnitOfWorkFake::over(instances.clone())),
-        instances,
-    ))
-}
-
-/// A journal a test can look inside.
-pub(super) fn journal_over(
-    instances: Arc<InstanceRepositoryFake>,
-) -> (Arc<SessionJournal>, Arc<UnitOfWorkFake>) {
-    let unit_of_work = Arc::new(UnitOfWorkFake::over(instances.clone()));
-    (
-        Arc::new(SessionJournal::new(unit_of_work.clone(), instances)),
-        unit_of_work,
-    )
-}
-
-/// A repository that loses the race on every read.
-///
-/// Reading a session is two reads, and this fake makes a competing
-/// write land in the gap between them — every time, instead of once in
-/// a thousand runs on a loaded machine.
-///
-/// Which of the two reads it lands between is the whole point. Reading
-/// the revision first leaves a stale expectation against fresh state
-/// and the commit is refused; reading it second leaves an expectation
-/// as fresh as the state, the commit is accepted, and the other
-/// writer's work is gone with nothing logged. The two orders are told
-/// apart here and nowhere else.
 #[async_trait]
-impl CeremonyInstanceRepositoryPort for ARepositoryThatLosesTheRace {
-    async fn save(&self, instance: &CeremonyInstance) -> Result<(), DomainError> {
-        self.instances.save(instance).await
+impl CeremonySnapshotStorePort for EventStoreFake {
+    async fn save(&self, snapshot: CeremonySnapshot) -> Result<(), DomainError> {
+        self.snapshots
+            .write()
+            .await
+            .entry(snapshot.instance.id().clone())
+            .or_default()
+            .insert(snapshot.version, snapshot.instance);
+        Ok(())
     }
 
-    async fn get(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
-        self.unit_of_work.someone_else_writes(id).await;
-        self.instances.get(id).await
+    async fn latest(&self, stream: &CeremonyId) -> Result<Option<CeremonySnapshot>, DomainError> {
+        Ok(self
+            .snapshots
+            .read()
+            .await
+            .get(stream)
+            .and_then(|versions| {
+                versions
+                    .iter()
+                    .next_back()
+                    .map(|(version, instance)| CeremonySnapshot {
+                        version: *version,
+                        instance: instance.clone(),
+                    })
+            }))
     }
 
-    async fn list(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
-        self.instances.list().await
-    }
-
-    async fn exists(&self, id: &CeremonyId) -> Result<bool, DomainError> {
-        self.instances.exists(id).await
+    async fn forget(&self, stream: &CeremonyId) -> Result<(), DomainError> {
+        self.snapshots.write().await.remove(stream);
+        Ok(())
     }
 }
 
-/// A journal whose every read is overtaken by another writer.
-pub(super) fn journal_losing_every_race(
-    instances: Arc<InstanceRepositoryFake>,
-) -> Arc<SessionJournal> {
-    let unit_of_work = Arc::new(UnitOfWorkFake::over(instances.clone()));
-    Arc::new(SessionJournal::new(
-        unit_of_work.clone(),
-        Arc::new(ARepositoryThatLosesTheRace {
-            instances,
-            unit_of_work,
+/// The stream every session use case is built over.
+pub(super) fn stream(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(store.clone(), store))
+}
+
+/// A stream a test can look inside.
+pub(super) fn stream_over(store: Arc<EventStoreFake>) -> (Arc<SessionStream>, Arc<EventStoreFake>) {
+    (stream(store.clone()), store)
+}
+
+/// A stream whose first append is overtaken by another writer, and
+/// whose later ones land.
+pub(super) fn stream_conflicting_once(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(
+        Arc::new(StoreThatConflictsOnce {
+            inner: store.clone(),
+            conflicted: std::sync::atomic::AtomicBool::new(false),
         }),
+        store,
     ))
+}
+
+/// A stream whose every append is overtaken by another writer.
+pub(super) fn stream_losing_every_race(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
+    stream_losing_every_race_over(store).0
+}
+
+/// The same, with the losing store in hand so a test can count how
+/// many times the use case tried before giving up.
+pub(super) fn stream_losing_every_race_over(
+    store: Arc<EventStoreFake>,
+) -> (Arc<SessionStream>, Arc<StoreThatLosesEveryRace>) {
+    let losing = Arc::new(StoreThatLosesEveryRace {
+        inner: store.clone(),
+        appends: std::sync::atomic::AtomicUsize::new(0),
+    });
+    (Arc::new(SessionStream::new(losing.clone(), store)), losing)
+}
+
+impl StoreThatLosesEveryRace {
+    pub(super) fn appends(&self) -> usize {
+        self.appends.load(std::sync::atomic::Ordering::SeqCst)
+    }
+}
+
+fn overtaken(expected: StreamVersion) -> AppendOutcome {
+    AppendOutcome::Conflict {
+        expected,
+        actual: expected.next(),
+    }
+}
+
+#[async_trait]
+impl CeremonyEventStorePort for StoreThatConflictsOnce {
+    async fn append(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        if !self
+            .conflicted
+            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        {
+            return Ok(overtaken(expected));
+        }
+        self.inner.append(stream, expected, facts).await
+    }
+
+    async fn read(
+        &self,
+        stream: &CeremonyId,
+        after: StreamVersion,
+    ) -> Result<Vec<AuditRecord>, DomainError> {
+        self.inner.read(stream, after).await
+    }
+
+    async fn read_all(
+        &self,
+        from: GlobalPosition,
+        limit: usize,
+    ) -> Result<Vec<PositionedRecord>, DomainError> {
+        self.inner.read_all(from, limit).await
+    }
+
+    async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+        self.inner.head(stream).await
+    }
+
+    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+        self.inner.streams().await
+    }
+}
+
+#[async_trait]
+impl CeremonyEventStorePort for StoreThatLosesEveryRace {
+    async fn append(
+        &self,
+        _stream: &CeremonyId,
+        expected: StreamVersion,
+        _facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.appends
+            .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(overtaken(expected))
+    }
+
+    async fn read(
+        &self,
+        stream: &CeremonyId,
+        after: StreamVersion,
+    ) -> Result<Vec<AuditRecord>, DomainError> {
+        self.inner.read(stream, after).await
+    }
+
+    async fn read_all(
+        &self,
+        from: GlobalPosition,
+        limit: usize,
+    ) -> Result<Vec<PositionedRecord>, DomainError> {
+        self.inner.read_all(from, limit).await
+    }
+
+    async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+        self.inner.head(stream).await
+    }
+
+    async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+        self.inner.streams().await
+    }
 }

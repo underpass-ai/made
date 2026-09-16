@@ -2,18 +2,19 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::ApproveGuard;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 use made_core::value_objects::CeremonyRecordRef;
 
 use super::approve_ceremony_guard_input::ApproveCeremonyGuardInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, SessionJournal, SessionMemoryRecorder};
+use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
 
 pub struct ApproveCeremonyGuardUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
     memory: Arc<SessionMemoryRecorder>,
 }
@@ -28,13 +29,13 @@ impl ApproveCeremonyGuardUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
         memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
             memory,
         }
@@ -53,36 +54,33 @@ impl ApproveCeremonyGuardUseCase {
         &self,
         input: ApproveCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
-        session.instance.approve_guard(
-            &definition,
-            &input.guard_name,
-            input.role_id.clone(),
-            input.role_kind,
+        let command = CeremonyCommand::ApproveGuard(ApproveGuard {
+            guard_name: input.guard_name.clone(),
+            approved_by: input.role_id,
+            approved_by_kind: input.role_kind,
             now,
-        )?;
-        let fact = session_facts::guard_approved(
-            &session.instance,
-            &input.guard_name,
-            &input.role_id,
-            input.role_kind,
-            now,
-        )?;
-        // The session and the record of a human having decided land
-        // together. Apart, a crash between them leaves an approval
-        // nobody can show was ever made.
-        let instance = self.journal.commit(session, vec![fact]).await?.instance;
+        });
+        // Decided against the fold and appended where it was decided.
+        // An approval commutes with what other writers do to the
+        // session, so a lost race is decided again rather than refused.
+        let instance = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?
+            .instance;
         // A human decision is the kind a later session weighs hardest,
         // and now it can say who made it.
         self.memory
             .remember_guard_decision(
                 &instance,
-                &CeremonyRecordRef::guard_decision(input.guard_name.clone()),
+                &CeremonyRecordRef::guard_decision(input.guard_name),
             )
             .await;
         Ok(instance)
@@ -94,7 +92,6 @@ mod tests {
     use made_core::entities::CeremonyEvent;
     use std::sync::Arc;
 
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::GuardName;
 
     use made_core::error::DomainError;
@@ -102,23 +99,23 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, approval_definition, ceremony_id, definition_resolver, journal,
-        journal_losing_every_race, journal_over, now, role_id, started_instance,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        a_recorder, approval_definition, ceremony_id, definition_resolver, now, role_id,
+        started_instance, stream, stream_losing_every_race_over, stream_over,
+        DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
     async fn records_human_guard_approval_in_context() {
         let definition = approval_definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = ApproveCeremonyGuardUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -149,22 +146,23 @@ mod tests {
     /// only observable difference between the safe implementation and
     /// the dangerous one is whether this call is refused.
     ///
-    /// What makes the refusal happen is the order the journal reads
-    /// in, and the fake is built to tell the two orders apart: swap
-    /// the two reads in `SessionJournal::load` and this test fails,
-    /// because the approval then succeeds over the other writer.
+    /// An approval commutes with most writes, so it is decided again
+    /// on a conflict — but only up to its bound. Against a stream that
+    /// moves under every attempt, the use case tries exactly as many
+    /// times as the default retry allows and then reports the race.
     #[tokio::test]
     async fn refuses_to_approve_over_a_session_someone_else_moved_on() {
         let definition = approval_definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
+        let (stream, losing) = stream_losing_every_race_over(instances.clone());
         let usecase = ApproveCeremonyGuardUseCase::new(
             definition_resolver(definitions),
-            journal_losing_every_race(instances.clone()),
+            stream,
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -187,26 +185,35 @@ mod tests {
             ),
             "a lost race must be reported as one, got {refused:?}"
         );
+        assert_eq!(
+            losing.appends(),
+            usize::from(ConflictPolicy::retry().attempts()),
+            "a retrying command tries exactly its bound before giving up"
+        );
+        assert!(
+            instances.facts().await.is_empty(),
+            "a refused approval must leave nothing in the stream"
+        );
     }
 
     /// The approval and the record of it land together.
     ///
     /// A guard that opens without leaving a fact behind is the failure
-    /// the unit of work exists to prevent, and it is invisible from the
+    /// the append exists to prevent, and it is invisible from the
     /// state alone — the session looks exactly the same either way.
     #[tokio::test]
     async fn seals_the_approval_into_the_journal() {
         let definition = approval_definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances.clone());
+        let (stream, store) = stream_over(instances.clone());
         let usecase = ApproveCeremonyGuardUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
             a_recorder(),
         );
@@ -221,7 +228,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one approval, one fact: {facts:?}");
         assert_eq!(
             facts[0].event.event_type(),

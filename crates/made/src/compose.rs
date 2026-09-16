@@ -9,9 +9,9 @@ use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
-    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
-    InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore,
+    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
@@ -29,8 +29,8 @@ use made_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::services::AutoDispatchService;
-use made_app::services::SessionJournal;
 use made_app::services::SessionMemoryRecorder;
+use made_app::services::SessionStream;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
@@ -46,10 +46,10 @@ use made_app::usecases::{
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ContractRegistryPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutorPort, MessagingPort, MetricsRecorderPort, ScoringPort,
-    StatisticsPort, ValidatorPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ContractRegistryPort,
+    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MessagingPort,
+    MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use tracing::{info, warn};
 
@@ -159,15 +159,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // deployment and a silent data-loss bug in any other, so an
     // unconfigured server says what it is giving up rather than
     // discovering it at the first restart.
-    // One store serves every ceremony port, durable or not. An instance
-    // and the published definition it is bound to have to survive
-    // together, or a restart leaves instances pointing at versions that
-    // are gone; and a session and the record of what it did have to
-    // land together, which they cannot if the unit of work commits into
-    // storage the reader never sees.
-    let (ceremony_instances, ceremony_unit_of_work, ceremony_publications): (
-        Arc<dyn CeremonyInstanceRepositoryPort>,
-        Arc<dyn CeremonyUnitOfWorkPort>,
+    // One store serves every ceremony port, durable or not. A stream
+    // and the published definition its ceremony is bound to have to
+    // survive together, or a restart leaves streams pointing at
+    // versions that are gone; and a snapshot is a cache of a stream's
+    // fold, which it cannot be if it lives somewhere the stream does
+    // not.
+    let (ceremony_events, ceremony_snapshots, ceremony_publications): (
+        Arc<dyn CeremonyEventStorePort>,
+        Arc<dyn CeremonySnapshotStorePort>,
         Arc<dyn CeremonyDefinitionPublicationPort>,
     ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
         let store = Arc::new(
@@ -181,17 +181,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
             "MADE_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
              leases, idempotency keys and pending human guards will not survive a restart."
         );
-        let store = Arc::new(InMemoryCeremonyStore::new());
+        let store = Arc::new(InMemoryCeremonyEventStore::new());
         (
             store.clone(),
             store,
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
     };
-    let ceremony_journal = Arc::new(SessionJournal::new(
-        ceremony_unit_of_work,
-        ceremony_instances.clone(),
-    ));
+    let ceremony_stream = Arc::new(SessionStream::new(ceremony_events, ceremony_snapshots));
 
     let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
         Arc::new(InMemoryCeremonyTranscriptStore::new());
@@ -236,7 +233,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let run_ceremony = Arc::new(
         RunCeremonyUseCase::new(
             ceremony_definitions.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             ceremony_step_handler.clone(),
             ceremony_transcript_store.clone(),
             clock.clone(),
@@ -255,18 +252,18 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // to be there for the next step whichever way the run was driven.
     let start_ceremony = Arc::new(StartCeremonyUseCase::new(
         ceremony_definitions.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
     ));
     let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
         ceremony_publications.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
     ));
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
-            ceremony_journal.clone(),
+            ceremony_stream.clone(),
             ceremony_step_handler,
             clock.clone(),
         )
@@ -279,42 +276,42 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
     ));
     let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
         session_memory.clone(),
     ));
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
     ));
     // No evidence source ships with the server, so this answers
@@ -322,7 +319,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // a missing method or an invented answer.
     let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         Arc::new(NoopCeremonyEvidenceSource::new()),
         clock.clone(),
         session_memory.clone(),
@@ -335,7 +332,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_journal.clone(),
+        ceremony_stream.clone(),
         clock.clone(),
     ));
 
@@ -378,11 +375,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // factory can finish wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
 
-    let get_ceremony_instance =
-        Arc::new(GetCeremonyInstanceUseCase::new(ceremony_instances.clone()));
-    let list_ceremony_instances = Arc::new(ListCeremonyInstancesUseCase::new(
-        ceremony_instances.clone(),
-    ));
+    let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+    let list_ceremony_instances =
+        Arc::new(ListCeremonyInstancesUseCase::new(ceremony_stream.clone()));
 
     let grpc_service = made_adapters::grpc::MadeGrpcService::builder()
         .deliberate(deliberate)

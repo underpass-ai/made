@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use made_core::entities::ceremony_commands::{ApplyStepResult, StartStep};
+use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
@@ -12,11 +14,11 @@ use made_core::value_objects::{CeremonyStepContribution, StepErrorMessage, StepL
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct RunCeremonyStepUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     clock: Arc<dyn ClockPort>,
@@ -32,13 +34,13 @@ impl RunCeremonyStepUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             handler,
             transcript_store: Arc::new(NoopCeremonyTranscriptStore),
             clock,
@@ -66,10 +68,10 @@ impl RunCeremonyStepUseCase {
         &self,
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
-        // Two commits, not one, and deliberately so: the claim has to
+        // Two appends, not one, and deliberately so: the claim has to
         // be durable before the handler is invoked, or a crash while it
         // runs leaves no record that anything took the step.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
@@ -83,6 +85,7 @@ impl RunCeremonyStepUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
 
         let now = self.clock.now();
         let lease = StepLease::acquire(
@@ -91,30 +94,28 @@ impl RunCeremonyStepUseCase {
             now,
             input.lease_ttl,
         )?;
-        let attempt = session.instance.start_step_as(
-            &definition,
-            &input.role_id,
-            &input.step_id,
+        let claim = CeremonyCommand::StartStep(StartStep {
+            role_id: Some(input.role_id.clone()),
+            step_id: input.step_id.clone(),
             lease,
             now,
-        )?;
-        let iteration = session
-            .instance
+        });
+        let claimed = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&claim, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?;
+        let instance = claimed.instance;
+        // Captured off the claim, before the result is applied: a
+        // successful repeat advances the record to the next iteration.
+        let record = instance
             .step_record(&input.step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
-            })?
-            .iteration();
-        let started = session_facts::step_started(
-            &session.instance,
-            &input.step_id,
-            iteration,
-            attempt,
-            &input.role_id,
-            input.role_kind,
-            now,
-        )?;
-        let instance = self.journal.commit(session, vec![started]).await?.instance;
+            })?;
+        let attempt = record.attempt();
 
         let transcript = self.transcript_store.transcript(instance.id()).await?;
         let request = CeremonyStepHandlerRequest::new(
@@ -134,28 +135,24 @@ impl RunCeremonyStepUseCase {
         .with_bound_specialty(instance.bound_specialty(&input.role_id).cloned());
         let result = self.execute_handler(request).await?;
 
-        // Read again rather than reusing what was loaded before the
-        // handler ran: it may have taken a while, and the revision that
-        // was current then is not the one this commit has to hold.
-        let mut session = self.journal.load(instance.id()).await?;
+        // Loaded again rather than reusing what the claim left: the
+        // handler may have taken a while, and the version that was
+        // current then is not the one this append has to expect.
+        let session = self.stream.load(instance.id()).await?;
         let finished_at = self.clock.now();
-        session.instance.apply_step_result(
-            &definition,
-            &input.step_id,
-            result.clone(),
-            finished_at,
-        )?;
-        let finished = session_facts::step_finished(
-            &session.instance,
-            &input.step_id,
-            iteration,
-            attempt,
-            &result,
-            &input.role_id,
-            input.role_kind,
-            finished_at,
-        )?;
-        let refreshed = self.journal.commit(session, vec![finished]).await?.instance;
+        let finish = CeremonyCommand::ApplyStepResult(ApplyStepResult {
+            step_id: input.step_id.clone(),
+            result: result.clone(),
+            now: finished_at,
+        });
+        let refreshed = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&finish, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, finished_at)
+            })
+            .await?
+            .instance;
         if result.is_success() {
             self.transcript_store
                 .append(
@@ -192,7 +189,6 @@ mod tests {
     use std::sync::Arc;
 
     use made_core::error::DomainError;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, StepAttempt, StepErrorMessage, StepOutput,
         StepStatus,
@@ -201,10 +197,9 @@ mod tests {
     use super::*;
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, definition_resolver, idempotency_key,
-        journal, journal_over, lease_owner, lease_ttl, now, repeating_approval_definition,
-        resolver_with, role_id, started_instance, step_id, ContextStoreFake,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake, PublicationsFake,
-        SequenceStepHandlerFake, StepHandlerFake,
+        lease_owner, lease_ttl, now, repeating_approval_definition, resolver_with, role_id,
+        started_instance, step_id, stream, stream_over, ContextStoreFake, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock, PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -229,7 +224,7 @@ mod tests {
         let publications = Arc::new(PublicationsFake::default());
         let published = publications.seed(definition()).await;
         let elsewhere = Arc::new(DefinitionRepositoryFake::new(approval_definition()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&made_core::entities::CeremonyInstance::start_bound(
                 ceremony_id(),
@@ -241,7 +236,7 @@ mod tests {
             .unwrap();
         let usecase = RunCeremonyStepUseCase::new(
             resolver_with(elsewhere, publications),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::completed(StepOutput::empty()).unwrap(),
             )),
@@ -273,7 +268,7 @@ mod tests {
     async fn invokes_handler_and_persists_completed_result() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
@@ -284,7 +279,7 @@ mod tests {
         let transcript_store = Arc::new(ContextStoreFake::default());
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             handler.clone(),
             Arc::new(FixedClock::new(now())),
         )
@@ -330,7 +325,7 @@ mod tests {
     async fn incremental_execution_exposes_same_step_as_next_iteration() {
         let definition = repeating_approval_definition(3);
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
@@ -341,7 +336,7 @@ mod tests {
         ]));
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             handler,
             Arc::new(FixedClock::new(now())),
         )
@@ -397,7 +392,7 @@ mod tests {
     async fn handler_domain_error_is_persisted_as_failed_step() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
@@ -407,7 +402,7 @@ mod tests {
         }));
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             handler,
             Arc::new(FixedClock::new(now())),
         );
@@ -436,7 +431,7 @@ mod tests {
     async fn active_lease_blocks_runner_before_handler_invocation() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let mut instance = started_instance(&definition);
         instance
             .start_step(
@@ -458,7 +453,7 @@ mod tests {
         ));
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             handler.clone(),
             Arc::new(FixedClock::new(now())),
         );
@@ -491,15 +486,15 @@ mod tests {
     async fn seals_the_claim_before_the_work_and_the_ending_after() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::completed(StepOutput::empty()).unwrap(),
             )),
@@ -519,7 +514,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         let sealed = facts
             .iter()
             .map(|fact| fact.event.event_type())
@@ -543,15 +538,15 @@ mod tests {
     async fn a_failed_step_is_sealed_as_a_failure() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::failed(StepErrorMessage::new("the handler gave up").unwrap()).unwrap(),
             )),
@@ -571,7 +566,7 @@ mod tests {
             .await
             .unwrap();
 
-        let sealed = unit_of_work
+        let sealed = store
             .facts()
             .await
             .iter()

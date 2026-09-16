@@ -6,16 +6,16 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore,
 };
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
-    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort,
-    CeremonyUnitOfWorkPort, ClockPort, MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
+    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
+    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use made_core::value_objects::StepResult;
 
@@ -32,9 +32,8 @@ pub struct EmbeddedMadeBuilder {
     memory: Option<Arc<dyn MemoryWriterPort>>,
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
-    instances: Option<Arc<dyn CeremonyInstanceRepositoryPort>>,
-    unit_of_work: Option<Arc<dyn CeremonyUnitOfWorkPort>>,
-    audit_journal: Option<Arc<dyn AuditJournalPort>>,
+    events: Option<Arc<dyn CeremonyEventStorePort>>,
+    snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
     transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
@@ -71,22 +70,21 @@ impl EmbeddedMadeBuilder {
         self
     }
 
-    /// The store sessions are read from and committed to.
+    /// The store a ceremony's stream and its snapshots live in.
     ///
     /// One object serves both ports, and the signature is what makes
-    /// that true rather than a note asking hosts to be careful. Reading
-    /// state from one storage while committing it to another is not a
-    /// configuration a host should be able to express: the commit would
-    /// land, the read would not see it, and every port would look
-    /// correctly implemented.
+    /// that true rather than a note asking hosts to be careful. A
+    /// snapshot is a cache of a stream's fold; caching one store's
+    /// streams beside another store's is not a configuration a host
+    /// should be able to express, because a reopen would fold the
+    /// stream from one place and read the cache from another.
     #[must_use]
     pub fn with_ceremony_store<S>(mut self, adapter: Arc<S>) -> Self
     where
-        S: AuditJournalPort + CeremonyInstanceRepositoryPort + CeremonyUnitOfWorkPort + 'static,
+        S: CeremonyEventStorePort + CeremonySnapshotStorePort + 'static,
     {
-        self.instances = Some(adapter.clone());
-        self.unit_of_work = Some(adapter.clone());
-        self.audit_journal = Some(adapter);
+        self.events = Some(adapter.clone());
+        self.snapshots = Some(adapter);
         self
     }
 
@@ -164,23 +162,16 @@ impl EmbeddedMadeBuilder {
         // `with_ceremony_store` takes them together: the pair is set by
         // one call or by neither, and a host that configures nothing
         // still gets one storage behind both.
-        let (instances, unit_of_work, audit_journal) = self
-            .instances
-            .zip(self.unit_of_work)
-            .zip(self.audit_journal)
-            .map_or_else(
-                || {
-                    let store = Arc::new(InMemoryCeremonyStore::new());
-                    (
-                        store.clone() as Arc<dyn CeremonyInstanceRepositoryPort>,
-                        store.clone() as Arc<dyn CeremonyUnitOfWorkPort>,
-                        store as Arc<dyn AuditJournalPort>,
-                    )
-                },
-                |((instances, unit_of_work), audit_journal)| {
-                    (instances, unit_of_work, audit_journal)
-                },
-            );
+        let (events, snapshots) = self.events.zip(self.snapshots).map_or_else(
+            || {
+                let store = Arc::new(InMemoryCeremonyEventStore::new());
+                (
+                    store.clone() as Arc<dyn CeremonyEventStorePort>,
+                    store as Arc<dyn CeremonySnapshotStorePort>,
+                )
+            },
+            |(events, snapshots)| (events, snapshots),
+        );
         let transcript_store = self.transcript_store.unwrap_or_else(|| {
             Arc::new(InMemoryCeremonyTranscriptStore::new()) as Arc<dyn CeremonyTranscriptStorePort>
         });
@@ -200,9 +191,8 @@ impl EmbeddedMadeBuilder {
         EmbeddedMade::new(
             definitions,
             publications,
-            instances,
-            unit_of_work,
-            audit_journal,
+            events,
+            snapshots,
             transcript_store,
             step_handler,
             evidence_source,
@@ -219,7 +209,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
         formatter
             .debug_struct("EmbeddedMadeBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
-            .field("has_ceremony_store", &self.instances.is_some())
+            .field("has_ceremony_store", &self.events.is_some())
             .field("has_transcript_store", &self.transcript_store.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())

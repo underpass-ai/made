@@ -8,11 +8,11 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyStore, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore,
 };
 use made_adapters::noop::NoopCeremonyStepHandler;
 use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
-use made_app::services::{SessionJournal, SessionMemoryRecorder};
+use made_app::services::{SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, MountCeremonyDefinitionsUseCase,
     ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
@@ -88,10 +88,10 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
         Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&fixture_dir).unwrap());
     let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
     // One store behind both ports, as every composition root builds
-    // it: a session committed through the journal has to be readable
+    // it: a session appended through the stream has to be readable
     // by the next step of this very flow.
-    let instances = Arc::new(InMemoryCeremonyStore::new());
-    let journal = Arc::new(SessionJournal::new(instances.clone(), instances.clone()));
+    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let journal = Arc::new(SessionStream::new(store.clone(), store));
     let transcript_store = Arc::new(InMemoryCeremonyTranscriptStore::new());
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());

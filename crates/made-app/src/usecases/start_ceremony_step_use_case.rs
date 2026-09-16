@@ -2,17 +2,19 @@
 
 use std::sync::Arc;
 
+use made_core::entities::ceremony_commands::StartStep;
+use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 use made_core::value_objects::{StepAttempt, StepLease};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::start_ceremony_step_input::StartCeremonyStepInput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct StartCeremonyStepUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -26,12 +28,12 @@ impl StartCeremonyStepUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
         }
     }
@@ -42,10 +44,7 @@ impl StartCeremonyStepUseCase {
         fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
     )]
     pub async fn execute(&self, input: StartCeremonyStepInput) -> Result<StepAttempt, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
@@ -53,6 +52,7 @@ impl StartCeremonyStepUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
         let lease = StepLease::acquire(
             input.lease_owner_id,
@@ -60,33 +60,29 @@ impl StartCeremonyStepUseCase {
             now,
             input.lease_ttl,
         )?;
-        let attempt = session.instance.start_step_as(
-            &definition,
-            &input.role_id,
-            &input.step_id,
+        let command = CeremonyCommand::StartStep(StartStep {
+            role_id: Some(input.role_id),
+            step_id: input.step_id.clone(),
             lease,
             now,
-        )?;
-        let iteration = session
+        });
+        // The claim commutes with what other writers do to the session
+        // — a second claim of the same step is refused by the lease,
+        // not by the store — so a lost race is decided again.
+        let session = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?;
+        Ok(session
             .instance
             .step_record(&input.step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?
-            .iteration();
-        // The claim and the record of a seat having made it land
-        // together, before any work starts against it.
-        let fact = session_facts::step_started(
-            &session.instance,
-            &input.step_id,
-            iteration,
-            attempt,
-            &input.role_id,
-            input.role_kind,
-            now,
-        )?;
-        self.journal.commit(session, vec![fact]).await?;
-        Ok(attempt)
+            .attempt())
     }
 }
 
@@ -96,29 +92,28 @@ mod tests {
     use std::sync::Arc;
 
     use made_core::error::DomainError;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{AuditActorKind, AuditEventType, StepStatus};
     use time::Duration;
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, idempotency_key, journal, journal_over,
-        lease_owner, lease_ttl, now, role_id, started_instance, step_id, DefinitionRepositoryFake,
-        FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, idempotency_key, lease_owner, lease_ttl, now,
+        role_id, started_instance, step_id, stream, stream_over, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
     async fn acquires_step_lease_and_persists_in_progress_record() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = StartCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -146,14 +141,14 @@ mod tests {
     async fn active_lease_blocks_second_runner() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = StartCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
         );
         usecase
@@ -189,14 +184,14 @@ mod tests {
     async fn expired_lease_allows_failover_attempt() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let first = StartCeremonyStepUseCase::new(
             definition_resolver(definitions.clone()),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
         first
@@ -213,7 +208,7 @@ mod tests {
             .unwrap();
         let second = StartCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now() + Duration::seconds(61))),
         );
 
@@ -243,15 +238,15 @@ mod tests {
     async fn seals_the_claim_even_though_nothing_ran() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = StartCeremonyStepUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -268,7 +263,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one claim, one fact: {facts:?}");
         assert_eq!(facts[0].event.event_type(), AuditEventType::StepStarted);
         let CeremonyEvent::StepStarted(claimed) = &facts[0].event else {

@@ -7,11 +7,11 @@ use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort};
 
 use super::start_ceremony_input::StartCeremonyInput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, SessionStream};
 
 pub struct StartCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -25,12 +25,12 @@ impl StartCeremonyUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
         }
     }
@@ -46,20 +46,20 @@ impl StartCeremonyUseCase {
     ) -> Result<CeremonyInstance, DomainError> {
         // No `exists` check before storing. Asking and then storing
         // leaves a gap two concurrent starts both walk through, and the
-        // second would replace the first in silence. The commit itself
-        // refuses, because it expects the session to be new.
+        // second would replace the first in silence. The append itself
+        // refuses, because it expects the stream to be empty.
         let definition = self
             .definitions
             .get(&input.definition_name, &input.definition_version)
             .await?;
+        // Named before the opening is sealed so a caller who named
+        // themselves badly is refused without a session being left
+        // behind.
+        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
         let now = self.clock.now();
-        let instance = CeremonyInstance::start(input.id, &definition, input.context, now);
-        // Built before the commit so a caller who named themselves
-        // badly is refused without a session being left behind.
-        let fact =
-            session_facts::ceremony_started(&instance, &input.actor_id, input.actor_kind, now)?;
-        self.journal
-            .open(instance, vec![fact])
+        let started = CeremonyInstance::decide_start(input.id, &definition, input.context, now);
+        self.stream
+            .open(started, actor, now)
             .await
             .map(|session| session.instance)
     }
@@ -71,23 +71,22 @@ mod tests {
     use std::sync::Arc;
 
     use made_core::error::DomainError;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{AuditActorKind, AuditEventType, CeremonyContext, StateId};
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_name, journal, journal_over, now, started_instance,
-        version, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_name, now, started_instance, stream, stream_over,
+        version, DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
     async fn starts_and_persists_instance_at_initial_state() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let usecase = StartCeremonyUseCase::new(
             definitions,
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -115,14 +114,14 @@ mod tests {
     async fn duplicate_instance_id_is_rejected_before_overwrite() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = StartCeremonyUseCase::new(
             definitions,
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -155,10 +154,10 @@ mod tests {
     async fn seals_the_opening_into_the_journal() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
-        let (journal, unit_of_work) = journal_over(instances);
+        let instances = Arc::new(EventStoreFake::default());
+        let (stream, store) = stream_over(instances);
         let usecase =
-            StartCeremonyUseCase::new(definitions, journal, Arc::new(FixedClock::new(now())));
+            StartCeremonyUseCase::new(definitions, stream, Arc::new(FixedClock::new(now())));
 
         let instance = usecase
             .execute(StartCeremonyInput::new(
@@ -172,7 +171,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one opening, one fact: {facts:?}");
         assert_eq!(
             facts[0].event.event_type(),
@@ -204,10 +203,10 @@ mod tests {
     async fn a_caller_who_cannot_be_named_opens_nothing() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let usecase = StartCeremonyUseCase::new(
             definitions,
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -224,8 +223,8 @@ mod tests {
             .unwrap_err();
 
         assert!(
-            !instances.exists(&ceremony_id()).await.unwrap(),
-            "a session was opened that the journal cannot account for"
+            !instances.exists(&ceremony_id()).await,
+            "a session was opened that the stream cannot account for"
         );
     }
 }

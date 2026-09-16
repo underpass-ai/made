@@ -2,25 +2,24 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::CloseIntervention;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 
+use super::close_ceremony_intervention_input::CloseCeremonyInterventionInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use super::CloseCeremonyInterventionInput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct CloseCeremonyInterventionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
 impl std::fmt::Debug for CloseCeremonyInterventionUseCase {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CloseCeremonyInterventionUseCase")
-            .finish()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CloseCeremonyInterventionUseCase").finish()
     }
 }
 
@@ -28,12 +27,12 @@ impl CloseCeremonyInterventionUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
         }
     }
@@ -51,35 +50,27 @@ impl CloseCeremonyInterventionUseCase {
         &self,
         input: CloseCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
-        // repository to go to. Reading coordinates off the caller made
-        // a bound session unadvanceable, because publishing writes to
-        // the catalogue and not to the repository.
+        // repository to go to.
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
-        session.instance.close_intervention_as(
-            &definition,
-            &input.intervention_id,
-            &input.role_id,
+        let command = CeremonyCommand::CloseIntervention(CloseIntervention {
+            intervention_id: input.intervention_id,
+            role_id: input.role_id,
             now,
-        )?;
-        // The item closing and the record of a seat having closed it
-        // land together.
-        let fact = session_facts::intervention_closed(
-            &session.instance,
-            &input.intervention_id,
-            &input.role_id,
-            input.role_kind,
-            now,
-        )?;
-        self.journal
-            .commit(session, vec![fact])
+        });
+        // Closing an item commutes with what other writers do to the
+        // session, so a lost race is decided again; an item that was
+        // closed meanwhile is refused by the decision, not the store.
+        self.stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
             .await
             .map(|session| session.instance)
     }
@@ -87,7 +78,6 @@ impl CloseCeremonyInterventionUseCase {
 
 #[cfg(test)]
 mod tests {
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyInterventionContent,
         CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionStatus,
@@ -96,15 +86,15 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, journal, journal_over, now, role_id,
-        started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, role_id, started_instance, stream,
+        stream_over, DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
     async fn requester_closes_the_dynamic_agenda_item() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let intervention_id = CeremonyInterventionId::new("ask-table").unwrap();
         let mut instance = started_instance(&definition);
         instance
@@ -122,7 +112,7 @@ mod tests {
         instances.save(&instance).await.unwrap();
         let usecase = CloseCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -145,12 +135,12 @@ mod tests {
     /// A session with an open agenda item, ready to have it closed.
     async fn with_an_open_item() -> (
         Arc<DefinitionRepositoryFake>,
-        Arc<InstanceRepositoryFake>,
+        Arc<EventStoreFake>,
         CeremonyInterventionId,
     ) {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let intervention_id = CeremonyInterventionId::new("ask-table").unwrap();
         let mut instance = started_instance(&definition);
         instance
@@ -173,10 +163,10 @@ mod tests {
     #[tokio::test]
     async fn seals_the_closure_into_the_journal() {
         let (definitions, instances, intervention_id) = with_an_open_item().await;
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = CloseCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -190,7 +180,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one closure, one fact: {facts:?}");
         assert_eq!(
             facts[0].event.event_type(),
@@ -212,10 +202,10 @@ mod tests {
     #[tokio::test]
     async fn an_item_is_closed_once_and_the_session_says_so() {
         let (definitions, instances, intervention_id) = with_an_open_item().await;
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = CloseCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
         let closing = || {
@@ -236,7 +226,7 @@ mod tests {
              first: {refused:?}"
         );
         assert_eq!(
-            unit_of_work.facts().await.len(),
+            store.facts().await.len(),
             1,
             "a refused closure sealed a fact"
         );
