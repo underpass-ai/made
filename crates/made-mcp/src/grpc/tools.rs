@@ -247,27 +247,23 @@ pub(crate) async fn dispatch(
         // performs the step itself; these two calls are how the
         // session learns it was taken on and how it ended.
         "made_claim_ceremony_step" => {
-            let request = ceremony_requests::build_claim_ceremony_step_request(arguments)?;
-            let response = client
-                .claim_ceremony_step(request)
-                .await
-                .map_err(|s| status_error(&s))?;
+            let request = ceremony_requests::build_claim_ceremony_step_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.claim_ceremony_step(request).await?;
             let pb::ClaimCeremonyStepResponse { instance } = response.into_inner();
             instance
                 .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| "made returned no ceremony instance".to_owned())
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 
         "made_complete_ceremony_step" => {
-            let request = ceremony_requests::build_complete_ceremony_step_request(arguments)?;
-            let response = client
-                .complete_ceremony_step(request)
-                .await
-                .map_err(|s| status_error(&s))?;
+            let request = ceremony_requests::build_complete_ceremony_step_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.complete_ceremony_step(request).await?;
             let pb::CompleteCeremonyStepResponse { instance } = response.into_inner();
             instance
                 .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| "made returned no ceremony instance".to_owned())
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 
         "made_apply_ceremony_transition" => {

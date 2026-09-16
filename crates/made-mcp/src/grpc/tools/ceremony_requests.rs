@@ -93,12 +93,11 @@ pub(super) fn build_claim_ceremony_step_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         step_id: j2p::require_str(obj, "step_id")?.to_owned(),
         actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
-        // Left empty rather than filled here: the server owns its own
-        // defaults, and a client that invents them puts a runner id
-        // and a lease length in the journal that nobody chose.
-        lease_owner_id: j2p::optional_str(obj, "lease_owner_id")
-            .unwrap_or_default()
-            .to_owned(),
+        // Defaulted here, exactly as `made_run_ceremony_step` does:
+        // one omission, one owner, whichever backend the client is
+        // pointed at. The server keeps its own default for clients
+        // that speak gRPC directly; from MCP it is never reached.
+        lease_owner_id: lease_owner_id(obj)?,
         idempotency_key: j2p::optional_str(obj, "idempotency_key")
             .unwrap_or_default()
             .to_owned(),
@@ -346,6 +345,38 @@ mod tests {
         }))
         .expect_err("a blank runner is not a runner");
         assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    /// The claim follows the same rule: it is the same lease, taken by
+    /// the same MCP server, so an omission cannot mean one owner when
+    /// the engine runs the step and another when the host does.
+    #[test]
+    fn a_claim_applies_the_same_default_runner() {
+        let request = build_claim_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "made-mcp:grpc");
+
+        let error = build_claim_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": " ",
+        }))
+        .expect_err("a blank runner is not a runner");
+        assert!(error.contains("lease_owner_id"), "{error}");
+
+        let request = build_claim_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "the-hosts-own-runner",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
     }
 
     #[test]
