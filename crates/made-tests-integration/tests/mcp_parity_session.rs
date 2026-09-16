@@ -63,11 +63,11 @@ const ONE_SHOT_ID: &str = "parity-one-shot";
 /// entry carries a one-line reason, which a test asserts.
 const NORMALISED: &[(&str, &str)] = &[];
 
-/// The definition the session runs. Rich on purpose: a step that runs,
-/// an automated guard, a human guard that is deferred and then
-/// approved, two seats, and a table that is asked, answered, evidenced
-/// and closed. An empty collection is a collection that cannot
-/// disagree.
+/// The definition the session runs. Rich on purpose: a step the engine
+/// runs, a step a host claims and completes itself, an automated guard,
+/// a human guard that is deferred and then approved, two seats, and a
+/// table that is asked, answered, evidenced and closed. An empty
+/// collection is a collection that cannot disagree.
 const PARITY_CEREMONY: &str = r#"
 version: "1.0"
 name: "parity_session"
@@ -99,10 +99,14 @@ steps:
   - id: work
     state: OPEN
     handler: parity_step
+  - id: handoff
+    state: REVIEW
+    handler: parity_step
 roles:
   - id: FACILITATOR
     allowed_actions:
       - work
+      - handoff
       - opened
       - approve
       - request_intervention
@@ -192,6 +196,46 @@ roles:
       - work
       - opened
 "#;
+
+/// The intent `made_design_ceremony` is asked to turn into a ceremony.
+///
+/// Rich for the same reason the definition above is: two stages, a
+/// repeat policy whose stop value is not a string, a human gate, a
+/// capability that is not a stage, and one number left out so the
+/// designer's own default is in the answer that gets compared.
+/// Designing reads no store and mints no id, so the two arms have to
+/// agree on the whole document.
+fn design_intent() -> Value {
+    json!({
+        "name": "parity_designed",
+        "objective": "Choose the lead story and have the editor accept it.",
+        "required_inputs": ["brief"],
+        "optional_inputs": ["archive"],
+        "outputs": ["lead_story"],
+        "participants": [
+            { "role_id": "WRITER", "capabilities": ["respond_to_intervention"] },
+            { "role_id": "EDITOR", "capabilities": ["request_intervention"] }
+        ],
+        "stages": [
+            {
+                "id": "draft_options",
+                "owner_role_id": "WRITER",
+                "instructions": "Draft three candidate leads.",
+                "repeat": { "max_iterations": 3, "output_field": "ready", "equals": true }
+            },
+            {
+                "id": "weigh_options",
+                "owner_role_id": "EDITOR",
+                "instructions": "Weigh them against the brief.",
+                "num_agents": 2,
+                "review_rounds": 1,
+                "see_prior": true
+            }
+        ],
+        "final_approval": { "role_id": "EDITOR" },
+        "backoff_seconds": 0
+    })
+}
 
 // ---------------------------------------------------------------------------
 // The two arms
@@ -283,6 +327,7 @@ fn failed(result: &Value) -> bool {
 #[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
 fn session_script() -> Vec<(&'static str, Value)> {
     vec![
+        ("made_design_ceremony", design_intent()),
         (
             "made_validate_ceremony_draft",
             json!({ "definition_yaml": PARITY_CEREMONY }),
@@ -343,6 +388,35 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_apply_ceremony_transition",
             json!({ "ceremony_id": SESSION_ID, "trigger": "opened", "actor_kind": "agent" }),
+        ),
+        // The delegated-host protocol on the step the review state
+        // declares: the host takes the lease, does the work where the
+        // engine cannot see it, and reports what it saw. The lease
+        // owner and the idempotency key are named rather than left to
+        // a default, for the reason the header gives: an omitted
+        // `lease_owner_id` becomes `made-mcp:<backend>`, which differs
+        // by arm on purpose (F2), and an omitted key is minted by the
+        // engine.
+        (
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parity-handoff-1",
+                "lease_ttl_ms": 60_000,
+            }),
+        ),
+        (
+            "made_complete_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "status": "completed",
+                "output": { "handoff_note": "the reviewer has it", "attachments": 2 },
+            }),
         ),
         (
             "made_request_ceremony_intervention",
@@ -489,7 +563,7 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
     .await;
     let session = structured(&session);
     assert_eq!(session["current_state"], json!("DONE"), "{session:#}");
-    assert_eq!(session["steps"].as_array().map(Vec::len), Some(1));
+    assert_eq!(session["steps"].as_array().map(Vec::len), Some(2));
     assert!(
         !session["steps"][0]["output"]
             .as_object()
