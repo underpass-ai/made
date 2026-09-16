@@ -111,18 +111,18 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`      | seat participants in declared roles |
 | `made_claim_ceremony_step`      | `ClaimCeremonyStep`               | lease one step the MCP host will execute itself |
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
+| `made_design_ceremony`          | `DesignCeremony`                  | turn structured intent into an analysed, unpublished linear draft |
 | `made_get_status`               | `GetStatus`                       | observability |
 | `made_get_metrics`              | `GetMetrics`                      | observability |
 
-These 37 backend-owned tools map 1:1 to the 37 RPCs in the MADE gRPC
+These 38 backend-owned tools map 1:1 to the 38 RPCs in the MADE gRPC
 service. Every server composition additionally advertises the two server-owned
 discovery/help tools described below.
 
-The embedded backend also exposes two tools that have no gRPC mapping:
+The embedded backend also exposes one tool that has no gRPC mapping:
 
 | MCP tool | Purpose |
 |----------|---------|
-| `made_design_ceremony` | Turn structured intent into an analysed, unpublished linear ceremony draft. |
 | `made_generate_ceremony_report` | Render one or more persisted instances and their audit journals as deterministic Markdown. |
 
 Which gaps are left, and why, is data rather than prose:

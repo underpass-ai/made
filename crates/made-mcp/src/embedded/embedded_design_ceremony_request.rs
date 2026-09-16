@@ -48,24 +48,10 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
 #[serde(deny_unknown_fields)]
 struct ParticipantIntent {
     role_id: String,
+    /// The words themselves, read by the use case rather than by
+    /// serde: one vocabulary, one refusal, on both backends.
     #[serde(default)]
-    capabilities: Vec<ParticipantCapability>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize)]
-#[serde(rename_all = "snake_case")]
-enum ParticipantCapability {
-    RequestIntervention,
-    RespondToIntervention,
-}
-
-impl From<ParticipantCapability> for CeremonyParticipantCapability {
-    fn from(capability: ParticipantCapability) -> Self {
-        match capability {
-            ParticipantCapability::RequestIntervention => Self::RequestIntervention,
-            ParticipantCapability::RespondToIntervention => Self::RespondToIntervention,
-        }
-    }
+    capabilities: Vec<String>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -159,8 +145,9 @@ impl ParticipantIntent {
         Ok(CeremonyDesignParticipant::new(
             RoleId::new(self.role_id)?,
             self.capabilities
-                .into_iter()
-                .map(CeremonyParticipantCapability::from),
+                .iter()
+                .map(|capability| CeremonyParticipantCapability::parse(capability))
+                .collect::<Result<Vec<_>, _>>()?,
         ))
     }
 }
