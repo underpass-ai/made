@@ -15,6 +15,7 @@ use super::proto_to_json as p2j;
 use super::streaming;
 
 mod ceremony_requests;
+mod design_ceremony_request;
 mod general_requests;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
@@ -349,6 +350,16 @@ pub(crate) async fn dispatch(
 
         // Authoring. Validate and explain answer about the YAML in the
         // request; publishing is what puts a version in the catalogue.
+        // Designing answers with a document rather than a session:
+        // the draft it rendered, already analysed, and what it did
+        // with the author's intent.
+        "made_design_ceremony" => {
+            let request = design_ceremony_request::build_design_ceremony_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.design_ceremony(request).await?;
+            Ok(p2j::design_ceremony_to_json(response.into_inner()))
+        }
+
         "made_validate_ceremony_draft" => {
             let request = pb::ValidateCeremonyDraftRequest {
                 definition_yaml: ceremony_requests::definition_yaml(arguments)
@@ -473,6 +484,8 @@ use ceremony_requests::{
     build_run_ceremony_step_request, build_start_ceremony_request,
     build_start_published_ceremony_request,
 };
+#[cfg(test)]
+use design_ceremony_request::build_design_ceremony_request;
 #[cfg(test)]
 use general_requests::{
     build_create_council_request, build_delete_contract_request, build_delete_council_request,

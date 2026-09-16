@@ -8,9 +8,10 @@ use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase, CeremonyDefinitionSource,
-    CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceInput,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
-    DeferCeremonyGuardInput, DeferCeremonyGuardUseCase, DiffCeremonyDefinitionsUseCase,
+    CeremonyDesignDocument, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
+    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
+    DesignCeremonyUseCase, DesignedCeremony, DiffCeremonyDefinitionsUseCase,
     GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
     ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
     MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase,
@@ -262,6 +263,24 @@ impl EmbeddedMade {
         )
         .execute(input)
         .await
+    }
+
+    /// Turn authoring intent into a ceremony document.
+    ///
+    /// Touches nothing, like validating and explaining a draft: it
+    /// reads no store, writes no definition and starts no session.
+    /// What it answers with is the document an author can then put
+    /// through those three.
+    // A method rather than an associated function: a host asks the
+    // engine it holds, and designing is one of the things it asks.
+    // That it needs nothing from the engine today is a fact about
+    // designing, not about where the question belongs.
+    #[allow(clippy::unused_self)]
+    pub fn design(
+        &self,
+        document: &CeremonyDesignDocument,
+    ) -> Result<DesignedCeremony, DomainError> {
+        DesignCeremonyUseCase::new().execute(document)
     }
 
     /// Compare two definitions, either side published or supplied.

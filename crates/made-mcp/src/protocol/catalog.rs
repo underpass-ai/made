@@ -56,11 +56,6 @@ fn tool_catalog() -> Vec<Value> {
     // only, which is how two distributions drift apart.
     let mut tools = grpc_tool_catalog();
     tools.push(tool_def(
-        DESIGN_CEREMONY_TOOL,
-        "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
-        ceremony_design_schema(),
-    ));
-    tools.push(tool_def(
         GENERATE_CEREMONY_REPORT_TOOL,
         "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
         ceremony_report_schema(),
@@ -381,6 +376,11 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             COMPLETE_CEREMONY_STEP_TOOL,
             "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step.",
             complete_ceremony_step_schema(),
+        ),
+        tool_def(
+            DESIGN_CEREMONY_TOOL,
+            "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
+            ceremony_design_schema(),
         ),
         tool_def(
             "made_get_status",

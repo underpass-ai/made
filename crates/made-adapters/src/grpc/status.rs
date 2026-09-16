@@ -23,7 +23,11 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         | DomainError::InvalidCharacters { .. }
         | DomainError::OutOfRange { .. }
         | DomainError::MustBeNonZero { .. }
-        | DomainError::EmptyCollection { .. } => Status::invalid_argument(msg),
+        | DomainError::EmptyCollection { .. }
+        // A document whose parts do not fit together is the caller's
+        // to fix and needs nothing from the engine to fix it, which
+        // is what invalid_argument means everywhere else here.
+        | DomainError::InvalidDocument { .. } => Status::invalid_argument(msg),
         // A stored event this engine cannot read is not the client's
         // doing and retrying changes nothing until a reader exists.
         DomainError::InvalidTransition { .. }
@@ -63,6 +67,9 @@ mod tests {
             },
             DomainError::MustBeNonZero { field: "x" },
             DomainError::EmptyCollection { field: "x" },
+            DomainError::InvalidDocument {
+                reason: "stage `review` names unknown owner role `MISSING`".to_owned(),
+            },
         ];
         for err in cases {
             assert_eq!(domain_error_to_status(err).code(), Code::InvalidArgument);
