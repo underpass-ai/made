@@ -14,9 +14,10 @@ use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
-    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
+    CeremonyEventSubscriberPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
+    NoopMetricsRecorder, StatisticsPort,
 };
 use made_core::value_objects::StepResult;
 
@@ -36,6 +37,7 @@ pub struct EmbeddedMadeBuilder {
     events: Option<Arc<dyn CeremonyEventStorePort>>,
     snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
     transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
+    subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
@@ -93,6 +95,19 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_transcript_store(mut self, adapter: Arc<dyn CeremonyTranscriptStorePort>) -> Self {
         self.transcript_store = Some(adapter);
+        self
+    }
+
+    /// Project something of the host's own from every sealed event.
+    ///
+    /// The engine's own projections are wired whatever the host does;
+    /// this one is told after them, about the records of each append
+    /// that landed, in order. It cannot fail a session: the signature
+    /// returns nothing, and a subscriber that has something to report
+    /// logs it.
+    #[must_use]
+    pub fn with_event_subscriber(mut self, adapter: Arc<dyn CeremonyEventSubscriberPort>) -> Self {
+        self.subscriber = Some(adapter);
         self
     }
 
@@ -231,6 +246,7 @@ impl EmbeddedMadeBuilder {
             statistics,
             self.memory
                 .unwrap_or_else(|| Arc::new(ForgetfulMemory::new())),
+            self.subscriber,
         )
     }
 }
@@ -242,6 +258,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .field("has_definition_repository", &self.definitions.is_some())
             .field("has_ceremony_store", &self.events.is_some())
             .field("has_transcript_store", &self.transcript_store.is_some())
+            .field("has_event_subscriber", &self.subscriber.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())

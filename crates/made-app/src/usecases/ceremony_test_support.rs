@@ -9,9 +9,10 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshot,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome, MemoryWriterPort, PositionedRecord,
+    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
+    CeremonySnapshot, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome,
+    MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
@@ -842,7 +843,19 @@ impl CeremonySnapshotStorePort for EventStoreFake {
 
 /// The stream every session use case is built over.
 pub(super) fn stream(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
-    Arc::new(SessionStream::new(store.clone(), store))
+    Arc::new(SessionStream::new(
+        store.clone(),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
+    ))
+}
+
+/// The same stream, with something projecting from it.
+pub(super) fn stream_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(store.clone(), store, subscriber))
 }
 
 /// A stream a test can look inside.
@@ -853,18 +866,41 @@ pub(super) fn stream_over(store: Arc<EventStoreFake>) -> (Arc<SessionStream>, Ar
 /// A stream whose first append is overtaken by another writer, and
 /// whose later ones land.
 pub(super) fn stream_conflicting_once(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
+    stream_conflicting_once_watched_by(store, Arc::new(NoopCeremonyEventSubscriber))
+}
+
+/// The same, with something projecting from it: what a subscriber is
+/// told when an append is refused once and lands on the retry.
+pub(super) fn stream_conflicting_once_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
     Arc::new(SessionStream::new(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
         }),
         store,
+        subscriber,
     ))
 }
 
 /// A stream whose every append is overtaken by another writer.
 pub(super) fn stream_losing_every_race(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
     stream_losing_every_race_over(store).0
+}
+
+/// The same, with something projecting from it: an append that never
+/// lands has nothing to tell it.
+pub(super) fn stream_losing_every_race_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
+    let losing = Arc::new(StoreThatLosesEveryRace {
+        inner: store.clone(),
+        appends: std::sync::atomic::AtomicUsize::new(0),
+    });
+    Arc::new(SessionStream::new(losing, store, subscriber))
 }
 
 /// The same, with the losing store in hand so a test can count how
@@ -876,7 +912,14 @@ pub(super) fn stream_losing_every_race_over(
         inner: store.clone(),
         appends: std::sync::atomic::AtomicUsize::new(0),
     });
-    (Arc::new(SessionStream::new(losing.clone(), store)), losing)
+    (
+        Arc::new(SessionStream::new(
+            losing.clone(),
+            store,
+            Arc::new(NoopCeremonyEventSubscriber),
+        )),
+        losing,
+    )
 }
 
 impl StoreThatLosesEveryRace {

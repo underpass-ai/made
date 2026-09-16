@@ -18,7 +18,7 @@ use made_app::usecases::{
     ResolveCeremonyDefinitionUseCase, RunCeremonyStepInput, RunCeremonyStepUseCase,
     StartCeremonyInput, StartCeremonyUseCase,
 };
-use made_core::ports::CeremonyDefinitionRepositoryPort;
+use made_core::ports::{CeremonyDefinitionRepositoryPort, NoopCeremonyEventSubscriber};
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
     IdempotencyKey, LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus,
@@ -91,7 +91,11 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
     // it: a session appended through the stream has to be readable
     // by the next step of this very flow.
     let store = Arc::new(InMemoryCeremonyEventStore::new());
-    let journal = Arc::new(SessionStream::new(store.clone(), store));
+    let journal = Arc::new(SessionStream::new(
+        store.clone(),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
+    ));
     let transcript_store = Arc::new(InMemoryCeremonyTranscriptStore::new());
     let handler = Arc::new(NoopCeremonyStepHandler::new());
     let clock = Arc::new(SystemClock::new());

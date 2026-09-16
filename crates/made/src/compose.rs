@@ -50,7 +50,7 @@ use made_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
     CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ContractRegistryPort,
     CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MetricsRecorderPort,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    NoopCeremonyEventSubscriber, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use tracing::{info, warn};
 
@@ -196,6 +196,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
+        Arc::new(NoopCeremonyEventSubscriber),
     ));
 
     // In memory whichever store the state went to, and known to be: a

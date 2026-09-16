@@ -56,7 +56,7 @@ use made_app::usecases::{
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, CeremonyTranscriptStorePort,
-    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
+    ContractRegistryPort, CouncilRegistryPort, NoopCeremonyEventSubscriber, ValidatorPort,
 };
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
@@ -133,6 +133,7 @@ impl GrpcFixture {
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -443,6 +444,7 @@ impl GrpcFixture {
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());

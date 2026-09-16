@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
-use made_app::services::{SessionMemoryRecorder, SessionStream};
+use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
@@ -32,8 +32,9 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort,
+    MetricsRecorderPort, NoopCeremonyEventSubscriber, StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -111,11 +112,20 @@ impl EmbeddedMade {
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
+        subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     ) -> Self {
+        let session_memory = Arc::new(SessionMemoryRecorder::new(memory));
+        // The engine's own projections first, the host's after: what a
+        // host reads from a projection of its own is a session the
+        // engine has already finished recording.
+        let subscribers = Arc::new(CeremonyEventFanout::of(
+            Arc::new(NoopCeremonyEventSubscriber),
+            subscriber,
+        ));
         Self {
             definitions,
             publications,
-            stream: Arc::new(SessionStream::new(events.clone(), snapshots)),
+            stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
             transcript_store,
             step_handler,
@@ -124,7 +134,7 @@ impl EmbeddedMade {
             metrics_recorder,
             statistics,
             started_at: Instant::now(),
-            session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
+            session_memory,
         }
     }
 
