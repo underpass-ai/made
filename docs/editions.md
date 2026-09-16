@@ -210,9 +210,11 @@ Two caveats that make this less symmetric than the KMP equivalent:
   tools, report what happened — is served by both editions: `ClaimCeremonyStep`
   and `CompleteCeremonyStep` back `made_claim_ceremony_step` and
   `made_complete_ceremony_step`, so a host that owns its step execution can
-  point at a cluster without changing a call. What is still embedded-only is
-  ceremony design and the read-only Markdown report, where no remote RPC
-  exists. `tools/list` on the
+  point at a cluster without changing a call. Designing one is served by both
+  too: `DesignCeremony` backs `made_design_ceremony`, and the designer itself
+  is a use case both editions call, so the same intent renders the same
+  document whichever engine answered. What is still embedded-only is the
+  read-only Markdown report, where no remote RPC exists. `tools/list` on the
   running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
   reason. Which gaps exist is not prose:

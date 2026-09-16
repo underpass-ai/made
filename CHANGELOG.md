@@ -16,6 +16,17 @@ operator command.
 
 ### Added
 
+- `DesignCeremony` RPC in `underpass.made.v1`, the gRPC-backend tool
+  `made_design_ceremony` and `EmbeddedMade::design`. Turning an author's
+  intent into a ceremony was a plugin extension with no RPC behind it; it is
+  now a use case both editions call, so the same intent renders the same
+  document — byte for byte, checked by an integration test that designs on
+  both arms — and a host pointed at a cluster can design there. The request
+  mirrors the tool's schema field for field, with field presence where absent
+  and zero are different answers (`see_prior`, `num_agents`,
+  `step_timeout_seconds`, `max_attempts`, `backoff_seconds`). Additive;
+  `buf breaking` against `origin/main` is green. `stages[].pattern` is not
+  part of it. (#51)
 - `ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs in
   `underpass.made.v1`, over the same use cases the embedded edition has always
   called, plus the two gRPC-backend tools `made_claim_ceremony_step` and
@@ -57,9 +68,22 @@ operator command.
 
 ### Changed
 
+- The ceremony designer moved out of the MCP adapter into
+  `made_app::usecases::DesignCeremonyUseCase`, with the intent document as a
+  DTO and the definition document it renders private to it. What an omitted
+  field means — version, handler, agent count, `see_prior`, timeout,
+  attempts, backoff, the approval's guard and trigger — is decided in that one
+  place, and an intent that cannot become a ceremony is refused there with a
+  reason that names the element at fault. The MCP request type is now a serde
+  shape that builds value objects and nothing else; the answer the tool gives
+  is unchanged. (#51)
+- `DomainError::InvalidDocument` carries the refusal of a document whose parts
+  do not fit together, which the `&'static str` variants could not say without
+  dropping the caller's own names. Both arms classify it as the caller's to
+  fix: `invalid_argument` on the wire, `invalid_request` in process. (#51)
 - `docs/architecture/parity.tsv` no longer carries a gap on
-  `claim_ceremony_step` or `complete_ceremony_step`: both rows name all four
-  surfaces and their reasons are gone. Agent help now offers the
+  `design_ceremony`, `claim_ceremony_step` or `complete_ceremony_step`: all
+  three rows name all four surfaces and their reasons are gone. Agent help now offers the
   delegated-host sequence on the gRPC and fixture backends too, because the
   backend can now serve it. (#50)
 - An omitted `lease_owner_id` on `made_run_ceremony`,

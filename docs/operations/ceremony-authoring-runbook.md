@@ -11,6 +11,21 @@ this runbook is for the operator **writing a ceremony YAML**: the schema keys
 that matter, the mechanics they trigger, the silent no-ops, how to size
 timeouts, and how to verify what actually happened.
 
+## 0. Where a first draft comes from
+
+Nothing below requires starting from a blank file. `made_design_ceremony`
+takes an objective, the participants and the ordered stages and renders a
+linear ceremony YAML with the states, completion guards, role actions,
+timeouts and retry policy already consistent — then analyses it, exactly as
+`made_validate_ceremony_draft` would. It publishes nothing and starts
+nothing, and both editions serve it: the MCP tool on either backend, and the
+`DesignCeremony` RPC for a client that speaks gRPC directly.
+
+What it will not do is the part this runbook is about. It builds one shape —
+every stage after the one before it — so branching, alternative terminal
+outcomes and anything a stage needs that the intent contract cannot say are
+written by hand, and every key below is what you are writing when you do.
+
 ## 1. The step config keys that drive everything
 
 ```yaml
