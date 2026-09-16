@@ -12,10 +12,13 @@
 //! this worth pinning.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use made_adapters::memory::InMemoryCeremonyEventStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
-use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
+use made_mcp::protocol::ToolErrorCode;
+use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
     ApplyCeremonyTransitionRequest, DeferCeremonyGuardRequest, RequestCeremonyInterventionRequest,
@@ -74,6 +77,42 @@ roles:
       - respond_to_intervention
 "#;
 
+/// A ceremony a single call can take from end to end: no guard waits
+/// for a person, so `made_run_ceremony` answers with the whole trace
+/// instead of stopping half way.
+const ONE_SHOT_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_one_shot"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: opened
+    guards:
+      - work_done
+guards:
+  work_done:
+    type: automated
+    check: "step_status:work:COMPLETED"
+steps:
+  - id: work
+    state: OPEN
+    handler: facilitation_prompt
+    config:
+      participants:
+        - facilitator
+      prompt: "Say whether the work is done."
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - opened
+"#;
+
 /// Fields the contract declares free-form. Their *presence* is part
 /// of the shape; their contents are whatever the ceremony put there,
 /// and the two sessions ran different step handlers, so descending
@@ -124,6 +163,28 @@ fn kind_of(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
+}
+
+/// Fail with the paths that exist on one side only.
+fn assert_same_shape(over_the_wire: &Value, in_process: &Value, what: &str) {
+    let mut wire_shape = BTreeSet::new();
+    shape(over_the_wire, "", &mut wire_shape);
+    let mut process_shape = BTreeSet::new();
+    shape(in_process, "", &mut process_shape);
+
+    let only_on_the_wire = wire_shape
+        .difference(&process_shape)
+        .cloned()
+        .collect::<Vec<_>>();
+    let only_in_process = process_shape
+        .difference(&wire_shape)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert!(
+        only_on_the_wire.is_empty() && only_in_process.is_empty(),
+        "{what} answered two different shapes\n  only over the wire: {only_on_the_wire:#?}\n  only in process: {only_in_process:#?}"
+    );
 }
 
 fn structured(result: &Value) -> Value {
@@ -447,6 +508,345 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
     );
 }
 
+/// One-shot runs. The repeat-until commit taught the gRPC mapper to
+/// emit `steps[].iteration` and left the in-process presenter behind,
+/// so the same run read differently depending on which engine served
+/// it. Driving the tool on both arms is what notices that again.
+#[tokio::test]
+async fn a_one_shot_run_answers_the_same_shape_on_both_backends() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    let arguments = json!({
+        "ceremony_id": "one-shot-parity",
+        "definition_yaml": ONE_SHOT_CEREMONY,
+        "actor_id": "parity-operator",
+        "actor_kind": "service",
+    });
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_run_ceremony", &arguments)
+            .await
+            .expect("the gRPC backend should run the ceremony"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_run_ceremony", &arguments)
+            .await
+            .expect("the in-process backend should run the ceremony"),
+    );
+
+    // Sanity: a run with no steps would make the two agree by having
+    // no trace to disagree about.
+    assert_eq!(over_the_wire["steps"].as_array().map(Vec::len), Some(1));
+    assert_eq!(in_process["steps"].as_array().map(Vec::len), Some(1));
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        assert!(
+            answer["steps"][0]["iteration"].is_number(),
+            "the {backend} backend must report which turn of the repeat loop a step was"
+        );
+    }
+
+    assert_same_shape(&over_the_wire, &in_process, "made_run_ceremony");
+}
+
+/// Listings. Both arms answer `{count, instances[]}`, every entry says
+/// whether it could be read, and an entry whose definition the store
+/// does not hold is one unreadable row rather than a failed call.
+///
+/// The store is written by one engine and listed by another one over
+/// it: the restart boundary in a single process, where the streams
+/// survive and the definitions that produced them do not.
+#[tokio::test]
+async fn a_listing_answers_the_same_shape_with_an_unreadable_entry_on_both_backends() {
+    // Two definitions, not one: a definition is resolved by name and
+    // version, so an orphan sharing a name with a session the listing
+    // engine started would resolve after all.
+    const ORPHAN: &str = "a-orphan-session";
+    const READABLE: &str = "b-readable-session";
+
+    // One store per arm: the two arms run the same two sessions, and a
+    // single store would have the second arm collide with the first.
+    let wire_store = Arc::new(InMemoryCeremonyEventStore::new());
+    let process_store = Arc::new(InMemoryCeremonyEventStore::new());
+
+    // The engine that leaves the orphan behind. Its definition
+    // repository dies with it.
+    let first_remote = GrpcFixture::start_over(wire_store.clone()).await;
+    start_over_the_wire(&first_remote, ORPHAN, ONE_SHOT_CEREMONY).await;
+    drop(first_remote);
+    let first_embedded = EmbeddedMadeMcpBackend::new(
+        EmbeddedMade::builder()
+            .with_ceremony_store(process_store.clone())
+            .build(),
+    );
+    start_in_process(&first_embedded, ORPHAN, ONE_SHOT_CEREMONY).await;
+    drop(first_embedded);
+
+    // The engine that lists: it only knows the definition of the
+    // session it started itself.
+    let second_remote = GrpcFixture::start_over(wire_store).await;
+    start_over_the_wire(&second_remote, READABLE, PARITY_CEREMONY).await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", second_remote.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(
+        EmbeddedMade::builder()
+            .with_ceremony_store(process_store)
+            .build(),
+    );
+    start_in_process(&embedded, READABLE, PARITY_CEREMONY).await;
+
+    let arguments = json!({});
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_list_ceremony_instances", &arguments)
+            .await
+            .expect("the gRPC backend should list its sessions"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_list_ceremony_instances", &arguments)
+            .await
+            .expect("the in-process backend should list its sessions"),
+    );
+
+    for (backend, listing) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        assert_eq!(
+            listing["count"].as_u64(),
+            Some(2),
+            "the {backend} backend must count what it listed: {listing:#?}"
+        );
+        assert_eq!(listing["instances"].as_array().map(Vec::len), Some(2));
+        assert_eq!(
+            entry(listing, ORPHAN)["rehydratable"],
+            json!(false),
+            "the {backend} backend must say which entry it could not read"
+        );
+        assert!(
+            entry(listing, ORPHAN)["reason"].is_string(),
+            "the {backend} backend must say why"
+        );
+        assert_eq!(entry(listing, READABLE)["rehydratable"], json!(true));
+        assert_eq!(entry(listing, READABLE)["reason"], Value::Null);
+    }
+
+    assert_same_shape(
+        &over_the_wire,
+        &in_process,
+        "made_list_ceremony_instances (the listing itself)",
+    );
+    assert_same_shape(
+        entry(&over_the_wire, ORPHAN),
+        entry(&in_process, ORPHAN),
+        "made_list_ceremony_instances (an entry that could not be read)",
+    );
+    assert_same_shape(
+        entry(&over_the_wire, READABLE),
+        entry(&in_process, READABLE),
+        "made_list_ceremony_instances (an entry that could be read)",
+    );
+}
+
+/// The listing entry for one session, by id, because two engines need
+/// not have listed them in the same order.
+fn entry<'a>(listing: &'a Value, ceremony_id: &str) -> &'a Value {
+    listing["instances"]
+        .as_array()
+        .expect("a listing carries an array of instances")
+        .iter()
+        .find(|entry| entry["ceremony_id"] == json!(ceremony_id))
+        .unwrap_or_else(|| panic!("`{ceremony_id}` should be listed: {listing:#?}"))
+}
+
+async fn start_over_the_wire(fixture: &GrpcFixture, ceremony_id: &str, definition_yaml: &str) {
+    MadeServiceClient::new(fixture.channel.clone())
+        .start_ceremony(StartCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            actor_id: "parity-operator".to_owned(),
+            actor_kind: "service".to_owned(),
+            definition_yaml: definition_yaml.to_owned(),
+            context: None,
+        })
+        .await
+        .expect("StartCeremony should succeed");
+}
+
+async fn start_in_process(
+    backend: &EmbeddedMadeMcpBackend,
+    ceremony_id: &str,
+    definition_yaml: &str,
+) {
+    backend
+        .call_tool(
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": definition_yaml,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await
+        .expect("made_start_ceremony should succeed in-process");
+}
+
+/// Error envelopes. One vocabulary on both arms: a client branches on
+/// `code` and never on prose, and never on which backend answered.
+///
+/// `unavailable` has no in-process counterpart by construction — an
+/// engine in this process is either there or the process is not — so
+/// it is proven on the arm that can produce it.
+#[tokio::test]
+async fn both_backends_answer_one_error_envelope_with_one_vocabulary() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    for backend in [
+        &remote as &dyn MadeMcpToolBackend,
+        &embedded as &dyn MadeMcpToolBackend,
+    ] {
+        start_a_session(backend, "envelope-parity").await;
+    }
+
+    let cases: [(&str, &str, Value, ToolErrorCode); 3] = [
+        // Nothing by that name: asking for something else is the remedy.
+        (
+            "not found",
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": "no-such-session" }),
+            ToolErrorCode::NotFound,
+        ),
+        // The arguments do not fit the tool's schema.
+        (
+            "an argument that is not there",
+            "made_get_ceremony_instance",
+            json!({}),
+            ToolErrorCode::InvalidRequest,
+        ),
+        // The engine looked at the session and said no: `approve` is
+        // not a trigger the current state offers.
+        (
+            "a transition the session does not offer",
+            "made_apply_ceremony_transition",
+            json!({
+                "ceremony_id": "envelope-parity",
+                "trigger": "approve",
+                "actor_kind": "agent",
+            }),
+            ToolErrorCode::Refused,
+        ),
+    ];
+
+    for (what, tool, arguments, expected) in cases {
+        for backend in [
+            &remote as &dyn MadeMcpToolBackend,
+            &embedded as &dyn MadeMcpToolBackend,
+        ] {
+            let name = backend.backend_name();
+            let error = backend
+                .call_tool(tool, &arguments)
+                .await
+                .expect_err(&format!("{what} should fail on the {name} backend"));
+            assert_eq!(
+                error.code(),
+                expected,
+                "{what} on the {name} backend: {error}"
+            );
+            assert!(!error.is_retryable(), "{what} is not worth repeating");
+            assert!(
+                !error.message().contains("gRPC"),
+                "the transport must not reach the envelope: {error}"
+            );
+        }
+    }
+
+    // The engine out of reach. Waiting is the remedy, and the envelope
+    // is the one that says so.
+    let unreachable =
+        GrpcMadeMcpBackend::new("http://127.0.0.1:1", MadeMcpGrpcTlsConfig::disabled());
+    let error = unreachable
+        .call_tool("made_get_ceremony_instance", &json!({ "ceremony_id": "x" }))
+        .await
+        .expect_err("a closed port should fail");
+    assert_eq!(error.code(), ToolErrorCode::Unavailable);
+    assert!(error.is_retryable());
+}
+
+async fn start_a_session(backend: &dyn MadeMcpToolBackend, ceremony_id: &str) {
+    backend
+        .call_tool(
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await
+        .expect("made_start_ceremony should succeed");
+}
+
+/// The default lease owner. Both arms publish one rule, in the same
+/// words, on every tool that takes a runner.
+///
+/// What each arm then *sends* is asserted where it is built — the proto
+/// request on the gRPC arm, the validated request on the in-process one
+/// — because a lease is cleared when its step resolves and no read
+/// surface carries the owner today.
+#[tokio::test]
+async fn both_backends_publish_one_default_lease_owner_rule() {
+    let embedded =
+        MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(EmbeddedMade::default()));
+    let remote = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
+        "http://127.0.0.1:1",
+        MadeMcpGrpcTlsConfig::disabled(),
+    ));
+
+    let mut rules = Vec::new();
+    for server in [&embedded, &remote] {
+        let response = server
+            .handle_json_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+            .await
+            .expect("tools/list should answer");
+        let listed: Value = serde_json::from_str(&response).expect("tools/list is JSON");
+        let tools = listed["result"]["tools"]
+            .as_array()
+            .expect("a catalog is an array")
+            .clone();
+        for tool in ["made_run_ceremony", "made_run_ceremony_step"] {
+            let schema = tools
+                .iter()
+                .find(|listed| listed["name"] == json!(tool))
+                .unwrap_or_else(|| panic!("{tool} should be listed"));
+            let rule = schema["inputSchema"]["properties"]["lease_owner_id"]["description"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{tool} should describe `lease_owner_id`"))
+                .to_owned();
+            assert!(
+                rule.contains("made-mcp:<backend>"),
+                "{tool} must state the rule it applies: {rule}"
+            );
+            rules.push(rule);
+        }
+    }
+
+    let first = rules.first().expect("there are rules to compare");
+    assert!(
+        rules.iter().all(|rule| rule == first),
+        "one rule, one wording, on every tool and both backends: {rules:#?}"
+    );
+}
+
 /// The delegated-host protocol, driven through the tools on both
 /// backends.
 ///
@@ -531,13 +931,9 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
         );
     }
 
-    let mut wire_shape = BTreeSet::new();
-    shape(&over_the_wire, "", &mut wire_shape);
-    let mut process_shape = BTreeSet::new();
-    shape(&in_process, "", &mut process_shape);
-
-    assert_eq!(
-        wire_shape, process_shape,
-        "claiming and completing left two different shapes"
+    assert_same_shape(
+        &over_the_wire,
+        &in_process,
+        "made_claim_ceremony_step then made_complete_ceremony_step",
     );
 }

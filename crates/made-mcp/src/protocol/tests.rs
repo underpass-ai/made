@@ -123,9 +123,15 @@ fn tool_results_carry_both_text_and_structured() {
         .unwrap()
         .contains("yes"));
 
-    let error = tool_error_result("nope");
+    // One envelope, twice: structured for a client that branches on
+    // the code, text for a host that reads nothing else.
+    let error = tool_error_result(&ToolError::not_found("nope"));
     assert_eq!(error["isError"], true);
-    assert_eq!(error["content"][0]["text"], "nope");
+    assert_eq!(error["content"][0]["text"], "not_found: nope");
+    assert_eq!(
+        error["structuredContent"],
+        json!({ "code": "not_found", "message": "nope", "retryable": false })
+    );
 }
 
 #[test]

@@ -120,7 +120,7 @@ These three are the reason this repo ships a
 2. **Only published definitions rehydrate.** An instance started from a mounted
    (unpublished) definition persists its state but cannot be loaded after the
    store reopens — it fails with `not found: ceremony_definition`. The listing
-   reports those as `"rehydratable": false`. Publish the definition first if you
+   reports those as `"rehydratable": false`, on either backend. Publish the definition first if you
    need to resume across restarts.
 3. **Discovery is not configuration.** `made_discover_capabilities` returns a
    backend-filtered catalog that is authoritative for the *installed executable

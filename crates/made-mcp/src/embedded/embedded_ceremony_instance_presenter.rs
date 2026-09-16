@@ -4,6 +4,8 @@ use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RoleId, StepId,
 };
 use made_embedded::EmbeddedMade;
+
+use crate::protocol::ToolError;
 use serde_json::{json, Value};
 
 use super::embedded_request_fields::load_instance_definition;
@@ -16,14 +18,13 @@ impl EmbeddedCeremonyInstancePresenter {
     pub(super) async fn present(
         made: &EmbeddedMade,
         ceremony_id: &CeremonyId,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ToolError> {
         let (definition, instance) = load_instance_definition(made, ceremony_id).await?;
         // Derived once in the application layer and rendered here. The
         // gRPC adapter renders the same view, which is what keeps one
         // working session from looking like two depending on how a
         // client reached it.
-        let view = CeremonyInstanceView::project(&instance, &definition)
-            .map_err(|error| format!("ceremony instance could not be projected: {error}"))?;
+        let view = CeremonyInstanceView::project(&instance, &definition)?;
 
         let steps = view
             .steps()

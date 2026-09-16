@@ -7,6 +7,8 @@ use super::embedded_request_fields::{
     load_instance_definition, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that applies one enabled transition.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedApplyCeremonyTransitionRequest {
@@ -16,22 +18,19 @@ pub(super) struct EmbeddedApplyCeremonyTransitionRequest {
 }
 
 impl EmbeddedApplyCeremonyTransitionRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         let (definition, _instance) = load_instance_definition(made, &self.ceremony_id).await?;
         // The seat is the definition's to say; what filled it is the
         // caller's, and taking both from the definition would record a
         // kind nobody declared.
-        let role_id = definition
-            .role_id_for_transition(&self.trigger)
-            .map_err(|error| format!("ceremony transition has no authorized role: {error}"))?;
+        let role_id = definition.role_id_for_transition(&self.trigger)?;
         made.apply_transition(ApplyCeremonyTransitionInput::new(
             self.ceremony_id.clone(),
             role_id,
             self.actor_kind,
             self.trigger,
         ))
-        .await
-        .map_err(|error| format!("failed to apply ceremony transition: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }

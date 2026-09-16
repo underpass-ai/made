@@ -5,6 +5,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::required_string;
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request to fix a definition to an immutable version.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct EmbeddedPublishCeremonyDefinitionRequest {
@@ -18,16 +20,16 @@ impl EmbeddedPublishCeremonyDefinitionRequest {
     /// could never be executed is refused before it occupies a version
     /// — the point of publishing is that what comes back out is known
     /// good.
-    pub(crate) async fn execute(self, made: &EmbeddedMade) -> Result<PublicationOutcome, String> {
-        let draft = CeremonyDefinitionYaml::parse_draft_str(&self.definition_yaml)
-            .map_err(|error| format!("ceremony draft could not be parsed: {error}"))?;
-        let definition = draft
-            .publish()
-            .map_err(|error| format!("ceremony draft is not publishable: {error}"))?;
+    pub(crate) async fn execute(
+        self,
+        made: &EmbeddedMade,
+    ) -> Result<PublicationOutcome, ToolError> {
+        let draft = CeremonyDefinitionYaml::parse_draft_str(&self.definition_yaml)?;
+        let definition = draft.publish()?;
 
         made.publish_definition(definition)
             .await
-            .map_err(|error| format!("publication failed: {error}"))
+            .map_err(ToolError::from)
     }
 }
 

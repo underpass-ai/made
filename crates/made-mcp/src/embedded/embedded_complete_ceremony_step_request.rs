@@ -9,6 +9,8 @@ use super::embedded_request_fields::{
     optional_attributes, optional_string, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that records one host-executed step result.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedCompleteCeremonyStepRequest {
@@ -19,15 +21,14 @@ pub(super) struct EmbeddedCompleteCeremonyStepRequest {
 }
 
 impl EmbeddedCompleteCeremonyStepRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.complete_step(CompleteCeremonyStepInput::new(
             self.ceremony_id.clone(),
             self.step_id,
             self.result,
             self.actor_kind,
         ))
-        .await
-        .map_err(|error| format!("failed to complete ceremony step: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }
