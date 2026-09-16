@@ -7,15 +7,18 @@ use made_app::usecases::{
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
-use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort, StatisticsPort};
+use made_core::ports::{
+    CeremonyDefinitionRepositoryPort, ContractRegistryPort, MetricsRecorderPort,
+    NoopMetricsRecorder, StatisticsPort,
+};
 
 /// Builder so composition-root wiring is readable even as the number
 /// of use cases grows.
@@ -58,6 +61,12 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) contract_registry: Option<Arc<dyn ContractRegistryPort>>,
     pub(super) auto_dispatch: Option<Arc<AutoDispatchService>>,
     pub(super) statistics: Option<Arc<dyn StatisticsPort>>,
+    /// What records operational metrics in this process.
+    ///
+    /// Optional because a composition that wires none is still a
+    /// running service; it then answers `noop` when asked what is
+    /// recording, which is the true answer rather than silence.
+    pub(super) metrics: Option<Arc<dyn MetricsRecorderPort>>,
     pub(super) service_version: Option<&'static str>,
 }
 
@@ -238,6 +247,12 @@ impl MadeGrpcServiceBuilder {
     }
 
     #[must_use]
+    pub fn metrics(mut self, value: Arc<dyn MetricsRecorderPort>) -> Self {
+        self.metrics = Some(value);
+        self
+    }
+
+    #[must_use]
     pub fn service_version(mut self, value: &'static str) -> Self {
         self.service_version = Some(value);
         self
@@ -247,6 +262,20 @@ impl MadeGrpcServiceBuilder {
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
     pub fn build(self) -> Result<MadeGrpcService, DomainError> {
+        // Composed here rather than in a handler: the uptime clock
+        // starts when the service is built, and what a status *is*
+        // belongs to the use case both editions call.
+        let statistics = required!(self, statistics, "port");
+        let metrics = self
+            .metrics
+            .unwrap_or_else(|| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>);
+        let get_service_status = Arc::new(GetServiceStatusUseCase::new(
+            statistics.clone(),
+            metrics,
+            self.service_version.unwrap_or(""),
+            std::time::Instant::now(),
+        ));
+        let get_service_metrics = Arc::new(GetServiceMetricsUseCase::new(statistics));
         Ok(MadeGrpcService {
             deliberate: required!(self, deliberate),
             orchestrate: required!(self, orchestrate),
@@ -284,9 +313,8 @@ impl MadeGrpcServiceBuilder {
             prepare_ceremony_participants: required!(self, prepare_ceremony_participants),
             contract_registry: required!(self, contract_registry, "port"),
             auto_dispatch: required!(self, auto_dispatch, "service"),
-            statistics: required!(self, statistics, "port"),
-            started_at: std::time::Instant::now(),
-            service_version: self.service_version.unwrap_or(""),
+            get_service_status,
+            get_service_metrics,
         })
     }
 }

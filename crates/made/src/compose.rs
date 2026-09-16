@@ -455,6 +455,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
+        // The same registry the use cases record into and `/metrics`
+        // renders, so `GetStatus` names what is actually recording.
+        .metrics(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .build()?;
 

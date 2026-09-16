@@ -26,6 +26,8 @@ pub(crate) const PUBLISH_CEREMONY_DEFINITION_TOOL: &str = "made_publish_ceremony
 pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "made_diff_ceremony_definitions";
 pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "made_bind_ceremony_participants";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_ceremony";
+pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
+pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
 pub(super) const GRPC_TOOL_NAMES: [&str; 41] = [
     "made_deliberate",
@@ -67,8 +69,8 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 41] = [
     READ_CEREMONY_EVENTS_TOOL,
     GET_CEREMONY_TRANSCRIPT_TOOL,
     GENERATE_CEREMONY_REPORT_TOOL,
-    "made_get_status",
-    "made_get_metrics",
+    GET_STATUS_TOOL,
+    GET_METRICS_TOOL,
 ];
 
 pub(super) const SERVER_TOOL_NAMES: [&str; 2] = [DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL];

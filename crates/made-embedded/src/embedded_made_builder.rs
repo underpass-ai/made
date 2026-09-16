@@ -6,8 +6,9 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore,
+    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore, InMemoryStatistics,
 };
+use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
@@ -15,7 +16,7 @@ use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
     CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
     CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
-    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder,
+    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
 };
 use made_core::value_objects::StepResult;
 
@@ -39,6 +40,7 @@ pub struct EmbeddedMadeBuilder {
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
+    statistics: Option<Arc<dyn StatisticsPort>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -130,9 +132,23 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    /// Where operational metrics go.
+    ///
+    /// Left out, the engine wires its own in-process Prometheus
+    /// registry: no endpoint, no exporter, nothing to configure and
+    /// nothing leaving the process. A host that already has a registry
+    /// hands one in here and gets every observation this engine makes
+    /// (plan §3.7 G3).
     #[must_use]
     pub fn with_metrics(mut self, adapter: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = Some(adapter);
+        self
+    }
+
+    /// Where the operational counters a status answer reports live.
+    #[must_use]
+    pub fn with_statistics(mut self, adapter: Arc<dyn StatisticsPort>) -> Self {
+        self.statistics = Some(adapter);
         self
     }
 
@@ -184,9 +200,23 @@ impl EmbeddedMadeBuilder {
         let clock = self
             .clock
             .unwrap_or_else(|| Arc::new(SystemClock::new()) as Arc<dyn ClockPort>);
-        let metrics = self
-            .metrics
-            .unwrap_or_else(|| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>);
+        // The default is a real registry, not a sink that forgets.
+        // It is in-process and explicit — no global recorder, no
+        // exporter, no endpoint — so the cost of the default is a few
+        // atomics and the benefit is that a host that wires nothing
+        // still has numbers to read. Registering into a registry this
+        // call just created can only fail on a duplicate family, which
+        // cannot happen here; if it ever did, the engine says `noop`
+        // when asked what is recording rather than pretending.
+        let metrics = self.metrics.unwrap_or_else(|| {
+            PrometheusMetricsRecorder::new().map_or_else(
+                |_| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>,
+                |recorder| Arc::new(recorder) as Arc<dyn MetricsRecorderPort>,
+            )
+        });
+        let statistics = self
+            .statistics
+            .unwrap_or_else(|| Arc::new(InMemoryStatistics::new()) as Arc<dyn StatisticsPort>);
 
         EmbeddedMade::new(
             definitions,
@@ -198,6 +228,7 @@ impl EmbeddedMadeBuilder {
             evidence_source,
             clock,
             metrics,
+            statistics,
             self.memory
                 .unwrap_or_else(|| Arc::new(ForgetfulMemory::new())),
         )
@@ -215,6 +246,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())
             .field("has_metrics", &self.metrics.is_some())
+            .field("has_statistics", &self.statistics.is_some())
             .finish()
     }
 }

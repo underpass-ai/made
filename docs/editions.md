@@ -35,7 +35,7 @@ version and definition version solve different compatibility problems.
 | Messaging | none | optional NATS |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
-| Observability | host's choice | Prometheus at `/metrics`, OTLP traces |
+| Observability | an in-process Prometheus registry, wired by default; `made_get_status` / `made_get_metrics`; no exporter and no endpoint | Prometheus at `/metrics`, OTLP traces |
 | Requires | nothing | a cluster, or at least a running binary |
 | Select with | `MADE_MCP_BACKEND=embedded` | `MADE_MCP_GRPC_ENDPOINT=…` (backend defaults to `grpc`) |
 
@@ -91,8 +91,12 @@ let made = EmbeddedMade::builder()
 ```
 
 The builder also accepts `Arc<dyn …Port>` for the definition repository,
-instance repository, transcript store, step handler, clock, and metrics
-recorder. The host keeps ownership of its async runtime and the lifecycle of
+instance repository, transcript store, step handler, clock, metrics recorder
+and statistics. A host that wires no metrics recorder gets an **in-process
+Prometheus registry** rather than a sink that forgets: explicit, local to the
+process, no exporter and no endpoint. `EmbeddedMade::status` says which
+recorder is running, so "the host chose one" and "nothing is recording" are
+distinguishable from outside. The host keeps ownership of its async runtime and the lifecycle of
 everything it injects. Details: [embedded-made.md](embedded-made.md).
 
 ### What it guarantees

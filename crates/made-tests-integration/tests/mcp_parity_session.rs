@@ -47,21 +47,46 @@ const PUBLISHED_SESSION_ID: &str = "parity-published-session";
 /// The session `made_run_ceremony` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
 
-/// Paths whose values are allowed to differ, and why.
+/// Values that are allowed to differ, named per tool, with why.
 ///
-/// It is **empty**, and that is the result rather than an oversight:
-/// with the same step handler, the same evidence source and the same
-/// frozen clock on both arms, every field of every shared tool's
-/// answer is equal, timestamps included. Nothing is excused because
-/// nothing needed excusing.
+/// It was empty until status joined the shared set, and it is still
+/// empty for every other tool: with the same step handler, the same
+/// evidence source and the same frozen clock on both arms, every
+/// field of every shared tool's answer is equal, timestamps included.
+/// What keeps it that way is that the script names the things a
+/// client can name — the ceremony id, the intervention id, the
+/// idempotency key, the lease owner. Left out, each would be minted
+/// per engine and land here with a reason.
 ///
-/// What keeps it empty is that the script names the things a client
-/// can name: the ceremony id, the intervention id, the idempotency
-/// key. Left out, each would be minted per engine and land here with
-/// a reason. An entry is written the way the walk below names a path
-/// — field names joined by `.`, an array element as `[]` — and every
-/// entry carries a one-line reason, which a test asserts.
-const NORMALISED: &[(&str, &str)] = &[];
+/// An entry is `(tool, path, reason)`. The tool is part of the key
+/// because a path excused everywhere is a hole: `.content[].text` is
+/// the pretty-printed mirror of `structuredContent`, so excusing it
+/// for the one tool whose two answers legitimately differ must not
+/// stop it being compared for the other twenty-six. A path is written
+/// the way the walk below names one — field names joined by `.`, an
+/// array element as `[]` — and every entry carries a one-line reason,
+/// which a test asserts.
+const NORMALISED: &[(&str, &str, &str)] = &[
+    (
+        "made_get_status",
+        ".structuredContent.version",
+        "each arm reports the version of the engine that answered it: the deployed service's \
+         over the wire, the made-embedded crate's in process",
+    ),
+    (
+        "made_get_status",
+        ".structuredContent.uptime_seconds",
+        "uptime is measured from when the engine that answered started — the server process \
+         over the wire, the facade's construction in process",
+    ),
+    (
+        "made_get_status",
+        ".content[].text",
+        "the text block is the pretty-printed mirror of structuredContent, so it carries the \
+         version and the uptime verbatim; every other field of the status is still compared \
+         in structuredContent",
+    ),
+];
 
 /// The definition the session runs. Rich on purpose: a step the engine
 /// runs, a step a host claims and completes itself, an automated guard,
@@ -562,6 +587,13 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "title": "Parity review <both arms>",
             }),
         ),
+        // How the engine that served all of the above is doing, asked
+        // last so the counters it reports are the counters of a
+        // session that really ran. `include_stats` is on, because a
+        // status whose one open-ended field was never filled in is a
+        // status whose one open-ended field was never compared.
+        ("made_get_status", json!({ "include_stats": true })),
+        ("made_get_metrics", json!({})),
     ]
 }
 
@@ -895,8 +927,8 @@ fn shared_tools() -> BTreeSet<String> {
 fn assert_same_answer(tool: &str, over_the_wire: &Value, in_process: &Value) {
     let mut differences = Vec::new();
     compare(
-        &normalise(over_the_wire, ""),
-        &normalise(in_process, ""),
+        &normalise(over_the_wire, "", tool),
+        &normalise(in_process, "", tool),
         "",
         &mut differences,
     );
@@ -912,23 +944,33 @@ fn assert_same_answer(tool: &str, over_the_wire: &Value, in_process: &Value) {
     );
 }
 
-/// Replace the values at normalised paths with one marker, so the
-/// comparison below sees them as equal without seeing them at all.
-fn normalise(value: &Value, path: &str) -> Value {
-    if NORMALISED.iter().any(|(normalised, _)| *normalised == path) {
+/// Replace the values at this tool's normalised paths with one
+/// marker, so the comparison below sees them as equal without seeing
+/// them at all. A path excused for one tool stays compared for every
+/// other.
+fn normalise(value: &Value, path: &str, tool: &str) -> Value {
+    if NORMALISED
+        .iter()
+        .any(|(normalised_tool, normalised, _)| *normalised_tool == tool && *normalised == path)
+    {
         return json!("<normalised>");
     }
     match value {
         Value::Object(fields) => Value::Object(
             fields
                 .iter()
-                .map(|(key, child)| (key.clone(), normalise(child, &format!("{path}.{key}"))))
+                .map(|(key, child)| {
+                    (
+                        key.clone(),
+                        normalise(child, &format!("{path}.{key}"), tool),
+                    )
+                })
                 .collect(),
         ),
         Value::Array(items) => Value::Array(
             items
                 .iter()
-                .map(|item| normalise(item, &format!("{path}[]")))
+                .map(|item| normalise(item, &format!("{path}[]"), tool))
                 .collect(),
         ),
         leaf => leaf.clone(),
@@ -977,19 +1019,26 @@ fn compare(over_the_wire: &Value, in_process: &Value, path: &str, into: &mut Vec
     }
 }
 
-/// Every normalised path carries a reason, and no path is listed twice.
+/// Every normalised path carries a reason, names a tool the session
+/// really drives, and is listed once.
 #[test]
 fn the_normalised_paths_are_declared_once_each_with_a_reason() {
-    let mut reasons: BTreeMap<&str, &str> = BTreeMap::new();
-    for (path, reason) in NORMALISED {
+    let driven: BTreeSet<&str> = session_script().into_iter().map(|(tool, _)| tool).collect();
+    let mut reasons: BTreeMap<(&str, &str), &str> = BTreeMap::new();
+    for (tool, path, reason) in NORMALISED {
         assert!(
             !reason.trim().is_empty(),
-            "the normalised path `{path}` carries no reason; a value excused from the \
+            "`{tool}`'s normalised path `{path}` carries no reason; a value excused from the \
              comparison without one is a divergence nobody decided to allow"
         );
         assert!(
-            reasons.insert(path, reason).is_none(),
-            "the path `{path}` is normalised twice"
+            driven.contains(tool),
+            "`{path}` is excused for `{tool}`, which the session never calls; an excuse for a \
+             tool nobody drives excuses nothing and hides the next one"
+        );
+        assert!(
+            reasons.insert((tool, path), reason).is_none(),
+            "`{tool}`'s path `{path}` is normalised twice"
         );
     }
 }

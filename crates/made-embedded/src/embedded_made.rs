@@ -1,5 +1,6 @@
 use std::fmt;
 use std::sync::Arc;
+use std::time::Instant;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
@@ -14,24 +15,25 @@ use made_app::usecases::{
     DeferCeremonyGuardUseCase, DesignCeremonyUseCase, DesignedCeremony,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportInput, GenerateCeremonyReportUseCase,
     GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput,
-    MountCeremonyDefinitionsUseCase, PublishCeremonyDefinitionUseCase, ReadCeremonyEventsInput,
-    ReadCeremonyEventsUseCase, RequestCeremonyInterventionInput,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyDefinitionsUseCase,
+    ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
+    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsInput, ReadCeremonyEventsUseCase,
+    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionInput,
+    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
+    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    ServiceStatus, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
     StartCeremonyUseCase, StartPublishedCeremonyUseCase,
 };
 use made_core::entities::{
     AuditRecord, CeremonyDefinition, CeremonyInstance, PublicationOutcome,
-    PublishedCeremonyDefinition,
+    PublishedCeremonyDefinition, Statistics,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -55,7 +57,17 @@ pub struct EmbeddedMade {
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
-    metrics: Arc<dyn MetricsRecorderPort>,
+    metrics_recorder: Arc<dyn MetricsRecorderPort>,
+    /// The operational counters this engine keeps.
+    ///
+    /// Wired like every other port so a host can replace it; the
+    /// default keeps them in memory, and in an edition that runs no
+    /// council they stay at zero — which is the honest answer, not a
+    /// missing one.
+    statistics: Arc<dyn StatisticsPort>,
+    /// When this engine was built. Monotonic, so uptime does not
+    /// move when the host's wall clock does.
+    started_at: Instant,
     /// What a session leaves behind.
     ///
     /// A host that configures no memory gets one that forgets and says
@@ -96,7 +108,8 @@ impl EmbeddedMade {
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
-        metrics: Arc<dyn MetricsRecorderPort>,
+        metrics_recorder: Arc<dyn MetricsRecorderPort>,
+        statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
     ) -> Self {
         Self {
@@ -108,7 +121,9 @@ impl EmbeddedMade {
             step_handler,
             evidence_source,
             clock,
-            metrics,
+            metrics_recorder,
+            statistics,
+            started_at: Instant::now(),
             session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
         }
     }
@@ -231,6 +246,31 @@ impl EmbeddedMade {
         .await
     }
 
+    /// How this engine is doing: the version it was built from, how
+    /// long it has been up, its condition, what is recording, and the
+    /// counters when they are asked for.
+    ///
+    /// The same use case the deployable edition's `GetStatus` runs, so
+    /// a host that moves between editions reads one answer rather than
+    /// two (ADR-014).
+    pub async fn status(&self, include_statistics: bool) -> Result<ServiceStatus, DomainError> {
+        GetServiceStatusUseCase::new(
+            self.statistics.clone(),
+            self.metrics_recorder.clone(),
+            VERSION,
+            self.started_at,
+        )
+        .execute(include_statistics)
+        .await
+    }
+
+    /// The operational counters on their own.
+    pub async fn metrics(&self) -> Result<Statistics, DomainError> {
+        GetServiceMetricsUseCase::new(self.statistics.clone())
+            .execute()
+            .await
+    }
+
     pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
         RunCeremonyUseCase::new(
             self.definitions.clone(),
@@ -239,7 +279,7 @@ impl EmbeddedMade {
             self.transcript_store.clone(),
             self.clock.clone(),
         )
-        .with_metrics(self.metrics.clone())
+        .with_metrics(self.metrics_recorder.clone())
         .execute(input)
         .await
     }

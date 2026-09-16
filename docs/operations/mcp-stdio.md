@@ -410,7 +410,7 @@ Both responses are derived against the same catalog filter as `tools/list`:
 a backend that cannot execute a tool neither lists it nor recommends its
 workflow. Every ceremony tool now has an RPC behind it, so what the gRPC
 backend filters out is nothing, and what the embedded backend filters out is
-the council surface plus status and metrics.
+the council surface. Status and metrics are served by both (`service_observability`).
 
 The 41 backend-owned MCP tools are 1:1 with MADE's 41 gRPC RPCs.
 Together with the two server-owned discovery/help tools above, gRPC mode

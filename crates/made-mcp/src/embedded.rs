@@ -18,6 +18,7 @@ mod embedded_defer_ceremony_guard_request;
 mod embedded_design_ceremony_request;
 mod embedded_diff_ceremony_definitions_request;
 mod embedded_generate_ceremony_report_request;
+mod embedded_get_status_request;
 mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
 mod embedded_read_ceremony_events_request;
@@ -27,6 +28,7 @@ mod embedded_respond_to_ceremony_intervention_request;
 mod embedded_run_ceremony_presenter;
 mod embedded_run_ceremony_request;
 mod embedded_run_ceremony_step_request;
+mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
@@ -43,10 +45,11 @@ use crate::protocol::{
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
-    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -70,6 +73,7 @@ use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardReque
 use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
 use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
 use self::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyReportRequest;
+use self::embedded_get_status_request::EmbeddedGetStatusRequest;
 use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
 use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
 use self::embedded_read_ceremony_events_request::EmbeddedReadCeremonyEventsRequest;
@@ -78,6 +82,9 @@ use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCe
 use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
 use self::embedded_run_ceremony_request::EmbeddedRunCeremonyRequest;
 use self::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
+use self::embedded_service_observability_presenter::{
+    present_service_metrics, present_service_status,
+};
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 
@@ -173,6 +180,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | READ_CEREMONY_EVENTS_TOOL
                 | GET_CEREMONY_TRANSCRIPT_TOOL
                 | GENERATE_CEREMONY_REPORT_TOOL
+                | GET_STATUS_TOOL
+                | GET_METRICS_TOOL
         )
     }
 
@@ -342,6 +351,20 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .into_input();
                     let report = self.made.report(input).await?;
                     Ok(tool_success_result(present_ceremony_report(&report)))
+                }
+                GET_STATUS_TOOL => {
+                    // The same use case the deployable edition's
+                    // `GetStatus` runs, rendered into the same four
+                    // keys: what an engine says about itself is not
+                    // allowed to depend on which one a client reached.
+                    let request = EmbeddedGetStatusRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let status = self.made.status(request.include_statistics()).await?;
+                    Ok(tool_success_result(present_service_status(&status)))
+                }
+                GET_METRICS_TOOL => {
+                    let metrics = self.made.metrics().await?;
+                    Ok(tool_success_result(present_service_metrics(&metrics)))
                 }
                 LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {

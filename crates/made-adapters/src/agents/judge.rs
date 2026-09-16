@@ -304,6 +304,10 @@ mod tests {
         errors: std::sync::Mutex<Vec<&'static str>>,
     }
     impl MetricsRecorderPort for CapturingMetrics {
+        fn recorder_name(&self) -> &'static str {
+            "test"
+        }
+
         fn observe_deliberation_duration(
             &self,
             _specialty: &made_core::value_objects::Specialty,

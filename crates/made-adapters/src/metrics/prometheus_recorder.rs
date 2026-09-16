@@ -275,6 +275,10 @@ impl std::fmt::Debug for PrometheusMetricsRecorder {
 }
 
 impl MetricsRecorderPort for PrometheusMetricsRecorder {
+    fn recorder_name(&self) -> &'static str {
+        "prometheus"
+    }
+
     fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {
         self.deliberation_duration_seconds
             .with_label_values(&[specialty.as_str()])

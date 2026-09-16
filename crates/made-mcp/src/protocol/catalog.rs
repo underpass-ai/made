@@ -22,11 +22,11 @@ use super::tool_names::{
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, GET_METRICS_TOOL,
+    GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
+    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 /// `tools/list` result filtered to capabilities honored by the active
@@ -395,7 +395,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             ceremony_report_schema(),
         ),
         tool_def(
-            "made_get_status",
+            GET_STATUS_TOOL,
             "Return service health, version, uptime, and optionally statistics.",
             json!({
                 "type": "object",
@@ -409,7 +409,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             }),
         ),
         tool_def(
-            "made_get_metrics",
+            GET_METRICS_TOOL,
             "Return the current statistics snapshot.",
             json!({
                 "type": "object",
