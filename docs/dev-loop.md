@@ -56,7 +56,8 @@ later with `SocketNotFoundError`.
 
 ```bash
 just                 # list every recipe
-just check           # contract + fmt-check + clippy + test + bench-compile
+just dev             # the draft loop: fmt + clippy + test for DEV_PACKAGES + gates
+just check           # workflow-contract + contract + fmt-check + clippy + test + bench-compile
 just fmt             # apply rustfmt in-place
 just contract        # proto + AsyncAPI gate
 just clippy          # warnings-as-errors on the full provider matrix
@@ -73,6 +74,56 @@ just check && just helm-lint
 This is exactly what the per-PR CI gates run. If `just check`
 passes, the PR will pass (excluding the container-backed gates,
 which need Docker/podman).
+
+## Draft and ready
+
+Two loops, one handover.
+
+**Open the pull request as a draft.** While it is a draft, the full gate
+stands down and `dev-loop.yml` answers instead: formatting, clippy and
+tests for the crates named in `DEV_PACKAGES`, the three architecture
+gates that cost seconds, and a `made-mcp` embedded binary built for
+linux-arm64 and uploaded as a workflow artifact. Minutes, not the full
+matrix.
+
+**Mark it ready for review** (`gh pr ready`) and the handover happens on
+that event, not on the next push: `quality-gate.yml`, `integration.yml`
+and `plugin-package.yml` all list `ready_for_review` among their trigger
+types, and every job in them wakes with the `impact` job.
+
+**Nothing merges on the dev loop's word.** The loop is feedback, not
+proof. The `gate` job in `quality-gate.yml` exists for exactly that: a
+skipped required check counts as satisfied on GitHub, so `gate` fails on
+purpose while the pull request is a draft, and succeeds only when the
+full gate has actually run and nothing required failed. Protect it on
+`main` and the draft/ready handover is enforced rather than merely
+documented.
+
+### Running the same loop locally
+
+```bash
+just dev                            # every stage
+just dev lint                       # fmt + clippy only
+just dev test                       # tests only
+just dev gates                      # the three seconds-long gates
+DEV_PACKAGES="-p made-core" just dev  # narrow it for one run
+```
+
+`just dev` and the workflow are not two lists that mirror each other:
+both run `scripts/ci/dev-loop.sh`. `scripts/ci/dev-loop-workflow-contract.py`
+fails the build if they ever name different crates.
+
+### Changing `DEV_PACKAGES`
+
+`DEV_PACKAGES` names the crates the current phase iterates on. It lives in
+two places that must stay identical, and the contract script enforces that:
+
+- `env.DEV_PACKAGES` in `.github/workflows/dev-loop.yml`
+- the `DEV_PACKAGES="${DEV_PACKAGES:-…}"` default in `scripts/ci/dev-loop.sh`
+
+Edit both, then run `just workflow-contract`. Widening it costs draft
+minutes; narrowing it costs nothing in safety, because the full gate on
+ready-for-review still proves the whole workspace.
 
 ## Container-backed checks
 
@@ -299,23 +350,27 @@ See [`docs/release.md`](release.md).
 
 | Gate | Command | Runs on |
 |---|---|---|
-| `rustfmt` | `cargo fmt --all -- --check` | every PR |
-| `contract` | proto + AsyncAPI validation + blocking proto breaking check | every PR |
-| `clippy` | `cargo clippy` with `-D warnings` on full provider matrix | every PR |
-| `test` | `cargo test` on full provider matrix | every PR |
-| `benches-compile` | `cargo bench --workspace --no-run` | every PR |
-| `integration-nats` | testcontainers NATS tests | every PR |
-| `integration-postgres` | testcontainers Postgres tests | every PR |
-| `helm-chart` | `helm lint` + hardened-render assertions | every PR |
-| `container-image` | image builds from `Dockerfile` | every PR |
-| `dependency-review` | GitHub dependency-review-action | every PR |
+| `dev-lint` | `bash scripts/ci/dev-loop.sh lint` | draft PRs |
+| `dev-test` | `bash scripts/ci/dev-loop.sh test` | draft PRs |
+| `dev-architecture` | `bash scripts/ci/dev-loop.sh gates` | draft PRs |
+| `dev-binary` | `cargo build --release -p made-mcp --no-default-features --features embedded` | draft PRs |
+| `rustfmt` | `cargo fmt --all -- --check` | every ready PR |
+| `contract` | proto + AsyncAPI validation + blocking proto breaking check | every ready PR |
+| `clippy` | `cargo clippy` with `-D warnings` on full provider matrix | every ready PR |
+| `test` | `cargo test` on full provider matrix | every ready PR |
+| `benches-compile` | `cargo bench --workspace --no-run` | every ready PR |
+| `integration-nats` | testcontainers NATS tests | every ready PR |
+| `integration-postgres` | testcontainers Postgres tests | every ready PR |
+| `helm-chart` | `helm lint` + hardened-render assertions | every ready PR |
+| `container-image` | image builds from `Dockerfile` | every ready PR |
+| `dependency-review` | GitHub dependency-review-action | every ready PR |
+| `coverage` | `bash scripts/ci/rust-coverage.sh` (80 % workspace) | every ready PR |
+| `gate` | every required job passed and this is not a draft | every ready PR |
 | `e2e-compose` | full stack via docker compose + runner | **manual** |
 | `e2e-kubernetes` | kubernetes + chart + runner Job | **manual** |
 
-Coverage is not in that table on purpose: it is a local gate, `just
-coverage`, with an 80 % floor. CI stays fast and CodeQL covers static
-analysis.
-
-Every row except the last two gates a PR. E2E stays outside CI — the
-per-PR gates already cover the compile-and-unit surface, and E2E is
-reserved for manual pre-release validation via `make`.
+"Every ready PR" is literal: while the pull request is a draft those rows
+do not run at all, and the four `dev-*` rows answer instead. E2E stays
+outside CI entirely — the per-PR gates already cover the compile-and-unit
+surface, and E2E is reserved for manual pre-release validation via
+`make`.
