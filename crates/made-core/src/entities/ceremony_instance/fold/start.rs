@@ -36,12 +36,4 @@ impl CeremonyInstance {
             bound_definition: started.bound_definition,
         }
     }
-
-    /// A stream opens once. Applying the opening to a session that
-    /// already exists is a programming error in the caller, and the
-    /// session is left exactly as it was: a fold that panicked over
-    /// it would take a host down over one bad stream, and one that
-    /// reopened the session would silently discard everything after
-    /// the first opening.
-    pub(super) fn apply_started(&mut self, _started: &CeremonyInstanceStarted) {}
 }

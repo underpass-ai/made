@@ -27,123 +27,96 @@ pub(crate) fn mutate(
     command: &CeremonyCommand,
 ) -> Result<(), DomainError> {
     match command {
-        CeremonyCommand::BindParticipant(BindParticipant {
-            role_id,
-            specialty,
-            now,
-        }) => instance.bind_participant(definition, role_id.clone(), specialty.clone(), *now),
-        CeremonyCommand::StartStep(StartStep {
-            role_id: Some(role_id),
-            step_id,
-            lease,
-            now,
-        }) => instance
-            .start_step_as(definition, role_id, step_id, lease.clone(), *now)
-            .map(|_| ()),
-        CeremonyCommand::StartStep(StartStep {
-            role_id: None,
-            step_id,
-            lease,
-            now,
-        }) => instance
-            .start_step(definition, step_id, lease.clone(), *now)
-            .map(|_| ()),
-        CeremonyCommand::ApplyStepResult(ApplyStepResult {
-            step_id,
-            result,
-            now,
-        }) => instance.apply_step_result(definition, step_id, result.clone(), *now),
-        CeremonyCommand::ApplyTransition(ApplyTransition {
-            role_id: Some(role_id),
-            trigger,
-            now,
-        }) => instance
-            .apply_transition_as(definition, role_id, trigger, *now)
-            .map(|_| ()),
-        CeremonyCommand::ApplyTransition(ApplyTransition {
-            role_id: None,
-            trigger,
-            now,
-        }) => instance
-            .apply_transition(definition, trigger, *now)
-            .map(|_| ()),
-        CeremonyCommand::ApproveGuard(ApproveGuard {
-            guard_name,
-            approved_by,
-            approved_by_kind,
-            now,
-        }) => instance.approve_guard(
-            definition,
-            guard_name,
-            approved_by.clone(),
-            *approved_by_kind,
-            *now,
-        ),
-        CeremonyCommand::DeferGuard(DeferGuard {
-            guard_name,
-            content,
-            deferred_by,
-            deferred_by_kind,
-            now,
-        }) => instance.defer_guard(
-            definition,
-            guard_name.clone(),
-            content.clone(),
-            deferred_by.clone(),
-            *deferred_by_kind,
-            *now,
-        ),
-        CeremonyCommand::RequestIntervention(RequestIntervention {
-            intervention_id,
-            role_id,
-            kind,
-            target,
-            content,
-            provenance,
-            now,
-        }) => instance.request_intervention_with_provenance_as(
-            definition,
-            intervention_id.clone(),
-            role_id.clone(),
-            *kind,
-            target.clone(),
-            content.clone(),
-            provenance.clone(),
-            *now,
-        ),
-        CeremonyCommand::RespondToIntervention(RespondToIntervention {
-            intervention_id,
-            role_id,
-            content,
-            now,
-        }) => instance.respond_to_intervention_as(
-            definition,
-            intervention_id,
-            role_id.clone(),
-            content.clone(),
-            *now,
-        ),
-        CeremonyCommand::RespondToInterventionWithEvidence(RespondToInterventionWithEvidence {
-            intervention_id,
-            role_id,
-            evidence_pack,
-            now,
-        }) => instance.respond_to_intervention_with_evidence_as(
-            definition,
-            intervention_id,
-            role_id.clone(),
-            evidence_pack.clone(),
-            *now,
-        ),
-        CeremonyCommand::AssertReason(AssertReason { reason }) => {
-            assert_reason(instance, definition, reason)
+        CeremonyCommand::BindParticipant(c) => {
+            instance.bind_participant(definition, c.role_id.clone(), c.specialty.clone(), c.now)
         }
-        CeremonyCommand::CloseIntervention(CloseIntervention {
-            intervention_id,
-            role_id,
-            now,
-        }) => instance.close_intervention_as(definition, intervention_id, role_id, *now),
+        CeremonyCommand::StartStep(c) => start_step(instance, definition, c),
+        CeremonyCommand::ApplyStepResult(c) => {
+            instance.apply_step_result(definition, &c.step_id, c.result.clone(), c.now)
+        }
+        CeremonyCommand::ApplyTransition(c) => apply_transition(instance, definition, c),
+        CeremonyCommand::ApproveGuard(c) => instance.approve_guard(
+            definition,
+            &c.guard_name,
+            c.approved_by.clone(),
+            c.approved_by_kind,
+            c.now,
+        ),
+        CeremonyCommand::DeferGuard(c) => instance.defer_guard(
+            definition,
+            c.guard_name.clone(),
+            c.content.clone(),
+            c.deferred_by.clone(),
+            c.deferred_by_kind,
+            c.now,
+        ),
+        CeremonyCommand::RequestIntervention(c) => request_intervention(instance, definition, c),
+        CeremonyCommand::RespondToIntervention(c) => instance.respond_to_intervention_as(
+            definition,
+            &c.intervention_id,
+            c.role_id.clone(),
+            c.content.clone(),
+            c.now,
+        ),
+        CeremonyCommand::RespondToInterventionWithEvidence(c) => instance
+            .respond_to_intervention_with_evidence_as(
+                definition,
+                &c.intervention_id,
+                c.role_id.clone(),
+                c.evidence_pack.clone(),
+                c.now,
+            ),
+        CeremonyCommand::AssertReason(c) => assert_reason(instance, definition, &c.reason),
+        CeremonyCommand::CloseIntervention(c) => {
+            instance.close_intervention_as(definition, &c.intervention_id, &c.role_id, c.now)
+        }
     }
+}
+
+fn start_step(
+    instance: &mut CeremonyInstance,
+    definition: &CeremonyDefinition,
+    command: &StartStep,
+) -> Result<(), DomainError> {
+    let lease = command.lease.clone();
+    match command.role_id.as_ref() {
+        Some(role_id) => {
+            instance.start_step_as(definition, role_id, &command.step_id, lease, command.now)
+        }
+        None => instance.start_step(definition, &command.step_id, lease, command.now),
+    }
+    .map(|_| ())
+}
+
+fn apply_transition(
+    instance: &mut CeremonyInstance,
+    definition: &CeremonyDefinition,
+    command: &ApplyTransition,
+) -> Result<(), DomainError> {
+    match command.role_id.as_ref() {
+        Some(role_id) => {
+            instance.apply_transition_as(definition, role_id, &command.trigger, command.now)
+        }
+        None => instance.apply_transition(definition, &command.trigger, command.now),
+    }
+    .map(|_| ())
+}
+
+fn request_intervention(
+    instance: &mut CeremonyInstance,
+    definition: &CeremonyDefinition,
+    command: &RequestIntervention,
+) -> Result<(), DomainError> {
+    instance.request_intervention_with_provenance_as(
+        definition,
+        command.intervention_id.clone(),
+        command.role_id.clone(),
+        command.kind,
+        command.target.clone(),
+        command.content.clone(),
+        command.provenance.clone(),
+        command.now,
+    )
 }
 
 fn assert_reason(
@@ -173,6 +146,13 @@ fn assert_reason(
 /// answered two ways, a reason, a deferral then an approval, a
 /// move, a retried step, and the move that ends it.
 fn lifecycle() -> Vec<CeremonyCommand> {
+    let mut commands = drafting();
+    commands.extend(review());
+    commands
+}
+
+/// Everything that happens in `drafting`.
+fn drafting() -> Vec<CeremonyCommand> {
     let observer = CeremonyInterventionTarget::roles([role("observer")]).unwrap();
     vec![
         CeremonyCommand::BindParticipant(BindParticipant {
@@ -249,6 +229,12 @@ fn lifecycle() -> Vec<CeremonyCommand> {
             role_id: role("facilitator"),
             now: at(11),
         }),
+    ]
+}
+
+/// The deferral, the move to `review`, and everything there.
+fn review() -> Vec<CeremonyCommand> {
+    vec![
         CeremonyCommand::DeferGuard(DeferGuard {
             guard_name: guard("human_approved"),
             content: deferral(),

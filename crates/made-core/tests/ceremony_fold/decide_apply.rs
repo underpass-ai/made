@@ -35,11 +35,11 @@ use super::fixture::{
 fn decided_and_folded<T>(
     instance: &CeremonyInstance,
     definition: &CeremonyDefinition,
-    command: CeremonyCommand,
+    command: &CeremonyCommand,
     mutator: impl FnOnce(&mut CeremonyInstance) -> Result<T, DomainError>,
 ) -> Vec<CeremonyEvent> {
     let events = instance
-        .decide(&command, definition)
+        .decide(command, definition)
         .expect("the command is accepted");
     let mut by_fold = instance.clone();
     for event in &events {
@@ -146,7 +146,7 @@ fn binding_a_participant() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::BindParticipant(BindParticipant {
+        &CeremonyCommand::BindParticipant(BindParticipant {
             role_id: role("observer"),
             specialty: specialty("queues"),
             now: at(1),
@@ -176,7 +176,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::StartStep(StartStep {
+        &CeremonyCommand::StartStep(StartStep {
             role_id: Some(role("facilitator")),
             step_id: step("plan"),
             lease: lease("plan-1", at(1)),
@@ -216,7 +216,7 @@ fn a_step_started_by_the_engine_names_the_definitions_seat() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::StartStep(StartStep {
+        &CeremonyCommand::StartStep(StartStep {
             role_id: None,
             step_id: step("plan"),
             lease: lease("plan-1", at(1)),
@@ -240,7 +240,7 @@ fn taking_over_an_expired_lease_is_the_next_attempt() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::StartStep(StartStep {
+        &CeremonyCommand::StartStep(StartStep {
             role_id: None,
             step_id: step("plan"),
             lease: lease("plan-2", at(7)),
@@ -264,7 +264,7 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
             result: result.clone(),
             now: at(2),
@@ -295,7 +295,7 @@ fn a_final_result_carries_no_next_iteration() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
             result: result.clone(),
             now: at(2),
@@ -318,7 +318,7 @@ fn a_failure_is_its_own_event() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
             result: result.clone(),
             now: at(2),
@@ -355,7 +355,7 @@ fn a_move_into_an_intermediate_state_is_one_event() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApplyTransition(ApplyTransition {
+        &CeremonyCommand::ApplyTransition(ApplyTransition {
             role_id: Some(role("facilitator")),
             trigger: trigger("submit"),
             now: at(3),
@@ -412,7 +412,7 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApplyTransition(ApplyTransition {
+        &CeremonyCommand::ApplyTransition(ApplyTransition {
             role_id: None,
             trigger: trigger("abandon"),
             now: at(2),
@@ -448,7 +448,7 @@ fn approving_a_guard() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::ApproveGuard(ApproveGuard {
+        &CeremonyCommand::ApproveGuard(ApproveGuard {
             guard_name: guard("human_approved"),
             approved_by: role("facilitator"),
             approved_by_kind: AuditActorKind::Human,
@@ -488,7 +488,7 @@ fn deferring_a_guard() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::DeferGuard(DeferGuard {
+        &CeremonyCommand::DeferGuard(DeferGuard {
             guard_name: guard("human_approved"),
             content: deferral(),
             deferred_by: role("observer"),
@@ -532,7 +532,7 @@ fn requesting_an_intervention() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::RequestIntervention(RequestIntervention {
+        &CeremonyCommand::RequestIntervention(RequestIntervention {
             intervention_id: item("item-1"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Investigation,
@@ -584,7 +584,7 @@ fn requesting_an_intervention_selected_out_of_a_response() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::RequestIntervention(RequestIntervention {
+        &CeremonyCommand::RequestIntervention(RequestIntervention {
             intervention_id: item("item-2"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Opinion,
@@ -621,7 +621,7 @@ fn responding_to_an_intervention() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::RespondToIntervention(RespondToIntervention {
+        &CeremonyCommand::RespondToIntervention(RespondToIntervention {
             intervention_id: item("item-1"),
             role_id: role("observer"),
             content: content("It is empty."),
@@ -662,7 +662,7 @@ fn responding_out_of_a_source_is_a_receipt_and_an_answer() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::RespondToInterventionWithEvidence(RespondToInterventionWithEvidence {
+        &CeremonyCommand::RespondToInterventionWithEvidence(RespondToInterventionWithEvidence {
             intervention_id: item("item-1"),
             role_id: role("observer"),
             evidence_pack: pack.clone(),
@@ -720,7 +720,7 @@ fn asserting_a_reason() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::AssertReason(AssertReason {
+        &CeremonyCommand::AssertReason(AssertReason {
             reason: reason.clone(),
         }),
         |session| {
@@ -779,7 +779,7 @@ fn closing_an_intervention() {
     let events = decided_and_folded(
         &instance,
         &definition,
-        CeremonyCommand::CloseIntervention(CloseIntervention {
+        &CeremonyCommand::CloseIntervention(CloseIntervention {
             intervention_id: item("item-1"),
             role_id: role("facilitator"),
             now: at(3),

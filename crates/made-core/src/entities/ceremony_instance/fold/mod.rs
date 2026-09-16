@@ -28,7 +28,13 @@ impl CeremonyInstance {
     /// event's own timestamp.
     pub fn apply(&mut self, event: &CeremonyEvent) {
         match event {
-            CeremonyEvent::CeremonyInstanceStarted(started) => self.apply_started(started),
+            // A stream opens once. Applying the opening to a session
+            // that already exists is a programming error in the
+            // caller, and the session is left exactly as it was: a
+            // fold that panicked over it would take a host down over
+            // one bad stream, and one that reopened the session would
+            // silently discard everything after the first opening.
+            CeremonyEvent::CeremonyInstanceStarted(_) => {}
             CeremonyEvent::ParticipantsBound(bound) => self.apply_participants_bound(bound),
             CeremonyEvent::StepStarted(started) => self.apply_step_started(started),
             CeremonyEvent::StepCompleted(completed) => self.apply_step_completed(completed),
