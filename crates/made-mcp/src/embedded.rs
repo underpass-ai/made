@@ -1,6 +1,5 @@
 //! Embedded MCP backend.
 
-mod designed_ceremony_draft;
 mod domain_tool_error;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
@@ -30,6 +29,7 @@ mod embedded_run_ceremony_step_request;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
+use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_app::usecases::CeremonyDraftView;
 use made_core::value_objects::CeremonyId;
 use made_embedded::EmbeddedMade;
@@ -48,7 +48,6 @@ use crate::protocol::{
     VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
-use self::designed_ceremony_draft::DesignedCeremonyDraft;
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
 use self::embedded_assert_ceremony_reason_request::EmbeddedAssertCeremonyReasonRequest;
@@ -180,16 +179,19 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 DESIGN_CEREMONY_TOOL => {
                     let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?
-                        .design()
-                        .map_err(ToolError::invalid_request)?;
-                    let report = designed.draft().analyze();
+                        .execute(&self.made)?;
+                    // Through the same parser and the same analysis a
+                    // hand-authored draft goes through, at the same
+                    // boundary: "designed" means written quickly, not
+                    // trusted more.
+                    let draft =
+                        CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())?;
+                    let report = draft.analyze();
                     Ok(tool_success_result(
                         EmbeddedCeremonyDraftPresenter::present_design(
                             designed.definition_yaml(),
-                            &CeremonyDraftView::project(designed.draft(), &report),
-                            designed.stage_count(),
-                            designed.participant_count(),
-                            designed.final_approval_required(),
+                            &CeremonyDraftView::project(&draft, &report),
+                            &designed,
                         ),
                     ))
                 }

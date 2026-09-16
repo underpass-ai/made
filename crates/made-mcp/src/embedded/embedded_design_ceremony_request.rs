@@ -1,54 +1,31 @@
-use std::collections::{BTreeMap, BTreeSet};
-
-use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_app::usecases::{
+    CeremonyDesignDocument, CeremonyDesignFinalApproval, CeremonyDesignParticipant,
+    CeremonyDesignRepeat, CeremonyDesignStage, CeremonyParticipantCapability, DesignedCeremony,
+};
+use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, GuardName, InputName, OutputName, RoleId,
     StepHandlerKind, StepId, StepIteration, StepOutputField, TransitionTrigger,
 };
+use made_embedded::EmbeddedMade;
 use serde::Deserialize;
-use serde_json::{json, Value};
-
-use super::DesignedCeremonyDraft;
-
-mod ceremony_document;
-mod guard_document;
-mod inputs_document;
-mod repeat_until_document;
-mod retry_policies_document;
-mod retry_policy_document;
-mod role_document;
-mod state_document;
-mod step_document;
-mod step_repeat_document;
-mod timeouts_document;
-mod transition_document;
-
-use ceremony_document::CeremonyDocument;
-use guard_document::GuardDocument;
-use inputs_document::InputsDocument;
-use repeat_until_document::RepeatUntilDocument;
-use retry_policies_document::RetryPoliciesDocument;
-use retry_policy_document::RetryPolicyDocument;
-use role_document::RoleDocument;
-use state_document::StateDocument;
-use step_document::StepDocument;
-use step_repeat_document::StepRepeatDocument;
-use timeouts_document::TimeoutsDocument;
-use transition_document::TransitionDocument;
+use serde_json::Value;
 
 /// Structured intent accepted by `made_design_ceremony`.
 ///
-/// The host chooses the meaning — objective, participants and stages. The
-/// adapter owns the mechanical topology: one state and automated completion
-/// guard per stage, optional final human approval, role actions, retry policy
-/// and YAML rendering. The generated document still passes through the same
-/// parser and analyser as every hand-authored draft.
+/// A serde shape over
+/// [`made_app::usecases::CeremonyDesignDocument`] and nothing else:
+/// the host's JSON becomes value objects here, and every decision
+/// about what that intent means — the topology, what an omitted field
+/// stands for, which intents cannot become a ceremony — belongs to
+/// [`made_app::usecases::DesignCeremonyUseCase`], so that the same
+/// document designs the same ceremony whichever surface took it.
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct EmbeddedDesignCeremonyRequest {
     name: String,
-    #[serde(default = "default_version")]
-    version: String,
+    #[serde(default)]
+    version: Option<String>,
     objective: String,
     #[serde(default)]
     required_inputs: Vec<String>,
@@ -59,12 +36,12 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     stages: Vec<StageIntent>,
     #[serde(default)]
     final_approval: Option<FinalApprovalIntent>,
-    #[serde(default = "default_step_timeout_seconds")]
-    step_timeout_seconds: u64,
-    #[serde(default = "default_max_attempts")]
-    max_attempts: u32,
-    #[serde(default = "default_backoff_seconds")]
-    backoff_seconds: u64,
+    #[serde(default)]
+    step_timeout_seconds: Option<u64>,
+    #[serde(default)]
+    max_attempts: Option<u32>,
+    #[serde(default)]
+    backoff_seconds: Option<u64>,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -82,11 +59,11 @@ enum ParticipantCapability {
     RespondToIntervention,
 }
 
-impl ParticipantCapability {
-    const fn as_action(self) -> &'static str {
-        match self {
-            Self::RequestIntervention => "request_intervention",
-            Self::RespondToIntervention => "respond_to_intervention",
+impl From<ParticipantCapability> for CeremonyParticipantCapability {
+    fn from(capability: ParticipantCapability) -> Self {
+        match capability {
+            ParticipantCapability::RequestIntervention => Self::RequestIntervention,
+            ParticipantCapability::RespondToIntervention => Self::RespondToIntervention,
         }
     }
 }
@@ -97,12 +74,12 @@ struct StageIntent {
     id: String,
     owner_role_id: String,
     instructions: String,
-    #[serde(default = "default_handler")]
-    handler: String,
+    #[serde(default)]
+    handler: Option<String>,
     #[serde(default)]
     see_prior: Option<bool>,
-    #[serde(default = "default_num_agents")]
-    num_agents: u64,
+    #[serde(default)]
+    num_agents: Option<u64>,
     #[serde(default)]
     review_rounds: u64,
     #[serde(default)]
@@ -121,10 +98,10 @@ struct RepeatIntent {
 #[serde(deny_unknown_fields)]
 struct FinalApprovalIntent {
     role_id: String,
-    #[serde(default = "default_approval_guard")]
-    guard_name: String,
-    #[serde(default = "default_approval_trigger")]
-    trigger: String,
+    #[serde(default)]
+    guard_name: Option<String>,
+    #[serde(default)]
+    trigger: Option<String>,
 }
 
 impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
@@ -140,458 +117,101 @@ impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
 }
 
 impl EmbeddedDesignCeremonyRequest {
-    pub(super) fn design(self) -> Result<DesignedCeremonyDraft, String> {
-        self.validate_intent()?;
-
-        let stage_count = self.stages.len();
-        let participant_count = self.participants.len();
-        let final_approval_required = self.final_approval.is_some();
-        let document = self.into_document();
-        let definition_yaml = serde_yaml::to_string(&document)
-            .map_err(|error| format!("ceremony draft could not be rendered as YAML: {error}"))?;
-        let draft = CeremonyDefinitionYaml::parse_draft_str(&definition_yaml)
-            .map_err(|error| format!("designed ceremony draft could not be parsed: {error}"))?;
-
-        Ok(DesignedCeremonyDraft {
-            definition_yaml,
-            draft,
-            stage_count,
-            participant_count,
-            final_approval_required,
-        })
+    pub(super) fn execute(self, made: &EmbeddedMade) -> Result<DesignedCeremony, DomainError> {
+        made.design(&self.into_document()?)
     }
 
-    #[allow(clippy::too_many_lines)] // Every input invariant is audited in one authoring gate.
-    fn validate_intent(&self) -> Result<(), String> {
-        CeremonyName::new(&self.name).map_err(|error| error.to_string())?;
-        CeremonyVersion::new(&self.version).map_err(|error| error.to_string())?;
-        CeremonyDescription::new(&self.objective).map_err(|error| error.to_string())?;
-        if self.outputs.is_empty() {
-            return Err("field `outputs` must contain at least one output".to_owned());
-        }
-        if self.participants.is_empty() {
-            return Err("field `participants` must contain at least one participant".to_owned());
-        }
-        if self.stages.is_empty() {
-            return Err("field `stages` must contain at least one stage".to_owned());
-        }
-        if self.step_timeout_seconds == 0 {
-            return Err("field `step_timeout_seconds` must be greater than zero".to_owned());
-        }
-        if self.max_attempts == 0 {
-            return Err("field `max_attempts` must be greater than zero".to_owned());
-        }
-
-        validate_names(&self.required_inputs, "required_inputs", InputName::new)?;
-        validate_names(&self.optional_inputs, "optional_inputs", InputName::new)?;
-        validate_names(&self.outputs, "outputs", OutputName::new)?;
-        reject_overlap(
-            &self.required_inputs,
-            &self.optional_inputs,
-            "required_inputs",
-            "optional_inputs",
-        )?;
-
-        let participant_ids = self
+    fn into_document(self) -> Result<CeremonyDesignDocument, DomainError> {
+        let participants = self
             .participants
-            .iter()
-            .map(|participant| {
-                RoleId::new(&participant.role_id)
-                    .map_err(|error| error.to_string())
-                    .map(|role_id| role_id.as_str().to_owned())
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        reject_duplicates(&participant_ids, "participants.role_id")?;
-        let participant_set = participant_ids.iter().cloned().collect::<BTreeSet<_>>();
-
-        let mut stage_ids = Vec::with_capacity(self.stages.len());
-        for (index, stage) in self.stages.iter().enumerate() {
-            let step_id = StepId::new(&stage.id).map_err(|error| error.to_string())?;
-            stage_ids.push(step_id.as_str().to_owned());
-            RoleId::new(&stage.owner_role_id).map_err(|error| error.to_string())?;
-            if !participant_set.contains(stage.owner_role_id.trim()) {
-                return Err(format!(
-                    "stage `{}` names unknown owner role `{}`",
-                    stage.id, stage.owner_role_id
-                ));
-            }
-            require_non_blank(
-                &stage.instructions,
-                &format!("stages[{index}].instructions"),
-            )?;
-            StepHandlerKind::new(&stage.handler).map_err(|error| error.to_string())?;
-            if stage.num_agents == 0 {
-                return Err(format!(
-                    "stage `{}` must request at least one agent",
-                    stage.id
-                ));
-            }
-            if stage.review_rounds > 0 && stage.num_agents < 2 {
-                return Err(format!(
-                    "stage `{}` requests review rounds with fewer than two agents",
-                    stage.id
-                ));
-            }
-            if let Some(repeat) = &stage.repeat {
-                StepIteration::new(repeat.max_iterations).map_err(|error| error.to_string())?;
-                StepOutputField::new(&repeat.output_field).map_err(|error| error.to_string())?;
-            }
-        }
-        reject_duplicates(&stage_ids, "stages.id")?;
-        if stage_ids
-            .iter()
-            .any(|id| id.eq_ignore_ascii_case("completed"))
-        {
-            return Err("stage id `completed` is reserved for the terminal state".to_owned());
-        }
-
-        let generated_triggers = stage_ids
-            .iter()
-            .map(|id| format!("{id}_completed"))
-            .collect::<BTreeSet<_>>();
-        for stage_id in &stage_ids {
-            if generated_triggers.contains(stage_id)
-                || matches!(
-                    stage_id.as_str(),
-                    "request_intervention" | "respond_to_intervention"
-                )
-            {
-                return Err(format!(
-                    "stage id `{stage_id}` collides with a generated transition or role capability"
-                ));
-            }
-        }
-
-        if let Some(approval) = &self.final_approval {
-            RoleId::new(&approval.role_id).map_err(|error| error.to_string())?;
-            if !participant_set.contains(approval.role_id.trim()) {
-                return Err(format!(
-                    "final approval names unknown role `{}`",
-                    approval.role_id
-                ));
-            }
-            GuardName::new(&approval.guard_name).map_err(|error| error.to_string())?;
-            TransitionTrigger::new(&approval.trigger).map_err(|error| error.to_string())?;
-            let generated_guards = stage_ids
-                .iter()
-                .map(|id| format!("{id}_completed"))
-                .collect::<BTreeSet<_>>();
-            if generated_guards.contains(approval.guard_name.trim()) {
-                return Err(format!(
-                    "final approval guard `{}` collides with a generated completion guard",
-                    approval.guard_name
-                ));
-            }
-            if generated_triggers.contains(approval.trigger.trim())
-                || stage_ids.iter().any(|id| id == approval.trigger.trim())
-                || matches!(
-                    approval.trigger.trim(),
-                    "request_intervention" | "respond_to_intervention"
-                )
-            {
-                return Err(format!(
-                    "final approval trigger `{}` collides with a stage, generated transition or role capability",
-                    approval.trigger
-                ));
-            }
-        }
-
-        for participant in &self.participants {
-            let role_id = participant.role_id.trim();
-            let owns_stage = self
-                .stages
-                .iter()
-                .any(|stage| stage.owner_role_id.trim() == role_id);
-            let owns_approval = self
-                .final_approval
-                .as_ref()
-                .is_some_and(|approval| approval.role_id.trim() == role_id);
-            if participant.capabilities.is_empty() && !owns_stage && !owns_approval {
-                return Err(format!(
-                    "participant role `{role_id}` has no stage, approval or intervention capability"
-                ));
-            }
-        }
-
-        Ok(())
-    }
-
-    #[allow(clippy::too_many_lines)] // The linear topology is rendered atomically from one intent.
-    fn into_document(self) -> CeremonyDocument {
-        let participant_order = self
-            .participants
-            .iter()
-            .map(|participant| participant.role_id.trim().to_owned())
-            .collect::<Vec<_>>();
-        let mut actions = self
-            .participants
-            .iter()
-            .map(|participant| {
-                let capabilities = participant
-                    .capabilities
-                    .iter()
-                    .map(|capability| capability.as_action().to_owned())
-                    .collect::<BTreeSet<_>>();
-                (participant.role_id.trim().to_owned(), capabilities)
-            })
-            .collect::<BTreeMap<_, _>>();
-
-        let stage_state_ids = self
-            .stages
-            .iter()
-            .map(|stage| stage.id.trim().to_ascii_uppercase())
-            .collect::<Vec<_>>();
-        let mut states = self
-            .stages
-            .iter()
-            .enumerate()
-            .map(|(index, _)| StateDocument {
-                id: stage_state_ids[index].clone(),
-                initial: index == 0,
-                terminal: false,
-            })
-            .collect::<Vec<_>>();
-        states.push(StateDocument {
-            id: "COMPLETED".to_owned(),
-            initial: false,
-            terminal: true,
-        });
-
-        let mut guards = BTreeMap::new();
-        let mut transitions = Vec::with_capacity(self.stages.len());
-        let mut steps = Vec::with_capacity(self.stages.len());
-        for (index, stage) in self.stages.iter().enumerate() {
-            let stage_id = stage.id.trim();
-            let completion_guard = format!("{stage_id}_completed");
-            guards.insert(
-                completion_guard.clone(),
-                GuardDocument {
-                    guard_type: "automated".to_owned(),
-                    check: format!("step_status:{stage_id}:COMPLETED"),
-                },
-            );
-
-            let is_last = index + 1 == self.stages.len();
-            let (trigger, transition_guards, transition_owner) = if is_last {
-                if let Some(approval) = &self.final_approval {
-                    guards.insert(
-                        approval.guard_name.trim().to_owned(),
-                        GuardDocument {
-                            guard_type: "human".to_owned(),
-                            check: "manual_approval".to_owned(),
-                        },
-                    );
-                    (
-                        approval.trigger.trim().to_owned(),
-                        vec![completion_guard, approval.guard_name.trim().to_owned()],
-                        approval.role_id.trim().to_owned(),
-                    )
-                } else {
-                    (
-                        format!("{stage_id}_completed"),
-                        vec![completion_guard],
-                        stage.owner_role_id.trim().to_owned(),
-                    )
-                }
-            } else {
-                (
-                    format!("{stage_id}_completed"),
-                    vec![completion_guard],
-                    stage.owner_role_id.trim().to_owned(),
-                )
-            };
-
-            actions
-                .get_mut(stage.owner_role_id.trim())
-                .expect("owner role validated")
-                .insert(stage_id.to_owned());
-            actions
-                .get_mut(&transition_owner)
-                .expect("transition role validated")
-                .insert(trigger.clone());
-
-            transitions.push(TransitionDocument {
-                from: stage_state_ids[index].clone(),
-                to: stage_state_ids
-                    .get(index + 1)
-                    .cloned()
-                    .unwrap_or_else(|| "COMPLETED".to_owned()),
-                trigger,
-                guards: transition_guards,
-            });
-            steps.push(StepDocument {
-                id: stage_id.to_owned(),
-                state: stage_state_ids[index].clone(),
-                handler: stage.handler.trim().to_owned(),
-                config: stage_config(stage, index),
-                repeat: stage.repeat.as_ref().map(|repeat| StepRepeatDocument {
-                    max_iterations: repeat.max_iterations,
-                    until: RepeatUntilDocument {
-                        output_field: repeat.output_field.trim().to_owned(),
-                        equals: repeat.equals.clone(),
-                    },
-                }),
-            });
-        }
-
-        let roles = participant_order
             .into_iter()
-            .map(|role_id| RoleDocument {
-                allowed_actions: actions
-                    .remove(&role_id)
-                    .expect("participant action bucket exists")
-                    .into_iter()
-                    .collect(),
-                id: role_id,
-            })
-            .collect();
+            .map(ParticipantIntent::into_domain)
+            .collect::<Result<Vec<_>, _>>()?;
+        let stages = self
+            .stages
+            .into_iter()
+            .map(StageIntent::into_domain)
+            .collect::<Result<Vec<_>, _>>()?;
+        let final_approval = self
+            .final_approval
+            .map(FinalApprovalIntent::into_domain)
+            .transpose()?;
 
-        CeremonyDocument {
-            version: self.version.trim().to_owned(),
-            name: self.name.trim().to_owned(),
-            description: self.objective.trim().to_owned(),
-            inputs: InputsDocument {
-                required: trimmed(self.required_inputs),
-                optional: trimmed(self.optional_inputs),
-            },
-            outputs: self
-                .outputs
+        Ok(CeremonyDesignDocument::new(
+            CeremonyName::new(self.name)?,
+            self.version.map(CeremonyVersion::new).transpose()?,
+            CeremonyDescription::new(self.objective)?,
+            names(self.required_inputs, InputName::new)?,
+            names(self.optional_inputs, InputName::new)?,
+            names(self.outputs, OutputName::new)?,
+            participants,
+            stages,
+            final_approval,
+            self.step_timeout_seconds,
+            self.max_attempts,
+            self.backoff_seconds,
+        ))
+    }
+}
+
+impl ParticipantIntent {
+    fn into_domain(self) -> Result<CeremonyDesignParticipant, DomainError> {
+        Ok(CeremonyDesignParticipant::new(
+            RoleId::new(self.role_id)?,
+            self.capabilities
                 .into_iter()
-                .map(|output| (output.trim().to_owned(), json!({ "type": "object" })))
-                .collect(),
-            states,
-            transitions,
-            steps,
-            guards,
-            roles,
-            timeouts: TimeoutsDocument {
-                step_default: self.step_timeout_seconds,
-            },
-            retry_policies: RetryPoliciesDocument {
-                default: RetryPolicyDocument {
-                    max_attempts: self.max_attempts,
-                    backoff_seconds: self.backoff_seconds,
-                },
-            },
-        }
+                .map(CeremonyParticipantCapability::from),
+        ))
     }
 }
 
-fn stage_config(stage: &StageIntent, index: usize) -> BTreeMap<String, Value> {
-    let mut config = BTreeMap::from([
-        ("num_agents".to_owned(), json!(stage.num_agents)),
-        ("prompt".to_owned(), json!(stage.instructions.trim())),
-        (
-            "see_prior".to_owned(),
-            json!(stage.see_prior.unwrap_or(index > 0)),
-        ),
-    ]);
-    if stage.review_rounds > 0 {
-        config.insert("rounds".to_owned(), json!(stage.review_rounds));
-    }
-    config
-}
-
-fn require_non_blank(value: &str, field: &str) -> Result<(), String> {
-    if value.trim().is_empty() {
-        Err(format!("field `{field}` must not be blank"))
-    } else {
-        Ok(())
+impl StageIntent {
+    fn into_domain(self) -> Result<CeremonyDesignStage, DomainError> {
+        Ok(CeremonyDesignStage::new(
+            StepId::new(self.id)?,
+            RoleId::new(self.owner_role_id)?,
+            self.instructions,
+            self.handler.map(StepHandlerKind::new).transpose()?,
+            self.see_prior,
+            self.num_agents,
+            self.review_rounds,
+            self.repeat.map(RepeatIntent::into_domain).transpose()?,
+        ))
     }
 }
 
-fn validate_names<T, E>(
-    values: &[String],
-    field: &str,
-    constructor: impl Fn(String) -> Result<T, E>,
-) -> Result<(), String>
-where
-    E: std::fmt::Display,
-{
-    for value in values {
-        constructor(value.clone()).map_err(|error| error.to_string())?;
+impl RepeatIntent {
+    fn into_domain(self) -> Result<CeremonyDesignRepeat, DomainError> {
+        Ok(CeremonyDesignRepeat::new(
+            StepIteration::new(self.max_iterations)?,
+            StepOutputField::new(self.output_field)?,
+            self.equals,
+        ))
     }
-    let normalized = values
-        .iter()
-        .map(|value| value.trim().to_owned())
-        .collect::<Vec<_>>();
-    reject_duplicates(&normalized, field)
 }
 
-fn reject_duplicates(values: &[String], field: &str) -> Result<(), String> {
-    let mut seen = BTreeSet::new();
-    for value in values {
-        if !seen.insert(value) {
-            return Err(format!("field `{field}` contains duplicate `{value}`"));
-        }
+impl FinalApprovalIntent {
+    fn into_domain(self) -> Result<CeremonyDesignFinalApproval, DomainError> {
+        Ok(CeremonyDesignFinalApproval::new(
+            RoleId::new(self.role_id)?,
+            self.guard_name.map(GuardName::new).transpose()?,
+            self.trigger.map(TransitionTrigger::new).transpose()?,
+        ))
     }
-    Ok(())
 }
 
-fn reject_overlap(
-    left: &[String],
-    right: &[String],
-    left_name: &str,
-    right_name: &str,
-) -> Result<(), String> {
-    let left = left
-        .iter()
-        .map(|value| value.trim())
-        .collect::<BTreeSet<_>>();
-    if let Some(overlap) = right
-        .iter()
-        .map(|value| value.trim())
-        .find(|value| left.contains(value))
-    {
-        return Err(format!(
-            "`{overlap}` appears in both `{left_name}` and `{right_name}`"
-        ));
-    }
-    Ok(())
-}
-
-fn trimmed(values: Vec<String>) -> Vec<String> {
-    values
-        .into_iter()
-        .map(|value| value.trim().to_owned())
-        .collect()
-}
-
-const fn default_step_timeout_seconds() -> u64 {
-    300
-}
-
-const fn default_max_attempts() -> u32 {
-    2
-}
-
-const fn default_backoff_seconds() -> u64 {
-    1
-}
-
-fn default_version() -> String {
-    "1.0".to_owned()
-}
-
-fn default_handler() -> String {
-    "host_callback".to_owned()
-}
-
-const fn default_num_agents() -> u64 {
-    1
-}
-
-fn default_approval_guard() -> String {
-    "human_approved_outcome".to_owned()
-}
-
-fn default_approval_trigger() -> String {
-    "approve_outcome".to_owned()
+fn names<T>(
+    values: Vec<String>,
+    constructor: impl Fn(String) -> Result<T, DomainError>,
+) -> Result<Vec<T>, DomainError> {
+    values.into_iter().map(constructor).collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use made_adapters::yaml::CeremonyDefinitionYaml;
+    use made_core::entities::CeremonyDefinitionDraft;
     use serde_json::json;
 
     fn intent() -> Value {
@@ -622,11 +242,24 @@ mod tests {
         })
     }
 
+    fn design(value: &Value) -> Result<DesignedCeremony, DomainError> {
+        EmbeddedDesignCeremonyRequest::try_from(value)
+            .expect("the intent should deserialize")
+            .execute(&EmbeddedMade::default())
+    }
+
+    /// The whole point of rendering YAML: it goes back through the
+    /// same parser every hand-authored draft does.
+    fn parsed(designed: &DesignedCeremony) -> CeremonyDefinitionDraft {
+        CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())
+            .expect("a designed draft parses")
+    }
+
     #[test]
     fn designs_a_publishable_draft_with_a_real_human_guard() {
-        let request = EmbeddedDesignCeremonyRequest::try_from(&intent()).unwrap();
-        let designed = request.design().unwrap();
-        let report = designed.draft().analyze();
+        let designed = design(&intent()).unwrap();
+        let draft = parsed(&designed);
+        let report = draft.analyze();
 
         assert!(report.is_valid(), "{:?}", report.findings());
         assert!(designed.definition_yaml().contains("type: human"));
@@ -646,16 +279,12 @@ mod tests {
             "equals": true
         });
 
-        let designed = EmbeddedDesignCeremonyRequest::try_from(&value)
-            .unwrap()
-            .design()
-            .unwrap();
+        let designed = design(&value).unwrap();
         let yaml = designed.definition_yaml();
 
         assert!(yaml.contains("max_iterations: 5"), "{yaml}");
         assert!(yaml.contains("output_field: ready"), "{yaml}");
-        assert!(designed
-            .draft()
+        assert!(parsed(&designed)
             .steps()
             .iter()
             .find(|step| step.id() == &StepId::new("compose").unwrap())
@@ -682,10 +311,7 @@ mod tests {
         let mut value = intent();
         value["stages"][0]["owner_role_id"] = json!("MISSING");
 
-        let error = EmbeddedDesignCeremonyRequest::try_from(&value)
-            .unwrap()
-            .design()
-            .unwrap_err();
+        let error = design(&value).unwrap_err().to_string();
 
         assert!(error.contains("unknown owner role"), "{error}");
     }
@@ -695,10 +321,7 @@ mod tests {
         let mut value = intent();
         value["stages"][1]["num_agents"] = json!(1);
 
-        let error = EmbeddedDesignCeremonyRequest::try_from(&value)
-            .unwrap()
-            .design()
-            .unwrap_err();
+        let error = design(&value).unwrap_err().to_string();
 
         assert!(error.contains("fewer than two agents"), "{error}");
     }
@@ -708,10 +331,7 @@ mod tests {
         let mut value = intent();
         value["stages"][0]["id"] = json!("request_intervention");
 
-        let error = EmbeddedDesignCeremonyRequest::try_from(&value)
-            .unwrap()
-            .design()
-            .unwrap_err();
+        let error = design(&value).unwrap_err().to_string();
 
         assert!(error.contains("role capability"), "{error}");
     }
@@ -724,11 +344,21 @@ mod tests {
             .unwrap()
             .push(json!({ "role_id": "OBSERVER" }));
 
-        let error = EmbeddedDesignCeremonyRequest::try_from(&value)
-            .unwrap()
-            .design()
-            .unwrap_err();
+        let error = design(&value).unwrap_err().to_string();
 
         assert!(error.contains("has no stage"), "{error}");
+    }
+
+    /// A field no value object accepts is refused where it is read,
+    /// not where it is used: the message names the field, not the
+    /// design.
+    #[test]
+    fn refuses_a_field_no_value_object_accepts() {
+        let mut value = intent();
+        value["participants"][0]["role_id"] = json!("  ");
+
+        let error = design(&value).unwrap_err();
+
+        assert!(matches!(error, DomainError::EmptyField { field } if field == "role_id"));
     }
 }
