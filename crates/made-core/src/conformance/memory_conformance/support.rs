@@ -31,7 +31,6 @@ pub(super) fn named(
         MemoryEntryId::new(id).expect("entry id should be valid"),
         kind,
         summary,
-        None,
         MemoryProvenance::new(
             CeremonyId::new("conformance").expect("ceremony id should be valid"),
             None,

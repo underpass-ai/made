@@ -10,7 +10,7 @@ use made_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use made_core::value_objects::{
-    MemoryCapabilities, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryScope, MemoryWrite,
+    MemoryCapabilities, MemoryEntryId, MemoryMoment, MemoryScope, MemoryWrite,
 };
 
 #[derive(Debug, Clone, Copy, Default)]
@@ -42,14 +42,6 @@ impl MemoryWriterPort for ForgetfulMemory {
 #[async_trait]
 impl MemoryReaderPort for ForgetfulMemory {
     async fn recall(&self, _scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
-        Ok(MemoryRecollection::Unsupported)
-    }
-
-    async fn ask(
-        &self,
-        _scope: &MemoryScope,
-        _question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
         Ok(MemoryRecollection::Unsupported)
     }
 

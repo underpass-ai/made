@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub enum MemoryCapability {
     Remembering,
     Recalling,
-    AnsweringQuestions,
     TravellingInTime,
     KeepingEvidence,
     KeepingReasons,
@@ -19,7 +18,6 @@ impl MemoryCapability {
         match self {
             Self::Remembering => "remembering",
             Self::Recalling => "recalling",
-            Self::AnsweringQuestions => "answering_questions",
             Self::TravellingInTime => "travelling_in_time",
             Self::KeepingEvidence => "keeping_evidence",
             Self::KeepingReasons => "keeping_reasons",

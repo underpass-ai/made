@@ -18,17 +18,16 @@
 //! edge into nothing claims an explanation exists and gives no way to
 //! reach it. It is also why the one reason the engine observes on its
 //! own — that a contribution answers its agenda item — never reaches
-//! memory: the item is not an entry. Nothing is lost by it, since the
-//! contribution carries the item as its own axis and can be found
-//! along it.
+//! memory: the item is not an entry. Nothing is lost by it, since a
+//! contribution is named after the item it answers and can be found by
+//! that name.
 
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyInterventionKind,
-    CeremonyReason, CeremonyReasonKind, CeremonyRecordRef, MemoryDimension, MemoryEntry,
-    MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryProvenance, MemoryRelation,
-    MemoryRelationKind, RoleId,
+    CeremonyReason, CeremonyReasonKind, CeremonyRecordRef, MemoryEntry, MemoryEntryId,
+    MemoryEntryKind, MemoryEvidence, MemoryProvenance, MemoryRelation, MemoryRelationKind, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -105,7 +104,6 @@ pub(super) fn contribution_entry(
         entry_id(record)?,
         kind,
         response.content().message(),
-        Some(MemoryDimension::new(format!("agenda:{agenda_item}"))?),
         provenance(instance, Some(response.role_id()), response.responded_at()),
         Attributes::empty(),
     )?
@@ -153,7 +151,6 @@ fn approval_entry(
         entry_id(record)?,
         MemoryEntryKind::Decision,
         format!("`{}` was approved", approval.guard_name()),
-        None,
         provenance(
             instance,
             Some(approval.approved_by()),
@@ -181,7 +178,6 @@ fn deferral_entry(
         entry_id(record)?,
         MemoryEntryKind::Constraint,
         summary,
-        None,
         provenance(
             instance,
             Some(deferral.deferred_by()),
@@ -232,7 +228,6 @@ pub(super) fn ending_entry(
         entry_id(&record)?,
         MemoryEntryKind::Outcome,
         summary,
-        None,
         provenance(instance, ending.applied_by(), ending.applied_at()),
         Attributes::empty(),
     )?;
