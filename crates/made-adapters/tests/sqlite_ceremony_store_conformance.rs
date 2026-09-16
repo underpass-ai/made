@@ -29,7 +29,7 @@ async fn sqlite_satisfies_the_audit_journal_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 7, "properties run: {passed:?}");
 }
 
 #[tokio::test]
@@ -105,11 +105,15 @@ async fn a_reopened_store_still_holds_its_journal_and_verifies() {
 }
 
 mod support {
+    use made_core::entities::ceremony_events::StepCompleted;
+    use made_core::entities::CeremonyEvent;
     use made_core::entities::{AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance};
     use made_core::value_objects::{
-        AuditActor, AuditActorKind, AuditEventType, CeremonyContext, CeremonyId, CeremonyName,
-        CeremonyState, CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId,
-        TransitionTrigger,
+        AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyState,
+        CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId, TransitionTrigger,
+    };
+    use made_core::value_objects::{
+        RoleId, StepAttempt, StepId, StepIteration, StepOutput, StepResult,
     };
     use time::OffsetDateTime;
 
@@ -136,7 +140,15 @@ mod support {
         );
         let fact = AuditFact {
             event_id: EventId::new(format!("restart-{ordinal}")).unwrap(),
-            event_type: AuditEventType::StepCompleted,
+            event: CeremonyEvent::StepCompleted(StepCompleted {
+                step_id: StepId::new("conformance_step").unwrap(),
+                iteration: StepIteration::FIRST,
+                attempt: StepAttempt::FIRST,
+                result: StepResult::completed(StepOutput::empty()).unwrap(),
+                next_iteration: None,
+                finished_by: RoleId::new("test").unwrap(),
+                finished_at: OffsetDateTime::UNIX_EPOCH,
+            }),
             ceremony_id: ceremony_id.clone(),
             definition_name: definition.name().clone(),
             definition_version: definition.version().clone(),

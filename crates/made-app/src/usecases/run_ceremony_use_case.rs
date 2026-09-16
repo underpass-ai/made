@@ -505,7 +505,7 @@ mod tests {
             .into_iter()
             .filter(|fact| {
                 matches!(
-                    fact.event_type,
+                    fact.event.event_type(),
                     AuditEventType::StepStarted | AuditEventType::StepCompleted
                 )
             })
@@ -816,7 +816,7 @@ mod tests {
             .facts()
             .await
             .iter()
-            .map(|fact| fact.event_type)
+            .map(|fact| fact.event.event_type())
             .collect::<Vec<_>>();
         assert_eq!(
             sealed,

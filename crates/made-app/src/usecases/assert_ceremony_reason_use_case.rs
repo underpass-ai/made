@@ -352,7 +352,7 @@ mod tests {
             .facts()
             .await
             .into_iter()
-            .filter(|fact| fact.event_type == AuditEventType::ReasonAsserted)
+            .filter(|fact| fact.event.event_type() == AuditEventType::ReasonAsserted)
             .collect::<Vec<_>>();
         assert_eq!(reasons.len(), 2, "two claims, two facts: {reasons:?}");
         assert_ne!(

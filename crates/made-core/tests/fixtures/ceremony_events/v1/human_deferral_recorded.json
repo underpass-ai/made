@@ -1,0 +1,16 @@
+{
+  "type": "human_deferral_recorded",
+  "deferral": {
+    "guard_name": "release",
+    "deferred_by": "reviewer",
+    "deferred_by_kind": "human",
+    "content": {
+      "statement": "Not yet.",
+      "reason": "The audit is still open.",
+      "reconsider_when": [
+        "the audit closes"
+      ]
+    },
+    "deferred_at": "2026-07-29T09:05:00Z"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "type": "intervention_responded",
+  "intervention_id": "item-1",
+  "response": {
+    "role_id": "reviewer",
+    "content": {
+      "message": "Yes, but narrow it.",
+      "details": {
+        "topic": "scope"
+      }
+    },
+    "evidence_pack": null,
+    "responded_at": "2026-07-29T09:05:00Z"
+  }
+}

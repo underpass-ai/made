@@ -22,8 +22,9 @@ async fn the_in_memory_journal_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 7, "properties run: {passed:?}");
     assert!(passed.contains(&"concurrent_appends_do_not_fork_the_chain"));
+    assert!(passed.contains(&"a_record_carries_its_event"));
 }
 
 #[tokio::test]

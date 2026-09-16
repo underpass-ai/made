@@ -13,12 +13,16 @@
 use std::io::Write;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
+use made_core::entities::ceremony_events::StepCompleted;
+use made_core::entities::CeremonyEvent;
 use made_core::entities::{AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance};
 use made_core::ports::CeremonyUnitOfWorkPort;
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyState, CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId,
-    TransitionTrigger,
+    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyState,
+    CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId, TransitionTrigger,
+};
+use made_core::value_objects::{
+    RoleId, StepAttempt, StepId, StepIteration, StepOutput, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -61,7 +65,15 @@ fn commit_for(
     );
     let fact = AuditFact {
         event_id: EventId::new(format!("{}-{ordinal}", ceremony_id.as_str())).unwrap(),
-        event_type: AuditEventType::StepCompleted,
+        event: CeremonyEvent::StepCompleted(StepCompleted {
+            step_id: StepId::new("conformance_step").unwrap(),
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::FIRST,
+            result: StepResult::completed(StepOutput::empty()).unwrap(),
+            next_iteration: None,
+            finished_by: RoleId::new("writer").unwrap(),
+            finished_at: OffsetDateTime::UNIX_EPOCH,
+        }),
         ceremony_id: ceremony_id.clone(),
         definition_name: definition.name().clone(),
         definition_version: definition.version().clone(),

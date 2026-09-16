@@ -1,0 +1,19 @@
+{
+  "type": "reason_asserted",
+  "reason": {
+    "from": {
+      "kind": "contribution",
+      "agenda_item": "item-1",
+      "ordinal": 0
+    },
+    "to": {
+      "kind": "agenda_item",
+      "agenda_item": "item-1"
+    },
+    "kind": "answers",
+    "why": "a contribution made against this agenda item",
+    "confidence": "high",
+    "asserted_by": "reviewer",
+    "asserted_at": "2026-07-29T09:05:00Z"
+  }
+}

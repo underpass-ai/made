@@ -67,6 +67,7 @@ impl StartCeremonyUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use std::sync::Arc;
 
     use made_core::error::DomainError;
@@ -159,7 +160,7 @@ mod tests {
         let usecase =
             StartCeremonyUseCase::new(definitions, journal, Arc::new(FixedClock::new(now())));
 
-        usecase
+        let instance = usecase
             .execute(StartCeremonyInput::new(
                 ceremony_id(),
                 definition_name(),
@@ -173,7 +174,19 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one opening, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::CeremonyInstanceStarted);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::CeremonyInstanceStarted
+        );
+        let CeremonyEvent::CeremonyInstanceStarted(started) = &facts[0].event else {
+            panic!("an opening seals what it opened: {:?}", facts[0].event);
+        };
+        assert_eq!(started.initial_state, *instance.current_state());
+        assert_eq!(
+            started.step_ids,
+            instance.step_records().keys().cloned().collect()
+        );
+        assert_eq!(started.bound_definition, None);
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Service);
         assert_eq!(facts[0].actor.actor_id(), "scheduler-1");
         assert!(

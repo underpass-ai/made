@@ -98,10 +98,11 @@ fn digest_defect(record: &AuditRecord) -> Option<AuditChainVerdict> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::entities::AuditFact;
+    use crate::entities::ceremony_events::StepCompleted;
+    use crate::entities::{AuditFact, CeremonyEvent};
     use crate::value_objects::{
-        AuditActor, AuditActorKind, AuditEventType, CeremonyId, CeremonyName, CeremonyVersion,
-        EventId,
+        AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, EventId, RoleId,
+        StepAttempt, StepId, StepIteration, StepOutput, StepResult,
     };
     use serde_json::Value;
     use time::macros::datetime;
@@ -109,7 +110,15 @@ mod tests {
     fn fact(event_id: &str, ceremony: &str) -> AuditFact {
         AuditFact {
             event_id: EventId::new(event_id).unwrap(),
-            event_type: AuditEventType::StepCompleted,
+            event: CeremonyEvent::StepCompleted(StepCompleted {
+                step_id: StepId::new("draft").unwrap(),
+                iteration: StepIteration::FIRST,
+                attempt: StepAttempt::FIRST,
+                result: StepResult::completed(StepOutput::empty()).unwrap(),
+                next_iteration: None,
+                finished_by: RoleId::new("author").unwrap(),
+                finished_at: datetime!(2026-07-29 09:00:00 UTC),
+            }),
             ceremony_id: CeremonyId::new(ceremony).unwrap(),
             definition_name: CeremonyName::new("planning_ceremony").unwrap(),
             definition_version: CeremonyVersion::v1(),
@@ -190,6 +199,39 @@ mod tests {
     }
 
     #[test]
+    fn an_edited_event_payload_is_detected_at_its_own_position() {
+        // The chain now covers what happened: rewriting a step's output
+        // in the stored record is caught exactly like rewriting who did
+        // it.
+        let mut records = chain();
+        records[1] = tampered(&records[1], |json| {
+            json["event"]["result"]["output"]["rewritten"] = "after the fact".into();
+        });
+
+        assert_eq!(
+            AuditChain::verify(&records).defect(),
+            Some(AuditChainDefect::DigestAltered {
+                at: AuditSequence::new(2).unwrap()
+            })
+        );
+    }
+
+    #[test]
+    fn a_record_that_lost_its_event_is_detected_at_its_own_position() {
+        let mut records = chain();
+        records[2] = tampered(&records[2], |json| {
+            json["event"] = Value::Null;
+        });
+
+        assert_eq!(
+            AuditChain::verify(&records).defect(),
+            Some(AuditChainDefect::DigestAltered {
+                at: AuditSequence::new(3).unwrap()
+            })
+        );
+    }
+
+    #[test]
     fn a_substituted_record_breaks_the_link_of_the_one_after_it() {
         let records = chain();
         let forged = AuditRecord::following(fact("forged", "ceremony-1"), &records[0]).unwrap();
@@ -254,10 +296,10 @@ mod tests {
     fn verification_stops_at_the_first_defect() {
         let mut records = chain();
         records[1] = tampered(&records[1], |json| {
-            json["event_type"] = "step_failed".into();
+            json["actor"]["actor_id"] = "someone-else".into();
         });
         records[2] = tampered(&records[2], |json| {
-            json["event_type"] = "step_failed".into();
+            json["actor"]["actor_id"] = "someone-else".into();
         });
 
         // Both are altered; only the earlier one is reported, because

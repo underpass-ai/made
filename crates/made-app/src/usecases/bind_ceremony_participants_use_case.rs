@@ -88,6 +88,7 @@ impl BindCeremonyParticipantsUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::AuditEventType;
 
@@ -135,7 +136,16 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one seating, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::ParticipantsBound);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::ParticipantsBound
+        );
+        let CeremonyEvent::ParticipantsBound(seated) = &facts[0].event else {
+            panic!("a seating seals who sits where: {:?}", facts[0].event);
+        };
+        assert_eq!(seated.bindings.len(), 1);
+        assert_eq!(seated.bindings[0].role_id(), &role_id());
+        assert_eq!(seated.bindings[0].specialty().as_str(), "reviewer");
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Human);
         assert!(
             facts[0].actor.role_id().is_none(),

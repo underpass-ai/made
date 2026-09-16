@@ -3,6 +3,7 @@
 mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod loaded_session;
+pub(crate) mod session_events;
 pub(crate) mod session_facts;
 mod session_journal;
 mod session_memory_projection;

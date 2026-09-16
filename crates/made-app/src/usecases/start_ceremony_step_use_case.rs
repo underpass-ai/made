@@ -92,6 +92,7 @@ impl StartCeremonyStepUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use std::sync::Arc;
 
     use made_core::error::DomainError;
@@ -269,7 +270,13 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one claim, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::StepStarted);
+        assert_eq!(facts[0].event.event_type(), AuditEventType::StepStarted);
+        let CeremonyEvent::StepStarted(claimed) = &facts[0].event else {
+            panic!("a claim seals its lease: {:?}", facts[0].event);
+        };
+        assert_eq!(claimed.step_id, step_id());
+        assert_eq!(claimed.lease.idempotency_key(), &idempotency_key("claim-1"));
+        assert_eq!(claimed.started_by, role_id());
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Human);
     }
 }

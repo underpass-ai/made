@@ -91,6 +91,7 @@ impl ApproveCeremonyGuardUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use std::sync::Arc;
 
     use made_core::ports::CeremonyInstanceRepositoryPort;
@@ -222,7 +223,18 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one approval, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::HumanApprovalRecorded);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::HumanApprovalRecorded
+        );
+        let CeremonyEvent::HumanApprovalRecorded(approved) = &facts[0].event else {
+            panic!(
+                "an approval seals who let the guard through: {:?}",
+                facts[0].event
+            );
+        };
+        assert_eq!(approved.approval.guard_name().as_str(), "human_approved");
+        assert_eq!(approved.approval.approved_by(), &role_id());
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Human);
     }
 }

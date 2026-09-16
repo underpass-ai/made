@@ -8,6 +8,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_adapters::memory::InMemoryCeremonyStore;
 use made_core::conformance::CeremonyUnitOfWorkConformance;
+use made_core::entities::ceremony_events::CeremonyCompleted;
+use made_core::entities::CeremonyEvent;
 use made_core::entities::{
     AuditFact, AuditRecord, CeremonyCommit, CeremonyInstance, CommitOutcome,
 };
@@ -148,7 +150,7 @@ impl AuditJournalPort for PiecewiseCeremonyStore {
 async fn messages_are_enqueued_with_the_commit_and_never_without_it() {
     use made_core::entities::{AuditFact, CeremonyDefinition};
     use made_core::value_objects::{
-        AuditActor, AuditActorKind, AuditEventType, CeremonyContext, CeremonyName, CeremonyState,
+        AuditActor, AuditActorKind, CeremonyContext, CeremonyName, CeremonyState,
         CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, OutboxMessage,
         OutboxSubject, StateId, TransitionTrigger,
     };
@@ -191,7 +193,10 @@ async fn messages_are_enqueued_with_the_commit_and_never_without_it() {
             expected,
             [AuditFact {
                 event_id: EventId::new(event).unwrap(),
-                event_type: AuditEventType::CeremonyCompleted,
+                event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+                    final_state: StateId::new("DONE").unwrap(),
+                    completed_at: OffsetDateTime::UNIX_EPOCH,
+                }),
                 ceremony_id: ceremony.clone(),
                 definition_name: definition.name().clone(),
                 definition_version: definition.version().clone(),

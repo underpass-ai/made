@@ -1,0 +1,10 @@
+{
+  "type": "transition_applied",
+  "transition": {
+    "trigger": "finish",
+    "from_state": "OPEN",
+    "to_state": "DONE",
+    "applied_by": "author",
+    "applied_at": "2026-07-29T09:05:00Z"
+  }
+}

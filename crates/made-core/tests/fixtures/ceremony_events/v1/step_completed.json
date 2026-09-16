@@ -1,0 +1,16 @@
+{
+  "type": "step_completed",
+  "step_id": "draft",
+  "iteration": 1,
+  "attempt": 1,
+  "result": {
+    "status": "COMPLETED",
+    "output": {
+      "draft": "v1 text"
+    },
+    "error_message": null
+  },
+  "next_iteration": 2,
+  "finished_by": "author",
+  "finished_at": "2026-07-29T09:05:00Z"
+}

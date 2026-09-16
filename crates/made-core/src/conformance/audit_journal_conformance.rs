@@ -22,12 +22,13 @@
 use futures::future::join_all;
 use time::OffsetDateTime;
 
+use crate::conformance::conformance_fixtures::ceremony_event;
 use crate::conformance::ConformanceFailure;
 use crate::entities::{AuditChain, AuditFact, AuditRecord};
 use crate::error::DomainError;
 use crate::ports::AuditJournalPort;
 use crate::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyId, CeremonyName, CeremonyVersion, EventId,
+    AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, EventId,
 };
 
 /// Number of appends the concurrency property drives at once.
@@ -59,6 +60,8 @@ impl AuditJournalConformance {
         passed.push("ceremonies_have_independent_journals");
         Self::concurrent_appends_do_not_fork_the_chain(journal).await?;
         passed.push("concurrent_appends_do_not_fork_the_chain");
+        Self::a_record_carries_its_event(journal).await?;
+        passed.push("a_record_carries_its_event");
         Ok(passed)
     }
 
@@ -252,6 +255,50 @@ impl AuditJournalConformance {
         }
         verify_intact(PROPERTY, &stored)
     }
+
+    /// The journal keeps what happened, not only that it did: the event
+    /// a fact carried comes back, payload and all, on the record that
+    /// sealed it — from the append and from a later read alike.
+    async fn a_record_carries_its_event(
+        journal: &dyn AuditJournalPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "a_record_carries_its_event";
+        let ceremony = ceremony_id(PROPERTY, "payload")?;
+        let fact = fact(PROPERTY, &ceremony, 1)?;
+        let expected = fact.event.clone();
+
+        let appended = call(PROPERTY, journal.append(fact).await)?;
+        if appended.event() != Some(&expected) {
+            return Err(failure(
+                PROPERTY,
+                "the appended record does not carry the event it sealed",
+            ));
+        }
+
+        let stored = call(PROPERTY, journal.records(&ceremony).await)?;
+        match stored.as_slice() {
+            [record] if record.event() == Some(&expected) => {}
+            [record] if record.event().is_none() => {
+                return Err(failure(
+                    PROPERTY,
+                    "the stored record came back without its event",
+                ))
+            }
+            [_] => {
+                return Err(failure(
+                    PROPERTY,
+                    "the stored record came back with a different event",
+                ))
+            }
+            other => {
+                return Err(failure(
+                    PROPERTY,
+                    format!("expected 1 record, found {}", other.len()),
+                ))
+            }
+        }
+        verify_intact(PROPERTY, &stored)
+    }
 }
 
 fn verify_intact(
@@ -296,7 +343,7 @@ fn fact(
     let build = || -> Result<AuditFact, DomainError> {
         Ok(AuditFact {
             event_id: EventId::new(format!("{property}-{ordinal}"))?,
-            event_type: AuditEventType::StepCompleted,
+            event: ceremony_event()?,
             ceremony_id: ceremony_id.clone(),
             definition_name: CeremonyName::new("conformance_ceremony")?,
             definition_version: CeremonyVersion::v1(),

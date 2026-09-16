@@ -93,6 +93,7 @@ impl CompleteCeremonyStepUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::CeremonyEvent;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
@@ -215,7 +216,13 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one ending, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::StepCompleted);
+        assert_eq!(facts[0].event.event_type(), AuditEventType::StepCompleted);
+        let CeremonyEvent::StepCompleted(completed) = &facts[0].event else {
+            panic!("a completion seals its result: {:?}", facts[0].event);
+        };
+        assert_eq!(completed.step_id, step_id());
+        assert!(completed.result.is_success());
+        assert_eq!(completed.next_iteration, None);
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Human);
         assert!(
             facts[0]

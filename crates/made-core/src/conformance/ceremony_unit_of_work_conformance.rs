@@ -21,11 +21,12 @@ use crate::entities::{
 use crate::error::DomainError;
 use crate::ports::{AuditJournalPort, CeremonyUnitOfWorkPort};
 use crate::value_objects::{
-    AuditActor, AuditActorKind, AuditEventType, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyRevision, CeremonyState, CeremonyTransition, CeremonyVersion, EventId,
-    ExpectedRevision, StateId, TransitionTrigger,
+    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyRevision,
+    CeremonyState, CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId,
+    TransitionTrigger,
 };
 
+use super::conformance_fixtures::ceremony_event;
 use super::ConformanceFailure;
 
 const CONCURRENT_COMMITS: usize = 8;
@@ -309,7 +310,7 @@ fn commit(
         );
         let fact = AuditFact {
             event_id: EventId::new(format!("{property}-{ordinal}"))?,
-            event_type: AuditEventType::StepCompleted,
+            event: ceremony_event()?,
             ceremony_id: ceremony_id.clone(),
             definition_name: definition.name().clone(),
             definition_version: definition.version().clone(),

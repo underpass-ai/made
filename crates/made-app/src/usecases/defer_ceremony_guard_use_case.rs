@@ -186,6 +186,9 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one deferral, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::HumanDeferralRecorded);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::HumanDeferralRecorded
+        );
     }
 }

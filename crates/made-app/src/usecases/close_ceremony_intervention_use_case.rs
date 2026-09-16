@@ -192,7 +192,10 @@ mod tests {
 
         let facts = unit_of_work.facts().await;
         assert_eq!(facts.len(), 1, "one closure, one fact: {facts:?}");
-        assert_eq!(facts[0].event_type, AuditEventType::InterventionClosed);
+        assert_eq!(
+            facts[0].event.event_type(),
+            AuditEventType::InterventionClosed
+        );
         assert_eq!(facts[0].actor.kind(), AuditActorKind::Human);
     }
 

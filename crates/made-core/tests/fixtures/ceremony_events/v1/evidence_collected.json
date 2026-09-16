@@ -1,0 +1,31 @@
+{
+  "type": "evidence_collected",
+  "intervention_id": "item-1",
+  "source_id": "wiki",
+  "collected_by": "reviewer",
+  "evidence_pack": {
+    "source_id": "wiki",
+    "bundle": {
+      "bundle_id": "bundle-1",
+      "schema_version": "v1",
+      "summary": {
+        "text": "What the wiki says about scope.",
+        "attributes": {}
+      },
+      "items": [
+        {
+          "item_id": "item-1",
+          "kind": "page",
+          "title": "Scope",
+          "narrative": "The scope is fixed.",
+          "attributes": {},
+          "reference_ids": []
+        }
+      ],
+      "references": [],
+      "metadata": {}
+    },
+    "collected_at": "2026-07-29T09:00:00Z"
+  },
+  "collected_at": "2026-07-29T09:05:00Z"
+}

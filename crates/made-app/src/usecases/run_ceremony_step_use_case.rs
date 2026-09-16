@@ -520,7 +520,10 @@ mod tests {
             .unwrap();
 
         let facts = unit_of_work.facts().await;
-        let sealed = facts.iter().map(|fact| fact.event_type).collect::<Vec<_>>();
+        let sealed = facts
+            .iter()
+            .map(|fact| fact.event.event_type())
+            .collect::<Vec<_>>();
         assert_eq!(
             sealed,
             vec![AuditEventType::StepStarted, AuditEventType::StepCompleted],
@@ -572,7 +575,7 @@ mod tests {
             .facts()
             .await
             .iter()
-            .map(|fact| fact.event_type)
+            .map(|fact| fact.event.event_type())
             .collect::<Vec<_>>();
         assert_eq!(
             sealed,
