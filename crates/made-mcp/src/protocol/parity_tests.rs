@@ -79,7 +79,7 @@ impl ParityRow {
     }
 
     fn has_gap(&self) -> bool {
-        self.surfaces().iter().any(|cell| *cell == GAP)
+        self.surfaces().contains(&GAP)
     }
 }
 
