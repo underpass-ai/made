@@ -12,6 +12,13 @@ Any one of those drifting silently turns "fast feedback" into "no gate".
 This script is the regression test, and ``--self-test`` proves it still
 catches the drift by mutating each rule and demanding a failure.
 
+Nothing here is a second copy of the workflow. The job list, the planner
+output each job is routed by, the ``gate`` job's needs-list and the tree
+proof's idea of the full matrix are all *derived* from the files they
+describe and then cross-checked against each other, because a contract
+that reads its own hard-coded table on both sides of a comparison cannot
+see a job that was never added to it.
+
 Run it:  python3 scripts/ci/dev-loop-workflow-contract.py [--self-test]
 """
 
@@ -29,6 +36,8 @@ INTEGRATION = ".github/workflows/integration.yml"
 PLUGIN_PACKAGE = ".github/workflows/plugin-package.yml"
 DEV_SCRIPT = "scripts/ci/dev-loop.sh"
 JUSTFILE = "justfile"
+PLANNER = "scripts/ci/quality-gate-plan.py"
+TREE_PROOF = "scripts/ci/tree-already-proved.sh"
 
 SOURCES = (
     DEV_LOOP,
@@ -37,6 +46,8 @@ SOURCES = (
     PLUGIN_PACKAGE,
     DEV_SCRIPT,
     JUSTFILE,
+    PLANNER,
+    TREE_PROOF,
 )
 
 # The dev loop answers drafts; everything else answers ready pull requests.
@@ -58,23 +69,23 @@ DEV_LOOP_JOBS = {
     "dev-binary": "run: cargo build --release -p made-mcp --locked",
 }
 
-# Every quality-gate job that must stand down with the `impact` job, and the
-# planner output that routes it. Adding a job to the workflow without adding
-# it here is caught by the `gate` needs-list check below, which compares
-# against this same set.
-QUALITY_GATE_JOBS = {
-    "architecture": "architecture",
-    "contract": "contract",
-    "rustfmt": "rustfmt",
-    "embedded-boundary": "embedded_boundary",
-    "embedded-sqlite-gates": "embedded_sqlite",
-    "clippy": "clippy",
-    "test": "test",
-    "coverage": "coverage",
-    "container-image": "container",
-    "helm-chart": "helm",
-    "benches-compile": "benches",
-    "publish-dry-run": "publish",
+# The three quality-gate jobs that are not routed gates: the proof, the
+# planner, and the required context. Every *other* job in the workflow must
+# need `impact` and be routed by one of its outputs — that rule is what
+# catches a job added to the workflow and to nobody's list.
+UNROUTED_JOBS = ("tree-proof", "impact", "gate")
+
+# The four moments a workflow that stands down on drafts has to hear about.
+# Shrink the list and the handover waits for the next push instead of
+# happening on `gh pr ready`.
+REQUIRED_TRIGGER_TYPES = ("opened", "synchronize", "reopened", "ready_for_review")
+
+# What each Rust gate proves. The planner deliberately exports no crate
+# list (see `ci(planner): drop cargo_packages rather than wire it`): the
+# closure decides which gates run, `--workspace` decides what they build.
+WORKSPACE_COMMANDS = {
+    "clippy": "cargo clippy --workspace",
+    "test": "cargo test --workspace",
 }
 
 # Workflows that are part of the full gate and must not burn a runner on a
@@ -128,6 +139,63 @@ def trigger_block(text: str) -> str:
         len(lines),
     )
     return "\n".join(strip_comments(lines[start:end]))
+
+
+def workflow_jobs(text: str) -> list[str]:
+    """Every job name in the workflow's `jobs:` block, in file order."""
+    lines = text.splitlines()
+    start = next((number for number, line in enumerate(lines) if line == "jobs:"), None)
+    if start is None:
+        return []
+    names: list[str] = []
+    for line in lines[start + 1 :]:
+        if TOP_LEVEL.match(line):
+            break
+        if line.lstrip().startswith("#"):
+            continue
+        header = JOB_HEADER.fullmatch(line)
+        if header:
+            names.append(header.group(1))
+    return names
+
+
+def needs_list(block: str) -> list[str]:
+    """The jobs a `needs:` key names, whether inline or as a block list."""
+    inline = re.search(r"^    needs: \[(.+)\]\s*$", block, re.MULTILINE)
+    if inline:
+        return [name.strip() for name in inline.group(1).split(",") if name.strip()]
+    listed = re.search(r"^    needs:\n((?:      - .+\n?)+)", block, re.MULTILINE)
+    if listed:
+        return [line.strip().removeprefix("- ").strip() for line in listed.group(1).splitlines()]
+    return []
+
+
+def trigger_types(text: str) -> list[str]:
+    match = re.search(r"^    types: \[(.+)\]\s*$", trigger_block(text), re.MULTILINE)
+    if match is None:
+        return []
+    return [name.strip() for name in match.group(1).split(",") if name.strip()]
+
+
+def planner_gates(text: str) -> list[str]:
+    """The GATES tuple scripts/ci/quality-gate-plan.py declares."""
+    match = re.search(r"^GATES = \(\n(.*?)^\)", text, re.MULTILINE | re.DOTALL)
+    if match is None:
+        return []
+    return re.findall(r'"([a-z_]+)"', match.group(1))
+
+
+def tree_proof_jobs(text: str) -> list[str]:
+    """The REQUIRED_JOBS list scripts/ci/tree-already-proved.sh demands."""
+    match = re.search(r"^REQUIRED_JOBS=\(\n(.*?)^\)", text, re.MULTILINE | re.DOTALL)
+    if match is None:
+        return []
+    return [line.strip() for line in match.group(1).splitlines() if line.strip()]
+
+
+def routed_by(block: str) -> list[str]:
+    """The planner outputs a job's `if` reads."""
+    return re.findall(r"needs\.impact\.outputs\.([a-z_]+) == 'true'", block)
 
 
 def dev_packages_from_workflow(text: str) -> str | None:
@@ -189,12 +257,13 @@ def validate(sources: dict[str, str]) -> list[str]:
 
     # --- H2: the full gate stands down on a draft and wakes on ready ------
     quality = sources[QUALITY_GATE]
-    quality_triggers = trigger_block(quality)
-    if "ready_for_review" not in quality_triggers:
-        failures.append(
-            "quality-gate lost the ready_for_review trigger type: the "
-            "handover would wait for the next push"
-        )
+    jobs = workflow_jobs(quality)
+    gates = planner_gates(sources[PLANNER])
+    if not gates:
+        failures.append(f"{PLANNER} no longer declares a GATES tuple to read")
+    missing_jobs = [job for job in UNROUTED_JOBS if job not in jobs]
+    if missing_jobs:
+        failures.append("quality-gate lost: " + ", ".join(missing_jobs))
 
     impact = job_block(quality, "impact")
     if impact is None:
@@ -204,13 +273,28 @@ def validate(sources: dict[str, str]) -> list[str]:
             failures.append("quality-gate impact job lost its draft stand-down guard")
         if "needs.tree-proof.outputs.skip != 'true'" not in impact:
             failures.append("quality-gate impact job no longer honours the tree proof")
+        # Both self-tests run before anything is planned: the router proves
+        # its routing table and this contract proves itself, in the job whose
+        # outputs every other job obeys.
         if "python3 scripts/ci/quality-gate-plan.py --self-test" not in impact:
             failures.append("quality-gate no longer proves its routing matrix first")
+        if "python3 scripts/ci/dev-loop-workflow-contract.py --self-test" not in impact:
+            failures.append("quality-gate no longer proves this contract first")
         if "--github-output" not in impact:
             failures.append("quality-gate impact job no longer publishes a plan")
-        for gate in sorted(set(QUALITY_GATE_JOBS.values())):
+        # Every planning invocation records what it planned, or the tree
+        # proof's audit trail has a hole the run cannot be read back through.
+        if impact.count("--step-summary") != impact.count("--github-output"):
+            failures.append(
+                "quality-gate impact job publishes a plan it does not record: "
+                f"{impact.count('--github-output')} --github-output vs "
+                f"{impact.count('--step-summary')} --step-summary"
+            )
+        for gate in gates:
             if f"      {gate}: ${{{{ steps.plan.outputs.{gate} }}}}" not in impact:
                 failures.append(f"quality-gate impact job stopped exporting {gate}")
+        if "      full: ${{ steps.plan.outputs.full }}" not in impact:
+            failures.append("quality-gate impact job stopped exporting full")
 
     proof = job_block(quality, "tree-proof")
     if proof is None:
@@ -221,29 +305,62 @@ def validate(sources: dict[str, str]) -> list[str]:
         if "run: bash scripts/ci/tree-already-proved.sh quality-gate.yml" not in proof:
             failures.append("tree-proof no longer runs the tree proof script")
 
-    for job, gate in QUALITY_GATE_JOBS.items():
+    # The proof accepts a run only when every job of the full matrix went
+    # green, so its idea of "the full matrix" is the workflow's job list —
+    # minus tree-proof, which is green on a run that skipped everything.
+    expected_proof_jobs = sorted(job for job in jobs if job != "tree-proof")
+    actual_proof_jobs = sorted(tree_proof_jobs(sources[TREE_PROOF]))
+    if jobs and actual_proof_jobs != expected_proof_jobs:
+        failures.append(
+            f"{TREE_PROOF} demands a different full matrix than the workflow "
+            f"runs: {actual_proof_jobs} vs {expected_proof_jobs}"
+        )
+
+    # --- every other job is a routed gate, and the planner knows it -------
+    routed: dict[str, str] = {}
+    for job in jobs:
+        if job in UNROUTED_JOBS:
+            continue
         block = job_block(quality, job)
         if block is None:
-            failures.append(f"quality-gate lost the {job} job")
+            failures.append(f"quality-gate job {job} could not be read")
             continue
-        needs = re.search(r"^    needs: \[(.+)\]\s*$", block, re.MULTILINE)
-        if needs is None or "impact" not in [
-            name.strip() for name in needs.group(1).split(",")
-        ]:
+        if "impact" not in needs_list(block):
             failures.append(
                 f"quality-gate job {job} does not need impact, so it would "
                 "run on a draft"
             )
-        if f"needs.impact.outputs.{gate} == 'true'" not in block:
+        outputs = routed_by(block)
+        if not outputs:
             failures.append(
-                f"quality-gate job {job} is not routed by the planner output "
-                f"{gate}"
+                f"quality-gate job {job} is not routed by any planner output, "
+                "so it runs whatever the change was"
             )
+        else:
+            routed[job] = outputs[0]
+            unknown = [output for output in outputs if output not in gates]
+            if unknown:
+                failures.append(
+                    f"quality-gate job {job} reads planner outputs that do not "
+                    "exist: " + ", ".join(unknown)
+                )
         if "!cancelled()" in block and "needs.impact.result == 'success'" not in block:
             failures.append(
                 f"quality-gate job {job} opens with !cancelled() but does not "
                 "require the planner to have succeeded, so it would run on a draft"
             )
+        command = WORKSPACE_COMMANDS.get(job)
+        if command is not None and command not in block:
+            failures.append(
+                f"quality-gate job {job} no longer runs `{command}`: a gate "
+                "that compiles a subset is a proof about a subset"
+            )
+
+    unwired = sorted(set(gates) - set(routed.values()))
+    if gates and unwired:
+        failures.append(
+            "the planner routes gates no job reads: " + ", ".join(unwired)
+        )
 
     gate = job_block(quality, "gate")
     if gate is None:
@@ -255,22 +372,35 @@ def validate(sources: dict[str, str]) -> list[str]:
             failures.append("gate no longer fails on purpose on a draft")
         if 'if [[ "${TREE_PROVED}" == "true" ]]; then' not in gate:
             failures.append("gate no longer accepts an already-proved tree")
-        missing = [
-            job
-            for job in ("tree-proof", "impact", *QUALITY_GATE_JOBS)
-            if f"      - {job}\n" not in gate + "\n"
-        ]
-        if missing:
+        if '"${result}" == "cancelled"' not in gate:
             failures.append(
-                "gate does not wait for: " + ", ".join(missing)
+                "gate no longer treats a cancelled job as a failure, so a "
+                "cancelled matrix reports green"
+            )
+        expected_needs = sorted(job for job in jobs if job != "gate")
+        actual_needs = sorted(needs_list(gate))
+        if jobs and actual_needs != expected_needs:
+            failures.append(
+                "gate waits for a different set of jobs than the workflow "
+                f"runs: {actual_needs} vs {expected_needs}"
             )
 
     # --- the rest of the full gate stands down too ------------------------
-    for workflow, jobs in STANDDOWN_WORKFLOWS.items():
+    for workflow in (QUALITY_GATE, *STANDDOWN_WORKFLOWS):
+        missing_types = [
+            name
+            for name in REQUIRED_TRIGGER_TYPES
+            if name not in trigger_types(sources[workflow])
+        ]
+        if missing_types:
+            failures.append(
+                f"{workflow} no longer triggers on " + ", ".join(missing_types)
+                + ": the draft/ready handover would wait for the next push"
+            )
+
+    for workflow, standdown_jobs in STANDDOWN_WORKFLOWS.items():
         text = sources[workflow]
-        if "ready_for_review" not in trigger_block(text):
-            failures.append(f"{workflow} lost the ready_for_review trigger type")
-        for job in jobs:
+        for job in standdown_jobs:
             block = job_block(text, job)
             if block is None:
                 failures.append(f"{workflow} lost the {job} job")
@@ -394,6 +524,67 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         f"    {READY_ONLY}\n",
         "",
     ),
+    # --- the four drifts the read-only review of #57/#58 found -----------
+    # A job added to the workflow and to nobody's list: no impact guard, no
+    # planner output, absent from the required context's needs.
+    "a gate job answers to nobody": (
+        QUALITY_GATE,
+        "  architecture:\n    needs: [impact]\n",
+        "  smuggled-gate:\n"
+        "    runs-on: ubuntu-24.04\n"
+        "    timeout-minutes: 5\n"
+        "    steps:\n"
+        "      - name: Do as it pleases\n"
+        "        run: echo unguarded\n"
+        "\n"
+        "  architecture:\n    needs: [impact]\n",
+    ),
+    "a gate job reads a planner output that does not exist": (
+        QUALITY_GATE,
+        "needs.impact.outputs.architecture == 'true'",
+        "needs.impact.outputs.arch == 'true'",
+    ),
+    "the planner grows a gate no job runs": (
+        PLANNER,
+        '    "publish",\n)',
+        '    "publish",\n    "smoke",\n)',
+    ),
+    "the handover shrinks to ready_for_review alone": (
+        QUALITY_GATE,
+        "    types: [opened, synchronize, reopened, ready_for_review]\n",
+        "    types: [ready_for_review]\n",
+    ),
+    "the contract stops proving itself": (
+        QUALITY_GATE,
+        "          python3 scripts/ci/dev-loop-workflow-contract.py --self-test\n",
+        "",
+    ),
+    "the required context forgives a cancelled job": (
+        QUALITY_GATE,
+        '|| "${result}" == "cancelled"',
+        "",
+    ),
+    # --- and the rules the four drifts made it worth deriving ------------
+    "the planner stops recording what it planned": (
+        QUALITY_GATE,
+        '              --step-summary "${GITHUB_STEP_SUMMARY}"\n',
+        "",
+    ),
+    "clippy stops proving the whole workspace": (
+        QUALITY_GATE,
+        "cargo clippy --workspace --all-targets --locked",
+        "cargo clippy -p made-core --all-targets --locked",
+    ),
+    "test stops proving the whole workspace": (
+        QUALITY_GATE,
+        "cargo test --workspace --locked",
+        "cargo test -p made-core --locked",
+    ),
+    "the tree proof forgets a job of the full matrix": (
+        TREE_PROOF,
+        "  coverage\n",
+        "",
+    ),
 }
 
 
@@ -427,10 +618,13 @@ def main() -> int:
     if "--self-test" in sys.argv[1:]:
         self_test(sources)
 
+    routed = len(
+        [job for job in workflow_jobs(sources[QUALITY_GATE]) if job not in UNROUTED_JOBS]
+    )
     print(
         "dev-loop workflow contract passed: "
         f"{len(DEV_LOOP_JOBS)} draft-only lanes, "
-        f"{len(QUALITY_GATE_JOBS)} routed gate jobs, "
+        f"{routed} routed gate jobs derived from the workflow, "
         "one required gate context, DEV_PACKAGES agreed"
     )
     return 0
