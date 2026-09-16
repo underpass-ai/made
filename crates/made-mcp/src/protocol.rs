@@ -26,6 +26,8 @@ pub(crate) use catalog::{available_tool_catalog, tools_list_result};
 // Only a backend applies the rule; a build with neither would carry a
 // function nothing calls.
 #[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use ceremony_schemas::REPORT_IS_PERSISTED;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use default_lease_owner::default_lease_owner_id;
 pub(crate) use initialization::initialize_result;
 pub(crate) use request_gate::validate_tool_request;

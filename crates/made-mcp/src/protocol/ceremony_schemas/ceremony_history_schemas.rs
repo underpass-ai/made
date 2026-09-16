@@ -9,6 +9,21 @@ use serde_json::{json, Value};
 
 use crate::protocol::schema_primitives::string_schema;
 
+/// Whether a report is stored anywhere. It is not, on either edition:
+/// ADR-006 makes a report a projection of persisted state, and nothing
+/// writes one.
+///
+/// One constant read by both presenters rather than a literal in each,
+/// because it is a fact about what a report *is* and not about either
+/// transport. It is not a field on the wire: an always-false boolean
+/// in the contract would suggest a caller could ask for one that is
+/// true.
+///
+/// Gated on the two backends because a build with neither mounts no
+/// presenter to read it.
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) const REPORT_IS_PERSISTED: bool = false;
+
 pub(crate) fn ceremony_report_schema() -> Value {
     json!({
         "type": "object",
@@ -83,6 +98,13 @@ pub(crate) fn get_ceremony_transcript_schema() -> Value {
 /// decided. This is what keeps the copy honest: a schema that promised
 /// a default or a cap the engine does not apply fails here rather than
 /// misleading a caller who read it.
+///
+/// It needs `made-app` to compare against, so it runs wherever that
+/// crate is compiled in — the default build, which is what CI's
+/// `cargo test -p made-mcp` and the workspace run both use. A
+/// grpc-only build compiles the constants but not the comparison; it
+/// is the same source file either way, so the drift is caught before
+/// such a build could carry it.
 #[cfg(all(test, feature = "embedded"))]
 mod tests {
     use made_app::usecases::ReadCeremonyEventsInput;

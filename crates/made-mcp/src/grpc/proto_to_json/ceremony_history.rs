@@ -12,6 +12,7 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Map, Value};
 
 use super::primitives::pb_struct_to_json;
+use crate::protocol::REPORT_IS_PERSISTED;
 
 pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsResponse) -> Value {
     let pb::ReadCeremonyEventsResponse {
@@ -143,10 +144,8 @@ pub(crate) fn ceremony_report_to_json(response: pb::GenerateCeremonyReportRespon
                 "bound_definition_digest": absent_when_empty(binding.bound_definition_digest),
             }))
             .collect::<Vec<_>>(),
-        // Not a field of the response: no edition writes a report
-        // anywhere, and an always-false boolean on the wire would
-        // suggest a caller could ask for one that is.
-        "persisted": false,
+        // Not a field of the response; the constant says why.
+        "persisted": REPORT_IS_PERSISTED,
     })
 }
 

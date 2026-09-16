@@ -5,6 +5,8 @@ use super::schema_primitives::{attributes_schema, string_schema};
 
 mod ceremony_history_schemas;
 
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use ceremony_history_schemas::REPORT_IS_PERSISTED;
 pub(super) use ceremony_history_schemas::{
     ceremony_report_schema, get_ceremony_transcript_schema, read_ceremony_events_schema,
 };

@@ -10,7 +10,7 @@ use made_app::usecases::{CeremonyEventPage, CeremonyReport};
 use made_core::value_objects::CeremonyTranscript;
 use serde_json::{json, Value};
 
-use crate::protocol::ToolError;
+use crate::protocol::{ToolError, REPORT_IS_PERSISTED};
 
 /// One page of a stream.
 pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value, ToolError> {
@@ -48,10 +48,6 @@ pub(super) fn present_ceremony_transcript(transcript: &CeremonyTranscript) -> Va
 }
 
 /// The report, exactly as this tool has always answered it.
-///
-/// `persisted` is a constant rather than a field of the report: no
-/// edition writes one, and putting an always-false boolean in the
-/// contract would suggest a caller could ask for one that is.
 #[must_use]
 pub(super) fn present_ceremony_report(report: &CeremonyReport) -> Value {
     json!({
@@ -77,6 +73,6 @@ pub(super) fn present_ceremony_report(report: &CeremonyReport) -> Value {
                     .map(|digest| digest.to_hex()),
             }))
             .collect::<Vec<_>>(),
-        "persisted": false,
+        "persisted": REPORT_IS_PERSISTED,
     })
 }
