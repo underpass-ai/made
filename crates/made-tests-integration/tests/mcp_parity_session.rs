@@ -21,7 +21,9 @@
 //! editing the comparison (ADR-014, plan §3.6 F4).
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::sync::Arc;
 
+use made_adapters::memory::InProcessSessionMemory;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
@@ -46,6 +48,13 @@ const SESSION_ID: &str = "parity-session";
 const PUBLISHED_SESSION_ID: &str = "parity-published-session";
 /// The session `made_run_ceremony` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
+/// The session that decides something inside a shared memory scope.
+const MEMORY_FIRST_ID: &str = "parity-memory-first";
+/// The session that opens in the same scope afterwards and is told
+/// what the first one decided.
+const MEMORY_SECOND_ID: &str = "parity-memory-second";
+/// The scope both of them declare.
+const MEMORY_SCOPE: &str = "team:parity";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
@@ -281,11 +290,16 @@ struct ParityArms {
 
 impl ParityArms {
     async fn start() -> Self {
+        // One memory per arm, not one between them. Both are
+        // in-process and equivalent, so each arm recalls what that arm
+        // wrote and the two answers are equal because the engines
+        // agree — not because they are reading each other's writes.
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
-                .with_clock(ParityClock::shared()),
+                .with_clock(ParityClock::shared())
+                .with_memory(Arc::new(InProcessSessionMemory::new())),
         )
         .await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
@@ -297,6 +311,7 @@ impl ParityArms {
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
+                .with_memory(Arc::new(InProcessSessionMemory::new()))
                 .build(),
         ));
         Self {
@@ -594,6 +609,61 @@ fn session_script() -> Vec<(&'static str, Value)> {
         // status whose one open-ended field was never compared.
         ("made_get_status", json!({ "include_stats": true })),
         ("made_get_metrics", json!({})),
+        // E1's gate, driven on both arms. A session that declares a
+        // memory scope decides something inside it; a second session
+        // that declares the same scope is told so when it opens, and
+        // both arms have to say the same thing about what it was told.
+        (
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": MEMORY_FIRST_ID,
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": { "memory_scope": MEMORY_SCOPE },
+            }),
+        ),
+        (
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": MEMORY_FIRST_ID,
+                "intervention_id": "which-rollback",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "Which rollback do we rehearse?",
+            }),
+        ),
+        // An opinion answered is what the memory projection records as
+        // a decision, which is what the second session must be told.
+        (
+            "made_respond_to_ceremony_intervention",
+            json!({
+                "ceremony_id": MEMORY_FIRST_ID,
+                "intervention_id": "which-rollback",
+                "role_id": "OBSERVER",
+                "role_kind": "agent",
+                "message": "Roll back rather than restart.",
+            }),
+        ),
+        (
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": MEMORY_SECOND_ID,
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": { "memory_scope": MEMORY_SCOPE },
+            }),
+        ),
+        (
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": MEMORY_SECOND_ID }),
+        ),
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": MEMORY_SECOND_ID }),
+        ),
     ]
 }
 
@@ -1100,6 +1170,102 @@ async fn both_arms_run_the_same_step_handler() {
         assert_eq!(output["findings"][0]["verdict"], json!("done"));
     }
     assert_same_answer("made_get_ceremony_instance", &over_the_wire, &in_process);
+}
+
+/// E1's gate: what one session decided is what the next session in
+/// that scope is told, on both engines.
+///
+/// The script above already compares the two answers field for field;
+/// what this adds is the value. Two arms that agreed on `recollection:
+/// null` would pass the comparison and prove nothing, which is the
+/// failure the assertion below exists for.
+#[tokio::test]
+async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
+    let arms = ParityArms::start().await;
+    for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        arms.call(index as u64 + 1, tool, &arguments).await;
+    }
+
+    let (over_the_wire, in_process) = arms
+        .call(
+            200,
+            "made_get_ceremony_instance",
+            &json!({ "ceremony_id": MEMORY_SECOND_ID }),
+        )
+        .await;
+
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let recollection = &structured(answer)["recollection"];
+        assert_eq!(
+            recollection["scope"],
+            json!(MEMORY_SCOPE),
+            "the {backend} backend did not read the declared scope: {answer:#}"
+        );
+        assert_eq!(recollection["truncated"], json!(false));
+        let entries = recollection["entries"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the {backend} backend answered no entries: {answer:#}"));
+        assert!(
+            entries.iter().any(|entry| {
+                entry["kind"] == json!("decision")
+                    && entry["summary"] == json!("Roll back rather than restart.")
+                    && entry["from_ceremony_id"] == json!(MEMORY_FIRST_ID)
+            }),
+            "the {backend} backend did not carry the earlier session's decision: {answer:#}"
+        );
+    }
+    assert_same_answer("made_get_ceremony_instance", &over_the_wire, &in_process);
+
+    // And it is in the stream, right after the opening, so both
+    // editions see it by folding rather than by asking memory again.
+    let (over_the_wire, in_process) = arms
+        .call(
+            201,
+            "made_read_ceremony_events",
+            &json!({ "ceremony_id": MEMORY_SECOND_ID }),
+        )
+        .await;
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let records = structured(answer)["records"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the {backend} backend answered no stream: {answer:#}"));
+        assert_eq!(
+            records[0]["event_type"],
+            json!("ceremony_instance_started"),
+            "the {backend} backend: {answer:#}"
+        );
+        assert_eq!(
+            records[1]["event_type"],
+            json!("memory_recalled"),
+            "the {backend} backend seals the recollection somewhere other than \
+             right after the opening: {answer:#}"
+        );
+        assert_eq!(records[1]["sequence"], json!(2), "{answer:#}");
+    }
+    assert_same_answer("made_read_ceremony_events", &over_the_wire, &in_process);
+
+    // The other direction, and the reason existing streams are
+    // untouched: a session that declares no scope is told nothing and
+    // seals nothing beside its opening.
+    let (over_the_wire, in_process) = arms
+        .call(
+            202,
+            "made_read_ceremony_events",
+            &json!({ "ceremony_id": ONE_SHOT_ID }),
+        )
+        .await;
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let records = structured(answer)["records"]
+            .as_array()
+            .unwrap_or_else(|| panic!("the {backend} backend answered no stream: {answer:#}"));
+        assert!(
+            !records
+                .iter()
+                .any(|record| record["event_type"] == json!("memory_recalled")),
+            "the {backend} backend recorded a recollection for a session that declared \
+             no scope: {answer:#}"
+        );
+    }
 }
 
 /// The clock is frozen and both arms read it, so a timestamp is a
