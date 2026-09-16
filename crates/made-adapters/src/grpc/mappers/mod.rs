@@ -13,6 +13,7 @@ mod agent;
 mod attributes;
 mod ceremony_authoring;
 mod ceremony_delegation;
+mod ceremony_design;
 mod ceremony_human_verbs;
 mod ceremony_instance;
 mod ceremony_lifecycle;
@@ -39,6 +40,7 @@ pub use ceremony_authoring::{
 pub use ceremony_delegation::{
     claim_ceremony_step_input_from_proto, complete_ceremony_step_input_from_proto,
 };
+pub use ceremony_design::{ceremony_design_document_from_proto, design_ceremony_response_from};
 pub use ceremony_human_verbs::{
     approve_ceremony_guard_input_from_proto, assert_ceremony_reason_input_from_proto,
     bind_ceremony_participants_input_from_proto, close_ceremony_intervention_input_from_proto,

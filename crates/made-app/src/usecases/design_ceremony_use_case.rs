@@ -565,8 +565,8 @@ mod tests {
         )
     }
 
-    /// The intent the authoring runbook uses: compose, review, and a
-    /// human who accepts the outcome.
+    /// One session with two stages and a human who accepts the
+    /// outcome: compose, review, approve.
     fn document() -> CeremonyDesignDocument {
         CeremonyDesignDocument::new(
             CeremonyName::new("art_review").expect("a ceremony name"),

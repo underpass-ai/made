@@ -1,5 +1,8 @@
+use made_app::usecases::DesignCeremonyUseCase;
+
 use super::{
     bind_ceremony_participants_input_from_proto, ceremony_definition_source_from_proto,
+    ceremony_design_document_from_proto, design_ceremony_response_from,
     diff_ceremony_definitions_response_from, domain_error_to_status,
     explain_ceremony_draft_response_from, link_span_to_metadata, pb,
     publish_ceremony_definition_response_from, statistics_to_proto,
@@ -37,6 +40,34 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         let report = draft.analyze();
         Ok(Response::new(explain_ceremony_draft_response_from(
+            &CeremonyDraftView::project(&draft, &report),
+        )))
+    }
+
+    /// Designing touches nothing either, and answers with the draft
+    /// it rendered already analysed — through the same parser and the
+    /// same projection `ValidateCeremonyDraft` uses, so a designed
+    /// draft is read exactly like a hand-authored one.
+    ///
+    /// The use case is built here rather than injected: it holds no
+    /// port, and a dependency that does not exist is not one the
+    /// composition root can supply.
+    #[tracing::instrument(name = "rpc.design_ceremony", skip_all)]
+    pub(super) async fn handle_design_ceremony(
+        &self,
+        request: Request<pb::DesignCeremonyRequest>,
+    ) -> GrpcResult<pb::DesignCeremonyResponse> {
+        link_span_to_metadata(&request);
+        let document = ceremony_design_document_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let designed = DesignCeremonyUseCase::new()
+            .execute(&document)
+            .map_err(domain_error_to_status)?;
+        let draft = CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())
+            .map_err(domain_error_to_status)?;
+        let report = draft.analyze();
+        Ok(Response::new(design_ceremony_response_from(
+            &designed,
             &CeremonyDraftView::project(&draft, &report),
         )))
     }

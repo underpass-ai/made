@@ -183,6 +183,17 @@ service MadeService {
   rpc ClaimCeremonyStep(ClaimCeremonyStepRequest) returns (ClaimCeremonyStepResponse);
   rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
 
+  // Design one. The caller says what the working session is for, who
+  // sits at it and what each stage asks; the engine decides the
+  // mechanical half — a state and an automated completion guard per
+  // stage, the transitions between them, the optional human gate at
+  // the end, the role actions — and answers with the document they
+  // can publish, already analysed. Touches nothing: designing writes
+  // no definition and starts no session, and the draft it hands back
+  // goes through ValidateCeremonyDraft and PublishCeremonyDefinition
+  // like any other.
+  rpc DesignCeremony(DesignCeremonyRequest) returns (DesignCeremonyResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -1367,4 +1378,123 @@ message CompleteCeremonyStepRequest {
 
 message CompleteCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
+}
+
+// ============================================================================
+// Designing a ceremony
+// ============================================================================
+
+// One role the author wants seated at the working session.
+message CeremonyDesignParticipant {
+  string role_id = 1;
+  // What this role may do beyond the stages it owns:
+  // "request_intervention", "respond_to_intervention", or neither. A
+  // participant that owns no stage, takes no approval and has no
+  // capability is refused, because nothing would be its to do.
+  repeated string capabilities = 2;
+}
+
+// A bounded repeat-until policy for one stage. Iterations are
+// semantic executions and are distinct from technical retry attempts.
+message CeremonyDesignRepeat {
+  // Hard cap on executions of this stage, including the first.
+  uint32 max_iterations = 1;
+  // Top-level structured step-output field tested after each
+  // successful iteration.
+  string output_field = 2;
+  // The exact value that ends repetition. Missing or unequal output
+  // repeats the stage.
+  google.protobuf.Value equals = 3;
+}
+
+// One stage of the working session, in the author's terms.
+// Declaration order is execution order.
+message CeremonyDesignStage {
+  string id = 1;
+  // Participant role allowed to run this stage.
+  string owner_role_id = 2;
+  // What the stage asks of whoever runs it, and how they know they
+  // are done. It reaches the step handler as its prompt.
+  string instructions = 3;
+  // Host step-handler specialty. Empty takes "host_callback".
+  string handler = 4;
+  // Whether earlier stage outputs enter this stage. Absent means
+  // "as usual": false for the first stage and true afterwards.
+  //
+  // Optional rather than a plain bool because absent and false are
+  // different answers here, and a client that never set it would
+  // otherwise be taken to have said "no" for every stage.
+  optional bool see_prior = 5;
+  // Council size. Absent takes one; zero is refused, as it is in
+  // process, which is why it is optional rather than defaulted from
+  // zero.
+  optional uint64 num_agents = 6;
+  // Adversarial peer-review rounds. Zero is none, and a positive
+  // value requires at least two agents.
+  uint64 review_rounds = 7;
+  CeremonyDesignRepeat repeat = 8;
+}
+
+// The explicit human gate after the final stage. Designing it never
+// records approval.
+message CeremonyDesignFinalApproval {
+  // Participant role whose approval unlocks completion.
+  string role_id = 1;
+  // Human guard identity. Empty takes "human_approved_outcome".
+  string guard_name = 2;
+  // Final transition trigger. Empty takes "approve_outcome".
+  string trigger = 3;
+}
+
+message DesignCeremonyRequest {
+  // Stable lower_snake_case identity for the designed ceremony.
+  string name = 1;
+  // Publication version. Empty takes "1.0".
+  string version = 2;
+  // The single question or artifact this ceremony exists to resolve
+  // or produce.
+  string objective = 3;
+  // Context keys every run must provide, and keys a run may provide.
+  // A key cannot be in both.
+  repeated string required_inputs = 4;
+  repeated string optional_inputs = 5;
+  // Named output objects the completed ceremony promises.
+  repeated string outputs = 6;
+  repeated CeremonyDesignParticipant participants = 7;
+  repeated CeremonyDesignStage stages = 8;
+  CeremonyDesignFinalApproval final_approval = 9;
+  // Defaults written into the draft. Absent takes 300 seconds and two
+  // attempts; zero is refused for both.
+  optional uint64 step_timeout_seconds = 10;
+  optional uint32 max_attempts = 11;
+  // Retry backoff. Absent takes one second; zero is a legitimate
+  // choice, which is why absent has to be tellable from it.
+  optional uint64 backoff_seconds = 12;
+}
+
+// What the design decided, beside the document it rendered. Counting
+// the parts of the YAML would not answer it: these are the author's
+// stages and participants, as the designer read them.
+message CeremonyDesignOutline {
+  // The shape the designer built. "linear" is the only one today:
+  // every stage follows the one before it.
+  string topology = 1;
+  uint32 stages = 2;
+  uint32 participants = 3;
+  bool final_approval_required = 4;
+}
+
+message DesignCeremonyResponse {
+  string ceremony = 1;
+  string version = 2;
+  // The document the author can publish.
+  string definition_yaml = 3;
+  // The analysis of that document, from the same projection
+  // ValidateCeremonyDraft answers with: a designed draft is analysed
+  // exactly like a hand-authored one.
+  bool publishable = 4;
+  CeremonyDesignOutline design = 5;
+  uint32 error_count = 6;
+  uint32 warning_count = 7;
+  repeated CeremonyDraftFinding findings = 8;
 }

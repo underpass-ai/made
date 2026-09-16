@@ -29,10 +29,11 @@ use tracing::debug;
 use super::mappers::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
     assert_ceremony_reason_input_from_proto, bind_ceremony_participants_input_from_proto,
-    ceremony_definition_source_from_proto, ceremony_instance_state_from,
-    claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
-    collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
-    council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
+    ceremony_definition_source_from_proto, ceremony_design_document_from_proto,
+    ceremony_instance_state_from, claim_ceremony_step_input_from_proto,
+    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
+    complete_ceremony_step_input_from_proto, council_summary_from,
+    defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
     diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
     orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
     publish_ceremony_definition_response_from, request_ceremony_intervention_input_from_proto,
@@ -410,6 +411,13 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::ExplainCeremonyDraftRequest>,
     ) -> GrpcResult<pb::ExplainCeremonyDraftResponse> {
         self.handle_explain_ceremony_draft(request).await
+    }
+
+    async fn design_ceremony(
+        &self,
+        request: Request<pb::DesignCeremonyRequest>,
+    ) -> GrpcResult<pb::DesignCeremonyResponse> {
+        self.handle_design_ceremony(request).await
     }
 
     async fn publish_ceremony_definition(
