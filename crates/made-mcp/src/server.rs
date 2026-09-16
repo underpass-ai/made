@@ -25,7 +25,7 @@ use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
     initialize_result, is_server_tool, jsonrpc_error, jsonrpc_result, tool_error_result,
-    tool_success_result, tools_list_result, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
+    tool_success_result, tools_list_result, ToolError, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].
@@ -235,6 +235,10 @@ impl MadeMcpServer {
         let arguments = params.get("arguments").unwrap_or(&Value::Null);
         let start = Instant::now();
 
+        // The two server-owned tools answer about this process and
+        // reach no engine, so the only way either can fail is the call
+        // itself: an unknown field, a missing one, an audience that is
+        // not one of the two. One place says so, on both backends.
         let outcome = match name {
             DISCOVER_CAPABILITIES_TOOL => discovery_result(
                 self.identity,
@@ -243,9 +247,11 @@ impl MadeMcpServer {
                 arguments,
                 |tool| self.backend.supports_tool(tool),
             )
-            .map(tool_success_result),
+            .map(tool_success_result)
+            .map_err(ToolError::invalid_request),
             GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
-                .map(tool_success_result),
+                .map(tool_success_result)
+                .map_err(ToolError::invalid_request),
             _ => self.backend.call_tool(name, arguments).await,
         };
 
@@ -261,7 +267,7 @@ impl MadeMcpServer {
                 );
                 jsonrpc_result(id, result)
             }
-            Err(message) => {
+            Err(error) => {
                 record_tool_error(
                     self.backend_name(),
                     self.grpc_tls_mode_name(),
@@ -272,10 +278,10 @@ impl MadeMcpServer {
                     } else {
                         ToolErrorKind::Backend
                     },
-                    &message,
+                    &error.to_string(),
                     start.elapsed(),
                 );
-                jsonrpc_result(id, tool_error_result(&message))
+                jsonrpc_result(id, tool_error_result(&error))
             }
         }
     }

@@ -345,6 +345,46 @@ takes precedence over overlapping execution-profile metadata.
 
 ## Tools
 
+### When a tool call fails
+
+A failed tool call is an MCP tool **result** with `"isError": true`, not
+a JSON-RPC `error`: the JSON-RPC layer only fails when the message
+itself is unusable. Every backend answers the same envelope, in the
+result's `structuredContent`:
+
+```json
+{
+  "content": [{ "type": "text", "text": "not_found: not found: ceremony_instance" }],
+  "structuredContent": {
+    "code": "not_found",
+    "message": "not found: ceremony_instance",
+    "retryable": false
+  },
+  "isError": true
+}
+```
+
+`code` is one of four words, and each names a different remedy:
+
+| `code` | What happened | `retryable` |
+|---|---|---|
+| `unavailable` | The engine was not reached. | `true` |
+| `not_found` | What the call named is not there. | `false` |
+| `refused` | The engine looked at the call and said no. | `false` |
+| `invalid_request` | The arguments do not fit the tool's schema. | `false` |
+
+Branch on `code`, never on the message: the message is the engine's own
+words and may change. The same failure carries the same code whichever
+backend served it, which is what lets a client point at an in-process
+engine or a cluster without a second error table. `retryable` is `true`
+for `unavailable` and nothing else — the other three answer the same way
+however many times they are asked.
+
+The text content carries `code: message` for hosts that render nothing
+else. The transport never appears in either: `unavailable` says the same
+thing whether the engine was across a network or failed to open in this
+process.
+
 ### Discovering the active surface and getting help
 
 Two server-owned tools are available independently of the selected backend:
@@ -505,9 +545,28 @@ What survives a restart is bounded by the
 started from a published definition rehydrates, one started from supplied
 YAML keeps its snapshot but cannot reload its definition, and
 `made_list_ceremony_instances` reports the latter as
-`"rehydratable": false` instead of failing the whole listing. The full
-loop is in the
+`"rehydratable": false` instead of failing the whole listing. Every
+entry of that listing carries `rehydratable` and `reason`, readable or
+not, on either backend — test one field rather than inferring
+readability from a field that is not there. The full loop is in the
 [embedded ceremony execution runbook](./embedded-ceremony-execution.md).
+
+### Who holds a step lease
+
+`made_run_ceremony`, `made_run_ceremony_step` and
+`made_claim_ceremony_step` all take an optional `lease_owner_id`. Leave
+it out and this MCP server fills it in with `made-mcp:<backend>` —
+`made-mcp:embedded` in process, `made-mcp:grpc` against a cluster —
+before the call reaches the engine. One omission means one owner, and
+which kind of process is holding a lease is readable from the id.
+
+The value is applied here, not left to the engine: a server has its own
+default for clients that speak gRPC directly, and from MCP that default
+is never reached. Name your own runner whenever the host, and not this
+server, is the thing that will come back to finish the step. A blank
+`lease_owner_id` is refused rather than defaulted, on both backends: the
+field's schema says `minLength: 1`, and a caller who wrote it meant to
+name something.
 
 ### Embedded step execution ownership
 

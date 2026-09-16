@@ -8,16 +8,18 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{required_actor_kind, required_string};
 
+use crate::protocol::ToolError;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedBindCeremonyParticipantsRequest {
     input: BindCeremonyParticipantsInput,
 }
 
 impl EmbeddedBindCeremonyParticipantsRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyInstance, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyInstance, ToolError> {
         made.bind_participants(self.input)
             .await
-            .map_err(|error| format!("failed to seat ceremony participants: {error}"))
+            .map_err(ToolError::from)
     }
 }
 

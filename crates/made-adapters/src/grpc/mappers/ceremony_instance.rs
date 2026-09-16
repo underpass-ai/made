@@ -8,7 +8,7 @@
 use made_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTransitionView};
 use made_core::entities::{CeremonyInstance, CeremonyIntervention};
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyInterventionResponse,
+    CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
     CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RoleId, StepId,
 };
 use made_proto::v1 as pb;
@@ -65,6 +65,29 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .map(participant_binding_state_from)
             .collect(),
         reasons: view.reasons().iter().map(reason_state_from).collect(),
+        // It was projected, so it is readable. The one caller that can
+        // say otherwise is the listing below.
+        rehydratable: true,
+        unrehydratable_reason: String::new(),
+    }
+}
+
+/// A listing entry for a session whose definition this store does not
+/// hold.
+///
+/// The stream is there and the id is all that can be rendered from it,
+/// so the listing says so for that one entry instead of failing the
+/// whole call. This is the same answer the in-process backend gives,
+/// which is the point of it existing here.
+pub fn unrehydratable_ceremony_instance_state_from(
+    ceremony_id: &CeremonyId,
+    reason: &str,
+) -> pb::CeremonyInstanceState {
+    pb::CeremonyInstanceState {
+        ceremony_id: ceremony_id.as_str().to_owned(),
+        rehydratable: false,
+        unrehydratable_reason: reason.to_owned(),
+        ..pb::CeremonyInstanceState::default()
     }
 }
 

@@ -8,6 +8,8 @@ use made_adapters::yaml::CeremonyDefinitionYaml;
 
 use super::embedded_request_fields::optional_string;
 
+use crate::protocol::ToolError;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedDiffCeremonyDefinitionsRequest {
     before: CeremonyDefinitionSource,
@@ -18,10 +20,10 @@ impl EmbeddedDiffCeremonyDefinitionsRequest {
     pub(super) async fn execute(
         self,
         made: &EmbeddedMade,
-    ) -> Result<CeremonyDefinitionDiff, String> {
+    ) -> Result<CeremonyDefinitionDiff, ToolError> {
         made.diff_definitions(self.before, self.after)
             .await
-            .map_err(|error| format!("failed to compare ceremony definitions: {error}"))
+            .map_err(ToolError::from)
     }
 }
 

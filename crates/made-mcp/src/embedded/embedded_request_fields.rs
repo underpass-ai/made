@@ -1,4 +1,6 @@
 use made_core::value_objects::{Attributes, AuditActorKind, CeremonyContext, CeremonyId, RoleId};
+
+use crate::protocol::ToolError;
 use made_embedded::EmbeddedMade;
 use serde_json::{Map, Value};
 
@@ -109,16 +111,10 @@ pub(super) async fn load_instance_definition(
         made_core::entities::CeremonyDefinition,
         made_core::entities::CeremonyInstance,
     ),
-    String,
+    ToolError,
 > {
-    let instance = made
-        .instance(ceremony_id)
-        .await
-        .map_err(|error| format!("failed to load ceremony instance: {error}"))?;
-    let definition = made
-        .definition_for(&instance)
-        .await
-        .map_err(|error| format!("failed to load ceremony definition: {error}"))?;
+    let instance = made.instance(ceremony_id).await?;
+    let definition = made.definition_for(&instance).await?;
     Ok((definition, instance))
 }
 

@@ -1,0 +1,235 @@
+//! A working session, from proto to the MCP contract's JSON.
+//!
+//! Split out of `proto_to_json` because the session is the part of the
+//! contract both backends must render identically, and it is the part
+//! that keeps growing.
+
+use made_mcp_proto::v1 as pb;
+use serde_json::{json, Value};
+
+use super::optional_pb_struct_to_json;
+
+/// A live working session as the MCP contract carries it.
+///
+/// This is the shape the in-process backend renders from the domain,
+/// reproduced from the proto. Proto has no null, so absence arrives as
+/// an empty string and is put back as `null` here: a client must not
+/// have to know which backend answered in order to tell "no next step"
+/// from "the next step is called nothing".
+/// One entry of `made_list_ceremony_instances`.
+///
+/// Every entry says whether it could be read, so a caller tests one
+/// field instead of inferring readability from a field that is not
+/// there. An entry that could not be read carries its id and the
+/// reason and nothing else: there is nothing else to carry.
+pub(crate) fn ceremony_instance_listing_to_json(state: pb::CeremonyInstanceState) -> Value {
+    if !state.rehydratable {
+        return json!({
+            "ceremony_id": state.ceremony_id,
+            "rehydratable": false,
+            "reason": state.unrehydratable_reason,
+        });
+    }
+    let mut entry = ceremony_instance_state_to_json(state);
+    if let Some(fields) = entry.as_object_mut() {
+        fields.insert("rehydratable".to_owned(), Value::Bool(true));
+        fields.insert("reason".to_owned(), Value::Null);
+    }
+    entry
+}
+
+pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {
+    json!({
+        "ceremony_id": state.ceremony_id,
+        "definition_name": state.definition_name,
+        "definition_version": state.definition_version,
+        "bound_definition_digest": empty_as_null(state.bound_definition_digest),
+        "current_state": state.current_state,
+        "completed": state.completed,
+        "next_step_id": empty_as_null(state.next_step_id),
+        "waiting_for_human": state.waiting_for_human,
+        "guard_deferrals": state
+            .guard_deferrals
+            .into_iter()
+            .map(|deferral| guard_deferral_to_json(&deferral))
+            .collect::<Vec<_>>(),
+        "transitions": state
+            .transitions
+            .into_iter()
+            .map(available_transition_to_json)
+            .collect::<Vec<_>>(),
+        "steps": state.steps.into_iter().map(step_state_to_json).collect::<Vec<_>>(),
+        "interventions": state
+            .interventions
+            .into_iter()
+            .map(intervention_to_json)
+            .collect::<Vec<_>>(),
+        "open_intervention_ids": state.open_intervention_ids,
+        "context": optional_pb_struct_to_json(state.context),
+        "participant_bindings": state
+            .participant_bindings
+            .into_iter()
+            .map(|binding| json!({
+                "role_id": binding.role_id,
+                "specialty": binding.specialty,
+                "bound_at": binding.bound_at,
+            }))
+            .collect::<Vec<_>>(),
+        // Both backends answer the same shape or neither does: the
+        // parity gate is what says so, and it is the reason this had to
+        // be added here the moment the embedded side grew it.
+        "reasons": state
+            .reasons
+            .into_iter()
+            .map(|reason| json!({
+                "from": record_ref_to_json(reason.from),
+                "to": record_ref_to_json(reason.to),
+                "kind": reason.kind,
+                "why": reason.why,
+                "confidence": reason.confidence,
+                "asserted_by_role_id": empty_as_null(reason.asserted_by_role_id),
+                "asserted_at": reason.asserted_at,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+/// What a reason points at, with only the fields its kind uses.
+///
+/// Proto fills every field of a flat message; carrying the unset ones
+/// out to a caller would offer a step id on an agenda item.
+fn record_ref_to_json(record: Option<pb::CeremonyRecordRefState>) -> Value {
+    let Some(record) = record else {
+        return Value::Null;
+    };
+    match record.kind.as_str() {
+        "step" => json!({ "kind": "step", "step_id": record.step_id }),
+        "agenda_item" => json!({ "kind": "agenda_item", "agenda_item": record.agenda_item }),
+        "contribution" => json!({
+            "kind": "contribution",
+            "agenda_item": record.agenda_item,
+            "ordinal": record.ordinal,
+        }),
+        "guard_decision" => json!({ "kind": "guard_decision", "guard_name": record.guard_name }),
+        "transition" => json!({ "kind": "transition", "ordinal": record.ordinal }),
+        other => json!({ "kind": other }),
+    }
+}
+
+fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
+    json!({
+        "step_id": step.step_id,
+        "state_id": step.state_id,
+        "status": step.status,
+        "attempt": step.attempt,
+        "output": optional_pb_struct_to_json(step.output),
+        "error": empty_as_null(step.error),
+        "iteration": step.iteration,
+        "repeat_condition_satisfied": step.repeat_condition_satisfied,
+        "repeat_limit_reached": step.repeat_limit_reached,
+        "repeat_max_iterations": if step.repeat_max_iterations == 0 {
+            Value::Null
+        } else {
+            json!(step.repeat_max_iterations)
+        },
+    })
+}
+
+fn available_transition_to_json(transition: pb::CeremonyAvailableTransition) -> Value {
+    json!({
+        "trigger": transition.trigger,
+        "to_state": transition.to,
+        "enabled": transition.enabled,
+        "guards": transition
+            .guards
+            .into_iter()
+            .map(|guard| json!({
+                "name": guard.name,
+                "kind": guard.kind,
+                "satisfied": guard.satisfied,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn guard_deferral_to_json(deferral: &pb::CeremonyGuardDeferralState) -> Value {
+    json!({
+        "guard_name": deferral.guard_name,
+        "statement": deferral.statement,
+        "reason": deferral.reason,
+        "reconsider_when": deferral.reconsider_when.clone(),
+        "deferred_at": deferral.deferred_at,
+    })
+}
+
+fn intervention_to_json(intervention: pb::CeremonyInterventionState) -> Value {
+    json!({
+        "intervention_id": intervention.intervention_id,
+        "kind": intervention.kind,
+        "status": intervention.status,
+        "requested_by": intervention.requested_by,
+        "target": intervention.target.as_ref().map_or_else(
+            || json!({ "kind": "table" }),
+            intervention_target_to_json,
+        ),
+        "request": intervention.request.map_or_else(
+            || json!({ "message": "", "details": {} }),
+            intervention_message_to_json,
+        ),
+        "provenance": intervention.provenance.map(|provenance| json!({
+            "source_intervention_id": provenance.source_intervention_id,
+            "source_response_role_id": provenance.source_response_role_id,
+            "selected_role_id": provenance.selected_role_id,
+        })),
+        "responses": intervention
+            .responses
+            .into_iter()
+            .map(|response| json!({
+                "role_id": response.role_id,
+                "message": response.content.as_ref().map_or("", |c| c.message.as_str()),
+                "details": optional_pb_struct_to_json(
+                    response.content.and_then(|content| content.details),
+                ),
+                "evidence_pack": empty_as_null(response.evidence_pack),
+                "responded_at": response.responded_at,
+            }))
+            .collect::<Vec<_>>(),
+        "created_at": intervention.created_at,
+        "updated_at": intervention.updated_at,
+        "closed_at": empty_as_null(intervention.closed_at),
+    })
+}
+
+/// An item put to the whole table carries no roles, and says so by
+/// having no `role_ids` at all rather than an empty list. Proto has no
+/// way to leave a repeated field out, so the distinction is restored
+/// here — an empty list reads as "put to nobody", which is the one
+/// thing a target can never mean.
+fn intervention_target_to_json(target: &pb::CeremonyInterventionTargetState) -> Value {
+    if target.role_ids.is_empty() {
+        json!({ "kind": target.kind })
+    } else {
+        json!({
+            "kind": target.kind,
+            "role_ids": target.role_ids.clone(),
+        })
+    }
+}
+
+fn intervention_message_to_json(message: pb::CeremonyInterventionMessage) -> Value {
+    json!({
+        "message": message.message,
+        "details": optional_pb_struct_to_json(message.details),
+    })
+}
+
+/// Proto cannot say "absent", so an empty string is how absence
+/// arrives. Turning it back into `null` is what makes the two backends
+/// answer the same thing.
+fn empty_as_null(value: String) -> Value {
+    if value.is_empty() {
+        Value::Null
+    } else {
+        Value::String(value)
+    }
+}

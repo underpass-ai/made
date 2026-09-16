@@ -842,6 +842,19 @@ message CeremonyInstanceState {
   // Every reason asserted about this session, in the order they were
   // asserted.
   repeated CeremonyReasonState reasons = 16;
+  // Whether the definition this session runs could be resolved, so
+  // that everything above describes the session as it stands.
+  //
+  // Only a listing can answer false. A session whose definition this
+  // store does not hold has its own stream and nothing to render it
+  // with, and taking every readable session down with it would be the
+  // worse answer; asking for that one by id still fails loudly. Every
+  // entry carries the flag, so a caller tests one field rather than
+  // inferring readability from a field that is missing.
+  bool rehydratable = 17;
+  // Why it could not be, when it could not. Empty otherwise, and only
+  // ever set together with `rehydratable = false`.
+  string unrehydratable_reason = 18;
 }
 
 message CeremonyParticipantBindingState {

@@ -8,6 +8,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{optional_attributes, required_actor_kind, required_string};
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that collects evidence for one open intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedCollectCeremonyEvidenceRequest {
@@ -20,7 +22,7 @@ pub(super) struct EmbeddedCollectCeremonyEvidenceRequest {
 }
 
 impl EmbeddedCollectCeremonyEvidenceRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.collect_evidence(CollectCeremonyEvidenceInput::new(
             self.ceremony_id.clone(),
             self.intervention_id,
@@ -29,8 +31,7 @@ impl EmbeddedCollectCeremonyEvidenceRequest {
             self.source_id,
             self.query,
         ))
-        .await
-        .map_err(|error| format!("failed to collect ceremony evidence: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }
