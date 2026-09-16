@@ -449,6 +449,8 @@ advertises 37 executable tools:
 | `made_publish_ceremony_definition` | `PublishCeremonyDefinition`        | Publish an immutable definition. |
 | `made_diff_ceremony_definitions` | `DiffCeremonyDefinitions`            | Compare two definitions. |
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
+| `made_claim_ceremony_step`      | `ClaimCeremonyStep`                   | Lease one step the host will execute itself. |
+| `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 
@@ -586,6 +588,12 @@ There are two distinct execution paths:
 Claiming records a lease and performs no external work. Claim and completion
 wire existing application use cases; they grant no new authority and do not
 relax human guards or host policy.
+
+Both editions serve this pair. `made_claim_ceremony_step` and
+`made_complete_ceremony_step` are backed by the `ClaimCeremonyStep` and
+`CompleteCeremonyStep` RPCs, so a host that delegates step execution runs the
+same protocol against a cluster as it does in process — the same arguments,
+the same answer, the same refusals.
 
 The embedded-only intervention tools are:
 

@@ -421,6 +421,8 @@ async fn both_backends_advertise_every_ceremony_tool() {
         "made_publish_ceremony_definition",
         "made_diff_ceremony_definitions",
         "made_bind_ceremony_participants",
+        "made_claim_ceremony_step",
+        "made_complete_ceremony_step",
     ] {
         assert!(
             embedded.supports_tool(tool),
@@ -842,5 +844,96 @@ async fn both_backends_publish_one_default_lease_owner_rule() {
     assert!(
         rules.iter().all(|rule| rule == first),
         "one rule, one wording, on every tool and both backends: {rules:#?}"
+    );
+}
+
+/// The delegated-host protocol, driven through the tools on both
+/// backends.
+///
+/// This is the one sequence where the host does the work and the
+/// engine only hears about it. Until parity slice F3a it existed in
+/// process only, so a host that delegated step execution had no way
+/// to do it against a cluster; what is pinned here is that it now
+/// leaves the same session behind whichever engine answered.
+#[tokio::test]
+async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let ceremony_id = "delegated-parity";
+
+    for backend in [
+        &remote as &dyn MadeMcpToolBackend,
+        &embedded as &dyn MadeMcpToolBackend,
+    ] {
+        let name = backend.backend_name();
+        for (tool, args) in [
+            (
+                "made_start_ceremony",
+                json!({ "ceremony_id": ceremony_id, "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
+            ),
+            (
+                "made_claim_ceremony_step",
+                json!({
+                    "ceremony_id": ceremony_id,
+                    "step_id": "work",
+                    "actor_kind": "agent",
+                    "lease_owner_id": "parity-host",
+                    "idempotency_key": "parity-claim-work",
+                }),
+            ),
+            (
+                // …the host does the work here…
+                "made_complete_ceremony_step",
+                json!({
+                    "ceremony_id": ceremony_id,
+                    "step_id": "work",
+                    "actor_kind": "agent",
+                    "status": "completed",
+                    "output": { "verdict": "the work is done" },
+                }),
+            ),
+        ] {
+            backend
+                .call_tool(tool, &args)
+                .await
+                .unwrap_or_else(|error| panic!("{tool} failed on the {name} backend: {error}"));
+        }
+    }
+
+    let arguments = json!({ "ceremony_id": ceremony_id });
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_get_ceremony_instance", &arguments)
+            .await
+            .expect("the gRPC backend should answer"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_get_ceremony_instance", &arguments)
+            .await
+            .expect("the in-process backend should answer"),
+    );
+
+    // Sanity: the delegated step really did finish on both sides, so
+    // two sessions that never left the starting line cannot agree by
+    // having nothing to disagree about.
+    for (name, instance) in [
+        ("over the wire", &over_the_wire),
+        ("in process", &in_process),
+    ] {
+        assert_eq!(
+            instance["steps"][0]["status"], "completed",
+            "the delegated step did not finish {name}: {instance:#?}"
+        );
+    }
+
+    assert_same_shape(
+        &over_the_wire,
+        &in_process,
+        "made_claim_ceremony_step then made_complete_ceremony_step",
     );
 }

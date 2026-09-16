@@ -28,4 +28,24 @@ impl CompleteCeremonyStepInput {
             actor_kind,
         }
     }
+
+    #[must_use]
+    pub fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
+
+    #[must_use]
+    pub fn step_id(&self) -> &StepId {
+        &self.step_id
+    }
+
+    #[must_use]
+    pub const fn result(&self) -> &StepResult {
+        &self.result
+    }
+
+    #[must_use]
+    pub const fn actor_kind(&self) -> AuditActorKind {
+        self.actor_kind
+    }
 }

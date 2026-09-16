@@ -13,7 +13,14 @@ Codex host
 ```
 
 There is no MADE service, gRPC, NATS or PostgreSQL in this mode. The
-plugin launcher selects `MADE_MCP_BACKEND=embedded` and defaults
+protocol itself is not embedded-only: `made_claim_ceremony_step` and
+`made_complete_ceremony_step` are served by both editions, over the
+`ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs when the backend is
+`grpc`. What this runbook describes is the embedded composition of it;
+the loop below is the same one against a cluster, with publication and
+state living there instead of in the local file.
+
+The plugin launcher selects `MADE_MCP_BACKEND=embedded` and defaults
 `MADE_MCP_STORE_PATH` to:
 
 ```text
