@@ -405,6 +405,7 @@ pub(super) fn ceremony_reason_schema() -> Value {
             "kind": {
                 "type": "string",
                 "enum": [
+                    "authorizes",
                     "chosen_because",
                     "achieved_by",
                     "follows_from",
@@ -413,7 +414,7 @@ pub(super) fn ceremony_reason_schema() -> Value {
                     "supersedes",
                     "contradicts"
                 ],
-                "description": "How the first came from the second. `achieved_by` is the how, and it is what turns a resolved session from a precedent into a procedure. `answers` is absent: it states the shape of the session rather than anyone's judgement, and only the engine asserts it."
+                "description": "How the first came from the second. `authorizes` is the one a reviewer looks for first — not what happened, but what made it allowed to happen. `achieved_by` is the how, and it is what turns a resolved session from a precedent into a procedure. `answers` is absent: it states the shape of the session rather than anyone's judgement, and only the engine asserts it."
             },
             "why": string_schema("The reason itself, in one line. Required: an edge asserting a connection while declining to say how is a guess written down as a fact."),
             "confidence": {
