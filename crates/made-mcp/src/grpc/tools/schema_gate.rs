@@ -15,7 +15,7 @@
 
 use serde_json::{json, Map, Value};
 
-use crate::protocol::tools_list_result;
+use crate::protocol::{tools_list_result, GET_METRICS_TOOL, GET_STATUS_TOOL};
 
 /// Tools whose builder takes no arguments worth declaring.
 ///
@@ -24,8 +24,8 @@ use crate::protocol::tools_list_result;
 const NO_ARGUMENTS: [&str; 4] = [
     "made_list_councils",
     "made_list_contracts",
-    "made_get_status",
-    "made_get_metrics",
+    GET_STATUS_TOOL,
+    GET_METRICS_TOOL,
 ];
 
 /// What a caller reading this schema would send, and no more.

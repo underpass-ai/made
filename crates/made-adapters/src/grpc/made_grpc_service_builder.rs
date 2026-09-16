@@ -8,12 +8,11 @@ use made_app::usecases::{
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::ports::{

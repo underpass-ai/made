@@ -31,8 +31,8 @@ read_ceremony_events	ReadCeremonyEvents	made_read_ceremony_events	made_read_cere
 get_ceremony_transcript	GetCeremonyTranscript	made_get_ceremony_transcript	made_get_ceremony_transcript	transcript	-	
 list_ceremony_definitions	-	-	-	definitions	-	decided in F1: host affordance, not a capability; the catalog a host mounts and publishes into is local to its process, and publish_ceremony_definition is how a definition crosses surfaces
 mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host
-get_status	GetStatus	made_get_status	-	-	-	G3: status comes to the embedded edition (ADR-014)
-get_metrics	GetMetrics	made_get_metrics	-	-	-	G3: metrics come to the embedded edition (ADR-014)
+get_status	GetStatus	made_get_status	made_get_status	status	-	
+get_metrics	GetMetrics	made_get_metrics	made_get_metrics	metrics	-	
 deliberate	Deliberate	made_deliberate	-	-	-	council surface: cluster-only until B3 (ADR-014)
 stream_deliberation	StreamDeliberation	made_stream_deliberation	-	-	-	council surface: cluster-only until B3 (ADR-014)
 get_deliberation_result	GetDeliberationResult	made_get_deliberation_result	-	-	-	council surface: cluster-only until B3 (ADR-014)
