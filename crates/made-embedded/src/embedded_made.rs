@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{SessionMemoryRecorder, SessionStream};
@@ -75,8 +76,7 @@ pub struct EmbeddedMade {
     /// so, which is the honest shape of "not turned on". Handing it a
     /// durable writer instead is the whole of turning it on.
     session_memory: Arc<SessionMemoryRecorder>,
-    /// What a session opening in a shared scope is told earlier ones
-    /// decided. The same adapter the recorder writes through.
+    /// The same adapter the recorder writes through, read back.
     memory_reader: Arc<dyn MemoryReaderPort>,
 }
 
@@ -100,6 +100,10 @@ impl EmbeddedMade {
         Self::builder()
             .with_ceremony_store(store.clone())
             .with_definition_publications(store)
+            // Memory that lives as long as this process: not durable,
+            // and not pretending to be (E3 puts it in the store). It
+            // is what makes a declared scope usable at all.
+            .with_memory(Arc::new(InProcessSessionMemory::new()))
             .build()
     }
 
