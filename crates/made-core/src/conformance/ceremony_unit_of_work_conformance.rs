@@ -11,6 +11,8 @@
 //! leaves nothing behind when the process survives. Whether a commit
 //! interrupted mid-write leaves nothing behind is a property of the
 //! store, and the host proves it against its own.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use futures::future::join_all;
 use time::OffsetDateTime;

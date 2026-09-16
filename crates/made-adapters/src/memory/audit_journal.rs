@@ -5,6 +5,8 @@
 //! long as the process lives, which makes it right for tests and for
 //! proving the port is implementable, and wrong for anything that has
 //! to survive a restart.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use std::collections::BTreeMap;
 use std::sync::Arc;

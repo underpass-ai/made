@@ -10,6 +10,9 @@
 //! agent hosts open independently.
 //!
 //! Usage: store_writer <path> <ceremony-id> <count> [commits|events]
+//!
+//! The `commits` mode drives the legacy unit of work: unused since A4;
+//! removed by A7.
 
 use std::io::Write;
 

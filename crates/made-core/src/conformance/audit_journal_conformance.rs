@@ -18,6 +18,8 @@
 //! at every await point — where a read-then-write race in an async
 //! adapter actually appears. Genuine multi-threaded contention against
 //! a shared store is again the host's to exercise.
+//!
+//! Unused since A4; removed by A7. The use cases, the embedded edition and the server read and write `CeremonyEventStorePort` and `CeremonySnapshotStorePort` now; this stays compiling and tested until the migration command (A7) imports the stores that still need it.
 
 use futures::future::join_all;
 use time::OffsetDateTime;
