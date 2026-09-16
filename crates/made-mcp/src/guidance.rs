@@ -19,7 +19,7 @@ use crate::protocol::{
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
-mod capability_group;
+pub(crate) mod capability_group;
 
 use capability_group::CAPABILITY_GROUPS;
 

@@ -11,13 +11,13 @@ use crate::protocol::{
     VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
-pub(super) struct CapabilityGroup {
-    pub(super) id: &'static str,
+pub(crate) struct CapabilityGroup {
+    pub(crate) id: &'static str,
     pub(super) description: &'static str,
-    pub(super) tools: &'static [&'static str],
+    pub(crate) tools: &'static [&'static str],
 }
 
-pub(super) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
+pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
     CapabilityGroup {
         id: "self_description",
         description: "Inspect the active server and obtain audience-specific help.",
