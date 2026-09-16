@@ -2,27 +2,26 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::RespondToInterventionWithEvidence;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyEvidenceSourcePort, ClockPort};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::CollectCeremonyEvidenceInput;
-use crate::services::{session_facts, SessionJournal, SessionMemoryRecorder};
+use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
 
 pub struct CollectCeremonyEvidenceUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
     memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for CollectCeremonyEvidenceUseCase {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("CollectCeremonyEvidenceUseCase")
-            .finish()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CollectCeremonyEvidenceUseCase").finish()
     }
 }
 
@@ -30,14 +29,14 @@ impl CollectCeremonyEvidenceUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             evidence_source,
             clock,
             memory,
@@ -58,10 +57,7 @@ impl CollectCeremonyEvidenceUseCase {
         &self,
         input: CollectCeremonyEvidenceInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
@@ -69,7 +65,6 @@ impl CollectCeremonyEvidenceUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
-        let source_id = input.source_id.clone();
         let request = session.instance.prepare_evidence_request_as(
             &definition,
             input.intervention_id,
@@ -79,26 +74,27 @@ impl CollectCeremonyEvidenceUseCase {
         )?;
         let evidence_pack = self.evidence_source.collect(request.clone()).await?;
         request.ensure_matches(&evidence_pack)?;
+        let actor = session_facts::seat(request.role_id(), input.role_kind)?;
         let now = self.clock.now();
-        session.instance.respond_to_intervention_with_evidence_as(
-            &definition,
-            request.intervention_id(),
-            request.role_id().clone(),
-            evidence_pack,
-            now,
-        )?;
+        let command =
+            CeremonyCommand::RespondToInterventionWithEvidence(RespondToInterventionWithEvidence {
+                intervention_id: request.intervention_id().clone(),
+                role_id: request.role_id().clone(),
+                evidence_pack,
+                now,
+            });
         // Both facts and the contribution land together. The pack was
-        // already fetched by now, so a crash here loses the whole act
-        // rather than half of it.
-        let facts = session_facts::evidence_collected(
-            &session.instance,
-            request.intervention_id(),
-            &source_id,
-            request.role_id(),
-            input.role_kind,
-            now,
-        )?;
-        let instance = self.journal.commit(session, facts).await?.instance;
+        // already fetched by now, so a lost race is decided again
+        // rather than fetched again, and a crash here loses the whole
+        // act rather than half of it.
+        let instance = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?
+            .instance;
         // The contribution and what backs it are remembered together,
         // because an observation whose evidence arrived separately
         // would read as a claim nobody checked.
@@ -116,9 +112,7 @@ mod tests {
     use made_core::entities::{
         CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
     };
-    use made_core::ports::{
-        CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort,
-    };
+    use made_core::ports::{CeremonyEvidenceRequest, CeremonyEvidenceSourcePort};
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyEvidenceSourceId,
         CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
@@ -127,9 +121,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, ceremony_id, definition, definition_resolver, journal, journal_over, now,
-        respondent_role_id, role_id, started_instance, DefinitionRepositoryFake, FixedClock,
-        InstanceRepositoryFake,
+        a_recorder, ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        started_instance, stream, stream_over, DefinitionRepositoryFake, EventStoreFake,
+        FixedClock,
     };
 
     #[derive(Debug)]
@@ -178,7 +172,7 @@ mod tests {
     async fn persists_source_evidence_as_a_typed_intervention_response() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let intervention_id = CeremonyInterventionId::new("inspect-observability").unwrap();
         let mut instance = started_instance(&definition);
         instance
@@ -196,7 +190,7 @@ mod tests {
         instances.save(&instance).await.unwrap();
         let usecase = CollectCeremonyEvidenceUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(EvidenceSourceFake {
                 pack: evidence_pack(),
             }),
@@ -249,7 +243,7 @@ mod tests {
     async fn seals_both_the_lookup_and_the_answer_it_produced() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let intervention_id = CeremonyInterventionId::new("inspect-queue").unwrap();
         let mut instance = started_instance(&definition);
         instance
@@ -265,10 +259,10 @@ mod tests {
             )
             .unwrap();
         instances.save(&instance).await.unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = CollectCeremonyEvidenceUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(EvidenceSourceFake {
                 pack: evidence_pack(),
             }),
@@ -292,7 +286,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         let sealed = facts
             .iter()
             .map(|fact| fact.event.event_type())

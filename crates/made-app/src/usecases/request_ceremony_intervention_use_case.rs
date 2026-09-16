@@ -2,24 +2,24 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::RequestIntervention;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 
+use super::request_ceremony_intervention_input::RequestCeremonyInterventionInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use super::RequestCeremonyInterventionInput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct RequestCeremonyInterventionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
 impl std::fmt::Debug for RequestCeremonyInterventionUseCase {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("RequestCeremonyInterventionUseCase")
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RequestCeremonyInterventionUseCase")
             .finish()
     }
 }
@@ -28,12 +28,12 @@ impl RequestCeremonyInterventionUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
         }
     }
@@ -51,41 +51,30 @@ impl RequestCeremonyInterventionUseCase {
         &self,
         input: RequestCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
         // definition it recorded, and one that is unbound has only the
-        // repository to go to. Reading coordinates off the caller made
-        // a bound session unadvanceable, because publishing writes to
-        // the catalogue and not to the repository.
+        // repository to go to.
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
-        let intervention_id = input.intervention_id.clone();
-        let requested_by = input.role_id.clone();
-        session.instance.request_intervention_with_provenance_as(
-            &definition,
-            input.intervention_id,
-            input.role_id,
-            input.kind,
-            input.target,
-            input.content,
-            input.provenance,
+        let command = CeremonyCommand::RequestIntervention(RequestIntervention {
+            intervention_id: input.intervention_id,
+            role_id: input.role_id,
+            kind: input.kind,
+            target: input.target,
+            content: input.content,
+            provenance: input.provenance,
             now,
-        )?;
-        // An intervention that asks the table for something, and the
-        // record of somebody having asked, land together.
-        let fact = session_facts::intervention_requested(
-            &session.instance,
-            &intervention_id,
-            &requested_by,
-            input.role_kind,
-            now,
-        )?;
-        self.journal
-            .commit(session, vec![fact])
+        });
+        // An item asked of the table commutes with what other writers
+        // do to the session, so a lost race is decided again.
+        self.stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
             .await
             .map(|session| session.instance)
     }
@@ -94,7 +83,6 @@ impl RequestCeremonyInterventionUseCase {
 #[cfg(test)]
 mod tests {
     use made_core::entities::CeremonyEvent;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyInterventionContent,
         CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget,
@@ -102,22 +90,22 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, journal, journal_over, now, role_id,
-        started_instance, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, role_id, started_instance, stream,
+        stream_over, DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
     async fn persists_a_dynamic_intervention_on_the_running_instance() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
         let usecase = RequestCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
         );
         let intervention_id = CeremonyInterventionId::new("ask-table").unwrap();
@@ -160,15 +148,15 @@ mod tests {
     async fn seals_the_request_into_the_journal() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = RequestCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -186,7 +174,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one request, one fact: {facts:?}");
         assert_eq!(
             facts[0].event.event_type(),
@@ -215,15 +203,15 @@ mod tests {
     async fn two_requests_are_two_distinct_facts() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
             .unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = RequestCeremonyInterventionUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -242,7 +230,7 @@ mod tests {
                 .unwrap();
         }
 
-        let ids = unit_of_work
+        let ids = store
             .facts()
             .await
             .iter()

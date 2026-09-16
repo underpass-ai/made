@@ -2,26 +2,26 @@
 
 use std::sync::Arc;
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::AssertReason;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
+use made_core::value_objects::CeremonyReason;
 
 use super::assert_ceremony_reason_input::AssertCeremonyReasonInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, SessionJournal, SessionMemoryRecorder};
+use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
 
 pub struct AssertCeremonyReasonUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
     memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for AssertCeremonyReasonUseCase {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        formatter
-            .debug_struct("AssertCeremonyReasonUseCase")
-            .finish()
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("AssertCeremonyReasonUseCase").finish()
     }
 }
 
@@ -29,13 +29,13 @@ impl AssertCeremonyReasonUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
         memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
             memory,
         }
@@ -54,28 +54,32 @@ impl AssertCeremonyReasonUseCase {
         &self,
         input: AssertCeremonyReasonInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
-        let asserted_by = input.role_id.clone();
-        session.instance.assert_reason_as(
-            &definition,
-            input.role_id,
-            input.from,
-            input.to,
-            input.kind,
-            input.why,
-            input.confidence,
-            now,
-        )?;
-        // The judgement and the record of somebody having made it land
-        // together.
-        let fact =
-            session_facts::reason_asserted(&session.instance, &asserted_by, input.role_kind, now)?;
-        let instance = self.journal.commit(session, vec![fact]).await?.instance;
+        let command = CeremonyCommand::AssertReason(AssertReason {
+            reason: CeremonyReason::new(
+                input.from,
+                input.to,
+                input.kind,
+                input.why,
+                input.confidence,
+                Some(input.role_id),
+                now,
+            )?,
+        });
+        // A judgement commutes with what other writers do to the
+        // session, so a lost race is decided again — and numbered
+        // again, since its id is its position among the reasons.
+        let instance = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&command, &definition)?;
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
+            .await?
+            .instance;
         // The reason a later session will follow, sent on once the
         // session that holds it is safely stored.
         self.memory
@@ -87,7 +91,6 @@ impl AssertCeremonyReasonUseCase {
 
 #[cfg(test)]
 mod tests {
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyInterventionContent,
         CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget,
@@ -96,9 +99,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, journal, journal_over, now, recorder,
-        recording_memory, respondent_role_id, role_id, started_instance, DefinitionRepositoryFake,
-        FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, recorder, recording_memory,
+        respondent_role_id, role_id, started_instance, stream, stream_over,
+        DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
     use crate::usecases::{
         RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase,
@@ -114,7 +117,7 @@ mod tests {
     async fn a_reason_reaches_memory_as_an_edge_between_two_entries() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let memory = recording_memory();
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
 
@@ -139,7 +142,7 @@ mod tests {
 
         let respond = RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         );
@@ -162,7 +165,7 @@ mod tests {
 
         AssertCeremonyReasonUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         )
@@ -204,7 +207,7 @@ mod tests {
     async fn a_reason_into_something_unremembered_is_not_sent() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let memory = recording_memory();
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
 
@@ -224,7 +227,7 @@ mod tests {
 
         RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            journal(instances.clone()),
+            stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         )
@@ -241,7 +244,7 @@ mod tests {
 
         AssertCeremonyReasonUseCase::new(
             definition_resolver(definitions),
-            journal(instances),
+            stream(instances),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         )
@@ -279,7 +282,7 @@ mod tests {
     async fn a_repeated_edge_is_sealed_as_a_second_claim() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let memory = recording_memory();
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
         let later = CeremonyInterventionId::new("what-next").unwrap();
@@ -299,11 +302,11 @@ mod tests {
                 .unwrap();
         }
         instances.save(&instance).await.unwrap();
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
 
         let respond = RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            journal.clone(),
+            stream.clone(),
             Arc::new(FixedClock::new(now())),
             recorder(memory.clone()),
         );
@@ -325,7 +328,7 @@ mod tests {
 
         let usecase = AssertCeremonyReasonUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
             recorder(memory),
         );
@@ -348,7 +351,7 @@ mod tests {
                 .unwrap();
         }
 
-        let reasons = unit_of_work
+        let reasons = store
             .facts()
             .await
             .into_iter()

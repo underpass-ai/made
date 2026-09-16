@@ -8,9 +8,10 @@ use std::sync::Arc;
 
 use super::bind_ceremony_participants_input::BindCeremonyParticipantsInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
-use made_core::entities::CeremonyInstance;
+use made_core::entities::ceremony_commands::BindParticipant;
+use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 #[cfg(test)]
@@ -18,7 +19,7 @@ use made_core::value_objects::{AuditActorKind, Specialty};
 
 pub struct BindCeremonyParticipantsUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -32,12 +33,12 @@ impl BindCeremonyParticipantsUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             clock,
         }
     }
@@ -51,36 +52,41 @@ impl BindCeremonyParticipantsUseCase {
         &self,
         input: BindCeremonyParticipantsInput,
     ) -> Result<CeremonyInstance, DomainError> {
-        // Loaded through the journal so the revision is read before
-        // the session: the other order lets a concurrent write turn a
-        // race into a silent overwrite.
-        let mut session = self.journal.load(&input.instance_id).await?;
+        let session = self.stream.load(&input.instance_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;
+        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
         let now = self.clock.now();
+        let commands = input
+            .seating
+            .iter()
+            .map(|(role_id, specialty)| {
+                CeremonyCommand::BindParticipant(BindParticipant {
+                    role_id: role_id.clone(),
+                    specialty: specialty.clone(),
+                    now,
+                })
+            })
+            .collect::<Vec<_>>();
 
-        // All of it or none of it: a seat the ceremony never declared
-        // stops the call before anything is saved. A caller seating
+        // All of it or none of it: one seat is one command, decided
+        // in turn against the seating so far, and the facts of every
+        // seat land in one append. A seat the ceremony never declared
+        // stops the call before anything is saved — a caller seating
         // three roles and getting two would have to work out which,
         // and a half-seated table is not something anyone asked for.
-        for (role_id, specialty) in &input.seating {
-            session.instance.bind_participant(
-                &definition,
-                role_id.clone(),
-                specialty.clone(),
-                now,
-            )?;
-        }
-        // The seating and the record of somebody having done it land
-        // together, for the same reason the loop is all-or-nothing.
-        let fact = session_facts::participants_bound(
-            &session.instance,
-            &input.seating,
-            &input.actor_id,
-            input.actor_kind,
-            now,
-        )?;
-        self.journal
-            .commit(session, vec![fact])
+        self.stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let mut seated = session.instance.clone();
+                let mut events = Vec::new();
+                for command in &commands {
+                    let decided = seated.decide(command, &definition)?;
+                    for event in &decided {
+                        seated.apply(event);
+                    }
+                    events.extend(decided);
+                }
+                session_facts::facts(&session.instance, events, &actor, now)
+            })
             .await
             .map(|session| session.instance)
     }
@@ -89,19 +95,18 @@ impl BindCeremonyParticipantsUseCase {
 #[cfg(test)]
 mod tests {
     use made_core::entities::CeremonyEvent;
-    use made_core::ports::CeremonyInstanceRepositoryPort;
     use made_core::value_objects::AuditEventType;
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, journal_over, now, role_id, started_instance,
-        DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        ceremony_id, definition, definition_resolver, now, role_id, started_instance, stream_over,
+        DefinitionRepositoryFake, EventStoreFake, FixedClock,
     };
 
-    async fn seated() -> (Arc<DefinitionRepositoryFake>, Arc<InstanceRepositoryFake>) {
+    async fn seated() -> (Arc<DefinitionRepositoryFake>, Arc<EventStoreFake>) {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
@@ -114,10 +119,10 @@ mod tests {
     #[tokio::test]
     async fn seals_the_seating_into_the_journal() {
         let (definitions, instances) = seated().await;
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = BindCeremonyParticipantsUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -134,7 +139,7 @@ mod tests {
             .await
             .unwrap();
 
-        let facts = unit_of_work.facts().await;
+        let facts = store.facts().await;
         assert_eq!(facts.len(), 1, "one seating, one fact: {facts:?}");
         assert_eq!(
             facts[0].event.event_type(),
@@ -161,10 +166,10 @@ mod tests {
     #[tokio::test]
     async fn re_seating_a_role_elsewhere_is_a_distinct_fact() {
         let (definitions, instances) = seated().await;
-        let (journal, unit_of_work) = journal_over(instances);
+        let (stream, store) = stream_over(instances);
         let usecase = BindCeremonyParticipantsUseCase::new(
             definition_resolver(definitions),
-            journal,
+            stream,
             Arc::new(FixedClock::new(now())),
         );
 
@@ -183,7 +188,7 @@ mod tests {
                 .unwrap();
         }
 
-        let ids = unit_of_work
+        let ids = store
             .facts()
             .await
             .iter()

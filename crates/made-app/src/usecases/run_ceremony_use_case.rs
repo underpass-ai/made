@@ -2,15 +2,16 @@
 
 use std::sync::Arc;
 
-use crate::services::{session_facts, LoadedSession, SessionJournal};
-use made_core::entities::{CeremonyDefinition, CeremonyInstance};
+use crate::services::{session_facts, ConflictPolicy, LoadedSession, SessionStream};
+use made_core::entities::ceremony_commands::{ApplyStepResult, ApplyTransition, StartStep};
+use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
     CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyOutcome, CeremonyStepContribution, CeremonyTranscript, DurationMs,
+    AuditActor, CeremonyOutcome, CeremonyStepContribution, CeremonyTranscript, DurationMs,
     IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt, StepErrorMessage, StepId, StepLease,
     StepResult,
 };
@@ -28,7 +29,7 @@ fn ms_since(start: OffsetDateTime, end: OffsetDateTime) -> DurationMs {
 
 pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     clock: Arc<dyn ClockPort>,
@@ -45,14 +46,14 @@ impl RunCeremonyUseCase {
     #[must_use]
     pub fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
         transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
-            journal,
+            stream,
             handler,
             transcript_store,
             clock,
@@ -84,10 +85,10 @@ impl RunCeremonyUseCase {
         // Asked before the definition is stored, so a run that is
         // about to be refused does not leave one behind. This is a
         // courtesy and not the guard: two runs can still both get past
-        // it, and what stops the second is the commit below expecting
-        // the session to be new.
+        // it, and what stops the second is the append below expecting
+        // the stream to be empty.
         if !matches!(
-            self.journal.load(&id).await,
+            self.stream.load(&id).await,
             Err(DomainError::NotFound { .. })
         ) {
             self.metrics
@@ -99,12 +100,12 @@ impl RunCeremonyUseCase {
         self.definitions.save(&definition).await?;
 
         let started_at = self.clock.now();
-        let opening = CeremonyInstance::start(id.clone(), &definition, context, started_at);
-        let started = session_facts::ceremony_started(&opening, &actor_id, actor_kind, started_at)?;
-        // The guard proper: the commit expects the session to be new,
+        let opener = session_facts::party(&actor_id, actor_kind)?;
+        let started = CeremonyInstance::decide_start(id.clone(), &definition, context, started_at);
+        // The guard proper: the append expects the stream to be empty,
         // so of two runs that both got past the check above, the loser
         // is told rather than winning quietly.
-        let mut session = match self.journal.open(opening, vec![started]).await {
+        let mut session = match self.stream.open(started, opener, started_at).await {
             Ok(session) => session,
             Err(error @ DomainError::AlreadyExists { .. }) => {
                 self.metrics
@@ -150,6 +151,7 @@ impl RunCeremonyUseCase {
                         break;
                     }
                     let role_id = definition.role_id_for_step(&step_id)?;
+                    let actor = session_facts::seat(&role_id, actor_kind)?;
                     let transcript = self.transcript_store.transcript(&id).await?;
                     let step_started = self.clock.now();
                     let (moved_on, iteration, attempt, step_result) = self
@@ -157,7 +159,7 @@ impl RunCeremonyUseCase {
                             &definition,
                             session,
                             &role_id,
-                            actor_kind,
+                            &actor,
                             &step_id,
                             &lease_owner_id,
                             lease_ttl,
@@ -244,21 +246,23 @@ impl RunCeremonyUseCase {
                 });
             };
             let role_id = definition.role_id_for_transition(transition.trigger())?;
+            let actor = session_facts::seat(&role_id, actor_kind)?;
             let moved_at = self.clock.now();
-            session.instance.apply_transition_as(
-                &definition,
-                &role_id,
-                transition.trigger(),
-                moved_at,
-            )?;
-            let moved = session_facts::transition_applied(
-                &session.instance,
-                &definition,
-                &role_id,
-                actor_kind,
-                moved_at,
-            )?;
-            session = self.journal.commit(session, moved).await?;
+            let command = CeremonyCommand::ApplyTransition(ApplyTransition {
+                role_id: Some(role_id),
+                trigger: transition.trigger().clone(),
+                now: moved_at,
+            });
+            // Fail fast, as the transition verb does: the move was
+            // chosen against this state, and a stream that moved under
+            // the driver is not one it should move again blind.
+            session = self
+                .stream
+                .execute(session, ConflictPolicy::FailFast, |session| {
+                    let events = session.instance.decide(&command, &definition)?;
+                    session_facts::facts(&session.instance, events, &actor, moved_at)
+                })
+                .await?;
         }
 
         self.metrics
@@ -273,7 +277,7 @@ impl RunCeremonyUseCase {
         definition: &CeremonyDefinition,
         session: LoadedSession,
         role_id: &RoleId,
-        actor_kind: AuditActorKind,
+        actor: &AuditActor,
         step_id: &StepId,
         lease_owner_id: &LeaseOwnerId,
         lease_ttl: DurationMs,
@@ -306,30 +310,31 @@ impl RunCeremonyUseCase {
             now,
             lease_ttl,
         )?;
-        let mut session = session;
-        let attempt = session
-            .instance
-            .start_step_as(definition, role_id, step_id, lease, now)?;
-        let iteration = session
+        let claim = CeremonyCommand::StartStep(StartStep {
+            role_id: Some(role_id.clone()),
+            step_id: step_id.clone(),
+            lease,
+            now,
+        });
+        // Appended before the handler runs, for the reason the step
+        // use case appends twice: a crash while it runs must leave a
+        // stream saying somebody took this step and never came back.
+        let session = self
+            .stream
+            .execute(session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&claim, definition)?;
+                session_facts::facts(&session.instance, events, actor, now)
+            })
+            .await?;
+        // Captured off the claim, before the result is applied: a
+        // successful repeat advances the record to the next iteration.
+        let record = session
             .instance
             .step_record(step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
-            })?
-            .iteration();
-        let claimed = session_facts::step_started(
-            &session.instance,
-            step_id,
-            iteration,
-            attempt,
-            role_id,
-            actor_kind,
-            now,
-        )?;
-        // Committed before the handler runs, for the reason the step
-        // use case commits twice: a crash while it runs must leave a
-        // session saying somebody took this step and never came back.
-        session = self.journal.commit(session, vec![claimed]).await?;
+            })?;
+        let (iteration, attempt) = (record.iteration(), record.attempt());
 
         let request = CeremonyStepHandlerRequest::new(
             session.instance.id().clone(),
@@ -347,30 +352,22 @@ impl RunCeremonyUseCase {
         .with_bound_specialty(session.instance.bound_specialty(role_id).cloned());
         let step_result = self.execute_handler(request).await?;
 
-        // Read again rather than reusing what was loaded before the
-        // handler ran: it may have taken a while, and the revision that
-        // was current then is not the one this commit has to hold.
-        let mut finished_session = self.journal.load(session.instance.id()).await?;
+        // Loaded again rather than reusing what the claim left: the
+        // handler may have taken a while, and the version that was
+        // current then is not the one this append has to expect.
+        let finished_session = self.stream.load(session.instance.id()).await?;
         let finished_at = self.clock.now();
-        finished_session.instance.apply_step_result(
-            definition,
-            step_id,
-            step_result.clone(),
-            finished_at,
-        )?;
-        let finished = session_facts::step_finished(
-            &finished_session.instance,
-            step_id,
-            iteration,
-            attempt,
-            &step_result,
-            role_id,
-            actor_kind,
-            finished_at,
-        )?;
+        let finish = CeremonyCommand::ApplyStepResult(ApplyStepResult {
+            step_id: step_id.clone(),
+            result: step_result.clone(),
+            now: finished_at,
+        });
         let session = self
-            .journal
-            .commit(finished_session, vec![finished])
+            .stream
+            .execute(finished_session, ConflictPolicy::retry(), |session| {
+                let events = session.instance.decide(&finish, definition)?;
+                session_facts::facts(&session.instance, events, actor, finished_at)
+            })
             .await?;
 
         Ok((session, iteration, attempt, step_result))
@@ -396,7 +393,7 @@ mod tests {
     use std::sync::Arc;
 
     use made_core::error::DomainError;
-    use made_core::ports::{CeremonyDefinitionRepositoryPort, CeremonyInstanceRepositoryPort};
+    use made_core::ports::CeremonyDefinitionRepositoryPort;
     use made_core::value_objects::{
         Attributes, AuditActorKind, AuditEventType, CeremonyContext, StepOutput, StepResult,
         StepStatus,
@@ -404,9 +401,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition, journal, journal_over, lease_owner,
-        lease_ttl, now, repeating_definition, started_instance, step_id, two_step_definition,
-        ContextStoreFake, DefinitionRepositoryFake, FixedClock, InstanceRepositoryFake,
+        approval_definition, ceremony_id, definition, lease_owner, lease_ttl, now,
+        repeating_definition, started_instance, step_id, stream, stream_over, two_step_definition,
+        ContextStoreFake, DefinitionRepositoryFake, EventStoreFake, FixedClock,
         SequenceStepHandlerFake, StepHandlerFake,
     };
 
@@ -424,13 +421,13 @@ mod tests {
     async fn executes_linear_ceremony_to_terminal_state() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances.clone()),
+            stream(instances.clone()),
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -464,15 +461,15 @@ mod tests {
     async fn repeats_successful_step_until_structured_condition_is_true() {
         let definition = repeating_definition(3);
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
-        let (journal, unit_of_work) = journal_over(instances.clone());
+        let instances = Arc::new(EventStoreFake::default());
+        let (stream, store) = stream_over(instances.clone());
         let handler = Arc::new(SequenceStepHandlerFake::new([
             StepResult::completed(readiness_output(false)).unwrap(),
             StepResult::completed(readiness_output(true)).unwrap(),
         ]));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal,
+            stream,
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -499,7 +496,7 @@ mod tests {
         let requests = handler.requests().await;
         assert_eq!(requests.len(), 2);
         assert_eq!(requests[1].transcript().len(), 1);
-        let step_event_ids = unit_of_work
+        let step_event_ids = store
             .facts()
             .await
             .into_iter()
@@ -528,13 +525,13 @@ mod tests {
     async fn reports_repeat_limit_instead_of_spinning_or_transitioning() {
         let definition = repeating_definition(2);
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(readiness_output(false)).unwrap(),
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances.clone()),
+            stream(instances.clone()),
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -570,13 +567,13 @@ mod tests {
     async fn aborts_when_a_step_does_not_complete_successfully() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
             reason: "handler rejected step",
         }));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances.clone()),
+            stream(instances.clone()),
             handler,
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -616,13 +613,13 @@ mod tests {
         // enabled out of the initial state.
         let definition = approval_definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances),
+            stream(instances),
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -656,13 +653,13 @@ mod tests {
     async fn duplicate_instance_id_is_rejected() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances),
+            stream(instances),
             handler,
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -694,7 +691,7 @@ mod tests {
     async fn duplicate_instance_id_is_rejected_before_saving_definition() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         instances
             .save(&started_instance(&definition))
             .await
@@ -704,7 +701,7 @@ mod tests {
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions.clone(),
-            journal(instances),
+            stream(instances),
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -737,13 +734,13 @@ mod tests {
     async fn threads_prior_step_output_into_the_next_step() {
         let definition = two_step_definition();
         let definitions = Arc::new(DefinitionRepositoryFake::default());
-        let instances = Arc::new(InstanceRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal(instances),
+            stream(instances),
             handler.clone(),
             Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
@@ -787,11 +784,11 @@ mod tests {
     async fn seals_the_whole_run_as_the_verbs_would_have() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
-        let instances = Arc::new(InstanceRepositoryFake::default());
-        let (journal, unit_of_work) = journal_over(instances);
+        let instances = Arc::new(EventStoreFake::default());
+        let (stream, store) = stream_over(instances);
         let usecase = RunCeremonyUseCase::new(
             definitions,
-            journal,
+            stream,
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::completed(StepOutput::empty()).unwrap(),
             )),
@@ -812,7 +809,7 @@ mod tests {
             .await
             .unwrap();
 
-        let sealed = unit_of_work
+        let sealed = store
             .facts()
             .await
             .iter()
@@ -829,5 +826,68 @@ mod tests {
             ],
             "a run left a different record than the verbs would have"
         );
+    }
+
+    /// Every record of a stream says what it correlates to and what
+    /// caused it: the opening for the former, the record before it for
+    /// the latter — the opening itself correlating to itself and caused
+    /// by nothing.
+    ///
+    /// A run seals five records across four appends, so this covers
+    /// causation within one batch (the move and the completion it
+    /// produced) as well as across appends.
+    #[tokio::test]
+    async fn every_record_names_the_opening_and_the_record_before_it() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let (stream, store) = stream_over(instances);
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            stream,
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(StepOutput::empty()).unwrap(),
+            )),
+            Arc::new(ContextStoreFake::default()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap();
+
+        let records = store.records(&ceremony_id()).await;
+        assert_eq!(records.len(), 5, "{records:?}");
+        let opening = records[0].event_id().clone();
+        assert_eq!(
+            records[0].event_type(),
+            AuditEventType::CeremonyInstanceStarted
+        );
+        assert_eq!(records[0].correlation_id(), Some(&opening));
+        assert_eq!(records[0].causation_id(), None);
+        for pair in records.windows(2) {
+            let (previous, record) = (&pair[0], &pair[1]);
+            assert_eq!(
+                record.correlation_id(),
+                Some(&opening),
+                "{} does not correlate to the opening",
+                record.event_id()
+            );
+            assert_eq!(
+                record.causation_id(),
+                Some(previous.event_id()),
+                "{} is not caused by the record before it",
+                record.event_id()
+            );
+        }
     }
 }

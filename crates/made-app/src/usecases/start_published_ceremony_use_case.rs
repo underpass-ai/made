@@ -1,5 +1,4 @@
 //! [`StartPublishedCeremonyUseCase`] — run a published definition, and
-//! record which one.
 
 use std::sync::Arc;
 
@@ -8,11 +7,11 @@ use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionPublicationPort, ClockPort};
 
 use super::start_ceremony_input::StartCeremonyInput;
-use crate::services::{session_facts, SessionJournal};
+use crate::services::{session_facts, SessionStream};
 
 pub struct StartPublishedCeremonyUseCase {
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-    journal: Arc<SessionJournal>,
+    stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -26,23 +25,16 @@ impl StartPublishedCeremonyUseCase {
     #[must_use]
     pub fn new(
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-        journal: Arc<SessionJournal>,
+        stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             publications,
-            journal,
+            stream,
             clock,
         }
     }
 
-    /// Resolve the published version and bind the instance to its
-    /// digest.
-    ///
-    /// Deliberately not a fallback to an unpublished definition of the
-    /// same name: a caller that asked for a published version and
-    /// silently received something else would be told it is governed
-    /// when it is not.
     #[tracing::instrument(
         name = "start_published_ceremony",
         skip_all,
@@ -54,8 +46,8 @@ impl StartPublishedCeremonyUseCase {
     ) -> Result<CeremonyInstance, DomainError> {
         // No `exists` check before storing. Asking and then storing
         // leaves a gap two concurrent starts both walk through, and the
-        // second would replace the first in silence. The commit itself
-        // refuses, because it expects the session to be new.
+        // second would replace the first in silence. The append itself
+        // refuses, because it expects the stream to be empty.
         let published = self
             .publications
             .published(&input.definition_name, &input.definition_version)
@@ -64,14 +56,15 @@ impl StartPublishedCeremonyUseCase {
                 what: "published_ceremony_definition",
             })?;
 
+        // Named before the opening is sealed so a caller who named
+        // themselves badly is refused without a session being left
+        // behind.
+        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
         let now = self.clock.now();
-        let instance = CeremonyInstance::start_bound(input.id, &published, input.context, now);
-        // Built before the commit so a caller who named themselves
-        // badly is refused without a session being left behind.
-        let fact =
-            session_facts::ceremony_started(&instance, &input.actor_id, input.actor_kind, now)?;
-        self.journal
-            .open(instance, vec![fact])
+        let started =
+            CeremonyInstance::decide_start_bound(input.id, &published, input.context, now);
+        self.stream
+            .open(started, actor, now)
             .await
             .map(|session| session.instance)
     }
