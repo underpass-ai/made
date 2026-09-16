@@ -6,6 +6,8 @@
 
 #[cfg(test)]
 mod ceremony_test_support;
+#[cfg(test)]
+mod decide_matches_session_events;
 
 mod apply_ceremony_transition_input;
 mod apply_ceremony_transition_use_case;

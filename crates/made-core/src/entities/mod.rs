@@ -7,6 +7,8 @@
 mod audit_chain;
 mod audit_fact;
 mod audit_record;
+mod ceremony_command;
+pub mod ceremony_commands;
 mod ceremony_commit;
 mod ceremony_definition;
 mod ceremony_definition_analysis;
@@ -40,6 +42,7 @@ mod validator_report;
 pub use audit_chain::AuditChain;
 pub use audit_fact::AuditFact;
 pub use audit_record::{AuditRecord, AUDIT_RECORD_SCHEMA_VERSION};
+pub use ceremony_command::CeremonyCommand;
 pub use ceremony_commit::CeremonyCommit;
 pub use ceremony_definition::CeremonyDefinition;
 pub use ceremony_definition_draft::CeremonyDefinitionDraft;

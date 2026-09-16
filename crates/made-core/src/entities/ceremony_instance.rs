@@ -3,6 +3,19 @@
 //! Runtime state for a single ceremony execution. The aggregate owns
 //! step leases, retry attempts, idempotency keys and state transitions,
 //! so failover remains a domain rule instead of adapter glue.
+//!
+//! A ceremony is its event stream. Every change goes through two
+//! halves: [`CeremonyInstance::decide`] turns a
+//! [`CeremonyCommand`](super::CeremonyCommand) into the
+//! [`CeremonyEvent`]s it would produce, holding every rule and writing
+//! nothing; [`CeremonyInstance::apply`] writes one event and checks
+//! nothing. [`CeremonyInstance::rehydrate`] folds a whole stream. The
+//! mutators callers already use are thin wrappers over that pair, and
+//! keep their signatures.
+//!
+//! One mutation stays outside the command set on purpose:
+//! [`CeremonyInstance::migrate_definition_binding`] is a storage
+//! migration with no audit fact today, and it is slated for removal.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -10,8 +23,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    ceremony_definition::CeremonyDefinition, CeremonyEvidencePack, CeremonyIntervention,
-    PublishedCeremonyDefinition,
+    ceremony_definition::CeremonyDefinition, CeremonyEvent, CeremonyEvidencePack,
+    CeremonyIntervention, PublishedCeremonyDefinition,
 };
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
@@ -19,14 +32,15 @@ use crate::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyDefinitionDigestMigration,
     CeremonyEvidenceSourceId, CeremonyGuardApproval, CeremonyGuardDeferral,
     CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
-    CeremonyInterventionTarget, CeremonyName, CeremonyParticipantBinding, CeremonyReason,
-    CeremonyReasonKind, CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion,
-    GuardCondition, GuardName, IdempotencyKey, MemoryConfidence, ReasonAsserter, RoleAction,
-    RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult,
-    StepStatus, TransitionTrigger,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
+    CeremonyName, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
+    CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey,
+    MemoryConfidence, RoleAction, RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord,
+    StepId, StepLease, StepResult, TransitionTrigger,
 };
 
+mod decisions;
+mod fold;
 mod guard_decisions;
 mod interventions;
 mod invariants;
@@ -111,7 +125,8 @@ impl CeremonyInstance {
     /// Start from a definition supplied for this run.
     ///
     /// Nothing binds the instance to a definition that can be looked up
-    /// later; that is what [`Self::start_bound`] is for.
+    /// later; that is what [`Self::start_bound`] is for. The instance
+    /// is the fold of the opening event [`Self::decide_start`] yields.
     #[must_use]
     pub fn start(
         id: CeremonyId,
@@ -119,7 +134,7 @@ impl CeremonyInstance {
         context: CeremonyContext,
         now: OffsetDateTime,
     ) -> Self {
-        Self::open(id, definition, context, now, None)
+        Self::from_started(&Self::opening(id, definition, context, now, None))
     }
 
     /// Start from a published definition, recording its digest.
@@ -134,48 +149,13 @@ impl CeremonyInstance {
         context: CeremonyContext,
         now: OffsetDateTime,
     ) -> Self {
-        Self::open(
+        Self::from_started(&Self::opening(
             id,
             published.definition(),
             context,
             now,
             Some(published.digest()),
-        )
-    }
-
-    fn open(
-        id: CeremonyId,
-        definition: &CeremonyDefinition,
-        context: CeremonyContext,
-        now: OffsetDateTime,
-        bound_definition: Option<CeremonyDefinitionDigest>,
-    ) -> Self {
-        let step_records = definition
-            .steps()
-            .keys()
-            .map(|step_id| (step_id.clone(), StepExecutionRecord::pending()))
-            .collect();
-
-        Self {
-            id,
-            definition_name: definition.name().clone(),
-            definition_version: definition.version().clone(),
-            current_state: definition.initial_state_id().clone(),
-            step_records,
-            step_record_history: BTreeMap::new(),
-            interventions: Vec::new(),
-            guard_deferrals: Vec::new(),
-            guard_approvals: Vec::new(),
-            transitions: Vec::new(),
-            reasons: Vec::new(),
-            participant_bindings: BTreeMap::new(),
-            context,
-            idempotency_keys: BTreeSet::new(),
-            created_at: now,
-            updated_at: now,
-            completed_at: None,
-            bound_definition,
-        }
+        ))
     }
 
     /// The digest of the published definition this instance runs, if it
@@ -194,6 +174,10 @@ impl CeremonyInstance {
 
     /// Replace a legacy publication identity after the same definition has
     /// been verified under a successor digest scheme.
+    ///
+    /// Not a command and decides no event: it has no audit fact today
+    /// and is deleted once stores are migrated to event streams. It is
+    /// left exactly as it was until then.
     ///
     /// This is deliberately narrower than a general rebind operation. A
     /// running ceremony cannot be moved to different content, name or
@@ -368,7 +352,7 @@ mod tests {
     use crate::value_objects::{
         Attributes, CeremonyGuard, CeremonyState, CeremonyStep, CeremonyTransition, GuardCondition,
         GuardName, LeaseOwnerId, RepeatUntilCondition, RetryPolicy, StepHandlerConfig,
-        StepHandlerKind, StepIteration, StepOutput, StepOutputField, StepRepeatPolicy,
+        StepHandlerKind, StepIteration, StepOutput, StepOutputField, StepRepeatPolicy, StepStatus,
     };
     use serde_json::json;
     use time::macros::datetime;
