@@ -12,7 +12,8 @@ much as the decision itself.
 - [ADR-002](002-ceremony-definition-analysis.md): analysis reports every defect;
   construction still fails fast
 - [ADR-003](003-audit-journal-and-durability.md): the engine owns the audit
-  contract; the host owns durability
+  contract; the host owns durability (its "not event sourcing" sentence is
+  superseded by ADR-012)
 - [ADR-004](004-published-embedded-api-contract.md): `made-api` is the
   contract a consumer compiles against
 - [ADR-005](005-structured-ceremony-design-tool.md): ceremony design accepts
@@ -29,3 +30,12 @@ much as the decision itself.
   repetition is bounded, durable and distinct from technical retry
 - [ADR-011](011-sqlite-is-the-only-embedded-ceremony-store.md): SQLite is the
   sole canonical embedded ceremony store; Redb is a release-bound migration input
+- [ADR-012](012-a-ceremony-is-its-event-stream.md): a ceremony is its event
+  stream; snapshots are a cache, everything else is a projection (supersedes
+  the "not event sourcing" sentence of ADR-003)
+- [ADR-013](013-memory-is-mades-own-bounded-context.md): memory is MADE's own
+  bounded context; SQLite is the reference implementation, kernels are
+  out-of-tree adapters
+- [ADR-014](014-the-local-edition-leads-and-the-api-keeps-parity.md): the
+  local edition leads and the API keeps parity; divergence is a named row in
+  a checked-in exception list

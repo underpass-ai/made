@@ -1,6 +1,9 @@
 # ADR-003: The engine owns the audit contract; the host owns durability
 
-Status: Accepted; embedded storage choice superseded by ADR-011
+Status: Accepted; embedded storage choice superseded by ADR-011; the
+"snapshot plus append-only journal plus outbox, not event sourcing"
+decision superseded by ADR-012 (the audit contract, the hash chain, the
+conformance rule and the host-owns-durability rule stand)
 
 Implementation status last verified: 2026-08-14
 
