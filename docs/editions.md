@@ -205,8 +205,14 @@ MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 Two caveats that make this less symmetric than the KMP equivalent:
 
-- The **tool surfaces differ by design**. Embedded-only ceremony controls and
-  read-only Markdown reports exist where no remote RPC does. `tools/list` on the
+- The **tool surfaces differ by design**, and by less than they did. The
+  delegated-host protocol — claim the step, run it with your own agents and
+  tools, report what happened — is served by both editions: `ClaimCeremonyStep`
+  and `CompleteCeremonyStep` back `made_claim_ceremony_step` and
+  `made_complete_ceremony_step`, so a host that owns its step execution can
+  point at a cluster without changing a call. What is still embedded-only is
+  ceremony design and the read-only Markdown report, where no remote RPC
+  exists. `tools/list` on the
   running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
   reason. Which gaps exist is not prose:

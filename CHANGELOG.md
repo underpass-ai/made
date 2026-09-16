@@ -16,6 +16,16 @@ operator command.
 
 ### Added
 
+- `ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs in
+  `underpass.made.v1`, over the same use cases the embedded edition has always
+  called, plus the two gRPC-backend tools `made_claim_ceremony_step` and
+  `made_complete_ceremony_step`. The delegated-host protocol — claim the step,
+  run it with the host's own agents and tools, report the observable result —
+  now works against a cluster with the same calls it takes in process. Both
+  answer with the session, like every other move. An absent `lease_owner_id`,
+  `idempotency_key` or `lease_ttl_ms` takes a server default, and the claim's
+  default lease is five minutes because the work it waits on is not the
+  engine's. (#50)
 - `docs/architecture/parity.tsv`: the checked-in exception list of surface
   gaps (ADR-014), one row per ceremony capability and one column per surface,
   with a reason mandatory on every gap. A gate in `made-mcp` compares it with
@@ -43,6 +53,11 @@ operator command.
 
 ### Changed
 
+- `docs/architecture/parity.tsv` no longer carries a gap on
+  `claim_ceremony_step` or `complete_ceremony_step`: both rows name all four
+  surfaces and their reasons are gone. Agent help now offers the
+  delegated-host sequence on the gRPC and fixture backends too, because the
+  backend can now serve it. (#50)
 - Release publication now validates marketplace parity, waits for the exact
   plugin archive and standalone-binary asset set, and only then fast-forwards
   the stable `marketplace` branch. (#36)

@@ -46,7 +46,10 @@ qualified.
    failover, durable guards, leases, idempotency or audit retention.
 
 Calling `made_claim_ceremony_step` reserves delegated work; it neither
-performs that work nor grants external credentials or authority.
+performs that work nor grants external credentials or authority. It says
+nothing about the edition either: both serve the claim/complete pair, so
+"the host claimed it" is as weak a claim against a cluster as it is in
+process.
 
 ## Composition matrix
 
@@ -103,8 +106,8 @@ Those are composition, authority and observation questions.
 Avoid unqualified sentences such as “MADE persists ceremonies” or
 “MADE executes agent steps.” State the boundary in the sentence:
 
-- “The embedded MCP executable exposes `made_claim_ceremony_step` on the
-  installed backend.”
+- “The MCP executable exposes `made_claim_ceremony_step` on the installed
+  backend, embedded or gRPC.”
 - “The host executes the claimed step through its separately authorized
   worker.”
 - “The deployable process persists ceremony state in SQLite when
