@@ -50,6 +50,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      # The skip branch can only be observed on a real push to main, so
+      # what runs on every event is the proof's own rules: a partial plan,
+      # a fork, a stale run, a skipped job and a cancelled one are all
+      # refused, a full plan and a push are accepted.
+      - name: Prove the proof's own rules
+        run: bash scripts/ci/tree-already-proved.sh --self-test
       - name: Was this tree already proved green?
         id: proof
         if: github.event_name == 'push'

@@ -304,6 +304,11 @@ def validate(sources: dict[str, str]) -> list[str]:
             failures.append("tree-proof must only answer for pushes")
         if "run: bash scripts/ci/tree-already-proved.sh quality-gate.yml" not in proof:
             failures.append("tree-proof no longer runs the tree proof script")
+        if "run: bash scripts/ci/tree-already-proved.sh --self-test" not in proof:
+            failures.append(
+                "tree-proof no longer proves the rules by which it accepts a "
+                "proof; they are what decides whether the gate runs at all"
+            )
 
     # The proof accepts a run only when every job of the full matrix went
     # green, so its idea of "the full matrix" is the workflow's job list —
@@ -416,6 +421,8 @@ def validate(sources: dict[str, str]) -> list[str]:
         )
     if "python3 scripts/ci/quality-gate-plan.py --self-test" not in justfile:
         failures.append("`just workflow-contract` no longer proves the routing matrix")
+    if "bash scripts/ci/tree-already-proved.sh --self-test" not in justfile:
+        failures.append("`just workflow-contract` no longer proves the tree proof")
     check = re.search(r"^check:(.*)$", justfile, re.MULTILINE)
     if check is None:
         failures.append("justfile lost its `check` recipe")
@@ -518,6 +525,12 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         JUSTFILE,
         "check: workflow-contract ",
         "check: ",
+    ),
+    "the tree proof stops proving its own rules": (
+        QUALITY_GATE,
+        "      - name: Prove the proof's own rules\n"
+        "        run: bash scripts/ci/tree-already-proved.sh --self-test\n",
+        "",
     ),
     "the container suites burn runners on drafts": (
         INTEGRATION,
