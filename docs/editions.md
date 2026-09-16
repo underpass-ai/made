@@ -30,7 +30,7 @@ version and definition version solve different compatibility problems.
 |:--|:--|:--|
 | Who it is for | one developer running a working session | a team whose deliberations must outlive a process |
 | Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
-| Surface today | the **ceremony engine** | the full `underpass.made.v1` gRPC contract |
+| Surface today ([table](operations/support-matrix.md#editions)) | the **ceremony engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
 | Persistence | one local SQLite state file | SQLite for ceremonies; Postgres or memory for other aggregates |
 | Messaging | none | optional NATS |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
@@ -45,9 +45,17 @@ tool choice; it is not an edition and must be selected explicitly.
 
 ## Embedded edition
 
-Status: implemented first slice. The embedded surface currently covers the
-**ceremony engine**. Native embedded facades for the broader council and
-deliberation APIs are **not claimed**.
+Status: implemented first slice. The embedded surface covers the **ceremony
+engine**: every capability group the MCP server offers except the council
+surface — deliberation, and council, agent and contract configuration — which
+is cluster-only until B3.
+
+Which group each of the four surfaces serves, the reason for every gap and the
+gate that proves every cell is one table: the [Editions section of the support
+matrix](operations/support-matrix.md#editions). A test derives it from
+[`architecture/parity.tsv`](./architecture/parity.tsv) and the capability
+groups and fails on any cell the two disagree about, so this page points at it
+instead of restating it.
 
 ### Install and run
 
@@ -232,13 +240,12 @@ Two caveats that make this less symmetric than the KMP equivalent:
   state report the same bytes whichever engine rendered them. A read of the
   stream hands out the **sealed records**, digests and hash chain included, so
   a client verifies the chain on what it received rather than trusting the
-  server that sent it. The remaining gaps are the council surface, which is
-  cluster-only until B3, and status and metrics, which the embedded edition
-  gains with G3. `tools/list` on the running executable is the authority, and
+  server that sent it. The one gap left is the council surface, cluster-only
+  until B3. `tools/list` on the running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
   reason. Which gaps exist is not prose:
   [`architecture/parity.tsv`](./architecture/parity.tsv) is the checked list,
-  one row per capability with the reason for its gap, and **two** gates read
+  one row per capability with the reason for its gap, and **three** gates read
   it. The first compares the file with the four surfaces in both directions
   and fails when either side names something the other does not; it needs no
   server and runs in milliseconds. The second drives one working session
@@ -246,7 +253,13 @@ Two caveats that make this less symmetric than the KMP equivalent:
   the same evidence source and the same frozen clock on each — and compares
   the two answers field for field, so a tool that answers differently
   depending on which engine served it fails by name. A shared tool that
-  session never calls fails it too.
+  session never calls fails it too. The third reads the file as the support
+  claim it is: the [Editions section of the support
+  matrix](operations/support-matrix.md#editions) says, per capability group
+  and per surface, supported or not supported with the reason, and a test
+  derives that table from this file and the capability groups and compares it
+  cell by cell — a table that promises what the file denies fails by name, and
+  so does a group the table forgets.
 - **Ceremony state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.

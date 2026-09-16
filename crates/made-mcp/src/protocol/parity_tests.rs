@@ -56,24 +56,25 @@ const FACADE_VARIANTS: [(&str, &str); 7] = [
 const FACADE_CONSTRUCTORS: [&str; 2] = ["open", "builder"];
 
 /// The marker a cell uses for "this surface does not have it".
-const GAP: &str = "-";
+pub(super) const GAP: &str = "-";
 
-/// One line of `parity.tsv`.
-struct ParityRow {
-    capability: String,
+/// One line of `parity.tsv`. Read here and by the Editions-table check
+/// next door, which groups these rows the way the MCP server groups them.
+pub(super) struct ParityRow {
+    pub(super) capability: String,
     proto: String,
-    mcp_grpc: String,
+    pub(super) mcp_grpc: String,
     mcp_embedded: String,
     facade: String,
     api: String,
-    reason: String,
+    pub(super) reason: String,
 }
 
 impl ParityRow {
     /// The four surfaces parity is defined over. `api` is deliberately not
     /// one of them: ADR-004 makes it a subset, and a subset is allowed to be
     /// smaller without an excuse.
-    fn surfaces(&self) -> [&str; 4] {
+    pub(super) fn surfaces(&self) -> [&str; 4] {
         [
             &self.proto,
             &self.mcp_grpc,
@@ -253,7 +254,7 @@ fn assert_columns_agree(
     );
 }
 
-fn parity_rows() -> Vec<ParityRow> {
+pub(super) fn parity_rows() -> Vec<ParityRow> {
     let mut rows = Vec::new();
     for (index, line) in PARITY_TSV.lines().enumerate() {
         let number = index + 1;

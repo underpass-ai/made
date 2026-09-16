@@ -16,6 +16,29 @@ operator command.
 
 ### Added
 
+- An **Editions** section in `docs/operations/support-matrix.md`: one row per
+  capability group — the groups `made_discover_capabilities` answers with —
+  against the four surfaces (the proto contract, MCP on the gRPC backend, MCP
+  on the embedded backend, the `EmbeddedMade` facade), each cell `supported` or
+  `not supported` with the reason quoted verbatim from
+  `docs/architecture/parity.tsv`, plus the gate that proves the row. Parity was
+  a checked file and two tests; it was not yet a support claim, and the page
+  whose rule is that a claim names its source of truth and its enforcement had
+  no edition row at all. A group whose capabilities disagree about a surface is
+  split per capability: `ceremony_design` is the one split today, because
+  validating and explaining a draft have no facade method by decision (F1).
+- `crates/made-mcp/src/protocol/editions_matrix_tests.rs`: the check that keeps
+  that table honest. It derives the expected cells from `parity.tsv` and
+  `CAPABILITY_GROUPS`, parses the table out of the markdown between two
+  HTML-comment markers, and compares them cell by cell in both directions — a
+  cell that promises what the TSV denies fails by name, a group the table
+  forgets fails, a row the code no longer groups fails, and so does a gate
+  column that names a test which does not cover the row. It also asserts that
+  every capability with an MCP tool is in exactly one group, and that the two
+  capabilities no group can offer (`list_ceremony_definitions`,
+  `mount_definition`) are still named in the section. No server, no store, four
+  tests in milliseconds inside `cargo test -p made-mcp`, so the development
+  loop runs it (ADR-014). (#54)
 - `made_get_status` and `made_get_metrics` on the **embedded** MCP backend, and
   the facade methods `EmbeddedMade::status` and `EmbeddedMade::metrics`. The
   two answers are composed by `GetServiceStatusUseCase` and
@@ -104,6 +127,14 @@ operator command.
 
 ### Changed
 
+- `docs/editions.md` points at the Editions table instead of describing the
+  surfaces in prose: the "Surface today" row links it, the sentence that said
+  native embedded facades for the council and deliberation APIs are "not
+  claimed" is now the pointer, and the parity paragraph names **three** gates
+  reading `parity.tsv` rather than two. The stale sentence that still listed
+  status and metrics as a gap "the embedded edition gains with G3" is gone —
+  they landed in #53, and the council surface is the one gap left.
+  `docs/index.md` says what the support matrix now carries. (#54)
 - `docs/architecture/parity.tsv`: the `get_status` and `get_metrics` rows name
   all four surfaces and their `G3` reasons are gone. No ceremony **or**
   observability capability is gRPC-only any more; the council surface is the

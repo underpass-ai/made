@@ -178,7 +178,10 @@ backend (23 tools), and the Rust facade (`EmbeddedMade`, 31 methods, of which
   against a hard-coded allowlist of 17 names — it cannot notice a tool added
   to one side. No request-side schema parity exists for the embedded arm.
 - `docs/operations/support-matrix.md` has no edition row at all: parity is
-  not a support claim today.
+  not a support claim today. *[As of F6 it has one: § Editions, a row per
+  capability group against the four surfaces, each cell carrying its reason
+  and the gate that proves it, derived from `parity.tsv` and checked by
+  `crates/made-mcp/src/protocol/editions_matrix_tests.rs`.]*
 
 ### 0.5 Observability without event sourcing
 
@@ -594,7 +597,7 @@ the embedded edition leads, the API follows in the same change.
 | F3 | **Bring the embedded-only tools to the API.** `ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs over the existing use cases (the delegated-host protocol then works against a cluster too); `DesignCeremony` as an RPC over the same intent document; `ReadCeremonyEvents` (the stream, with cursor) and `GetCeremonyTranscript` read RPCs, which give `GenerateCeremonyReport` a remote path or let the MCP server render the report on the gRPC backend from those reads. Add the tools to the gRPC backend catalog. | Catalog↔proto bijection test extended; the exception file has no ceremony rows. |
 | F4 | **Make the parity test a real gate.** Drive the same session on both backends with the same handler wiring, compare shape **and** values for every shared tool, compare request acceptance through the schema gate with an embedded arm, compare error envelopes. Replace the allowlist with the TSV comparison from F1. | The three F2 divergences, reintroduced on a branch, fail the test. |
 | F5 | **The council surface in the local edition.** The sixteen gRPC-only tools are absent from embedded by design today. `GetStatus` / `GetMetrics` come to embedded in §3.7. Deliberation and councils stay cluster-only, listed with their reason in the exception file, until B3's parallel proposing lands — the first feature the local edition would otherwise never see — at which point they come into `EmbeddedMade` behind the provider features (`made-embedded` already excludes only `tonic`, `async-nats` and `sqlx`, not the HTTP provider clients). | The exception file names each with its reason; a later slice empties it. |
-| F6 | **Support matrix gains an "Editions" section**: one row per capability group with the surfaces it is supported on and the gate that proves it. `docs/editions.md` "tool surfaces differ by design" becomes a pointer to that table. | The table is checked against `parity.tsv`. |
+| F6 | **Support matrix gains an "Editions" section**: one row per capability group with the surfaces it is supported on and the gate that proves it. `docs/editions.md` "tool surfaces differ by design" becomes a pointer to that table. | The table is checked against `parity.tsv`. *[Done: `docs/operations/support-matrix.md` § Editions, derived from `parity.tsv` and `CAPABILITY_GROUPS` and compared cell by cell by `crates/made-mcp/src/protocol/editions_matrix_tests.rs`; a group whose capabilities disagree about a surface is split per capability.]* |
 
 `made-api` stays a versioned subset by ADR-004; parity does not require the
 contract to expose mutations. It does require that the facade behind it has

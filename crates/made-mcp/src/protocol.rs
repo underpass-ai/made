@@ -6,6 +6,8 @@
 mod catalog;
 mod ceremony_schemas;
 mod default_lease_owner;
+#[cfg(test)]
+mod editions_matrix_tests;
 mod general_schemas;
 mod initialization;
 #[cfg(test)]
