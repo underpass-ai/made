@@ -420,15 +420,36 @@ def check_embedded_data_routing() -> int:
     return len(escaping)
 
 
+# `--diff-filter=ACMR` used to ask this question, and it dropped the two
+# statuses that matter most. A deletion is a change to the workspace —
+# removing a crate source changes what compiles, and removing a routed file
+# changes what a gate proves — and a rename's *source* path is where the
+# routed file used to live. On 40cb7e5 the filter turned a sixteen-file diff
+# into three, so a pull request that deletes a crate source and edits a .md
+# routed to nothing at all.
+#
+# `-M --name-status` keeps every status and names both sides of a rename or
+# a copy. The plan is the union of the two sides, which is the only answer
+# that is right whichever side carried the gate.
+def parse_name_status(output: str) -> list[str]:
+    """Every path a `git diff -M --name-status` answer names, both sides."""
+    paths: list[str] = []
+    for line in output.splitlines():
+        fields = [field for field in line.split("\t") if field]
+        # `M\tpath`, `D\tpath`, `R100\told\tnew`, `C075\tsource\tcopy`.
+        paths.extend(fields[1:])
+    return paths
+
+
 def changed_paths(base: str, head: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
+        ["git", "diff", "-M", "--name-status", base, head, "--"],
         cwd=ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE,
     )
-    return [line for line in result.stdout.splitlines() if line]
+    return parse_name_status(result.stdout)
 
 
 def write_outputs(plan: dict[str, object], destination: pathlib.Path) -> None:
@@ -585,8 +606,41 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         ["scripts/ci/tree-already-proved.sh"],
         {"full": True},
     ),
+    # A change boundary that drops deletions is how a pull request that
+    # removes a crate source and edits a document routes to nothing.
+    (
+        "a deleted crate source still runs the Rust gates",
+        ["crates/made-e2e-runner/src/scenarios/daily_standup.rs", "docs/dev-loop.md"],
+        {"clippy": True, "test": True, "rustfmt": True, "full": False},
+    ),
     ("unknown path", ["new-top-level.bin"], {"full": True}),
     ("no paths at all", [], {"full": True}),
+)
+
+
+# The change boundary itself, which is where the two statuses were lost.
+NAME_STATUS_CASES: tuple[tuple[str, str, list[str]], ...] = (
+    (
+        "a deletion is a change",
+        "D\tcrates/made-e2e-runner/src/scenarios/daily_standup.rs\n"
+        "M\tdocs/dev-loop.md\n",
+        ["crates/made-e2e-runner/src/scenarios/daily_standup.rs", "docs/dev-loop.md"],
+    ),
+    (
+        "a rename routes the path it left as well as the one it reached",
+        "R100\tcrates/made-core/src/old.rs\tcrates/made-app/src/new.rs\n",
+        ["crates/made-core/src/old.rs", "crates/made-app/src/new.rs"],
+    ),
+    (
+        "so does a copy",
+        "C075\tdocs/architecture/parity.tsv\tdocs/architecture/spare.tsv\n",
+        ["docs/architecture/parity.tsv", "docs/architecture/spare.tsv"],
+    ),
+    (
+        "additions and modifications survive unchanged",
+        "A\tcharts/made/values.yaml\nM\tCargo.lock\n",
+        ["charts/made/values.yaml", "Cargo.lock"],
+    ),
 )
 
 
@@ -599,10 +653,18 @@ def self_test() -> None:
                     f"quality gate plan self-test: {name}: expected "
                     f"{key}={value!r}, got {actual[key]!r}"
                 )
+    for name, output, expected in NAME_STATUS_CASES:
+        actual = parse_name_status(output)
+        if actual != expected:
+            raise SystemExit(
+                f"quality gate plan self-test: {name}: expected "
+                f"{expected!r}, got {actual!r}"
+            )
     embedded = check_embedded_data_routing()
     print(
         f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing "
-        f"cases, {embedded} files compiled into a crate from outside it"
+        f"cases, {len(NAME_STATUS_CASES)} change-boundary cases, {embedded} "
+        "files compiled into a crate from outside it"
     )
 
 
