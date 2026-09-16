@@ -178,7 +178,10 @@ backend (23 tools), and the Rust facade (`EmbeddedMade`, 31 methods, of which
   against a hard-coded allowlist of 17 names — it cannot notice a tool added
   to one side. No request-side schema parity exists for the embedded arm.
 - `docs/operations/support-matrix.md` has no edition row at all: parity is
-  not a support claim today.
+  not a support claim today. *[As of F6 it has one: § Editions, a row per
+  capability group against the four surfaces, each cell carrying its reason
+  and the gate that proves it, derived from `parity.tsv` and checked by
+  `crates/made-mcp/src/protocol/editions_matrix_tests.rs`.]*
 
 ### 0.5 Observability without event sourcing
 
