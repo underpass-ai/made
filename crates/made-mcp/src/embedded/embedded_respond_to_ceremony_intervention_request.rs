@@ -7,6 +7,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{optional_attributes, required_actor_kind, required_string};
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that records one role's intervention response.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedRespondToCeremonyInterventionRequest {
@@ -18,7 +20,7 @@ pub(super) struct EmbeddedRespondToCeremonyInterventionRequest {
 }
 
 impl EmbeddedRespondToCeremonyInterventionRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.respond_to_intervention(RespondToCeremonyInterventionInput::new(
             self.ceremony_id.clone(),
             self.intervention_id,
@@ -26,8 +28,7 @@ impl EmbeddedRespondToCeremonyInterventionRequest {
             self.role_kind,
             self.content,
         ))
-        .await
-        .map_err(|error| format!("failed to respond to ceremony intervention: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }

@@ -3,6 +3,24 @@ use serde_json::{Map, Value};
 use uuid::Uuid;
 
 use super::super::json_to_proto as j2p;
+use crate::grpc::GRPC_BACKEND_NAME;
+use crate::protocol::default_lease_owner_id;
+
+/// The runner the caller named, or the one this layer applies.
+///
+/// Absent means "you choose"; blank is refused, as the tool's schema
+/// says (`minLength: 1`) and as the in-process backend already did.
+/// Letting it through would reach the server's own default, which is
+/// the divergence this closes.
+pub(in crate::grpc) fn lease_owner_id(obj: &Map<String, Value>) -> Result<String, String> {
+    match j2p::optional_str(obj, "lease_owner_id") {
+        None => Ok(default_lease_owner_id(GRPC_BACKEND_NAME)),
+        Some(named) if named.trim().is_empty() => {
+            Err("field `lease_owner_id` must not be blank".to_owned())
+        }
+        Some(named) => Ok(named.trim().to_owned()),
+    }
+}
 
 pub(super) fn definition_yaml(args: &Value) -> Result<String, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
@@ -54,9 +72,9 @@ pub(super) fn build_run_ceremony_step_request(
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
         step_id: j2p::require_str(obj, "step_id")?.to_owned(),
-        lease_owner_id: j2p::optional_str(obj, "lease_owner_id")
-            .unwrap_or_default()
-            .to_owned(),
+        // Defaulted here, not left to the server: one omission, one
+        // owner, whichever backend the client is pointed at.
+        lease_owner_id: lease_owner_id(obj)?,
         idempotency_key: j2p::optional_str(obj, "idempotency_key")
             .unwrap_or_default()
             .to_owned(),
@@ -253,4 +271,50 @@ pub(super) fn definition_ref(
             .unwrap_or_default()
             .to_owned(),
     }))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The request that leaves this layer already names a runner, so
+    /// the server's own default is never reached from MCP.
+    #[test]
+    fn an_omitted_runner_becomes_the_backends_own_default() {
+        let request = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "made-mcp:grpc");
+    }
+
+    /// Blank is refused rather than defaulted, as the tool's schema
+    /// says and as the in-process backend already did: a caller who
+    /// wrote the field meant to name a runner.
+    #[test]
+    fn a_blank_runner_is_refused_rather_than_defaulted() {
+        let error = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "   ",
+        }))
+        .expect_err("a blank runner is not a runner");
+        assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    #[test]
+    fn a_runner_the_caller_named_is_left_alone() {
+        let request = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "the-hosts-own-runner",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
+    }
 }

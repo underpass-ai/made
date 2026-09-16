@@ -311,10 +311,15 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
     let server = MadeMcpServer::embedded();
     send(&server, run_ceremony_call(1, "report-known")).await;
 
-    for (id, ceremony_ids, expected) in [
-        (2, json!([]), "at least one"),
-        (3, json!(["report-known", "report-known"]), "duplicate"),
-        (4, json!(["report-missing"]), "could not be loaded"),
+    for (id, ceremony_ids, expected, code) in [
+        (2, json!([]), "at least one", "invalid_request"),
+        (
+            3,
+            json!(["report-known", "report-known"]),
+            "duplicate",
+            "invalid_request",
+        ),
+        (4, json!(["report-missing"]), "not found", "not_found"),
     ] {
         let response = send(
             &server,
@@ -331,6 +336,16 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
                 .as_str()
                 .unwrap()
                 .contains(expected),
+            "{response:?}"
+        );
+        // The envelope, not prose: a client branches on this.
+        assert_eq!(
+            response["result"]["structuredContent"],
+            json!({
+                "code": code,
+                "message": response["result"]["structuredContent"]["message"],
+                "retryable": false,
+            }),
             "{response:?}"
         );
     }

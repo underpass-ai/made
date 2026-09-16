@@ -4,6 +4,8 @@ use made_app::usecases::CeremonyInstanceView;
 use made_core::entities::{AuditRecord, CeremonyDefinition, CeremonyInstance};
 use made_core::value_objects::{CeremonyDefinitionDigest, CeremonyId};
 use made_embedded::EmbeddedMade;
+
+use crate::protocol::ToolError;
 use serde_json::{json, Value};
 
 use super::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyReportRequest;
@@ -24,14 +26,17 @@ impl EmbeddedCeremonyReportPresenter {
     pub(super) async fn present(
         made: &EmbeddedMade,
         request: &EmbeddedGenerateCeremonyReportRequest,
-    ) -> Result<Value, String> {
+    ) -> Result<Value, ToolError> {
         let mut reports = Vec::with_capacity(request.ceremony_ids().len());
         for ceremony_id in request.ceremony_ids() {
             reports.push(Self::load(made, ceremony_id).await?);
         }
 
         let completed_count = reports.iter().filter(|report| report.completed).count();
-        let report_markdown = render_markdown(request.title(), &reports)?;
+        // Rendering is this presenter's own doing: a caller cannot
+        // fix it and the engine did not refuse anything.
+        let report_markdown =
+            render_markdown(request.title(), &reports).map_err(ToolError::refused)?;
         Ok(json!({
             "report_markdown": report_markdown,
             "ceremony_ids": request.ceremony_ids().iter().map(CeremonyId::as_str).collect::<Vec<_>>(),
@@ -49,24 +54,15 @@ impl EmbeddedCeremonyReportPresenter {
         }))
     }
 
-    async fn load(made: &EmbeddedMade, ceremony_id: &CeremonyId) -> Result<ReportInstance, String> {
-        let instance = made.instance(ceremony_id).await.map_err(|error| {
-            format!("ceremony instance `{ceremony_id}` could not be loaded: {error}")
-        })?;
-        let definition = made.definition_for(&instance).await.map_err(|error| {
-            format!("definition for ceremony `{ceremony_id}` could not be loaded: {error}")
-        })?;
-        let completed = CeremonyInstanceView::project(&instance, &definition)
-            .map_err(|error| {
-                format!("ceremony instance `{ceremony_id}` could not be projected: {error}")
-            })?
-            .is_completed();
-        let digest = definition.digest().map_err(|error| {
-            format!("definition for ceremony `{ceremony_id}` has no digest: {error}")
-        })?;
-        let journal = made.audit_records(ceremony_id).await.map_err(|error| {
-            format!("journal for ceremony `{ceremony_id}` could not be loaded: {error}")
-        })?;
+    async fn load(
+        made: &EmbeddedMade,
+        ceremony_id: &CeremonyId,
+    ) -> Result<ReportInstance, ToolError> {
+        let instance = made.instance(ceremony_id).await?;
+        let definition = made.definition_for(&instance).await?;
+        let completed = CeremonyInstanceView::project(&instance, &definition)?.is_completed();
+        let digest = definition.digest()?;
+        let journal = made.audit_records(ceremony_id).await?;
         Ok(ReportInstance {
             definition,
             instance,
