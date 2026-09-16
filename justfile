@@ -42,6 +42,7 @@ dev STAGE='all':
 # `just dev` and the workflow name the same crates. Both workflows run it.
 workflow-contract:
     python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+    python3 scripts/ci/quality-gate-plan.py --self-test
 
 # -----------------------------------------------------------------------------
 # fast per-PR gates — match quality-gate.yml
