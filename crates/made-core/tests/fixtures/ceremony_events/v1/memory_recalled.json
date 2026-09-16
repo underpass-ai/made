@@ -1,0 +1,17 @@
+{
+  "type": "memory_recalled",
+  "recollection": {
+    "scope": "team:alpha",
+    "entries": [
+      {
+        "id": "guard:sign_off",
+        "kind": "decision",
+        "summary": "`sign_off` was approved",
+        "from_ceremony": "earlier-session",
+        "observed_at": "2026-07-28T09:00:00Z"
+      }
+    ],
+    "completeness": "whole"
+  },
+  "recalled_at": "2026-07-29T09:00:00Z"
+}

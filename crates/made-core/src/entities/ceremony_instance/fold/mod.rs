@@ -14,6 +14,7 @@ mod guard_decisions;
 mod interventions;
 mod participant_bindings;
 mod reasons;
+mod recollection;
 mod start;
 mod step_execution;
 mod transitions;
@@ -56,6 +57,7 @@ impl CeremonyInstance {
                 self.apply_human_deferral_recorded(recorded);
             }
             CeremonyEvent::CeremonyCompleted(completed) => self.apply_ceremony_completed(completed),
+            CeremonyEvent::MemoryRecalled(recalled) => self.apply_memory_recalled(recalled),
         }
     }
 

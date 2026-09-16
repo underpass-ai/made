@@ -29,6 +29,7 @@ impl CeremonyInstance {
             reasons: Vec::new(),
             participant_bindings: BTreeMap::new(),
             context: started.context.clone(),
+            recollection: None,
             idempotency_keys: BTreeSet::new(),
             created_at: started.created_at,
             updated_at: started.created_at,

@@ -35,8 +35,8 @@ use crate::value_objects::{
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
     CeremonyName, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
     CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey,
-    MemoryConfidence, RoleAction, RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord,
-    StepId, StepLease, StepResult, TransitionTrigger,
+    MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty, StateId, StepAttempt,
+    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
 };
 
 mod decisions;
@@ -100,6 +100,17 @@ pub struct CeremonyInstance {
     #[serde(default)]
     participant_bindings: BTreeMap<RoleId, CeremonyParticipantBinding>,
     context: CeremonyContext,
+    /// What earlier sessions in this session's memory scope decided,
+    /// as this session was told at its opening.
+    ///
+    /// Absent for a session that recalled nothing, which is every
+    /// session that declares no scope of its own: the default scope is
+    /// the session's own id, and nobody else writes there. Kept as it
+    /// was read rather than re-read on demand — what a session was told
+    /// is part of what it did, and answering later with today's memory
+    /// would judge the session by knowledge it did not have.
+    #[serde(default)]
+    recollection: Option<SessionRecollection>,
     idempotency_keys: BTreeSet<IdempotencyKey>,
     #[serde(with = "time::serde::rfc3339")]
     created_at: OffsetDateTime,
@@ -163,6 +174,13 @@ impl CeremonyInstance {
     #[must_use]
     pub fn bound_definition(&self) -> Option<CeremonyDefinitionDigest> {
         self.bound_definition
+    }
+
+    /// What earlier sessions in this session's scope decided, as this
+    /// session was told when it opened.
+    #[must_use]
+    pub fn recollection(&self) -> Option<&SessionRecollection> {
+        self.recollection.as_ref()
     }
 
     /// Whether this instance runs a definition that can be looked up

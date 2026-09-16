@@ -5,8 +5,7 @@ use serde::{Deserialize, Serialize};
 /// The catalogue only names facts the engine can emit today. A type
 /// that nothing can produce is dead vocabulary, and in an audit
 /// catalogue it is worse than dead: it suggests coverage that does not
-/// exist. Publication, participant binding, memory contributions and
-/// artifacts join when their concepts do.
+/// exist. Publication and artifacts join when their concepts do.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditEventType {
@@ -27,6 +26,7 @@ pub enum AuditEventType {
     HumanDeferralRecorded,
     CeremonyCompleted,
     CeremonyFailed,
+    MemoryRecalled,
 }
 
 impl AuditEventType {
@@ -50,6 +50,7 @@ impl AuditEventType {
             Self::HumanDeferralRecorded => "human_deferral_recorded",
             Self::CeremonyCompleted => "ceremony_completed",
             Self::CeremonyFailed => "ceremony_failed",
+            Self::MemoryRecalled => "memory_recalled",
         }
     }
 

@@ -140,9 +140,13 @@ fn event_id(
 ///   the edge: two seats can reach the same conclusion, and one seat
 ///   can say it again with a different why.
 /// - A guard decision is keyed on the guard.
+/// - A recollection is keyed on nothing else, because a session opens
+///   once and reads its memory once: deciding the opening again derives
+///   the same two ids, which is what makes a retried start land once.
 fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
     match event {
         CeremonyEvent::CeremonyInstanceStarted(_) => "session".to_owned(),
+        CeremonyEvent::MemoryRecalled(_) => "recollection".to_owned(),
         CeremonyEvent::ParticipantsBound(bound) => {
             let seated = bound
                 .bindings
