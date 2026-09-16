@@ -10,7 +10,9 @@
 
 mod audit_journal_conformance;
 mod ceremony_definition_publication_conformance;
+mod ceremony_event_store_conformance;
 mod ceremony_session_store_conformance;
+mod ceremony_snapshot_store_conformance;
 mod ceremony_unit_of_work_conformance;
 mod conformance_failure;
 mod conformance_fixtures;
@@ -21,7 +23,9 @@ mod outbox_conformance;
 
 pub use audit_journal_conformance::AuditJournalConformance;
 pub use ceremony_definition_publication_conformance::CeremonyDefinitionPublicationConformance;
+pub use ceremony_event_store_conformance::CeremonyEventStoreConformance;
 pub use ceremony_session_store_conformance::CeremonySessionStoreConformance;
+pub use ceremony_snapshot_store_conformance::CeremonySnapshotStoreConformance;
 pub use ceremony_unit_of_work_conformance::CeremonyUnitOfWorkConformance;
 pub use conformance_failure::ConformanceFailure;
 pub use memory_conformance::MemoryConformance;

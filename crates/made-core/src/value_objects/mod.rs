@@ -54,7 +54,7 @@ pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use audit::{
     AuditActor, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
-    AuditRecordHash, AuditSequence, EventSchemaVersion,
+    AuditRecordHash, AuditSequence, EventSchemaVersion, GlobalPosition, StreamVersion,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,
