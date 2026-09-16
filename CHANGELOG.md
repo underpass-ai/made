@@ -157,7 +157,15 @@ operator command.
   numbers that moved with every slice of WS-F, and the slices that have landed
   — A1–A4, F1–F4, G5, H1–H4, and H5 except its per-crate coverage floors —
   say so in their rows, as ADR-012, ADR-013 and ADR-014 now do in their status
-  lines. (#69)
+  lines. Four counts that had drifted the other way go with them: the tool
+  table in `docs/operations/mcp-stdio.md` had 37 rows under a sentence
+  promising 41, and now carries every backend-owned tool in the order
+  `GRPC_TOOL_NAMES` lists them; `crates/made-mcp/README.md` said the container
+  test checks 35 tools and now names `parity.tsv`; the `justfile` said CI does
+  not run coverage, which it has since the impact planner landed; and
+  `docs/dev-loop.md` said a green `just check` means a green pull request,
+  when `just check` leaves out coverage, the chart and the container image.
+  (#69)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
