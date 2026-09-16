@@ -263,15 +263,24 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // Advancing a session one move at a time. The transcript store is
     // shared with the whole-run use case above: what a step said has
     // to be there for the next step whichever way the run was driven.
+    // No memory configured, and said so rather than pretended: a
+    // session with nowhere to record what it decided still runs, it
+    // just forgets, and a session opening in a shared scope is told
+    // nothing because there is nothing there. One adapter serves both
+    // directions, so swapping this for a durable one is the whole of
+    // turning memory on.
+    let memory = Arc::new(ForgetfulMemory::new());
     let start_ceremony = Arc::new(StartCeremonyUseCase::new(
         ceremony_definitions.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        memory.clone(),
     ));
     let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
         ceremony_publications.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        memory.clone(),
     ));
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
@@ -295,11 +304,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
-    // No memory configured, and said so rather than pretended: a
-    // session with nowhere to record what it decided still runs, it
-    // just forgets. Swapping this for a durable writer is the
-    // whole of turning it on.
-    let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
+    let session_memory = Arc::new(SessionMemoryRecorder::new(memory));
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),

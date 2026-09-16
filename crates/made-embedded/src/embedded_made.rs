@@ -33,7 +33,8 @@ use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    CeremonyTranscriptStorePort, ClockPort, MemoryReaderPort, MemoryWriterPort,
+    MetricsRecorderPort, StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -74,6 +75,9 @@ pub struct EmbeddedMade {
     /// so, which is the honest shape of "not turned on". Handing it a
     /// durable writer instead is the whole of turning it on.
     session_memory: Arc<SessionMemoryRecorder>,
+    /// What a session opening in a shared scope is told earlier ones
+    /// decided. The same adapter the recorder writes through.
+    memory_reader: Arc<dyn MemoryReaderPort>,
 }
 
 impl EmbeddedMade {
@@ -111,6 +115,7 @@ impl EmbeddedMade {
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
+        memory_reader: Arc<dyn MemoryReaderPort>,
     ) -> Self {
         Self {
             definitions,
@@ -125,6 +130,7 @@ impl EmbeddedMade {
             statistics,
             started_at: Instant::now(),
             session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
+            memory_reader,
         }
     }
 
@@ -386,6 +392,7 @@ impl EmbeddedMade {
             self.publications.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await
@@ -396,6 +403,7 @@ impl EmbeddedMade {
             self.definitions.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await

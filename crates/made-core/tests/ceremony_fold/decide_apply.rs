@@ -98,10 +98,14 @@ fn starting_is_the_fold_of_the_opening_event() {
         id.clone(),
         &definition,
         CeremonyContext::empty(),
+        None,
         OPENED_AT,
     );
-    let CeremonyEvent::CeremonyInstanceStarted(payload) = &started else {
-        panic!("starting yields the opening event, got {started:?}");
+    let [opening] = started.as_slice() else {
+        panic!("a session that recalls nothing opens with one event, got {started:?}");
+    };
+    let CeremonyEvent::CeremonyInstanceStarted(payload) = opening else {
+        panic!("starting yields the opening event, got {opening:?}");
     };
     assert_eq!(
         payload,
@@ -118,18 +122,20 @@ fn starting_is_the_fold_of_the_opening_event() {
     );
     assert_eq!(CeremonyInstance::from_started(payload), opened(&definition));
     assert_eq!(
-        CeremonyInstance::rehydrate([&started]).unwrap(),
+        CeremonyInstance::rehydrate(&started).unwrap(),
         opened(&definition)
     );
 
     let published = PublishedCeremonyDefinition::seal(definition.clone()).unwrap();
-    let CeremonyEvent::CeremonyInstanceStarted(bound) = CeremonyInstance::decide_start_bound(
+    let bound_opening = CeremonyInstance::decide_start_bound(
         id.clone(),
         &published,
         CeremonyContext::empty(),
+        None,
         OPENED_AT,
-    ) else {
-        panic!("starting bound yields the opening event");
+    );
+    let [CeremonyEvent::CeremonyInstanceStarted(bound)] = bound_opening.as_slice() else {
+        panic!("starting bound yields the opening event, got {bound_opening:?}");
     };
     assert_eq!(bound.bound_definition, Some(published.digest()));
     assert_eq!(
@@ -863,11 +869,14 @@ fn a_second_opening_leaves_the_session_untouched() {
         CeremonyId::new("someone-else").unwrap(),
         &definition,
         CeremonyContext::empty(),
+        None,
         at(9),
     );
 
     let mut applied = instance.clone();
-    applied.apply(&reopening);
+    for event in &reopening {
+        applied.apply(event);
+    }
 
     assert_eq!(applied, instance);
 }

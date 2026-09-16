@@ -101,7 +101,12 @@ impl RunCeremonyUseCase {
 
         let started_at = self.clock.now();
         let opener = session_facts::party(&actor_id, actor_kind)?;
-        let started = CeremonyInstance::decide_start(id.clone(), &definition, context, started_at);
+        // The one-shot driver reads no memory. It takes a definition
+        // handed to it and runs it end to end; a recollection is what a
+        // session that outlives one call is opened with, and E1 gives
+        // it to the two use cases that open one.
+        let started =
+            CeremonyInstance::decide_start(id.clone(), &definition, context, None, started_at);
         // The guard proper: the append expects the stream to be empty,
         // so of two runs that both got past the check above, the loser
         // is told rather than winning quietly.

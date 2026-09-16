@@ -333,12 +333,13 @@ impl Generator {
 fn run(seed: u64, coverage: &mut BTreeMap<AuditEventType, usize>) {
     let definition = definition();
     let mut generator = Generator::seeded(seed);
-    let mut stream = vec![CeremonyInstance::decide_start(
+    let mut stream = CeremonyInstance::decide_start(
         CeremonyId::new("ceremony-fold").unwrap(),
         &definition,
         CeremonyContext::empty(),
+        None,
         at(0),
-    )];
+    );
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 

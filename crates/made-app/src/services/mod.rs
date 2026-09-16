@@ -9,6 +9,7 @@ mod retry_attempts;
 pub(crate) mod session_facts;
 mod session_memory_projection;
 mod session_memory_recorder;
+pub(crate) mod session_recall;
 mod session_stream;
 
 pub use auto_dispatch::AutoDispatchService;
