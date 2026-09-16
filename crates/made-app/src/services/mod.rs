@@ -4,6 +4,7 @@ mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod conflict_policy;
 mod loaded_session;
+pub(crate) mod memory_scope_resolver;
 mod retry_attempts;
 pub(crate) mod session_facts;
 mod session_memory_projection;

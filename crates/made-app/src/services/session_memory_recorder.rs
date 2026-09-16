@@ -26,9 +26,10 @@ use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::MemoryWriterPort;
 use made_core::value_objects::{
-    CeremonyInterventionId, CeremonyRecordRef, MemoryProvenance, MemoryScope, MemoryWrite,
+    CeremonyInterventionId, CeremonyRecordRef, MemoryProvenance, MemoryWrite,
 };
 
+use super::memory_scope_resolver;
 use super::session_memory_projection as projection;
 
 /// Writes what a session decided, and why, into memory that outlives it.
@@ -191,7 +192,7 @@ impl SessionMemoryRecorder {
                 return;
             }
         };
-        let scope = match MemoryScope::of_ceremony(instance.id()) {
+        let scope = match memory_scope_resolver::of_instance(instance) {
             Ok(scope) => scope,
             Err(error) => {
                 tracing::warn!(ceremony_id = %instance.id(), %error, "a session has no memory scope");
