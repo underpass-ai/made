@@ -139,7 +139,7 @@ fn starting_is_the_fold_of_the_opening_event() {
     };
     assert_eq!(bound.bound_definition, Some(published.digest()));
     assert_eq!(
-        CeremonyInstance::from_started(&bound),
+        CeremonyInstance::from_started(bound),
         CeremonyInstance::start_bound(id, &published, CeremonyContext::empty(), OPENED_AT)
     );
 }
