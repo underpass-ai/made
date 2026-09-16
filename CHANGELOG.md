@@ -16,6 +16,45 @@ operator command.
 
 ### Added
 
+- **Recall at start.** A working session can declare a `memory_scope` in the
+  context it is started with, and the engine reads that scope through
+  `MemoryReaderPort` before the session opens. What comes back is rendered —
+  decisions and constraints first, then observations and outcomes, each group
+  in the order memory returned them, bounded at **4096 bytes of summary** with
+  a `truncated` flag when the bound bit — and sealed into the stream as a new
+  `MemoryRecalled` event, in the same append as `CeremonyInstanceStarted`, so
+  a session cannot exist without what it was told. The engine wrote memory and
+  never read it: `MemoryReaderPort` had no consumer at all, and the scope was
+  always the instance's own id, so no ceremony could ever recall another.
+  A scope is now `kind:name` (`ceremony:{id}` is the same grammar), and a
+  session that declares none keeps the default, which means **no shared
+  memory** and says so in the docs. An entry larger than the whole budget is
+  dropped rather than cut. A memory that cannot be read costs a session its
+  recollection and never the session: it is logged at `warn` and the start
+  succeeds. A `memory_scope` that is present and is not a usable scope refuses
+  the start, because falling back to the private default would hand an
+  operator a session that remembers alone while they believe it is sharing.
+  Gated by `crates/made-tests-integration/tests/mcp_parity_session.rs`, whose
+  session now drives two ceremonies in one scope on **both** MCP backends and
+  asserts the second carries the first one's decision and shows
+  `memory_recalled` at sequence 2 — and asserts that a session declaring no
+  scope seals nothing beside its opening, which is why every stream, golden
+  and fixture written until now is unchanged (ADR-013, plan §3.8 E1). (#68)
+- `recollection` on all four surfaces: `CeremonyRecollectionState` and
+  `CeremonyRecalledEntryState` in `underpass.made.v1` with
+  `CeremonyInstanceState.recollection` at field 19, the gRPC mapper, both MCP
+  presenters, the fixture backend a client wires against, and
+  `CeremonySummary.recollection` in `made-api`. A message rather than fields
+  on the state, because proto message presence is the one way this contract
+  can say "told nothing" without it reading as "told an empty scope"; the MCP
+  arms render `null`. `GenerateCeremonyReport` renders a **What earlier
+  sessions decided** section ahead of what the session did. Additive;
+  `buf breaking` against `origin/main` is green. (#68)
+- `authorizes` in the `made_assert_ceremony_reason` schema's `kind` enum. Both
+  request mappers accepted it and the schema refused it first, so the one
+  relation a reviewer looks for — what made an action allowed — could not be
+  asserted through either MCP backend. (#68)
+
 - An **Editions** section in `docs/operations/support-matrix.md`: one row per
   capability group — the groups `made_discover_capabilities` answers with —
   against the four surfaces (the proto contract, MCP on the gRPC backend, MCP
@@ -127,6 +166,21 @@ operator command.
 
 ### Changed
 
+- `EmbeddedMade::open` wires `InProcessSessionMemory` where it wired a memory
+  that forgets, so a declared scope is one an operator can actually use: two
+  sessions in one process, in the same scope, and the second is told what the
+  first decided. It lives as long as the process and does not pretend
+  otherwise — a durable memory in the ceremonies store is plan §3.8 E3. A host
+  that hands its own in through `EmbeddedMadeBuilder::with_memory` is
+  unaffected, and that method now takes one adapter implementing both memory
+  ports: a host that wrote to one backend and read from another would have a
+  memory that never recalls what it wrote. (#68)
+- `StartCeremonyUseCase` and `StartPublishedCeremonyUseCase` take a
+  `MemoryReaderPort`; `CeremonyInstance::decide_start` and `decide_start_bound`
+  take the recollection and return the batch of events an opening produces;
+  `SessionStream::open` appends that batch. `decide` stays pure — the read
+  happens in the use case — and a session with nothing to recall produces the
+  single event it always produced. (#68)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
@@ -281,6 +335,16 @@ operator command.
 
 ### Removed
 
+- `MemoryReaderPort::ask`, `MemoryQuestion`, the `AnsweringQuestions`
+  capability and `MemoryDimension`. `ask` had no consumer outside the
+  conformance suite, no adapter declared the capability, and the dimension was
+  written by the memory projection and read by nobody; the suite now states
+  **nine** properties instead of ten, and every method left on the port has a
+  production consumer or a property behind it. Nothing is lost by the
+  dimension: a contribution is already named after the agenda item it answers
+  (`agenda:{item}:contribution:{n}`). A host implementing the port drops its
+  `ask` and the `dimension` argument to `MemoryEntry::new` (ADR-013, plan §3.8
+  E2). (#68)
 - The in-tree KMP memory adapter: the `made-adapters` feature `kmp`, its
   `kmp` module, the CI matrix arm that built it and its live-kernel test.
   Nothing wired it; both composition roots use `ForgetfulMemory`. Memory
