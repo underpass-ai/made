@@ -18,7 +18,7 @@ use made_adapters::memory::InMemoryCeremonyEventStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::protocol::ToolErrorCode;
-use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
+use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
     ApplyCeremonyTransitionRequest, DeferCeremonyGuardRequest, RequestCeremonyInterventionRequest,
@@ -792,4 +792,55 @@ async fn start_a_session(backend: &dyn MadeMcpToolBackend, ceremony_id: &str) {
         )
         .await
         .expect("made_start_ceremony should succeed");
+}
+
+/// The default lease owner. Both arms publish one rule, in the same
+/// words, on every tool that takes a runner.
+///
+/// What each arm then *sends* is asserted where it is built — the proto
+/// request on the gRPC arm, the validated request on the in-process one
+/// — because a lease is cleared when its step resolves and no read
+/// surface carries the owner today.
+#[tokio::test]
+async fn both_backends_publish_one_default_lease_owner_rule() {
+    let embedded =
+        MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(EmbeddedMade::default()));
+    let remote = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
+        "http://127.0.0.1:1",
+        MadeMcpGrpcTlsConfig::disabled(),
+    ));
+
+    let mut rules = Vec::new();
+    for server in [&embedded, &remote] {
+        let response = server
+            .handle_json_line(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#)
+            .await
+            .expect("tools/list should answer");
+        let listed: Value = serde_json::from_str(&response).expect("tools/list is JSON");
+        let tools = listed["result"]["tools"]
+            .as_array()
+            .expect("a catalog is an array")
+            .clone();
+        for tool in ["made_run_ceremony", "made_run_ceremony_step"] {
+            let schema = tools
+                .iter()
+                .find(|listed| listed["name"] == json!(tool))
+                .unwrap_or_else(|| panic!("{tool} should be listed"));
+            let rule = schema["inputSchema"]["properties"]["lease_owner_id"]["description"]
+                .as_str()
+                .unwrap_or_else(|| panic!("{tool} should describe `lease_owner_id`"))
+                .to_owned();
+            assert!(
+                rule.contains("made-mcp:<backend>"),
+                "{tool} must state the rule it applies: {rule}"
+            );
+            rules.push(rule);
+        }
+    }
+
+    let first = rules.first().expect("there are rules to compare");
+    assert!(
+        rules.iter().all(|rule| rule == first),
+        "one rule, one wording, on every tool and both backends: {rules:#?}"
+    );
 }

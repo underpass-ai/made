@@ -549,6 +549,23 @@ YAML keeps its snapshot but cannot reload its definition, and
 loop is in the
 [embedded ceremony execution runbook](./embedded-ceremony-execution.md).
 
+### Who holds a step lease
+
+`made_run_ceremony`, `made_run_ceremony_step` and
+`made_claim_ceremony_step` all take an optional `lease_owner_id`. Leave
+it out and this MCP server fills it in with `made-mcp:<backend>` —
+`made-mcp:embedded` in process, `made-mcp:grpc` against a cluster —
+before the call reaches the engine. One omission means one owner, and
+which kind of process is holding a lease is readable from the id.
+
+The value is applied here, not left to the engine: a server has its own
+default for clients that speak gRPC directly, and from MCP that default
+is never reached. Name your own runner whenever the host, and not this
+server, is the thing that will come back to finish the step. A blank
+`lease_owner_id` is refused rather than defaulted, on both backends: the
+field's schema says `minLength: 1`, and a caller who wrote it meant to
+name something.
+
 ### Embedded step execution ownership
 
 There are two distinct execution paths:

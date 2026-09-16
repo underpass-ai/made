@@ -10,9 +10,9 @@ use super::embedded_request_fields::{
     load_instance_definition, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
-use crate::protocol::ToolError;
+use crate::embedded::EMBEDDED_BACKEND_NAME;
+use crate::protocol::{default_lease_owner_id, ToolError};
 
-const DEFAULT_LEASE_OWNER_ID: &str = "made-mcp-external-host";
 const DEFAULT_LEASE_TTL_MS: u64 = 300_000;
 
 /// Validated MCP request that leases one step for execution by the host.
@@ -53,7 +53,7 @@ impl TryFrom<&Value> for EmbeddedClaimCeremonyStepRequest {
             .as_object()
             .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
         let lease_owner_id = optional_string(object, "lease_owner_id")?
-            .unwrap_or_else(|| DEFAULT_LEASE_OWNER_ID.to_owned());
+            .unwrap_or_else(|| default_lease_owner_id(EMBEDDED_BACKEND_NAME));
         let idempotency_key = optional_string(object, "idempotency_key")?
             .unwrap_or_else(|| format!("made-mcp-external-{}", Uuid::new_v4()));
         let lease_ttl_ms = optional_u64(object, "lease_ttl_ms")?.unwrap_or_default();
@@ -73,5 +73,49 @@ impl TryFrom<&Value> for EmbeddedClaimCeremonyStepRequest {
                 lease_ttl_ms
             }),
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The request the backend is handed already names a runner, so
+    /// neither engine falls back to a default of its own.
+    #[test]
+    fn an_omitted_runner_becomes_the_backends_own_default() {
+        let request = EmbeddedClaimCeremonyStepRequest::try_from(
+            &json!({ "ceremony_id": "c-1", "step_id": "work", "actor_kind": "agent" }),
+        )
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id.as_str(), "made-mcp:embedded");
+    }
+
+    /// Blank is refused rather than defaulted, as the tool's schema
+    /// says and as the gRPC arm now does too: a caller who wrote the
+    /// field meant to name a runner.
+    #[test]
+    fn a_blank_runner_is_refused_rather_than_defaulted() {
+        let error = EmbeddedClaimCeremonyStepRequest::try_from(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "   ",
+        }))
+        .expect_err("a blank runner is not a runner");
+        assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    #[test]
+    fn a_runner_the_caller_named_is_left_alone() {
+        let request = EmbeddedClaimCeremonyStepRequest::try_from(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_owner_id": "the-hosts-own-runner",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_owner_id.as_str(), "the-hosts-own-runner");
     }
 }

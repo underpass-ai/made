@@ -35,6 +35,13 @@ operator command.
 
 ### Changed
 
+- An omitted `lease_owner_id` on `made_run_ceremony`,
+  `made_run_ceremony_step` and `made_claim_ceremony_step` now becomes
+  `made-mcp:<backend>` — `made-mcp:embedded` or `made-mcp:grpc` — applied by
+  the MCP layer on both backends before the call reaches the engine, and
+  stated in the three tool schemas. The server keeps its own default for
+  direct gRPC clients; MCP never reaches it. A blank `lease_owner_id` is
+  refused on both arms instead of being silently defaulted on one. (#48)
 - Every MCP tool failure now carries one structured envelope —
   `{code, message, retryable}` in the result's `structuredContent`, with the
   text content kept — on both backends. `code` is `unavailable`, `not_found`,

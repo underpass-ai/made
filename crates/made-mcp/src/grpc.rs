@@ -22,6 +22,11 @@ use crate::backend::{
 };
 use crate::protocol::ToolError;
 
+/// What this backend calls itself. Shared with the default lease owner
+/// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
+/// the name `initialize` advertises.
+pub(crate) const GRPC_BACKEND_NAME: &str = "grpc";
+
 /// gRPC-backed implementation of [`MadeMcpToolBackend`].
 ///
 /// Holds a lazily-connected tonic `Channel` (resolved on the first
@@ -51,7 +56,7 @@ impl GrpcMadeMcpBackend {
 #[async_trait]
 impl MadeMcpToolBackend for GrpcMadeMcpBackend {
     fn backend_name(&self) -> &'static str {
-        "grpc"
+        GRPC_BACKEND_NAME
     }
 
     fn grpc_tls_mode_name(&self) -> &'static str {

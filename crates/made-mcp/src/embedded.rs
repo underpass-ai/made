@@ -78,6 +78,11 @@ use self::embedded_run_ceremony_step_request::EmbeddedRunCeremonyStepRequest;
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 
+/// What this backend calls itself. Shared with the default lease owner
+/// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
+/// the name `initialize` advertises.
+pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
+
 /// MCP adapter that executes ceremonies inside the host process.
 #[derive(Clone, Debug, Default)]
 pub struct EmbeddedMadeMcpBackend {
@@ -134,7 +139,7 @@ impl EmbeddedMadeMcpBackend {
 
 impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     fn backend_name(&self) -> &'static str {
-        "embedded"
+        EMBEDDED_BACKEND_NAME
     }
 
     fn supports_tool(&self, name: &str) -> bool {

@@ -10,9 +10,9 @@ use super::embedded_request_fields::{
     context_from_json, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
-use crate::protocol::ToolError;
+use crate::embedded::EMBEDDED_BACKEND_NAME;
+use crate::protocol::{default_lease_owner_id, ToolError};
 
-const DEFAULT_LEASE_OWNER_ID: &str = "made-mcp-embedded";
 const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
 
 /// Validated MCP request for an embedded ceremony execution.
@@ -59,7 +59,7 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyRequest {
         let ceremony_id =
             optional_string(object, "ceremony_id")?.unwrap_or_else(|| Uuid::new_v4().to_string());
         let lease_owner_id = optional_string(object, "lease_owner_id")?
-            .unwrap_or_else(|| DEFAULT_LEASE_OWNER_ID.to_owned());
+            .unwrap_or_else(|| default_lease_owner_id(EMBEDDED_BACKEND_NAME));
         let lease_ttl_ms = optional_u64(object, "lease_ttl_ms")?.unwrap_or_default();
         let context = object
             .get("context")
