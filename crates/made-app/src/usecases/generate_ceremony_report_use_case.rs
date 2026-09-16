@@ -190,7 +190,7 @@ mod tests {
             .usecase
             .execute(GenerateCeremonyReportInput::new(
                 vec![ceremony_id()],
-                Some("Incident review".to_owned()),
+                Some("Session review".to_owned()),
             ))
             .await
             .unwrap();
@@ -198,7 +198,7 @@ mod tests {
         assert_eq!(report.ceremony_count(), 1);
         assert_eq!(report.completed_count(), 0);
         assert_eq!(report.incomplete_count(), 1);
-        assert!(report.markdown().starts_with("# Incident review\n\n"));
+        assert!(report.markdown().starts_with("# Session review\n\n"));
         for section in [
             "### Definition",
             "### Steps and outputs",

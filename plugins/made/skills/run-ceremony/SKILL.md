@@ -156,11 +156,28 @@ the safe read-only meaning: inspect logs, query a database without writes, and
 peek at queue metadata without consuming messages. Ask for explicit approval
 before any consequential mutation.
 
+## Reading what a session left behind
+
+`made_read_ceremony_events` reads the sealed records of one ceremony's event
+stream, in order, with their payloads and hash chain. Reading is by position:
+send `from_version` as the version you have already seen — omit it to start at
+the first record — and the answer carries `next_version` to send back for the
+next page. Use it when the user asks what actually happened, or when a claim
+about the session has to be traceable to the record that supports it: quote
+the record, not a summary of it.
+
+`made_get_ceremony_transcript` reads the ordered contributions the steps
+produced. On the bundled embedded process the transcript lives in memory and
+empties on restart, while the event stream does not; when the transcript is
+empty for a session that clearly ran, read the stream instead of telling the
+user nothing happened.
+
+Both are read-only and served on every backend.
+
 ## Reports
 
-When the user asks for a ceremony report, confirm through discovery that
-`made_generate_ceremony_report` is available, select exact ceremony ids, and
-call it. Treat `structuredContent.report_markdown` as the generated artifact.
-The tool is read-only and returns `persisted: false`; save it only through a
-host-authorized file or document operation and report that destination
-separately.
+When the user asks for a ceremony report, select exact ceremony ids and call
+`made_generate_ceremony_report`. Treat `structuredContent.report_markdown` as
+the generated artifact. The tool is read-only and returns `persisted: false`;
+save it only through a host-authorized file or document operation and report
+that destination separately.

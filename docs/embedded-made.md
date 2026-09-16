@@ -132,11 +132,19 @@ human-active execution:
 - start, run or complete an individual step;
 - approve a human guard;
 - apply an authorized transition;
-- retrieve definitions, an instance and its transcript.
+- retrieve definitions, an instance and its transcript;
+- read what a session left behind: `audit_records(id)` for the whole sealed
+  stream — which is what a caller verifying the chain wants, since a chain is
+  verified from its first record — and `audit_records_from(id, from, limit)`
+  for one page of it, answering with where the reader now stands;
+- render the Markdown report over one or more sessions with `report(input)`.
 
 Mounting and queries pass through `made-app` use cases. Execution passes
 through the existing ceremony use cases; the embedded crate contains no second
-state machine.
+state machine. The report is no exception: it is
+`GenerateCeremonyReportUseCase`, a projection of persisted state (ADR-006) that
+the deployable edition renders through as well, so the same sessions in the
+same state report the same bytes on either edition.
 
 ## Dependency boundary
 

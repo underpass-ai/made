@@ -197,7 +197,7 @@ mod tests {
 
         let bytes = json["record_hash"].as_array().expect("a digest is bytes");
         assert_eq!(bytes.len(), 32);
-        assert!(bytes.iter().all(|byte| byte.is_u64()));
+        assert!(bytes.iter().all(Value::is_u64));
     }
 
     /// The keys are the record's own, because a client reads them back

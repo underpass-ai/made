@@ -27,7 +27,7 @@ impl MadeGrpcService {
         // turns that into the default. Proto3 has no other way to say
         // an absent scalar, and asking for no records is not a
         // question anyone means.
-        let limit = (request.limit > 0).then(|| request.limit as usize);
+        let limit = (request.limit > 0).then_some(request.limit as usize);
         let page = self
             .read_ceremony_events
             .execute(ReadCeremonyEventsInput::new(

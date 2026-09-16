@@ -43,7 +43,8 @@ source, manifest, skill, launcher, and tests remain reviewable.
 
 The installed plugin exposes the embedded ceremony engine's design,
 publication, one-shot and incremental execution, delegated-host
-claim/work/complete coordination, recovery, interventions, evidence and
+claim/work/complete coordination, recovery, interventions, evidence, the
+read-only reads of the sealed event stream and the transcript, and the
 read-only report projection. `made_discover_capabilities`
 describes the exact running version, backend and executable surface, while
 `made_get_help` returns `user` or `agent` guidance derived against that

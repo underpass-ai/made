@@ -117,6 +117,9 @@ Executable scope:
   `made_get_ceremony_instance` for persistent, human-authorized flows;
 - `made_list_ceremony_instances` to rediscover resumable meetings known to
   the active backend;
+- `made_read_ceremony_events` and `made_get_ceremony_transcript` to read what
+  a session left behind: the sealed records of its event stream, digests and
+  hash chain included, and the ordered contributions its steps produced;
 - `made_generate_ceremony_report` to project selected ceremony snapshots
   and their ordered audit journals into deterministic Markdown. It returns
   `persisted: false`; the host chooses whether and where to save that text;
@@ -128,7 +131,8 @@ Executable scope:
 
 The bundled zero-infrastructure process persists ceremony instances, published
 definitions, the audit journal and outbox in SQLite. Mounted definitions and
-transcripts remain in memory. `made_list_ceremony_instances` therefore recovers
+transcripts remain in memory — so `made_get_ceremony_transcript` empties on
+restart while `made_read_ceremony_events` does not. `made_list_ceremony_instances` therefore recovers
 published-definition sessions after a process restart and marks ad-hoc sessions
 as unrehydratable instead of hiding their persisted snapshots.
 

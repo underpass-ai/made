@@ -83,10 +83,10 @@ mod tests {
     #[test]
     fn a_report_carries_the_title_it_was_given() {
         let request = build_generate_ceremony_report_request(
-            &json!({ "ceremony_ids": ["a"], "title": "Incident review" }),
+            &json!({ "ceremony_ids": ["a"], "title": "Session review" }),
         )
         .unwrap();
 
-        assert_eq!(request.title, "Incident review");
+        assert_eq!(request.title, "Session review");
     }
 }

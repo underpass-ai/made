@@ -152,7 +152,10 @@ backend (23 tools), and the Rust facade (`EmbeddedMade`, 31 methods, of which
   `made-app` and have no gRPC handler. The audit journal and the transcript
   have no read RPC at all. History shows the pattern: every host-collaboration
   affordance landed embedded-only and never caught up (`ccc0997`, `47a1f44`,
-  `a560d34`).
+  `a560d34`). *[As of F3c: 41 RPCs, and no embedded-only ceremony tool — all
+  four reached the contract in F3a, F3b and F3c, which also added the two
+  stream and transcript reads; this paragraph is the inventory that motivated
+  WS-F, kept as the dated snapshot it was.]*
 - **gRPC-only, no embedded path: sixteen tools** in three clusters —
   deliberation (`Deliberate`, `StreamDeliberation`, `GetDeliberationResult`,
   `Orchestrate`, `ProcessTriggerEvent`, `RunCouncilDecision`), configuration
