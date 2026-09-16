@@ -645,17 +645,26 @@ mod tests {
                     assert!(markdown.contains("## Preconditions"));
                     assert!(markdown.contains("## Authority boundaries"));
                     assert!(markdown.contains("## Error handling"));
-                    assert_eq!(
+                    // On both backends now: the delegated-host
+                    // protocol reached the contract in parity slice
+                    // F3a, so a host that delegates step execution
+                    // gets the same instructions against a cluster.
+                    assert!(
                         markdown.contains("## Delegated-host sequence"),
-                        backend == "all"
+                        "{backend} agent help drops the delegated-host sequence"
                     );
                 }
             }
         }
     }
 
+    /// Help offers what the backend can actually run, and nothing
+    /// else. Reporting is still rendered inside the MCP adapter and
+    /// has no RPC behind it, so it must not be recommended to a
+    /// client pointed at a cluster; the delegated-host protocol has
+    /// one since parity slice F3a, so it must be.
     #[test]
-    fn fixture_and_grpc_help_omit_filtered_reporting_and_delegated_execution() {
+    fn fixture_and_grpc_help_omit_filtered_reporting_but_keep_delegated_execution() {
         for backend in ["fixture", "grpc"] {
             let user = help_result(&json!({"audience": "user"}), is_grpc_tool).unwrap();
             let user_text = serde_json::to_string(&user).unwrap().to_ascii_lowercase();
@@ -665,13 +674,14 @@ mod tests {
             );
 
             let agent = help_result(&json!({"audience": "agent"}), is_grpc_tool).unwrap();
-            assert!(agent["delegated_host_sequence"]
-                .as_array()
-                .unwrap()
-                .is_empty());
+            let sequence = agent["delegated_host_sequence"].as_array().unwrap();
+            assert!(
+                !sequence.is_empty(),
+                "{backend} agent help drops the delegated-host sequence it can serve"
+            );
             let agent_text = serde_json::to_string(&agent).unwrap();
-            assert!(!agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
-            assert!(!agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
+            assert!(agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
+            assert!(agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
             assert!(!agent_text
                 .to_ascii_lowercase()
                 .contains("report generation"));

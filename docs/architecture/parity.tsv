@@ -23,8 +23,8 @@ explain_ceremony_draft	ExplainCeremonyDraft	made_explain_ceremony_draft	made_exp
 publish_ceremony_definition	PublishCeremonyDefinition	made_publish_ceremony_definition	made_publish_ceremony_definition	publish_definition	publish_definition	
 diff_ceremony_definitions	DiffCeremonyDefinitions	made_diff_ceremony_definitions	made_diff_ceremony_definitions	diff_definitions	-	
 bind_ceremony_participants	BindCeremonyParticipants	made_bind_ceremony_participants	made_bind_ceremony_participants	bind_participants	-	
-claim_ceremony_step	-	-	made_claim_ceremony_step	start_step	-	F3a: no RPC yet
-complete_ceremony_step	-	-	made_complete_ceremony_step	complete_step	-	F3a: no RPC yet
+claim_ceremony_step	ClaimCeremonyStep	made_claim_ceremony_step	made_claim_ceremony_step	start_step	-	
+complete_ceremony_step	CompleteCeremonyStep	made_complete_ceremony_step	made_complete_ceremony_step	complete_step	-	
 design_ceremony	-	-	made_design_ceremony	-	-	F3b: design logic lives in the MCP adapter; no use case, no RPC, no facade method
 generate_ceremony_report	-	-	made_generate_ceremony_report	-	-	F3c: rendered in the MCP adapter from instance + definition + audit records
 read_ceremony_events	-	-	-	audit_records	-	F3c: facade reads the stream; no RPC, no tool

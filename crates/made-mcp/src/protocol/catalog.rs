@@ -61,16 +61,6 @@ fn tool_catalog() -> Vec<Value> {
         ceremony_design_schema(),
     ));
     tools.push(tool_def(
-        CLAIM_CEREMONY_STEP_TOOL,
-        "Acquire a lease for one ceremony step that the MCP host will execute with its own agents and tools. This records the claim but performs no external work.",
-        claim_ceremony_step_schema(),
-    ));
-    tools.push(tool_def(
-        COMPLETE_CEREMONY_STEP_TOOL,
-        "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step.",
-        complete_ceremony_step_schema(),
-    ));
-    tools.push(tool_def(
         GENERATE_CEREMONY_REPORT_TOOL,
         "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
         ceremony_report_schema(),
@@ -381,6 +371,16 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                     }
                 }
             }),
+        ),
+        tool_def(
+            CLAIM_CEREMONY_STEP_TOOL,
+            "Acquire a lease for one ceremony step that the MCP host will execute with its own agents and tools. This records the claim but performs no external work.",
+            claim_ceremony_step_schema(),
+        ),
+        tool_def(
+            COMPLETE_CEREMONY_STEP_TOOL,
+            "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step.",
+            complete_ceremony_step_schema(),
         ),
         tool_def(
             "made_get_status",

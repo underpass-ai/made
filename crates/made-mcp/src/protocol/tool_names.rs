@@ -25,7 +25,7 @@ pub(crate) const DIFF_CEREMONY_DEFINITIONS_TOOL: &str = "made_diff_ceremony_defi
 pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "made_bind_ceremony_participants";
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_ceremony";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 35] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 37] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -59,6 +59,8 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 35] = [
     PUBLISH_CEREMONY_DEFINITION_TOOL,
     DIFF_CEREMONY_DEFINITIONS_TOOL,
     BIND_CEREMONY_PARTICIPANTS_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL,
+    COMPLETE_CEREMONY_STEP_TOOL,
     "made_get_status",
     "made_get_metrics",
 ];

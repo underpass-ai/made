@@ -72,6 +72,8 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_publish_ceremony_definition" => publish_definition_fixture(),
                 "made_diff_ceremony_definitions" => diff_definitions_fixture(),
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
+                "made_claim_ceremony_step" => ceremony_instance_fixture(),
+                "made_complete_ceremony_step" => ceremony_instance_fixture(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
