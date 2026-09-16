@@ -21,6 +21,55 @@ pub(super) fn ceremony_report_schema() -> Value {
     })
 }
 
+/// What an unasked-for `limit` takes, and the most any read answers
+/// with.
+///
+/// The engine owns both — they are
+/// `made_app::usecases::ReadCeremonyEventsInput::DEFAULT_LIMIT` and
+/// `MAX_LIMIT` — and they are repeated here because this crate builds
+/// without `made-app` when only the gRPC backend is compiled in. A
+/// test pins the two against each other, so a schema that promised
+/// something the engine does not do fails rather than misleads.
+pub(super) const DEFAULT_EVENT_PAGE_LIMIT: usize = 200;
+pub(super) const EVENT_PAGE_LIMIT_CAP: usize = 1000;
+
+pub(super) fn read_ceremony_events_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id. A ceremony with no stream is not found."),
+            "from_version": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Stream version you have already seen; the answer starts at the record after it. Omitted or 0 reads from the first record. To continue a read, send back the `next_version` of the previous answer. Reading is by position, not by a named cursor the server keeps for you."
+            },
+            "limit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": EVENT_PAGE_LIMIT_CAP,
+                "description": format!(
+                    "How many records at most. Omitted or 0 takes {DEFAULT_EVENT_PAGE_LIMIT}; \
+                     {EVENT_PAGE_LIMIT_CAP} is the cap, and a longer stream is read in further \
+                     calls from `next_version`."
+                )
+            }
+        }
+    })
+}
+
+pub(super) fn get_ceremony_transcript_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id.")
+        }
+    })
+}
+
 pub(super) fn start_published_ceremony_schema() -> Value {
     json!({
         "type": "object",

@@ -4,7 +4,8 @@ use crate::protocol::{
     COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DEFER_CEREMONY_GUARD_TOOL,
     DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL,
@@ -99,6 +100,17 @@ pub(super) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
         id: "service_observability",
         description: "Inspect service health and statistics.",
         tools: &["made_get_status", "made_get_metrics"],
+    },
+    // Its own group rather than part of `ceremony_reporting`: reading
+    // the sealed records and the transcript answers "what happened",
+    // and what a caller does with that is its own business. Reporting
+    // answers "give me the document", which is one particular thing to
+    // do with it, and a host may want to offer either without the
+    // other.
+    CapabilityGroup {
+        id: "ceremony_history",
+        description: "Read the sealed event stream and the transcript a ceremony produced.",
+        tools: &[READ_CEREMONY_EVENTS_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL],
     },
     CapabilityGroup {
         id: "ceremony_reporting",

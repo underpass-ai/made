@@ -35,9 +35,10 @@ use made_app::usecases::{
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
@@ -192,8 +193,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
     };
-    let ceremony_stream = Arc::new(SessionStream::new(ceremony_events, ceremony_snapshots));
+    let ceremony_stream = Arc::new(SessionStream::new(
+        ceremony_events.clone(),
+        ceremony_snapshots,
+    ));
 
+    // In memory whichever store the state went to, and known to be: a
+    // transcript read over gRPC answers with what this process holds,
+    // and a restart empties it. The read RPC is still the right
+    // surface — F3c gives it one — and a durable transcript store is
+    // its own change.
     let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
         Arc::new(InMemoryCeremonyTranscriptStore::new());
 
@@ -271,7 +280,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_step_handler,
             clock.clone(),
         )
-        .with_transcript_store(ceremony_transcript_store),
+        .with_transcript_store(ceremony_transcript_store.clone()),
     );
     // The delegated-host protocol. Claiming and completing are the
     // same two use cases the embedded edition has always called; only
@@ -395,6 +404,18 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
     let list_ceremony_instances =
         Arc::new(ListCeremonyInstancesUseCase::new(ceremony_stream.clone()));
+    // What a session left behind. The stream read goes to the event
+    // store directly — records, not the session they fold to — and the
+    // report composes the session, its definition and its stream into
+    // the one projection both editions render (ADR-006).
+    let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
+    let get_ceremony_transcript =
+        Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_transcript_store));
+    let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
+        get_ceremony_instance.clone(),
+        resolve_ceremony_definition.clone(),
+        ceremony_events,
+    ));
 
     let grpc_service = made_adapters::grpc::MadeGrpcService::builder()
         .deliberate(deliberate)
@@ -420,6 +441,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
+        .read_ceremony_events(read_ceremony_events)
+        .get_ceremony_transcript(get_ceremony_transcript)
+        .generate_ceremony_report(generate_ceremony_report)
         .publish_ceremony_definition(publish_ceremony_definition)
         .diff_ceremony_definitions(diff_ceremony_definitions)
         .bind_ceremony_participants(bind_ceremony_participants)

@@ -7,8 +7,9 @@ mod embedded_assert_ceremony_reason_request;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_ceremony_draft_presenter;
 mod embedded_ceremony_draft_request;
+mod embedded_ceremony_history_presenter;
+mod embedded_ceremony_id_request;
 mod embedded_ceremony_instance_presenter;
-mod embedded_ceremony_report_presenter;
 mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
@@ -17,9 +18,9 @@ mod embedded_defer_ceremony_guard_request;
 mod embedded_design_ceremony_request;
 mod embedded_diff_ceremony_definitions_request;
 mod embedded_generate_ceremony_report_request;
-mod embedded_get_ceremony_instance_request;
 mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
+mod embedded_read_ceremony_events_request;
 mod embedded_request_ceremony_intervention_request;
 mod embedded_request_fields;
 mod embedded_respond_to_ceremony_intervention_request;
@@ -42,10 +43,10 @@ use crate::protocol::{
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
+    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -56,8 +57,11 @@ use self::embedded_ceremony_draft_presenter::{
     present_definition_diff, EmbeddedCeremonyDraftPresenter,
 };
 use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
+use self::embedded_ceremony_history_presenter::{
+    present_ceremony_events, present_ceremony_report, present_ceremony_transcript,
+};
+use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
-use self::embedded_ceremony_report_presenter::EmbeddedCeremonyReportPresenter;
 use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest;
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
@@ -66,9 +70,9 @@ use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardReque
 use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
 use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
 use self::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyReportRequest;
-use self::embedded_get_ceremony_instance_request::EmbeddedGetCeremonyInstanceRequest;
 use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
 use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
+use self::embedded_read_ceremony_events_request::EmbeddedReadCeremonyEventsRequest;
 use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
 use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
 use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
@@ -166,6 +170,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | START_PUBLISHED_CEREMONY_TOOL
                 | DIFF_CEREMONY_DEFINITIONS_TOOL
                 | BIND_CEREMONY_PARTICIPANTS_TOOL
+                | READ_CEREMONY_EVENTS_TOOL
+                | GET_CEREMONY_TRANSCRIPT_TOOL
                 | GENERATE_CEREMONY_REPORT_TOOL
         )
     }
@@ -300,17 +306,42 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     self.present_instance(&ceremony_id).await
                 }
                 GET_CEREMONY_INSTANCE_TOOL => {
-                    let request = EmbeddedGetCeremonyInstanceRequest::try_from(arguments)
+                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.into_ceremony_id();
                     self.present_instance(&ceremony_id).await
                 }
-                GENERATE_CEREMONY_REPORT_TOOL => {
-                    let request = EmbeddedGenerateCeremonyReportRequest::try_from(arguments)
+                READ_CEREMONY_EVENTS_TOOL => {
+                    let request = EmbeddedReadCeremonyEventsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    EmbeddedCeremonyReportPresenter::present(&self.made, &request)
-                        .await
-                        .map(tool_success_result)
+                    let input = request.into_input();
+                    let page = self
+                        .made
+                        .audit_records_from(
+                            input.ceremony_id(),
+                            input.from_version(),
+                            Some(input.limit()),
+                        )
+                        .await?;
+                    present_ceremony_events(&page).map(tool_success_result)
+                }
+                GET_CEREMONY_TRANSCRIPT_TOOL => {
+                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let transcript = self.made.transcript(&request.into_ceremony_id()).await?;
+                    Ok(tool_success_result(present_ceremony_transcript(
+                        &transcript,
+                    )))
+                }
+                GENERATE_CEREMONY_REPORT_TOOL => {
+                    // A mapper, not a composer: the projection is the
+                    // use case's (ADR-006), and the server renders the
+                    // same one.
+                    let input = EmbeddedGenerateCeremonyReportRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?
+                        .into_input();
+                    let report = self.made.report(input).await?;
+                    Ok(tool_success_result(present_ceremony_report(&report)))
                 }
                 LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {

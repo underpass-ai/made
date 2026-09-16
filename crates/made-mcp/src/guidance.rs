@@ -14,8 +14,9 @@ use crate::protocol::{
     available_tool_catalog, APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL,
     COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, RUN_CEREMONY_STEP_TOOL,
+    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 mod capability_group;
@@ -183,6 +184,15 @@ fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
             &[
                 (LIST_CEREMONY_INSTANCES_TOOL, "List known instances."),
                 (GET_CEREMONY_INSTANCE_TOOL, "Refresh the selected instance."),
+            ],
+        ),
+        workflow(
+            "inspect_ceremony_history",
+            "Read what a ceremony recorded",
+            "Read the sealed records the session produced and the contributions its steps made, without changing anything.",
+            &[
+                (READ_CEREMONY_EVENTS_TOOL, "Read the stream from the version you have already seen; the answer says where to continue."),
+                (GET_CEREMONY_TRANSCRIPT_TOOL, "Read the ordered contributions the steps produced."),
             ],
         ),
         workflow(
@@ -580,26 +590,56 @@ mod tests {
         );
     }
 
+    /// Discovery advertises what the active backend can run, and
+    /// nothing else.
+    ///
+    /// The gRPC backend no longer filters anything out: every ceremony
+    /// tool has an RPC behind it since parity slice F3c, the report
+    /// included, so that is asserted rather than assumed. The
+    /// filtering itself is shown with a backend that serves nothing
+    /// but the server's own two tools.
     #[test]
     fn discovery_hides_backend_tools_the_backend_cannot_execute() {
-        let result = discovery_result(
-            McpServerIdentity::new("test-mcp", "1.0.0"),
-            "fixture",
-            "disabled",
-            &json!({}),
-            is_grpc_tool,
-        )
-        .unwrap();
-        let names = result["tools"]
+        let names = |supports: fn(&str) -> bool| {
+            discovery_result(
+                McpServerIdentity::new("test-mcp", "1.0.0"),
+                "fixture",
+                "disabled",
+                &json!({}),
+                supports,
+            )
+            .unwrap()
+        };
+
+        let over_the_wire = names(is_grpc_tool);
+        let advertised = over_the_wire["tools"]
             .as_array()
             .unwrap()
             .iter()
             .map(|tool| tool["name"].as_str().unwrap())
             .collect::<BTreeSet<_>>();
-        assert!(names.contains(DISCOVER_CAPABILITIES_TOOL));
-        assert!(names.contains(GET_HELP_TOOL));
-        assert!(!names.contains(GENERATE_CEREMONY_REPORT_TOOL));
-        assert!(result["artifact_generators"].as_array().unwrap().is_empty());
+        assert!(advertised.contains(DISCOVER_CAPABILITIES_TOOL));
+        assert!(advertised.contains(GET_HELP_TOOL));
+        assert!(advertised.contains(GENERATE_CEREMONY_REPORT_TOOL));
+        assert!(advertised.contains(READ_CEREMONY_EVENTS_TOOL));
+        assert!(advertised.contains(GET_CEREMONY_TRANSCRIPT_TOOL));
+        assert!(!over_the_wire["artifact_generators"]
+            .as_array()
+            .unwrap()
+            .is_empty());
+
+        let bare = names(is_server_tool);
+        let advertised = bare["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            advertised,
+            BTreeSet::from([DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL])
+        );
+        assert!(bare["artifact_generators"].as_array().unwrap().is_empty());
     }
 
     #[test]
@@ -659,33 +699,46 @@ mod tests {
     }
 
     /// Help offers what the backend can actually run, and nothing
-    /// else. Reporting is still rendered inside the MCP adapter and
-    /// has no RPC behind it, so it must not be recommended to a
-    /// client pointed at a cluster; the delegated-host protocol has
-    /// one since parity slice F3a, so it must be.
+    /// else.
+    ///
+    /// This test used to assert the opposite about reporting: it had
+    /// no RPC behind it, so recommending it to a client pointed at a
+    /// cluster would have sent that client to a tool it could not
+    /// call. Parity slice F3c gave it one, along with the two reads,
+    /// so a host against a cluster is now told about all three — and
+    /// about the delegated-host protocol, which got its RPCs in F3a.
     #[test]
-    fn fixture_and_grpc_help_omit_filtered_reporting_but_keep_delegated_execution() {
-        for backend in ["fixture", "grpc"] {
-            let user = help_result(&json!({"audience": "user"}), is_grpc_tool).unwrap();
-            let user_text = serde_json::to_string(&user).unwrap().to_ascii_lowercase();
-            assert!(
-                !user_text.contains("report"),
-                "{backend} user help recommends unavailable reporting: {user_text}"
-            );
+    fn grpc_help_offers_reporting_history_and_delegated_execution() {
+        let user = help_result(&json!({"audience": "user"}), is_grpc_tool).unwrap();
+        let user_text = serde_json::to_string(&user).unwrap().to_ascii_lowercase();
+        assert!(
+            user_text.contains("report"),
+            "grpc user help drops the reporting it can now serve: {user_text}"
+        );
 
-            let agent = help_result(&json!({"audience": "agent"}), is_grpc_tool).unwrap();
-            let sequence = agent["delegated_host_sequence"].as_array().unwrap();
-            assert!(
-                !sequence.is_empty(),
-                "{backend} agent help drops the delegated-host sequence it can serve"
-            );
-            let agent_text = serde_json::to_string(&agent).unwrap();
-            assert!(agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
-            assert!(agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
-            assert!(!agent_text
-                .to_ascii_lowercase()
-                .contains("report generation"));
-        }
+        let agent = help_result(&json!({"audience": "agent"}), is_grpc_tool).unwrap();
+        let sequence = agent["delegated_host_sequence"].as_array().unwrap();
+        assert!(
+            !sequence.is_empty(),
+            "grpc agent help drops the delegated-host sequence it can serve"
+        );
+        let agent_text = serde_json::to_string(&agent).unwrap();
+        assert!(agent_text.contains(CLAIM_CEREMONY_STEP_TOOL));
+        assert!(agent_text.contains(COMPLETE_CEREMONY_STEP_TOOL));
+        assert!(agent_text
+            .to_ascii_lowercase()
+            .contains("report generation"));
+
+        // Reading what a session recorded is a workflow on this
+        // backend now, not only in process.
+        let workflow_ids = agent["workflows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|workflow| workflow["id"].as_str().unwrap())
+            .collect::<BTreeSet<_>>();
+        assert!(workflow_ids.contains("inspect_ceremony_history"), "{agent}");
+        assert!(workflow_ids.contains("generate_report"), "{agent}");
     }
 
     #[test]

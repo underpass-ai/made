@@ -10,12 +10,13 @@ use made_app::usecases::{
     BindCeremonyParticipantsUseCase, CeremonyDraftView, CeremonyInstanceView,
     CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
     CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
-    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase,
-    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::error::DomainError;
@@ -35,8 +36,10 @@ use super::mappers::{
     complete_ceremony_step_input_from_proto, council_summary_from,
     defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
     diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
+    generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
     orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
-    publish_ceremony_definition_response_from, request_ceremony_intervention_input_from_proto,
+    publish_ceremony_definition_response_from, read_ceremony_events_response_from,
+    request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
@@ -57,6 +60,7 @@ use statistics_mapper::statistics_to_proto;
 mod authoring_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
+mod ceremony_history_handlers;
 mod council_handlers;
 mod descriptor_error;
 mod register_agent_descriptor;
@@ -92,6 +96,9 @@ pub struct MadeGrpcService {
     pub(super) respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
+    pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
+    pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
+    pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
     pub(super) diff_ceremony_definitions: Arc<DiffCeremonyDefinitionsUseCase>,
     pub(super) bind_ceremony_participants: Arc<BindCeremonyParticipantsUseCase>,
     pub(super) publish_ceremony_definition: Arc<PublishCeremonyDefinitionUseCase>,
@@ -418,6 +425,27 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::DesignCeremonyRequest>,
     ) -> GrpcResult<pb::DesignCeremonyResponse> {
         self.handle_design_ceremony(request).await
+    }
+
+    async fn read_ceremony_events(
+        &self,
+        request: Request<pb::ReadCeremonyEventsRequest>,
+    ) -> GrpcResult<pb::ReadCeremonyEventsResponse> {
+        self.handle_read_ceremony_events(request).await
+    }
+
+    async fn get_ceremony_transcript(
+        &self,
+        request: Request<pb::GetCeremonyTranscriptRequest>,
+    ) -> GrpcResult<pb::GetCeremonyTranscriptResponse> {
+        self.handle_get_ceremony_transcript(request).await
+    }
+
+    async fn generate_ceremony_report(
+        &self,
+        request: Request<pb::GenerateCeremonyReportRequest>,
+    ) -> GrpcResult<pb::GenerateCeremonyReportResponse> {
+        self.handle_generate_ceremony_report(request).await
     }
 
     async fn publish_ceremony_definition(

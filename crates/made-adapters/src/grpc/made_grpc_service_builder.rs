@@ -6,9 +6,10 @@ use made_app::usecases::{
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
@@ -46,6 +47,9 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
+    pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
+    pub(super) get_ceremony_transcript: Option<Arc<GetCeremonyTranscriptUseCase>>,
+    pub(super) generate_ceremony_report: Option<Arc<GenerateCeremonyReportUseCase>>,
     pub(super) diff_ceremony_definitions: Option<Arc<DiffCeremonyDefinitionsUseCase>>,
     pub(super) bind_ceremony_participants: Option<Arc<BindCeremonyParticipantsUseCase>>,
     pub(super) publish_ceremony_definition: Option<Arc<PublishCeremonyDefinitionUseCase>>,
@@ -176,6 +180,21 @@ impl MadeGrpcServiceBuilder {
         collect_ceremony_evidence
     );
     setter!(
+        read_ceremony_events,
+        ReadCeremonyEventsUseCase,
+        read_ceremony_events
+    );
+    setter!(
+        get_ceremony_transcript,
+        GetCeremonyTranscriptUseCase,
+        get_ceremony_transcript
+    );
+    setter!(
+        generate_ceremony_report,
+        GenerateCeremonyReportUseCase,
+        generate_ceremony_report
+    );
+    setter!(
         prepare_ceremony_participants,
         PrepareCeremonyParticipantsUseCase,
         prepare_ceremony_participants
@@ -255,6 +274,9 @@ impl MadeGrpcServiceBuilder {
             respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
+            read_ceremony_events: required!(self, read_ceremony_events),
+            get_ceremony_transcript: required!(self, get_ceremony_transcript),
+            generate_ceremony_report: required!(self, generate_ceremony_report),
             publish_ceremony_definition: required!(self, publish_ceremony_definition),
             diff_ceremony_definitions: required!(self, diff_ceremony_definitions),
             bind_ceremony_participants: required!(self, bind_ceremony_participants),

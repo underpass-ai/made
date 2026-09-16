@@ -6,6 +6,7 @@ use super::ceremony_schemas::{
     ceremony_reason_schema, ceremony_report_schema, ceremony_transition_schema,
     claim_ceremony_step_schema, close_ceremony_intervention_schema,
     collect_ceremony_evidence_schema, complete_ceremony_step_schema,
+    get_ceremony_transcript_schema, read_ceremony_events_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
     run_ceremony_schema, run_ceremony_step_schema, start_ceremony_schema,
     start_published_ceremony_schema,
@@ -21,10 +22,11 @@ use super::tool_names::{
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
-    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL,
 };
 
 /// `tools/list` result filtered to capabilities honored by the active
@@ -55,11 +57,6 @@ fn tool_catalog() -> Vec<Value> {
     // or an RPC with no tool, is a surface that exists on one side
     // only, which is how two distributions drift apart.
     let mut tools = grpc_tool_catalog();
-    tools.push(tool_def(
-        GENERATE_CEREMONY_REPORT_TOOL,
-        "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
-        ceremony_report_schema(),
-    ));
     tools.push(tool_def(
         DISCOVER_CAPABILITIES_TOOL,
         "Discover this server's version, active backend, executable tool catalog, capability groups, and artifact generators as machine-readable data.",
@@ -381,6 +378,21 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             DESIGN_CEREMONY_TOOL,
             "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
             ceremony_design_schema(),
+        ),
+        tool_def(
+            READ_CEREMONY_EVENTS_TOOL,
+            "Read one page of a ceremony's event stream: the sealed records, in order, with their payloads and hash chain. Read-only, and what comes back can be verified as a chain without trusting this server.",
+            read_ceremony_events_schema(),
+        ),
+        tool_def(
+            GET_CEREMONY_TRANSCRIPT_TOOL,
+            "Read the ordered contributions one ceremony's steps have produced so far. Read-only.",
+            get_ceremony_transcript_schema(),
+        ),
+        tool_def(
+            GENERATE_CEREMONY_REPORT_TOOL,
+            "Generate a deterministic Markdown report from persisted ceremony state and its audit journal. Read-only: the response contains Markdown and does not persist a file.",
+            ceremony_report_schema(),
         ),
         tool_def(
             "made_get_status",

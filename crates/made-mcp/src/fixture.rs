@@ -13,6 +13,12 @@ use serde_json::{json, Value};
 
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
+mod ceremony_history_fixtures;
+
+use ceremony_history_fixtures::{
+    ceremony_report_fixture, ceremony_transcript_fixture, read_ceremony_events_fixture,
+};
+
 /// Backend that returns canned JSON for every tool. The shapes are
 /// kept aligned with what [`crate::grpc::GrpcMadeMcpBackend`] will
 /// emit in live mode so client wiring is identical across modes.
@@ -66,6 +72,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
                 "made_design_ceremony" => design_ceremony_fixture(),
+                "made_read_ceremony_events" => read_ceremony_events_fixture(),
+                "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
+                "made_generate_ceremony_report" => ceremony_report_fixture(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),

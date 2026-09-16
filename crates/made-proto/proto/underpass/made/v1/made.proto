@@ -194,6 +194,24 @@ service MadeService {
   // like any other.
   rpc DesignCeremony(DesignCeremonyRequest) returns (DesignCeremonyResponse);
 
+  // What a session left behind. A ceremony is its event stream
+  // (ADR-012), so reading that stream is how a caller sees what
+  // happened rather than only where the session now stands: the sealed
+  // records come out whole, digests and hash chain included, and a
+  // caller can verify the chain on what it received. Reading is by
+  // position — the version already seen — because that is what a
+  // stream has; a durable named cursor per consumer is a different
+  // thing and arrives as additive fields. The transcript is the other
+  // half: what the seats actually contributed, in order.
+  rpc ReadCeremonyEvents(ReadCeremonyEventsRequest) returns (ReadCeremonyEventsResponse);
+  rpc GetCeremonyTranscript(GetCeremonyTranscriptRequest) returns (GetCeremonyTranscriptResponse);
+
+  // The report over one or more sessions: a projection of persisted
+  // state and never a document the engine stores (ADR-006). Rendering
+  // it is a use case both editions call, so the same sessions in the
+  // same state report the same bytes whichever engine served the call.
+  rpc GenerateCeremonyReport(GenerateCeremonyReportRequest) returns (GenerateCeremonyReportResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -1497,4 +1515,142 @@ message DesignCeremonyResponse {
   uint32 error_count = 6;
   uint32 warning_count = 7;
   repeated CeremonyDraftFinding findings = 8;
+}
+
+// ============================================================================
+// What a ceremony left behind
+// ============================================================================
+
+// Who caused one sealed record.
+message CeremonyEventActor {
+  string actor_id = 1;
+  // "human", "agent", "service" or "engine".
+  string kind = 2;
+  // The seat the actor acted through. Empty when it acted through
+  // none, as the engine's own timeouts do.
+  string role_id = 3;
+}
+
+// One sealed record of a ceremony's stream: the fact, its position,
+// and everything that binds it to the records before it.
+//
+// The fields are the record's own rather than a rendering of them, so
+// a caller can rebuild the record and verify the chain itself instead
+// of trusting the engine that sent it.
+message CeremonyEventRecord {
+  // Occurs once in the stream. Derived from the fact, so one command
+  // decided twice cannot land twice.
+  string event_id = 1;
+  // Catalogue entry this record is an instance of, in snake_case:
+  // "step_completed", "intervention_requested", and so on.
+  string event_type = 2;
+  // Version of the record's *field set*: 2 for everything sealed
+  // today, 1 for records written before the event travelled inside
+  // them, which carry no payload.
+  uint32 schema_version = 3;
+  string ceremony_id = 4;
+  string definition_name = 5;
+  string definition_version = 6;
+  // Position in the stream. From one, contiguous, no gaps.
+  uint64 sequence = 7;
+  // RFC 3339.
+  string occurred_at = 8;
+  CeremonyEventActor actor = 9;
+  // The opening record's id: what ties one session's records
+  // together. Empty when the record names none.
+  string correlation_id = 10;
+  // The record this one was decided against. Empty on the first.
+  string causation_id = 11;
+  // Empty until a fact carries a trace.
+  string trace_id = 12;
+  // The shape the payload below was sealed in. Zero on a version-1
+  // record, which has no payload to shape.
+  uint32 event_schema_version = 13;
+  // The sealed event, exactly as the digest covers it. Absent on a
+  // version-1 record.
+  //
+  // A Struct rather than one message per event type: the payload is
+  // versioned by `event_schema_version` and read through the engine's
+  // own upcasters, so freezing its shape in this contract would put
+  // the same thing in two places and make every payload change a
+  // contract change.
+  google.protobuf.Struct event = 14;
+  // The previous record's digest, 32 bytes. Empty on the first record
+  // of a stream.
+  bytes previous_record_hash = 15;
+  // This record's digest, over its content and the previous digest.
+  // 32 bytes.
+  bytes record_hash = 16;
+}
+
+message ReadCeremonyEventsRequest {
+  string ceremony_id = 1;
+  // The version already seen: the answer starts at the record after
+  // it, and zero reads from the beginning of the stream.
+  uint64 from_version = 2;
+  // How many records at most. Zero takes the server's default;
+  // anything above its cap takes the cap.
+  uint32 limit = 3;
+}
+
+message ReadCeremonyEventsResponse {
+  // In stream order.
+  repeated CeremonyEventRecord records = 1;
+  // What to send back as `from_version` to continue: the last
+  // record's version, or the head when the page is empty.
+  uint64 next_version = 2;
+  // How far the stream goes, so a caller can tell "there is more"
+  // from "you are caught up" without asking again.
+  uint64 head_version = 3;
+}
+
+// One thing a seat contributed while running a step.
+message CeremonyTranscriptEntry {
+  string step_id = 1;
+  string role_id = 2;
+  // Structured output, as the step produced it. Empty when it
+  // produced none.
+  google.protobuf.Struct output = 3;
+}
+
+message GetCeremonyTranscriptRequest {
+  string ceremony_id = 1;
+}
+
+message GetCeremonyTranscriptResponse {
+  // In the order they were produced.
+  repeated CeremonyTranscriptEntry entries = 1;
+}
+
+// Which definition one reported session was running.
+message CeremonyReportBinding {
+  string ceremony_id = 1;
+  string definition_name = 2;
+  string definition_version = 3;
+  // Hex digest of the definition as the report read it.
+  string definition_digest = 4;
+  // Hex digest of the published version the session recorded when it
+  // was started from one. Empty for a session started from a
+  // document, which is bound to nothing.
+  string bound_definition_digest = 5;
+}
+
+message GenerateCeremonyReportRequest {
+  // One or more started sessions, reported in this order. An empty
+  // list, a duplicate and an unknown id are each refused.
+  repeated string ceremony_ids = 1;
+  // Report heading. Empty takes the default one, and whatever is
+  // given is escaped as the untrusted Markdown it is.
+  string title = 2;
+}
+
+message GenerateCeremonyReportResponse {
+  // The whole document.
+  string report_markdown = 1;
+  // The sessions reported, in the caller's order.
+  repeated string ceremony_ids = 2;
+  uint32 ceremony_count = 3;
+  uint32 completed_count = 4;
+  uint32 incomplete_count = 5;
+  repeated CeremonyReportBinding definition_bindings = 6;
 }
