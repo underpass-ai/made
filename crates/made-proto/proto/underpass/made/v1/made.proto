@@ -896,6 +896,39 @@ message CeremonyInstanceState {
   // Why it could not be, when it could not. Empty otherwise, and only
   // ever set together with `rehydratable = false`.
   string unrehydratable_reason = 18;
+  // What earlier sessions in this session's memory scope decided, as
+  // this session was told when it opened.
+  //
+  // Unset when it was told nothing, which is every session that
+  // declares no `memory_scope` in its context: the default scope is
+  // the session's own id and nobody else writes there. A message
+  // rather than fields on this one, because message presence is what
+  // lets "recalled nothing" differ from "recalled an empty scope".
+  CeremonyRecollectionState recollection = 19;
+}
+
+// What a session was told when it opened, bounded and in order:
+// decisions and constraints first, then the rest.
+message CeremonyRecollectionState {
+  // The memory this session reads and writes, as `kind:name`.
+  string scope = 1;
+  repeated CeremonyRecalledEntryState entries = 2;
+  // Whether the budget stopped the rendering before the scope ran out.
+  // A reader weighing what earlier sessions decided has to know
+  // whether it is looking at the whole record or at the front of it.
+  bool truncated = 3;
+}
+
+// One thing an earlier session left behind.
+message CeremonyRecalledEntryState {
+  string entry_id = 1;
+  // `decision`, `observation`, `constraint` or `outcome`.
+  string kind = 2;
+  string summary = 3;
+  // The session that said it, so a decision can be attributed and
+  // walked back to where it was taken.
+  string from_ceremony_id = 4;
+  string observed_at = 5;
 }
 
 message CeremonyParticipantBindingState {

@@ -27,6 +27,8 @@ mod intervention_response_view;
 mod intervention_views;
 mod published_definition_view;
 mod raise_intervention_request;
+mod recalled_entry_view;
+mod recollection_view;
 mod respond_to_intervention_request;
 mod start_ceremony_request;
 
@@ -41,6 +43,8 @@ pub use intervention_response_view::InterventionResponseView;
 pub use intervention_views::InterventionView;
 pub use published_definition_view::PublishedDefinitionView;
 pub use raise_intervention_request::RaiseInterventionRequest;
+pub use recalled_entry_view::RecalledEntryView;
+pub use recollection_view::RecollectionView;
 pub use respond_to_intervention_request::RespondToInterventionRequest;
 pub use start_ceremony_request::StartCeremonyRequest;
 
