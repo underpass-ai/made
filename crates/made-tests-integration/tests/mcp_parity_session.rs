@@ -280,6 +280,7 @@ fn failed(result: &Value) -> bool {
 
 /// The scripted session, in order. Every shared tool is in here at
 /// least once; the coverage assertion below is what keeps it true.
+#[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
 fn session_script() -> Vec<(&'static str, Value)> {
     vec![
         (
