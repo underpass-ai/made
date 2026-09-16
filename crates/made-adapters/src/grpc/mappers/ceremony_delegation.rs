@@ -26,7 +26,9 @@ use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 const DEFAULT_LEASE_OWNER_ID: &str = "grpc-claim-ceremony-step";
-const DEFAULT_LEASE_TTL_MS: u64 = 300_000;
+
+/// The engine's own number, read from the input that carries it.
+const DEFAULT_LEASE_TTL_MS: u64 = StartCeremonyStepInput::DEFAULT_LEASE_TTL_MS;
 
 /// The statuses a host may report. Deliberately not every
 /// [`StepStatus`]: `pending` and `in_progress` describe a step nobody

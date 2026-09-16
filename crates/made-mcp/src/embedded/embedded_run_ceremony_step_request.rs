@@ -11,9 +11,7 @@ use super::embedded_request_fields::{
 };
 
 use crate::embedded::EMBEDDED_BACKEND_NAME;
-use crate::protocol::{default_lease_owner_id, ToolError};
-
-const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
+use crate::protocol::{default_lease_owner_id, ToolError, RUN_CEREMONY_STEP_LEASE_TTL_MS};
 
 /// Validated MCP request that executes one step on a persistent instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -68,7 +66,7 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyStepRequest {
             idempotency_key: IdempotencyKey::new(idempotency_key)
                 .map_err(|error| error.to_string())?,
             lease_ttl: DurationMs::from_millis(if lease_ttl_ms == 0 {
-                DEFAULT_LEASE_TTL_MS
+                RUN_CEREMONY_STEP_LEASE_TTL_MS
             } else {
                 lease_ttl_ms
             }),
@@ -105,6 +103,17 @@ mod tests {
         }))
         .expect_err("a blank runner is not a runner");
         assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    /// The lease length is the same on both arms, because both read
+    /// the number the engine declares rather than choosing one.
+    #[test]
+    fn an_omitted_lease_length_is_the_one_both_arms_apply() {
+        let request = EmbeddedRunCeremonyStepRequest::try_from(
+            &json!({ "ceremony_id": "c-1", "step_id": "work", "actor_kind": "agent" }),
+        )
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_ttl.get(), RUN_CEREMONY_STEP_LEASE_TTL_MS);
     }
 
     #[test]

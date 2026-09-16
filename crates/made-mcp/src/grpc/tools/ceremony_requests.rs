@@ -4,7 +4,9 @@ use uuid::Uuid;
 
 use super::super::json_to_proto as j2p;
 use crate::grpc::GRPC_BACKEND_NAME;
-use crate::protocol::default_lease_owner_id;
+use crate::protocol::{
+    default_lease_owner_id, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_STEP_LEASE_TTL_MS,
+};
 
 /// The runner the caller named, or the one this layer applies.
 ///
@@ -20,6 +22,22 @@ pub(in crate::grpc) fn lease_owner_id(obj: &Map<String, Value>) -> Result<String
         }
         Some(named) => Ok(named.trim().to_owned()),
     }
+}
+
+/// The lease length the caller asked for, or the one this layer
+/// applies.
+///
+/// Sent rather than left as a zero: `0` on the wire means "you choose",
+/// and letting the server choose is how the same omission became a
+/// sixty-second lease over the wire and a thirty-second one in process.
+pub(in crate::grpc) fn lease_ttl_ms(
+    obj: &Map<String, Value>,
+    default_ms: u64,
+) -> Result<u64, String> {
+    Ok(match j2p::optional_u64(obj, "lease_ttl_ms")? {
+        0 => default_ms,
+        asked => asked,
+    })
 }
 
 pub(super) fn definition_yaml(args: &Value) -> Result<String, String> {
@@ -78,7 +96,7 @@ pub(super) fn build_run_ceremony_step_request(
         idempotency_key: j2p::optional_str(obj, "idempotency_key")
             .unwrap_or_default()
             .to_owned(),
-        lease_ttl_ms: j2p::optional_u64(obj, "lease_ttl_ms")?,
+        lease_ttl_ms: lease_ttl_ms(obj, RUN_CEREMONY_STEP_LEASE_TTL_MS)?,
     })
 }
 
@@ -101,7 +119,7 @@ pub(super) fn build_claim_ceremony_step_request(
         idempotency_key: j2p::optional_str(obj, "idempotency_key")
             .unwrap_or_default()
             .to_owned(),
-        lease_ttl_ms: j2p::optional_u64(obj, "lease_ttl_ms")?,
+        lease_ttl_ms: lease_ttl_ms(obj, CLAIM_CEREMONY_STEP_LEASE_TTL_MS)?,
     })
 }
 
@@ -377,6 +395,55 @@ mod tests {
         }))
         .expect("the request should be accepted");
         assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
+    }
+
+    /// The lease length leaves this layer as a number, so the server's
+    /// own default is never reached — the divergence that made one
+    /// omission mean two different leases.
+    #[test]
+    fn an_omitted_lease_length_becomes_the_number_this_layer_sends() {
+        let step = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, RUN_CEREMONY_STEP_LEASE_TTL_MS);
+
+        let claim = build_claim_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(claim.lease_ttl_ms, CLAIM_CEREMONY_STEP_LEASE_TTL_MS);
+    }
+
+    /// Zero is the schema's own spelling of "omitted", so it takes the
+    /// same answer rather than reaching the server's default by the
+    /// back door.
+    #[test]
+    fn a_zero_lease_length_reads_as_an_omission() {
+        let step = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_ttl_ms": 0,
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, RUN_CEREMONY_STEP_LEASE_TTL_MS);
+    }
+
+    #[test]
+    fn a_lease_length_the_caller_asked_for_is_left_alone() {
+        let step = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "lease_ttl_ms": 5_000,
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.lease_ttl_ms, 5_000);
     }
 
     #[test]

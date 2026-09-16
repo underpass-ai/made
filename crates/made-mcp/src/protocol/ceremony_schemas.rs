@@ -1,6 +1,10 @@
 use serde_json::{json, Value};
 
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
+use super::default_lease_ttl::{
+    lease_ttl_rule, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS,
+    RUN_CEREMONY_STEP_LEASE_TTL_MS,
+};
 use super::schema_primitives::{attributes_schema, string_schema};
 
 mod ceremony_history_schemas;
@@ -216,7 +220,7 @@ pub(super) fn run_ceremony_schema() -> Value {
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+                "description": lease_ttl_rule(RUN_CEREMONY_LEASE_TTL_MS)
             }
         }
     })
@@ -263,7 +267,7 @@ pub(super) fn run_ceremony_step_schema() -> Value {
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+                "description": lease_ttl_rule(RUN_CEREMONY_STEP_LEASE_TTL_MS)
             }
         }
     })
@@ -287,7 +291,7 @@ pub(super) fn claim_ceremony_step_schema() -> Value {
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Lease TTL in milliseconds. Zero or omitted uses the five-minute external-host default."
+                "description": lease_ttl_rule(CLAIM_CEREMONY_STEP_LEASE_TTL_MS)
             }
         }
     })

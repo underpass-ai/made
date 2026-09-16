@@ -15,6 +15,20 @@ pub struct RunCeremonyInput {
 }
 
 impl RunCeremonyInput {
+    /// How long a step lease lasts when the caller asked for no
+    /// particular length.
+    ///
+    /// The engine runs the step itself here, so the lease only has to
+    /// outlive one handler call; a minute is generous for that and
+    /// short enough that a crashed run does not hold a step until
+    /// someone notices. Declared next to the input that carries it, as
+    /// [`ReadCeremonyEventsInput::DEFAULT_LIMIT`] is, so an adapter
+    /// reads the number instead of choosing one: the same omission
+    /// used to mean thirty seconds in process and sixty over the wire.
+    ///
+    /// [`ReadCeremonyEventsInput::DEFAULT_LIMIT`]: super::ReadCeremonyEventsInput::DEFAULT_LIMIT
+    pub const DEFAULT_LEASE_TTL_MS: u64 = 60_000;
+
     #[must_use]
     pub fn new(
         id: CeremonyId,

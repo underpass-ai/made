@@ -11,9 +11,7 @@ use super::embedded_request_fields::{
 };
 
 use crate::embedded::EMBEDDED_BACKEND_NAME;
-use crate::protocol::{default_lease_owner_id, ToolError};
-
-const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
+use crate::protocol::{default_lease_owner_id, ToolError, RUN_CEREMONY_LEASE_TTL_MS};
 
 /// Validated MCP request for an embedded ceremony execution.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,12 +69,49 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyRequest {
             context,
             lease_owner_id: LeaseOwnerId::new(lease_owner_id).map_err(|error| error.to_string())?,
             lease_ttl: DurationMs::from_millis(if lease_ttl_ms == 0 {
-                DEFAULT_LEASE_TTL_MS
+                RUN_CEREMONY_LEASE_TTL_MS
             } else {
                 lease_ttl_ms
             }),
             actor_id: required_string(object, "actor_id")?,
             actor_kind: required_actor_kind(object, "actor_kind")?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    /// The lease a one-shot run takes is the same length on both arms.
+    ///
+    /// It was thirty seconds here and sixty over the wire, because this
+    /// arm chose a number and the other sent a zero for the server to
+    /// choose with. One omission now means one lease.
+    #[test]
+    fn an_omitted_lease_length_is_the_one_both_arms_apply() {
+        let request = EmbeddedRunCeremonyRequest::try_from(&json!({
+            "definition_yaml": "version: \"1.0\"",
+            "actor_id": "operator",
+            "actor_kind": "service",
+        }))
+        .expect("the request should be accepted");
+
+        assert_eq!(request.lease_ttl.get(), RUN_CEREMONY_LEASE_TTL_MS);
+        assert_eq!(request.lease_owner_id.as_str(), "made-mcp:embedded");
+    }
+
+    #[test]
+    fn a_lease_length_the_caller_asked_for_is_left_alone() {
+        let request = EmbeddedRunCeremonyRequest::try_from(&json!({
+            "definition_yaml": "version: \"1.0\"",
+            "actor_id": "operator",
+            "actor_kind": "service",
+            "lease_ttl_ms": 1_500,
+        }))
+        .expect("the request should be accepted");
+
+        assert_eq!(request.lease_ttl.get(), 1_500);
     }
 }

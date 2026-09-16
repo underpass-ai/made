@@ -18,6 +18,15 @@ pub struct StartCeremonyStepInput {
 }
 
 impl StartCeremonyStepInput {
+    /// How long a claimed step stays claimed when the caller asked for
+    /// no particular length.
+    ///
+    /// Longer than the engine's own default by an order of magnitude,
+    /// and deliberately: this lease covers work a host does outside the
+    /// engine, where nobody can see progress, so it has to outlive a
+    /// human-paced turnaround rather than one handler call.
+    pub const DEFAULT_LEASE_TTL_MS: u64 = 300_000;
+
     #[must_use]
     pub fn new(
         instance_id: CeremonyId,
