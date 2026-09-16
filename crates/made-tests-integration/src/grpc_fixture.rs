@@ -51,7 +51,7 @@ use made_app::usecases::{
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
@@ -343,10 +343,13 @@ impl GrpcFixture {
                 ceremony_stream.clone(),
             )))
             // What the session left behind. The parity session drives
-            // all three over these very RPCs, so a fixture missing
+            // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
             // runs.
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+            )))
+            .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
                 ceremony_store.clone(),
             )))
             .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(
@@ -650,10 +653,13 @@ impl GrpcFixture {
                 ceremony_stream.clone(),
             )))
             // What the session left behind. The parity session drives
-            // all three over these very RPCs, so a fixture missing
+            // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
             // runs.
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+            )))
+            .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
                 ceremony_store.clone(),
             )))
             .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(

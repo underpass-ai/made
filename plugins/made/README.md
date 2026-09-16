@@ -120,6 +120,9 @@ Executable scope:
 - `made_read_ceremony_events` and `made_get_ceremony_transcript` to read what
   a session left behind: the sealed records of its event stream, digests and
   hash chain included, and the ordered contributions its steps produced;
+- `made_verify_ceremony_journal` to check that chain: whether every record is
+  sealed, positioned and linked as written, and where it stopped being
+  trustworthy if it is not;
 - `made_generate_ceremony_report` to project selected ceremony snapshots
   and their ordered audit journals into deterministic Markdown. It returns
   `persisted: false`; the host chooses whether and where to save that text;

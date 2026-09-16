@@ -455,6 +455,7 @@ advertises 43 executable tools:
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
+| `made_verify_ceremony_journal`  | `VerifyCeremonyJournal`               | Verify the hash chain of one ceremony's journal. |
 
 The MADE API is **respected at 100%** — every proto field has
 an explicit JSON key in both the tool input schema and the response.
@@ -489,8 +490,40 @@ the transcript store is per-process and empties on restart; the sealed stream
 above is the durable record, so what a step contributed is recoverable from it
 either way.
 
-Both are served by both editions, over `ReadCeremonyEvents` and
-`GetCeremonyTranscript`.
+`made_verify_ceremony_journal` answers whether one ceremony's journal is
+sealed, positioned and linked as it was written. The answer names the head
+version, how many records were verified, `intact`, and — when it is not — the
+first position that cannot be trusted and why, in words. It stops at the first
+defect: past a break the verifier does not know what it is looking at, so a
+list of further ones would suggest otherwise. A ceremony with no stream is
+`not_found`, and a broken chain is an answer rather than an error.
+
+```json
+{
+  "name": "made_verify_ceremony_journal",
+  "arguments": { "ceremony_id": "session-17" }
+}
+```
+
+```json
+{
+  "ceremony_id": "session-17",
+  "head_version": 12,
+  "record_count": 12,
+  "intact": true,
+  "first_broken_sequence": null,
+  "reason": null
+}
+```
+
+The engine's verdict is checkable rather than authoritative: the same records
+come out of `made_read_ceremony_events`, and the verifier is
+`AuditChain::verify` in `made-core`, which depends on nothing but the bytes it
+was given. A caller that would rather not take the engine's word runs it
+itself and compares — which is what the integration test does.
+
+All three are served by both editions, over `ReadCeremonyEvents`,
+`VerifyCeremonyJournal` and `GetCeremonyTranscript`.
 
 ### Ceremony reports
 

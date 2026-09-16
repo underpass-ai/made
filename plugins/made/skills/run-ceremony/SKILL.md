@@ -172,7 +172,14 @@ empties on restart, while the event stream does not; when the transcript is
 empty for a session that clearly ran, read the stream instead of telling the
 user nothing happened.
 
-Both are read-only and served on every backend.
+`made_verify_ceremony_journal` says whether that stream is sealed, positioned
+and linked as it was written. Use it when the user asks whether the record can
+be trusted, or after moving a store between machines. `intact: true` and you
+can quote the stream as evidence; otherwise the answer names the first
+position that cannot be trusted and why — say so plainly and do not quote
+anything at or after it.
+
+All three are read-only and served on every backend.
 
 ## Reports
 

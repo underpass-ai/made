@@ -1,15 +1,16 @@
 //! What a ceremony left behind → proto: sealed records, the
-//! transcript, and the report.
+//! transcript, the report, and the verdict on the chain that seals
+//! them.
 //!
 //! A record goes out whole, field for field, with its payload as the
 //! JSON the digest covers. That is what lets a client rebuild the
 //! record and verify the chain on what it received; a rendering of a
 //! record verifies nothing.
 
-use made_app::usecases::{CeremonyEventPage, CeremonyReport};
+use made_app::usecases::{CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport};
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
-use made_core::value_objects::CeremonyTranscript;
+use made_core::value_objects::{AuditSequence, CeremonyTranscript};
 use made_proto::v1 as pb;
 use time::format_description::well_known::Rfc3339;
 
@@ -144,6 +145,26 @@ pub fn generate_ceremony_report_response_from(
     }
 }
 
+/// The verdict on one journal's chain.
+///
+/// Absent is zero and empty here, as everywhere else in proto3: a
+/// position counts from one, so zero cannot be a position, and an
+/// intact journal has no reason to give.
+pub fn verify_ceremony_journal_response_from(
+    verdict: &CeremonyJournalVerdict,
+) -> pb::VerifyCeremonyJournalResponse {
+    pb::VerifyCeremonyJournalResponse {
+        ceremony_id: verdict.ceremony_id().as_str().to_owned(),
+        head_version: verdict.head_version().value(),
+        record_count: u32::try_from(verdict.record_count()).unwrap_or(u32::MAX),
+        intact: verdict.is_intact(),
+        first_broken_sequence: verdict
+            .first_broken_sequence()
+            .map_or(0, AuditSequence::value),
+        reason: verdict.reason().unwrap_or_default(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::{BTreeMap, BTreeSet};
@@ -151,8 +172,9 @@ mod tests {
     use made_core::entities::ceremony_events::CeremonyInstanceStarted;
     use made_core::entities::{AuditFact, CeremonyEvent};
     use made_core::value_objects::{
-        Attributes, AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
-        CeremonyStepContribution, CeremonyVersion, EventId, RoleId, StateId, StepId, StepOutput,
+        Attributes, AuditActor, AuditActorKind, AuditChainDefect, AuditChainVerdict,
+        CeremonyContext, CeremonyId, CeremonyName, CeremonyStepContribution, CeremonyVersion,
+        EventId, RoleId, StateId, StepId, StepOutput, StreamVersion,
     };
     use prost_types::value::Kind;
     use time::macros::datetime;
@@ -265,5 +287,43 @@ mod tests {
                 .and_then(|value| value.kind.clone()),
             Some(Kind::StringValue("done".to_owned()))
         );
+    }
+
+    #[test]
+    fn an_intact_journal_reports_no_position_and_no_reason() {
+        let verdict = CeremonyJournalVerdict::new(
+            CeremonyId::new("session-1").unwrap(),
+            StreamVersion::new(4),
+            4,
+            AuditChainVerdict::Intact,
+        );
+
+        let wire = verify_ceremony_journal_response_from(&verdict);
+
+        assert_eq!(wire.ceremony_id, "session-1");
+        assert_eq!(wire.head_version, 4);
+        assert_eq!(wire.record_count, 4);
+        assert!(wire.intact);
+        assert_eq!(wire.first_broken_sequence, 0);
+        assert!(wire.reason.is_empty());
+    }
+
+    #[test]
+    fn a_broken_journal_carries_the_first_position_and_why() {
+        let verdict = CeremonyJournalVerdict::new(
+            CeremonyId::new("session-1").unwrap(),
+            StreamVersion::new(4),
+            3,
+            AuditChainVerdict::Broken(AuditChainDefect::DigestAltered {
+                at: AuditSequence::new(2).unwrap(),
+            }),
+        );
+
+        let wire = verify_ceremony_journal_response_from(&verdict);
+
+        assert!(!wire.intact);
+        assert_eq!(wire.first_broken_sequence, 2);
+        assert!(wire.reason.contains("digest"), "{}", wire.reason);
+        assert_eq!(wire.record_count, 3);
     }
 }

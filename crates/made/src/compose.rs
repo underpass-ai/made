@@ -42,7 +42,7 @@ use made_app::usecases::{
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -409,6 +409,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // report composes the session, its definition and its stream into
     // the one projection both editions render (ADR-006).
     let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
+    let verify_ceremony_journal =
+        Arc::new(VerifyCeremonyJournalUseCase::new(ceremony_events.clone()));
     let get_ceremony_transcript =
         Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_transcript_store));
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
@@ -442,6 +444,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .read_ceremony_events(read_ceremony_events)
+        .verify_ceremony_journal(verify_ceremony_journal)
         .get_ceremony_transcript(get_ceremony_transcript)
         .generate_ceremony_report(generate_ceremony_report)
         .publish_ceremony_definition(publish_ceremony_definition)

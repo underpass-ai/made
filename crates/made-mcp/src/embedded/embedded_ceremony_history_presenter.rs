@@ -6,11 +6,11 @@
 //! rebuilds exactly this JSON from the proto record, and the parity
 //! session compares the two field for field.
 
-use made_app::usecases::{CeremonyEventPage, CeremonyReport};
+use made_app::usecases::{CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport};
 use made_core::value_objects::CeremonyTranscript;
 use serde_json::{json, Value};
 
-use crate::protocol::{ToolError, REPORT_IS_PERSISTED};
+use crate::protocol::{CeremonyJournalVerdictView, ToolError, REPORT_IS_PERSISTED};
 
 /// One page of a stream.
 pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value, ToolError> {
@@ -28,6 +28,26 @@ pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value,
         "head_version": page.head_version().value(),
         "has_more": page.has_more(),
     }))
+}
+
+/// The verdict on one session's chain.
+///
+/// Filled into the view both arms render through, so the in-process
+/// answer and the one that came back over gRPC are the same JSON by
+/// construction rather than by two people writing the same keys.
+#[must_use]
+pub(super) fn present_ceremony_journal_verdict(verdict: &CeremonyJournalVerdict) -> Value {
+    CeremonyJournalVerdictView {
+        ceremony_id: verdict.ceremony_id().as_str().to_owned(),
+        head_version: verdict.head_version().value(),
+        record_count: verdict.record_count() as u64,
+        intact: verdict.is_intact(),
+        first_broken_sequence: verdict
+            .first_broken_sequence()
+            .map(made_core::value_objects::AuditSequence::value),
+        reason: verdict.reason(),
+    }
+    .to_json()
 }
 
 /// The ordered contributions of one session.

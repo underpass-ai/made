@@ -10,9 +10,9 @@
 use std::sync::Arc;
 
 use made_app::usecases::{
-    CeremonyEventPage, CeremonyReport, GenerateCeremonyReportInput, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, ReadCeremonyEventsInput,
-    ReadCeremonyEventsUseCase,
+    CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, GenerateCeremonyReportInput,
+    GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
+    ReadCeremonyEventsInput, ReadCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
@@ -72,5 +72,22 @@ impl EmbeddedMade {
         )
         .execute(input)
         .await
+    }
+
+    /// Whether one session's journal is sealed, positioned and linked
+    /// as it was written.
+    ///
+    /// The engine's own answer to a question the caller can also
+    /// answer for itself: [`Self::audit_records`] hands out the
+    /// records, and `AuditChain::verify` in `made-core` is the same
+    /// verifier this runs. That is what makes the answer evidence
+    /// rather than a reassurance.
+    pub async fn verify_journal(
+        &self,
+        id: &CeremonyId,
+    ) -> Result<CeremonyJournalVerdict, DomainError> {
+        VerifyCeremonyJournalUseCase::new(self.events.clone())
+            .execute(id)
+            .await
     }
 }
