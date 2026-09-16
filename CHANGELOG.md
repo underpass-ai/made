@@ -16,6 +16,11 @@ operator command.
 
 ### Added
 
+- `CeremonyEventStorePort` and `CeremonySnapshotStorePort` with conformance
+  suites, an in-memory adapter (`InMemoryCeremonyEventStore`) and a SQLite
+  adapter on `SqliteCeremonyStore` (tables `ceremony_events`,
+  `ceremony_event_log`, `ceremony_snapshots`, `store_meta`); the two-writers
+  test also covers the event store. Not yet used by the use cases (slice A4).
 - MADE now ships co-located Codex and Claude Code marketplace catalogs, a
   `made-setup` skill and `/made:setup` command, and checksummed standalone MCP
   executables. A clean marketplace install downloads its release-matched
