@@ -58,23 +58,24 @@ DEV_LOOP_JOBS = {
     "dev-binary": "run: cargo build --release -p made-mcp --locked",
 }
 
-# Every quality-gate job that must stand down with the `impact` job. Adding
-# a job to the workflow without adding it here is caught by the `gate`
-# needs-list check below, which compares against this same set.
-QUALITY_GATE_JOBS = (
-    "architecture",
-    "contract",
-    "rustfmt",
-    "embedded-boundary",
-    "embedded-sqlite-gates",
-    "clippy",
-    "test",
-    "coverage",
-    "container-image",
-    "helm-chart",
-    "benches-compile",
-    "publish-dry-run",
-)
+# Every quality-gate job that must stand down with the `impact` job, and the
+# planner output that routes it. Adding a job to the workflow without adding
+# it here is caught by the `gate` needs-list check below, which compares
+# against this same set.
+QUALITY_GATE_JOBS = {
+    "architecture": "architecture",
+    "contract": "contract",
+    "rustfmt": "rustfmt",
+    "embedded-boundary": "embedded_boundary",
+    "embedded-sqlite-gates": "embedded_sqlite",
+    "clippy": "clippy",
+    "test": "test",
+    "coverage": "coverage",
+    "container-image": "container",
+    "helm-chart": "helm",
+    "benches-compile": "benches",
+    "publish-dry-run": "publish",
+}
 
 # Workflows that are part of the full gate and must not burn a runner on a
 # draft: every job guarded, and ready_for_review in the trigger types.
@@ -198,10 +199,29 @@ def validate(sources: dict[str, str]) -> list[str]:
     impact = job_block(quality, "impact")
     if impact is None:
         failures.append("quality-gate lost its impact stand-down job")
-    elif READY_ONLY not in impact:
-        failures.append("quality-gate impact job lost its draft stand-down guard")
+    else:
+        if "github.event.pull_request.draft == false" not in impact:
+            failures.append("quality-gate impact job lost its draft stand-down guard")
+        if "needs.tree-proof.outputs.skip != 'true'" not in impact:
+            failures.append("quality-gate impact job no longer honours the tree proof")
+        if "python3 scripts/ci/quality-gate-plan.py --self-test" not in impact:
+            failures.append("quality-gate no longer proves its routing matrix first")
+        if "--github-output" not in impact:
+            failures.append("quality-gate impact job no longer publishes a plan")
+        for gate in sorted(set(QUALITY_GATE_JOBS.values())):
+            if f"      {gate}: ${{{{ steps.plan.outputs.{gate} }}}}" not in impact:
+                failures.append(f"quality-gate impact job stopped exporting {gate}")
 
-    for job in QUALITY_GATE_JOBS:
+    proof = job_block(quality, "tree-proof")
+    if proof is None:
+        failures.append("quality-gate lost its tree-proof job")
+    else:
+        if "if: github.event_name == 'push'" not in proof:
+            failures.append("tree-proof must only answer for pushes")
+        if "run: bash scripts/ci/tree-already-proved.sh quality-gate.yml" not in proof:
+            failures.append("tree-proof no longer runs the tree proof script")
+
+    for job, gate in QUALITY_GATE_JOBS.items():
         block = job_block(quality, job)
         if block is None:
             failures.append(f"quality-gate lost the {job} job")
@@ -214,6 +234,16 @@ def validate(sources: dict[str, str]) -> list[str]:
                 f"quality-gate job {job} does not need impact, so it would "
                 "run on a draft"
             )
+        if f"needs.impact.outputs.{gate} == 'true'" not in block:
+            failures.append(
+                f"quality-gate job {job} is not routed by the planner output "
+                f"{gate}"
+            )
+        if "!cancelled()" in block and "needs.impact.result == 'success'" not in block:
+            failures.append(
+                f"quality-gate job {job} opens with !cancelled() but does not "
+                "require the planner to have succeeded, so it would run on a draft"
+            )
 
     gate = job_block(quality, "gate")
     if gate is None:
@@ -223,9 +253,11 @@ def validate(sources: dict[str, str]) -> list[str]:
             failures.append("gate must run always(), or a skip reports green")
         if 'if [[ "${DRAFT}" == "true" ]]; then' not in gate:
             failures.append("gate no longer fails on purpose on a draft")
+        if 'if [[ "${TREE_PROVED}" == "true" ]]; then' not in gate:
+            failures.append("gate no longer accepts an already-proved tree")
         missing = [
             job
-            for job in ("impact", *QUALITY_GATE_JOBS)
+            for job in ("tree-proof", "impact", *QUALITY_GATE_JOBS)
             if f"      - {job}\n" not in gate + "\n"
         ]
         if missing:
@@ -252,6 +284,8 @@ def validate(sources: dict[str, str]) -> list[str]:
             "`just dev` no longer runs scripts/ci/dev-loop.sh, so the local "
             "loop and the workflow are two lists again"
         )
+    if "python3 scripts/ci/quality-gate-plan.py --self-test" not in justfile:
+        failures.append("`just workflow-contract` no longer proves the routing matrix")
     check = re.search(r"^check:(.*)$", justfile, re.MULTILINE)
     if check is None:
         failures.append("justfile lost its `check` recipe")
@@ -289,8 +323,36 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
     ),
     "full gate runs on drafts": (
         QUALITY_GATE,
-        f"    {READY_ONLY}\n",
+        "      && (github.event_name != 'pull_request'"
+        " || github.event.pull_request.draft == false)\n",
         "",
+    ),
+    "full gate ignores the tree proof": (
+        QUALITY_GATE,
+        "      needs.tree-proof.outputs.skip != 'true'\n",
+        "      true\n",
+    ),
+    "the tree proof job disappears": (
+        QUALITY_GATE,
+        "  tree-proof:\n",
+        "  tree-proof-disabled:\n",
+    ),
+    "the routing matrix stops proving itself": (
+        QUALITY_GATE,
+        "python3 scripts/ci/quality-gate-plan.py --self-test",
+        "echo skipped",
+    ),
+    "a job stops being routed by the planner": (
+        QUALITY_GATE,
+        "    if: needs.impact.outputs.architecture == 'true'\n",
+        "",
+    ),
+    "a routed job forgets the planner succeeded": (
+        QUALITY_GATE,
+        "      !cancelled() && needs.impact.result == 'success'\n"
+        "      && needs.impact.outputs.clippy == 'true'\n",
+        "      !cancelled()\n"
+        "      && needs.impact.outputs.clippy == 'true'\n",
     ),
     "a gate job escapes the stand-down": (
         QUALITY_GATE,
@@ -316,6 +378,11 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         JUSTFILE,
         "bash scripts/ci/dev-loop.sh {{STAGE}}",
         "cargo test --workspace",
+    ),
+    "just stops proving the routing matrix": (
+        JUSTFILE,
+        "    python3 scripts/ci/quality-gate-plan.py --self-test\n",
+        "",
     ),
     "just check stops proving this contract": (
         JUSTFILE,
@@ -363,7 +430,7 @@ def main() -> int:
     print(
         "dev-loop workflow contract passed: "
         f"{len(DEV_LOOP_JOBS)} draft-only lanes, "
-        f"{len(QUALITY_GATE_JOBS)} gate jobs behind one stand-down, "
+        f"{len(QUALITY_GATE_JOBS)} routed gate jobs, "
         "one required gate context, DEV_PACKAGES agreed"
     )
     return 0

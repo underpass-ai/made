@@ -113,6 +113,51 @@ DEV_PACKAGES="-p made-core" just dev  # narrow it for one run
 both run `scripts/ci/dev-loop.sh`. `scripts/ci/dev-loop-workflow-contract.py`
 fails the build if they ever name different crates.
 
+### What the ready gate actually runs
+
+Marking a pull request ready does not run every job unconditionally. The
+first job of `quality-gate.yml`, `impact`, plans the smallest honest gate
+for the change and every other job reads its outputs:
+
+- **Rust gates follow the reverse workspace dependency closure.** A change
+  inside a crate affects that crate and everything that depends on it,
+  read from the manifests by `scripts/ci/quality-gate-plan.py` rather than
+  guessed. `made-core` reaches every crate, so a change there runs the whole
+  Rust matrix.
+- **The independent contracts follow path routing**: proto and AsyncAPI
+  (`contract`), the embedded boundaries, the plugin bundle, the chart
+  (`charts/**`), the container image (`Dockerfile`), coverage and the
+  publication dry run. `helm` and `contract` are the two gates no Rust
+  source can reach; nothing routes them from a crate change.
+- **It fails closed.** A path the router does not recognise, a change to
+  `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `quality-gate.yml`,
+  the router itself or the tree proof, and every `workflow_dispatch` run
+  return the full matrix. Being wrong costs time, never safety.
+
+Ask it what a change would run before pushing:
+
+```bash
+python3 scripts/ci/quality-gate-plan.py --path crates/made-core/src/lib.rs
+python3 scripts/ci/quality-gate-plan.py --base origin/main --head HEAD
+just workflow-contract     # the router's self-test + the workflow contract
+```
+
+A docs-only pull request runs no Rust job at all.
+
+### Never twice for the same tree
+
+A merge to `main` usually lands a tree byte-identical to the pull request
+head that was just proved green: same tree hash, different commit. The
+`tree-proof` job asks `scripts/ci/tree-already-proved.sh` whether a
+successful `quality-gate` run already covered this exact tree, and skips the
+gate when one did.
+
+The rule is "skip when this tree was already proved", never "trust the pull
+request". A merge from an out-of-date branch, a conflict resolved in the
+GitHub UI and a direct push each produce a tree nobody tested, and each
+still runs the full gate — as does any doubt at all: no green run to compare
+against, an API that will not answer, a commit that cannot be resolved.
+
 ### Changing `DEV_PACKAGES`
 
 `DEV_PACKAGES` names the crates the current phase iterates on. It lives in
@@ -365,12 +410,16 @@ See [`docs/release.md`](release.md).
 | `container-image` | image builds from `Dockerfile` | every ready PR |
 | `dependency-review` | GitHub dependency-review-action | every ready PR |
 | `coverage` | `bash scripts/ci/rust-coverage.sh` (80 % workspace) | every ready PR |
+| `tree-proof` | `bash scripts/ci/tree-already-proved.sh` | pushes to `main` |
+| `impact` | `python3 scripts/ci/quality-gate-plan.py` | every ready PR |
 | `gate` | every required job passed and this is not a draft | every ready PR |
 | `e2e-compose` | full stack via docker compose + runner | **manual** |
 | `e2e-kubernetes` | kubernetes + chart + runner Job | **manual** |
 
-"Every ready PR" is literal: while the pull request is a draft those rows
-do not run at all, and the four `dev-*` rows answer instead. E2E stays
+"Every ready PR" is literal twice over: while the pull request is a draft
+those rows do not run at all and the four `dev-*` rows answer instead, and
+once it is ready the `impact` planner still routes out the rows the change
+cannot affect. E2E stays
 outside CI entirely — the per-PR gates already cover the compile-and-unit
 surface, and E2E is reserved for manual pre-release validation via
 `make`.

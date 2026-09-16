@@ -23,34 +23,95 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Draft pull requests are development mode: dev-loop.yml answers them in
-  # minutes, and the full gate stands down here. Every job below needs this
-  # one, so they all stand down with it. Marking the pull request ready for
-  # review runs everything.
+  # A merge to main usually lands a tree byte-identical to the pull request
+  # head that was just proved green: same tree, different commit. Compiling
+  # and testing it again proves nothing, and doubles the exposure to the
+  # flaky parts of the matrix — every false red on a tree that was green
+  # minutes earlier trains the reflex to re-run rather than read.
   #
-  # This job is deliberately the single switch rather than a guard repeated
-  # on a dozen jobs: one condition can be read, and a job added later
-  # inherits the stand-down by needing it — which it must do anyway.
-  #
-  # Slice H3 turns this job into the impact planner; the name is already the
-  # one the owner protects, so that change adds outputs without renaming a
-  # required check.
-  impact:
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+  # The rule is "skip when this tree was already proved", never "trust the
+  # pull request". A merge from an out-of-date branch, a conflict resolved in
+  # the UI and a direct push all produce trees nobody tested, and each still
+  # gets the full gate. So does any doubt at all.
+  tree-proof:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     permissions:
       contents: read
+      actions: read
+    outputs:
+      skip: ${{ steps.proof.outputs.skip }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-      - name: Prove the dev-loop / quality-gate workflow contract
-        run: python3 scripts/ci/dev-loop-workflow-contract.py --self-test
-      - name: Report the mode
-        run: echo "not a draft, so the full gate runs"
+      - name: Was this tree already proved green?
+        id: proof
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/tree-already-proved.sh quality-gate.yml
+
+  # Pull requests pay only for the parts of the product they can affect. The
+  # planner derives the reverse workspace dependency closure, then routes the
+  # independent contracts — proto/AsyncAPI, the embedded boundaries, the
+  # plugin bundle, the chart, the image, coverage, the publication dry run.
+  # Unknown paths and changes to this router fail closed to the full matrix,
+  # and workflow_dispatch is deliberately full.
+  #
+  # Draft pull requests are development mode: dev-loop.yml answers them in
+  # minutes, and the full gate stands down by skipping this job — every job
+  # below needs one of its outputs, so they all stand down with it. Marking
+  # the pull request ready for review runs everything.
+  impact:
+    needs: tree-proof
+    if: >-
+      needs.tree-proof.outputs.skip != 'true'
+      && (github.event_name != 'pull_request' || github.event.pull_request.draft == false)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      architecture: ${{ steps.plan.outputs.architecture }}
+      contract: ${{ steps.plan.outputs.contract }}
+      rustfmt: ${{ steps.plan.outputs.rustfmt }}
+      embedded_boundary: ${{ steps.plan.outputs.embedded_boundary }}
+      embedded_sqlite: ${{ steps.plan.outputs.embedded_sqlite }}
+      clippy: ${{ steps.plan.outputs.clippy }}
+      test: ${{ steps.plan.outputs.test }}
+      coverage: ${{ steps.plan.outputs.coverage }}
+      container: ${{ steps.plan.outputs.container }}
+      helm: ${{ steps.plan.outputs.helm }}
+      benches: ${{ steps.plan.outputs.benches }}
+      publish: ${{ steps.plan.outputs.publish }}
+      full: ${{ steps.plan.outputs.full }}
+      cargo_packages: ${{ steps.plan.outputs.cargo_packages }}
+    steps:
+      - name: Checkout complete history for the change boundary
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+      - name: Prove the routing matrix and the workflow contract
+        run: |
+          python3 scripts/ci/quality-gate-plan.py --self-test
+          python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+      - name: Plan required gates
+        id: plan
+        shell: bash
+        run: |
+          if [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
+            python3 scripts/ci/quality-gate-plan.py \
+              --base "${{ github.event.pull_request.base.sha }}" \
+              --head "${{ github.event.pull_request.head.sha }}" \
+              --github-output "${GITHUB_OUTPUT}"
+          else
+            python3 scripts/ci/quality-gate-plan.py --full \
+              --github-output "${GITHUB_OUTPUT}"
+          fi
 
   architecture:
     needs: [impact]
+    if: needs.impact.outputs.architecture == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -67,6 +128,7 @@ jobs:
 
   contract:
     needs: [impact]
+    if: needs.impact.outputs.contract == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -93,6 +155,7 @@ jobs:
 
   rustfmt:
     needs: [impact]
+    if: needs.impact.outputs.rustfmt == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -112,6 +175,7 @@ jobs:
 
   embedded-boundary:
     needs: [impact]
+    if: needs.impact.outputs.embedded_boundary == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -137,6 +201,7 @@ jobs:
 
   embedded-sqlite-gates:
     needs: [impact]
+    if: needs.impact.outputs.embedded_sqlite == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -167,6 +232,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.clippy == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -205,6 +276,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.test == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -235,6 +312,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.coverage == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -262,6 +345,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     needs: [impact, rustfmt, clippy, test]
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.container == 'true'
+      && needs.rustfmt.result != 'failure'
+      && needs.clippy.result != 'failure'
+      && needs.test.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -276,6 +365,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.helm == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -293,6 +388,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.benches == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -318,6 +419,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     needs: [impact, contract]
+    # `contract` may be routed out; a skipped need would skip this job
+    # too, so the status function opens the condition explicitly.
+    if: >-
+      !cancelled() && needs.impact.result == 'success'
+      && needs.impact.outputs.publish == 'true'
+      && needs.contract.result != 'failure'
     permissions:
       contents: read
     steps:
@@ -346,6 +453,7 @@ jobs:
   # rather than merely documented.
   gate:
     needs:
+      - tree-proof
       - impact
       - architecture
       - contract
@@ -368,6 +476,7 @@ jobs:
       - name: The full gate ran and nothing required failed
         env:
           DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          TREE_PROVED: ${{ needs.tree-proof.outputs.skip }}
           IMPACT: ${{ needs.impact.result }}
           RESULTS: ${{ join(needs.*.result, ' ') }}
         run: |
@@ -375,8 +484,12 @@ jobs:
             echo "draft: the full gate stands down; mark ready for review to run it" >&2
             exit 1
           fi
+          if [[ "${TREE_PROVED}" == "true" ]]; then
+            echo "tree already proved green; nothing to re-run"
+            exit 0
+          fi
           if [[ "${IMPACT}" != "success" ]]; then
-            echo "the stand-down job finished '${IMPACT}', so nothing downstream is trustworthy" >&2
+            echo "the impact planner finished '${IMPACT}', so nothing downstream is trustworthy" >&2
             exit 1
           fi
           for result in ${RESULTS}; do
