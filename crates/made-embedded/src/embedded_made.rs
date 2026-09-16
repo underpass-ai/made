@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
-use made_app::services::{SessionJournal, SessionMemoryRecorder};
+use made_app::services::{SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
@@ -27,14 +27,13 @@ use made_core::entities::{
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    AuditJournalPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
-    CeremonyEvidenceSourcePort, CeremonyInstanceRepositoryPort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, CeremonyUnitOfWorkPort, ClockPort, MemoryWriterPort,
-    MetricsRecorderPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
+    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
+    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
-    StepAttempt,
+    StepAttempt, StreamVersion,
 };
 
 use crate::{EmbeddedMadeBuilder, InProcessCeremonyDefinitionSource, VERSION};
@@ -44,16 +43,12 @@ use crate::{EmbeddedMadeBuilder, InProcessCeremonyDefinitionSource, VERSION};
 pub struct EmbeddedMade {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-    instances: Arc<dyn CeremonyInstanceRepositoryPort>,
-    audit_journal: Arc<dyn AuditJournalPort>,
-    /// Reading a session with its revision, and storing it with the
-    /// record of what it did.
-    ///
-    /// Kept alongside `instances` rather than replacing it: reads that
-    /// change nothing have no revision to honour and no fact to seal,
-    /// and routing them through here would only make them look
-    /// transactional.
-    journal: Arc<SessionJournal>,
+    /// The streams themselves, for the one read that wants records
+    /// rather than the session they fold to.
+    events: Arc<dyn CeremonyEventStorePort>,
+    /// A session as the fold of its stream: every verb that reads or
+    /// advances one goes through here.
+    stream: Arc<SessionStream>,
     transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -93,9 +88,8 @@ impl EmbeddedMade {
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
-        instances: Arc<dyn CeremonyInstanceRepositoryPort>,
-        unit_of_work: Arc<dyn CeremonyUnitOfWorkPort>,
-        audit_journal: Arc<dyn AuditJournalPort>,
+        events: Arc<dyn CeremonyEventStorePort>,
+        snapshots: Arc<dyn CeremonySnapshotStorePort>,
         transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -106,9 +100,8 @@ impl EmbeddedMade {
         Self {
             definitions,
             publications,
-            journal: Arc::new(SessionJournal::new(unit_of_work, instances.clone())),
-            instances,
-            audit_journal,
+            stream: Arc::new(SessionStream::new(events.clone(), snapshots)),
+            events,
             transcript_store,
             step_handler,
             evidence_source,
@@ -172,20 +165,20 @@ impl EmbeddedMade {
     }
 
     pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
-        GetCeremonyInstanceUseCase::new(self.instances.clone())
+        GetCeremonyInstanceUseCase::new(self.stream.clone())
             .execute(id)
             .await
     }
 
     pub async fn instances(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
-        ListCeremonyInstancesUseCase::new(self.instances.clone())
+        ListCeremonyInstancesUseCase::new(self.stream.clone())
             .execute()
             .await
     }
 
-    /// Every persisted audit record for one session, in journal order.
+    /// Every sealed record of one session's stream, in stream order.
     pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        self.audit_journal.records(id).await
+        self.events.read(id, StreamVersion::EMPTY).await
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
@@ -197,7 +190,7 @@ impl EmbeddedMade {
     pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
         RunCeremonyUseCase::new(
             self.definitions.clone(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.step_handler.clone(),
             self.transcript_store.clone(),
             self.clock.clone(),
@@ -264,7 +257,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         BindCeremonyParticipantsUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -289,7 +282,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         StartPublishedCeremonyUseCase::new(
             self.publications.clone(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -299,7 +292,7 @@ impl EmbeddedMade {
     pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
         StartCeremonyUseCase::new(
             self.definitions.clone(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -317,7 +310,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         AssertCeremonyReasonUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
@@ -331,7 +324,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         ApproveCeremonyGuardUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
@@ -345,7 +338,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         DeferCeremonyGuardUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
@@ -359,7 +352,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         RequestCeremonyInterventionUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -372,7 +365,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         RespondToCeremonyInterventionUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
@@ -386,7 +379,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         CollectCeremonyEvidenceUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
@@ -401,7 +394,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         CloseCeremonyInterventionUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -414,7 +407,7 @@ impl EmbeddedMade {
     ) -> Result<StepAttempt, DomainError> {
         StartCeremonyStepUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -427,7 +420,7 @@ impl EmbeddedMade {
     ) -> Result<RunCeremonyStepOutput, DomainError> {
         RunCeremonyStepUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.step_handler.clone(),
             self.clock.clone(),
         )
@@ -442,7 +435,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         CompleteCeremonyStepUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
         )
         .execute(input)
@@ -455,7 +448,7 @@ impl EmbeddedMade {
     ) -> Result<CeremonyInstance, DomainError> {
         ApplyCeremonyTransitionUseCase::new(
             self.resolve_definition(),
-            self.journal.clone(),
+            self.stream.clone(),
             self.clock.clone(),
             self.session_memory.clone(),
         )
