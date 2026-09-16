@@ -20,6 +20,7 @@ mod ceremony_unit_of_work;
 mod definition_publication;
 mod event_store;
 mod instance_repository;
+mod legacy_snapshot_source;
 mod lifecycle;
 mod outbox;
 mod snapshot_store;
