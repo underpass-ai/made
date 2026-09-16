@@ -1,6 +1,7 @@
 //! Embedded MCP backend.
 
 mod designed_ceremony_draft;
+mod domain_tool_error;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_assert_ceremony_reason_request;
@@ -36,7 +37,7 @@ use serde_json::Value;
 
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 use crate::protocol::{
-    tool_success_result, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
+    tool_success_result, ToolError, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
@@ -89,18 +90,14 @@ impl EmbeddedMadeMcpBackend {
         Self { made }
     }
 
-    async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, String> {
+    async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, ToolError> {
         EmbeddedCeremonyInstancePresenter::present(&self.made, ceremony_id)
             .await
             .map(tool_success_result)
     }
 
-    async fn present_instances(&self) -> Result<Value, String> {
-        let instances = self
-            .made
-            .instances()
-            .await
-            .map_err(|error| error.to_string())?;
+    async fn present_instances(&self) -> Result<Value, ToolError> {
+        let instances = self.made.instances().await?;
         let mut values = Vec::with_capacity(instances.len());
         for instance in instances {
             // An instance whose definition is not in this store cannot be
@@ -123,7 +120,7 @@ impl EmbeddedMadeMcpBackend {
                 Err(reason) => values.push(serde_json::json!({
                     "ceremony_id": instance.id().as_str(),
                     "rehydratable": false,
-                    "reason": reason,
+                    "reason": reason.message(),
                 })),
             }
         }
@@ -176,7 +173,10 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         Box::pin(async move {
             match name {
                 DESIGN_CEREMONY_TOOL => {
-                    let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)?.design()?;
+                    let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?
+                        .design()
+                        .map_err(ToolError::invalid_request)?;
                     let report = designed.draft().analyze();
                     Ok(tool_success_result(
                         EmbeddedCeremonyDraftPresenter::present_design(
@@ -189,7 +189,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     ))
                 }
                 VALIDATE_CEREMONY_DRAFT_TOOL => {
-                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)?;
+                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
@@ -199,7 +200,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     ))
                 }
                 EXPLAIN_CEREMONY_DRAFT_TOOL => {
-                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)?;
+                    let request = EmbeddedCeremonyDraftRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let draft = request.parse()?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
@@ -209,108 +211,128 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     ))
                 }
                 BIND_CEREMONY_PARTICIPANTS_TOOL => {
-                    let request = EmbeddedBindCeremonyParticipantsRequest::try_from(arguments)?;
+                    let request = EmbeddedBindCeremonyParticipantsRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let instance = request.execute(&self.made).await?;
                     self.present_instance(instance.id()).await
                 }
                 DIFF_CEREMONY_DEFINITIONS_TOOL => {
-                    let request = EmbeddedDiffCeremonyDefinitionsRequest::try_from(arguments)?;
+                    let request = EmbeddedDiffCeremonyDefinitionsRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let diff = request.execute(&self.made).await?;
                     Ok(tool_success_result(present_definition_diff(&diff)))
                 }
                 PUBLISH_CEREMONY_DEFINITION_TOOL => {
-                    let request = EmbeddedPublishCeremonyDefinitionRequest::try_from(arguments)?;
+                    let request = EmbeddedPublishCeremonyDefinitionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let outcome = request.execute(&self.made).await?;
                     Ok(tool_success_result(EmbeddedPublicationPresenter::present(
                         &outcome,
                     )))
                 }
                 START_PUBLISHED_CEREMONY_TOOL => {
-                    let request = EmbeddedStartPublishedCeremonyRequest::try_from(arguments)?;
+                    let request = EmbeddedStartPublishedCeremonyRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 RUN_CEREMONY_TOOL => {
-                    let request = EmbeddedRunCeremonyRequest::try_from(arguments)?;
+                    let request = EmbeddedRunCeremonyRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let output = request.execute(&self.made).await?;
                     Ok(tool_success_result(EmbeddedRunCeremonyPresenter::present(
                         &output,
                     )))
                 }
                 START_CEREMONY_TOOL => {
-                    let request = EmbeddedStartCeremonyRequest::try_from(arguments)?;
+                    let request = EmbeddedStartCeremonyRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 RUN_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedRunCeremonyStepRequest::try_from(arguments)?;
+                    let request = EmbeddedRunCeremonyStepRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 CLAIM_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)?;
+                    let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 COMPLETE_CEREMONY_STEP_TOOL => {
-                    let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)?;
+                    let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 APPROVE_CEREMONY_GUARD_TOOL => {
-                    let request = EmbeddedApproveCeremonyGuardRequest::try_from(arguments)?;
+                    let request = EmbeddedApproveCeremonyGuardRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 ASSERT_CEREMONY_REASON_TOOL => {
-                    let request = EmbeddedAssertCeremonyReasonRequest::try_from(arguments)?;
+                    let request = EmbeddedAssertCeremonyReasonRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 DEFER_CEREMONY_GUARD_TOOL => {
-                    let request = EmbeddedDeferCeremonyGuardRequest::try_from(arguments)?;
+                    let request = EmbeddedDeferCeremonyGuardRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 APPLY_CEREMONY_TRANSITION_TOOL => {
-                    let request = EmbeddedApplyCeremonyTransitionRequest::try_from(arguments)?;
+                    let request = EmbeddedApplyCeremonyTransitionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 GET_CEREMONY_INSTANCE_TOOL => {
-                    let request = EmbeddedGetCeremonyInstanceRequest::try_from(arguments)?;
+                    let request = EmbeddedGetCeremonyInstanceRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.into_ceremony_id();
                     self.present_instance(&ceremony_id).await
                 }
                 GENERATE_CEREMONY_REPORT_TOOL => {
-                    let request = EmbeddedGenerateCeremonyReportRequest::try_from(arguments)?;
+                    let request = EmbeddedGenerateCeremonyReportRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     EmbeddedCeremonyReportPresenter::present(&self.made, &request)
                         .await
                         .map(tool_success_result)
                 }
                 LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {
-                    let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)?;
+                    let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 RESPOND_TO_CEREMONY_INTERVENTION_TOOL => {
-                    let request =
-                        EmbeddedRespondToCeremonyInterventionRequest::try_from(arguments)?;
+                    let request = EmbeddedRespondToCeremonyInterventionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 CLOSE_CEREMONY_INTERVENTION_TOOL => {
-                    let request = EmbeddedCloseCeremonyInterventionRequest::try_from(arguments)?;
+                    let request = EmbeddedCloseCeremonyInterventionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 COLLECT_CEREMONY_EVIDENCE_TOOL => {
-                    let request = EmbeddedCollectCeremonyEvidenceRequest::try_from(arguments)?;
+                    let request = EmbeddedCollectCeremonyEvidenceRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
                 }
-                _ => Err(format!("embedded backend: unsupported tool `{name}`")),
+                _ => Err(ToolError::invalid_request(format!(
+                    "embedded backend: unsupported tool `{name}`"
+                ))),
             }
         })
     }

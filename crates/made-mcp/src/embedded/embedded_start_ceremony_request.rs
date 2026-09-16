@@ -8,6 +8,8 @@ use super::embedded_request_fields::{
     context_from_json, optional_string, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that starts, but does not advance, a ceremony.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedStartCeremonyRequest {
@@ -19,15 +21,11 @@ pub(super) struct EmbeddedStartCeremonyRequest {
 }
 
 impl EmbeddedStartCeremonyRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
-        let mounted = made
-            .mount_yaml(&self.definition_yaml)
-            .await
-            .map_err(|error| format!("invalid ceremony definition: {error}"))?;
-        let definition = mounted
-            .definitions()
-            .first()
-            .ok_or_else(|| "ceremony definition source returned no definitions".to_owned())?;
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
+        let mounted = made.mount_yaml(&self.definition_yaml).await?;
+        let definition = mounted.definitions().first().ok_or_else(|| {
+            ToolError::refused("ceremony definition source returned no definitions")
+        })?;
         let instance = made
             .start(StartCeremonyInput::new(
                 self.ceremony_id,
@@ -37,8 +35,7 @@ impl EmbeddedStartCeremonyRequest {
                 self.actor_id,
                 self.actor_kind,
             ))
-            .await
-            .map_err(|error| format!("failed to start ceremony: {error}"))?;
+            .await?;
         Ok(instance.id().clone())
     }
 }

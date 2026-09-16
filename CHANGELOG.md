@@ -35,6 +35,13 @@ operator command.
 
 ### Changed
 
+- Every MCP tool failure now carries one structured envelope —
+  `{code, message, retryable}` in the result's `structuredContent`, with the
+  text content kept — on both backends. `code` is `unavailable`, `not_found`,
+  `refused` or `invalid_request`, reusing `made-api`'s `ApiError` vocabulary.
+  The `"gRPC {code}: {message}"` prefix and free-text errors are gone, and a
+  `tonic::Status` and a `DomainError` that mean the same thing now produce the
+  same code. (#48)
 - `made_list_ceremony_instances` answers `{count, instances[]}` on both MCP
   backends. Every entry carries `rehydratable` and `reason`; a session whose
   definition the store does not hold is one unreadable entry instead of a

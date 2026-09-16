@@ -10,6 +10,8 @@ use super::embedded_request_fields::{
     context_from_json, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 const DEFAULT_LEASE_OWNER_ID: &str = "made-mcp-embedded";
 const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
 
@@ -26,16 +28,11 @@ pub(crate) struct EmbeddedRunCeremonyRequest {
 }
 
 impl EmbeddedRunCeremonyRequest {
-    pub(crate) async fn execute(self, made: &EmbeddedMade) -> Result<RunCeremonyOutput, String> {
-        let mounted = made
-            .mount_yaml(&self.definition_yaml)
-            .await
-            .map_err(|error| format!("invalid ceremony definition: {error}"))?;
-        let definition = mounted
-            .definitions()
-            .first()
-            .cloned()
-            .ok_or_else(|| "ceremony definition source returned no definitions".to_owned())?;
+    pub(crate) async fn execute(self, made: &EmbeddedMade) -> Result<RunCeremonyOutput, ToolError> {
+        let mounted = made.mount_yaml(&self.definition_yaml).await?;
+        let definition = mounted.definitions().first().cloned().ok_or_else(|| {
+            ToolError::refused("ceremony definition source returned no definitions")
+        })?;
 
         made.run(RunCeremonyInput::new(
             self.ceremony_id,
@@ -47,7 +44,7 @@ impl EmbeddedRunCeremonyRequest {
             self.actor_kind,
         ))
         .await
-        .map_err(|error| format!("ceremony execution failed: {error}"))
+        .map_err(ToolError::from)
     }
 }
 

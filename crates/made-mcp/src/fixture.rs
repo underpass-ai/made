@@ -73,9 +73,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
-                    return Err(format!(
+                    return Err(crate::protocol::ToolError::invalid_request(format!(
                         "fixture backend: unknown tool `{other}` (this is a client-side typo, not a backend error)"
-                    ));
+                    )));
                 }
             };
             Ok(crate::protocol::tool_success_result(structured))
@@ -467,7 +467,8 @@ mod tests {
     async fn unknown_tool_returns_explicit_error() {
         let backend = FixtureMadeMcpBackend;
         let err = backend.call_tool("nope", &json!({})).await.unwrap_err();
-        assert!(err.contains("unknown tool"));
+        assert!(err.message().contains("unknown tool"));
+        assert_eq!(err.code(), crate::protocol::ToolErrorCode::InvalidRequest);
     }
 
     #[tokio::test]

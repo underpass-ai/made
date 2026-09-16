@@ -11,6 +11,8 @@ mod result_envelopes;
 mod schema_primitives;
 #[cfg(test)]
 mod tests;
+mod tool_error;
+mod tool_error_code;
 
 /// MCP protocol version we advertise.
 pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
@@ -21,6 +23,8 @@ pub(crate) use initialization::initialize_result;
 pub(crate) use result_envelopes::{
     jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
 };
+pub use tool_error::ToolError;
+pub use tool_error_code::ToolErrorCode;
 pub(crate) use tool_names::{
     is_grpc_tool, is_server_tool, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,

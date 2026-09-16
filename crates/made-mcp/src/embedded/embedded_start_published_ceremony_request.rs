@@ -10,6 +10,8 @@ use super::embedded_request_fields::{
     context_from_json, optional_string, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that starts a ceremony from a published
 /// definition.
 ///
@@ -28,7 +30,7 @@ pub(super) struct EmbeddedStartPublishedCeremonyRequest {
 }
 
 impl EmbeddedStartPublishedCeremonyRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         let instance = made
             .start_published(StartCeremonyInput::new(
                 self.ceremony_id,
@@ -38,8 +40,7 @@ impl EmbeddedStartPublishedCeremonyRequest {
                 self.actor_id,
                 self.actor_kind,
             ))
-            .await
-            .map_err(|error| format!("failed to start published ceremony: {error}"))?;
+            .await?;
         Ok(instance.id().clone())
     }
 }

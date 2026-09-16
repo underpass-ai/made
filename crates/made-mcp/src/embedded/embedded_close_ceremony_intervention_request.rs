@@ -5,6 +5,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{required_actor_kind, required_string};
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that closes a dynamic ceremony intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedCloseCeremonyInterventionRequest {
@@ -15,15 +17,14 @@ pub(super) struct EmbeddedCloseCeremonyInterventionRequest {
 }
 
 impl EmbeddedCloseCeremonyInterventionRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.close_intervention(CloseCeremonyInterventionInput::new(
             self.ceremony.clone(),
             self.intervention,
             self.role,
             self.role_kind,
         ))
-        .await
-        .map_err(|error| format!("failed to close ceremony intervention: {error}"))?;
+        .await?;
         Ok(self.ceremony)
     }
 }

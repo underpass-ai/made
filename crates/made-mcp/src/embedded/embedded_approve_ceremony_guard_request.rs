@@ -7,6 +7,8 @@ use super::embedded_request_fields::{
     load_instance_definition, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request for one explicit human guard approval.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedApproveCeremonyGuardRequest {
@@ -17,22 +19,23 @@ pub(super) struct EmbeddedApproveCeremonyGuardRequest {
 }
 
 impl EmbeddedApproveCeremonyGuardRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         let (definition, instance) = load_instance_definition(made, &self.ceremony_id).await?;
-        let guard = definition
-            .guards()
-            .get(&self.guard_name)
-            .ok_or_else(|| "ceremony guard was not found in the instance definition".to_owned())?;
+        let guard = definition.guards().get(&self.guard_name).ok_or_else(|| {
+            ToolError::not_found("ceremony guard was not found in the instance definition")
+        })?;
         if !matches!(guard.condition(), GuardCondition::HumanApproval) {
-            return Err("only human approval guards can be approved explicitly".to_owned());
+            return Err(ToolError::refused(
+                "only human approval guards can be approved explicitly",
+            ));
         }
         let is_currently_required = definition
             .available_transitions(instance.current_state())
             .any(|transition| transition.required_guards().contains(&self.guard_name));
         if !is_currently_required {
-            return Err(
-                "human guard is not required by a transition from the current state".to_owned(),
-            );
+            return Err(ToolError::refused(
+                "human guard is not required by a transition from the current state",
+            ));
         }
 
         made.approve_guard(ApproveCeremonyGuardInput::new(
@@ -41,8 +44,7 @@ impl EmbeddedApproveCeremonyGuardRequest {
             self.role_id,
             self.role_kind,
         ))
-        .await
-        .map_err(|error| format!("failed to approve ceremony guard: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }

@@ -10,6 +10,8 @@ use super::embedded_request_fields::{
     load_instance_definition, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 const DEFAULT_LEASE_OWNER_ID: &str = "made-mcp-embedded";
 const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
 
@@ -25,11 +27,9 @@ pub(super) struct EmbeddedRunCeremonyStepRequest {
 }
 
 impl EmbeddedRunCeremonyStepRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         let (definition, _instance) = load_instance_definition(made, &self.ceremony_id).await?;
-        let role_id = definition
-            .role_id_for_step(&self.step_id)
-            .map_err(|error| format!("ceremony step has no authorized role: {error}"))?;
+        let role_id = definition.role_id_for_step(&self.step_id)?;
 
         made.run_step(RunCeremonyStepInput::new(
             self.ceremony_id.clone(),
@@ -40,8 +40,7 @@ impl EmbeddedRunCeremonyStepRequest {
             self.idempotency_key,
             self.lease_ttl,
         ))
-        .await
-        .map_err(|error| format!("failed to run ceremony step: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }

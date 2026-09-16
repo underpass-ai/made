@@ -345,6 +345,46 @@ takes precedence over overlapping execution-profile metadata.
 
 ## Tools
 
+### When a tool call fails
+
+A failed tool call is an MCP tool **result** with `"isError": true`, not
+a JSON-RPC `error`: the JSON-RPC layer only fails when the message
+itself is unusable. Every backend answers the same envelope, in the
+result's `structuredContent`:
+
+```json
+{
+  "content": [{ "type": "text", "text": "not_found: not found: ceremony_instance" }],
+  "structuredContent": {
+    "code": "not_found",
+    "message": "not found: ceremony_instance",
+    "retryable": false
+  },
+  "isError": true
+}
+```
+
+`code` is one of four words, and each names a different remedy:
+
+| `code` | What happened | `retryable` |
+|---|---|---|
+| `unavailable` | The engine was not reached. | `true` |
+| `not_found` | What the call named is not there. | `false` |
+| `refused` | The engine looked at the call and said no. | `false` |
+| `invalid_request` | The arguments do not fit the tool's schema. | `false` |
+
+Branch on `code`, never on the message: the message is the engine's own
+words and may change. The same failure carries the same code whichever
+backend served it, which is what lets a client point at an in-process
+engine or a cluster without a second error table. `retryable` is `true`
+for `unavailable` and nothing else — the other three answer the same way
+however many times they are asked.
+
+The text content carries `code: message` for hosts that render nothing
+else. The transport never appears in either: `unavailable` says the same
+thing whether the engine was across a network or failed to open in this
+process.
+
 ### Discovering the active surface and getting help
 
 Two server-owned tools are available independently of the selected backend:

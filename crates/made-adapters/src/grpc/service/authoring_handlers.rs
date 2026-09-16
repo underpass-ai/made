@@ -139,8 +139,8 @@ impl MadeGrpcService {
             // by id still fails loudly.
             states.push(match self.project(instance).await {
                 Ok(state) => state,
-                Err(status) => {
-                    unrehydratable_ceremony_instance_state_from(instance.id(), status.message())
+                Err(unreadable) => {
+                    unrehydratable_ceremony_instance_state_from(instance.id(), unreadable.message())
                 }
             });
         }

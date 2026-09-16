@@ -17,6 +17,7 @@ use std::sync::Arc;
 use made_adapters::memory::InMemoryCeremonyEventStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
+use made_mcp::protocol::ToolErrorCode;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
@@ -691,4 +692,104 @@ async fn start_in_process(
         )
         .await
         .expect("made_start_ceremony should succeed in-process");
+}
+
+/// Error envelopes. One vocabulary on both arms: a client branches on
+/// `code` and never on prose, and never on which backend answered.
+///
+/// `unavailable` has no in-process counterpart by construction — an
+/// engine in this process is either there or the process is not — so
+/// it is proven on the arm that can produce it.
+#[tokio::test]
+async fn both_backends_answer_one_error_envelope_with_one_vocabulary() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    for backend in [
+        &remote as &dyn MadeMcpToolBackend,
+        &embedded as &dyn MadeMcpToolBackend,
+    ] {
+        start_a_session(backend, "envelope-parity").await;
+    }
+
+    let cases: [(&str, &str, Value, ToolErrorCode); 3] = [
+        // Nothing by that name: asking for something else is the remedy.
+        (
+            "not found",
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": "no-such-session" }),
+            ToolErrorCode::NotFound,
+        ),
+        // The arguments do not fit the tool's schema.
+        (
+            "an argument that is not there",
+            "made_get_ceremony_instance",
+            json!({}),
+            ToolErrorCode::InvalidRequest,
+        ),
+        // The engine looked at the session and said no: `approve` is
+        // not a trigger the current state offers.
+        (
+            "a transition the session does not offer",
+            "made_apply_ceremony_transition",
+            json!({
+                "ceremony_id": "envelope-parity",
+                "trigger": "approve",
+                "actor_kind": "agent",
+            }),
+            ToolErrorCode::Refused,
+        ),
+    ];
+
+    for (what, tool, arguments, expected) in cases {
+        for backend in [
+            &remote as &dyn MadeMcpToolBackend,
+            &embedded as &dyn MadeMcpToolBackend,
+        ] {
+            let name = backend.backend_name();
+            let error = backend
+                .call_tool(tool, &arguments)
+                .await
+                .expect_err(&format!("{what} should fail on the {name} backend"));
+            assert_eq!(
+                error.code(),
+                expected,
+                "{what} on the {name} backend: {error}"
+            );
+            assert!(!error.is_retryable(), "{what} is not worth repeating");
+            assert!(
+                !error.message().contains("gRPC"),
+                "the transport must not reach the envelope: {error}"
+            );
+        }
+    }
+
+    // The engine out of reach. Waiting is the remedy, and the envelope
+    // is the one that says so.
+    let unreachable =
+        GrpcMadeMcpBackend::new("http://127.0.0.1:1", MadeMcpGrpcTlsConfig::disabled());
+    let error = unreachable
+        .call_tool("made_get_ceremony_instance", &json!({ "ceremony_id": "x" }))
+        .await
+        .expect_err("a closed port should fail");
+    assert_eq!(error.code(), ToolErrorCode::Unavailable);
+    assert!(error.is_retryable());
+}
+
+async fn start_a_session(backend: &dyn MadeMcpToolBackend, ceremony_id: &str) {
+    backend
+        .call_tool(
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await
+        .expect("made_start_ceremony should succeed");
 }
