@@ -6,7 +6,11 @@ else. Two rules decide that:
 
 * Rust gates follow the **reverse workspace dependency closure**. A change
   inside a crate affects that crate and everything that depends on it,
-  transitively, read from the manifests rather than guessed.
+  transitively, read from the manifests rather than guessed. The closure
+  decides *which gates run*, never which crates they build: every Rust job
+  is `--workspace`, because a gate that compiles a subset is a proof about
+  a subset. `affected_packages` is the reason the plan gives for its
+  booleans, not a cargo argument.
 * The independent contracts — proto/AsyncAPI, the embedded boundaries, the
   plugin bundle, the chart, the container image, coverage, the publication
   dry run — follow **path routing**.
@@ -253,7 +257,6 @@ def empty_plan() -> dict[str, object]:
         "reason": "path-specific",
         "changed_packages": [],
         "affected_packages": [],
-        "cargo_packages": "",
         **{gate: False for gate in GATES},
     }
 
@@ -265,7 +268,6 @@ def full_plan(packages: dict[str, pathlib.Path], reason: str) -> dict[str, objec
         "reason": reason,
         "changed_packages": names,
         "affected_packages": names,
-        "cargo_packages": " ".join(f"-p {name}" for name in names),
         **{gate: True for gate in GATES},
     }
 
@@ -318,7 +320,6 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
         affected = reverse_closure(changed_packages, dependencies)
         plan["changed_packages"] = sorted(changed_packages)
         plan["affected_packages"] = sorted(affected)
-        plan["cargo_packages"] = " ".join(f"-p {name}" for name in sorted(affected))
         for gate in WORKSPACE_WIDE:
             plan[gate] = True
         plan["embedded_boundary"] = bool(EMBEDDED_BOUNDARY_CRATES & affected)

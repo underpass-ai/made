@@ -85,7 +85,6 @@ jobs:
       benches: ${{ steps.plan.outputs.benches }}
       publish: ${{ steps.plan.outputs.publish }}
       full: ${{ steps.plan.outputs.full }}
-      cargo_packages: ${{ steps.plan.outputs.cargo_packages }}
     steps:
       - name: Checkout complete history for the change boundary
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
