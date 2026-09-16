@@ -31,6 +31,10 @@ operator command.
   envelope; the record digest covers the payload, so `AuditChain::verify`
   detects an edited event. Version-1 records from earlier stores still read
   and verify unchanged.
+- `CeremonyInstance` now decides commands into events and folds events into
+  state (`decide` / `apply` / `rehydrate`); the existing mutators are wrappers
+  over that pair, and fold equality — the session is the fold of the events
+  its mutations decided — is tested per command and over random sequences.
 
 ## 0.3.0 - 2026-09-03
 
