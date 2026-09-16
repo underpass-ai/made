@@ -461,6 +461,12 @@ def validate(sources: dict[str, str]) -> list[str]:
             "permissions, so it inherits whatever the repository grants"
         )
 
+    if '- "!crates/made-mcp/**/*.md"' not in trigger_block(sources[PLUGIN_PACKAGE]):
+        failures.append(
+            f"{PLUGIN_PACKAGE} watches crates/made-mcp/** without excluding "
+            "its prose, so a README wakes four packaging hosts"
+        )
+
     release = job_block(sources[PLUGIN_PACKAGE], RELEASE_JOB)
     if release is None:
         failures.append(f"{PLUGIN_PACKAGE} lost the {RELEASE_JOB} job")
@@ -616,6 +622,11 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         "  release-upload:\n    needs: [package]\n"
         "    if: startsWith(github.ref, 'refs/tags/v')\n",
         "  release-upload:\n    needs: [package]\n",
+    ),
+    "a README under made-mcp wakes four packaging hosts": (
+        PLUGIN_PACKAGE,
+        '      - "!crates/made-mcp/**/*.md"\n',
+        "",
     ),
     "the container suites burn runners on drafts": (
         INTEGRATION,

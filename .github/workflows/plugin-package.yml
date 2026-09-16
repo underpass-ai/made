@@ -27,6 +27,12 @@ on:
       - "scripts/ci/made-plugin-smoke.sh"
       - "tests/plugin/**"
       - "crates/made-mcp/**"
+      # …but not its prose. A README cannot change the binary the bundle
+      # ships, and waking four hosts for one is the opposite of a fast
+      # loop. The exclusion is deliberately narrow: the markdown under
+      # plugins/made/** — the skills and commands — *is* bundle content
+      # and still wakes the matrix.
+      - "!crates/made-mcp/**/*.md"
       - ".github/workflows/plugin-package.yml"
   push:
     branches:
