@@ -8,15 +8,15 @@ use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CeremonyDraftView, CeremonyInstanceView,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CreateCouncilInput,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
+    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    UnregisterAgentUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort, StatisticsPort};
@@ -30,7 +30,8 @@ use super::mappers::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
     assert_ceremony_reason_input_from_proto, bind_ceremony_participants_input_from_proto,
     ceremony_definition_source_from_proto, ceremony_instance_state_from,
-    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
+    claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
+    collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
     council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
     diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
     orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
@@ -52,6 +53,7 @@ use register_agent_descriptor::descriptor_from_register_request;
 use statistics_mapper::statistics_to_proto;
 
 mod authoring_handlers;
+mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod council_handlers;
 mod descriptor_error;
@@ -78,6 +80,8 @@ pub struct MadeGrpcService {
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
     pub(super) run_ceremony_step: Arc<RunCeremonyStepUseCase>,
+    pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
+    pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
     pub(super) apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
     pub(super) approve_ceremony_guard: Arc<ApproveCeremonyGuardUseCase>,
     pub(super) defer_ceremony_guard: Arc<DeferCeremonyGuardUseCase>,
@@ -321,6 +325,20 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::RunCeremonyStepRequest>,
     ) -> GrpcResult<pb::RunCeremonyStepResponse> {
         self.handle_run_ceremony_step(request).await
+    }
+
+    async fn claim_ceremony_step(
+        &self,
+        request: Request<pb::ClaimCeremonyStepRequest>,
+    ) -> GrpcResult<pb::ClaimCeremonyStepResponse> {
+        self.handle_claim_ceremony_step(request).await
+    }
+
+    async fn complete_ceremony_step(
+        &self,
+        request: Request<pb::CompleteCeremonyStepRequest>,
+    ) -> GrpcResult<pb::CompleteCeremonyStepResponse> {
+        self.handle_complete_ceremony_step(request).await
     }
 
     async fn apply_ceremony_transition(

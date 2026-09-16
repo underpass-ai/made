@@ -42,13 +42,14 @@ use made_app::services::SessionStream;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
-    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::ports::{
@@ -175,6 +176,20 @@ impl GrpcFixture {
             )
             .with_transcript_store(ceremony_transcript_store),
         );
+        // The delegated-host protocol reaches the fixture too: the
+        // parity tests drive claim and complete over these very RPCs,
+        // and a fixture missing them would prove the tools agree on a
+        // server nobody runs.
+        let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+        ));
+        let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+        ));
         // No memory configured, and said so rather than pretended.
         let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
@@ -279,6 +294,8 @@ impl GrpcFixture {
             .start_ceremony(start_ceremony)
             .start_published_ceremony(start_published_ceremony)
             .run_ceremony_step(run_ceremony_step)
+            .claim_ceremony_step(claim_ceremony_step)
+            .complete_ceremony_step(complete_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
             .approve_ceremony_guard(approve_ceremony_guard)
             .defer_ceremony_guard(defer_ceremony_guard)
@@ -447,6 +464,20 @@ impl GrpcFixture {
             )
             .with_transcript_store(ceremony_transcript_store),
         );
+        // The delegated-host protocol reaches the fixture too: the
+        // parity tests drive claim and complete over these very RPCs,
+        // and a fixture missing them would prove the tools agree on a
+        // server nobody runs.
+        let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+        ));
+        let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+        ));
         // No memory configured, and said so rather than pretended.
         let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
@@ -551,6 +582,8 @@ impl GrpcFixture {
             .start_ceremony(start_ceremony)
             .start_published_ceremony(start_published_ceremony)
             .run_ceremony_step(run_ceremony_step)
+            .claim_ceremony_step(claim_ceremony_step)
+            .complete_ceremony_step(complete_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
             .approve_ceremony_guard(approve_ceremony_guard)
             .defer_ceremony_guard(defer_ceremony_guard)

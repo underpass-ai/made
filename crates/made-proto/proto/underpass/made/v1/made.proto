@@ -171,6 +171,18 @@ service MadeService {
   // move.
   rpc BindCeremonyParticipants(BindCeremonyParticipantsRequest) returns (BindCeremonyParticipantsResponse);
 
+  // The delegated-host protocol: claim, do the work, complete. What
+  // the step declares is performed outside the engine — by the
+  // caller's own agents, tools or hands — and these two calls are the
+  // only way the session learns that it was taken on and how it
+  // ended. Claiming takes the step's lease durably before any of that
+  // work starts, so two hosts cannot both believe the step is theirs;
+  // completing records the observable result the host saw, which the
+  // engine writes down and never infers. They answer with the
+  // session, like every other move.
+  rpc ClaimCeremonyStep(ClaimCeremonyStepRequest) returns (ClaimCeremonyStepResponse);
+  rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -1290,4 +1302,56 @@ message PublishCeremonyDefinitionResponse {
   string digest = 4;
   string published_digest = 5;
   string offered_digest = 6;
+}
+
+message ClaimCeremonyStepRequest {
+  string ceremony_id = 1;
+  // The declared step the host is about to execute itself.
+  string step_id = 2;
+  // What kind of party is taking it on: "human", "agent", "service"
+  // or "engine".
+  //
+  // Declared by you, because only you know. Which seat runs this step
+  // comes from the definition, and that says which seat was required
+  // — not what turned up to fill it.
+  //
+  // Refused when missing or unrecognised. A default would put a kind
+  // in the journal that nobody chose.
+  string actor_kind = 3;
+  // The host runner acquiring the lease. Empty takes the server
+  // default.
+  string lease_owner_id = 4;
+  // Repeating a call with the same key must not claim the step twice.
+  // Empty mints a fresh key server-side, which is accepted but is the
+  // same as asking for no guarantee.
+  string idempotency_key = 5;
+  // Zero takes the server default.
+  uint64 lease_ttl_ms = 6;
+}
+
+message ClaimCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message CompleteCeremonyStepRequest {
+  string ceremony_id = 1;
+  // The previously claimed step this result belongs to.
+  string step_id = 2;
+  // What kind of party did the work. See
+  // ClaimCeremonyStepRequest.actor_kind.
+  string actor_kind = 3;
+  // The observable result: "completed", "failed", "waiting_for_human"
+  // or "cancelled". What the host saw, not what it hoped for.
+  string status = 4;
+  // Structured output the host produced, including evidence and
+  // artifact references. Absent is empty, which is a legitimate
+  // result and not a missing one.
+  google.protobuf.Struct output = 5;
+  // Why it failed. Required for "failed" and refused for every other
+  // status: a reason attached to a success describes nothing.
+  string error = 6;
+}
+
+message CompleteCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
 }

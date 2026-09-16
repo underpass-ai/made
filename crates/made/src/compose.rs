@@ -34,13 +34,14 @@ use made_app::services::SessionStream;
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
-    GetCeremonyInstanceUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::error::DomainError;
@@ -269,6 +270,19 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )
         .with_transcript_store(ceremony_transcript_store),
     );
+    // The delegated-host protocol. Claiming and completing are the
+    // same two use cases the embedded edition has always called; only
+    // the way in is new.
+    let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
+    let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
     // No memory configured, and said so rather than pretended: a
     // session with nowhere to record what it decided still runs, it
     // just forgets. Swapping this for a durable writer is the
@@ -393,6 +407,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .start_ceremony(start_ceremony)
         .start_published_ceremony(start_published_ceremony)
         .run_ceremony_step(run_ceremony_step)
+        .claim_ceremony_step(claim_ceremony_step)
+        .complete_ceremony_step(complete_ceremony_step)
         .apply_ceremony_transition(apply_ceremony_transition)
         .approve_ceremony_guard(approve_ceremony_guard)
         .defer_ceremony_guard(defer_ceremony_guard)
