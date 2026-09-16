@@ -28,7 +28,7 @@ provider_features := "--features made-adapters/agent-anthropic --features made-a
 # script .github/workflows/dev-loop.yml runs, so the two cannot drift.
 #
 # Narrow or widen it for one run:
-#   DEV_PACKAGES="-p made-core" just dev
+#   DEV_PACKAGES="-p made-mcp" just dev
 #
 # Run a single stage:
 #   just dev lint | just dev test | just dev gates

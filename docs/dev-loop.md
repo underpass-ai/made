@@ -106,7 +106,7 @@ just dev                            # every stage
 just dev lint                       # fmt + clippy only
 just dev test                       # tests only
 just dev gates                      # the three seconds-long gates
-DEV_PACKAGES="-p made-core" just dev  # narrow it for one run
+DEV_PACKAGES="-p made-mcp" just dev   # narrow it for one run
 ```
 
 `just dev` and the workflow are not two lists that mirror each other:
@@ -160,8 +160,10 @@ against, an API that will not answer, a commit that cannot be resolved.
 
 ### Changing `DEV_PACKAGES`
 
-`DEV_PACKAGES` names the crates the current phase iterates on. It lives in
-two places that must stay identical, and the contract script enforces that:
+`DEV_PACKAGES` names the crates the current phase iterates on. Phase 2 —
+projections, cursors, migration, observability and memory — iterates on
+`made-core made-app made-adapters made-embedded made-mcp`. It lives in two
+places that must stay identical, and the contract script enforces that:
 
 - `env.DEV_PACKAGES` in `.github/workflows/dev-loop.yml`
 - the `DEV_PACKAGES="${DEV_PACKAGES:-…}"` default in `scripts/ci/dev-loop.sh`
