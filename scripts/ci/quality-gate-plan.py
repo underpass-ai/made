@@ -26,7 +26,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -64,6 +66,16 @@ EMBEDDED_SQLITE_CRATES = {"made-adapters", "made-embedded", "made-mcp"}
 CONTAINER_CRATES = {"made"}
 PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
 
+# Files that are documentation or fixtures to a reader and source code to
+# rustc, because some crate bakes them in with `include_str!` /
+# `include_bytes!`. Editing one changes what the workspace compiles and
+# what its tests assert, so it pays for the two jobs that compile the
+# crates' test targets and run them: `test` runs the assertion,
+# `clippy --all-targets` compiles it. Not `coverage`: it re-runs the very
+# tests `test` has already proved, and the line-coverage floor is a
+# property of Rust sources, which these files are not.
+EMBEDDED_DATA_GATES = ("clippy", "test")
+
 # Changing any of these changes what "proved" means, so the answer is the
 # whole matrix rather than a cleverer plan.
 FULL_MATRIX_PATHS = {
@@ -94,7 +106,13 @@ PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("scripts/ci/e2e-", ()),
     ("scripts/ci/integration-", ()),
     ("scripts/mcp/", ()),
-    ("tests/e2e/", ()),
+    # The ceremony definitions are not test data on the side. They are
+    # `include_str!`'d into made-e2e-runner's own sources, into seven
+    # made-tests-integration tests and into two made-adapters unit tests,
+    # and read from disk by two more made-adapters tests. Editing one
+    # changes what the workspace compiles and what it asserts.
+    ("tests/e2e/ceremonies/", EMBEDDED_DATA_GATES),
+    ("tests/e2e/kubernetes/", ()),
     ("tests/cluster/", ()),
     (".kmp/", ()),
     (".github/", ()),
@@ -114,6 +132,25 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "scripts/ci/install-helm.sh": ("helm",),
     "scripts/ci/architecture-gate.sh": ("architecture",),
     "docs/architecture/conformance.tsv": ("architecture",),
+    # Two documents the workspace compiles. `parity.tsv` is `include_str!`'d
+    # by crates/made-mcp/src/protocol/parity_tests.rs and by
+    # crates/made-tests-integration/tests/mcp_parity_session.rs;
+    # `support-matrix.md` by
+    # crates/made-mcp/src/protocol/editions_matrix_tests.rs. Both are
+    # documentation to a reader and source to rustc, and
+    # `check_embedded_data_routing` below fails if either stops being routed.
+    "docs/architecture/parity.tsv": EMBEDDED_DATA_GATES,
+    "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
+    # The rest of the manual E2E surface, named one by one rather than by a
+    # `tests/e2e/` prefix: nothing in the workspace compiles or reads these
+    # and no CI job builds them, but a new directory or Dockerfile there
+    # must fail closed to the full matrix rather than inherit an empty
+    # route from its parent.
+    "tests/e2e/docker-compose.e2e.yaml": (),
+    "tests/e2e/provider-runner.Dockerfile": (),
+    "tests/e2e/runner.Dockerfile": (),
+    "tests/e2e/stub-llm.Dockerfile": (),
+    "tests/e2e/stub-runtime.Dockerfile": (),
     "scripts/ci/domain-vocabulary-boundary.sh": ("rustfmt",),
     "scripts/ci/embedded-dependency-boundary.sh": ("embedded_boundary",),
     "scripts/ci/embedded-sqlite-gates.sh": ("embedded_sqlite",),
@@ -309,6 +346,80 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
     return plan
 
 
+# --- the non-regressable rule -------------------------------------------
+#
+# A file a crate bakes in with `include_str!` / `include_bytes!` is source
+# code, wherever it lives. While it lives inside the crate that includes
+# it the crate prefix routes it; once it escapes, the tables above are the
+# only thing between an edit and a gate that runs nothing. That is exactly
+# how `docs/architecture/parity.tsv`, `docs/operations/support-matrix.md`
+# and `tests/e2e/ceremonies/*.yaml` reached `main` unrouted.
+#
+# So the self-test walks every include in `crates/**`, resolves its target,
+# and fails when an escaping target would run no Rust job. The table can
+# fall behind the code once; it cannot fall behind it twice.
+
+INCLUDE_LITERAL = re.compile(
+    r'include_(?:str|bytes)!\s*\(\s*"((?:[^"\\]|\\.)*)"', re.S
+)
+INCLUDE_MANIFEST_DIR = re.compile(
+    r'include_(?:str|bytes)!\s*\(\s*concat!\s*\(\s*env!\s*\(\s*'
+    r'"CARGO_MANIFEST_DIR"\s*\)\s*,\s*"((?:[^"\\]|\\.)*)"',
+    re.S,
+)
+
+
+def embedded_data_targets() -> dict[str, set[str]]:
+    """Escaping include target -> the sources that compile it in.
+
+    A target inside the including crate's own directory is left out: the
+    crate prefix already routes it through the dependency closure.
+    """
+    escaping: dict[str, set[str]] = defaultdict(set)
+    for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
+        crate = manifest.parent
+        for source in sorted(crate.rglob("*.rs")):
+            if "target" in source.relative_to(crate).parts:
+                continue
+            body = source.read_text(encoding="utf-8")
+            targets = [
+                (source.parent / literal) for literal in INCLUDE_LITERAL.findall(body)
+            ]
+            targets += [
+                (crate / literal.lstrip("/"))
+                for literal in INCLUDE_MANIFEST_DIR.findall(body)
+            ]
+            for target in targets:
+                resolved = pathlib.Path(os.path.normpath(target))
+                if resolved.is_relative_to(crate):
+                    continue
+                if not resolved.is_relative_to(ROOT):
+                    raise SystemExit(
+                        f"{source.relative_to(ROOT)} includes {target}, which "
+                        "leaves the repository; nothing can route it"
+                    )
+                key = resolved.relative_to(ROOT).as_posix()
+                escaping[key].add(source.relative_to(ROOT).as_posix())
+    return escaping
+
+
+def check_embedded_data_routing() -> int:
+    """Every file a crate compiles in from elsewhere must reach `test`."""
+    escaping = embedded_data_targets()
+    unrouted = [
+        f"{target} (compiled into {', '.join(sorted(sources))}) routes to no "
+        "Rust job"
+        for target, sources in sorted(escaping.items())
+        if not plan_for([target])["test"]
+    ]
+    if unrouted:
+        raise SystemExit(
+            "quality gate plan self-test: a crate compiles in a file the "
+            "router does not route:\n  - " + "\n  - ".join(unrouted)
+        )
+    return len(escaping)
+
+
 def changed_paths(base: str, head: str) -> list[str]:
     result = subprocess.run(
         ["git", "diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
@@ -358,6 +469,45 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         "changelog",
         ["CHANGELOG.md"],
         {"clippy": False, "coverage": False, "full": False},
+    ),
+    # Documentation that rustc compiles. Both files are `include_str!`'d
+    # into tests, so "docs-only" stops being the same thing as "no Rust
+    # job" — and `check_embedded_data_routing` keeps that true.
+    (
+        "the parity file two crates compile in",
+        ["docs/architecture/parity.tsv"],
+        {"test": True, "clippy": True, "coverage": False, "helm": False, "full": False},
+    ),
+    (
+        "the support matrix made-mcp compiles in",
+        ["docs/operations/support-matrix.md"],
+        {"test": True, "clippy": True, "coverage": False, "full": False},
+    ),
+    (
+        "a ceremony definition three crates compile in",
+        ["tests/e2e/ceremonies/daily-standup.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "architecture": False,
+            "coverage": False,
+            "container": False,
+            "full": False,
+        },
+    ),
+    (
+        "the manual E2E surface still gates nothing",
+        [
+            "tests/e2e/kubernetes/runner-job.yaml",
+            "tests/e2e/docker-compose.e2e.yaml",
+            "tests/e2e/runner.Dockerfile",
+        ],
+        {gate: False for gate in GATES} | {"full": False},
+    ),
+    (
+        "a new directory under tests/e2e fails closed",
+        ["tests/e2e/contracts/surface.yaml"],
+        {"full": True},
     ),
     (
         "chart",
@@ -449,7 +599,11 @@ def self_test() -> None:
                     f"quality gate plan self-test: {name}: expected "
                     f"{key}={value!r}, got {actual[key]!r}"
                 )
-    print(f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing cases")
+    embedded = check_embedded_data_routing()
+    print(
+        f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing "
+        f"cases, {embedded} files compiled into a crate from outside it"
+    )
 
 
 def main() -> int:
