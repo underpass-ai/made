@@ -274,7 +274,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     );
     // No memory configured, and said so rather than pretended: a
     // session with nowhere to record what it decided still runs, it
-    // just forgets. Swapping this for a kernel-backed writer is the
+    // just forgets. Swapping this for a durable writer is the
     // whole of turning it on.
     let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(

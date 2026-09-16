@@ -630,7 +630,7 @@ pub(super) fn resolver_with(
 /// engine chose to remember — and why it said one thing led to
 /// another.
 ///
-/// Not a stand-in for a kernel. What is worth checking here is the
+/// Not a stand-in for a memory backend. What is worth checking here is the
 /// engine's judgement, and that is the same whatever backend receives
 /// it.
 impl RecordingMemory {

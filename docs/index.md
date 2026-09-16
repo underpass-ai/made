@@ -115,8 +115,8 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 ## Sibling repos (for cross-reference)
 
 - [`kmp`](https://github.com/underpass-ai/kmp)
-  — Underpass KMP. MCP adapter pattern this repo's `crates/made-mcp`
-  copies (`crates/rehydration-mcp/`).
+  — Underpass KMP. Its `crates/kmp-mcp/` is the MCP adapter pattern
+  this repo's `crates/made-mcp` follows. No KMP adapter ships here.
 - [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime)
   — execution plane. Proto vendored at
   `crates/made-proto/proto/underpass/runtime/v1/runtime.proto`;

@@ -13,7 +13,10 @@ are referenced only as studied integrations and possible use cases:
 The goal is not to market readiness. The goal is to state what is
 wired, what is intentionally out of scope, and what must still be
 proved by a downstream integration. MADE does not require
-KMP, PIR, or any specific downstream product to be usable.
+KMP, PIR, or any specific downstream product to be usable, and it ships
+no adapter for them. KMP is one possible producer of context bundles
+and one possible memory backend; an adapter for either lives out of
+tree.
 
 ## Scope
 
@@ -81,7 +84,9 @@ direct transport integration to any specific context system.
 If a downstream product requires MADE to fetch context itself,
 that should be a new port, adapter, and E2E slice for that product.
 Until then, the honest claim is caller-supplied context, not KMP client
-ownership.
+ownership. The memory port is the same: the in-tree backends and the
+memory conformance suite live here, and a memory adapter for KMP or any
+other external memory is out of tree, gated by that suite.
 
 ### 2. Real external provider validation is operator-run
 
