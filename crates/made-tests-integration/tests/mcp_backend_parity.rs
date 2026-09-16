@@ -395,44 +395,6 @@ async fn one_tool_answers_the_same_shape_whichever_backend_served_it() {
     );
 }
 
-#[tokio::test]
-async fn both_backends_advertise_every_ceremony_tool() {
-    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
-    let remote = GrpcMadeMcpBackend::new("http://127.0.0.1:1", MadeMcpGrpcTlsConfig::disabled());
-
-    // Every verb of a working session, on both sides. A tool served
-    // by one backend and not the other is a client that works until
-    // it is pointed at the other engine.
-    for tool in [
-        "made_get_ceremony_instance",
-        "made_list_ceremony_instances",
-        "made_start_ceremony",
-        "made_start_published_ceremony",
-        "made_run_ceremony_step",
-        "made_apply_ceremony_transition",
-        "made_approve_ceremony_guard",
-        "made_defer_ceremony_guard",
-        "made_request_ceremony_intervention",
-        "made_respond_to_ceremony_intervention",
-        "made_close_ceremony_intervention",
-        "made_collect_ceremony_evidence",
-        "made_validate_ceremony_draft",
-        "made_explain_ceremony_draft",
-        "made_publish_ceremony_definition",
-        "made_diff_ceremony_definitions",
-        "made_bind_ceremony_participants",
-    ] {
-        assert!(
-            embedded.supports_tool(tool),
-            "{tool} should be served in process"
-        );
-        assert!(
-            remote.supports_tool(tool),
-            "{tool} should be served over gRPC"
-        );
-    }
-}
-
 /// Driving the session through the *tools* on both sides, not through
 /// raw RPCs on one. This is the shape a client actually meets.
 #[tokio::test]

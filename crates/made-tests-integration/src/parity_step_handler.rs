@@ -52,6 +52,13 @@ impl ParityStepHandler {
                 "summary".to_owned(),
                 json!(format!("`{step_id}` ran in `{state_id}`.")),
             ),
+            // The one key `made_run_ceremony` renders into its trace,
+            // on both arms. Without it the run's `output` is the empty
+            // string on both, which is agreement about nothing.
+            (
+                "winner_content".to_owned(),
+                json!(format!("The parity handler finished `{step_id}`.")),
+            ),
         ]))?;
         Ok(StepOutput::new(attributes))
     }
