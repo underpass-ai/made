@@ -4,6 +4,10 @@ on:
   pull_request:
     branches:
       - main
+    # The defaults plus ready_for_review: a draft leaving draft state is the
+    # moment the full gate takes over from the dev loop, and without this
+    # type the handover would wait for the next push.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -19,7 +23,34 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  # Draft pull requests are development mode: dev-loop.yml answers them in
+  # minutes, and the full gate stands down here. Every job below needs this
+  # one, so they all stand down with it. Marking the pull request ready for
+  # review runs everything.
+  #
+  # This job is deliberately the single switch rather than a guard repeated
+  # on a dozen jobs: one condition can be read, and a job added later
+  # inherits the stand-down by needing it — which it must do anyway.
+  #
+  # Slice H3 turns this job into the impact planner; the name is already the
+  # one the owner protects, so that change adds outputs without renaming a
+  # required check.
+  impact:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+      - name: Prove the dev-loop / quality-gate workflow contract
+        run: python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+      - name: Report the mode
+        run: echo "not a draft, so the full gate runs"
+
   architecture:
+    needs: [impact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -35,6 +66,7 @@ jobs:
         run: bash scripts/ci/architecture-gate.sh
 
   contract:
+    needs: [impact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -60,6 +92,7 @@ jobs:
         run: bash scripts/ci/contract-gate.sh
 
   rustfmt:
+    needs: [impact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -78,6 +111,7 @@ jobs:
         run: bash scripts/ci/domain-vocabulary-boundary.sh
 
   embedded-boundary:
+    needs: [impact]
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:
@@ -102,6 +136,7 @@ jobs:
         run: cargo clippy -p made-mcp --all-targets --locked --no-default-features -- -D warnings
 
   embedded-sqlite-gates:
+    needs: [impact]
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -131,7 +166,7 @@ jobs:
   clippy:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -169,7 +204,7 @@ jobs:
   test:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -199,7 +234,7 @@ jobs:
   coverage:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -226,7 +261,7 @@ jobs:
   container-image:
     runs-on: ubuntu-24.04
     timeout-minutes: 25
-    needs: [rustfmt, clippy, test]
+    needs: [impact, rustfmt, clippy, test]
     permissions:
       contents: read
     steps:
@@ -240,7 +275,7 @@ jobs:
   helm-chart:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -257,7 +292,7 @@ jobs:
     # bench silently breaks every experiment's reproducer.
     runs-on: ubuntu-24.04
     timeout-minutes: 20
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -282,7 +317,7 @@ jobs:
     # only validate metadata and the file list.
     runs-on: ubuntu-24.04
     timeout-minutes: 15
-    needs: [contract]
+    needs: [impact, contract]
     permissions:
       contents: read
     steps:
@@ -298,3 +333,56 @@ jobs:
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
       - name: Publish dry-run
         run: bash scripts/ci/publish-dry-run.sh
+
+  # Branch protection counts a *skipped* required job as satisfied, so the
+  # stand-down above would leave a required context green on a draft head
+  # commit — and a merge right after ready-for-review could sail through
+  # before the real run reports. This is the one required context the
+  # stand-down cannot satisfy: on a draft it fails on purpose, and on a
+  # ready run (or a push to main) it succeeds only when every job above
+  # either passed or was legitimately skipped.
+  #
+  # Protect this context on main and the draft/ready handover is enforced
+  # rather than merely documented.
+  gate:
+    needs:
+      - impact
+      - architecture
+      - contract
+      - rustfmt
+      - embedded-boundary
+      - embedded-sqlite-gates
+      - clippy
+      - test
+      - coverage
+      - container-image
+      - helm-chart
+      - benches-compile
+      - publish-dry-run
+    if: always()
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    steps:
+      - name: The full gate ran and nothing required failed
+        env:
+          DRAFT: ${{ github.event_name == 'pull_request' && github.event.pull_request.draft }}
+          IMPACT: ${{ needs.impact.result }}
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          if [[ "${DRAFT}" == "true" ]]; then
+            echo "draft: the full gate stands down; mark ready for review to run it" >&2
+            exit 1
+          fi
+          if [[ "${IMPACT}" != "success" ]]; then
+            echo "the stand-down job finished '${IMPACT}', so nothing downstream is trustworthy" >&2
+            exit 1
+          fi
+          for result in ${RESULTS}; do
+            if [[ "${result}" == "failure" || "${result}" == "cancelled" ]]; then
+              echo "a required job failed or was cancelled: ${RESULTS}" >&2
+              exit 1
+            fi
+          done
+          echo "every required job passed or was skipped: ${RESULTS}"

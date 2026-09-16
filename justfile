@@ -19,6 +19,31 @@ default:
 provider_features := "--features made-adapters/agent-anthropic --features made-adapters/agent-openai --features made-adapters/agent-vllm"
 
 # -----------------------------------------------------------------------------
+# development loop — match dev-loop.yml
+# -----------------------------------------------------------------------------
+
+# The draft-pull-request development loop: fmt + clippy + tests for the
+# crates in DEV_PACKAGES, then the three architecture gates that cost
+# seconds. This is not a second list that mirrors CI — it is the same
+# script .github/workflows/dev-loop.yml runs, so the two cannot drift.
+#
+# Narrow or widen it for one run:
+#   DEV_PACKAGES="-p made-core" just dev
+#
+# Run a single stage:
+#   just dev lint | just dev test | just dev gates
+#
+# Nothing merges on this loop's word. `just check` is the gate.
+dev STAGE='all':
+    bash scripts/ci/dev-loop.sh {{STAGE}}
+
+# Pin the draft/ready CI handover: the dev-loop triggers and draft guards,
+# the quality-gate stand-down and its required `gate` context, and that
+# `just dev` and the workflow name the same crates. Both workflows run it.
+workflow-contract:
+    python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+
+# -----------------------------------------------------------------------------
 # fast per-PR gates — match quality-gate.yml
 # -----------------------------------------------------------------------------
 
@@ -64,7 +89,7 @@ coverage:
     bash scripts/ci/rust-coverage.sh
 
 # Walk the entire fast-gate cascade locally. Use before opening a PR.
-check: contract fmt-check embedded-boundary embedded-plugin-smoke clippy test bench-compile
+check: workflow-contract contract fmt-check embedded-boundary embedded-plugin-smoke clippy test bench-compile
 
 # -----------------------------------------------------------------------------
 # container-backed checks — need Docker or Podman running
