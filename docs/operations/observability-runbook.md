@@ -121,6 +121,27 @@ Prove it: the target appears `up` in Prometheus (`Status → Targets`) and
 dashboard first: winner-score distribution, `NoValidProposal` rate, judge
 latency/error class, provider token usage, ceremony step durations.
 
+### The embedded edition
+
+There is nothing to scrape. `made-mcp` on the embedded backend, and any host
+holding `EmbeddedMade`, wires a Prometheus registry **inside the process** and
+exposes no port: it records, and nothing exports. What an operator can ask for
+is the two MCP tools, which both editions serve:
+
+```json
+{"name":"made_get_status","arguments":{"include_stats":true}}
+{"name":"made_get_metrics","arguments":{}}
+```
+
+`made_get_status` answers with the version of the engine that answered, how
+long *that* engine has been up, its condition and the counters. The counters
+are deliberations and orchestrations, which an edition running no council
+leaves at zero; the ceremony families a session does move live in the
+in-process registry and are not on this answer yet (plan §3.7 G3). A host that
+wants them today injects its own recorder through `EmbeddedMadeBuilder::with_metrics`
+and renders that registry itself — which is also how it can tell what is
+recording, since `EmbeddedMade::status` names the recorder.
+
 ## 3. Logs
 
 Everything is single-line JSON on stdout (`tracing_subscriber` fmt layer) —

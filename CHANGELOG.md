@@ -16,6 +16,25 @@ operator command.
 
 ### Added
 
+- `made_get_status` and `made_get_metrics` on the **embedded** MCP backend, and
+  the facade methods `EmbeddedMade::status` and `EmbeddedMade::metrics`. The
+  two answers are composed by `GetServiceStatusUseCase` and
+  `GetServiceMetricsUseCase` in `made-app`, which the deployable edition's
+  `GetStatus` / `GetMetrics` handlers now call as well: the version, the
+  uptime, the condition and the counters are decided in one place instead of
+  being assembled inside a gRPC handler, so the two editions cannot answer
+  differently about what they are. Both arms render the four keys the contract
+  carries and no fifth. The proto is untouched.
+- `MetricsRecorderPort::recorder_name`, and an **in-process Prometheus
+  registry as the embedded default**: `EmbeddedMadeBuilder` wires
+  `PrometheusMetricsRecorder` when the host wires none, where it used to wire
+  a recorder that forgets. No exporter, no endpoint, no new dependency —
+  `prometheus` was already in `made-embedded`'s graph through `made-adapters`,
+  `Cargo.lock` is unchanged and the embedded dependency boundary still holds.
+  A host still injects its own recorder through `with_metrics`, and
+  `EmbeddedMade::status` reports which one is running. `EmbeddedMadeBuilder`
+  also accepts a statistics port (`with_statistics`), in-memory by default.
+  (#53)
 - `ReadCeremonyEvents`, `GetCeremonyTranscript` and `GenerateCeremonyReport`
   RPCs in `underpass.made.v1`, the two new tools `made_read_ceremony_events`
   and `made_get_ceremony_transcript` on **both** MCP backends,
@@ -85,6 +104,20 @@ operator command.
 
 ### Changed
 
+- `docs/architecture/parity.tsv`: the `get_status` and `get_metrics` rows name
+  all four surfaces and their `G3` reasons are gone. No ceremony **or**
+  observability capability is gRPC-only any more; the council surface is the
+  only remaining gap. F4's parity session drives both tools on both arms after
+  the session it already drove, and its `NORMALISED` list — empty until now —
+  carries three entries, all `made_get_status`'s and each with its reason:
+  the version and the uptime are the answering engine's own, and the text
+  block mirrors them. An entry is keyed by tool as well as path, so a value
+  excused for one tool stays compared for every other. (#53)
+- `made_get_metrics` on the embedded edition answers with every family the
+  deployable edition reports and honest zeros for each: `Statistics` counts
+  deliberations and orchestrations, which an edition running no council never
+  performs. The ceremony families a session *does* move are in the in-process
+  registry; putting that registry on the answer is plan §3.7 G3. (#53)
 - Rendering a ceremony report moved out of the MCP adapter into
   `made_app::usecases::GenerateCeremonyReportUseCase`, which composes the
   session, the definition it runs and its event stream into the one document

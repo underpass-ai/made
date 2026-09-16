@@ -267,3 +267,37 @@ Add a tonic `tower` layer in `grpc/service.rs` for `made_grpc_request_duration_s
 On the provider/judge spans, set attributes `error_kind`, `prompt_tokens`/`completion_tokens`, `model`, `provider`. On `deliberate`, ensure the per-proposal judge score and the final outcome are span events (the observer path already emits phase events; add `winner_score` to the completion event so Tempo shows it). Attach trace exemplars to `made_deliberation_completed_total` and `made_ceremony_completed_total` so the dashboard tables can deep-link.
 
 **Deferred (explicitly out of this slice, require domain-model or infra work):** ceremony state-dwell and human-approval latency (need `state_entered_at`/`guard_started_at` on `CeremonyInstance`); ceremony timeout/max-attempts metrics (need the YAML `timeouts`/`retry_policies` to actually be *enforced* first); a distributed lease-contention counter (only meaningful once a multi-worker executor pool exists); and any synthetic judge-availability prober.
+
+---
+
+## 7. Editions: what runs where
+
+The catalogue above is the **deployable** edition's. The embedded edition —
+`made-mcp` with `MADE_MCP_BACKEND=embedded`, or a host holding
+`EmbeddedMade` — is a different composition, and what it runs is smaller. Only
+what has code behind it is listed here.
+
+| | Embedded edition | Deployable edition |
+|---|---|---|
+| `MetricsRecorderPort` | `PrometheusMetricsRecorder` with its own `Registry`, wired by `EmbeddedMadeBuilder` when the host wires none | `PrometheusMetricsRecorder`, wired in `compose.rs` |
+| Exposition | none — the registry is in process and nothing renders it over a socket | `GET /metrics` on the HTTP port |
+| Families that move | the five ceremony families, and only from `RunCeremony` (§2.5) | every family in §2 |
+| `made_get_status` / `made_get_metrics` | served, over `GetServiceStatusUseCase` / `GetServiceMetricsUseCase` | served, over the same two use cases |
+| Traces | none — no exporter is wired | OTLP over gRPC behind the `otel` feature |
+
+Three things follow, and each is a gap rather than a claim:
+
+- **The step-at-a-time path records nothing, in either edition.** The five
+  ceremony families are recorded from `RunCeremonyUseCase`; a host that
+  claims, runs and completes steps itself moves no counter. Unchanged by this
+  slice.
+- **`made_get_metrics` answers with the `Statistics` counters, not the
+  registry.** Deliberations and orchestrations are council work, so an
+  embedded engine reports them at zero however many sessions it runs — every
+  family present, every value true. Putting the registry itself on that
+  answer is plan §3.7 G3, and it needs a contract field the deployable
+  edition can fill too.
+- **`ServiceStatus::recorder` names what is recording and is not on the
+  wire.** A Rust host reads it through the facade; neither MCP arm renders it,
+  because `GetStatusResponse` has four fields and giving one arm a fifth is
+  the divergence ADR-014 exists to prevent.
