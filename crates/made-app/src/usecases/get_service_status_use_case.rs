@@ -136,7 +136,9 @@ mod tests {
             statistics,
             Arc::new(NoopMetricsRecorder),
             "0.0.0-test",
-            Instant::now() - Duration::from_secs(90),
+            Instant::now()
+                .checked_sub(Duration::from_secs(90))
+                .expect("ninety seconds ago is a representable instant"),
         )
     }
 
