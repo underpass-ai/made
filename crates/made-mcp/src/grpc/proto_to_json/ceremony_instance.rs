@@ -190,7 +190,7 @@ fn intervention_to_json(intervention: pb::CeremonyInterventionState) -> Value {
                 "details": optional_pb_struct_to_json(
                     response.content.and_then(|content| content.details),
                 ),
-                "evidence_pack": empty_as_null(response.evidence_pack),
+                "evidence_pack": evidence_pack_to_json(response.evidence_pack),
                 "responded_at": response.responded_at,
             }))
             .collect::<Vec<_>>(),
@@ -226,6 +226,22 @@ fn intervention_message_to_json(message: pb::CeremonyInterventionMessage) -> Val
 /// Proto cannot say "absent", so an empty string is how absence
 /// arrives. Turning it back into `null` is what makes the two backends
 /// answer the same thing.
+/// The pack a source returned, as the object it is.
+///
+/// Proto carries it as the serialized document, because a pack is a
+/// versioned record rather than a bag of fields; the in-process arm
+/// never serializes it and answers the object. One tool answering a
+/// string on one backend and an object on the other is a client that
+/// works until it is pointed at the other engine, so the string is
+/// read back here. A payload that will not parse is handed on
+/// untouched rather than silently dropped.
+fn evidence_pack_to_json(value: String) -> Value {
+    if value.is_empty() {
+        return Value::Null;
+    }
+    serde_json::from_str(&value).unwrap_or(Value::String(value))
+}
+
 fn empty_as_null(value: String) -> Value {
     if value.is_empty() {
         Value::Null

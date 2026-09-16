@@ -1,0 +1,1089 @@
+//! One session, two engines, one answer — shape **and** values.
+//!
+//! The parity test this replaces compared the shape of a single tool's
+//! result and skipped four fields, because the two arms ran different
+//! step handlers: the server deliberated through its executor while the
+//! in-process edition ran a handler that does nothing. Different
+//! handlers mean different values, and different values mean shapes
+//! were all that could honestly be compared.
+//!
+//! Here both arms run the **same** step handler, the same evidence
+//! source and the same frozen clock, injected through the fixture and
+//! the builder and never through a production default. So the answers
+//! are compared field for field, `output`, `details`, `context` and
+//! `evidence_pack` included, and the list of paths excused from the
+//! comparison is a short const with a reason on every line.
+//!
+//! Which tools have to be covered is not a list kept here either: it is
+//! `docs/architecture/parity.tsv`, the same file F1's set-equality gate
+//! reads. A shared tool the script below never calls fails this test by
+//! name, so a tool that becomes shared later is covered without anyone
+//! editing the comparison (ADR-014, plan §3.6 F4).
+
+use std::collections::{BTreeMap, BTreeSet};
+
+use made_embedded::EmbeddedMade;
+use made_mcp::backend::MadeMcpGrpcTlsConfig;
+use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
+use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
+use made_tests_integration::parity_clock::ParityClock;
+use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
+use made_tests_integration::parity_step_handler::ParityStepHandler;
+use serde_json::{json, Value};
+
+/// The exception list, read at test time from the same file the
+/// surface gate reads. Relative to this file, as F1's `include_str!`
+/// is relative to its own.
+const PARITY_TSV: &str = include_str!("../../../docs/architecture/parity.tsv");
+
+/// The marker a `parity.tsv` cell uses for "this surface does not
+/// have it".
+const GAP: &str = "-";
+
+/// The one session both engines run.
+const SESSION_ID: &str = "parity-session";
+/// The session started from a published version.
+const PUBLISHED_SESSION_ID: &str = "parity-published-session";
+/// The session `made_run_ceremony` opens and finishes in one call.
+const ONE_SHOT_ID: &str = "parity-one-shot";
+
+/// Paths whose values are allowed to differ, and why.
+///
+/// It is **empty**, and that is the result rather than an oversight:
+/// with the same step handler, the same evidence source and the same
+/// frozen clock on both arms, every field of every shared tool's
+/// answer is equal, timestamps included. Nothing is excused because
+/// nothing needed excusing.
+///
+/// What keeps it empty is that the script names the things a client
+/// can name: the ceremony id, the intervention id, the idempotency
+/// key. Left out, each would be minted per engine and land here with
+/// a reason. An entry is written the way the walk below names a path
+/// — field names joined by `.`, an array element as `[]` — and every
+/// entry carries a one-line reason, which a test asserts.
+const NORMALISED: &[(&str, &str)] = &[];
+
+/// The definition the session runs. Rich on purpose: a step the engine
+/// runs, a step a host claims and completes itself, an automated guard,
+/// a human guard that is deferred and then approved, two seats, and a
+/// table that is asked, answered, evidenced and closed. An empty
+/// collection is a collection that cannot disagree.
+const PARITY_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_session"
+states:
+  - id: OPEN
+    initial: true
+  - id: REVIEW
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: REVIEW
+    trigger: opened
+    guards:
+      - work_done
+  - from: REVIEW
+    to: DONE
+    trigger: approve
+    guards:
+      - human_approved
+guards:
+  work_done:
+    type: automated
+    check: "step_status:work:COMPLETED"
+  human_approved:
+    type: human
+    check: manual_approval
+steps:
+  - id: work
+    state: OPEN
+    handler: parity_step
+  - id: handoff
+    state: REVIEW
+    handler: parity_step
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - handoff
+      - opened
+      - approve
+      - request_intervention
+      - respond_to_intervention
+  - id: OBSERVER
+    allowed_actions:
+      - respond_to_intervention
+"#;
+
+/// The definition that is published, started from its version, and
+/// diffed against a later one.
+const PUBLISHED_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_published"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: parity_step
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - finish
+"#;
+
+/// The same ceremony, a materially different graph: something for the
+/// diff to report.
+const ALTERED_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_published"
+states:
+  - id: OPEN
+    initial: true
+  - id: CANCELLED
+    terminal: true
+transitions:
+  - from: OPEN
+    to: CANCELLED
+    trigger: finish
+steps:
+  - id: work
+    state: OPEN
+    handler: parity_step
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - finish
+"#;
+
+/// A ceremony one call takes from end to end: no guard waits for a
+/// person, so `made_run_ceremony` answers with the whole trace.
+const ONE_SHOT_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_one_shot"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: opened
+    guards:
+      - work_done
+guards:
+  work_done:
+    type: automated
+    check: "step_status:work:COMPLETED"
+steps:
+  - id: work
+    state: OPEN
+    handler: parity_step
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - opened
+"#;
+
+/// The intent `made_design_ceremony` is asked to turn into a ceremony.
+///
+/// Rich for the same reason the definition above is: two stages, a
+/// repeat policy whose stop value is not a string, a human gate, a
+/// capability that is not a stage, and one number left out so the
+/// designer's own default is in the answer that gets compared.
+/// Designing reads no store and mints no id, so the two arms have to
+/// agree on the whole document.
+fn design_intent() -> Value {
+    json!({
+        "name": "parity_designed",
+        "objective": "Choose the lead story and have the editor accept it.",
+        "required_inputs": ["brief"],
+        "optional_inputs": ["archive"],
+        "outputs": ["lead_story"],
+        "participants": [
+            { "role_id": "WRITER", "capabilities": ["respond_to_intervention"] },
+            { "role_id": "EDITOR", "capabilities": ["request_intervention"] }
+        ],
+        "stages": [
+            {
+                "id": "draft_options",
+                "owner_role_id": "WRITER",
+                "instructions": "Draft three candidate leads.",
+                "repeat": { "max_iterations": 3, "output_field": "ready", "equals": true }
+            },
+            {
+                "id": "weigh_options",
+                "owner_role_id": "EDITOR",
+                "instructions": "Weigh them against the brief.",
+                "num_agents": 2,
+                "review_rounds": 1,
+                "see_prior": true
+            }
+        ],
+        "final_approval": { "role_id": "EDITOR" },
+        "backoff_seconds": 0
+    })
+}
+
+// ---------------------------------------------------------------------------
+// The two arms
+// ---------------------------------------------------------------------------
+
+/// Both engines, wired the same way, each behind the MCP server a
+/// client actually talks to.
+///
+/// Through the server rather than straight into the backend, because
+/// that is where the request gate runs and where the JSON-RPC envelope
+/// is built: a client meets `tools/call`, not a Rust trait.
+struct ParityArms {
+    /// Dropping it stops the in-process server.
+    _fixture: GrpcFixture,
+    over_the_wire: MadeMcpServer,
+    in_process: MadeMcpServer,
+}
+
+impl ParityArms {
+    async fn start() -> Self {
+        let fixture = GrpcFixture::start_with(
+            GrpcFixtureWiring::new()
+                .with_step_handler(ParityStepHandler::shared())
+                .with_evidence_source(ParityEvidenceSource::shared())
+                .with_clock(ParityClock::shared()),
+        )
+        .await;
+        let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
+            format!("http://{}", fixture.addr),
+            MadeMcpGrpcTlsConfig::disabled(),
+        ));
+        let in_process = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(
+            EmbeddedMade::builder()
+                .with_step_handler(ParityStepHandler::shared())
+                .with_evidence_source(ParityEvidenceSource::shared())
+                .with_clock(ParityClock::shared())
+                .build(),
+        ));
+        Self {
+            _fixture: fixture,
+            over_the_wire,
+            in_process,
+        }
+    }
+
+    /// The same call on both arms, answered as the client sees it.
+    async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
+        (
+            call_tool(&self.over_the_wire, id, tool, arguments).await,
+            call_tool(&self.in_process, id, tool, arguments).await,
+        )
+    }
+}
+
+/// One `tools/call`, returning the JSON-RPC `result` — the success
+/// envelope or the error envelope, whichever the server built.
+async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Value) -> Value {
+    let request = json!({
+        "jsonrpc": "2.0",
+        "id": id,
+        "method": "tools/call",
+        "params": { "name": tool, "arguments": arguments },
+    });
+    let response = server
+        .handle_json_line(&request.to_string())
+        .await
+        .unwrap_or_else(|| panic!("`{tool}` answered nothing at all"));
+    let parsed: Value = serde_json::from_str(&response)
+        .unwrap_or_else(|error| panic!("`{tool}` answered something that is not JSON: {error}"));
+    parsed.get("result").cloned().unwrap_or_else(|| {
+        panic!("`{tool}` answered a JSON-RPC error rather than a result: {parsed}")
+    })
+}
+
+fn structured(result: &Value) -> &Value {
+    &result["structuredContent"]
+}
+
+fn failed(result: &Value) -> bool {
+    result["isError"] == json!(true)
+}
+
+// ---------------------------------------------------------------------------
+// The session
+// ---------------------------------------------------------------------------
+
+/// The scripted session, in order. Every shared tool is in here at
+/// least once; the coverage assertion below is what keeps it true.
+#[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
+fn session_script() -> Vec<(&'static str, Value)> {
+    vec![
+        ("made_design_ceremony", design_intent()),
+        (
+            "made_validate_ceremony_draft",
+            json!({ "definition_yaml": PARITY_CEREMONY }),
+        ),
+        (
+            "made_explain_ceremony_draft",
+            json!({ "definition_yaml": PARITY_CEREMONY }),
+        ),
+        (
+            "made_publish_ceremony_definition",
+            json!({ "definition_yaml": PUBLISHED_CEREMONY }),
+        ),
+        (
+            "made_diff_ceremony_definitions",
+            json!({
+                "before": { "ceremony": "parity_published", "version": "1.0" },
+                "after": { "definition_yaml": ALTERED_CEREMONY },
+            }),
+        ),
+        (
+            "made_start_published_ceremony",
+            json!({
+                "ceremony": "parity_published",
+                "version": "1.0",
+                "ceremony_id": PUBLISHED_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": { "incident_ref": "INC-42", "severity": 2 },
+            }),
+        ),
+        (
+            "made_bind_ceremony_participants",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "seating": { "FACILITATOR": "facilitation" },
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "made_run_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "idempotency_key": "parity-work-1",
+            }),
+        ),
+        (
+            "made_apply_ceremony_transition",
+            json!({ "ceremony_id": SESSION_ID, "trigger": "opened", "actor_kind": "agent" }),
+        ),
+        // The delegated-host protocol on the step the review state
+        // declares: the host takes the lease, does the work where the
+        // engine cannot see it, and reports what it saw. The lease
+        // owner and the idempotency key are named rather than left to
+        // a default, for the reason the header gives: an omitted
+        // `lease_owner_id` becomes `made-mcp:<backend>`, which differs
+        // by arm on purpose (F2), and an omitted key is minted by the
+        // engine.
+        (
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parity-handoff-1",
+                "lease_ttl_ms": 60_000,
+            }),
+        ),
+        (
+            "made_complete_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "status": "completed",
+                "output": { "handoff_note": "the reviewer has it", "attachments": 2 },
+            }),
+        ),
+        (
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "what-happened",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "What did you see?",
+                "details": { "asked_at_state": "REVIEW" },
+            }),
+        ),
+        (
+            "made_respond_to_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "what-happened",
+                "role_id": "OBSERVER",
+                "role_kind": "agent",
+                "message": "The queue was backing up.",
+                "details": { "observed": ["queue_depth", "error_rate"] },
+            }),
+        ),
+        (
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "inspect-metrics",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "investigation",
+                "target_role_ids": ["OBSERVER"],
+                "message": "Inspect the checkout metrics.",
+            }),
+        ),
+        (
+            "made_collect_ceremony_evidence",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "inspect-metrics",
+                "role_id": "OBSERVER",
+                "role_kind": "agent",
+                "source_id": "observability",
+                "query": "Checkout errors over the last five minutes.",
+                "details": { "window_minutes": 5 },
+            }),
+        ),
+        (
+            "made_assert_ceremony_reason",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "role_id": "OBSERVER",
+                "role_kind": "agent",
+                "from": { "kind": "contribution", "agenda_item": "inspect-metrics", "ordinal": 0 },
+                "to": { "kind": "contribution", "agenda_item": "what-happened", "ordinal": 0 },
+                "kind": "chosen_because",
+                "why": "The queue growth is what sent me to the metrics.",
+                "confidence": "high",
+            }),
+        ),
+        (
+            "made_close_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "what-happened",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+            }),
+        ),
+        (
+            "made_defer_ceremony_guard",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "guard_name": "human_approved",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "statement": "Not yet.",
+                "reason": "The reviewer is out.",
+                "reconsider_when": ["the reviewer is back"],
+            }),
+        ),
+        (
+            "made_approve_ceremony_guard",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "guard_name": "human_approved",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+            }),
+        ),
+        (
+            "made_apply_ceremony_transition",
+            json!({ "ceremony_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
+        ),
+        (
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
+        (
+            "made_run_ceremony",
+            json!({
+                "ceremony_id": ONE_SHOT_ID,
+                "definition_yaml": ONE_SHOT_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        ("made_list_ceremony_instances", json!({})),
+    ]
+}
+
+#[tokio::test]
+async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends() {
+    let arms = ParityArms::start().await;
+    let shared = shared_tools();
+    let mut called: BTreeSet<String> = BTreeSet::new();
+
+    for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        let id = index as u64 + 1;
+        let (over_the_wire, in_process) = arms.call(id, tool, &arguments).await;
+
+        assert!(
+            !failed(&over_the_wire),
+            "`{tool}` failed on the gRPC backend: {over_the_wire:#}"
+        );
+        assert!(
+            !failed(&in_process),
+            "`{tool}` failed on the in-process backend: {in_process:#}"
+        );
+        assert_same_answer(tool, &over_the_wire, &in_process);
+        called.insert((*tool).to_owned());
+    }
+
+    // The session really was as rich as it claims: a collection with
+    // nothing in it cannot disagree, and two empty answers would agree
+    // about nothing at all.
+    let session = call_tool(
+        &arms.in_process,
+        100,
+        "made_get_ceremony_instance",
+        &json!({ "ceremony_id": SESSION_ID }),
+    )
+    .await;
+    let session = structured(&session);
+    assert_eq!(session["current_state"], json!("DONE"), "{session:#}");
+    assert_eq!(session["steps"].as_array().map(Vec::len), Some(2));
+    assert!(
+        !session["steps"][0]["output"]
+            .as_object()
+            .expect("the step handler answered with an object")
+            .is_empty(),
+        "the step output is what the old test could not compare; it must not be empty: {session:#}"
+    );
+    assert_eq!(session["interventions"].as_array().map(Vec::len), Some(2));
+    assert_eq!(session["guard_deferrals"].as_array().map(Vec::len), Some(1));
+    assert!(session["interventions"]
+        .as_array()
+        .expect("a session carries its table")
+        .iter()
+        .any(|item| item["responses"][0]["evidence_pack"].is_object()));
+
+    let uncovered: Vec<&str> = shared
+        .iter()
+        .filter(|tool| !called.contains(*tool))
+        .map(String::as_str)
+        .collect();
+    assert!(
+        uncovered.is_empty(),
+        "docs/architecture/parity.tsv calls these tools shared and the parity session never \
+         calls them: {uncovered:?}. A shared tool nothing drives is a tool whose two answers \
+         nobody has compared — add it to `session_script`, or say in the file why it is not \
+         shared (ADR-014)."
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Request acceptance
+// ---------------------------------------------------------------------------
+
+/// The same call is accepted, or refused with the same envelope, on
+/// both arms. It is refused by the server layer before any backend is
+/// reached, so the two envelopes are equal byte for byte rather than
+/// merely classified the same way.
+#[tokio::test]
+async fn both_backends_accept_and_refuse_the_same_requests() {
+    let arms = ParityArms::start().await;
+
+    let refused: Vec<(&str, &str, Value)> = vec![
+        (
+            "a required field left out",
+            "made_get_ceremony_instance",
+            json!({}),
+        ),
+        (
+            "a field of the wrong type",
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": 7 }),
+        ),
+        (
+            "a value outside the enum the tool declares",
+            "made_apply_ceremony_transition",
+            json!({ "ceremony_id": SESSION_ID, "trigger": "opened", "actor_kind": "wizard" }),
+        ),
+        (
+            "an empty ceremony id",
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": "" }),
+        ),
+        (
+            "a field the tool does not declare",
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": "typo-session",
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "actor_knid": "service",
+            }),
+        ),
+        ("a tool that does not exist", "made_do_the_thing", json!({})),
+    ];
+
+    for (index, (what, tool, arguments)) in refused.into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 1, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                failed(answer),
+                "{what} was accepted by the {backend} backend: {answer:#}"
+            );
+            assert_eq!(
+                structured(answer)["code"],
+                json!("invalid_request"),
+                "{what} on the {backend} backend: {answer:#}"
+            );
+            assert_eq!(structured(answer)["retryable"], json!(false));
+        }
+        assert_eq!(
+            over_the_wire, in_process,
+            "{what} was refused two different ways"
+        );
+    }
+
+    // And the other direction: a call that leaves out everything it is
+    // allowed to leave out is accepted by both.
+    let accepted: Vec<(&str, &str, Value)> = vec![
+        (
+            "a session opened without a context",
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": "optional-fields-session",
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "a step run without a lease owner, an idempotency key or a TTL",
+            "made_run_ceremony_step",
+            json!({
+                "ceremony_id": "optional-fields-session",
+                "step_id": "work",
+                "actor_kind": "agent",
+            }),
+        ),
+        (
+            "an intervention opened without an id, targets or details",
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": "optional-fields-session",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "Anything to add?",
+            }),
+        ),
+        (
+            "a listing asked for with no arguments",
+            "made_list_ceremony_instances",
+            json!({}),
+        ),
+    ];
+
+    for (index, (what, tool, arguments)) in accepted.into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 50, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                !failed(answer),
+                "{what} was refused by the {backend} backend: {answer:#}"
+            );
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Error envelopes
+// ---------------------------------------------------------------------------
+
+/// The same failure, the same envelope. `code` and `retryable` are what
+/// a client branches on, and they are compared exactly; the message is
+/// the engine's own prose and is only required to carry no transport
+/// name.
+#[tokio::test]
+async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
+    let arms = ParityArms::start().await;
+    arms.call(
+        1,
+        "made_start_ceremony",
+        &json!({
+            "ceremony_id": SESSION_ID,
+            "definition_yaml": PARITY_CEREMONY,
+            "actor_id": "parity-operator",
+            "actor_kind": "service",
+        }),
+    )
+    .await;
+
+    let cases: Vec<(&str, &str, Value, &str)> = vec![
+        (
+            "a session that is not there",
+            "made_get_ceremony_instance",
+            json!({ "ceremony_id": "no-such-session" }),
+            "not_found",
+        ),
+        (
+            "a trigger the current state does not offer",
+            "made_apply_ceremony_transition",
+            json!({ "ceremony_id": SESSION_ID, "trigger": "approve", "actor_kind": "human" }),
+            "refused",
+        ),
+        (
+            "a step outside the current state",
+            "made_run_ceremony_step",
+            json!({ "ceremony_id": SESSION_ID, "step_id": "nowhere", "actor_kind": "agent" }),
+            "refused",
+        ),
+        (
+            "arguments that do not fit the schema",
+            "made_get_ceremony_instance",
+            json!({}),
+            "invalid_request",
+        ),
+    ];
+
+    for (index, (what, tool, arguments, code)) in cases.into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 10, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                failed(answer),
+                "{what} succeeded on the {backend} backend: {answer:#}"
+            );
+            assert_eq!(
+                structured(answer)["code"],
+                json!(code),
+                "{what} on the {backend} backend: {answer:#}"
+            );
+            assert_eq!(structured(answer)["retryable"], json!(false));
+            assert!(
+                !structured(answer)["message"]
+                    .as_str()
+                    .unwrap_or_default()
+                    .contains("gRPC"),
+                "the transport reached the envelope on the {backend} backend: {answer:#}"
+            );
+        }
+        assert_eq!(
+            structured(&over_the_wire)["code"],
+            structured(&in_process)["code"],
+            "{what} was classified two different ways"
+        );
+    }
+
+    // The engine out of reach. The in-process edition has no
+    // counterpart by construction — an engine in this process is there
+    // or the process is not — so the shape of the envelope is what is
+    // asserted, on the arm that can produce it.
+    let unreachable = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
+        "http://127.0.0.1:1",
+        MadeMcpGrpcTlsConfig::disabled(),
+    ));
+    let answer = call_tool(
+        &unreachable,
+        1,
+        "made_get_ceremony_instance",
+        &json!({ "ceremony_id": SESSION_ID }),
+    )
+    .await;
+    assert!(failed(&answer), "{answer:#}");
+    assert_eq!(structured(&answer)["code"], json!("unavailable"));
+    assert_eq!(structured(&answer)["retryable"], json!(true));
+    assert!(structured(&answer)["message"].is_string());
+}
+
+// ---------------------------------------------------------------------------
+// The exception list
+// ---------------------------------------------------------------------------
+
+/// Tools `parity.tsv` says both MCP backends serve.
+fn shared_tools() -> BTreeSet<String> {
+    let mut shared = BTreeSet::new();
+    for line in PARITY_TSV.lines() {
+        if line.trim().is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let cells: Vec<&str> = line.split('\t').collect();
+        assert_eq!(
+            cells.len(),
+            7,
+            "docs/architecture/parity.tsv has a row of {} columns: {line:?}",
+            cells.len()
+        );
+        if cells[0] == "capability" {
+            continue;
+        }
+        let (over_the_wire, in_process) = (cells[2], cells[3]);
+        if over_the_wire == GAP || in_process == GAP {
+            continue;
+        }
+        assert_eq!(
+            over_the_wire, in_process,
+            "the capability `{}` is served by one tool name over gRPC and another in process; \
+             one capability is one tool",
+            cells[0]
+        );
+        shared.insert(over_the_wire.to_owned());
+    }
+    assert!(
+        !shared.is_empty(),
+        "docs/architecture/parity.tsv names no shared tool at all"
+    );
+    shared
+}
+
+// ---------------------------------------------------------------------------
+// Comparison
+// ---------------------------------------------------------------------------
+
+/// Two answers to one call, field for field, after normalising the
+/// paths listed in [`NORMALISED`].
+fn assert_same_answer(tool: &str, over_the_wire: &Value, in_process: &Value) {
+    let mut differences = Vec::new();
+    compare(
+        &normalise(over_the_wire, ""),
+        &normalise(in_process, ""),
+        "",
+        &mut differences,
+    );
+    assert!(
+        differences.is_empty(),
+        "`{tool}` answered differently depending on which engine served it:\n{}\n\
+         \n  over the wire: {over_the_wire:#}\n  in process: {in_process:#}",
+        differences
+            .iter()
+            .map(|line| format!("  {line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    );
+}
+
+/// Replace the values at normalised paths with one marker, so the
+/// comparison below sees them as equal without seeing them at all.
+fn normalise(value: &Value, path: &str) -> Value {
+    if NORMALISED.iter().any(|(normalised, _)| *normalised == path) {
+        return json!("<normalised>");
+    }
+    match value {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .map(|(key, child)| (key.clone(), normalise(child, &format!("{path}.{key}"))))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .map(|item| normalise(item, &format!("{path}[]")))
+                .collect(),
+        ),
+        leaf => leaf.clone(),
+    }
+}
+
+/// Every path the two answers disagree about, named. Reporting all of
+/// them beats reporting the first: a divergence is usually a family.
+fn compare(over_the_wire: &Value, in_process: &Value, path: &str, into: &mut Vec<String>) {
+    match (over_the_wire, in_process) {
+        (Value::Object(wire), Value::Object(process)) => {
+            let keys: BTreeSet<&String> = wire.keys().chain(process.keys()).collect();
+            for key in keys {
+                let child = format!("{path}.{key}");
+                match (wire.get(key), process.get(key)) {
+                    (Some(wire), Some(process)) => compare(wire, process, &child, into),
+                    (Some(wire), None) => {
+                        into.push(format!("{child}: only over the wire ({wire})"));
+                    }
+                    (None, Some(process)) => {
+                        into.push(format!("{child}: only in process ({process})"));
+                    }
+                    (None, None) => unreachable!("the key came from one of the two maps"),
+                }
+            }
+        }
+        (Value::Array(wire), Value::Array(process)) => {
+            if wire.len() != process.len() {
+                into.push(format!(
+                    "{path}: {} entries over the wire, {} in process",
+                    wire.len(),
+                    process.len()
+                ));
+                return;
+            }
+            for (index, (wire, process)) in wire.iter().zip(process).enumerate() {
+                compare(wire, process, &format!("{path}[{index}]"), into);
+            }
+        }
+        (wire, process) if wire != process => {
+            into.push(format!(
+                "{path}: {wire} over the wire, {process} in process"
+            ));
+        }
+        _ => {}
+    }
+}
+
+/// Every normalised path carries a reason, and no path is listed twice.
+#[test]
+fn the_normalised_paths_are_declared_once_each_with_a_reason() {
+    let mut reasons: BTreeMap<&str, &str> = BTreeMap::new();
+    for (path, reason) in NORMALISED {
+        assert!(
+            !reason.trim().is_empty(),
+            "the normalised path `{path}` carries no reason; a value excused from the \
+             comparison without one is a divergence nobody decided to allow"
+        );
+        assert!(
+            reasons.insert(path, reason).is_none(),
+            "the path `{path}` is normalised twice"
+        );
+    }
+}
+
+/// Both arms really are running the same wiring: the step handler
+/// answers, rather than the server deliberating and the in-process
+/// edition doing nothing.
+#[tokio::test]
+async fn both_arms_run_the_same_step_handler() {
+    let arms = ParityArms::start().await;
+    let (over_the_wire, in_process) = arms
+        .call(
+            1,
+            "made_run_ceremony",
+            &json!({
+                "ceremony_id": ONE_SHOT_ID,
+                "definition_yaml": ONE_SHOT_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await;
+
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let step = &structured(answer)["steps"][0];
+        // A run's trace renders the winner's content, so what proves
+        // the handler ran is that content rather than the structured
+        // output the session view carries.
+        assert_eq!(
+            step["output"],
+            json!("The parity handler finished `work`."),
+            "the {backend} backend ran something other than the parity handler: {answer:#}"
+        );
+        assert_eq!(step["status"], json!("completed"));
+        assert!(
+            step["iteration"].is_number(),
+            "the {backend} backend must report which turn of the repeat loop a step was"
+        );
+    }
+    assert_same_answer("made_run_ceremony", &over_the_wire, &in_process);
+
+    // And the structured output the session view carries, which is
+    // what the old test skipped as open-ended.
+    let (over_the_wire, in_process) = arms
+        .call(
+            2,
+            "made_get_ceremony_instance",
+            &json!({ "ceremony_id": ONE_SHOT_ID }),
+        )
+        .await;
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let output = &structured(answer)["steps"][0]["output"];
+        assert_eq!(
+            output["handler"],
+            json!("parity"),
+            "the {backend} backend kept something else as the step's output: {answer:#}"
+        );
+        assert_eq!(output["step"], json!("work"));
+        assert_eq!(output["findings"][0]["verdict"], json!("done"));
+    }
+    assert_same_answer("made_get_ceremony_instance", &over_the_wire, &in_process);
+}
+
+/// The clock is frozen and both arms read it, so a timestamp is a
+/// compared field rather than a normalised one.
+#[tokio::test]
+async fn both_arms_read_one_frozen_clock() {
+    let arms = ParityArms::start().await;
+    let (over_the_wire, in_process) = arms
+        .call(
+            1,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": "clock-parity",
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await;
+
+    assert_same_answer("made_start_ceremony", &over_the_wire, &in_process);
+
+    // The session view carries no clock of its own, so the instant is
+    // read where the session writes one: the table.
+    let (over_the_wire, in_process) = arms
+        .call(
+            2,
+            "made_request_ceremony_intervention",
+            &json!({
+                "ceremony_id": "clock-parity",
+                "intervention_id": "when",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "When was this asked?",
+            }),
+        )
+        .await;
+
+    let instant = ParityClock::default().instant();
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        let created_at = structured(answer)["interventions"][0]["created_at"]
+            .as_str()
+            .unwrap_or_else(|| panic!("the {backend} backend must say when: {answer:#}"));
+        assert!(
+            created_at.starts_with(&instant.date().to_string()),
+            "the {backend} backend did not read the frozen clock: {created_at}"
+        );
+    }
+    assert_same_answer(
+        "made_request_ceremony_intervention",
+        &over_the_wire,
+        &in_process,
+    );
+}
+
+/// The parity session must stay cheap enough to live in the test job.
+/// Two full sessions on two engines, and the budget is wall-clock
+/// seconds rather than a feeling.
+#[tokio::test]
+async fn the_parity_session_costs_seconds_not_minutes() {
+    let started = std::time::Instant::now();
+    let arms = ParityArms::start().await;
+    for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        arms.call(index as u64 + 1, tool, &arguments).await;
+    }
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed < std::time::Duration::from_secs(30),
+        "the parity session took {elapsed:?}; it runs on every workspace test run"
+    );
+}

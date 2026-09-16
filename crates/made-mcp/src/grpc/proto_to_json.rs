@@ -259,7 +259,13 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         "state_id": state_id,
         "step_id": step_id,
         "role_id": role_id,
-        "status": status,
+        // The contract spells a step status the way the session view
+        // spells it — `completed`, not `COMPLETED`. The proto carries
+        // the transport's own spelling, and a client reading a run's
+        // trace and then the session's would otherwise be told two
+        // different words for one status depending on which backend
+        // answered.
+        "status": status.to_ascii_lowercase(),
         "attempt": attempt,
         "iteration": iteration,
         "output": output,
