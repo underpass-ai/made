@@ -4,6 +4,9 @@ on:
   pull_request:
     branches:
       - main
+    # ready_for_review is the handover moment from the dev loop to the
+    # full gates; without it this workflow would wait for the next push.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches:
       - main
@@ -18,7 +21,10 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  # Container-backed suites are part of the full gate, not the dev loop:
+  # they stand down on a draft with everything else.
   integration-nats:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
@@ -45,6 +51,7 @@ jobs:
         run: bash scripts/ci/integration-nats.sh
 
   integration-postgres:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:

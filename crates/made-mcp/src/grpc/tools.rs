@@ -15,6 +15,7 @@ use super::proto_to_json as p2j;
 use super::streaming;
 
 mod ceremony_requests;
+mod design_ceremony_request;
 mod general_requests;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
@@ -243,6 +244,29 @@ pub(crate) async fn dispatch(
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 
+        // Claim, do the work outside the engine, complete. The host
+        // performs the step itself; these two calls are how the
+        // session learns it was taken on and how it ended.
+        "made_claim_ceremony_step" => {
+            let request = ceremony_requests::build_claim_ceremony_step_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.claim_ceremony_step(request).await?;
+            let pb::ClaimCeremonyStepResponse { instance } = response.into_inner();
+            instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
+        "made_complete_ceremony_step" => {
+            let request = ceremony_requests::build_complete_ceremony_step_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.complete_ceremony_step(request).await?;
+            let pb::CompleteCeremonyStepResponse { instance } = response.into_inner();
+            instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
         "made_apply_ceremony_transition" => {
             let request = ceremony_requests::build_apply_ceremony_transition_request(arguments)
                 .map_err(bad_request)?;
@@ -326,6 +350,16 @@ pub(crate) async fn dispatch(
 
         // Authoring. Validate and explain answer about the YAML in the
         // request; publishing is what puts a version in the catalogue.
+        // Designing answers with a document rather than a session:
+        // the draft it rendered, already analysed, and what it did
+        // with the author's intent.
+        "made_design_ceremony" => {
+            let request = design_ceremony_request::build_design_ceremony_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.design_ceremony(request).await?;
+            Ok(p2j::design_ceremony_to_json(response.into_inner()))
+        }
+
         "made_validate_ceremony_draft" => {
             let request = pb::ValidateCeremonyDraftRequest {
                 definition_yaml: ceremony_requests::definition_yaml(arguments)
@@ -443,12 +477,15 @@ pub(crate) async fn dispatch(
 #[cfg(test)]
 use ceremony_requests::{
     build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,
-    build_assert_ceremony_reason_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_defer_ceremony_guard_request,
+    build_assert_ceremony_reason_request, build_claim_ceremony_step_request,
+    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
+    build_complete_ceremony_step_request, build_defer_ceremony_guard_request,
     build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
     build_run_ceremony_step_request, build_start_ceremony_request,
     build_start_published_ceremony_request,
 };
+#[cfg(test)]
+use design_ceremony_request::build_design_ceremony_request;
 #[cfg(test)]
 use general_requests::{
     build_create_council_request, build_delete_contract_request, build_delete_council_request,

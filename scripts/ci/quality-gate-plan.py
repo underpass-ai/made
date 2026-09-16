@@ -1,0 +1,486 @@
+#!/usr/bin/env python3
+"""Plan the smallest fail-closed quality gate for a change (plan §3.9, H3).
+
+A pull request pays for the parts of the product it can affect and nothing
+else. Two rules decide that:
+
+* Rust gates follow the **reverse workspace dependency closure**. A change
+  inside a crate affects that crate and everything that depends on it,
+  transitively, read from the manifests rather than guessed.
+* The independent contracts — proto/AsyncAPI, the embedded boundaries, the
+  plugin bundle, the chart, the container image, coverage, the publication
+  dry run — follow **path routing**.
+
+Both rules fail closed. A path this router does not recognise, a change to
+the workspace manifest, lockfile or toolchain, a change to
+`quality-gate.yml`, and a change to this file all return the full matrix; so
+does `workflow_dispatch`. Being wrong must cost time, never safety.
+
+Run it:
+    python3 scripts/ci/quality-gate-plan.py --self-test
+    python3 scripts/ci/quality-gate-plan.py --base <sha> --head <sha>
+    python3 scripts/ci/quality-gate-plan.py --full --github-output "$GITHUB_OUTPUT"
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import pathlib
+import subprocess
+import sys
+import tomllib
+from collections import defaultdict, deque
+
+ROOT = pathlib.Path(__file__).resolve().parents[2]
+
+# One key per job in .github/workflows/quality-gate.yml, named after the job
+# it routes. The workflow reads them as `needs.impact.outputs.<gate>`.
+GATES = (
+    "architecture",
+    "contract",
+    "rustfmt",
+    "embedded_boundary",
+    "embedded_sqlite",
+    "clippy",
+    "test",
+    "coverage",
+    "container",
+    "helm",
+    "benches",
+    "publish",
+)
+
+# Gates that any source change inside any crate must run: they are
+# workspace-wide by construction (`cargo fmt --all`, the architecture
+# ratchet over every production file, `cargo bench --workspace --no-run`,
+# `cargo llvm-cov --workspace`).
+WORKSPACE_WIDE = ("architecture", "rustfmt", "clippy", "test", "coverage", "benches")
+
+# Crates whose presence in the affected closure switches on a contract that
+# is otherwise independent of the Rust matrix.
+EMBEDDED_BOUNDARY_CRATES = {"made-embedded", "made-mcp"}
+EMBEDDED_SQLITE_CRATES = {"made-adapters", "made-embedded", "made-mcp"}
+CONTAINER_CRATES = {"made"}
+PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
+
+# Changing any of these changes what "proved" means, so the answer is the
+# whole matrix rather than a cleverer plan.
+FULL_MATRIX_PATHS = {
+    "Cargo.toml",
+    "Cargo.lock",
+    "rust-toolchain.toml",
+    ".github/workflows/quality-gate.yml",
+    "scripts/ci/quality-gate-plan.py",
+    "scripts/ci/tree-already-proved.sh",
+    "scripts/ci/install-protoc.sh",
+}
+
+# path prefix or exact path -> the gates it switches on. An empty tuple
+# means "recognised, gates nothing" — documentation, the developer loop,
+# the workflows that gate themselves, the manual E2E surface.
+PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("charts/", ("helm",)),
+    ("specs/asyncapi/", ("contract",)),
+    ("api/", ("contract",)),
+    ("plugins/", ("embedded_sqlite",)),
+    ("tests/plugin/", ("embedded_sqlite",)),
+    ("scripts/plugin/", ("embedded_sqlite",)),
+    ("scripts/ci/made-plugin-", ("embedded_sqlite",)),
+    ("scripts/ci/made-marketplace-contract.py", ("embedded_sqlite",)),
+    (".claude-plugin/", ("embedded_sqlite",)),
+    (".agents/plugins/", ("embedded_sqlite",)),
+    ("scripts/release/", ("publish",)),
+    ("scripts/ci/e2e-", ()),
+    ("scripts/ci/integration-", ()),
+    ("scripts/mcp/", ()),
+    ("tests/e2e/", ()),
+    ("tests/cluster/", ()),
+    (".kmp/", ()),
+    (".github/", ()),
+    ("docs/", ()),
+)
+
+EXACT_ROUTES: dict[str, tuple[str, ...]] = {
+    "Dockerfile": ("container",),
+    ".dockerignore": ("container",),
+    "buf.yaml": ("contract",),
+    "scripts/ci/container-image.sh": ("container",),
+    "scripts/ci/build-provider-image.sh": ("container",),
+    "scripts/ci/contract-gate.sh": ("contract",),
+    "scripts/ci/install-buf.sh": ("contract",),
+    "scripts/ci/install-asyncapi.sh": ("contract",),
+    "scripts/ci/helm-lint.sh": ("helm",),
+    "scripts/ci/install-helm.sh": ("helm",),
+    "scripts/ci/architecture-gate.sh": ("architecture",),
+    "docs/architecture/conformance.tsv": ("architecture",),
+    "scripts/ci/domain-vocabulary-boundary.sh": ("rustfmt",),
+    "scripts/ci/embedded-dependency-boundary.sh": ("embedded_boundary",),
+    "scripts/ci/embedded-sqlite-gates.sh": ("embedded_sqlite",),
+    "scripts/ci/bench-compile.sh": ("benches",),
+    # Unlike KMP's, MADE's coverage job is self-contained — it runs
+    # `cargo llvm-cov --workspace` itself rather than reducing fragments
+    # other jobs upload. Changing the script therefore changes exactly one
+    # gate, and routing to it is precise rather than optimistic.
+    "scripts/ci/rust-coverage.sh": ("coverage",),
+    "scripts/ci/publish-dry-run.sh": ("publish",),
+    "scripts/ci/publish-crates.sh": ("publish",),
+    "scripts/release.sh": ("publish",),
+    "scripts/ci/testcontainers-host.sh": (),
+    "scripts/ci/deploy-kubernetes.sh": (),
+    "scripts/ci/quality-gate.sh": (),
+    "scripts/ci/dev-loop.sh": (),
+    "scripts/ci/dev-loop-workflow-contract.py": (),
+    "justfile": (),
+    "Makefile": (),
+    ".gitignore": (),
+    ".gitattributes": (),
+    "LICENSE": (),
+    "NOTICE": (),
+}
+
+DOC_SUFFIXES = (".md", ".txt")
+
+
+def is_documentation(path: str) -> bool:
+    return path.startswith("docs/") or path.endswith(DOC_SUFFIXES)
+
+
+def workspace_graph() -> tuple[dict[str, pathlib.Path], dict[str, set[str]]]:
+    """Package name -> directory, and package name -> its local dependencies."""
+    manifests = sorted((ROOT / "crates").glob("*/Cargo.toml"))
+    packages: dict[str, pathlib.Path] = {}
+    documents: dict[str, dict[str, object]] = {}
+    for manifest in manifests:
+        body = tomllib.loads(manifest.read_text(encoding="utf-8"))
+        name = str(body["package"]["name"])
+        packages[name] = manifest.parent.relative_to(ROOT)
+        documents[name] = body
+
+    root = tomllib.loads((ROOT / "Cargo.toml").read_text(encoding="utf-8"))
+    workspace_dependencies = root.get("workspace", {}).get("dependencies", {})
+    local_names = set(packages)
+    dependencies: dict[str, set[str]] = {name: set() for name in packages}
+
+    def collect(table: object) -> set[str]:
+        found: set[str] = set()
+        if not isinstance(table, dict):
+            return found
+        for key, spec in table.items():
+            candidate = key
+            if isinstance(spec, dict):
+                candidate = str(spec.get("package", key))
+                if spec.get("workspace") is True:
+                    inherited = workspace_dependencies.get(key, {})
+                    if isinstance(inherited, dict):
+                        candidate = str(inherited.get("package", key))
+            if candidate in local_names:
+                found.add(candidate)
+        return found
+
+    sections = ("dependencies", "dev-dependencies", "build-dependencies")
+    for package, body in documents.items():
+        for section in sections:
+            dependencies[package].update(collect(body.get(section)))
+        targets = body.get("target", {})
+        if isinstance(targets, dict):
+            for target in targets.values():
+                if not isinstance(target, dict):
+                    continue
+                for section in sections:
+                    dependencies[package].update(collect(target.get(section)))
+
+    return packages, dependencies
+
+
+def reverse_closure(changed: set[str], dependencies: dict[str, set[str]]) -> set[str]:
+    """Every crate that can observe a change in `changed`, transitively."""
+    reverse: dict[str, set[str]] = defaultdict(set)
+    for package, package_dependencies in dependencies.items():
+        for dependency in package_dependencies:
+            reverse[dependency].add(package)
+    affected = set(changed)
+    queue = deque(sorted(changed))
+    while queue:
+        dependency = queue.popleft()
+        for dependent in sorted(reverse[dependency]):
+            if dependent not in affected:
+                affected.add(dependent)
+                queue.append(dependent)
+    return affected
+
+
+def empty_plan() -> dict[str, object]:
+    return {
+        "full": False,
+        "reason": "path-specific",
+        "changed_packages": [],
+        "affected_packages": [],
+        "cargo_packages": "",
+        **{gate: False for gate in GATES},
+    }
+
+
+def full_plan(packages: dict[str, pathlib.Path], reason: str) -> dict[str, object]:
+    names = sorted(packages)
+    return {
+        "full": True,
+        "reason": reason,
+        "changed_packages": names,
+        "affected_packages": names,
+        "cargo_packages": " ".join(f"-p {name}" for name in names),
+        **{gate: True for gate in GATES},
+    }
+
+
+def route_path(path: str) -> tuple[str, ...] | None:
+    if path in EXACT_ROUTES:
+        return EXACT_ROUTES[path]
+    for prefix, gates in PREFIX_ROUTES:
+        if path.startswith(prefix):
+            return gates
+    if is_documentation(path):
+        return ()
+    return None
+
+
+def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
+    packages, dependencies = workspace_graph()
+    if force_full:
+        return full_plan(packages, "explicit full run")
+    if not paths:
+        return full_plan(packages, "no changed paths could be established")
+
+    normalized = sorted({path.removeprefix("./") for path in paths if path})
+    if any(path in FULL_MATRIX_PATHS for path in normalized):
+        return full_plan(packages, "workspace, toolchain or routing contract changed")
+
+    plan = empty_plan()
+    known: set[str] = set()
+    changed_packages: set[str] = set()
+
+    # --- crates: the reverse dependency closure ---------------------------
+    for name, directory in packages.items():
+        prefix = directory.as_posix() + "/"
+        crate_paths = {
+            path
+            for path in normalized
+            if path.startswith(prefix) and not is_documentation(path)
+        }
+        if not crate_paths:
+            continue
+        changed_packages.add(name)
+        known.update(crate_paths)
+        # The proto contract lives inside two crates but is not Rust: the
+        # `contract` job lints it, checks it for breaking changes, and
+        # proves the vendored copy has not drifted.
+        if any("/proto/" in path for path in crate_paths):
+            plan["contract"] = True
+
+    if changed_packages:
+        affected = reverse_closure(changed_packages, dependencies)
+        plan["changed_packages"] = sorted(changed_packages)
+        plan["affected_packages"] = sorted(affected)
+        plan["cargo_packages"] = " ".join(f"-p {name}" for name in sorted(affected))
+        for gate in WORKSPACE_WIDE:
+            plan[gate] = True
+        plan["embedded_boundary"] = bool(EMBEDDED_BOUNDARY_CRATES & affected)
+        plan["embedded_sqlite"] = bool(EMBEDDED_SQLITE_CRATES & affected)
+        plan["container"] = bool(CONTAINER_CRATES & affected)
+        plan["publish"] = bool(PUBLISHED_CRATES & affected)
+
+    # --- everything else: path routing ------------------------------------
+    for path in normalized:
+        if path in known:
+            continue
+        gates = route_path(path)
+        if gates is None:
+            continue
+        known.add(path)
+        for gate in gates:
+            plan[gate] = True
+
+    unknown = sorted(set(normalized) - known)
+    if unknown:
+        return full_plan(packages, "unknown paths: " + ", ".join(unknown))
+
+    if changed_packages:
+        plan["reason"] = "changed crates and their reverse dependencies"
+    return plan
+
+
+def changed_paths(base: str, head: str) -> list[str]:
+    result = subprocess.run(
+        ["git", "diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
+        cwd=ROOT,
+        check=True,
+        text=True,
+        stdout=subprocess.PIPE,
+    )
+    return [line for line in result.stdout.splitlines() if line]
+
+
+def write_outputs(plan: dict[str, object], destination: pathlib.Path) -> None:
+    with destination.open("a", encoding="utf-8") as handle:
+        for key, value in plan.items():
+            if isinstance(value, bool):
+                rendered = str(value).lower()
+            elif isinstance(value, list):
+                rendered = json.dumps(value, separators=(",", ":"))
+            else:
+                rendered = str(value)
+            print(f"{key}={rendered}", file=handle)
+
+
+SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
+    # Acceptance, plan §3.9 H3: a docs-only change runs no Rust job.
+    (
+        "docs only",
+        ["docs/orchestration-patterns-plan.md", "README.md", "crates/made-mcp/README.md"],
+        {gate: False for gate in GATES} | {"full": False},
+    ),
+    # Acceptance, plan §3.9 H3: a made-core change runs everything that a
+    # Rust change can reach — the whole matrix plus the embedded gates, the
+    # container image and the publication dry run, because made-core is in
+    # every crate's dependency tree. `contract` (buf lint, AsyncAPI) and
+    # `helm` (helm lint over charts/) are the two gates no Rust source can
+    # affect; routing them here would be a green light, not a proof.
+    (
+        "made-core",
+        ["crates/made-core/src/lib.rs"],
+        {
+            gate: gate not in {"contract", "helm"}
+            for gate in GATES
+        }
+        | {"full": False},
+    ),
+    (
+        "changelog",
+        ["CHANGELOG.md"],
+        {"clippy": False, "coverage": False, "full": False},
+    ),
+    (
+        "chart",
+        ["charts/made/values.yaml"],
+        {"helm": True, "clippy": False, "container": False, "full": False},
+    ),
+    (
+        "container image",
+        ["Dockerfile"],
+        {"container": True, "clippy": False, "coverage": False, "full": False},
+    ),
+    (
+        "proto contract",
+        ["crates/made-proto/proto/underpass/made/v1/made.proto"],
+        {"contract": True, "clippy": True, "full": False},
+    ),
+    (
+        "asyncapi only",
+        ["specs/asyncapi/made.asyncapi.yaml"],
+        {"contract": True, "clippy": False, "coverage": False, "full": False},
+    ),
+    (
+        "plugin bundle",
+        ["plugins/made/skills/made-setup/SKILL.md"],
+        {"embedded_sqlite": True, "clippy": False, "full": False},
+    ),
+    (
+        "plugin smoke script",
+        ["scripts/ci/made-plugin-smoke.sh"],
+        {"embedded_sqlite": True, "clippy": False, "full": False},
+    ),
+    (
+        "vendored mcp proto reaches publication",
+        ["crates/made-mcp-proto/src/lib.rs"],
+        {"publish": True, "container": False, "clippy": True, "full": False},
+    ),
+    (
+        "server crate builds the image",
+        ["crates/made/src/compose.rs"],
+        {"container": True, "clippy": True, "full": False},
+    ),
+    (
+        "adapters reach the embedded gates",
+        ["crates/made-adapters/src/lib.rs"],
+        {"embedded_sqlite": True, "embedded_boundary": True, "full": False},
+    ),
+    (
+        "e2e runner does not reach the embedded gates",
+        ["crates/made-e2e-runner/src/main.rs"],
+        {"embedded_sqlite": False, "embedded_boundary": False, "clippy": True},
+    ),
+    (
+        "coverage script",
+        ["scripts/ci/rust-coverage.sh"],
+        {"coverage": True, "clippy": False, "full": False},
+    ),
+    (
+        "dev loop is not a quality gate",
+        ["scripts/ci/dev-loop.sh", "justfile", ".github/workflows/dev-loop.yml"],
+        {gate: False for gate in GATES} | {"full": False},
+    ),
+    ("workspace lock", ["Cargo.lock"], {"full": True, "coverage": True}),
+    (
+        "the router itself",
+        ["scripts/ci/quality-gate-plan.py"],
+        {"full": True, "coverage": True},
+    ),
+    (
+        "the workflow itself",
+        [".github/workflows/quality-gate.yml"],
+        {"full": True, "coverage": True},
+    ),
+    (
+        "the tree proof itself",
+        ["scripts/ci/tree-already-proved.sh"],
+        {"full": True},
+    ),
+    ("unknown path", ["new-top-level.bin"], {"full": True}),
+    ("no paths at all", [], {"full": True}),
+)
+
+
+def self_test() -> None:
+    for name, paths, expected in SELF_TEST_CASES:
+        actual = plan_for(paths)
+        for key, value in expected.items():
+            if actual[key] != value:
+                raise SystemExit(
+                    f"quality gate plan self-test: {name}: expected "
+                    f"{key}={value!r}, got {actual[key]!r}"
+                )
+    print(f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing cases")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--base")
+    parser.add_argument("--head")
+    parser.add_argument("--path", action="append", default=[])
+    parser.add_argument("--full", action="store_true")
+    parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--self-test", action="store_true")
+    args = parser.parse_args()
+
+    if args.self_test:
+        self_test()
+        return 0
+
+    if args.path:
+        paths = args.path
+    elif args.base and args.head:
+        paths = changed_paths(args.base, args.head)
+    elif args.full:
+        paths = []
+    else:
+        parser.error("provide --base/--head, --path, --full, or --self-test")
+
+    plan = plan_for(paths, force_full=args.full)
+    if args.github_output:
+        write_outputs(plan, args.github_output)
+    print(json.dumps({"paths": sorted(paths), "plan": plan}, indent=2), file=sys.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

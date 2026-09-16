@@ -50,3 +50,18 @@ requirement was met.
 The tool is an embedded-plugin extension, not a gRPC RPC. Remote services do
 not advertise a capability they cannot honor, and the plugin can evolve the
 authoring UX without changing the execution API.
+
+### Update — parity slice F3b (ADR-014)
+
+That last paragraph no longer holds, and the reason it was written is what
+changed. The designer was an adapter, so a remote service genuinely could not
+honour it without designing a second time; it is now
+`DesignCeremonyUseCase` in `made-app`, which both editions call, so
+`DesignCeremony` advertises a capability the engine has rather than one the
+plugin has. The intent contract, the linear topology, the refusals and the
+answer are the ones this ADR decided: the same document renders the same
+ceremony whichever surface took it, which is the whole of what moving it
+bought.
+
+`stages[].pattern` is still not part of the request. It is D5's, and until
+then a pattern a caller names is a pattern no engine honours.

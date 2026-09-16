@@ -307,6 +307,44 @@ pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
 // Authoring
 // ---------------------------------------------------------------------------
 
+/// The design, in the shape the in-process backend renders.
+///
+/// The analysis is repeated as its own block rather than flattened
+/// into the answer: a caller that already reads
+/// `made_validate_ceremony_draft` reads this without learning a
+/// second shape. `published` and `started` are constants because
+/// designing does neither, and saying so is the point of a tool that
+/// hands back a document instead of a session.
+pub(crate) fn design_ceremony_to_json(response: pb::DesignCeremonyResponse) -> Value {
+    let design = response.design.unwrap_or_default();
+    json!({
+        "ceremony": response.ceremony,
+        "version": response.version,
+        "definition_yaml": response.definition_yaml,
+        "publishable": response.publishable,
+        "design": {
+            "topology": design.topology,
+            "stages": design.stages,
+            "participants": design.participants,
+            "final_approval_required": design.final_approval_required,
+        },
+        "analysis": {
+            "ceremony": response.ceremony,
+            "version": response.version,
+            "publishable": response.publishable,
+            "error_count": response.error_count,
+            "warning_count": response.warning_count,
+            "findings": response
+                .findings
+                .into_iter()
+                .map(finding_to_json)
+                .collect::<Vec<_>>(),
+        },
+        "published": false,
+        "started": false,
+    })
+}
+
 pub(crate) fn validate_ceremony_draft_to_json(
     response: pb::ValidateCeremonyDraftResponse,
 ) -> Value {
@@ -319,12 +357,20 @@ pub(crate) fn validate_ceremony_draft_to_json(
         "findings": response
             .findings
             .into_iter()
-            .map(|finding| json!({
-                "severity": finding.severity,
-                "locus": finding.locus.map_or(Value::Null, |locus| Value::Object(pb_struct_to_json(locus))),
-                "message": finding.message,
-            }))
+            .map(finding_to_json)
             .collect::<Vec<_>>(),
+    })
+}
+
+/// One finding, rendered once. Validating a draft and designing one
+/// answer with the same findings, and a reader that had to tell two
+/// renderings apart would be reading the difference between the calls
+/// rather than between the drafts.
+fn finding_to_json(finding: pb::CeremonyDraftFinding) -> Value {
+    json!({
+        "severity": finding.severity,
+        "locus": finding.locus.map_or(Value::Null, |locus| Value::Object(pb_struct_to_json(locus))),
+        "message": finding.message,
     })
 }
 

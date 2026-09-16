@@ -71,6 +71,28 @@ fn incremental_ceremony_tools_are_unique_catalog_extensions() {
     assert!(all_names.contains(&GENERATE_CEREMONY_REPORT_TOOL.to_owned()));
     assert!(all_names.contains(&DISCOVER_CAPABILITIES_TOOL.to_owned()));
     assert!(all_names.contains(&GET_HELP_TOOL.to_owned()));
+
+    // Three of the incremental tools have since reached the contract
+    // (parity slices F3a and F3b) and are served by both backends;
+    // the report is the last one still rendered inside the MCP
+    // adapter with no RPC behind it, and a client pointed at a
+    // cluster will not find it. Which is which is the whole content
+    // of this distinction, so it is asserted rather than described.
+    for shared in [
+        CLAIM_CEREMONY_STEP_TOOL,
+        COMPLETE_CEREMONY_STEP_TOOL,
+        DESIGN_CEREMONY_TOOL,
+    ] {
+        assert!(
+            GRPC_TOOL_NAMES.contains(&shared),
+            "{shared} is served by the gRPC backend; it should be in GRPC_TOOL_NAMES"
+        );
+    }
+    assert!(
+        !GRPC_TOOL_NAMES.contains(&GENERATE_CEREMONY_REPORT_TOOL),
+        "{GENERATE_CEREMONY_REPORT_TOOL} has no RPC behind it; \
+         the gRPC backend cannot serve it"
+    );
 }
 
 #[test]

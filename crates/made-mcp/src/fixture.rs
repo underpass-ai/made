@@ -65,11 +65,14 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
+                "made_design_ceremony" => design_ceremony_fixture(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),
                 "made_diff_ceremony_definitions" => diff_definitions_fixture(),
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
+                "made_claim_ceremony_step" => ceremony_instance_fixture(),
+                "made_complete_ceremony_step" => ceremony_instance_fixture(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -387,6 +390,80 @@ fn ceremony_instance_fixture() -> Value {
         "context": { "brief": "ship the editorial calendar" }
     })
 }
+
+/// A design that worked: the document it rendered, what it did with
+/// the intent, and a clean analysis. Publishable, unlike the draft the
+/// validation fixture answers with, because a designer that handed
+/// back something unpublishable would be broken.
+fn design_ceremony_fixture() -> Value {
+    json!({
+        "ceremony": "fixture_ceremony",
+        "version": "1.0",
+        "definition_yaml": FIXTURE_DESIGNED_YAML,
+        "publishable": true,
+        "design": {
+            "topology": "linear",
+            "stages": 1,
+            "participants": 1,
+            "final_approval_required": false
+        },
+        "analysis": {
+            "ceremony": "fixture_ceremony",
+            "version": "1.0",
+            "publishable": true,
+            "error_count": 0,
+            "warning_count": 0,
+            "findings": []
+        },
+        "published": false,
+        "started": false
+    })
+}
+
+const FIXTURE_DESIGNED_YAML: &str = r"version: '1.0'
+name: fixture_ceremony
+description: Decide the fixture question.
+inputs:
+  required: []
+  optional: []
+outputs:
+  decision:
+    type: object
+states:
+- id: DECIDE
+  initial: true
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: DECIDE
+  to: COMPLETED
+  trigger: decide_completed
+  guards:
+  - decide_completed
+steps:
+- id: decide
+  state: DECIDE
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Decide the fixture question.
+    see_prior: false
+guards:
+  decide_completed:
+    type: automated
+    check: step_status:decide:COMPLETED
+roles:
+- id: DECIDER
+  allowed_actions:
+  - decide
+  - decide_completed
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+";
 
 fn validate_draft_fixture() -> Value {
     json!({

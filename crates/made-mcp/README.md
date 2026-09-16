@@ -109,22 +109,25 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_publish_ceremony_definition` | `PublishCeremonyDefinition`    | publish an immutable definition |
 | `made_diff_ceremony_definitions` | `DiffCeremonyDefinitions`        | compare two definitions |
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`      | seat participants in declared roles |
+| `made_claim_ceremony_step`      | `ClaimCeremonyStep`               | lease one step the MCP host will execute itself |
+| `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
+| `made_design_ceremony`          | `DesignCeremony`                  | turn structured intent into an analysed, unpublished linear draft |
 | `made_get_status`               | `GetStatus`                       | observability |
 | `made_get_metrics`              | `GetMetrics`                      | observability |
 
-These 35 backend-owned tools map 1:1 to the 35 RPCs in the MADE gRPC
+These 38 backend-owned tools map 1:1 to the 38 RPCs in the MADE gRPC
 service. Every server composition additionally advertises the two server-owned
 discovery/help tools described below.
 
-The embedded backend also exposes four tools that intentionally have no gRPC
-mapping:
+The embedded backend also exposes one tool that has no gRPC mapping:
 
 | MCP tool | Purpose |
 |----------|---------|
-| `made_design_ceremony` | Turn structured intent into an analysed, unpublished linear ceremony draft. |
-| `made_claim_ceremony_step` | Lease the next step for real work performed by the MCP host; claiming performs no work. |
-| `made_complete_ceremony_step` | Record the observable status, structured output, and evidence of a previously claimed host-executed step. |
 | `made_generate_ceremony_report` | Render one or more persisted instances and their audit journals as deterministic Markdown. |
+
+Which gaps are left, and why, is data rather than prose:
+[`docs/architecture/parity.tsv`](../../docs/architecture/parity.tsv) has one
+row per capability and a gate fails when the file and the code disagree.
 
 The incremental ceremony controls allow the host to pause between actions.
 Human guard approval is never inferred by the server; the client must obtain

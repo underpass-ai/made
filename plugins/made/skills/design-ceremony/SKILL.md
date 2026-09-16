@@ -9,8 +9,9 @@ Use `made_design_ceremony` before writing ceremony YAML yourself. Translate
 the user's intent into the tool's structured fields while preserving their
 vocabulary in the objective and stage instructions.
 
-If the installed surface is uncertain, call `made_discover_capabilities`
-first. `made_get_help` with `audience: agent` gives the running server's
+The tool is served by both backends — in process and against a cluster — so
+the same intent designs the same ceremony wherever the server points. If the
+installed surface is uncertain, call `made_discover_capabilities` first. `made_get_help` with `audience: agent` gives the running server's
 short operational guidance without replacing this design policy.
 
 1. Establish the single question or artifact the ceremony must resolve.

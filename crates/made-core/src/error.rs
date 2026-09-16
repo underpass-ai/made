@@ -61,6 +61,20 @@ pub enum DomainError {
     #[error("not found: {what}")]
     NotFound { what: &'static str },
 
+    /// A document the caller authored describes something that cannot
+    /// be built, and saying which part requires naming it.
+    ///
+    /// Distinct from the field-level complaints above: those name one
+    /// field that is wrong on its own, and this one names parts that
+    /// are each acceptable and do not fit together — a stage owned by
+    /// nobody at the table, a name that collides with a generated one.
+    /// The reason is owned rather than `&'static str` because the
+    /// elements at fault carry the caller's own names, and a defect
+    /// that cannot say which element it is about sends an author
+    /// looking through the whole document.
+    #[error("{reason}")]
+    InvalidDocument { reason: String },
+
     /// A domain entity with the same identity already exists.
     #[error("already exists: {what}")]
     AlreadyExists { what: &'static str },

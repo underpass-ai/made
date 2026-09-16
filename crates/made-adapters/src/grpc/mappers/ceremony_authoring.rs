@@ -86,7 +86,7 @@ pub fn publish_ceremony_definition_response_from(
     }
 }
 
-fn finding_from(finding: &CeremonyValidationFinding) -> pb::CeremonyDraftFinding {
+pub(super) fn finding_from(finding: &CeremonyValidationFinding) -> pb::CeremonyDraftFinding {
     pb::CeremonyDraftFinding {
         severity: if finding.is_blocking() {
             "error".to_owned()
@@ -101,7 +101,7 @@ fn finding_from(finding: &CeremonyValidationFinding) -> pb::CeremonyDraftFinding
     }
 }
 
-fn count(value: usize) -> u32 {
+pub(super) fn count(value: usize) -> u32 {
     u32::try_from(value).unwrap_or(u32::MAX)
 }
 

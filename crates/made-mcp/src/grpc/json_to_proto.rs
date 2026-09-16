@@ -66,6 +66,33 @@ pub(crate) fn optional_u64(obj: &serde_json::Map<String, Value>, key: &str) -> R
     }
 }
 
+/// A number the caller wrote, or nothing.
+///
+/// The difference from [`optional_u32`] and [`optional_u64`] is the
+/// whole point: on a field where absent and zero are different
+/// answers, folding one into the other makes the engine invent a
+/// default the caller never asked for, or accept a zero it would have
+/// refused.
+pub(crate) fn optional_present_u32(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Option<u32>, String> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => optional_u32(obj, key).map(Some),
+    }
+}
+
+pub(crate) fn optional_present_u64(
+    obj: &serde_json::Map<String, Value>,
+    key: &str,
+) -> Result<Option<u64>, String> {
+    match obj.get(key) {
+        None | Some(Value::Null) => Ok(None),
+        Some(_) => optional_u64(obj, key).map(Some),
+    }
+}
+
 pub(crate) fn optional_bool(obj: &serde_json::Map<String, Value>, key: &str) -> bool {
     matches!(obj.get(key), Some(Value::Bool(true)))
 }

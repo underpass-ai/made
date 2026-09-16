@@ -79,7 +79,7 @@ fn map_to_struct(map: &BTreeMap<String, Value>) -> PbStruct {
     }
 }
 
-fn pb_value_to_json(v: PbValue) -> Value {
+pub(super) fn pb_value_to_json(v: PbValue) -> Value {
     match v.kind {
         None | Some(PbKind::NullValue(_)) => Value::Null,
         Some(PbKind::NumberValue(n)) => {

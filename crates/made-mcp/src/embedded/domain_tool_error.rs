@@ -23,7 +23,11 @@ impl From<DomainError> for ToolError {
             | DomainError::InvalidCharacters { .. }
             | DomainError::OutOfRange { .. }
             | DomainError::MustBeNonZero { .. }
-            | DomainError::EmptyCollection { .. } => Self::invalid_request(message),
+            | DomainError::EmptyCollection { .. }
+            // A document the caller wrote whose parts do not fit
+            // together: the reason names the element at fault, and
+            // fixing it needs nothing the caller does not have.
+            | DomainError::InvalidDocument { .. } => Self::invalid_request(message),
             DomainError::NotFound { .. } => Self::not_found(message),
             // Everything else is the engine having looked: an illegal
             // transition, a violated invariant, a lost race, a session
@@ -46,6 +50,20 @@ mod tests {
             })
             .code(),
             ToolErrorCode::InvalidRequest
+        );
+    }
+
+    /// The same classification the server gives a document it cannot
+    /// build: the caller wrote it, the caller can fix it.
+    #[test]
+    fn a_document_whose_parts_do_not_fit_is_the_callers_to_fix() {
+        let error = ToolError::from(DomainError::InvalidDocument {
+            reason: "stage `review` names unknown owner role `MISSING`".to_owned(),
+        });
+        assert_eq!(error.code(), ToolErrorCode::InvalidRequest);
+        assert_eq!(
+            error.message(),
+            "stage `review` names unknown owner role `MISSING`"
         );
     }
 

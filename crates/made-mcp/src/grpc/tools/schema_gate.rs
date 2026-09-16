@@ -147,6 +147,8 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
             rendered(build_start_published_ceremony_request(arguments))
         }
         "made_run_ceremony_step" => rendered(build_run_ceremony_step_request(arguments)),
+        "made_claim_ceremony_step" => rendered(build_claim_ceremony_step_request(arguments)),
+        "made_complete_ceremony_step" => rendered(build_complete_ceremony_step_request(arguments)),
         "made_apply_ceremony_transition" => {
             rendered(build_apply_ceremony_transition_request(arguments))
         }
@@ -165,6 +167,7 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
             rendered(build_collect_ceremony_evidence_request(arguments))
         }
         "made_assert_ceremony_reason" => rendered(build_assert_ceremony_reason_request(arguments)),
+        "made_design_ceremony" => rendered(build_design_ceremony_request(arguments)),
         _ => return None,
     };
     Some(outcome)
@@ -229,11 +232,13 @@ fn every_required_field_reaches_the_request() {
 
 use super::{
     build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,
-    build_assert_ceremony_reason_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_create_council_request,
+    build_assert_ceremony_reason_request, build_claim_ceremony_step_request,
+    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
+    build_complete_ceremony_step_request, build_create_council_request,
     build_defer_ceremony_guard_request, build_delete_contract_request,
-    build_delete_council_request, build_deliberate_request, build_get_deliberation_result_request,
-    build_orchestrate_request, build_process_trigger_event_request, build_register_agent_request,
+    build_delete_council_request, build_deliberate_request, build_design_ceremony_request,
+    build_get_deliberation_result_request, build_orchestrate_request,
+    build_process_trigger_event_request, build_register_agent_request,
     build_register_contract_request, build_request_ceremony_intervention_request,
     build_respond_to_ceremony_intervention_request, build_run_ceremony_request,
     build_run_ceremony_step_request, build_run_council_decision_request,
