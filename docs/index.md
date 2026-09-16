@@ -42,7 +42,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 | [`operations/capability-verification.md`](./operations/capability-verification.md) | **Start here before making capability claims.** Separates executable tool discovery, execution ownership, external authority and restart durability for every edition. |
 | [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter with backend-filtered tool discovery, audience help, every gRPC RPC, and embedded extensions. |
 | [`operations/ceremony-authoring-runbook.md`](./operations/ceremony-authoring-runbook.md) | Authoring ceremonies: schema, rounds, sizing, output contracts, verification. |
-| [`operations/support-matrix.md`](./operations/support-matrix.md) | Supported Rust toolchain and release-support rules. |
+| [`operations/support-matrix.md`](./operations/support-matrix.md) | **Editions**: which capability group each of the four surfaces serves, with the reason for every gap and the gate that proves every cell, derived from `architecture/parity.tsv` by a test. Plus the supported Rust toolchain, image tags, chart versions, provider adapters and Kubernetes posture. |
 
 ### Embedded edition — in-process, no service
 
