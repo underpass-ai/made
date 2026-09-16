@@ -16,11 +16,22 @@ operator command.
 
 ### Added
 
+- `docs/architecture/parity.tsv`: the checked-in exception list of surface
+  gaps (ADR-014), one row per ceremony capability and one column per surface,
+  with a reason mandatory on every gap. A gate in `made-mcp` compares it with
+  the `underpass.made.v1` RPC list, `GRPC_TOOL_NAMES`, the catalog the
+  embedded backend admits, the public methods of `EmbeddedMade` and the
+  `CeremonyEngineApi` trait. It fails in **both** directions — a tool, RPC or
+  facade method no row names, and a row naming something the code does not
+  have — and it also fails on a gap with no reason or a complete row that
+  still carries one. It runs with no server, in milliseconds, as part of the
+  workspace test job. (#47)
 - `CeremonyEventStorePort` and `CeremonySnapshotStorePort` with conformance
   suites, an in-memory adapter (`InMemoryCeremonyEventStore`) and a SQLite
   adapter on `SqliteCeremonyStore` (tables `ceremony_events`,
   `ceremony_event_log`, `ceremony_snapshots`, `store_meta`); the two-writers
-  test also covers the event store. Not yet used by the use cases (slice A4).
+  test also covers the event store. The ceremony use cases run on them:
+  load is the fold of the stream, and every mutation appends (#45).
 - MADE now ships co-located Codex and Claude Code marketplace catalogs, a
   `made-setup` skill and `/made:setup` command, and checksummed standalone MCP
   executables. A clean marketplace install downloads its release-matched
