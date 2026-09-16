@@ -44,9 +44,10 @@ use made_app::usecases::{
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GetCeremonyInstanceUseCase, GetDeliberationUseCase,
-    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase, RegisterAgentUseCase,
+    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
@@ -201,7 +202,7 @@ impl GrpcFixture {
                 ceremony_step_handler,
                 clock.clone(),
             )
-            .with_transcript_store(ceremony_transcript_store),
+            .with_transcript_store(ceremony_transcript_store.clone()),
         );
         // The delegated-host protocol reaches the fixture too: the
         // parity tests drive claim and complete over these very RPCs,
@@ -307,6 +308,8 @@ impl GrpcFixture {
             .expect("auto-dispatch wiring should never fail"),
         );
 
+        let get_ceremony_instance =
+            Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
         let svc = MadeGrpcService::builder()
             .deliberate(deliberate)
             .orchestrate(orchestrate)
@@ -335,11 +338,24 @@ impl GrpcFixture {
             .diff_ceremony_definitions(diff_ceremony_definitions)
             .bind_ceremony_participants(bind_ceremony_participants)
             .ceremony_definitions(ceremony_definitions.clone())
-            .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
-                ceremony_stream.clone(),
-            )))
+            .get_ceremony_instance(get_ceremony_instance.clone())
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
+            )))
+            // What the session left behind. The parity session drives
+            // all three over these very RPCs, so a fixture missing
+            // them would prove the tools agree on a server nobody
+            // runs.
+            .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+            )))
+            .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(
+                ceremony_transcript_store,
+            )))
+            .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
+                get_ceremony_instance,
+                resolve_ceremony_definition.clone(),
+                ceremony_store,
             )))
             .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
@@ -424,7 +440,10 @@ impl GrpcFixture {
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
-        let ceremony_stream = Arc::new(SessionStream::new(ceremony_store.clone(), ceremony_store));
+        let ceremony_stream = Arc::new(SessionStream::new(
+            ceremony_store.clone(),
+            ceremony_store.clone(),
+        ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
@@ -489,7 +508,7 @@ impl GrpcFixture {
                 ceremony_step_handler,
                 clock.clone(),
             )
-            .with_transcript_store(ceremony_transcript_store),
+            .with_transcript_store(ceremony_transcript_store.clone()),
         );
         // The delegated-host protocol reaches the fixture too: the
         // parity tests drive claim and complete over these very RPCs,
@@ -595,6 +614,8 @@ impl GrpcFixture {
             .expect("auto-dispatch wiring should never fail"),
         );
 
+        let get_ceremony_instance =
+            Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
         let svc = MadeGrpcService::builder()
             .deliberate(deliberate)
             .orchestrate(orchestrate)
@@ -624,11 +645,24 @@ impl GrpcFixture {
             .bind_ceremony_participants(bind_ceremony_participants)
             .ceremony_definitions(ceremony_definitions.clone())
             .prepare_ceremony_participants(prepare_ceremony_participants)
-            .get_ceremony_instance(Arc::new(GetCeremonyInstanceUseCase::new(
-                ceremony_stream.clone(),
-            )))
+            .get_ceremony_instance(get_ceremony_instance.clone())
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
+            )))
+            // What the session left behind. The parity session drives
+            // all three over these very RPCs, so a fixture missing
+            // them would prove the tools agree on a server nobody
+            // runs.
+            .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+            )))
+            .get_ceremony_transcript(Arc::new(GetCeremonyTranscriptUseCase::new(
+                ceremony_transcript_store,
+            )))
+            .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
+                get_ceremony_instance,
+                resolve_ceremony_definition.clone(),
+                ceremony_store,
             )))
             .resolve_ceremony_definition(resolve_ceremony_definition.clone())
             .contract_registry(contract_registry.clone())
