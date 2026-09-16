@@ -7,6 +7,8 @@ mod catalog;
 mod ceremony_schemas;
 mod general_schemas;
 mod initialization;
+#[cfg(test)]
+mod parity_tests;
 mod result_envelopes;
 mod schema_primitives;
 #[cfg(test)]
