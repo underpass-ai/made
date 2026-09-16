@@ -34,6 +34,8 @@ DEV_LOOP = ".github/workflows/dev-loop.yml"
 QUALITY_GATE = ".github/workflows/quality-gate.yml"
 INTEGRATION = ".github/workflows/integration.yml"
 PLUGIN_PACKAGE = ".github/workflows/plugin-package.yml"
+DEPENDENCY_REVIEW = ".github/workflows/dependency-review.yml"
+PUBLISH_DISTRIBUTION = ".github/workflows/publish-distribution.yml"
 DEV_SCRIPT = "scripts/ci/dev-loop.sh"
 JUSTFILE = "justfile"
 PLANNER = "scripts/ci/quality-gate-plan.py"
@@ -44,6 +46,8 @@ SOURCES = (
     QUALITY_GATE,
     INTEGRATION,
     PLUGIN_PACKAGE,
+    DEPENDENCY_REVIEW,
+    PUBLISH_DISTRIBUTION,
     DEV_SCRIPT,
     JUSTFILE,
     PLANNER,
@@ -94,6 +98,15 @@ STANDDOWN_WORKFLOWS = {
     INTEGRATION: ("integration-nats", "integration-postgres"),
     PLUGIN_PACKAGE: ("package",),
 }
+
+# A pull-request job holds a token the pull request's own scripts can
+# spend, so the packaging matrix reads and the tag-gated release upload is
+# the only job in that workflow that writes.
+PACKAGING_JOB = "package"
+RELEASE_JOB = "release-upload"
+
+ACTION_REFERENCE = re.compile(r"^\s*uses:\s*(\S+)\s*$", re.MULTILINE)
+COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
 
 JOB_HEADER = re.compile(r"^  ([A-Za-z0-9_-]+):\s*$")
 TOP_LEVEL = re.compile(r"^[A-Za-z_]")
@@ -412,6 +425,62 @@ def validate(sources: dict[str, str]) -> list[str]:
             elif READY_ONLY not in block:
                 failures.append(f"{workflow} job {job} lost its draft stand-down guard")
 
+    # --- every workflow is read, and every action is pinned ---------------
+    on_disk = sorted(
+        path.relative_to(ROOT).as_posix()
+        for path in (ROOT / ".github" / "workflows").glob("*.yml")
+    )
+    unread = [path for path in on_disk if path not in SOURCES]
+    if unread:
+        failures.append(
+            "workflows this contract never reads: " + ", ".join(unread)
+        )
+    for workflow in (path for path in SOURCES if path.startswith(".github/")):
+        for reference in ACTION_REFERENCE.findall(sources[workflow]):
+            if reference.startswith("./"):
+                continue
+            _, _, pin = reference.partition("@")
+            if not COMMIT_SHA.fullmatch(pin):
+                failures.append(
+                    f"{workflow} uses {reference}, which is a tag, not a "
+                    "commit: whoever can move the tag decides what runs"
+                )
+
+    # --- the packaging matrix reads, the release upload writes ------------
+    packaging = job_block(sources[PLUGIN_PACKAGE], PACKAGING_JOB)
+    if packaging is None:
+        failures.append(f"{PLUGIN_PACKAGE} lost the {PACKAGING_JOB} job")
+    elif "contents: write" in packaging:
+        failures.append(
+            f"{PLUGIN_PACKAGE} job {PACKAGING_JOB} holds a write token while "
+            "running scripts the pull request wrote"
+        )
+    elif "contents: read" not in packaging:
+        failures.append(
+            f"{PLUGIN_PACKAGE} job {PACKAGING_JOB} no longer names its "
+            "permissions, so it inherits whatever the repository grants"
+        )
+
+    release = job_block(sources[PLUGIN_PACKAGE], RELEASE_JOB)
+    if release is None:
+        failures.append(f"{PLUGIN_PACKAGE} lost the {RELEASE_JOB} job")
+    else:
+        if "startsWith(github.ref, 'refs/tags/v')" not in release:
+            failures.append(
+                f"{PLUGIN_PACKAGE} job {RELEASE_JOB} is no longer tag-gated, "
+                "so a write token reaches every push"
+            )
+        if "contents: write" not in release:
+            failures.append(
+                f"{PLUGIN_PACKAGE} job {RELEASE_JOB} cannot write the release "
+                "it exists to upload"
+            )
+        if PACKAGING_JOB not in needs_list(release):
+            failures.append(
+                f"{PLUGIN_PACKAGE} job {RELEASE_JOB} no longer waits for "
+                f"{PACKAGING_JOB}, so it would publish a partial release"
+            )
+
     # --- H5: `just dev` is the same script, `just check` runs this --------
     justfile = sources[JUSTFILE]
     if "bash scripts/ci/dev-loop.sh {{STAGE}}" not in justfile:
@@ -531,6 +600,22 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         "      - name: Prove the proof's own rules\n"
         "        run: bash scripts/ci/tree-already-proved.sh --self-test\n",
         "",
+    ),
+    "an action goes back to a movable tag": (
+        PLUGIN_PACKAGE,
+        "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+        "actions/upload-artifact@v4",
+    ),
+    "the packaging matrix gets a write token again": (
+        PLUGIN_PACKAGE,
+        "    permissions:\n      contents: read\n",
+        "    permissions:\n      contents: write\n",
+    ),
+    "the release upload stops being tag-gated": (
+        PLUGIN_PACKAGE,
+        "  release-upload:\n    needs: [package]\n"
+        "    if: startsWith(github.ref, 'refs/tags/v')\n",
+        "  release-upload:\n    needs: [package]\n",
     ),
     "the container suites burn runners on drafts": (
         INTEGRATION,

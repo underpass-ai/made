@@ -44,6 +44,12 @@ jobs:
   # A draft pull request is development mode: dev-loop.yml answers it, and
   # this four-host packaging matrix stands down until the pull request is
   # marked ready for review. Tag and main pushes are unaffected.
+  #
+  # `contents: read`: every step below runs code the pull request wrote —
+  # the marketplace contract, the plugin smoke, the two bootstrap scripts
+  # and the packager — so a write token here is a write token those scripts
+  # can spend. The release upload is the one step that needs to write, and
+  # it has moved to its own tag-gated job.
   package:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
@@ -61,7 +67,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     permissions:
-      contents: write
+      contents: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -100,19 +106,40 @@ jobs:
         run: bash scripts/plugin/package-made-plugin.sh
 
       - name: Upload package as workflow artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: made-plugin-${{ matrix.label }}
           path: dist/plugin/*
           if-no-files-found: error
 
-      - name: Attach package to the GitHub Release
-        if: startsWith(github.ref, 'refs/tags/v')
-        # Explicit: `windows-latest` defaults to PowerShell, which reads the
-        # line continuations below as unary operators and fails to parse.
+  # The one job that writes to the repository, and the only one that runs
+  # no pull-request code: it downloads what the four hosts built and
+  # attaches it to the release. Tag-gated, so it does not exist on a pull
+  # request at all, and it waits for all four hosts — a release that is
+  # missing a platform is worse than a release that is late.
+  #
+  # No checkout: `gh` reads the repository from GH_REPO, and there is no
+  # reason to put a working tree next to a write token.
+  release-upload:
+    needs: [package]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Collect the bundles the matrix packaged
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          pattern: made-plugin-*
+          merge-multiple: true
+          path: dist/plugin
+
+      - name: Attach the packages to the GitHub Release
         shell: bash
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
         run: |
           TAG="${GITHUB_REF_NAME}"
           gh release create "${TAG}" dist/plugin/* \
