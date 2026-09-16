@@ -23,9 +23,10 @@ use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
+use crate::protocol::ToolErrorCode;
 use crate::protocol::{
-    initialize_result, is_server_tool, jsonrpc_error, jsonrpc_result, tool_error_result,
-    tool_success_result, tools_list_result, ToolError, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
+    initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
+    tools_list_result, validate_tool_request, ToolError, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].
@@ -235,24 +236,35 @@ impl MadeMcpServer {
         let arguments = params.get("arguments").unwrap_or(&Value::Null);
         let start = Instant::now();
 
+        // The published schema decides what is acceptable, once, before
+        // any backend is reached: the same call is accepted or refused
+        // the same way whichever engine is mounted, and the refusal is
+        // worded by this layer rather than by whichever mapper looked
+        // first. Everything it reports is the call's own fault
+        // (ADR-014, plan §3.6 F4).
+        let refused_by_the_gate =
+            validate_tool_request(name, arguments, |tool| self.backend.supports_tool(tool));
         // The two server-owned tools answer about this process and
         // reach no engine, so the only way either can fail is the call
         // itself: an unknown field, a missing one, an audience that is
         // not one of the two. One place says so, on both backends.
-        let outcome = match name {
-            DISCOVER_CAPABILITIES_TOOL => discovery_result(
-                self.identity,
-                self.backend_name(),
-                self.grpc_tls_mode_name(),
-                arguments,
-                |tool| self.backend.supports_tool(tool),
-            )
-            .map(tool_success_result)
-            .map_err(ToolError::invalid_request),
-            GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
+        let outcome = match refused_by_the_gate {
+            Err(error) => Err(error),
+            Ok(()) => match name {
+                DISCOVER_CAPABILITIES_TOOL => discovery_result(
+                    self.identity,
+                    self.backend_name(),
+                    self.grpc_tls_mode_name(),
+                    arguments,
+                    |tool| self.backend.supports_tool(tool),
+                )
                 .map(tool_success_result)
                 .map_err(ToolError::invalid_request),
-            _ => self.backend.call_tool(name, arguments).await,
+                GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
+                    .map(tool_success_result)
+                    .map_err(ToolError::invalid_request),
+                _ => self.backend.call_tool(name, arguments).await,
+            },
         };
 
         match outcome {
@@ -273,7 +285,7 @@ impl MadeMcpServer {
                     self.grpc_tls_mode_name(),
                     name,
                     arguments,
-                    if is_server_tool(name) {
+                    if error.code() == ToolErrorCode::InvalidRequest {
                         ToolErrorKind::Validation
                     } else {
                         ToolErrorKind::Backend

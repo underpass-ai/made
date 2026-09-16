@@ -10,6 +10,7 @@ mod general_schemas;
 mod initialization;
 #[cfg(test)]
 mod parity_tests;
+mod request_gate;
 mod result_envelopes;
 mod schema_primitives;
 #[cfg(test)]
@@ -27,6 +28,7 @@ pub(crate) use catalog::{available_tool_catalog, tools_list_result};
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use default_lease_owner::default_lease_owner_id;
 pub(crate) use initialization::initialize_result;
+pub(crate) use request_gate::validate_tool_request;
 pub(crate) use result_envelopes::{
     jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
 };

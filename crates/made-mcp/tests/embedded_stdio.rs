@@ -312,7 +312,10 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
     send(&server, run_ceremony_call(1, "report-known")).await;
 
     for (id, ceremony_ids, expected, code) in [
-        (2, json!([]), "at least one", "invalid_request"),
+        // Refused by the request gate now, before any backend: the
+        // schema declares `minItems`, and one place says so for every
+        // backend (ADR-014, parity slice F4).
+        (2, json!([]), "fewer than the 1", "invalid_request"),
         (
             3,
             json!(["report-known", "report-known"]),
