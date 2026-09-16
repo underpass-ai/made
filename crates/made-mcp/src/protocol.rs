@@ -8,6 +8,8 @@ mod ceremony_schemas;
 mod default_lease_owner;
 mod general_schemas;
 mod initialization;
+#[cfg(test)]
+mod parity_tests;
 mod result_envelopes;
 mod schema_primitives;
 #[cfg(test)]

@@ -209,7 +209,10 @@ Two caveats that make this less symmetric than the KMP equivalent:
   read-only Markdown reports exist where no remote RPC does. `tools/list` on the
   running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
-  reason.
+  reason. Which gaps exist is not prose:
+  [`architecture/parity.tsv`](./architecture/parity.tsv) is the checked list,
+  one row per capability with the reason for its gap, and a gate fails when
+  the file and the code disagree.
 - **Ceremony state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.
