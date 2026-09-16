@@ -137,7 +137,7 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
         ))
         .await
         .unwrap();
-    let approved = engine
+    let after_approval = engine
         .approve_guard(ApproveCeremonyGuardInput::new(
             ceremony_id.clone(),
             GuardName::new("human_approved").unwrap(),
@@ -163,13 +163,13 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
         .expect("every append leaves a snapshot");
     assert_eq!(snapshot.version, StreamVersion::new(2));
     assert_eq!(snapshot.instance, folded);
-    assert_eq!(snapshot.instance, approved);
+    assert_eq!(snapshot.instance, after_approval);
 
     // Forgetting the cache changes nothing the host can see, and the
     // ceremony continues from the fold.
     store.forget(&ceremony_id).await.unwrap();
     assert_eq!(store.latest(&ceremony_id).await.unwrap(), None);
-    assert_eq!(engine.instance(&ceremony_id).await.unwrap(), approved);
+    assert_eq!(engine.instance(&ceremony_id).await.unwrap(), after_approval);
     let completed = engine
         .apply_transition(ApplyCeremonyTransitionInput::new(
             ceremony_id.clone(),
