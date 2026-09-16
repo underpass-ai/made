@@ -1,6 +1,6 @@
 //! A memory backend that keeps nothing, and says so.
 //!
-//! The honest shape of "no kernel configured". A session with nowhere
+//! The honest shape of "no memory configured". A session with nowhere
 //! to record what it decided still runs; it just forgets, and every
 //! caller can tell that from the capabilities before it asks.
 

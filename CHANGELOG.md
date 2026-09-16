@@ -25,6 +25,10 @@ operator command.
   `made-setup` skill and `/made:setup` command, and checksummed standalone MCP
   executables. A clean marketplace install downloads its release-matched
   engine without requiring Cargo. (#36)
+- The domain vocabulary gate (`scripts/ci/domain-vocabulary-boundary.sh`)
+  now also refuses other products' vocabulary (`kmp`, `kernel`,
+  `rehydration`) in `made-core`, `made-app`, `made-api`, `made-mcp`,
+  `made-embedded` and `made-adapters` sources, per ADR-013.
 
 ### Changed
 
@@ -49,6 +53,15 @@ operator command.
   embedded edition and the server store ceremonies in `ceremony_events`;
   instances from earlier stores that have no stream are counted and warned
   about at open and are not visible until the migration command lands (A7).
+
+### Removed
+
+- The in-tree KMP memory adapter: the `made-adapters` feature `kmp`, its
+  `kmp` module, the CI matrix arm that built it and its live-kernel test.
+  Nothing wired it; both composition roots use `ForgetfulMemory`. Memory
+  backends other than the in-tree ones are out-of-tree adapters gated by
+  the memory conformance suite. The last in-tree revision is `c7dad9f`
+  at `crates/made-adapters/src/kmp/` for anyone who needs it.
 
 ## 0.3.0 - 2026-09-03
 

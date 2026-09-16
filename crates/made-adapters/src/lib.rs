@@ -67,9 +67,6 @@ pub mod __test_only {
     pub use crate::grpc::tracecontext::link_span_to_metadata;
 }
 
-#[cfg(feature = "kmp")]
-pub mod kmp;
-
 #[cfg(feature = "nats")]
 pub mod nats;
 

@@ -14,7 +14,7 @@ agent kind enabled and a compatible endpoint is reachable:
 - **Chain 1** — Warn-mode reevaluation. Mirrors what a consumer
   triggers after observing an incident or domain event: optionally
   publish a trigger envelope, invoke `RunCouncilDecision` in Warn
-  mode with a kernel-rehydration-shaped bundle, then assert on the
+  mode with a context-bundle-shaped payload, then assert on the
   typed response + the outbound `made.deliberation.completed`
   envelope (correlation / causation propagation).
 
@@ -218,22 +218,22 @@ the typed shape without parsing the printed table.
   within the configured budget, or a chain runner returned `Err`
   (typically a panicking dependency).
 
-## The kernel rehydration seam
+## The context bundle seam
 
 `made_consumer_smoke::bundle::deterministic_bundle()` returns a
 literal `ExternalContextBundle`. A real consumer integration would
-replace it with the result of a kernel rehydration call (Underpass
-KMP, RAG, whatever the consumer wires) before invoking
+replace it with the result of a context fetch (Underpass KMP, RAG,
+whatever the consumer wires) before invoking
 `RunCouncilDecision`:
 
 ```text
-  let bundle = kernel.rehydrate(...).await?;
+  let bundle = context_source.fetch_bundle(...).await?;
   harness.grpc
       .run_council_decision(req.with_external_context(bundle))
       .await?;
 ```
 
-Keeping the rehydration adapter out of this crate keeps the smoke
+Keeping the context adapter out of this crate keeps the smoke
 binary's dependency surface narrow. The chains exercise the
-MADE's public RPC + bus contract; the kernel boundary is a
+MADE's public RPC + bus contract; the context boundary is a
 separate integration concern.

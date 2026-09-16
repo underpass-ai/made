@@ -232,7 +232,7 @@ cargo test -p made-mcp --locked
 - `src/observability.rs::tests` — error-kind labels and the recursive
   size approximator used in trace events.
 
-### Real-kernel container integration test
+### Real-server container integration test
 
 A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/made:latest` image via

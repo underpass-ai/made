@@ -16,7 +16,7 @@
 //!
 //! **Whether the memory is any good.** That entries are stored and
 //! come back says nothing about whether a later session can navigate
-//! them. Quality is the kernel's to measure, and it does.
+//! them. Quality is the backend's to measure, not this suite's.
 //!
 //! **Survival.** An in-process backend loses everything on restart, so
 //! no property runnable against every implementation could assert it.

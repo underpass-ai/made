@@ -98,6 +98,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 |---|---|
 | [`agentic-conversation-ceremony-evaluation-research.md`](./agentic-conversation-ceremony-evaluation-research.md) | Research on evaluating agentic meeting ceremonies using MADE with possible context/runtime providers such as KMP and Runtime. Status explicitly disclaimed as research. |
 | [`agentic-meeting-ceremony-blueprints.md`](./agentic-meeting-ceremony-blueprints.md) | Catalog of product-agnostic meeting designs (intake, evidence review, past replay, future scenario, decision council, …). |
+| [`orchestration-patterns-plan.md`](./orchestration-patterns-plan.md) | Plan (decided 2026-09-16): event sourcing for ceremonies, local-first parity with the gRPC API, observability in the embedded edition through adapters, the four patterns as fragments and their composition, broadcasting and concurrency, a memory decoupled from KMP, the engineering standard as a gate and a fast development CI loop. Direction, not implementation claims. |
 
 ## Historical / out-of-scope
 
@@ -114,8 +115,8 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 ## Sibling repos (for cross-reference)
 
 - [`kmp`](https://github.com/underpass-ai/kmp)
-  — Underpass KMP. MCP adapter pattern this repo's `crates/made-mcp`
-  copies (`crates/rehydration-mcp/`).
+  — Underpass KMP. Its `crates/kmp-mcp/` is the MCP adapter pattern
+  this repo's `crates/made-mcp` follows. No KMP adapter ships here.
 - [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime)
   — execution plane. Proto vendored at
   `crates/made-proto/proto/underpass/runtime/v1/runtime.proto`;

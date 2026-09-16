@@ -58,7 +58,7 @@ pub struct EmbeddedMade {
     ///
     /// A host that configures no memory gets one that forgets and says
     /// so, which is the honest shape of "not turned on". Handing it a
-    /// kernel-backed writer instead is the whole of turning it on.
+    /// durable writer instead is the whole of turning it on.
     session_memory: Arc<SessionMemoryRecorder>,
 }
 

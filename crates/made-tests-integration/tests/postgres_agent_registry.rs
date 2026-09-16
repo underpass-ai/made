@@ -1,6 +1,6 @@
 //! Integration test: [`PostgresAgentRegistry`] exercises
 //! `AgentRegistryPort` (write) + `AgentResolverPort` (read, via
-//! factory rehydration) against a real Postgres container.
+//! factory reconstruction) against a real Postgres container.
 //!
 //! Runs only when the `container-tests` feature is enabled (CI).
 
