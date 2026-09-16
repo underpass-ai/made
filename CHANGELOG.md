@@ -32,6 +32,9 @@ operator command.
 
 ### Changed
 
+- `made_run_ceremony` reports `steps[].iteration` on the embedded backend
+  too. The repeat-until change taught the gRPC mapper to emit it and left
+  the in-process presenter behind, so one run read two ways. (#48)
 - Release publication now validates marketplace parity, waits for the exact
   plugin archive and standalone-binary asset set, and only then fast-forwards
   the stable `marketplace` branch. (#36)

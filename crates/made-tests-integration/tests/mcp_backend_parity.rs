@@ -74,6 +74,42 @@ roles:
       - respond_to_intervention
 "#;
 
+/// A ceremony a single call can take from end to end: no guard waits
+/// for a person, so `made_run_ceremony` answers with the whole trace
+/// instead of stopping half way.
+const ONE_SHOT_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_one_shot"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: opened
+    guards:
+      - work_done
+guards:
+  work_done:
+    type: automated
+    check: "step_status:work:COMPLETED"
+steps:
+  - id: work
+    state: OPEN
+    handler: facilitation_prompt
+    config:
+      participants:
+        - facilitator
+      prompt: "Say whether the work is done."
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - work
+      - opened
+"#;
+
 /// Fields the contract declares free-form. Their *presence* is part
 /// of the shape; their contents are whatever the ceremony put there,
 /// and the two sessions ran different step handlers, so descending
@@ -124,6 +160,28 @@ fn kind_of(value: &Value) -> &'static str {
         Value::Array(_) => "array",
         Value::Object(_) => "object",
     }
+}
+
+/// Fail with the paths that exist on one side only.
+fn assert_same_shape(over_the_wire: &Value, in_process: &Value, what: &str) {
+    let mut wire_shape = BTreeSet::new();
+    shape(over_the_wire, "", &mut wire_shape);
+    let mut process_shape = BTreeSet::new();
+    shape(in_process, "", &mut process_shape);
+
+    let only_on_the_wire = wire_shape
+        .difference(&process_shape)
+        .cloned()
+        .collect::<Vec<_>>();
+    let only_in_process = process_shape
+        .difference(&wire_shape)
+        .cloned()
+        .collect::<Vec<_>>();
+
+    assert!(
+        only_on_the_wire.is_empty() && only_in_process.is_empty(),
+        "{what} answered two different shapes\n  only over the wire: {only_on_the_wire:#?}\n  only in process: {only_in_process:#?}"
+    );
 }
 
 fn structured(result: &Value) -> Value {
@@ -443,4 +501,50 @@ async fn the_same_tool_calls_drive_both_backends_to_the_same_shape() {
         wire_shape, process_shape,
         "the same sequence of tool calls left two different shapes"
     );
+}
+
+/// One-shot runs. The repeat-until commit taught the gRPC mapper to
+/// emit `steps[].iteration` and left the in-process presenter behind,
+/// so the same run read differently depending on which engine served
+/// it. Driving the tool on both arms is what notices that again.
+#[tokio::test]
+async fn a_one_shot_run_answers_the_same_shape_on_both_backends() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    let arguments = json!({
+        "ceremony_id": "one-shot-parity",
+        "definition_yaml": ONE_SHOT_CEREMONY,
+        "actor_id": "parity-operator",
+        "actor_kind": "service",
+    });
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_run_ceremony", &arguments)
+            .await
+            .expect("the gRPC backend should run the ceremony"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_run_ceremony", &arguments)
+            .await
+            .expect("the in-process backend should run the ceremony"),
+    );
+
+    // Sanity: a run with no steps would make the two agree by having
+    // no trace to disagree about.
+    assert_eq!(over_the_wire["steps"].as_array().map(Vec::len), Some(1));
+    assert_eq!(in_process["steps"].as_array().map(Vec::len), Some(1));
+    for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        assert!(
+            answer["steps"][0]["iteration"].is_number(),
+            "the {backend} backend must report which turn of the repeat loop a step was"
+        );
+    }
+
+    assert_same_shape(&over_the_wire, &in_process, "made_run_ceremony");
 }
