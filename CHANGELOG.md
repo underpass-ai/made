@@ -22,10 +22,11 @@ operator command.
   `made_complete_ceremony_step`. The delegated-host protocol — claim the step,
   run it with the host's own agents and tools, report the observable result —
   now works against a cluster with the same calls it takes in process. Both
-  answer with the session, like every other move. An absent `lease_owner_id`,
-  `idempotency_key` or `lease_ttl_ms` takes a server default, and the claim's
-  default lease is five minutes because the work it waits on is not the
-  engine's. (#50)
+  answer with the session, like every other move. An absent `idempotency_key`
+  or `lease_ttl_ms` takes a server default, and the claim's default lease is
+  five minutes because the work it waits on is not the engine's; an absent
+  `lease_owner_id` becomes `made-mcp:<backend>` like every other lease this
+  MCP server takes. (#50)
 - `docs/architecture/parity.tsv`: the checked-in exception list of surface
   gaps (ADR-014), one row per ceremony capability and one column per surface,
   with a reason mandatory on every gap. A gate in `made-mcp` compares it with
