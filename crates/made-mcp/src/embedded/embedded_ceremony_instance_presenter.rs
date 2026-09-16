@@ -4,6 +4,7 @@ use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RoleId, StepId,
 };
 use made_embedded::EmbeddedMade;
+use time::OffsetDateTime;
 
 use crate::protocol::ToolError;
 use serde_json::{json, Value};
@@ -104,7 +105,7 @@ impl EmbeddedCeremonyInstancePresenter {
                 .map(|binding| json!({
                     "role_id": binding.role_id().as_str(),
                     "specialty": binding.specialty().as_str(),
-                    "bound_at": binding.bound_at(),
+                    "bound_at": moment(binding.bound_at()),
                 }))
                 .collect::<Vec<_>>(),
             // Read back, not only written: a seat that explained this
@@ -120,7 +121,7 @@ impl EmbeddedCeremonyInstancePresenter {
                     "why": reason.why(),
                     "confidence": reason.confidence().as_label(),
                     "asserted_by_role_id": reason.asserted_by().map(RoleId::as_str),
-                    "asserted_at": reason.asserted_at(),
+                    "asserted_at": moment(reason.asserted_at()),
                 }))
                 .collect::<Vec<_>>(),
         }))
@@ -161,7 +162,7 @@ fn guard_deferral_values(instance: &CeremonyInstance) -> Vec<Value> {
                 "statement": deferral.content().statement(),
                 "reason": deferral.content().reason(),
                 "reconsider_when": deferral.content().reconsider_when(),
-                "deferred_at": deferral.deferred_at(),
+                "deferred_at": moment(deferral.deferred_at()),
             })
         })
         .collect()
@@ -190,7 +191,7 @@ fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
                         "message": response.content().message(),
                         "details": response.content().details().as_map(),
                         "evidence_pack": response.evidence_pack(),
-                        "responded_at": response.responded_at(),
+                        "responded_at": moment(response.responded_at()),
                     })
                 })
                 .collect::<Vec<_>>();
@@ -213,9 +214,9 @@ fn intervention_values(instance: &CeremonyInstance) -> Vec<Value> {
                 },
                 "provenance": provenance,
                 "responses": responses,
-                "created_at": intervention.created_at(),
-                "updated_at": intervention.updated_at(),
-                "closed_at": intervention.closed_at(),
+                "created_at": moment(intervention.created_at()),
+                "updated_at": moment(intervention.updated_at()),
+                "closed_at": intervention.closed_at().map_or(Value::Null, moment),
             })
         })
         .collect()
@@ -228,4 +229,15 @@ fn open_intervention_ids(instance: &CeremonyInstance) -> Vec<&str> {
         .filter(|intervention| intervention.status().is_open())
         .map(|intervention| intervention.id().as_str())
         .collect()
+}
+
+/// One instant, one rendering.
+///
+/// `time`'s own serialization writes `2026-09-16 09:00:00.0 +00:00:00`,
+/// which is neither RFC 3339 nor what the gRPC arm renders from the
+/// same view, so the same moment read two ways depending on which
+/// engine served the call. Both arms now answer RFC 3339.
+fn moment(at: OffsetDateTime) -> Value {
+    at.format(&time::format_description::well_known::Rfc3339)
+        .map_or(Value::Null, Value::String)
 }

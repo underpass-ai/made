@@ -12,8 +12,21 @@ use made_core::value_objects::{
     CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RoleId, StepId,
 };
 use made_proto::v1 as pb;
+use time::OffsetDateTime;
 
 use super::attributes::attributes_to_struct;
+
+/// One instant, one rendering.
+///
+/// Four of the timestamps this view carries used to be
+/// `OffsetDateTime`'s `Display` — not an interchange format, and not
+/// what the embedded adapter renders from the same view, so the same
+/// moment read two ways depending on which engine served the call.
+/// RFC 3339 on every one of them, as `bound_at` already was.
+fn moment(at: OffsetDateTime) -> String {
+    at.format(&time::format_description::well_known::Rfc3339)
+        .unwrap_or_default()
+}
 
 pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::CeremonyInstanceState {
     let instance = view.instance();
@@ -107,10 +120,7 @@ fn reason_state_from(reason: &CeremonyReason) -> pb::CeremonyReasonState {
             .asserted_by()
             .map(|role_id| role_id.as_str().to_owned())
             .unwrap_or_default(),
-        asserted_at: reason
-            .asserted_at()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default(),
+        asserted_at: moment(reason.asserted_at()),
     }
 }
 
@@ -120,10 +130,7 @@ fn participant_binding_state_from(
     pb::CeremonyParticipantBindingState {
         role_id: binding.role_id().as_str().to_owned(),
         specialty: binding.specialty().as_str().to_owned(),
-        bound_at: binding
-            .bound_at()
-            .format(&time::format_description::well_known::Rfc3339)
-            .unwrap_or_default(),
+        bound_at: moment(binding.bound_at()),
     }
 }
 
@@ -180,7 +187,7 @@ fn guard_deferral_state_from(deferral: &CeremonyGuardDeferral) -> pb::CeremonyGu
         statement: deferral.content().statement().to_owned(),
         reason: deferral.content().reason().to_owned(),
         reconsider_when: deferral.content().reconsider_when().to_vec(),
-        deferred_at: deferral.deferred_at().to_string(),
+        deferred_at: moment(deferral.deferred_at()),
     }
 }
 
@@ -220,12 +227,9 @@ fn intervention_state_from(intervention: &CeremonyIntervention) -> pb::CeremonyI
             .iter()
             .map(intervention_response_state_from)
             .collect(),
-        created_at: intervention.created_at().to_string(),
-        updated_at: intervention.updated_at().to_string(),
-        closed_at: intervention
-            .closed_at()
-            .map(|closed_at| closed_at.to_string())
-            .unwrap_or_default(),
+        created_at: moment(intervention.created_at()),
+        updated_at: moment(intervention.updated_at()),
+        closed_at: intervention.closed_at().map(moment).unwrap_or_default(),
     }
 }
 
@@ -242,7 +246,7 @@ fn intervention_response_state_from(
             .evidence_pack()
             .map(|pack| serde_json::to_string(pack).unwrap_or_default())
             .unwrap_or_default(),
-        responded_at: response.responded_at().to_string(),
+        responded_at: moment(response.responded_at()),
     }
 }
 
