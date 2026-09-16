@@ -216,11 +216,13 @@ pub(crate) async fn dispatch(
                 .await
                 .map_err(|s| status_error(&s))?;
             let pb::ListCeremonyInstancesResponse { instances } = response.into_inner();
+            let entries = instances
+                .into_iter()
+                .map(p2j::ceremony_instance_listing_to_json)
+                .collect::<Vec<_>>();
             Ok(json!({
-                "instances": instances
-                    .into_iter()
-                    .map(p2j::ceremony_instance_state_to_json)
-                    .collect::<Vec<_>>(),
+                "count": entries.len(),
+                "instances": entries,
             }))
         }
 

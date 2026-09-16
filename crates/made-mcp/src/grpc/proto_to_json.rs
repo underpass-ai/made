@@ -304,6 +304,28 @@ pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
 /// an empty string and is put back as `null` here: a client must not
 /// have to know which backend answered in order to tell "no next step"
 /// from "the next step is called nothing".
+/// One entry of `made_list_ceremony_instances`.
+///
+/// Every entry says whether it could be read, so a caller tests one
+/// field instead of inferring readability from a field that is not
+/// there. An entry that could not be read carries its id and the
+/// reason and nothing else: there is nothing else to carry.
+pub(crate) fn ceremony_instance_listing_to_json(state: pb::CeremonyInstanceState) -> Value {
+    if !state.rehydratable {
+        return json!({
+            "ceremony_id": state.ceremony_id,
+            "rehydratable": false,
+            "reason": state.unrehydratable_reason,
+        });
+    }
+    let mut entry = ceremony_instance_state_to_json(state);
+    if let Some(fields) = entry.as_object_mut() {
+        fields.insert("rehydratable".to_owned(), Value::Bool(true));
+        fields.insert("reason".to_owned(), Value::Null);
+    }
+    entry
+}
+
 pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {
     json!({
         "ceremony_id": state.ceremony_id,

@@ -12,7 +12,9 @@
 //! this worth pinning.
 
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
+use made_adapters::memory::InMemoryCeremonyEventStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
@@ -547,4 +549,146 @@ async fn a_one_shot_run_answers_the_same_shape_on_both_backends() {
     }
 
     assert_same_shape(&over_the_wire, &in_process, "made_run_ceremony");
+}
+
+/// Listings. Both arms answer `{count, instances[]}`, every entry says
+/// whether it could be read, and an entry whose definition the store
+/// does not hold is one unreadable row rather than a failed call.
+///
+/// The store is written by one engine and listed by another one over
+/// it: the restart boundary in a single process, where the streams
+/// survive and the definitions that produced them do not.
+#[tokio::test]
+async fn a_listing_answers_the_same_shape_with_an_unreadable_entry_on_both_backends() {
+    // Two definitions, not one: a definition is resolved by name and
+    // version, so an orphan sharing a name with a session the listing
+    // engine started would resolve after all.
+    const ORPHAN: &str = "a-orphan-session";
+    const READABLE: &str = "b-readable-session";
+
+    // One store per arm: the two arms run the same two sessions, and a
+    // single store would have the second arm collide with the first.
+    let wire_store = Arc::new(InMemoryCeremonyEventStore::new());
+    let process_store = Arc::new(InMemoryCeremonyEventStore::new());
+
+    // The engine that leaves the orphan behind. Its definition
+    // repository dies with it.
+    let first_remote = GrpcFixture::start_over(wire_store.clone()).await;
+    start_over_the_wire(&first_remote, ORPHAN, ONE_SHOT_CEREMONY).await;
+    drop(first_remote);
+    let first_embedded = EmbeddedMadeMcpBackend::new(
+        EmbeddedMade::builder()
+            .with_ceremony_store(process_store.clone())
+            .build(),
+    );
+    start_in_process(&first_embedded, ORPHAN, ONE_SHOT_CEREMONY).await;
+    drop(first_embedded);
+
+    // The engine that lists: it only knows the definition of the
+    // session it started itself.
+    let second_remote = GrpcFixture::start_over(wire_store).await;
+    start_over_the_wire(&second_remote, READABLE, PARITY_CEREMONY).await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", second_remote.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(
+        EmbeddedMade::builder()
+            .with_ceremony_store(process_store)
+            .build(),
+    );
+    start_in_process(&embedded, READABLE, PARITY_CEREMONY).await;
+
+    let arguments = json!({});
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_list_ceremony_instances", &arguments)
+            .await
+            .expect("the gRPC backend should list its sessions"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_list_ceremony_instances", &arguments)
+            .await
+            .expect("the in-process backend should list its sessions"),
+    );
+
+    for (backend, listing) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+        assert_eq!(
+            listing["count"].as_u64(),
+            Some(2),
+            "the {backend} backend must count what it listed: {listing:#?}"
+        );
+        assert_eq!(listing["instances"].as_array().map(Vec::len), Some(2));
+        assert_eq!(
+            entry(listing, ORPHAN)["rehydratable"],
+            json!(false),
+            "the {backend} backend must say which entry it could not read"
+        );
+        assert!(
+            entry(listing, ORPHAN)["reason"].is_string(),
+            "the {backend} backend must say why"
+        );
+        assert_eq!(entry(listing, READABLE)["rehydratable"], json!(true));
+        assert_eq!(entry(listing, READABLE)["reason"], Value::Null);
+    }
+
+    assert_same_shape(
+        &over_the_wire,
+        &in_process,
+        "made_list_ceremony_instances (the listing itself)",
+    );
+    assert_same_shape(
+        entry(&over_the_wire, ORPHAN),
+        entry(&in_process, ORPHAN),
+        "made_list_ceremony_instances (an entry that could not be read)",
+    );
+    assert_same_shape(
+        entry(&over_the_wire, READABLE),
+        entry(&in_process, READABLE),
+        "made_list_ceremony_instances (an entry that could be read)",
+    );
+}
+
+/// The listing entry for one session, by id, because two engines need
+/// not have listed them in the same order.
+fn entry<'a>(listing: &'a Value, ceremony_id: &str) -> &'a Value {
+    listing["instances"]
+        .as_array()
+        .expect("a listing carries an array of instances")
+        .iter()
+        .find(|entry| entry["ceremony_id"] == json!(ceremony_id))
+        .unwrap_or_else(|| panic!("`{ceremony_id}` should be listed: {listing:#?}"))
+}
+
+async fn start_over_the_wire(fixture: &GrpcFixture, ceremony_id: &str, definition_yaml: &str) {
+    MadeServiceClient::new(fixture.channel.clone())
+        .start_ceremony(StartCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            actor_id: "parity-operator".to_owned(),
+            actor_kind: "service".to_owned(),
+            definition_yaml: definition_yaml.to_owned(),
+            context: None,
+        })
+        .await
+        .expect("StartCeremony should succeed");
+}
+
+async fn start_in_process(
+    backend: &EmbeddedMadeMcpBackend,
+    ceremony_id: &str,
+    definition_yaml: &str,
+) {
+    backend
+        .call_tool(
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": definition_yaml,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        )
+        .await
+        .expect("made_start_ceremony should succeed in-process");
 }

@@ -16,6 +16,9 @@ operator command.
 
 ### Added
 
+- `CeremonyInstanceState` carries `rehydratable` and `unrehydratable_reason`,
+  so `ListCeremonyInstances` can name the one session it could not render.
+  Additive; `buf breaking` against `origin/main` is green. (#48)
 - `CeremonyEventStorePort` and `CeremonySnapshotStorePort` with conformance
   suites, an in-memory adapter (`InMemoryCeremonyEventStore`) and a SQLite
   adapter on `SqliteCeremonyStore` (tables `ceremony_events`,
@@ -32,6 +35,10 @@ operator command.
 
 ### Changed
 
+- `made_list_ceremony_instances` answers `{count, instances[]}` on both MCP
+  backends. Every entry carries `rehydratable` and `reason`; a session whose
+  definition the store does not hold is one unreadable entry instead of a
+  failed call, on the server as it already was in process. (#48)
 - `made_run_ceremony` reports `steps[].iteration` on the embedded backend
   too. The repeat-until change taught the gRPC mapper to emit it and left
   the in-process presenter behind, so one run read two ways. (#48)

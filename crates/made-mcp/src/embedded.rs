@@ -104,12 +104,22 @@ impl EmbeddedMadeMcpBackend {
         let mut values = Vec::with_capacity(instances.len());
         for instance in instances {
             // An instance whose definition is not in this store cannot be
-            // rehydrated — the published-definition restart boundary. The
+            // read back — the published-definition restart boundary. The
             // state is still there, so the listing reports that one entry
             // as unreadable instead of taking every readable ceremony down
             // with it. Asking for it by id still fails loudly.
+            //
+            // Every entry carries `rehydratable` and `reason`, readable
+            // or not, so a caller tests one field rather than inferring
+            // readability from a field that is not there.
             match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(value) => values.push(value),
+                Ok(mut value) => {
+                    if let Some(fields) = value.as_object_mut() {
+                        fields.insert("rehydratable".to_owned(), Value::Bool(true));
+                        fields.insert("reason".to_owned(), Value::Null);
+                    }
+                    values.push(value);
+                }
                 Err(reason) => values.push(serde_json::json!({
                     "ceremony_id": instance.id().as_str(),
                     "rehydratable": false,

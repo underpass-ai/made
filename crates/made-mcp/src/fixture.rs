@@ -64,9 +64,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_close_ceremony_intervention" => ceremony_instance_fixture(),
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
-                "made_list_ceremony_instances" => {
-                    json!({ "instances": [ceremony_instance_fixture()] })
-                }
+                "made_list_ceremony_instances" => ceremony_listing_fixture(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),
@@ -283,6 +281,29 @@ fn run_ceremony_fixture() -> Value {
             }
         ],
         "mermaid_sequence": "sequenceDiagram\n    FACILITATOR->>FACILITATOR: collect_context [noop_step]"
+    })
+}
+
+/// A listing with both kinds of entry a live engine answers with: a
+/// session that could be read, and one whose definition this store does
+/// not hold. Both carry `rehydratable` and `reason`, so a client wiring
+/// against the fixture meets the shape either backend renders.
+fn ceremony_listing_fixture() -> Value {
+    let mut readable = ceremony_instance_fixture();
+    if let Some(fields) = readable.as_object_mut() {
+        fields.insert("rehydratable".to_owned(), Value::Bool(true));
+        fields.insert("reason".to_owned(), Value::Null);
+    }
+    json!({
+        "count": 2,
+        "instances": [
+            readable,
+            {
+                "ceremony_id": "ceremony-fixture-2",
+                "rehydratable": false,
+                "reason": "not found: ceremony_definition",
+            }
+        ],
     })
 }
 

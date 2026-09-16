@@ -3,8 +3,9 @@ use super::{
     diff_ceremony_definitions_response_from, domain_error_to_status,
     explain_ceremony_draft_response_from, link_span_to_metadata, pb,
     publish_ceremony_definition_response_from, statistics_to_proto,
-    validate_ceremony_draft_response_from, CeremonyDefinitionYaml, CeremonyDraftView, CeremonyId,
-    GrpcResult, MadeGrpcService, Request, Response,
+    unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
+    CeremonyDefinitionYaml, CeremonyDraftView, CeremonyId, GrpcResult, MadeGrpcService, Request,
+    Response,
 };
 
 impl MadeGrpcService {
@@ -130,7 +131,18 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         let mut states = Vec::with_capacity(instances.len());
         for instance in &instances {
-            states.push(self.project(instance).await?);
+            // The fold of a stream never needs the definition; rendering
+            // it does. An instance naming a definition this store does
+            // not hold becomes one unreadable entry rather than an error
+            // that takes every readable session with it — the answer the
+            // in-process backend has always given. Asking for that one
+            // by id still fails loudly.
+            states.push(match self.project(instance).await {
+                Ok(state) => state,
+                Err(status) => {
+                    unrehydratable_ceremony_instance_state_from(instance.id(), status.message())
+                }
+            });
         }
         Ok(Response::new(pb::ListCeremonyInstancesResponse {
             instances: states,
