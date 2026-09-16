@@ -16,7 +16,7 @@ engine is reachable through four surfaces: the `underpass.made.v1` proto
 contract, the MCP server on the gRPC backend, the MCP server on the embedded
 backend, and the `EmbeddedMade` Rust facade. Which surface serves what is not
 prose: the source of truth is
-[`../architecture/parity.tsv`](../architecture/parity.tsv), one row per
+[`architecture/parity.tsv`](../architecture/parity.tsv), one row per
 capability and one column per surface (ADR-014), and the table below is that
 file grouped the way `made_discover_capabilities` groups it.
 
