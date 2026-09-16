@@ -11,6 +11,8 @@ use super::embedded_request_fields::{
     optional_attributes, optional_role_ids, optional_string, required_actor_kind, required_string,
 };
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request that opens a dynamic ceremony intervention.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedRequestCeremonyInterventionRequest {
@@ -25,7 +27,7 @@ pub(super) struct EmbeddedRequestCeremonyInterventionRequest {
 }
 
 impl EmbeddedRequestCeremonyInterventionRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         let mut input = RequestCeremonyInterventionInput::new(
             self.ceremony_id.clone(),
             self.intervention_id,
@@ -38,9 +40,7 @@ impl EmbeddedRequestCeremonyInterventionRequest {
         if let Some(provenance) = self.provenance {
             input = input.with_provenance(provenance);
         }
-        made.request_intervention(input)
-            .await
-            .map_err(|error| format!("failed to request ceremony intervention: {error}"))?;
+        made.request_intervention(input).await?;
         Ok(self.ceremony_id)
     }
 }

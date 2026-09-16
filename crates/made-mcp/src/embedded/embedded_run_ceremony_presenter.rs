@@ -23,6 +23,11 @@ impl EmbeddedRunCeremonyPresenter {
                     "role_id": trace.role_id().as_str(),
                     "status": trace.status().as_label(),
                     "attempt": trace.attempt().get(),
+                    // Which turn of the repeat-until loop this was. The
+                    // gRPC mapper has emitted it since repetition landed
+                    // and this presenter did not, so the same run read
+                    // two different traces depending on the backend.
+                    "iteration": trace.iteration().get(),
                     "output": trace
                         .output()
                         .attributes()

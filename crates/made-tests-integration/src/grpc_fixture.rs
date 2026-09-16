@@ -85,8 +85,17 @@ pub struct GrpcFixture {
 impl GrpcFixture {
     /// Wire and start a fresh fixture. Returns once the server is
     /// accepting connections.
-    #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start() -> Self {
+        Self::start_over(Arc::new(InMemoryCeremonyEventStore::new())).await
+    }
+
+    /// A second server over a store another one already wrote to.
+    ///
+    /// Everything else is fresh, the definition repository included, so
+    /// this is the restart boundary in one process: the streams are
+    /// there and the definitions that produced them are not.
+    #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
+    pub async fn start_over(ceremony_store: Arc<InMemoryCeremonyEventStore>) -> Self {
         let clock = Arc::new(SystemClock::new());
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
             Arc::new(ContentNonEmptyValidator::new()),
@@ -106,8 +115,10 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
-        let ceremony_stream = Arc::new(SessionStream::new(ceremony_store.clone(), ceremony_store));
+        let ceremony_stream = Arc::new(SessionStream::new(
+            ceremony_store.clone(),
+            ceremony_store.clone(),
+        ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(

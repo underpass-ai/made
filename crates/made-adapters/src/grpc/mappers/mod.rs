@@ -46,7 +46,9 @@ pub use ceremony_human_verbs::{
     request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto,
 };
-pub use ceremony_instance::ceremony_instance_state_from;
+pub use ceremony_instance::{
+    ceremony_instance_state_from, unrehydratable_ceremony_instance_state_from,
+};
 pub use ceremony_lifecycle::{
     apply_ceremony_transition_input_from_proto, run_ceremony_step_input_from_proto,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, StartCeremonyFromYaml,

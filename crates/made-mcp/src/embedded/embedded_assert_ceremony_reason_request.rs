@@ -10,16 +10,16 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{required_actor_kind, required_string};
 
+use crate::protocol::ToolError;
+
 pub(super) struct EmbeddedAssertCeremonyReasonRequest {
     input: AssertCeremonyReasonInput,
     ceremony_id: CeremonyId,
 }
 
 impl EmbeddedAssertCeremonyReasonRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
-        made.assert_reason(self.input)
-            .await
-            .map_err(|error| format!("failed to record why: {error}"))?;
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
+        made.assert_reason(self.input).await?;
         Ok(self.ceremony_id)
     }
 }

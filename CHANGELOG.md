@@ -36,6 +36,9 @@ operator command.
   have — and it also fails on a gap with no reason or a complete row that
   still carries one. It runs with no server, in milliseconds, as part of the
   workspace test job. (#47)
+- `CeremonyInstanceState` carries `rehydratable` and `unrehydratable_reason`,
+  so `ListCeremonyInstances` can name the one session it could not render.
+  Additive; `buf breaking` against `origin/main` is green. (#48)
 - `CeremonyEventStorePort` and `CeremonySnapshotStorePort` with conformance
   suites, an in-memory adapter (`InMemoryCeremonyEventStore`) and a SQLite
   adapter on `SqliteCeremonyStore` (tables `ceremony_events`,
@@ -58,6 +61,27 @@ operator command.
   surfaces and their reasons are gone. Agent help now offers the
   delegated-host sequence on the gRPC and fixture backends too, because the
   backend can now serve it. (#50)
+- An omitted `lease_owner_id` on `made_run_ceremony`,
+  `made_run_ceremony_step` and `made_claim_ceremony_step` now becomes
+  `made-mcp:<backend>` — `made-mcp:embedded` or `made-mcp:grpc` — applied by
+  the MCP layer on both backends before the call reaches the engine, and
+  stated in the three tool schemas. The server keeps its own default for
+  direct gRPC clients; MCP never reaches it. A blank `lease_owner_id` is
+  refused on both arms instead of being silently defaulted on one. (#48)
+- Every MCP tool failure now carries one structured envelope —
+  `{code, message, retryable}` in the result's `structuredContent`, with the
+  text content kept — on both backends. `code` is `unavailable`, `not_found`,
+  `refused` or `invalid_request`, reusing `made-api`'s `ApiError` vocabulary.
+  The `"gRPC {code}: {message}"` prefix and free-text errors are gone, and a
+  `tonic::Status` and a `DomainError` that mean the same thing now produce the
+  same code. (#48)
+- `made_list_ceremony_instances` answers `{count, instances[]}` on both MCP
+  backends. Every entry carries `rehydratable` and `reason`; a session whose
+  definition the store does not hold is one unreadable entry instead of a
+  failed call, on the server as it already was in process. (#48)
+- `made_run_ceremony` reports `steps[].iteration` on the embedded backend
+  too. The repeat-until change taught the gRPC mapper to emit it and left
+  the in-process presenter behind, so one run read two ways. (#48)
 - Release publication now validates marketplace parity, waits for the exact
   plugin archive and standalone-binary asset set, and only then fast-forwards
   the stable `marketplace` branch. (#36)
@@ -79,6 +103,30 @@ operator command.
   embedded edition and the server store ceremonies in `ceremony_events`;
   instances from earlier stores that have no stream are counted and warned
   about at open and are not visible until the migration command lands (A7).
+- CI now has two modes. While a pull request is a draft, `dev-loop.yml`
+  answers it in minutes — `cargo fmt`, clippy and tests for the crates in
+  `DEV_PACKAGES`, the architecture, vocabulary and embedded-boundary gates,
+  and a `made-mcp` embedded binary for linux-arm64 — and the quality,
+  integration and packaging workflows stand down. Marking the pull request
+  ready for review wakes all of them on the `ready_for_review` event. A new
+  `gate` job fails on purpose on a draft, so a stand-down can never satisfy
+  a required check. `just dev` runs `scripts/ci/dev-loop.sh`, the same
+  script the workflow runs, and
+  `scripts/ci/dev-loop-workflow-contract.py` fails the build if the two
+  ever name different crates. The `develop`-branch trigger is gone; that
+  branch no longer exists.
+- A ready pull request now runs only the gates its change can reach.
+  `scripts/ci/quality-gate-plan.py` plans them from the reverse workspace
+  dependency closure plus path routing for the independent contracts
+  (proto/AsyncAPI, the embedded boundaries, the plugin bundle, the chart,
+  the container image, coverage, the publication dry run), and every job in
+  `quality-gate.yml` reads its outputs. Unknown paths, the workspace
+  manifest, the lockfile, the toolchain, the workflow, the router itself and
+  every `workflow_dispatch` run fail closed to the full matrix. A push to
+  `main` whose tree was already proved green by the merged pull request's
+  gate skips it (`scripts/ci/tree-already-proved.sh`); a merge from an
+  out-of-date branch, a conflict resolved in the UI and a direct push still
+  run it.
 
 ### Removed
 

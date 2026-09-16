@@ -8,6 +8,9 @@
 use std::collections::BTreeMap;
 
 use made_mcp_proto::v1 as pb;
+
+use super::tools::lease_owner_id;
+
 use prost_types::{
     value::Kind as PbKind, ListValue, Struct as PbStruct, Timestamp, Value as PbValue,
 };
@@ -267,9 +270,9 @@ pub(crate) fn run_ceremony_request_from_json(
         ceremony_id: optional_str(obj, "ceremony_id").unwrap_or("").to_string(),
         definition_yaml: require_str(obj, "definition_yaml")?.to_string(),
         context: optional_pb_struct(obj, "context")?,
-        lease_owner_id: optional_str(obj, "lease_owner_id")
-            .unwrap_or("")
-            .to_string(),
+        // One rule, applied here on both backends: an omitted runner
+        // becomes `made-mcp:<backend>` before the engine sees the call.
+        lease_owner_id: lease_owner_id(obj)?,
         lease_ttl_ms: optional_u64(obj, "lease_ttl_ms")?,
     })
 }

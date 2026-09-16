@@ -40,7 +40,8 @@ use super::mappers::{
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, task_from_proto,
-    trigger_event_from_proto, validate_ceremony_draft_response_from, StartCeremonyFromYaml,
+    trigger_event_from_proto, unrehydratable_ceremony_instance_state_from,
+    validate_ceremony_draft_response_from, StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;

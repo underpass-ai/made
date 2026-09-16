@@ -90,9 +90,12 @@ context, outputs or the audit journal.
 
 1. Start the plugin against the same `MADE_MCP_STORE_PATH`.
 2. Call `made_list_ceremony_instances`; do not create a replacement first.
-   Entries the store cannot rehydrate come back as
-   `{"ceremony_id": …, "rehydratable": false, "reason": …}` instead of
-   failing the whole listing — state that exists is reported, not hidden.
+   The answer is `{count, instances[]}`, and every entry says whether it
+   could be read: `"rehydratable": true` with `"reason": null` beside the
+   session's own fields, or `{"ceremony_id": …, "rehydratable": false,
+   "reason": …}` and nothing else when the store cannot rehydrate it —
+   state that exists is reported, not hidden, and the whole listing does
+   not fail with it. Both MCP backends answer this shape.
 3. Refresh the matching instance with `made_get_ceremony_instance`.
 4. If a step is `in_progress`, inspect its lease and any durable artifact
    before retrying. Reuse the same idempotency key for the same claim.

@@ -4,6 +4,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::required_string;
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request carrying a ceremony draft to analyse.
 ///
 /// Authoring is read-only: the request holds the draft and nothing
@@ -19,9 +21,8 @@ impl EmbeddedCeremonyDraftRequest {
     /// A failure here is a syntax or identifier failure, not a
     /// structural one: a draft that parses is always analysable, even
     /// when it could never be published.
-    pub(crate) fn parse(&self) -> Result<CeremonyDefinitionDraft, String> {
-        CeremonyDefinitionYaml::parse_draft_str(&self.definition_yaml)
-            .map_err(|error| format!("ceremony draft could not be parsed: {error}"))
+    pub(crate) fn parse(&self) -> Result<CeremonyDefinitionDraft, ToolError> {
+        CeremonyDefinitionYaml::parse_draft_str(&self.definition_yaml).map_err(ToolError::from)
     }
 }
 

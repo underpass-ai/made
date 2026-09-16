@@ -1,5 +1,7 @@
 use serde_json::{json, Value};
 
+use super::ToolError;
+
 // ---------------------------------------------------------------------------
 // Tool-call result shape (MCP spec)
 // ---------------------------------------------------------------------------
@@ -18,9 +20,14 @@ pub(crate) fn tool_success_result(structured: Value) -> Value {
 
 /// MCP tool error: spec says `isError: true` in the *tool result*,
 /// **not** as a JSON-RPC `error`.
-pub(crate) fn tool_error_result(message: &str) -> Value {
+///
+/// The envelope travels twice: as structured content for a client that
+/// wants to branch on the code, and as text for a host that reads
+/// nothing else. One shape, whichever backend produced it.
+pub(crate) fn tool_error_result(error: &ToolError) -> Value {
     json!({
-        "content": [{ "type": "text", "text": message }],
+        "content": [{ "type": "text", "text": error.to_string() }],
+        "structuredContent": error.to_structured(),
         "isError": true,
     })
 }

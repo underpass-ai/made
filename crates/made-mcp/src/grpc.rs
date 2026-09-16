@@ -8,6 +8,7 @@
 mod channel;
 mod json_to_proto;
 mod proto_to_json;
+mod status_tool_error;
 mod streaming;
 mod tools;
 
@@ -19,6 +20,12 @@ use tracing::debug;
 use crate::backend::{
     endpoint_uri_for_tls_mode, MadeMcpGrpcTlsConfig, MadeMcpToolBackend, MadeMcpToolFuture,
 };
+use crate::protocol::ToolError;
+
+/// What this backend calls itself. Shared with the default lease owner
+/// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
+/// the name `initialize` advertises.
+pub(crate) const GRPC_BACKEND_NAME: &str = "grpc";
 
 /// gRPC-backed implementation of [`MadeMcpToolBackend`].
 ///
@@ -49,7 +56,7 @@ impl GrpcMadeMcpBackend {
 #[async_trait]
 impl MadeMcpToolBackend for GrpcMadeMcpBackend {
     fn backend_name(&self) -> &'static str {
-        "grpc"
+        GRPC_BACKEND_NAME
     }
 
     fn grpc_tls_mode_name(&self) -> &'static str {
@@ -68,7 +75,9 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
                 endpoint = self.endpoint.as_str(),
                 "made_mcp: dispatching live tool call"
             );
-            let channel = self.channel().await?;
+            // A channel that will not open is the engine out of
+            // reach, not the engine refusing: waiting is the remedy.
+            let channel = self.channel().await.map_err(ToolError::unavailable)?;
             let structured = tools::dispatch(channel, name, arguments).await?;
             Ok(crate::protocol::tool_success_result(structured))
         })

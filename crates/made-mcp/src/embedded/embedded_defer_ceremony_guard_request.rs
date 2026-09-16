@@ -7,6 +7,8 @@ use serde_json::Value;
 
 use super::embedded_request_fields::{required_actor_kind, required_string, required_strings};
 
+use crate::protocol::ToolError;
+
 /// Validated MCP request for one explicit human guard deferral.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(super) struct EmbeddedDeferCeremonyGuardRequest {
@@ -18,7 +20,7 @@ pub(super) struct EmbeddedDeferCeremonyGuardRequest {
 }
 
 impl EmbeddedDeferCeremonyGuardRequest {
-    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, String> {
+    pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.defer_guard(DeferCeremonyGuardInput::new(
             self.ceremony_id.clone(),
             self.guard_name,
@@ -26,8 +28,7 @@ impl EmbeddedDeferCeremonyGuardRequest {
             self.role_id,
             self.role_kind,
         ))
-        .await
-        .map_err(|error| format!("failed to defer ceremony guard: {error}"))?;
+        .await?;
         Ok(self.ceremony_id)
     }
 }

@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
 use super::schema_primitives::{attributes_schema, string_schema};
 
 pub(super) fn ceremony_report_schema() -> Value {
@@ -221,7 +222,7 @@ pub(super) fn run_ceremony_schema() -> Value {
                 "additionalProperties": true,
                 "description": "Opaque initial ceremony context forwarded to guards and handlers."
             },
-            "lease_owner_id": string_schema("Optional logical runner acquiring step leases. The server applies a default when omitted."),
+            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
@@ -267,7 +268,7 @@ pub(super) fn run_ceremony_step_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party is running it. Declared by you, because only you know: which seat runs this step comes from the definition, and that says which seat was required, not what turned up. This records who ran the step, not what produced its output — the handler is named by a host-defined string the engine will not classify."
             },
-            "lease_owner_id": string_schema("Optional logical runner acquiring the step lease."),
+            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
             "idempotency_key": string_schema("Optional unique execution key. The server mints one when omitted."),
             "lease_ttl_ms": {
                 "type": "integer",
@@ -291,7 +292,7 @@ pub(super) fn claim_ceremony_step_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party fills the step's declared seat. The engine records this declaration and never infers it."
             },
-            "lease_owner_id": string_schema("Logical host runner acquiring the step lease."),
+            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
             "idempotency_key": string_schema("Unique execution key for this claim. The server mints one when omitted."),
             "lease_ttl_ms": {
                 "type": "integer",
