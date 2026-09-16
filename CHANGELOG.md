@@ -16,6 +16,28 @@ operator command.
 
 ### Added
 
+- `CeremonyEventSubscriberPort` in `made-core`: the one seam a projection hangs
+  off. It is told the sealed records of one successful append, in order, each
+  with its place in the global order, after the store confirmed and before the
+  session goes back to the use case — so a caller that reads a projection
+  straight after the call it made finds it there. Infallible by signature
+  rather than by a swallowed `Result`: a projection cannot fail the session it
+  projects, and a subscriber with something to report logs it at warning level
+  with the ceremony id and the sequence. `NoopCeremonyEventSubscriber` is the
+  default, `CeremonyEventFanout` in `made-app` composes several in a fixed
+  order, and `EmbeddedMadeBuilder::with_event_subscriber` adds the host's own
+  behind the engine's. Durable consumers are not this port; publication keeps
+  a cursor over the global order (A6). Three colocated tests: every record of
+  every append observed once and in order across a multi-command session, a
+  conflicted-then-retried append observed once with the records that landed,
+  and an append that never lands observed not at all (ADR-012). (#66)
+- `AppendOutcome::positioned`, and the conformance property
+  `an_outcome_positions_what_read_all_returns` that both event-store adapters
+  now pass: what an append reports is what a reader finds from that position.
+  Telling a subscriber off the outcome is only as good as a read if the two
+  agree, and an adapter whose `first_position` was off by one would hand every
+  projection a cursor that skips or repeats a record. (#66)
+
 - An **Editions** section in `docs/operations/support-matrix.md`: one row per
   capability group — the groups `made_discover_capabilities` answers with —
   against the four surfaces (the proto contract, MCP on the gRPC backend, MCP
@@ -126,6 +148,39 @@ operator command.
   `made-embedded` and `made-adapters` sources, per ADR-013.
 
 ### Changed
+
+- **The transcript is a fold of the event stream, not a store.** Every
+  `step_completed` record is one contribution — the event already carries the
+  step, the seat the definition gives it and the output the step produced — so
+  `GetCeremonyTranscript` projects it on read from
+  `CeremonyEventStorePort::read` and nothing is appended beside the append.
+  Two consequences, both of them the point: the deployable server kept its
+  transcript in process whatever store the state went to and emptied it on
+  restart, and it is now exactly as durable as the session; and a step a host
+  claimed, performed where the engine cannot see it and reported back never
+  reached the transcript at all, because only the two drivers wrote to the
+  store. The parity session reads both of its steps where it used to read one.
+  A ceremony with no stream is now `NotFound` rather than an empty transcript,
+  the way reading its events already was, on both MCP arms. The answer for a
+  session the store did serve is byte-identical to the golden captured before
+  the store was removed (ADR-012). (#66)
+- **What a session leaves behind in memory is a projection of its stream.**
+  `SessionMemoryRecorder` implements `CeremonyEventSubscriberPort`; the six use
+  cases that held an `Arc<SessionMemoryRecorder>` and called it by hand no
+  longer take one, and both composition roots wire it as a subscriber instead.
+  The recorder folds the stream up to and including each sealed record, so what
+  a projection needs and one record does not carry — the ordinal of a response
+  among its item's answers, the ordinal of a reason, whether a move was an
+  ending — is derived rather than handed in by a call site. Which writes, which
+  keys and which scopes are unchanged, and the scope stays `ceremony:{id}`
+  (ADR-012, ADR-013). (#66)
+- The development loop iterates on the phase-2 crates — `made-core`,
+  `made-app`, `made-adapters`, `made-embedded`, `made-mcp` — in
+  `.github/workflows/dev-loop.yml` and `scripts/ci/dev-loop.sh` together;
+  `python3 scripts/ci/dev-loop-workflow-contract.py --self-test` is what says
+  they did not drift. The parity workstream's set no longer covered where the
+  work is, so a draft touching the aggregate got no feedback until it was
+  marked ready. (#66)
 
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
@@ -280,6 +335,24 @@ operator command.
   run it.
 
 ### Removed
+
+- **Breaking, embedding surface.** `CeremonyTranscriptStorePort` and its
+  deprecated alias `CeremonyContextStorePort`, `NoopCeremonyTranscriptStore`,
+  `InMemoryCeremonyTranscriptStore`, `EmbeddedMadeBuilder::with_transcript_store`
+  and `RunCeremonyStepUseCase::with_transcript_store`; the `transcript_store`
+  parameter of `RunCeremonyUseCase::new`; the `memory` parameter of
+  `ApplyCeremonyTransitionUseCase::new`, `AssertCeremonyReasonUseCase::new`,
+  `ApproveCeremonyGuardUseCase::new`, `DeferCeremonyGuardUseCase::new`,
+  `CollectCeremonyEvidenceUseCase::new` and
+  `RespondToCeremonyInterventionUseCase::new`. A host that supplied a
+  transcript store supplies nothing: the transcript is folded from the stream
+  it already keeps, and `EmbeddedMade::transcript` and
+  `made_get_ceremony_transcript` answer as before. A host that wants a
+  projection of its own registers it with
+  `EmbeddedMadeBuilder::with_event_subscriber`. `SessionStream::new` takes a
+  subscriber as its third argument and `SessionMemoryRecorder::new` takes the
+  event store as its second (ADR-012 consequences). The proto contract is
+  untouched. (#66)
 
 - The in-tree KMP memory adapter: the `made-adapters` feature `kmp`, its
   `kmp` module, the CI matrix arm that built it and its live-kernel test.

@@ -130,9 +130,10 @@ Executable scope:
   items controlled by the requesting role.
 
 The bundled zero-infrastructure process persists ceremony instances, published
-definitions, the audit journal and outbox in SQLite. Mounted definitions and
-transcripts remain in memory — so `made_get_ceremony_transcript` empties on
-restart while `made_read_ceremony_events` does not. `made_list_ceremony_instances` therefore recovers
+definitions, the audit journal and outbox in SQLite. Mounted definitions remain
+in memory. `made_get_ceremony_transcript` is folded from the same sealed stream
+`made_read_ceremony_events` hands out, so both survive a restart.
+`made_list_ceremony_instances` therefore recovers
 published-definition sessions after a process restart and marks ad-hoc sessions
 as unrehydratable instead of hiding their persisted snapshots.
 

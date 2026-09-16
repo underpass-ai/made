@@ -59,7 +59,7 @@ process. Durability is still not authority, and it is not unconditional
 recovery: an instance started from a published definition rehydrates, one
 started from supplied YAML keeps its snapshot but cannot reload its
 definition, and the listing marks it `"rehydratable": false`. Mounted
-definitions and transcripts stay in memory unless the host replaces those
+definitions stay in memory unless the host replaces those
 ports.
 
 The current launcher never opens or imports Redb. If the SQLite default is
