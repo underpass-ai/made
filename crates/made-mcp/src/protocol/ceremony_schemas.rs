@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
 use super::default_lease_ttl::{
     lease_ttl_rule, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS,
@@ -263,7 +264,7 @@ pub(super) fn run_ceremony_step_schema() -> Value {
                 "description": "What kind of party is running it. Declared by you, because only you know: which seat runs this step comes from the definition, and that says which seat was required, not what turned up. This records who ran the step, not what produced its output — the handler is named by a host-defined string the engine will not classify."
             },
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "idempotency_key": string_schema("Optional unique execution key. The server mints one when omitted."),
+            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
@@ -287,7 +288,7 @@ pub(super) fn claim_ceremony_step_schema() -> Value {
                 "description": "What kind of party fills the step's declared seat. The engine records this declaration and never infers it."
             },
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "idempotency_key": string_schema("Unique execution key for this claim. The server mints one when omitted."),
+            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,

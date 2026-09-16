@@ -5,6 +5,7 @@
 
 mod catalog;
 mod ceremony_schemas;
+mod default_idempotency_key;
 mod default_lease_owner;
 mod default_lease_ttl;
 #[cfg(test)]
@@ -30,6 +31,8 @@ pub(crate) use catalog::{available_tool_catalog, tools_list_result};
 // function nothing calls.
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use ceremony_schemas::REPORT_IS_PERSISTED;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use default_idempotency_key::default_idempotency_key;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use default_lease_owner::default_lease_owner_id;
 #[cfg(any(feature = "embedded", feature = "grpc"))]

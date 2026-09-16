@@ -5,7 +5,8 @@ use uuid::Uuid;
 use super::super::json_to_proto as j2p;
 use crate::grpc::GRPC_BACKEND_NAME;
 use crate::protocol::{
-    default_lease_owner_id, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_STEP_LEASE_TTL_MS,
+    default_idempotency_key, default_lease_owner_id, CLAIM_CEREMONY_STEP_LEASE_TTL_MS,
+    RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
 
 /// The runner the caller named, or the one this layer applies.
@@ -22,6 +23,20 @@ pub(in crate::grpc) fn lease_owner_id(obj: &Map<String, Value>) -> Result<String
         }
         Some(named) => Ok(named.trim().to_owned()),
     }
+}
+
+/// The execution key the caller named, or the one this layer mints.
+///
+/// Minted here rather than left empty for the server to mint: the key
+/// is sealed into the journal, and a journal that records
+/// `grpc-claim-<uuid>` for the same call the in-process engine records
+/// `made-mcp-external-<uuid>` for tells a reader which process answered
+/// instead of what the client asked.
+pub(in crate::grpc) fn idempotency_key(obj: &Map<String, Value>) -> String {
+    j2p::optional_str(obj, "idempotency_key")
+        .map(str::trim)
+        .filter(|named| !named.is_empty())
+        .map_or_else(default_idempotency_key, ToOwned::to_owned)
 }
 
 /// The lease length the caller asked for, or the one this layer
@@ -93,9 +108,7 @@ pub(super) fn build_run_ceremony_step_request(
         // Defaulted here, not left to the server: one omission, one
         // owner, whichever backend the client is pointed at.
         lease_owner_id: lease_owner_id(obj)?,
-        idempotency_key: j2p::optional_str(obj, "idempotency_key")
-            .unwrap_or_default()
-            .to_owned(),
+        idempotency_key: idempotency_key(obj),
         lease_ttl_ms: lease_ttl_ms(obj, RUN_CEREMONY_STEP_LEASE_TTL_MS)?,
     })
 }
@@ -116,9 +129,7 @@ pub(super) fn build_claim_ceremony_step_request(
         // pointed at. The server keeps its own default for clients
         // that speak gRPC directly; from MCP it is never reached.
         lease_owner_id: lease_owner_id(obj)?,
-        idempotency_key: j2p::optional_str(obj, "idempotency_key")
-            .unwrap_or_default()
-            .to_owned(),
+        idempotency_key: idempotency_key(obj),
         lease_ttl_ms: lease_ttl_ms(obj, CLAIM_CEREMONY_STEP_LEASE_TTL_MS)?,
     })
 }
@@ -395,6 +406,51 @@ mod tests {
         }))
         .expect("the request should be accepted");
         assert_eq!(request.lease_owner_id, "the-hosts-own-runner");
+    }
+
+    /// The key leaves this layer minted, so the server's own — sealed
+    /// into the journal with a transport name in it — is never reached.
+    #[test]
+    fn an_omitted_execution_key_is_minted_by_this_layer() {
+        let step = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert!(
+            step.idempotency_key.starts_with("made-mcp:"),
+            "{}",
+            step.idempotency_key
+        );
+
+        let claim = build_claim_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+        }))
+        .expect("the request should be accepted");
+        assert!(
+            claim.idempotency_key.starts_with("made-mcp:"),
+            "{}",
+            claim.idempotency_key
+        );
+        assert_ne!(
+            step.idempotency_key, claim.idempotency_key,
+            "two calls are two executions"
+        );
+    }
+
+    #[test]
+    fn an_execution_key_the_caller_named_is_left_alone() {
+        let step = build_run_ceremony_step_request(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "idempotency_key": "retry-42",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(step.idempotency_key, "retry-42");
     }
 
     /// The lease length leaves this layer as a number, so the server's
