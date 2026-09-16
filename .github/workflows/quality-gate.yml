@@ -33,6 +33,12 @@ jobs:
   # pull request". A merge from an out-of-date branch, a conflict resolved in
   # the UI and a direct push all produce trees nobody tested, and each still
   # gets the full gate. So does any doubt at all.
+  #
+  # And "proved" is narrow: the earlier run must have run in this repository,
+  # be younger than the age cap, and show *every* job of the full matrix
+  # concluded `success`. A run that skipped its gates — a docs-only pull
+  # request, or a push that itself skipped on an earlier proof — proves
+  # nothing and is refused.
   tree-proof:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
@@ -94,6 +100,11 @@ jobs:
         run: |
           python3 scripts/ci/quality-gate-plan.py --self-test
           python3 scripts/ci/dev-loop-workflow-contract.py --self-test
+      # --step-summary records the plan in the run: `full`, the gates it
+      # selected and the event. scripts/ci/tree-already-proved.sh reads a
+      # run's job conclusions rather than this record, because on a pull
+      # request the planner runs from the pull request's own head; the
+      # record is the same statement in the form a person reads.
       - name: Plan required gates
         id: plan
         shell: bash
@@ -102,10 +113,12 @@ jobs:
             python3 scripts/ci/quality-gate-plan.py \
               --base "${{ github.event.pull_request.base.sha }}" \
               --head "${{ github.event.pull_request.head.sha }}" \
-              --github-output "${GITHUB_OUTPUT}"
+              --github-output "${GITHUB_OUTPUT}" \
+              --step-summary "${GITHUB_STEP_SUMMARY}"
           else
             python3 scripts/ci/quality-gate-plan.py --full \
-              --github-output "${GITHUB_OUTPUT}"
+              --github-output "${GITHUB_OUTPUT}" \
+              --step-summary "${GITHUB_STEP_SUMMARY}"
           fi
 
   architecture:

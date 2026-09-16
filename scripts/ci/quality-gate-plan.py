@@ -465,6 +465,30 @@ def write_outputs(plan: dict[str, object], destination: pathlib.Path) -> None:
             print(f"{key}={rendered}", file=handle)
 
 
+def write_step_summary(
+    plan: dict[str, object], paths: list[str], event: str, destination: pathlib.Path
+) -> None:
+    """Record the plan in the run, where the tree proof's reader can find it.
+
+    `scripts/ci/tree-already-proved.sh` decides whether an earlier run proved
+    a tree from the run's *job conclusions*, which the run's own scripts
+    cannot forge. This is the same statement in the form a person reads: what
+    was planned, on which event, and why.
+    """
+    gates = ",".join(gate for gate in GATES if plan[gate]) or "none"
+    with destination.open("a", encoding="utf-8") as handle:
+        print("### quality gate plan", file=handle)
+        print("", file=handle)
+        print("```", file=handle)
+        print(
+            f"full={str(plan['full']).lower()} event={event} gates={gates}",
+            file=handle,
+        )
+        print(f"reason={plan['reason']}", file=handle)
+        print(f"changed paths={len(paths)}", file=handle)
+        print("```", file=handle)
+
+
 SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
     # Acceptance, plan §3.9 H3: a docs-only change runs no Rust job.
     (
@@ -676,6 +700,8 @@ def main() -> int:
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--step-summary", type=pathlib.Path)
+    parser.add_argument("--event", default=os.environ.get("GITHUB_EVENT_NAME", "local"))
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -695,6 +721,8 @@ def main() -> int:
     plan = plan_for(paths, force_full=args.full)
     if args.github_output:
         write_outputs(plan, args.github_output)
+    if args.step_summary:
+        write_step_summary(plan, paths, args.event, args.step_summary)
     print(json.dumps({"paths": sorted(paths), "plan": plan}, indent=2), file=sys.stdout)
     return 0
 
