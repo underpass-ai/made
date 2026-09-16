@@ -46,6 +46,27 @@ operator command.
 
 ### Changed
 
+- The parity test drives **one session through every shared tool** on both
+  MCP backends, with the same step handler, the same evidence source and the
+  same frozen clock wired into each, and compares the two answers field for
+  field — `output`, `details`, `context` and `evidence_pack` included, and no
+  path normalised. Which tools it must cover comes from
+  `docs/architecture/parity.tsv`; the hard-coded allowlist of seventeen names
+  is gone. (#49)
+- A `tools/call` is now validated against the schema the tool publishes,
+  once, in the server layer and before any backend is reached. The same call
+  is accepted or refused identically whichever engine is mounted, and a
+  refusal is the `invalid_request` envelope with one wording rather than
+  whichever request mapper looked first. Requests the gRPC arm used to accept
+  and ignore — an undeclared field, a value of the wrong type — are refused on
+  both arms, as the published schema always said. (#49)
+- One value for one thing, whichever backend served the call: every timestamp
+  in a ceremony answer is RFC 3339 on both arms (three renderings before, one
+  of them `time`'s `Display`); a whole number in a `context`, `details` or
+  `output` comes back whole from the gRPC arm instead of as a double; an
+  evidence pack is the object on both arms instead of the serialized string
+  over the wire; and a run's step status is `completed` on both arms, as the
+  session view already said. (#49)
 - An omitted `lease_owner_id` on `made_run_ceremony`,
   `made_run_ceremony_step` and `made_claim_ceremony_step` now becomes
   `made-mcp:<backend>` — `made-mcp:embedded` or `made-mcp:grpc` — applied by
