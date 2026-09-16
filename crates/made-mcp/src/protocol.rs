@@ -34,8 +34,12 @@ pub(crate) use result_envelopes::{
 };
 pub use tool_error::ToolError;
 pub use tool_error_code::ToolErrorCode;
+// Only the tests ask which tools this server owns; the catalog and the
+// gate reach the predicate through `tool_names` directly.
+#[cfg(test)]
+pub(crate) use tool_names::is_server_tool;
 pub(crate) use tool_names::{
-    is_grpc_tool, is_server_tool, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
+    is_grpc_tool, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,

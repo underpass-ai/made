@@ -59,6 +59,7 @@ use made_core::ports::{
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
 
+pub use crate::grpc_fixture_wiring::GrpcFixtureWiring;
 pub use crate::tls_server_setup::TlsServerSetup;
 
 /// Handles a test needs to drive the in-process made:
@@ -85,7 +86,7 @@ impl GrpcFixture {
     /// Wire and start a fresh fixture. Returns once the server is
     /// accepting connections.
     pub async fn start() -> Self {
-        Self::start_over(Arc::new(InMemoryCeremonyEventStore::new())).await
+        Self::start_with(GrpcFixtureWiring::new()).await
     }
 
     /// A second server over a store another one already wrote to.
@@ -93,9 +94,22 @@ impl GrpcFixture {
     /// Everything else is fresh, the definition repository included, so
     /// this is the restart boundary in one process: the streams are
     /// there and the definitions that produced them are not.
-    #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start_over(ceremony_store: Arc<InMemoryCeremonyEventStore>) -> Self {
-        let clock = Arc::new(SystemClock::new());
+        Self::start_with(GrpcFixtureWiring::new().with_ceremony_store(ceremony_store)).await
+    }
+
+    /// Wire and start a fixture, with the adapters the caller has an
+    /// opinion about replaced.
+    ///
+    /// Everything left unset is what `compose::compose` picks, so this
+    /// is the same server the other tests get. The parity session is
+    /// why the seam exists: it has to run the **same** step handler,
+    /// evidence source and clock here and in the in-process edition,
+    /// and it must get there without changing what production composes.
+    #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
+    pub async fn start_with(wiring: GrpcFixtureWiring) -> Self {
+        let ceremony_store = wiring.ceremony_store();
+        let clock = wiring.clock();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
             Arc::new(ContentNonEmptyValidator::new()),
             Arc::new(JsonObjectOutputValidator::new()),
@@ -142,8 +156,10 @@ impl GrpcFixture {
             Arc::new(made_core::ports::NoopMetricsRecorder),
             "made-tests",
         ));
-        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
+        let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> = wiring.step_handler(|| {
+            Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()))
+                as Arc<dyn CeremonyStepHandlerPort>
+        });
         let orchestrate = Arc::new(OrchestrateUseCase::new(
             deliberate.clone(),
             executor,
@@ -234,7 +250,7 @@ impl GrpcFixture {
         let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
-            Arc::new(NoopCeremonyEvidenceSource::new()),
+            wiring.evidence_source(),
             clock.clone(),
             session_memory.clone(),
         ));

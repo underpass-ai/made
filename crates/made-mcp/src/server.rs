@@ -23,10 +23,10 @@ use crate::grpc::GrpcMadeMcpBackend;
 use crate::guidance::{discovery_result, help_result};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
-use crate::protocol::ToolErrorCode;
 use crate::protocol::{
     initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
-    tools_list_result, validate_tool_request, ToolError, DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
+    tools_list_result, validate_tool_request, ToolError, ToolErrorCode, DISCOVER_CAPABILITIES_TOOL,
+    GET_HELP_TOOL,
 };
 
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].

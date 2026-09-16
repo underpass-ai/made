@@ -40,6 +40,13 @@ testcontainers = { version = "0.28", optional = true }
 # Default features include the `crypto` provider (ring-backed),
 # which is what `KeyPair::generate()` needs.
 rcgen = { version = "0.13", features = ["pem"] }
+# The parity support types under `src/` are ports implemented for both
+# engines at once: a frozen clock, a deterministic step handler and an
+# evidence source. They need the time and JSON crates the ports speak,
+# so those are ordinary dependencies of this test-only crate rather
+# than dev-dependencies of its `tests/`.
+time = { workspace = true }
+serde_json = { workspace = true }
 
 [dev-dependencies]
 # Both backends at once, on purpose: the parity test is the only place
@@ -49,9 +56,7 @@ made-mcp = { workspace = true, features = ["grpc", "embedded"] }
 made-embedded = { workspace = true }
 async-nats = { workspace = true }
 tokio = { workspace = true }
-time = { workspace = true }
 uuid = { workspace = true }
-serde_json = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
 prost-types = { workspace = true }
