@@ -40,6 +40,15 @@ operator command.
   state (`decide` / `apply` / `rehydrate`); the existing mutators are wrappers
   over that pair, and fold equality — the session is the fold of the events
   its mutations decided — is tested per command and over random sequences.
+- Ceremony use cases load the fold of the event stream, decide and append
+  with optimistic concurrency: bounded retry (three attempts) for commands
+  that commute — seating, step claim and ending, guards, interventions,
+  evidence, reasons — and fail-fast for transitions and start. Snapshots are
+  a cache written after every append. Every record carries its correlation
+  id (the stream's opening) and causation id (the record before it). The
+  embedded edition and the server store ceremonies in `ceremony_events`;
+  instances from earlier stores that have no stream are counted and warned
+  about at open and are not visible until the migration command lands (A7).
 
 ## 0.3.0 - 2026-09-03
 
