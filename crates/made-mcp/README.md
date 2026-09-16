@@ -112,18 +112,19 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_claim_ceremony_step`      | `ClaimCeremonyStep`               | lease one step the MCP host will execute itself |
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
 | `made_design_ceremony`          | `DesignCeremony`                  | turn structured intent into an analysed, unpublished linear draft |
+| `made_read_ceremony_events`     | `ReadCeremonyEvents`              | read one page of the sealed event stream, chain included |
+| `made_get_ceremony_transcript`  | `GetCeremonyTranscript`           | read the ordered contributions the steps produced |
+| `made_generate_ceremony_report` | `GenerateCeremonyReport`          | render one or more persisted instances and their audit journals as deterministic Markdown |
 | `made_get_status`               | `GetStatus`                       | observability |
 | `made_get_metrics`              | `GetMetrics`                      | observability |
 
-These 38 backend-owned tools map 1:1 to the 38 RPCs in the MADE gRPC
+These 41 backend-owned tools map 1:1 to the 41 RPCs in the MADE gRPC
 service. Every server composition additionally advertises the two server-owned
 discovery/help tools described below.
 
-The embedded backend also exposes one tool that has no gRPC mapping:
-
-| MCP tool | Purpose |
-|----------|---------|
-| `made_generate_ceremony_report` | Render one or more persisted instances and their audit journals as deterministic Markdown. |
+No ceremony tool is embedded-only: every one of them has an RPC behind it, so
+a client pointed at a cluster finds the whole ceremony surface. What the
+embedded backend does not serve is the council surface and status/metrics.
 
 Which gaps are left, and why, is data rather than prose:
 [`docs/architecture/parity.tsv`](../../docs/architecture/parity.tsv) has one

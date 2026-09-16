@@ -16,6 +16,23 @@ operator command.
 
 ### Added
 
+- `ReadCeremonyEvents`, `GetCeremonyTranscript` and `GenerateCeremonyReport`
+  RPCs in `underpass.made.v1`, the two new tools `made_read_ceremony_events`
+  and `made_get_ceremony_transcript` on **both** MCP backends,
+  `made_generate_ceremony_report` on the gRPC backend, and the facade methods
+  `EmbeddedMade::audit_records_from` and `EmbeddedMade::report`. What a session
+  left behind had no read surface at all beyond the in-process facade: the
+  event stream that *is* the ceremony (ADR-012) and the transcript its steps
+  produced were unreachable from any client, and the report was rendered
+  inside the MCP adapter with no RPC behind it. A read of the stream hands out
+  the **sealed records** — position, actor, timestamps, correlation and
+  causation, the payload the digest covers, and the hash chain — so a client
+  reads them back and verifies the chain on what it received rather than
+  trusting the server that sent it. Reading is by position: `from_version` is
+  the version already seen, and the answer carries `next_version` and
+  `head_version`. An omitted `limit` takes 200 records, capped at 1000. A
+  durable named cursor per consumer is not this and arrives as additive
+  fields. Additive; `buf breaking` against `origin/main` is green. (#52)
 - `DesignCeremony` RPC in `underpass.made.v1`, the gRPC-backend tool
   `made_design_ceremony` and `EmbeddedMade::design`. Turning an author's
   intent into a ceremony was a plugin extension with no RPC behind it; it is
@@ -68,6 +85,30 @@ operator command.
 
 ### Changed
 
+- Rendering a ceremony report moved out of the MCP adapter into
+  `made_app::usecases::GenerateCeremonyReportUseCase`, which composes the
+  session, the definition it runs and its event stream into the one document
+  both editions answer with (ADR-006: a report is a projection of persisted
+  state, never a document the engine stores). The embedded arm is a mapper
+  over its DTO and the JSON the tool answers with is unchanged. `persisted`
+  stays a constant in the two presenters rather than a field on the wire: no
+  edition writes a report, and an always-false boolean in the contract would
+  suggest a caller could ask for one that is. (#52)
+- `docs/architecture/parity.tsv` no longer carries a gap on
+  `read_ceremony_events`, `get_ceremony_transcript` or
+  `generate_ceremony_report`, which leaves **no embedded-only ceremony tool**:
+  every ceremony capability is served by the proto contract, both MCP backends
+  and the facade, and a client pointed at a cluster finds the whole ceremony
+  surface. The remaining rows with a reason are the council surface (until B3)
+  and the host-process affordances. (#52)
+- A whole number a caller sends in a `context`, a step `output`, an
+  intervention's `details` or an evidence request is now **stored** whole by
+  the deployable server. A `google.protobuf.Struct` carries every number as a
+  double, so `2` reached the engine as `2.0` and was sealed into the audit
+  record's digest that way, while the same session driven in process sealed
+  `2` — one session, two audit chains. Found by comparing the sealed records
+  of a parity session, which is the first read that put a digest where a test
+  could see it. (#52)
 - The ceremony designer moved out of the MCP adapter into
   `made_app::usecases::DesignCeremonyUseCase`, with the intent document as a
   DTO and the definition document it renders private to it. What an omitted

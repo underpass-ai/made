@@ -79,12 +79,33 @@ fn map_to_struct(map: &BTreeMap<String, Value>) -> PbStruct {
     }
 }
 
+/// Largest whole number a double still counts one at a time: 2^53.
+const EXACT_WHOLE_LIMIT: f64 = 9_007_199_254_740_992.0;
+
+/// A `Struct` carries every number as a double, so a caller that sends
+/// `2` hands the engine `2.0` — and the engine *stores* it, sealing
+/// `{"severity":2.0}` into the record's digest where the same session
+/// driven in process seals `{"severity":2}`. Two engines, two audit
+/// chains, one session: found by comparing the sealed records of a
+/// parity session (slice F3c), which is the first read that put a
+/// digest where a test could see it.
+///
+/// A whole number is stored whole; anything with a fraction, and
+/// anything past the range where a double still counts one at a time,
+/// is untouched.
+fn number_to_json(value: f64) -> Value {
+    if value.is_finite() && value.fract() == 0.0 && value.abs() <= EXACT_WHOLE_LIMIT {
+        #[allow(clippy::cast_possible_truncation)] // guarded above: whole, finite and within 2^53
+        let whole = value as i64;
+        return Value::Number(serde_json::Number::from(whole));
+    }
+    serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
+}
+
 pub(super) fn pb_value_to_json(v: PbValue) -> Value {
     match v.kind {
         None | Some(PbKind::NullValue(_)) => Value::Null,
-        Some(PbKind::NumberValue(n)) => {
-            serde_json::Number::from_f64(n).map_or(Value::Null, Value::Number)
-        }
+        Some(PbKind::NumberValue(n)) => number_to_json(n),
         Some(PbKind::StringValue(s)) => Value::String(s),
         Some(PbKind::BoolValue(b)) => Value::Bool(b),
         Some(PbKind::StructValue(s)) => {

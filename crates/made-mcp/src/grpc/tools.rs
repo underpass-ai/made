@@ -14,6 +14,7 @@ use super::json_to_proto as j2p;
 use super::proto_to_json as p2j;
 use super::streaming;
 
+mod ceremony_history_requests;
 mod ceremony_requests;
 mod design_ceremony_request;
 mod general_requests;
@@ -360,6 +361,32 @@ pub(crate) async fn dispatch(
             Ok(p2j::design_ceremony_to_json(response.into_inner()))
         }
 
+        // What the session left behind. Reads, in the order the
+        // contract declares them: the stream, the transcript, the
+        // report the engine renders from both.
+        "made_read_ceremony_events" => {
+            let request = ceremony_history_requests::build_read_ceremony_events_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.read_ceremony_events(request).await?;
+            Ok(p2j::read_ceremony_events_to_json(response.into_inner()))
+        }
+
+        "made_get_ceremony_transcript" => {
+            let request =
+                ceremony_history_requests::build_get_ceremony_transcript_request(arguments)
+                    .map_err(bad_request)?;
+            let response = client.get_ceremony_transcript(request).await?;
+            Ok(p2j::ceremony_transcript_to_json(response.into_inner()))
+        }
+
+        "made_generate_ceremony_report" => {
+            let request =
+                ceremony_history_requests::build_generate_ceremony_report_request(arguments)
+                    .map_err(bad_request)?;
+            let response = client.generate_ceremony_report(request).await?;
+            Ok(p2j::ceremony_report_to_json(response.into_inner()))
+        }
+
         "made_validate_ceremony_draft" => {
             let request = pb::ValidateCeremonyDraftRequest {
                 definition_yaml: ceremony_requests::definition_yaml(arguments)
@@ -474,6 +501,11 @@ pub(crate) async fn dispatch(
 // back as plain strings; tonic gets a fully-formed proto.
 // ---------------------------------------------------------------------------
 
+#[cfg(test)]
+use ceremony_history_requests::{
+    build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
+    build_read_ceremony_events_request,
+};
 #[cfg(test)]
 use ceremony_requests::{
     build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,

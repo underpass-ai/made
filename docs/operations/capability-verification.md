@@ -60,7 +60,7 @@ process.
 | `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists ceremony snapshots, unit-of-work state, audit journal, outbox and definition publications; mounted definitions and transcripts remain in memory unless replaced |
 | Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory; optional PostgreSQL covers other aggregates, not ceremonies |
 | Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state and publications use SQLite; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
-| MCP gRPC backend | Remote RPC-derived catalog; embedded-only extensions may be absent | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
+| MCP gRPC backend | Remote RPC-derived catalog; every ceremony tool has an RPC behind it, so what may be absent is whatever the remote build does not serve | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
 
 For the current repository composition, PostgreSQL persists deliberations,
 councils, agents and related statistics. It is not the ceremony-state adapter.

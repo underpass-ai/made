@@ -7,9 +7,13 @@
 use made_mcp_proto::v1 as pb;
 use serde_json::{json, Map, Number as JsonNumber, Value};
 
+mod ceremony_history;
 mod ceremony_instance;
 mod primitives;
 
+pub(crate) use ceremony_history::{
+    ceremony_report_to_json, ceremony_transcript_to_json, read_ceremony_events_to_json,
+};
 pub(crate) use ceremony_instance::{
     ceremony_instance_listing_to_json, ceremony_instance_state_to_json,
 };

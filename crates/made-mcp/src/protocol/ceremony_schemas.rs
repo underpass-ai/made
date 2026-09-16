@@ -3,23 +3,13 @@ use serde_json::{json, Value};
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
 use super::schema_primitives::{attributes_schema, string_schema};
 
-pub(super) fn ceremony_report_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["ceremony_ids"],
-        "properties": {
-            "ceremony_ids": {
-                "type": "array",
-                "minItems": 1,
-                "uniqueItems": true,
-                "items": string_schema("Identifier of a persisted ceremony instance."),
-                "description": "One or more ceremony ids, reported in caller order. Empty lists, duplicates and unknown ids are errors."
-            },
-            "title": string_schema("Optional report heading. It affects presentation only and is escaped as untrusted Markdown text.")
-        }
-    })
-}
+mod ceremony_history_schemas;
+
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use ceremony_history_schemas::REPORT_IS_PERSISTED;
+pub(super) use ceremony_history_schemas::{
+    ceremony_report_schema, get_ceremony_transcript_schema, read_ceremony_events_schema,
+};
 
 pub(super) fn start_published_ceremony_schema() -> Value {
     json!({

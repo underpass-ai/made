@@ -376,12 +376,19 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "actor_kind": "service",
             }),
         ),
+        // The lease owner is named for the same reason the
+        // idempotency key is: an omitted one becomes
+        // `made-mcp:<backend>` by the rule F2 wrote into the schema,
+        // which is the engine's own name and differs by arm on
+        // purpose. Reading the stream (F3c) is what first put that
+        // value where a comparison could see it.
         (
             "made_run_ceremony_step",
             json!({
                 "ceremony_id": SESSION_ID,
                 "step_id": "work",
                 "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
                 "idempotency_key": "parity-work-1",
             }),
         ),
@@ -526,6 +533,35 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         ("made_list_ceremony_instances", json!({})),
+        // What the session left behind, read after it is finished so
+        // the stream is whole. The sealed records carry their digests
+        // and the payload those digests cover, so a client can verify
+        // the chain on what it received — and the two arms have to
+        // agree on every byte of it, which is only true because the
+        // script names the ids and the clock is frozen.
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
+        // Read again from the middle: a page is a page on both arms,
+        // and `next_version` continues the same way.
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
+        ),
+        (
+            "made_get_ceremony_transcript",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
+        // Two sessions in one report, so the order the caller asked
+        // for is compared too, and a title so the escaping is.
+        (
+            "made_generate_ceremony_report",
+            json!({
+                "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
+                "title": "Parity review <both arms>",
+            }),
+        ),
     ]
 }
 

@@ -126,7 +126,14 @@ tool-call diagnostics on stderr; stdout is reserved for JSON-RPC.
 
 Use both layers deliberately:
 
-- audit journal: what the ceremony says happened, in order;
+- audit journal: what the ceremony says happened, in order. Read it with
+  `made_read_ceremony_events`, which hands out the sealed records themselves —
+  digests and hash chain included — so a consumer can verify the chain rather
+  than trust the process that served it. Reading is by position:
+  `from_version` is what you have already seen, and the answer says where to
+  continue. `made_get_ceremony_transcript` is the companion read for what the
+  steps contributed. Both are served by both editions, so the same consumer
+  works against a cluster;
 - MCP logs: adapter startup, request failures and tool-call diagnostics;
 - referenced artifacts: the actual external evidence produced by a stage.
 

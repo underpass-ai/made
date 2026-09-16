@@ -187,6 +187,12 @@ that refuses a manifest which drops any of it:
 
 ### Current limits, stated plainly
 
+- **The transcript store is in-memory, whichever store the state went to.**
+  `GetCeremonyTranscript` answers with what the process it reached holds, and a
+  restart empties it. The sealed event stream is durable — it is the ceremony
+  (ADR-012) — so what a step contributed is recoverable from
+  `ReadCeremonyEvents` either way; the transcript is a convenience read until a
+  durable transcript store lands.
 - `StreamDeliberation` emits phase transitions and a final `DeliberationResult`
   frame — **not** per-proposal, per-critique or per-revision events. That
   arrives in a later slice.
@@ -205,17 +211,26 @@ MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 Two caveats that make this less symmetric than the KMP equivalent:
 
-- The **tool surfaces differ by design**, and by less than they did. The
-  delegated-host protocol — claim the step, run it with your own agents and
-  tools, report what happened — is served by both editions: `ClaimCeremonyStep`
-  and `CompleteCeremonyStep` back `made_claim_ceremony_step` and
-  `made_complete_ceremony_step`, so a host that owns its step execution can
-  point at a cluster without changing a call. Designing one is served by both
-  too: `DesignCeremony` backs `made_design_ceremony`, and the designer itself
-  is a use case both editions call, so the same intent renders the same
-  document whichever engine answered. What is still embedded-only is the
-  read-only Markdown report, where no remote RPC exists. `tools/list` on the
-  running executable is the authority, and
+- The **ceremony tool surfaces no longer differ at all.** They did, and each
+  gap closed in its own slice. The delegated-host protocol — claim the step,
+  run it with your own agents and tools, report what happened — is served by
+  both editions: `ClaimCeremonyStep` and `CompleteCeremonyStep` back
+  `made_claim_ceremony_step` and `made_complete_ceremony_step`, so a host that
+  owns its step execution can point at a cluster without changing a call.
+  Designing one is served by both too: `DesignCeremony` backs
+  `made_design_ceremony`, and the designer itself is a use case both editions
+  call, so the same intent renders the same document whichever engine
+  answered. So is everything a finished session leaves behind:
+  `ReadCeremonyEvents` and `GetCeremonyTranscript` back
+  `made_read_ceremony_events` and `made_get_ceremony_transcript`, and
+  `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
+  is a `made-app` projection now (ADR-006), so the same sessions in the same
+  state report the same bytes whichever engine rendered them. A read of the
+  stream hands out the **sealed records**, digests and hash chain included, so
+  a client verifies the chain on what it received rather than trusting the
+  server that sent it. The remaining gaps are the council surface, which is
+  cluster-only until B3, and status and metrics, which the embedded edition
+  gains with G3. `tools/list` on the running executable is the authority, and
   `made_discover_capabilities` filters the catalog by backend for exactly this
   reason. Which gaps exist is not prose:
   [`architecture/parity.tsv`](./architecture/parity.tsv) is the checked list,

@@ -38,13 +38,17 @@ const API_NON_CAPABILITY_METHOD: &str = "capabilities";
 /// carries, mapped to that capability. Every one of these is explicit: an
 /// unmapped public method of `EmbeddedMade` fails the test rather than being
 /// waved through.
-const FACADE_VARIANTS: [(&str, &str); 6] = [
+const FACADE_VARIANTS: [(&str, &str); 7] = [
     ("mount_definitions", "mount_definition"),
     ("mount_yaml", "mount_definition"),
     ("definition", "list_ceremony_definitions"),
     ("published_definition", "list_ceremony_definitions"),
     ("published_definitions", "list_ceremony_definitions"),
     ("definition_for", "list_ceremony_definitions"),
+    // One capability, two questions: the whole stream for a caller
+    // that verifies the chain it was given, one page for a caller
+    // following it.
+    ("audit_records_from", "read_ceremony_events"),
 ];
 
 /// Constructors. They open or configure the facade; they are not capabilities

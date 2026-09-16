@@ -406,13 +406,15 @@ Two server-owned tools are available independently of the selected backend:
 {"name":"made_get_help","arguments":{"audience":"agent"}}
 ```
 
-Both responses are derived against the same catalog filter as `tools/list`.
-An embedded build therefore advertises its report generator, while a backend
-that cannot execute that tool neither lists it nor recommends its workflow.
+Both responses are derived against the same catalog filter as `tools/list`:
+a backend that cannot execute a tool neither lists it nor recommends its
+workflow. Every ceremony tool now has an RPC behind it, so what the gRPC
+backend filters out is nothing, and what the embedded backend filters out is
+the council surface plus status and metrics.
 
-The 35 backend-owned MCP tools are 1:1 with MADE's 35 gRPC RPCs.
+The 41 backend-owned MCP tools are 1:1 with MADE's 41 gRPC RPCs.
 Together with the two server-owned discovery/help tools above, gRPC mode
-advertises 37 executable tools:
+advertises 43 executable tools:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
@@ -459,11 +461,45 @@ an explicit JSON key in both the tool input schema and the response.
 No flattening, no silent drops. Enums (e.g. `DeliberationPhase`) map
 to stable string labels (`DELIBERATION_PHASE_PROPOSING`, …).
 
-### Durable ceremony reports (embedded)
+### Reading what a session left behind
 
-`made_generate_ceremony_report` is an embedded-only, read-only extension. A
-call supplies `ceremony_ids` as a non-empty array with no duplicates and may
-supply `title`. Unknown ids fail the whole call; caller order is preserved.
+`made_read_ceremony_events` hands out the **sealed records** of one ceremony's
+event stream, in order: the fact, its position, its actor and timestamps, the
+correlation and causation ids, the payload the digest covers, and the hash
+chain. A client can read the answer back into a record and verify the chain
+itself rather than trusting the server that sent it.
+
+Reading is by position. `from_version` is the version already seen — omit it,
+or send `0`, to read from the first record — and the answer carries
+`next_version` to send back for the next page plus `head_version`, so a caller
+can tell "there is more" from "you are caught up" without asking again. An
+omitted `limit` takes 200 records and 1000 is the cap. A ceremony with no
+stream is `not_found`.
+
+```json
+{
+  "name": "made_read_ceremony_events",
+  "arguments": { "ceremony_id": "session-17", "from_version": 12, "limit": 50 }
+}
+```
+
+`made_get_ceremony_transcript` hands out the ordered contributions the session's
+steps produced — `step_id`, `role_id` and the structured output. On a cluster
+the transcript store is per-process and empties on restart; the sealed stream
+above is the durable record, so what a step contributed is recoverable from it
+either way.
+
+Both are served by both editions, over `ReadCeremonyEvents` and
+`GetCeremonyTranscript`.
+
+### Ceremony reports
+
+`made_generate_ceremony_report` is a read-only projection of persisted state
+(ADR-006), served by **both** editions over the `GenerateCeremonyReport` RPC
+and rendered by one `made-app` use case, so the same sessions in the same state
+report the same bytes whichever engine answered. A call supplies `ceremony_ids`
+as a non-empty array with no duplicates and may supply `title`. Unknown ids
+fail the whole call; caller order is preserved.
 
 ```json
 {
@@ -497,8 +533,9 @@ Backend selection is driven by `MADE_MCP_BACKEND`:
   build exposes one-shot execution plus persistent incremental controls for
   starting, inspecting, stepping, claiming/completing host-owned work,
   explicitly approving a human guard, and applying a transition. It can also
-  generate deterministic Markdown reports from one or more persisted ceremony
-  snapshots and audit journals.
+  read the sealed event stream and the transcript, and generate deterministic
+  Markdown reports from one or more persisted ceremony snapshots and audit
+  journals.
   Participants can open, answer, and close dynamic opinion, investigation, or
   action requests while the ceremony remains active. It requires no
   MADE service, gRPC, protobuf, NATS, or database.
@@ -595,7 +632,9 @@ Both editions serve this pair. `made_claim_ceremony_step` and
 same protocol against a cluster as it does in process — the same arguments,
 the same answer, the same refusals.
 
-The embedded-only intervention tools are:
+The intervention tools — served by both editions since parity slice F2, over
+`RequestCeremonyIntervention`, `RespondToCeremonyIntervention` and
+`CloseCeremonyIntervention` — are:
 
 - `made_request_ceremony_intervention`: the requesting role opens a live
   agenda item. Omit `target_role_ids` for the whole table or provide one or
