@@ -1,18 +1,20 @@
 use made_core::value_objects::CeremonyId;
 
+use super::ReportTitle;
+
 /// What to report on, and what to call the report.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenerateCeremonyReportInput {
     ceremony_ids: Vec<CeremonyId>,
-    /// The heading. Absent takes the default one; present and blank is
-    /// refused, because a heading nobody can read is not a choice
-    /// anyone made.
-    title: Option<String>,
+    /// The heading. Absent takes the default one; what counts as
+    /// present is [`ReportTitle`]'s to say, so the two arms cannot
+    /// disagree about a padded string.
+    title: Option<ReportTitle>,
 }
 
 impl GenerateCeremonyReportInput {
     #[must_use]
-    pub fn new(ceremony_ids: Vec<CeremonyId>, title: Option<String>) -> Self {
+    pub fn new(ceremony_ids: Vec<CeremonyId>, title: Option<ReportTitle>) -> Self {
         Self {
             ceremony_ids,
             title,
@@ -28,6 +30,6 @@ impl GenerateCeremonyReportInput {
 
     #[must_use]
     pub fn title(&self) -> Option<&str> {
-        self.title.as_deref()
+        self.title.as_ref().map(ReportTitle::as_str)
     }
 }

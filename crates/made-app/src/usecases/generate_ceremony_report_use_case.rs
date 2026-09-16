@@ -109,11 +109,9 @@ impl GenerateCeremonyReportUseCase {
                 });
             }
         }
-        if input.title().is_some_and(|title| title.trim().is_empty()) {
-            return Err(DomainError::EmptyField {
-                field: "ceremony_report.title",
-            });
-        }
+        // A blank title is refused by `ReportTitle`, which is the only
+        // way one reaches this input, so there is nothing left to check
+        // here about it.
         Ok(())
     }
 
@@ -146,6 +144,7 @@ mod tests {
         ceremony_id, definition, definition_resolver, now, started_instance, stream,
         DefinitionRepositoryFake, EventStoreFake,
     };
+    use crate::usecases::ReportTitle;
 
     struct Fixture {
         usecase: GenerateCeremonyReportUseCase,
@@ -190,7 +189,7 @@ mod tests {
             .usecase
             .execute(GenerateCeremonyReportInput::new(
                 vec![ceremony_id()],
-                Some("Session review".to_owned()),
+                Some(ReportTitle::new("Session review").unwrap()),
             ))
             .await
             .unwrap();
@@ -306,18 +305,12 @@ mod tests {
             matches!(&duplicate, DomainError::InvalidDocument { reason } if reason.contains("duplicate")),
             "{duplicate:?}"
         );
+        // A blank heading never reaches the use case: it is refused
+        // where a title is built, which is the one place both arms
+        // build one.
         assert!(matches!(
-            fixture
-                .usecase
-                .execute(GenerateCeremonyReportInput::new(
-                    ids(&["session-2"]),
-                    Some("   ".to_owned())
-                ))
-                .await
-                .unwrap_err(),
-            DomainError::EmptyField {
-                field: "ceremony_report.title"
-            }
+            ReportTitle::new("   "),
+            Err(DomainError::EmptyField { field: "title" })
         ));
     }
 }

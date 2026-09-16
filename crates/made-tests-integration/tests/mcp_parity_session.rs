@@ -579,12 +579,14 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({ "ceremony_id": SESSION_ID }),
         ),
         // Two sessions in one report, so the order the caller asked
-        // for is compared too, and a title so the escaping is.
+        // for is compared too, and a title so the escaping is. The
+        // padding is the point: one arm trimmed the heading and the
+        // other did not, so one request rendered two documents.
         (
             "made_generate_ceremony_report",
             json!({
                 "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
-                "title": "Parity review <both arms>",
+                "title": "  Parity review <both arms>  ",
             }),
         ),
         // How the engine that served all of the above is doing, asked
@@ -706,6 +708,11 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
             }),
         ),
         ("a tool that does not exist", "made_do_the_thing", json!({})),
+        (
+            "a report heading that is nothing but space",
+            "made_generate_ceremony_report",
+            json!({ "ceremony_ids": [SESSION_ID], "title": "   " }),
+        ),
     ];
 
     for (index, (what, tool, arguments)) in refused.into_iter().enumerate() {
