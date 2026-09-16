@@ -9,6 +9,10 @@ use crate::value_objects::{
 pub struct NoopMetricsRecorder;
 
 impl MetricsRecorderPort for NoopMetricsRecorder {
+    fn recorder_name(&self) -> &'static str {
+        "noop"
+    }
+
     fn observe_deliberation_duration(&self, _: &Specialty, _: DurationMs) {}
     fn record_deliberation_outcome(&self, _: &Specialty, _: DeliberationOutcome) {}
     fn observe_winner_score(&self, _: &Specialty, _: Score) {}

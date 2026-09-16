@@ -5,7 +5,7 @@ use super::{
     ceremony_design_document_from_proto, design_ceremony_response_from,
     diff_ceremony_definitions_response_from, domain_error_to_status,
     explain_ceremony_draft_response_from, link_span_to_metadata, pb,
-    publish_ceremony_definition_response_from, statistics_to_proto,
+    publish_ceremony_definition_response_from, service_status_to_proto, statistics_to_proto,
     unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
     CeremonyDefinitionYaml, CeremonyDraftView, CeremonyId, GrpcResult, MadeGrpcService, Request,
     Response,
@@ -180,30 +180,23 @@ impl MadeGrpcService {
         }))
     }
 
+    // Observability is two mappers. The composition of a status —
+    // version, uptime, condition, recorder, counters — is
+    // `GetServiceStatusUseCase`'s, and the in-process edition calls
+    // the same one, so the two editions cannot answer differently
+    // about what they are (ADR-014, plan §3.7 G3).
     #[tracing::instrument(name = "rpc.get_status", skip_all)]
     pub(super) async fn handle_get_status(
         &self,
         request: Request<pb::GetStatusRequest>,
     ) -> GrpcResult<pb::GetStatusResponse> {
         link_span_to_metadata(&request);
-        let include_stats = request.into_inner().include_stats;
-        let stats = if include_stats {
-            Some(
-                self.statistics
-                    .snapshot()
-                    .await
-                    .map_err(domain_error_to_status)?,
-            )
-        } else {
-            None
-        };
-
-        Ok(Response::new(pb::GetStatusResponse {
-            version: self.service_version.to_owned(),
-            uptime_seconds: self.started_at.elapsed().as_secs(),
-            health: "healthy".to_owned(),
-            stats: stats.as_ref().map(statistics_to_proto),
-        }))
+        let status = self
+            .get_service_status
+            .execute(request.into_inner().include_stats)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(service_status_to_proto(&status)))
     }
 
     #[tracing::instrument(name = "rpc.get_metrics", skip_all)]
@@ -213,13 +206,13 @@ impl MadeGrpcService {
     ) -> GrpcResult<pb::GetMetricsResponse> {
         link_span_to_metadata(&request);
         let _ = request;
-        let snap = self
-            .statistics
-            .snapshot()
+        let snapshot = self
+            .get_service_metrics
+            .execute()
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::GetMetricsResponse {
-            stats: Some(statistics_to_proto(&snap)),
+            stats: Some(statistics_to_proto(&snapshot)),
         }))
     }
 }

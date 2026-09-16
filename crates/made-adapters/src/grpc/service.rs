@@ -12,6 +12,7 @@ use made_app::usecases::{
     CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
     DeliberateUseCase, DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
+    GetServiceMetricsUseCase, GetServiceStatusUseCase,
     ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
     ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
@@ -20,7 +21,7 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort, StatisticsPort};
+use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort};
 use made_core::value_objects::{AgentId, CeremonyId, OutputContractId, Specialty, TaskId};
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -55,7 +56,7 @@ use crate::yaml::CeremonyDefinitionYaml;
 
 use descriptor_error::DescriptorError;
 use register_agent_descriptor::descriptor_from_register_request;
-use statistics_mapper::statistics_to_proto;
+use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
 mod authoring_handlers;
 mod ceremony_delegation_handlers;
@@ -106,9 +107,13 @@ pub struct MadeGrpcService {
     pub(super) prepare_ceremony_participants: Arc<PrepareCeremonyParticipantsUseCase>,
     pub(super) contract_registry: Arc<dyn ContractRegistryPort>,
     pub(super) auto_dispatch: Arc<AutoDispatchService>,
-    pub(super) statistics: Arc<dyn StatisticsPort>,
-    pub(super) started_at: std::time::Instant,
-    pub(super) service_version: &'static str,
+    /// Observability is two use cases like everything else here.
+    /// The version, the uptime and the counter port they read are the
+    /// builder's to compose, so this service holds no clock and no
+    /// version of its own: an answer assembled in a handler is an
+    /// answer the in-process edition cannot give (ADR-014).
+    pub(super) get_service_status: Arc<GetServiceStatusUseCase>,
+    pub(super) get_service_metrics: Arc<GetServiceMetricsUseCase>,
 }
 
 impl std::fmt::Debug for MadeGrpcService {

@@ -24,6 +24,16 @@ use crate::value_objects::{
 };
 
 pub trait MetricsRecorderPort: Send + Sync {
+    /// What is recording, in one lower-case word — `noop`, `prometheus`.
+    ///
+    /// A status answer that did not say this would look the same whether
+    /// the host wired a registry or nothing at all, which is the one
+    /// question an operator asks of an edition whose recorder is the
+    /// host's choice. Required rather than defaulted: a recorder that
+    /// forgot to name itself would answer `unknown`, and there is no
+    /// honest value for that.
+    fn recorder_name(&self) -> &'static str;
+
     /// Observe the end-to-end wall-clock duration of a deliberation that
     /// ran to completion, regardless of its terminal outcome.
     fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs);
