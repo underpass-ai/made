@@ -40,7 +40,7 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 /// `state_migrations` — and they are left exactly where they are:
 /// nothing here writes them, and dropping a table an operator can
 /// still read is not this command's to do.
-const ALL_TABLES: [Table; 7] = [
+const ALL_TABLES: [Table; 9] = [
     Table::Ceremonies,
     Table::Journal,
     Table::Publications,
@@ -48,6 +48,8 @@ const ALL_TABLES: [Table; 7] = [
     Table::EventLog,
     Table::Snapshots,
     Table::Meta,
+    Table::EventCursors,
+    Table::EventCursorQuarantine,
 ];
 
 /// One open SQLite file, with a small pool so concurrent blocking tasks each

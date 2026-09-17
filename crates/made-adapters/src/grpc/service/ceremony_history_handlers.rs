@@ -7,7 +7,7 @@
 //! current state.
 
 use made_app::usecases::{GenerateCeremonyReportInput, ReadCeremonyEventsInput, ReportTitle};
-use made_core::value_objects::StreamVersion;
+use made_core::value_objects::{CeremonyEventPageLimit, StreamVersion};
 
 use super::{
     domain_error_to_status, generate_ceremony_report_response_from,
@@ -29,17 +29,18 @@ impl MadeGrpcService {
         // turns that into the default. Proto3 has no other way to say
         // an absent scalar, and asking for no records is not a
         // question anyone means.
-        let limit = (request.limit > 0).then_some(request.limit as usize);
+        let limit = if request.limit == 0 {
+            CeremonyEventPageLimit::DEFAULT
+        } else {
+            CeremonyEventPageLimit::new(request.limit as usize).map_err(domain_error_to_status)?
+        };
         let page = self
             .read_ceremony_events
-            .execute(
-                ReadCeremonyEventsInput::new(
-                    ceremony_id,
-                    StreamVersion::new(request.from_version),
-                    limit,
-                )
-                .map_err(domain_error_to_status)?,
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id,
+                StreamVersion::new(request.from_version),
+                limit,
+            ))
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(

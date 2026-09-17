@@ -6,7 +6,7 @@ use made_core::error::DomainError;
 use made_core::ports::CeremonyEventStorePort;
 use made_core::value_objects::{CeremonyId, StreamVersion};
 
-use super::CeremonyJournalVerdict;
+use super::{CeremonyJournalVerdict, ReadWholeCeremonyEventsUseCase};
 
 /// Verifies the hash chain of one session's journal.
 ///
@@ -48,7 +48,9 @@ impl VerifyCeremonyJournalUseCase {
         &self,
         ceremony_id: &CeremonyId,
     ) -> Result<CeremonyJournalVerdict, DomainError> {
-        let records = self.events.read(ceremony_id, StreamVersion::EMPTY).await?;
+        let records = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(ceremony_id)
+            .await?;
         // A stream nothing was ever appended to is a session that was
         // never started. Calling that intact would answer a question
         // about a ceremony that does not exist with a reassurance.
@@ -104,6 +106,7 @@ mod tests {
             &self,
             _stream: &CeremonyId,
             _after: StreamVersion,
+            _limit: made_core::value_objects::CeremonyEventPageLimit,
         ) -> Result<Vec<AuditRecord>, DomainError> {
             Ok(self.records.clone())
         }
@@ -111,7 +114,7 @@ mod tests {
         async fn read_all(
             &self,
             _from: made_core::value_objects::GlobalPosition,
-            _limit: usize,
+            _limit: made_core::value_objects::CeremonyEventPageLimit,
         ) -> Result<Vec<made_core::ports::PositionedRecord>, DomainError> {
             unreachable!("verification reads one stream")
         }
@@ -238,7 +241,11 @@ mod tests {
         let instance = started_instance(&definition());
         store.save(&instance).await.unwrap();
         let records = store
-            .read(instance.id(), StreamVersion::EMPTY)
+            .read(
+                instance.id(),
+                StreamVersion::EMPTY,
+                made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+            )
             .await
             .unwrap();
 

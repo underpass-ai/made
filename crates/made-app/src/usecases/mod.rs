@@ -74,6 +74,7 @@ mod prepare_ceremony_participants_use_case;
 mod publish_ceremony_definition_use_case;
 mod read_ceremony_events_input;
 mod read_ceremony_events_use_case;
+mod read_whole_ceremony_events_use_case;
 mod register_agent;
 mod report_title;
 mod request_ceremony_intervention_input;
@@ -166,6 +167,7 @@ pub use prepare_ceremony_participants_use_case::PrepareCeremonyParticipantsUseCa
 pub use publish_ceremony_definition_use_case::PublishCeremonyDefinitionUseCase;
 pub use read_ceremony_events_input::ReadCeremonyEventsInput;
 pub use read_ceremony_events_use_case::ReadCeremonyEventsUseCase;
+pub use read_whole_ceremony_events_use_case::ReadWholeCeremonyEventsUseCase;
 pub use register_agent::RegisterAgentUseCase;
 pub use report_title::ReportTitle;
 pub use request_ceremony_intervention_input::RequestCeremonyInterventionInput;
