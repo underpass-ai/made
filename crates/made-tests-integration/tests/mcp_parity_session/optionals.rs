@@ -75,20 +75,21 @@ async fn filled_optionals_and_rotated_enums_match_on_shipped_sqlite() {
 
 async fn drive_rich_session(arms: &ParityArms) {
     for (index, (tool, arguments)) in rich_script().into_iter().enumerate() {
+        let expects_provenance = tool == "made_request_ceremony_intervention"
+            && arguments["intervention_id"] == "inspect-metrics";
         let answer = checked(arms, 1_000 + index as u64, tool, arguments).await;
         if tool == "made_design_ceremony" {
             assert_design_optionals(structured(&answer));
         }
-        if tool == "made_request_ceremony_intervention" {
+        if expects_provenance {
             let items = structured(&answer)["interventions"].as_array().unwrap();
-            if let Some(item) = items
+            let item = items
                 .iter()
                 .find(|item| item["intervention_id"] == "inspect-metrics")
-            {
-                assert_eq!(item["provenance"], provenance());
-                assert_eq!(item["kind"], "action");
-                assert_eq!(item["request"]["details"]["selected"], true);
-            }
+                .expect("the intervention carrying provenance is returned");
+            assert_eq!(item["provenance"], provenance());
+            assert_eq!(item["kind"], "action");
+            assert_eq!(item["request"]["details"]["selected"], true);
         }
     }
     assert_opening_contexts(arms).await;
@@ -167,6 +168,9 @@ async fn assert_opening_contexts(arms: &ParityArms) {
         let first = &structured(&events)["records"][0];
         assert_eq!(first["actor"]["kind"], "engine");
         assert_eq!(first["event"]["context"], opening_context());
+        if *ceremony_id == ONE_SHOT_ID {
+            assert_lease(structured(&events), "work", "parity-host", None, 17_000);
+        }
     }
 }
 
@@ -230,20 +234,28 @@ async fn assert_reason_variants(arms: &ParityArms) {
         }
     }
     // Hashes, trace and actor kinds cross the same unchanged record renderer.
-    checked(
+    let events = checked(
         arms,
         1_250,
         "made_read_ceremony_events",
         json!({"ceremony_id": SESSION_ID}),
     )
     .await;
-    checked(
+    assert_lease(
+        structured(&events),
+        "work",
+        "parity-host",
+        Some("parity-work-1"),
+        19_000,
+    );
+    let verdict = checked(
         arms,
         1_251,
         "made_verify_ceremony_journal",
         json!({"ceremony_id": SESSION_ID}),
     )
     .await;
+    assert_eq!(structured(&verdict)["intact"], true);
 }
 
 async fn assert_completion_variants(arms: &ParityArms) {
@@ -280,20 +292,28 @@ async fn assert_completion_variants(arms: &ParityArms) {
                 Value::Null
             }
         );
-        checked(
+        let events = checked(
             arms,
             id + 3,
             "made_read_ceremony_events",
             json!({"ceremony_id": ceremony_id}),
         )
         .await;
-        checked(
+        assert_lease(
+            structured(&events),
+            "work",
+            "parity-results-host",
+            Some(&format!("claim-{status}")),
+            23_000,
+        );
+        let verdict = checked(
             arms,
             id + 4,
             "made_verify_ceremony_journal",
             json!({"ceremony_id": ceremony_id}),
         )
         .await;
+        assert_eq!(structured(&verdict)["intact"], true);
     }
     let metrics = checked(arms, 1_400, "made_get_metrics", json!({})).await;
     let family = structured(&metrics)["registry"]
@@ -315,6 +335,32 @@ async fn assert_completion_variants(arms: &ParityArms) {
             .unwrap_or_else(|| panic!("missing metric for {status}: {family}"));
         assert_eq!(sample["value"], 1);
     }
+}
+
+fn assert_lease(events: &Value, step: &str, owner: &str, key: Option<&str>, ttl_ms: i128) {
+    let lease = events["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|record| &record["event"])
+        .find(|event| event["step_id"] == step && event.get("lease").is_some())
+        .expect("a sealed start event carries the requested lease")["lease"]
+        .clone();
+    assert_eq!(lease["owner_id"], owner);
+    if let Some(key) = key {
+        assert_eq!(lease["idempotency_key"], key);
+    }
+    let acquired = time::OffsetDateTime::parse(
+        lease["acquired_at"].as_str().unwrap(),
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    let expires = time::OffsetDateTime::parse(
+        lease["expires_at"].as_str().unwrap(),
+        &time::format_description::well_known::Rfc3339,
+    )
+    .unwrap();
+    assert_eq!((expires - acquired).whole_milliseconds(), ttl_ms);
 }
 
 #[test]

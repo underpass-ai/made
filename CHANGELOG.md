@@ -16,6 +16,10 @@ operator command.
 
 ### Changed
 
+- Run the complete MCP parity session with filled optionals and all public
+  actor, result, reason, reference and confidence variants on memory and SQLite;
+  compare status text without hiding non-version differences. (#120)
+
 - `made_get_metrics` now returns the same in-process Prometheus registry as
   text and structured families/samples in both editions while preserving the
   legacy statistics. Embedded hosts can share one recorder/reader adapter,
