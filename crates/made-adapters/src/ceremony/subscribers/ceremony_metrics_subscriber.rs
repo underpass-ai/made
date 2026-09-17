@@ -66,7 +66,7 @@ impl CeremonyMetricsSubscriber {
                     failed.iteration.get(),
                     failed.attempt.get(),
                     failed.finished_at,
-                    StepStatus::Failed,
+                    failed.result.status(),
                 );
                 self.metrics
                     .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
