@@ -1,6 +1,6 @@
 use time::OffsetDateTime;
 
-use crate::value_objects::{RoleId, StepId, StepLease};
+use crate::value_objects::{MaxParallel, RoleId, StepId, StepLease};
 
 /// Take a step to run under a lease.
 ///
@@ -13,4 +13,5 @@ pub struct StartStep {
     pub step_id: StepId,
     pub lease: StepLease,
     pub now: OffsetDateTime,
+    pub max_parallel_ceiling: MaxParallel,
 }

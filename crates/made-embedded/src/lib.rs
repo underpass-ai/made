@@ -16,7 +16,7 @@ mod in_process_ceremony_definition_source;
 
 pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;
 pub use callback_ceremony_step_handler::CallbackCeremonyStepHandler;
-pub use embedded_made::EmbeddedMade;
+pub use embedded_made::{EmbeddedCeremonyProjection, EmbeddedMade};
 pub use embedded_made_builder::EmbeddedMadeBuilder;
 pub use in_process_ceremony_definition_source::InProcessCeremonyDefinitionSource;
 

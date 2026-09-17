@@ -502,4 +502,70 @@ mod tests {
             "a roundtable needs more than one role"
         );
     }
+
+    #[test]
+    fn concurrent_group_materializes_one_state_and_first_owner_transition() {
+        use crate::usecases::{
+            CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
+            CeremonyDesignStageEntry,
+        };
+        use made_core::value_objects::{
+            MaxParallel, RoleAction, StateExecution, TransitionTrigger,
+        };
+
+        let base = document();
+        let grouped = CeremonyDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        )
+        .with_stage_entries(vec![CeremonyDesignStageEntry::Group(
+            CeremonyDesignGroup::new(
+                StepId::new("review_group").unwrap(),
+                StateExecution::Concurrent,
+                vec![
+                    CeremonyDesignGroupStep::new(base.stages()[0].clone()),
+                    CeremonyDesignGroupStep::new(base.stages()[1].clone()),
+                ],
+                CeremonyDesignJoin::AnyStepCompleted,
+            ),
+        )])
+        .with_max_parallel(MaxParallel::new(2).unwrap());
+
+        let designed = designed(&grouped);
+        let draft = designed.definition();
+        assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
+        assert_eq!(draft.steps().len(), 2);
+        assert!(draft
+            .steps()
+            .iter()
+            .all(|step| step.state_id().as_str() == "REVIEW_GROUP"));
+        assert_eq!(draft.states()[0].execution(), StateExecution::Concurrent);
+        assert!(draft
+            .guards()
+            .iter()
+            .any(|guard| matches!(guard.condition(), GuardCondition::AnyStepCompleted)));
+        assert!(draft
+            .roles()
+            .iter()
+            .find(|role| role.id().as_str() == "WORKER")
+            .unwrap()
+            .allows(&RoleAction::transition(
+                TransitionTrigger::new("approve_outcome").unwrap()
+            )));
+        assert!(
+            draft.analyze().is_valid(),
+            "{:?}",
+            draft.analyze().findings()
+        );
+    }
 }

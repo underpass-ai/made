@@ -47,6 +47,7 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
         "current_state": state.current_state,
         "completed": state.completed,
         "next_step_id": empty_as_null(state.next_step_id),
+        "claimable_step_ids": state.claimable_step_ids,
         "waiting_for_human": state.waiting_for_human,
         "guard_deferrals": state
             .guard_deferrals

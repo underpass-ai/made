@@ -42,24 +42,21 @@ impl CeremonyInstance {
             });
         }
 
+        let claimable =
+            self.claimable_step_ids_at(definition, command.now, command.max_parallel_ceiling)?;
+        if !claimable.contains(&&command.step_id) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony step is not claimable at the observed time and capacity",
+            });
+        }
+
         let record = self
             .step_records
             .get(&command.step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_instance.step_record",
             })?;
-        if !record.can_be_started_at(command.now) {
-            return Err(DomainError::InvariantViolated {
-                reason: "step lease is still active",
-            });
-        }
-
         let attempt = next_attempt_for_start(record)?;
-        if !step.retry_policy().allows_attempt(attempt) {
-            return Err(DomainError::InvariantViolated {
-                reason: "step retry policy exhausted",
-            });
-        }
         if self
             .idempotency_keys
             .contains(command.lease.idempotency_key())

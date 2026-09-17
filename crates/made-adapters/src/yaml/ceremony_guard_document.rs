@@ -1,7 +1,7 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyGuard, GuardCondition, GuardName, OutputFieldGuardCondition, StepId, StepOutputField,
-    StepRepeatExhaustedGuardCondition, StepStatus,
+    CeremonyGuard, GuardCondition, GuardName, JoinStepCount, OutputFieldGuardCondition, StepId,
+    StepOutputField, StepRepeatExhaustedGuardCondition, StepStatus,
 };
 use serde::Deserialize;
 
@@ -24,6 +24,13 @@ impl CeremonyGuardDocument {
         }
         if self.check == "all_steps_completed" {
             return Ok(GuardCondition::AllStepsCompleted);
+        }
+        if self.check == "any_step_completed" {
+            return Ok(GuardCondition::AnyStepCompleted);
+        }
+        if let Some(count) = self.check.strip_prefix("steps_completed:") {
+            let count = count.parse::<u32>().map_err(|_| unsupported_guard())?;
+            return Ok(GuardCondition::StepsCompleted(JoinStepCount::new(count)?));
         }
         if self.check.starts_with("output_field:") {
             return parse_output_field_guard(&self.check);

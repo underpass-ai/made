@@ -174,6 +174,7 @@ impl Generator {
             step_id: self.any_step(),
             lease: lease(&format!("lease-{key}"), now),
             now,
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         })
     }
 

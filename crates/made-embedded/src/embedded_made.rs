@@ -8,10 +8,11 @@ use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ServiceStatus,
+    CeremonyInstanceView, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase,
+    ServiceStatus,
 };
-use made_core::entities::{CeremonyInstance, Statistics};
+use made_core::entities::{CeremonyDefinition, CeremonyInstance, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
@@ -19,8 +20,8 @@ use made_core::ports::{
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
     MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
-use made_core::value_objects::CeremonyEventPageLimit;
 use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
@@ -44,6 +45,7 @@ pub struct EmbeddedMade {
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
+    max_parallel_ceiling: MaxParallel,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
     /// The operational counters this engine keeps.
     ///
@@ -63,6 +65,31 @@ pub struct EmbeddedMade {
     /// another append to move again.
     event_publisher: Option<Arc<PublishCeremonyEventsUseCase>>,
     event_publisher_consumer: CeremonyEventConsumer,
+}
+
+/// Projects an embedded ceremony using the engine's configured clock and
+/// concurrency ceiling.
+pub trait EmbeddedCeremonyProjection {
+    fn project_instance<'a>(
+        &self,
+        instance: &'a CeremonyInstance,
+        definition: &'a CeremonyDefinition,
+    ) -> Result<CeremonyInstanceView<'a>, DomainError>;
+}
+
+impl EmbeddedCeremonyProjection for EmbeddedMade {
+    fn project_instance<'a>(
+        &self,
+        instance: &'a CeremonyInstance,
+        definition: &'a CeremonyDefinition,
+    ) -> Result<CeremonyInstanceView<'a>, DomainError> {
+        CeremonyInstanceView::project_at(
+            instance,
+            definition,
+            self.clock.now(),
+            self.max_parallel_ceiling,
+        )
+    }
 }
 
 impl EmbeddedMade {
@@ -115,6 +142,7 @@ impl EmbeddedMade {
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
+        max_parallel_ceiling: MaxParallel,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
@@ -163,6 +191,7 @@ impl EmbeddedMade {
             step_handler,
             evidence_source,
             clock,
+            max_parallel_ceiling,
             metrics_recorder,
             statistics,
             memory_reader,

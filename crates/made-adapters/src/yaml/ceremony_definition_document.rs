@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyOutputDefinition, CeremonyVersion, OutputName,
+    CeremonyDescription, CeremonyName, CeremonyOutputDefinition, CeremonyVersion, MaxParallel,
+    OutputName,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -41,6 +42,8 @@ pub(super) struct CeremonyDefinitionDocument {
     timeouts: CeremonyTimeoutsDocument,
     #[serde(default)]
     retry_policies: RetryPoliciesDocument,
+    #[serde(default = "default_max_parallel")]
+    max_parallel: u8,
 }
 
 impl CeremonyDefinitionDocument {
@@ -99,6 +102,11 @@ impl CeremonyDefinitionDocument {
             steps,
             guards,
             roles,
-        ))
+        )
+        .with_max_parallel(MaxParallel::new(self.max_parallel)?))
     }
+}
+
+const fn default_max_parallel() -> u8 {
+    3
 }

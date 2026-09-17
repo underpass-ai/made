@@ -5,9 +5,10 @@ use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyGuard, CeremonyInputDefinition, CeremonyOutputDefinition, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
-    GuardName, OutputFieldGuardCondition, RepeatUntilCondition, RetryPolicy, RoleAction, StateId,
-    StepAttempt, StepHandlerConfig, StepHandlerKind, StepRepeatExhaustedGuardCondition,
-    StepRepeatPolicy, StepStatus, StepTimeout, TransitionTrigger,
+    GuardName, OutputFieldGuardCondition, RepeatUntilCondition, RetryPolicy, RoleAction,
+    StateExecution, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepStatus, StepTimeout,
+    TransitionTrigger,
 };
 use serde_json::{json, Value};
 
@@ -16,7 +17,7 @@ use super::{
     CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS,
     DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
 };
-use crate::usecases::CeremonyDesignExitGuard;
+use crate::usecases::{CeremonyDesignExitGuard, CeremonyDesignJoin, CeremonyDesignStageEntry};
 
 /// The linear topology, assembled atomically from one intent: one state
 /// per stage plus the terminal one, one automated completion guard per
@@ -42,20 +43,21 @@ pub(super) fn build_definition(
         })
         .collect::<BTreeMap<_, _>>();
     let state_ids = document
-        .stages()
+        .stage_entries()
         .iter()
-        .map(|stage| StateId::new(stage.id().as_str().to_ascii_uppercase()))
+        .map(|entry| StateId::new(entry_id(entry).as_str().to_ascii_uppercase()))
         .collect::<Result<Vec<_>, _>>()?;
     let terminal = StateId::new(COMPLETED_STATE)?;
     let mut states = state_ids
         .iter()
         .enumerate()
         .map(|(index, id)| {
-            if index == 0 {
+            let state = if index == 0 {
                 CeremonyState::initial(id.clone())
             } else {
                 CeremonyState::intermediate(id.clone())
-            }
+            };
+            state.with_execution(entry_execution(&document.stage_entries()[index]))
         })
         .collect::<Vec<_>>();
     states.push(CeremonyState::terminal(terminal.clone()));
@@ -75,37 +77,80 @@ pub(super) fn build_definition(
     let mut guards = Vec::new();
     let mut transitions = Vec::new();
     let mut steps = Vec::new();
-    for (index, stage) in document.stages().iter().enumerate() {
-        let completion = GuardName::new(completion_guard(stage.id().as_str()))?;
-        guards.push(CeremonyGuard::new(
-            completion.clone(),
-            GuardCondition::StepStatus {
-                step_id: stage.id().clone(),
-                status: StepStatus::Completed,
+    for (index, entry) in document.stage_entries().iter().enumerate() {
+        let stages = entry_steps(entry);
+        let entry_name = entry_id(entry).as_str();
+        let completion = GuardName::new(completion_guard(entry_name))?;
+        let mut required_guards = Vec::new();
+        match entry {
+            CeremonyDesignStageEntry::Leaf(stage) => {
+                guards.push(CeremonyGuard::new(
+                    completion.clone(),
+                    GuardCondition::StepStatus {
+                        step_id: stage.id().clone(),
+                        status: StepStatus::Completed,
+                    },
+                ));
+                required_guards.push(completion.clone());
+            }
+            CeremonyDesignStageEntry::Group(group) => match group.join() {
+                CeremonyDesignJoin::AllStepsCompleted => {
+                    for stage in &stages {
+                        let name =
+                            GuardName::new(format!("{}_{}_completed", entry_name, stage.id()))?;
+                        guards.push(CeremonyGuard::new(
+                            name.clone(),
+                            GuardCondition::StepStatus {
+                                step_id: stage.id().clone(),
+                                status: StepStatus::Completed,
+                            },
+                        ));
+                        required_guards.push(name);
+                    }
+                }
+                CeremonyDesignJoin::AnyStepCompleted => {
+                    guards.push(CeremonyGuard::new(
+                        completion.clone(),
+                        GuardCondition::AnyStepCompleted,
+                    ));
+                    required_guards.push(completion.clone());
+                }
+                CeremonyDesignJoin::StepsCompleted(count) => {
+                    guards.push(CeremonyGuard::new(
+                        completion.clone(),
+                        GuardCondition::StepsCompleted(count),
+                    ));
+                    required_guards.push(completion.clone());
+                }
             },
-        ));
-        let mut required_guards = vec![completion.clone()];
-        for (guard_index, guard) in stage.exit_guards().iter().enumerate() {
-            let name = GuardName::new(exit_guard_name(stage.id().as_str(), guard_index))?;
-            let condition = match guard {
-                CeremonyDesignExitGuard::OutputField(guard) => {
-                    GuardCondition::OutputField(OutputFieldGuardCondition::new(
-                        guard.step_id().clone(),
-                        guard.output_field().clone(),
-                        guard.expected().clone(),
-                    ))
-                }
-                CeremonyDesignExitGuard::StepRepeatExhausted(guard) => {
-                    GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(
-                        guard.step_id().clone(),
-                    ))
-                }
-            };
-            guards.push(CeremonyGuard::new(name.clone(), condition));
-            required_guards.push(name);
         }
+        if let CeremonyDesignStageEntry::Leaf(stage) = entry {
+            for (guard_index, guard) in stage.exit_guards().iter().enumerate() {
+                let name = GuardName::new(exit_guard_name(stage.id().as_str(), guard_index))?;
+                let condition = match guard {
+                    CeremonyDesignExitGuard::OutputField(guard) => {
+                        GuardCondition::OutputField(OutputFieldGuardCondition::new(
+                            guard.step_id().clone(),
+                            guard.output_field().clone(),
+                            guard.expected().clone(),
+                        ))
+                    }
+                    CeremonyDesignExitGuard::StepRepeatExhausted(guard) => {
+                        GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(
+                            guard.step_id().clone(),
+                        ))
+                    }
+                };
+                guards.push(CeremonyGuard::new(name.clone(), condition));
+                required_guards.push(name);
+            }
+        }
+        let first_owner = stages
+            .first()
+            .expect("validated non-empty group")
+            .owner_role_id();
         let (trigger, owner) = match document.final_approval() {
-            Some(approval) if index + 1 == document.stages().len() => {
+            Some(approval) if index + 1 == document.stage_entries().len() => {
                 let human = GuardName::new(approval_guard_name(document))?;
                 guards.push(CeremonyGuard::new(
                     human.clone(),
@@ -114,18 +159,20 @@ pub(super) fn build_definition(
                 required_guards.push(human);
                 (
                     TransitionTrigger::new(approval_trigger(document))?,
-                    approval.role_id(),
+                    match entry {
+                        CeremonyDesignStageEntry::Group(_) => first_owner,
+                        _ => approval.role_id(),
+                    },
                 )
             }
-            _ => (
-                TransitionTrigger::new(completion.as_str())?,
-                stage.owner_role_id(),
-            ),
+            _ => (TransitionTrigger::new(completion.as_str())?, first_owner),
         };
-        actions
-            .get_mut(stage.owner_role_id())
-            .expect("validated owner")
-            .insert(RoleAction::step(stage.id().clone()));
+        for stage in &stages {
+            actions
+                .get_mut(stage.owner_role_id())
+                .expect("validated owner")
+                .insert(RoleAction::step(stage.id().clone()));
+        }
         actions
             .get_mut(owner)
             .expect("validated transition owner")
@@ -136,28 +183,30 @@ pub(super) fn build_definition(
             trigger,
             required_guards,
         )?);
-        let handler = stage
-            .handler()
-            .cloned()
-            .unwrap_or(StepHandlerKind::new(DEFAULT_HANDLER)?);
-        let mut step = CeremonyStep::new(
-            stage.id().clone(),
-            state_ids[index].clone(),
-            handler,
-            StepHandlerConfig::new(Attributes::new(stage_config(stage, index))?),
-            retry,
-            Some(timeout),
-        );
-        if let Some(repeat) = stage.repeat() {
-            step = step.with_repeat_policy(StepRepeatPolicy::new(
-                RepeatUntilCondition::output_field_equals(
-                    repeat.output_field().clone(),
-                    repeat.equals().clone(),
-                ),
-                repeat.max_iterations(),
-            ));
+        for stage in stages {
+            let handler = stage
+                .handler()
+                .cloned()
+                .unwrap_or(StepHandlerKind::new(DEFAULT_HANDLER)?);
+            let mut step = CeremonyStep::new(
+                stage.id().clone(),
+                state_ids[index].clone(),
+                handler,
+                StepHandlerConfig::new(Attributes::new(stage_config(stage, index))?),
+                retry,
+                Some(timeout),
+            );
+            if let Some(repeat) = stage.repeat() {
+                step = step.with_repeat_policy(StepRepeatPolicy::new(
+                    RepeatUntilCondition::output_field_equals(
+                        repeat.output_field().clone(),
+                        repeat.equals().clone(),
+                    ),
+                    repeat.max_iterations(),
+                ));
+            }
+            steps.push(step);
         }
-        steps.push(step);
     }
     let roles = document
         .participants()
@@ -201,7 +250,31 @@ pub(super) fn build_definition(
         steps,
         guards,
         roles,
-    ))
+    )
+    .with_max_parallel(document.max_parallel()))
+}
+
+fn entry_id(entry: &CeremonyDesignStageEntry) -> &made_core::value_objects::StepId {
+    match entry {
+        CeremonyDesignStageEntry::Leaf(stage) => stage.id(),
+        CeremonyDesignStageEntry::Group(group) => group.id(),
+    }
+}
+
+fn entry_execution(entry: &CeremonyDesignStageEntry) -> StateExecution {
+    match entry {
+        CeremonyDesignStageEntry::Leaf(_) => StateExecution::Sequential,
+        CeremonyDesignStageEntry::Group(group) => group.execution(),
+    }
+}
+
+fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
+    match entry {
+        CeremonyDesignStageEntry::Leaf(stage) => vec![stage],
+        CeremonyDesignStageEntry::Group(group) => {
+            group.steps().iter().map(|step| step.step()).collect()
+        }
+    }
 }
 
 fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, Value> {

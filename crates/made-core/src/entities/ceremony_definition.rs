@@ -13,7 +13,7 @@ use crate::value_objects::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
     CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
     CeremonyStep, CeremonyTransition, CeremonyValidationReport, CeremonyVersion, GuardName,
-    InputName, OutputName, RoleAction, RoleId, StateId, StepExecutionRecord, StepId,
+    InputName, MaxParallel, OutputName, RoleAction, RoleId, StateId, StepExecutionRecord, StepId,
     TransitionTrigger,
 };
 
@@ -39,6 +39,8 @@ pub struct CeremonyDefinition {
     step_order: Vec<StepId>,
     guards: BTreeMap<GuardName, CeremonyGuard>,
     roles: BTreeMap<RoleId, CeremonyRole>,
+    #[serde(default, skip_serializing_if = "MaxParallel::is_default")]
+    max_parallel: MaxParallel,
 }
 
 impl CeremonyDefinition {
@@ -74,6 +76,7 @@ impl CeremonyDefinition {
             step_order,
             guards,
             roles,
+            max_parallel: MaxParallel::default(),
         };
         definition.validate()?;
         Ok(definition)
@@ -139,6 +142,17 @@ impl CeremonyDefinition {
     #[must_use]
     pub fn roles(&self) -> &BTreeMap<RoleId, CeremonyRole> {
         &self.roles
+    }
+
+    #[must_use]
+    pub fn with_max_parallel(mut self, max_parallel: MaxParallel) -> Self {
+        self.max_parallel = max_parallel;
+        self
+    }
+
+    #[must_use]
+    pub fn max_parallel(&self) -> MaxParallel {
+        self.max_parallel
     }
 
     #[must_use]

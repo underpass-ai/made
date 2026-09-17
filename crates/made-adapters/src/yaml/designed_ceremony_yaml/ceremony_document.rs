@@ -22,4 +22,10 @@ pub(super) struct CeremonyDocument {
     pub(super) roles: Vec<RoleDocument>,
     pub(super) timeouts: TimeoutsDocument,
     pub(super) retry_policies: RetryPoliciesDocument,
+    #[serde(skip_serializing_if = "is_default_max_parallel")]
+    pub(super) max_parallel: u8,
+}
+
+const fn is_default_max_parallel(value: &u8) -> bool {
+    *value == 3
 }

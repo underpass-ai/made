@@ -14,7 +14,8 @@
 
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyStep, GuardCondition, GuardName, StepId};
+use made_core::value_objects::{GuardCondition, GuardName, MaxParallel, StepId};
+use time::OffsetDateTime;
 
 use super::ceremony_guard_view::CeremonyGuardView;
 use super::ceremony_step_view::CeremonyStepView;
@@ -29,6 +30,7 @@ pub struct CeremonyInstanceView<'a> {
     transitions: Vec<CeremonyTransitionView<'a>>,
     waiting_for_human: Vec<&'a GuardName>,
     next_step_id: Option<&'a StepId>,
+    claimable_step_ids: Vec<&'a StepId>,
     completed: bool,
 }
 
@@ -42,6 +44,20 @@ impl<'a> CeremonyInstanceView<'a> {
     pub fn project(
         instance: &'a CeremonyInstance,
         definition: &'a CeremonyDefinition,
+    ) -> Result<Self, DomainError> {
+        Self::project_at(
+            instance,
+            definition,
+            OffsetDateTime::UNIX_EPOCH,
+            MaxParallel::SERVER_MAX,
+        )
+    }
+
+    pub fn project_at(
+        instance: &'a CeremonyInstance,
+        definition: &'a CeremonyDefinition,
+        now: OffsetDateTime,
+        host_ceiling: MaxParallel,
     ) -> Result<Self, DomainError> {
         let steps = definition
             .steps_in_declaration_order()
@@ -79,7 +95,7 @@ impl<'a> CeremonyInstanceView<'a> {
                     .collect::<Result<Vec<_>, DomainError>>()?;
                 Ok(CeremonyTransitionView::new(
                     transition,
-                    instance.transition_is_enabled(definition, transition),
+                    instance.transition_is_enabled_at(definition, transition, now),
                     definition.repeat_requirements_are_satisfied_for_transition(
                         transition,
                         instance.step_records(),
@@ -101,14 +117,8 @@ impl<'a> CeremonyInstanceView<'a> {
             .map(CeremonyGuardView::name)
             .collect::<Vec<_>>();
 
-        let next_step_id = definition
-            .steps_for_state(instance.current_state())
-            .find(|step| {
-                instance
-                    .step_record(step.id())
-                    .is_some_and(|record| !record.status().is_success())
-            })
-            .map(CeremonyStep::id);
+        let claimable_step_ids = instance.claimable_step_ids_at(definition, now, host_ceiling)?;
+        let next_step_id = claimable_step_ids.first().copied();
 
         Ok(Self {
             instance,
@@ -117,6 +127,7 @@ impl<'a> CeremonyInstanceView<'a> {
             transitions,
             waiting_for_human,
             next_step_id,
+            claimable_step_ids,
             completed: instance.is_completed(definition),
         })
     }
@@ -173,6 +184,11 @@ impl<'a> CeremonyInstanceView<'a> {
     #[must_use]
     pub fn next_step_id(&self) -> Option<&'a StepId> {
         self.next_step_id
+    }
+
+    #[must_use]
+    pub fn claimable_step_ids(&self) -> &[&'a StepId] {
+        &self.claimable_step_ids
     }
 
     #[must_use]

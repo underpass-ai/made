@@ -41,6 +41,7 @@ mod guard_decisions;
 mod interventions;
 mod invariants;
 mod participant_bindings;
+mod step_claims;
 mod step_execution;
 mod transitions;
 

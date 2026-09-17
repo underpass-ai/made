@@ -20,6 +20,7 @@ use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
     NoopMetricsRecorder, StatisticsPort,
 };
+use made_core::value_objects::MaxParallel;
 
 /// Builder so composition-root wiring is readable even as the number
 /// of use cases grows.
@@ -72,6 +73,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) metrics: Option<Arc<dyn MetricsRecorderPort>>,
     pub(super) service_version: Option<&'static str>,
     pub(super) clock: Option<Arc<dyn ClockPort>>,
+    pub(super) max_parallel_ceiling: Option<MaxParallel>,
 }
 
 use made_core::error::DomainError;
@@ -278,6 +280,12 @@ impl MadeGrpcServiceBuilder {
         self
     }
 
+    #[must_use]
+    pub fn max_parallel_ceiling(mut self, value: MaxParallel) -> Self {
+        self.max_parallel_ceiling = Some(value);
+        self
+    }
+
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
@@ -289,16 +297,19 @@ impl MadeGrpcServiceBuilder {
         let metrics = self
             .metrics
             .unwrap_or_else(|| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>);
+        let clock = self
+            .clock
+            .unwrap_or_else(|| Arc::new(crate::clock::SystemClock::new()) as Arc<dyn ClockPort>);
         let get_service_status = Arc::new(GetServiceStatusUseCase::new(
             statistics.clone(),
             metrics,
             self.service_version.unwrap_or(""),
-            self.clock.unwrap_or_else(|| {
-                Arc::new(crate::clock::SystemClock::new()) as Arc<dyn ClockPort>
-            }),
+            clock.clone(),
         ));
         let get_service_metrics = Arc::new(GetServiceMetricsUseCase::new(statistics));
         Ok(MadeGrpcService {
+            clock,
+            max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             deliberate: required!(self, deliberate),
             orchestrate: required!(self, orchestrate),
             create_council: required!(self, create_council),

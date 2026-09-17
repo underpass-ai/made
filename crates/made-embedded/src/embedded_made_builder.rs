@@ -19,7 +19,7 @@ use made_core::ports::{
     CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MemoryReaderPort,
     MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
 };
-use made_core::value_objects::StepResult;
+use made_core::value_objects::{MaxParallel, StepResult};
 
 use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
 
@@ -45,6 +45,7 @@ pub struct EmbeddedMadeBuilder {
     clock: Option<Arc<dyn ClockPort>>,
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
+    max_parallel_ceiling: Option<MaxParallel>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -179,6 +180,12 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    #[must_use]
+    pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
+        self.max_parallel_ceiling = Some(ceiling);
+        self
+    }
+
     /// Where operational metrics go.
     ///
     /// Left out, the engine wires its own in-process Prometheus
@@ -289,6 +296,7 @@ impl EmbeddedMadeBuilder {
             step_handler,
             evidence_source,
             clock,
+            self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             metrics,
             statistics,
             memory_writer,

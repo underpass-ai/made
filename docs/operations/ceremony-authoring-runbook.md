@@ -15,14 +15,44 @@ timeouts, and how to verify what actually happened.
 
 Nothing below requires starting from a blank file. `made_design_ceremony`
 takes an objective, the participants and the ordered stages and renders a
-linear ceremony YAML with the states, completion guards, role actions,
+ceremony YAML with the states, completion guards, role actions,
 timeouts and retry policy already consistent — then analyses it, exactly as
 `made_validate_ceremony_draft` would. It publishes nothing and starts
 nothing, and both editions serve it: the MCP tool on either backend, and the
 `DesignCeremony` RPC for a client that speaks gRPC directly.
 
-What it will not do is the part this runbook is about. It builds one shape —
-every stage after the one before it — so branching, alternative terminal
+The designer also accepts a grouped stage. Its children become separate steps
+in one state, while the outer stage id names that state:
+
+```json
+{
+  "max_parallel": 3,
+  "stages": [{
+    "id": "review",
+    "group": {
+      "execution": "concurrent",
+      "steps": [
+        {"id":"security_review","owner_role_id":"SECURITY","instructions":"Review security."},
+        {"id":"operations_review","owner_role_id":"OPERATIONS","instructions":"Review operations."}
+      ],
+      "join": {"condition":"all_steps_completed"}
+    }
+  }]
+}
+```
+
+Each concurrent child must have a distinct role owner. Join conditions are
+`all_steps_completed`, `any_step_completed`, or `steps_completed` with a
+positive `count`. The first child's owner owns the generated outgoing
+transition. `max_parallel` belongs to the definition (default 3, range 1–8);
+the server applies the lower of it and `MADE_MAX_PARALLEL` (default 8) without
+rewriting the stored definition. Live clients should fan out over every id in
+`claimable_step_ids`, complete claims in any order, then transition. A live
+lease always blocks the transition, including an early `any_step_completed`
+join; an expired lease does not.
+
+What it will not do is the rest of the part this runbook is about. Its outer
+topology remains ordered, so branching, alternative terminal
 outcomes and anything a stage needs that the intent contract cannot say are
 written by hand, and every key below is what you are writing when you do.
 

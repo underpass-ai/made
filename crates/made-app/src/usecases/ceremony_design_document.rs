@@ -1,12 +1,13 @@
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
-    StepAttempt, StepTimeout,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxParallel,
+    OutputName, StepAttempt, StepTimeout,
 };
 
 use super::ceremony_design_final_approval::CeremonyDesignFinalApproval;
 use super::ceremony_design_participant::CeremonyDesignParticipant;
 use super::ceremony_design_stage::CeremonyDesignStage;
 use super::ceremony_pattern_preset::CeremonyPatternPreset;
+use super::CeremonyDesignStageEntry;
 
 /// What an author wants, before anything mechanical is decided.
 ///
@@ -27,11 +28,13 @@ pub struct CeremonyDesignDocument {
     outputs: Vec<OutputName>,
     participants: Vec<CeremonyDesignParticipant>,
     stages: Vec<CeremonyDesignStage>,
+    stage_entries: Vec<CeremonyDesignStageEntry>,
     final_approval: Option<CeremonyDesignFinalApproval>,
     step_timeout: Option<StepTimeout>,
     max_attempts: Option<StepAttempt>,
     retry_backoff: Option<DurationMs>,
     pattern: Option<CeremonyPatternPreset>,
+    max_parallel: MaxParallel,
 }
 
 impl CeremonyDesignDocument {
@@ -50,6 +53,11 @@ impl CeremonyDesignDocument {
         max_attempts: Option<StepAttempt>,
         retry_backoff: Option<DurationMs>,
     ) -> Self {
+        let stage_entries = stages
+            .iter()
+            .cloned()
+            .map(CeremonyDesignStageEntry::Leaf)
+            .collect();
         Self {
             name,
             version,
@@ -59,11 +67,13 @@ impl CeremonyDesignDocument {
             outputs,
             participants,
             stages,
+            stage_entries,
             final_approval,
             step_timeout,
             max_attempts,
             retry_backoff,
             pattern: None,
+            max_parallel: MaxParallel::default(),
         }
     }
 
@@ -115,6 +125,35 @@ impl CeremonyDesignDocument {
     }
 
     #[must_use]
+    pub fn stage_entries(&self) -> &[CeremonyDesignStageEntry] {
+        &self.stage_entries
+    }
+
+    #[must_use]
+    pub fn with_stage_entries(mut self, entries: Vec<CeremonyDesignStageEntry>) -> Self {
+        self.stages = entries
+            .iter()
+            .filter_map(|entry| match entry {
+                CeremonyDesignStageEntry::Leaf(stage) => Some(stage.clone()),
+                CeremonyDesignStageEntry::Group(_) => None,
+            })
+            .collect();
+        self.stage_entries = entries;
+        self
+    }
+
+    #[must_use]
+    pub fn with_max_parallel(mut self, max_parallel: MaxParallel) -> Self {
+        self.max_parallel = max_parallel;
+        self
+    }
+
+    #[must_use]
+    pub fn max_parallel(&self) -> MaxParallel {
+        self.max_parallel
+    }
+
+    #[must_use]
     pub fn final_approval(&self) -> Option<&CeremonyDesignFinalApproval> {
         self.final_approval.as_ref()
     }
@@ -142,6 +181,12 @@ impl CeremonyDesignDocument {
     pub(crate) fn materialized_with_stages(&self, stages: Vec<CeremonyDesignStage>) -> Self {
         let mut materialized = self.clone();
         materialized.stages = stages;
+        materialized.stage_entries = materialized
+            .stages
+            .iter()
+            .cloned()
+            .map(CeremonyDesignStageEntry::Leaf)
+            .collect();
         materialized.pattern = None;
         materialized
     }

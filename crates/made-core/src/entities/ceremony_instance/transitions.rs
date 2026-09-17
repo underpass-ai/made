@@ -21,6 +21,17 @@ impl CeremonyInstance {
                 .is_ok()
     }
 
+    #[must_use]
+    pub fn transition_is_enabled_at(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+        now: OffsetDateTime,
+    ) -> bool {
+        !self.has_live_step_leases_at(definition, now)
+            && self.transition_is_enabled(definition, transition)
+    }
+
     pub(super) fn require_interventions_resolved_before_entering(
         &self,
         definition: &CeremonyDefinition,

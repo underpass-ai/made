@@ -81,6 +81,15 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
+    pub fn has_live_lease_at(&self, now: OffsetDateTime) -> bool {
+        self.status == StepStatus::InProgress
+            && self
+                .lease
+                .as_ref()
+                .is_some_and(|lease| !lease.is_expired_at(now))
+    }
+
+    #[must_use]
     pub fn with_started(self, lease: StepLease, attempt: StepAttempt) -> Self {
         Self {
             status: StepStatus::InProgress,

@@ -87,6 +87,11 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
         trace_id: String::new(),
         correlation_id: String::new(),
         causation_id: String::new(),
+        claimable_step_ids: view
+            .claimable_step_ids()
+            .iter()
+            .map(|id| id.as_str().to_owned())
+            .collect(),
     }
 }
 

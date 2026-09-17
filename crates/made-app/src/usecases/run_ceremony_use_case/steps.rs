@@ -54,6 +54,7 @@ impl RunCeremonyUseCase {
             step_id: step_id.clone(),
             lease,
             now,
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         });
         // Appended before the handler runs, for the reason the step
         // use case appends twice: a crash while it runs must leave a

@@ -1,5 +1,6 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use crate::entities::CeremonyCommand;
+use crate::value_objects::MaxParallel;
 
 use super::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, DomainError, OffsetDateTime, RoleId,
@@ -18,7 +19,14 @@ impl CeremonyInstance {
         lease: StepLease,
         now: OffsetDateTime,
     ) -> Result<StepAttempt, DomainError> {
-        self.start_step_with(definition, Some(role_id.clone()), step_id, lease, now)
+        self.start_step_with(
+            definition,
+            Some(role_id.clone()),
+            step_id,
+            lease,
+            now,
+            MaxParallel::SERVER_MAX,
+        )
     }
 
     pub fn start_step(
@@ -28,7 +36,14 @@ impl CeremonyInstance {
         lease: StepLease,
         now: OffsetDateTime,
     ) -> Result<StepAttempt, DomainError> {
-        self.start_step_with(definition, None, step_id, lease, now)
+        self.start_step_with(
+            definition,
+            None,
+            step_id,
+            lease,
+            now,
+            MaxParallel::SERVER_MAX,
+        )
     }
 
     fn start_step_with(
@@ -38,12 +53,14 @@ impl CeremonyInstance {
         step_id: &StepId,
         lease: StepLease,
         now: OffsetDateTime,
+        max_parallel_ceiling: MaxParallel,
     ) -> Result<StepAttempt, DomainError> {
         let command = CeremonyCommand::StartStep(StartStep {
             role_id,
             step_id: step_id.clone(),
             lease,
             now,
+            max_parallel_ceiling,
         });
         let events = self.decide(&command, definition)?;
         let attempt = events

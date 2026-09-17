@@ -6,7 +6,7 @@ use made_core::entities::ceremony_commands::StartStep;
 use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
-use made_core::value_objects::{StepAttempt, StepLease};
+use made_core::value_objects::{MaxParallel, StepAttempt, StepLease};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::start_ceremony_step_input::StartCeremonyStepInput;
@@ -16,6 +16,7 @@ pub struct StartCeremonyStepUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
+    max_parallel_ceiling: MaxParallel,
 }
 
 impl std::fmt::Debug for StartCeremonyStepUseCase {
@@ -35,7 +36,14 @@ impl StartCeremonyStepUseCase {
             definitions,
             stream,
             clock,
+            max_parallel_ceiling: MaxParallel::SERVER_MAX,
         }
+    }
+
+    #[must_use]
+    pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
+        self.max_parallel_ceiling = ceiling;
+        self
     }
 
     #[tracing::instrument(
@@ -65,6 +73,7 @@ impl StartCeremonyStepUseCase {
             step_id: input.step_id.clone(),
             lease,
             now,
+            max_parallel_ceiling: self.max_parallel_ceiling,
         });
         // The claim commutes with what other writers do to the session
         // — a second claim of the same step is refused by the lease,

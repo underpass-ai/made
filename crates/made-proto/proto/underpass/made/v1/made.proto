@@ -922,6 +922,9 @@ message CeremonyInstanceState {
   string trace_id = 20;
   string correlation_id = 21;
   string causation_id = 22;
+  // Every step that may be claimed at this observed instant. Ordered by
+  // declaration. `next_step_id` remains the first item for compatibility.
+  repeated string claimable_step_ids = 23;
 }
 
 // What a session was told when it opened, bounded and in order:
@@ -1523,9 +1526,37 @@ message CeremonyDesignStage {
   // value requires at least two agents.
   uint64 review_rounds = 7;
   CeremonyDesignRepeat repeat = 8;
+  CeremonyDesignGroup group = 9;
   repeated CeremonyDesignExitGuard exit_guards = 10;
   // Reserved for P5 role and context-write authoring fields.
   reserved 11 to 13;
+}
+
+// A leaf inside a grouped state. It cannot recursively contain a group or
+// carry stage-exit guards.
+message CeremonyDesignGroupStep {
+  string id = 1;
+  string owner_role_id = 2;
+  string instructions = 3;
+  string handler = 4;
+  optional bool see_prior = 5;
+  optional uint64 num_agents = 6;
+  uint64 review_rounds = 7;
+  CeremonyDesignRepeat repeat = 8;
+}
+
+message CeremonyDesignGroupJoin {
+  // all_steps_completed | any_step_completed | steps_completed
+  string condition = 1;
+  optional uint32 count = 2;
+}
+
+message CeremonyDesignGroup {
+  // sequential | concurrent; empty defaults to sequential.
+  string execution = 1;
+  repeated CeremonyDesignGroupStep steps = 2;
+  CeremonyDesignGroupJoin join = 3;
+  reserved 4;
 }
 
 // The explicit human gate after the final stage. Designing it never
@@ -1563,6 +1594,8 @@ message DesignCeremonyRequest {
   // Retry backoff. Absent takes one second; zero is a legitimate
   // choice, which is why absent has to be tellable from it.
   optional uint64 backoff_seconds = 12;
+  // Definition-level parallelism. Omitted takes 3; valid range is 1..=8.
+  optional uint32 max_parallel = 13;
   // Shipped authoring preset. Mutually exclusive with explicit stages.
   // Empty preserves legacy explicit-stage design.
   string pattern = 14;
