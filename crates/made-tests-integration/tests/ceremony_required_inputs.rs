@@ -107,6 +107,18 @@ fn aggregate_openings_refuse_all_missing_names_and_accept_present_nulls() {
         "missing required ceremony inputs: alpha"
     );
     let supplied = context(json!({"alpha":null,"zeta":false}));
+    assert_eq!(
+        CeremonyInstance::decide_start(
+            id("optional-only"),
+            &definition,
+            context(json!({"extra":"present"})),
+            None,
+            now
+        )
+        .unwrap_err()
+        .to_string(),
+        REASON
+    );
     let events =
         CeremonyInstance::decide_start(id("present"), &definition, supplied.clone(), None, now)
             .unwrap();

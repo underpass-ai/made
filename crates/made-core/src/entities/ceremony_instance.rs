@@ -10,8 +10,8 @@
 //! [`CeremonyEvent`]s it would produce, holding every rule and writing
 //! nothing; [`CeremonyInstance::apply`] writes one event and checks
 //! nothing. [`CeremonyInstance::rehydrate`] folds a whole stream. The
-//! mutators callers already use are thin wrappers over that pair, and
-//! keep their signatures.
+//! mutators callers already use are thin wrappers over that pair. Opening
+//! constructors also return domain refusals when required context is absent.
 
 use std::collections::{BTreeMap, BTreeSet};
 
