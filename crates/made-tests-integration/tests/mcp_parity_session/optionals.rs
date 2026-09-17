@@ -28,6 +28,11 @@ fn rich_script() -> Vec<(&'static str, Value)> {
                 arguments["stages"][0]["see_prior"] = json!(false);
                 arguments["stages"][0]["num_agents"] = json!(1);
                 arguments["stages"][0]["review_rounds"] = json!(0);
+                arguments["stages"][0]["exit_guards"] = json!([
+                    {"kind": "output_field", "step": "draft_options",
+                     "output_field": "decision=key", "equals": {"label": "left=right"}},
+                    {"kind": "step_repeat_exhausted", "step": "draft_options"}
+                ]);
                 arguments["final_approval"]["guard_name"] = json!("release_approved");
                 arguments["final_approval"]["trigger"] = json!("publish_outcome");
             }
@@ -173,6 +178,14 @@ fn assert_design_optionals(answer: &Value) {
     assert!(yaml.contains("see_prior: false"), "{yaml}");
     assert!(yaml.contains("num_agents: 2"), "{yaml}");
     assert!(yaml.contains("rounds: 1"), "{yaml}");
+    assert!(
+        yaml.contains("output_field:draft_options:decision=key="),
+        "{yaml}"
+    );
+    assert!(
+        yaml.contains("step_repeat_exhausted:draft_options"),
+        "{yaml}"
+    );
 }
 
 async fn assert_opening_contexts(arms: &ParityArms) {
