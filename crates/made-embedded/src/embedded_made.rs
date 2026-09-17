@@ -223,28 +223,21 @@ impl EmbeddedMade {
     /// Constructors stay synchronous and side-effect free beyond opening
     /// adapters. A host calls this once from its async startup path before it
     /// accepts work. The cursor makes repeating recovery safe: acknowledged
-    /// records are skipped, failed delivery remains pending for the next
-    /// attempt, and exhausted delivery is quarantined by the publisher use
-    /// case before recovery advances.
+    /// records are skipped. A transient delivery failure is retried in this
+    /// awaited startup call with bounded backoff; an exhausted delivery is
+    /// quarantined by the publisher use case before recovery advances.
     pub async fn recover_event_publication(&self) -> Result<(), DomainError> {
         let Some(publisher) = &self.event_publisher else {
             return Ok(());
         };
         loop {
             let round = publisher
-                .execute(
+                .execute_automatically(
                     &self.event_publisher_consumer,
                     CeremonyEventPageLimit::DEFAULT,
                 )
                 .await?;
-            if round.failed > 0 {
-                return Err(DomainError::InvariantViolated {
-                    reason: "embedded ceremony event publication recovery failed",
-                });
-            }
-            if round.busy
-                || round.delivered + round.quarantined < CeremonyEventPageLimit::DEFAULT.value()
-            {
+            if round.busy || round.confirmed() < CeremonyEventPageLimit::DEFAULT.value() {
                 return Ok(());
             }
         }

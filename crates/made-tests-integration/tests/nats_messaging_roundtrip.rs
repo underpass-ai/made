@@ -103,7 +103,6 @@ async fn ceremony_record_lands_on_its_typed_subject_with_global_position() {
         })
         .await
         .unwrap();
-    client.flush().await.unwrap();
 
     let message = tokio::time::timeout(Duration::from_secs(5), subscriber.next())
         .await

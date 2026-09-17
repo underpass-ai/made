@@ -5,6 +5,7 @@ use async_trait::async_trait;
 use made_adapters::clock::SystemClock;
 use made_adapters::event_sink::JsonLinesCeremonyEventSink;
 use made_adapters::memory::{InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore};
+use made_app::services::CeremonyEventPublisherSubscriber;
 use made_app::usecases::{
     PublishCeremonyEventsUseCase, PullCeremonyEventsInput, PullCeremonyEventsUseCase,
 };
@@ -12,8 +13,8 @@ use made_core::entities::ceremony_events::CeremonyCompleted;
 use made_core::entities::{AuditFact, CeremonyEvent, MetricFamily, MetricSample, MetricsSnapshot};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventTransportPort,
-    MetricsSnapshotPort, PositionedRecord,
+    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
+    CeremonyEventTransportPort, MetricsSnapshotPort, PositionedRecord,
 };
 use made_core::value_objects::{
     AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
@@ -180,6 +181,36 @@ async fn publisher_retries_the_same_event_id_before_advancing() {
     assert_eq!(attempts[2].0, 2);
 }
 
+#[tokio::test(start_paused = true)]
+async fn automatic_subscriber_retries_without_another_append() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let transport = Arc::new(RecordingTransport::failing(1));
+    let consumer = CeremonyEventConsumer::new("automatic-publisher").unwrap();
+    let subscriber = CeremonyEventPublisherSubscriber::new(
+        Arc::new(PublishCeremonyEventsUseCase::new(
+            store,
+            cursors.clone(),
+            transport.clone(),
+            Arc::new(SystemClock::new()),
+        )),
+        consumer.clone(),
+    );
+
+    // One notification only. The transport recovers after its first failure;
+    // no later ceremony append is available to wake publication again.
+    subscriber.observe(&[]).await;
+
+    assert_eq!(
+        cursors.position(&consumer).await.unwrap(),
+        Some(GlobalPosition::new(2).unwrap())
+    );
+    let attempts = transport.attempts.lock().unwrap();
+    assert_eq!(attempts.len(), 3);
+    assert_eq!(attempts[0], attempts[1]);
+    assert_eq!(attempts[2].0, 2);
+}
+
 #[tokio::test]
 async fn a_three_time_failure_is_quarantined_and_made_visible() {
     let store = store_with_two_events().await;
@@ -210,6 +241,65 @@ async fn a_three_time_failure_is_quarantined_and_made_visible() {
     let quarantine = cursors.quarantined(&consumer).await.unwrap();
     assert_eq!(quarantine.len(), 1);
     assert_eq!(quarantine[0].position(), GlobalPosition::FIRST);
+}
+
+#[tokio::test(start_paused = true)]
+async fn automatic_publisher_reports_retries_separately_from_quarantine() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let publisher = PublishCeremonyEventsUseCase::new(
+        store,
+        cursors.clone(),
+        Arc::new(RecordingTransport::failing(usize::MAX)),
+        Arc::new(SystemClock::new()),
+    );
+    let consumer = CeremonyEventConsumer::new("automatic-quarantine").unwrap();
+
+    let summary = publisher
+        .execute_automatically(&consumer, CeremonyEventPageLimit::new(1).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(summary.retried, 3);
+    assert_eq!(summary.failed, 0);
+    assert_eq!(summary.delivered, 0);
+    assert_eq!(summary.quarantined, 1);
+    assert_eq!(summary.confirmed(), 1);
+    assert_eq!(
+        cursors.position(&consumer).await.unwrap(),
+        Some(GlobalPosition::FIRST)
+    );
+}
+
+#[tokio::test(start_paused = true)]
+async fn automatic_page_limit_counts_confirmed_positions_not_failed_attempts() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let transport = Arc::new(RecordingTransport::failing(1));
+    let publisher = PublishCeremonyEventsUseCase::new(
+        store,
+        cursors.clone(),
+        transport.clone(),
+        Arc::new(SystemClock::new()),
+    );
+    let consumer = CeremonyEventConsumer::new("bounded-automatic-publisher").unwrap();
+
+    let summary = publisher
+        .execute_automatically(&consumer, CeremonyEventPageLimit::new(1).unwrap())
+        .await
+        .unwrap();
+
+    assert_eq!(summary.delivered, 1);
+    assert_eq!(summary.retried, 1);
+    assert_eq!(summary.confirmed(), 1);
+    assert_eq!(
+        cursors.position(&consumer).await.unwrap(),
+        Some(GlobalPosition::FIRST)
+    );
+    let attempts = transport.attempts.lock().unwrap();
+    assert_eq!(attempts.len(), 2);
+    assert_eq!(attempts[0], attempts[1]);
+    assert!(attempts.iter().all(|attempt| attempt.0 == 1));
 }
 
 #[tokio::test]

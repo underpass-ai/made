@@ -14,6 +14,7 @@
 mod ceremony_event_transport;
 mod config;
 mod messaging;
+mod nats_publish_client;
 mod nats_subjects;
 mod subscriber;
 
