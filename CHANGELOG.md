@@ -16,6 +16,11 @@ operator command.
 
 ### Changed
 
+- Ceremony runs now export step and handler spans on every execution surface,
+  while provider and judge adapters export concrete identity, stable failure
+  class and upstream-reported token usage. Empty or malformed model content no
+  longer hides token usage that the provider already reported. (#123)
+
 - `made_get_metrics` now returns the same in-process Prometheus registry as
   text and structured families/samples in both editions while preserving the
   legacy statistics. Embedded hosts can share one recorder/reader adapter,
