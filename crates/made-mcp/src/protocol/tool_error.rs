@@ -30,6 +30,12 @@ impl ToolError {
         Self::new(ToolErrorCode::NotFound, message)
     }
 
+    /// Somebody else wrote to what this call was writing to. Reading
+    /// the session again and calling once more is the remedy.
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self::new(ToolErrorCode::Conflict, message)
+    }
+
     /// The engine looked at the call and said no.
     pub fn refused(message: impl Into<String>) -> Self {
         Self::new(ToolErrorCode::Refused, message)
@@ -75,7 +81,7 @@ impl ToolError {
 }
 
 /// The code before the message, so a host that reads only the text
-/// content still sees which of the four this was. The transport never
+/// content still sees which of the five this was. The transport never
 /// appears: `unavailable` says the same thing whether the engine was
 /// across a network or failed to open in this process.
 impl fmt::Display for ToolError {
@@ -108,6 +114,18 @@ mod tests {
         let error = ToolError::refused("no satisfied ceremony transition is available");
         assert_eq!(error.to_structured()["retryable"], json!(false));
         assert_eq!(error.code(), ToolErrorCode::Refused);
+    }
+
+    /// The one code that says "ask again".
+    #[test]
+    fn a_lost_race_is_worth_repeating() {
+        let error = ToolError::conflict("the session moved under this call");
+        assert_eq!(error.to_structured()["retryable"], json!(true));
+        assert_eq!(error.code(), ToolErrorCode::Conflict);
+        assert_eq!(
+            error.to_string(),
+            "conflict: the session moved under this call"
+        );
     }
 
     #[test]

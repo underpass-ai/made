@@ -17,10 +17,15 @@ impl From<Status> for ToolError {
             // and said no; waiting is the remedy for either.
             Code::Unavailable | Code::DeadlineExceeded => Self::unavailable(message),
             Code::InvalidArgument => Self::invalid_request(message),
-            // Everything else — failed preconditions, aborted races,
-            // already-exists, internal — is the engine answering. The
-            // remedy is to change the call or the session, never to
-            // repeat it unchanged.
+            // The server answers `aborted` for one thing only:
+            // `DomainError::Conflict`, a write that lost a race. Its
+            // remedy is to read the session again and repeat the call,
+            // which is the opposite of what `refused` tells a client.
+            Code::Aborted => Self::conflict(message),
+            // Everything else — failed preconditions, already-exists,
+            // internal — is the engine answering. The remedy is to
+            // change the call or the session, never to repeat it
+            // unchanged.
             _ => Self::refused(message),
         }
     }
@@ -32,7 +37,7 @@ mod tests {
     use crate::protocol::ToolErrorCode;
 
     #[test]
-    fn every_status_lands_on_one_of_the_four_codes() {
+    fn every_status_lands_on_one_of_the_five_codes() {
         let cases = [
             (Status::not_found("nope"), ToolErrorCode::NotFound),
             (Status::unavailable("down"), ToolErrorCode::Unavailable),
@@ -45,7 +50,7 @@ mod tests {
                 ToolErrorCode::InvalidRequest,
             ),
             (Status::failed_precondition("no"), ToolErrorCode::Refused),
-            (Status::aborted("raced"), ToolErrorCode::Refused),
+            (Status::aborted("raced"), ToolErrorCode::Conflict),
             (Status::already_exists("twice"), ToolErrorCode::Refused),
             (Status::internal("boom"), ToolErrorCode::Refused),
         ];
