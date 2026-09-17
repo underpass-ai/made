@@ -22,7 +22,7 @@ operator command.
   one trace through every record they seal. Instance reads, event reads, and
   reports expose trace, correlation, and causation identifiers. Reports fold
   and render one bounded stream snapshot, so a concurrent append cannot mix
-  two stream versions in one document. (#71)
+  two stream versions in one document. (#110)
 - MCP sealed records, instance listings, and statistics envelopes now use one
   JSON renderer across the embedded, gRPC, and fixture backends (#101).
 
