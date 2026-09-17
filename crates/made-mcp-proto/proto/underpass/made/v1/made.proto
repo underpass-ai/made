@@ -584,6 +584,21 @@ message GetMetricsRequest {}
 
 message GetMetricsResponse {
   Statistics stats = 1;
+  string registry_text = 2;
+  repeated MetricFamily registry = 3;
+}
+
+message MetricFamily {
+  string name = 1;
+  string help = 2;
+  string type = 3;
+  repeated MetricSample samples = 4;
+}
+
+message MetricSample {
+  string name = 1;
+  map<string, string> labels = 2;
+  google.protobuf.Value value = 3;
 }
 
 message Statistics {

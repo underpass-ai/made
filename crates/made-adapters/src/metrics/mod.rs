@@ -5,5 +5,6 @@
 //! explicit registry rather than a global recorder.
 
 mod prometheus_recorder;
+mod prometheus_snapshot;
 
 pub use prometheus_recorder::PrometheusMetricsRecorder;

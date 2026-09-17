@@ -51,7 +51,7 @@ async fn every_observable_result_keeps_its_status_in_the_stream_metric() {
         .await;
     }
 
-    let rendered = recorder.render();
+    let rendered = recorder.render().unwrap();
     for status in statuses {
         let sample = format!(
             "made_ceremony_step_total{{ceremony=\"result_metrics\",status=\"{}\",step=\"work\"}} 1",

@@ -27,6 +27,7 @@ name = "made-mcp"
 path = "src/main.rs"
 
 [dependencies]
+anyhow = { workspace = true }
 made-adapters = { workspace = true, optional = true }
 made-app = { workspace = true, optional = true }
 made-core = { workspace = true, optional = true }
@@ -44,7 +45,6 @@ tokio = { workspace = true }
 tonic = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
-opentelemetry = { workspace = true }
 uuid = { workspace = true }
 testcontainers = { version = "0.28", optional = true }
 
@@ -71,6 +71,7 @@ grpc = [
     "dep:time",
     "dep:tonic",
 ]
+otel = ["dep:made-adapters", "made-adapters/otel"]
 container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]

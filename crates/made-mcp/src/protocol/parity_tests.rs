@@ -58,7 +58,7 @@ const FACADE_VARIANTS: [(&str, &str); 7] = [
 /// `FACADE_VARIANTS` is — an unlisted public method fails the test rather
 /// than being waved through — and with a reason each, because "not a
 /// capability" is a judgement and a judgement with no reason is a hole.
-const FACADE_NON_CAPABILITIES: [(&str, &str); 5] = [
+const FACADE_NON_CAPABILITIES: [(&str, &str); 7] = [
     (
         "open",
         "opens the durable store the engine runs over; making an engine is not          something an engine does",
@@ -66,6 +66,14 @@ const FACADE_NON_CAPABILITIES: [(&str, &str); 5] = [
     (
         "open_with_event_transport",
         "opens and composes the durable engine with an outbound transport; constructing an engine is not an engine capability",
+    ),
+    (
+        "open_with_metrics",
+        "opens and composes the durable engine with a host-owned observability adapter; constructing an engine is not an engine capability",
+    ),
+    (
+        "open_with_observability",
+        "opens and composes the durable engine with host-owned observability and transport adapters; constructing an engine is not an engine capability",
     ),
     (
         "recover_event_publication",
