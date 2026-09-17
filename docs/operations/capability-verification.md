@@ -53,13 +53,13 @@ process.
 
 ## Composition matrix
 
-| Composition | Executable surface | Default execution | Ceremony durability |
+| Composition | Executable surface | Default execution | Ceremony and memory durability |
 |---|---|---|---|
-| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | SQLite file named by `MADE_MCP_STORE_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); same durability and same published-definition boundary as `EmbeddedMade::open` |
-| `EmbeddedMade::default()` | Rust embedded ceremony facade | `NoopCeremonyStepHandler` | In memory |
-| `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists the ceremony event streams the transcript and the report are folded from, their global order, the folded snapshots and definition publications; mounted definitions remain in memory unless replaced |
-| Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory; optional PostgreSQL covers other aggregates, not ceremonies |
-| Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state and publications use SQLite; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
+| Bundled Codex plugin / isolated embedded `made-mcp` | Active embedded catalog; verify with `tools/list` and discovery | Default handler may be no-op; delegated host execution is explicit | SQLite file named by `MADE_MCP_STORE_PATH` (the launcher defaults it under `$XDG_STATE_HOME/underpass-made`); ceremony state, publications and session memory share the file and the published-definition boundary matches `EmbeddedMade::open` |
+| `EmbeddedMade::default()` | Rust embedded ceremony facade | `NoopCeremonyStepHandler` | Ceremony state is in memory and session memory is explicitly forgetful |
+| `EmbeddedMade::open(path)` | Same Rust facade | No-op unless the host injects a handler | SQLite persists the ceremony event streams the transcript and the report are folded from, their global order, the folded snapshots, definition publications and session memory; mounted definitions remain in memory unless replaced |
+| Deployable `made` without `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state is in memory and memory is forgetful; `MADE_MEMORY=sqlite` is refused without a path |
+| Deployable `made` with `MADE_CEREMONY_STORE_PATH` | gRPC plus the selected MCP backend | Depends on configured server adapters | Ceremony state, publications and session memory use one SQLite engine by default; `MADE_MEMORY=none` disables memory explicitly; multiple processes may share the store only when the filesystem supports SQLite locking and WAL semantics |
 | MCP gRPC backend | Remote RPC-derived catalog; every ceremony tool has an RPC behind it, so what may be absent is whatever the remote build does not serve | Owned by the remote deployment | Determined by the remote deployment, not by the MCP adapter |
 
 For the current repository composition, PostgreSQL persists deliberations,

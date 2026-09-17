@@ -98,6 +98,17 @@ operator command.
 
 ### Added
 
+- **Durable session memory in the ceremony SQLite store.**
+  `SqliteSessionMemory` stores idempotent memory writes through the same
+  SQLite engine as ceremony streams and passes the nine-property memory
+  conformance suite. `EmbeddedMade::open(path)` and the deployable server's
+  path-aware default now preserve decisions across process restarts; the
+  generic `EmbeddedMadeBuilder` remains side-effect-free and forgetful unless
+  a host supplies memory. `with_ceremony_store_and_memory` gives Rust hosts a
+  typed same-adapter entry point. `MADE_MEMORY=none` disables server memory,
+  while explicit `sqlite` without `MADE_CEREMONY_STORE_PATH` fails startup.
+  A two-process `made-mcp` stdio test proves that a new process recalls the
+  earlier process's decision. (#102)
 - `CeremonyEventSubscriberPort` in `made-core`: the one seam a projection hangs
   off. It is told the sealed records of one successful append, in order, each
   with its place in the global order, after the store confirmed and before the

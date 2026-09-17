@@ -57,6 +57,7 @@ and definition version solve different compatibility problems.
 |---|---|
 | ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
 | ceremony event stream and snapshots | `InMemoryCeremonyEventStore` |
+| session memory | `ForgetfulMemory` |
 | step execution | `NoopCeremonyStepHandler` |
 | clock | `SystemClock` |
 | metrics | `PrometheusMetricsRecorder` with its own in-process registry |
@@ -75,9 +76,13 @@ store.
 ## Durable SQLite composition
 
 `EmbeddedMade::open(path)` supplies a
-`SqliteCeremonyStore` to the ceremony-store and definition-publication ports.
+`SqliteCeremonyStore` to the ceremony-store, definition-publication and memory
+ports through `with_ceremony_store_and_memory`. One opened SQLite engine and
+connection pool therefore owns ceremony state and `SqliteSessionMemory`; there
+is no second file or independently configured memory connection.
 That composition persists the ceremony event streams, their global order, the
-folded snapshots and published definitions across process restarts. Its
+folded snapshots, published definitions and session memory across process
+restarts. Its
 crash/reopen behavior is exercised by
 `crates/made-embedded/tests/sqlite_store_api.rs`.
 
@@ -124,6 +129,14 @@ For richer integrations the builder accepts `Arc<dyn ...Port>` for:
 - event subscriber — a projection of the host's own, told the sealed records of
   every append that landed.
 
+`with_ceremony_store_and_memory(adapter)` is the typed durable entry point. The
+adapter must implement `CeremonyEventStorePort`, `CeremonySnapshotStorePort`,
+`MemoryWriterPort` and `MemoryReaderPort`, so a Rust host cannot accidentally
+write session memory to one store and recall it from another. The narrower
+`with_ceremony_store` and `with_memory` methods remain for custom compositions.
+Calling `EmbeddedMadeBuilder::new().build()` remains side-effect-free and uses
+`ForgetfulMemory`; only `EmbeddedMade::open(path)` chooses SQLite defaults.
+
 The host keeps the concrete adapter handle when it needs adapter-specific
 administration. The embedded facade does not expose a service locator.
 
@@ -167,8 +180,9 @@ explicitly, preserving its existing deployment capabilities.
 
 - The embedded facade currently covers ceremonies, not every public gRPC RPC.
 - `EmbeddedMade::default()` is process-local and ephemeral.
-  `EmbeddedMade::open(path)` persists the ceremony store and definition publications,
-  but mounted definitions remain a host-configured boundary.
+  `EmbeddedMade::open(path)` persists the ceremony store, definition
+  publications and session memory, but mounted definitions remain a
+  host-configured boundary.
 - Callbacks execute on the caller's async runtime; MADE does not create
   or hide a runtime.
 - Packaging to crates.io and a stable compatibility commitment wait for the
