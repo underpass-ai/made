@@ -16,6 +16,12 @@ operator command.
 
 ### Changed
 
+- Ceremony definitions and `made_design_ceremony` can require exact JSON from
+  a declared step's current successful output and explicitly route a bounded
+  step-repeat exhaustion. An exhaustion route waives only that step's repeat
+  condition on that transition; all other guards and invariants remain in
+  force. (#116)
+
 - Ceremony telemetry now projects sealed records through metrics, tracing, and
   structured-log subscribers in both editions. One-shot and step-at-a-time
   execution produce the same ceremony metric deltas, and MCP tool calls carry

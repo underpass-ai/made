@@ -2,8 +2,10 @@
 
 Status: Accepted (2026-09-17)
 
-Implementation: planned for phase 3a, P2–P6. Extends ADR-010; its step repeat
-contract remains unchanged except for an explicitly guarded exhaustion exit.
+Implementation: output and exhausted-repeat guards are implemented by P3
+(#116); the remaining primitives are planned for phase 3a P2 and P4–P6.
+Extends ADR-010; its step repeat contract remains unchanged except for an
+explicitly guarded exhaustion exit.
 
 ## Context
 
