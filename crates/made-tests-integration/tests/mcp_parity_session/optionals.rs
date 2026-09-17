@@ -22,6 +22,7 @@ fn rich_script() -> Vec<(&'static str, Value)> {
                 arguments["step_timeout_seconds"] = json!(321);
                 arguments["max_attempts"] = json!(4);
                 arguments["backoff_seconds"] = json!(3);
+                arguments["max_parallel"] = json!(2);
                 for stage in arguments["stages"].as_array_mut().unwrap() {
                     stage["handler"] = json!("host_callback");
                 }
@@ -129,6 +130,65 @@ async fn drive_rich_session(arms: &ParityArms) {
     assert_eq!(structured(&transcript)["entry_count"], 2);
     assert_eq!(structured(&transcript)["entries"][1]["step_id"], "handoff");
     assert_pattern_optional(arms).await;
+    assert_group_optionals(arms).await;
+}
+
+async fn assert_group_optionals(arms: &ParityArms) {
+    for (index, (execution, join)) in [
+        ("sequential", json!({"condition": "all_steps_completed"})),
+        ("concurrent", json!({"condition": "any_step_completed"})),
+        (
+            "concurrent",
+            json!({"condition": "steps_completed", "count": 1}),
+        ),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let arguments = json!({
+            "name": "parity_grouped", "objective": "Review the two perspectives.",
+            "participants": [{"role_id": "A"}, {"role_id": "B"}],
+            "max_parallel": 2,
+            "stages": [{"id": "review", "group": {
+                "execution": execution, "join": join,
+                "steps": [
+                    {"id": "a", "owner_role_id": "A", "instructions": "Inspect the first perspective.", "handler": "host_callback"},
+                    {"id": "b", "owner_role_id": "B", "instructions": "Inspect the second perspective.", "handler": "host_callback"}
+                ]
+            }}]
+        });
+        let answer = checked(
+            arms,
+            2_050 + index as u64,
+            "made_design_ceremony",
+            arguments,
+        )
+        .await;
+        assert_eq!(structured(&answer)["publishable"], true);
+        let yaml = structured(&answer)["definition_yaml"].as_str().unwrap();
+        let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(yaml).unwrap();
+        assert_eq!(definition.max_parallel().get(), 2);
+        let steps = definition.steps_in_declaration_order().collect::<Vec<_>>();
+        assert_eq!(
+            steps
+                .iter()
+                .map(|step| step.id().as_str())
+                .collect::<Vec<_>>(),
+            ["a", "b"]
+        );
+        assert_eq!(steps[0].state_id(), steps[1].state_id());
+        if execution == "concurrent" {
+            assert!(yaml.contains("execution: concurrent"), "{yaml}");
+            assert!(
+                yaml.contains(if index == 1 {
+                    "any_step_completed"
+                } else {
+                    "steps_completed:1"
+                }),
+                "{yaml}"
+            );
+        }
+    }
 }
 
 async fn assert_pattern_optional(arms: &ParityArms) {
@@ -161,6 +221,7 @@ fn assert_design_optionals(answer: &Value) {
     let yaml = answer["definition_yaml"].as_str().unwrap();
     let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(yaml).unwrap();
     assert_eq!(definition.version().as_str(), "2.0");
+    assert_eq!(definition.max_parallel().get(), 2);
     assert!(definition
         .guards()
         .keys()
