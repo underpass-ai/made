@@ -36,6 +36,9 @@ operator command.
 
 ### Fixed
 
+- Refuse terminal ceremony transitions while an intervention remains open,
+  preserve the journal on refusal, and report that move disabled (#109).
+
 - Ceremony design returns a domain draft; one adapter renders YAML for both
   MCP paths, with serialization DTOs and serde_yaml removed from made-app
   (#104). Rust hosts read DesignedCeremony::definition() and render explicitly.
