@@ -2,6 +2,7 @@
 //! use cases in [`made_app`].
 
 use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -237,14 +238,20 @@ impl MadeGrpcService {
 
 type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
-async fn run_with_ceremony_trace<F>(trace: Option<TraceContext>, future: F) -> F::Output
+fn run_with_ceremony_trace<'a, F>(
+    trace: Option<TraceContext>,
+    future: F,
+) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'a>>
 where
-    F: Future,
+    F: Future + Send + 'a,
+    F::Output: 'a,
 {
-    match trace {
-        Some(trace) => CeremonyTraceScope::run(trace, future).await,
-        None => future.await,
-    }
+    Box::pin(async move {
+        match trace {
+            Some(trace) => CeremonyTraceScope::run(trace, future).await,
+            None => future.await,
+        }
+    })
 }
 
 #[async_trait]
