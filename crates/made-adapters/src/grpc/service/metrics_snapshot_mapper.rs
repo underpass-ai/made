@@ -31,7 +31,7 @@ fn metric_sample_to_proto(sample: &MetricSample) -> pb::MetricSample {
 
 fn metric_value_to_proto(value: MetricValue) -> Value {
     let kind = match value {
-        MetricValue::Finite(value) => Kind::NumberValue(value),
+        MetricValue::Finite(value) => Kind::NumberValue(value.get()),
         MetricValue::Nan => Kind::StringValue("NaN".to_owned()),
         MetricValue::PositiveInfinity => Kind::StringValue("+Inf".to_owned()),
         MetricValue::NegativeInfinity => Kind::StringValue("-Inf".to_owned()),

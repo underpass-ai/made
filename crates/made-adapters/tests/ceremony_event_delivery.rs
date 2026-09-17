@@ -48,7 +48,7 @@ impl MetricsSnapshotPort for SnapshotFake {
                 vec![MetricSample::new(
                     MetricName::new("made_ceremony_step_total").unwrap(),
                     labels,
-                    MetricValue::Finite(1.0),
+                    MetricValue::from_f64(1.0),
                 )],
             )],
         ))

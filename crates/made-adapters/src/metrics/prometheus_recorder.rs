@@ -807,7 +807,7 @@ mod tests {
         );
         assert_eq!(
             sample.value(),
-            made_core::value_objects::MetricValue::Finite(1.0)
+            made_core::value_objects::MetricValue::from_f64(1.0)
         );
     }
 

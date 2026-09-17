@@ -87,11 +87,14 @@ fn statistics_view(statistics: &Statistics) -> StatisticsView {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::time::Duration;
 
     use made_app::usecases::ServiceHealth;
-    use made_core::entities::MetricsSnapshot;
-    use made_core::value_objects::{DurationMs, Specialty};
+    use made_core::entities::{MetricFamily, MetricSample, MetricsSnapshot};
+    use made_core::value_objects::{
+        DurationMs, MetricHelp, MetricKind, MetricName, PrometheusText, Specialty,
+    };
 
     use super::*;
 
@@ -182,5 +185,48 @@ mod tests {
             rendered["stats"]["average_duration_ms"].is_f64(),
             "{rendered}"
         );
+    }
+
+    #[test]
+    fn metric_projection_preserves_finite_and_non_finite_values() {
+        let values = [
+            MetricValue::from_f64(2.0),
+            MetricValue::from_f64(2.5),
+            MetricValue::from_f64(f64::NAN),
+            MetricValue::from_f64(f64::INFINITY),
+            MetricValue::from_f64(f64::NEG_INFINITY),
+        ];
+        let samples = values
+            .into_iter()
+            .enumerate()
+            .map(|(index, value)| {
+                MetricSample::new(
+                    MetricName::new(format!("made_projection_{index}")).expect("valid metric name"),
+                    BTreeMap::new(),
+                    value,
+                )
+            })
+            .collect();
+        let snapshot = MetricsSnapshot::new(
+            PrometheusText::new(String::new()),
+            vec![MetricFamily::new(
+                MetricName::new("made_projection").expect("valid metric name"),
+                MetricHelp::new("projection values"),
+                MetricKind::Gauge,
+                samples,
+            )],
+        );
+
+        let rendered = present_service_metrics(&ServiceMetrics::new(Statistics::new(), snapshot));
+        let samples = rendered["registry"][0]["samples"]
+            .as_array()
+            .expect("samples array");
+
+        assert_eq!(samples[0]["value"], json!(2));
+        assert_eq!(samples[1]["value"], json!(2.5));
+        assert_eq!(samples[2]["value"], json!("NaN"));
+        assert_eq!(samples[3]["value"], json!("+Inf"));
+        assert_eq!(samples[4]["value"], json!("-Inf"));
+        assert!(samples.iter().all(|sample| !sample["value"].is_null()));
     }
 }

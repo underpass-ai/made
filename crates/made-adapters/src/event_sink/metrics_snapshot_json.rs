@@ -34,9 +34,10 @@ fn metric_sample_json(sample: &MetricSample) -> Value {
 
 fn metric_value_json(value: MetricValue) -> Value {
     match value {
-        MetricValue::Finite(value) => {
-            serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
-        }
+        MetricValue::Finite(value) => Value::Number(
+            serde_json::Number::from_f64(value.get())
+                .expect("FiniteMetricValue always contains a JSON number"),
+        ),
         MetricValue::Nan => Value::String("NaN".to_owned()),
         MetricValue::PositiveInfinity => Value::String("+Inf".to_owned()),
         MetricValue::NegativeInfinity => Value::String("-Inf".to_owned()),

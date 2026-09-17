@@ -24,6 +24,7 @@ mod evidence_reference;
 mod execution_id;
 mod execution_outcome;
 mod execution_status;
+mod finite_metric_value;
 mod ids;
 mod llm_error_kind;
 mod memory;
@@ -102,6 +103,7 @@ pub use evidence_reference::EvidenceReference;
 pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;
 pub use execution_status::ExecutionStatus;
+pub use finite_metric_value::FiniteMetricValue;
 pub use ids::{AgentId, CouncilId, EventId, ProposalId, TaskId};
 pub use llm_error_kind::LlmErrorKind;
 pub use memory::{
