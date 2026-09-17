@@ -18,7 +18,7 @@ operator command.
 
 - Durable named ceremony-event cursors now drive explicit pull acknowledgements,
   NATS publication on `made.ceremony.<event_type>`, and the embedded JSONL sink
-  selected with `MADE_MCP_EVENT_SINK_PATH` (#70).
+  selected with `MADE_MCP_EVENT_SINK_PATH` (#108).
 
 - MCP sealed records, instance listings, and statistics envelopes now use one
   JSON renderer across the embedded, gRPC, and fixture backends (#101).
