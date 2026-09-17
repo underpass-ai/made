@@ -245,14 +245,16 @@ impl MadeMcpServer {
         // `Struct` cannot tell `1` from `1.0`: settled at ingress, or
         // settled by whichever engine answered (issue #75).
         //
-        // Then the published schema decides what is acceptable. The
-        // engine is never reached, so the refusal is worded by this
-        // layer rather than by whichever mapper looked first, and
-        // everything either step reports is the call's own fault
-        // (ADR-014, plan §3.6 F4).
+        // Then the published schema decides what is acceptable, and
+        // hands back the arguments it accepted: an unset optional
+        // written as `null` is dropped and the host's own `_`-prefixed
+        // keys are left behind, so no request mapper needs an opinion
+        // about either. The engine is never reached, so the refusal is
+        // worded by this layer rather than by whichever mapper looked
+        // first, and everything either step reports is the call's own
+        // fault (ADR-014, plan §3.6 F4).
         let accepted = normalise_numbers(received).and_then(|arguments| {
-            validate_tool_request(name, &arguments, |tool| self.backend.supports_tool(tool))?;
-            Ok(arguments)
+            validate_tool_request(name, &arguments, |tool| self.backend.supports_tool(tool))
         });
         // What is recorded is what ran; a call that never ran is
         // recorded as the client wrote it.

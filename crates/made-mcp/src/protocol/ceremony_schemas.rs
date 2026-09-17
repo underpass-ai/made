@@ -6,7 +6,7 @@ use super::default_lease_ttl::{
     lease_ttl_rule, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS,
     RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
-use super::schema_primitives::{attributes_schema, string_schema};
+use super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
 use super::struct_numbers::STRUCT_NUMBER_RULE;
 
 mod ceremony_history_schemas;
@@ -39,17 +39,33 @@ pub(super) fn start_published_ceremony_schema() -> Value {
 
 /// Either a published version, named, or a document supplied for the
 /// occasion. Both at once has no sensible reading, and the schema says
-/// so rather than leaving the server to discover it.
+/// so — in `oneOf`, not only in prose, so a caller's own validator
+/// refuses what this server refuses.
 pub(super) fn ceremony_definition_ref_schema(description: &str) -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "description": description,
+        "description": format!(
+            "{description} Exactly one of the two ways to name a definition: \
+             `ceremony` with `version`, or `definition_yaml` on its own."
+        ),
         "properties": {
             "ceremony": string_schema("Name of a published definition. Give this with `version`."),
             "version": string_schema("Version of a published definition. Give this with `ceremony`."),
             "definition_yaml": string_schema("A definition supplied for the comparison, instead of naming a published one.")
-        }
+        },
+        "oneOf": [
+            {
+                "required": ["ceremony", "version"],
+                "not": { "required": ["definition_yaml"] }
+            },
+            {
+                "required": ["definition_yaml"],
+                "not": {
+                    "anyOf": [{ "required": ["ceremony"] }, { "required": ["version"] }]
+                }
+            }
+        ]
     })
 }
 
@@ -295,6 +311,17 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "required": ["ceremony_id", "step_id", "actor_kind", "status"],
+        // What `status` is decides whether `error` belongs, and the
+        // schema says so rather than only describing it: a failure with
+        // no reason is not a report, and a reason attached to a success
+        // is a contradiction the engine would have to resolve for the
+        // caller.
+        "if": {
+            "required": ["status"],
+            "properties": { "status": { "enum": ["failed"] } }
+        },
+        "then": { "required": ["error"] },
+        "else": { "not": { "required": ["error"] } },
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "step_id": string_schema("Previously claimed ceremony step receiving the host's result."),
@@ -351,9 +378,13 @@ pub(super) fn ceremony_guard_deferral_schema() -> Value {
             "reconsider_when": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
-                "description": "Concrete conditions that would make it appropriate to ask again."
+                "description": format!(
+                    "Concrete conditions that would make it appropriate to ask again. \
+                     At least one, at most {MAX_ID_LIST_ITEMS}, each distinct."
+                )
             }
         }
     })
@@ -472,9 +503,13 @@ pub(super) fn request_ceremony_intervention_schema() -> Value {
             "target_role_ids": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
-                "description": "Optional responding roles. Omit to address the whole table."
+                "description": format!(
+                    "Optional responding roles. Omit to address the whole table; \
+                     at most {MAX_ID_LIST_ITEMS}, each distinct."
+                )
             },
             "message": string_schema("Participant's request in their own words."),
             "details": attributes_schema("Structured request context or evidence references."),

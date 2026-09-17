@@ -2,6 +2,15 @@ use serde_json::{json, Value};
 
 use super::struct_numbers::STRUCT_NUMBER_RULE;
 
+/// The most entries any caller-supplied list of ids carries.
+///
+/// A bound, and a stated one: every array that declares `uniqueItems`
+/// is checked for duplicates, and a list whose length the caller
+/// decides is a list somebody can make expensive. A hundred is far more
+/// than a session has seats, open items or conditions, and well under
+/// anything worth worrying about.
+pub(super) const MAX_ID_LIST_ITEMS: usize = 100;
+
 /// An object MADE does not look inside — a context, an output, an
 /// evidence request, a payload, a bag of attributes.
 ///

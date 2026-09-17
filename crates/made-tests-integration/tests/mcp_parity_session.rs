@@ -740,6 +740,57 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
             "made_generate_ceremony_report",
             json!({ "ceremony_ids": [SESSION_ID], "title": "   " }),
         ),
+        // The three constraints the schemas used to promise in prose
+        // only, and the bound every caller-supplied list of ids now
+        // declares.
+        (
+            "both ways of naming a definition at once",
+            "made_diff_ceremony_definitions",
+            json!({
+                "before": { "ceremony": "parity_published", "version": "1.0", "definition_yaml": PARITY_CEREMONY },
+                "after": { "definition_yaml": ALTERED_CEREMONY },
+            }),
+        ),
+        (
+            "a table with nobody seated at it",
+            "made_bind_ceremony_participants",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "seating": {},
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "a failed step that does not say why",
+            "made_complete_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "status": "failed",
+            }),
+        ),
+        (
+            "a report naming more sessions than the bound allows",
+            "made_generate_ceremony_report",
+            json!({
+                "ceremony_ids": (0..101)
+                    .map(|index| format!("session-{index}"))
+                    .collect::<Vec<_>>(),
+            }),
+        ),
+        (
+            "a number no double can count one at a time",
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": "out-of-range-session",
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": { "ticket": 1e17 },
+            }),
+        ),
     ];
 
     for (index, (what, tool, arguments)) in refused.into_iter().enumerate() {
@@ -799,6 +850,43 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
             "a listing asked for with no arguments",
             "made_list_ceremony_instances",
             json!({}),
+        ),
+        // A host generated from a typed SDK writes an unset optional as
+        // `null`, and MCP reserves `_meta` on any object it defines.
+        // Both were refused, on both arms, so pointing a client
+        // somewhere else did not help it.
+        (
+            "an intervention whose unset optionals are written as null",
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": "optional-fields-session",
+                "intervention_id": null,
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "Anything else?",
+                "target_role_ids": null,
+                "details": null,
+            }),
+        ),
+        (
+            "a listing carrying the host's own `_meta`",
+            "made_list_ceremony_instances",
+            json!({ "_meta": { "progressToken": 7 } }),
+        ),
+        // A whole number written with a decimal point is read whole on
+        // both arms, so it is accepted rather than refused as a
+        // non-integer where an integer is declared.
+        (
+            "a lease length written with a decimal point",
+            "made_run_ceremony",
+            json!({
+                "ceremony_id": "decimal-lease-session",
+                "definition_yaml": ONE_SHOT_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "lease_ttl_ms": 60000.0,
+            }),
         ),
     ];
 

@@ -354,6 +354,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                     },
                     "seating": {
                         "type": "object",
+                        "minProperties": 1,
                         "description": "Role id to specialty. At least one seat; an empty object would change nothing.",
                         "additionalProperties": { "type": "string" }
                     }

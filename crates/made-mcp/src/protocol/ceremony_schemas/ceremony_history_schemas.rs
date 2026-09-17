@@ -7,7 +7,7 @@
 
 use serde_json::{json, Value};
 
-use crate::protocol::schema_primitives::string_schema;
+use crate::protocol::schema_primitives::{string_schema, MAX_ID_LIST_ITEMS};
 
 /// Whether a report is stored anywhere. It is not, on either edition:
 /// ADR-006 makes a report a projection of persisted state, and nothing
@@ -33,9 +33,13 @@ pub(crate) fn ceremony_report_schema() -> Value {
             "ceremony_ids": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": string_schema("Identifier of a persisted ceremony instance."),
-                "description": "One or more ceremony ids, reported in caller order. Empty lists, duplicates and unknown ids are errors."
+                "description": format!(
+                    "One or more ceremony ids, reported in caller order, at most \
+                     {MAX_ID_LIST_ITEMS}. Empty lists, duplicates and unknown ids are errors."
+                )
             },
             "title": string_schema("Optional report heading. It affects presentation only and is escaped as untrusted Markdown text.")
         }
