@@ -39,7 +39,7 @@ fn bad_request(message: String) -> ToolError {
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
 /// `tool_success_result`).
-#[allow(clippy::too_many_lines)] // one arm per tool; splitting fragments the dispatch table
+#[allow(clippy::too_many_lines, clippy::result_large_err)] // one arm per tool; tonic's interceptor contract returns Status
 pub(crate) async fn dispatch(
     channel: Channel,
     name: &str,

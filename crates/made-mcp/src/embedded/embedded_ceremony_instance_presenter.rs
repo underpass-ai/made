@@ -29,29 +29,8 @@ impl EmbeddedCeremonyInstancePresenter {
         // gRPC adapter renders the same view, which is what keeps one
         // working session from looking like two depending on how a
         // client reached it.
-        let view = CeremonyInstanceView::project(&instance, &definition)?;
-
-        let steps = view
-            .steps()
-            .iter()
-            .map(|step| {
-                json!({
-                    "step_id": step.step().id().as_str(),
-                    "state_id": step.step().state_id().as_str(),
-                    "status": step.record().status().as_label(),
-                    "attempt": step.record().attempt().get(),
-                    "output": step.record().output().attributes().as_map(),
-                    "error": step.record().error_message().map(ToString::to_string),
-                    "iteration": step.record().iteration().get(),
-                    "repeat_condition_satisfied": step.repeat_condition_satisfied(),
-                    "repeat_limit_reached": step.repeat_limit_reached(),
-                    "repeat_max_iterations": step
-                        .step()
-                        .repeat_policy()
-                        .map(|policy| policy.max_iterations().get()),
-                })
-            })
-            .collect::<Vec<_>>();
+        let view = CeremonyInstanceView::project(instance, &definition)?;
+        let steps = step_values(&view);
         let transitions = view
             .transitions()
             .iter()
@@ -78,9 +57,9 @@ impl EmbeddedCeremonyInstancePresenter {
             .map(|name| name.as_str())
             .collect::<Vec<_>>();
         let next_step_id = view.next_step_id().map(StepId::as_str);
-        let interventions = intervention_values(&instance);
-        let open_intervention_ids = open_intervention_ids(&instance);
-        let guard_deferrals = guard_deferral_values(&instance);
+        let interventions = intervention_values(instance);
+        let open_intervention_ids = open_intervention_ids(instance);
+        let guard_deferrals = guard_deferral_values(instance);
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
@@ -141,6 +120,29 @@ impl EmbeddedCeremonyInstancePresenter {
                 .collect::<Vec<_>>(),
         }))
     }
+}
+
+fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
+    view.steps()
+        .iter()
+        .map(|step| {
+            json!({
+                "step_id": step.step().id().as_str(),
+                "state_id": step.step().state_id().as_str(),
+                "status": step.record().status().as_label(),
+                "attempt": step.record().attempt().get(),
+                "output": step.record().output().attributes().as_map(),
+                "error": step.record().error_message().map(ToString::to_string),
+                "iteration": step.record().iteration().get(),
+                "repeat_condition_satisfied": step.repeat_condition_satisfied(),
+                "repeat_limit_reached": step.repeat_limit_reached(),
+                "repeat_max_iterations": step
+                    .step()
+                    .repeat_policy()
+                    .map(|policy| policy.max_iterations().get()),
+            })
+        })
+        .collect()
 }
 
 /// What earlier sessions in this scope decided, as this one was told.
