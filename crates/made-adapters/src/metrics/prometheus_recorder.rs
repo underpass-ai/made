@@ -321,10 +321,8 @@ impl PrometheusMetricsRecorder {
         })
     }
 
-    /// Render every registered metric in the Prometheus text exposition
-    /// format. Returns an empty string (and logs) on the practically
-    /// impossible event that text encoding fails, so the `/metrics`
-    /// handler can never be brought down by instrumentation.
+    /// Render Prometheus text; an encoding failure logs and returns empty so
+    /// instrumentation cannot bring down the `/metrics` handler.
     #[must_use]
     pub fn render(&self) -> String {
         let metric_families = self.registry.gather();
@@ -560,8 +558,7 @@ fn register_histogram(
     Ok(metric)
 }
 
-/// Define a labelled counter, register it on `registry`, and return the
-/// handle. See [`register_histogram`] for the pairing rationale.
+/// Define and register a labelled counter; see [`register_histogram`].
 fn register_counter(
     registry: &Registry,
     name: &str,
@@ -576,8 +573,7 @@ fn register_counter(
     Ok(metric)
 }
 
-/// Define a labelled gauge, register it on `registry`, and return the
-/// handle. See [`register_histogram`] for the pairing rationale.
+/// Define and register a labelled gauge; see [`register_histogram`].
 fn register_gauge(
     registry: &Registry,
     name: &str,
