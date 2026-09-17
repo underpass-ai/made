@@ -100,6 +100,9 @@ pub(super) fn render_markdown(
         section(&mut markdown, "Reasons", instance.reasons())?;
         section(&mut markdown, "Audit journal", &session.journal)?;
     }
+    let document_end = markdown.trim_end().len();
+    markdown.truncate(document_end);
+    markdown.push('\n');
     Ok(markdown)
 }
 
