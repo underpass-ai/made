@@ -16,6 +16,9 @@ operator command.
 
 ### Changed
 
+- Preserve waiting-for-human and cancelled step-result labels in ceremony
+  metrics instead of counting both as failed results. (#118)
+
 - Move ceremony step execution into a child module of the application driver,
   preserving method bodies and all execution behavior. (#115)
 
