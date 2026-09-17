@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 import sys
@@ -68,7 +69,21 @@ def git_output(*args: str) -> str | None:
     return result.stdout.strip() if result.returncode == 0 else None
 
 
-def verify(allow_unpublished_tag: bool) -> str:
+def verify_release_tag(release_ref: str, require_release_tag: bool) -> None:
+    """Branches validate metadata; release invocations also bind it to HEAD."""
+    tag_commit = git_output("rev-parse", "--verify", f"refs/tags/{release_ref}^{{commit}}")
+    head = git_output("rev-parse", "HEAD")
+    if not require_release_tag and (tag_commit is None or tag_commit != head):
+        return
+    if tag_commit is None:
+        fail(f"annotated release tag {release_ref} is not available")
+    if git_output("cat-file", "-t", f"refs/tags/{release_ref}") != "tag":
+        fail(f"release tag {release_ref} must be annotated")
+    if tag_commit != head:
+        fail(f"{release_ref} resolves to {tag_commit}, not HEAD {head}")
+
+
+def verify(require_release_tag: bool = False) -> str:
     version = workspace_version()
     release_ref = f"v{version}"
 
@@ -163,34 +178,74 @@ def verify(allow_unpublished_tag: bool) -> str:
     if 'bash scripts/release/advance-marketplace.sh "${version}"' not in release_text:
         fail("release command does not wait for assets and advance marketplace")
 
-    tag_commit = git_output("rev-parse", "--verify", f"refs/tags/{release_ref}^{{commit}}")
-    if tag_commit is None:
-        if not allow_unpublished_tag:
-            fail(f"annotated release tag {release_ref} is not available")
-    else:
-        if git_output("cat-file", "-t", f"refs/tags/{release_ref}") != "tag":
-            fail(f"release tag {release_ref} must be annotated")
-        head = git_output("rev-parse", "HEAD")
-        if tag_commit != head:
-            fail(f"{release_ref} resolves to {tag_commit}, not HEAD {head}")
-        difference = subprocess.run(
-            ["git", "diff", "--quiet", tag_commit, "HEAD", "--", "plugins/made"],
-            cwd=ROOT,
-            check=False,
-        )
-        if difference.returncode != 0:
-            fail("Claude and Codex marketplace mappings do not resolve the same plugin tree")
+    if os.environ.get("GITHUB_REF_TYPE") == "tag":
+        if os.environ.get("GITHUB_REF_NAME") != release_ref:
+            fail(f"release ref must match manifest version {release_ref}")
+        require_release_tag = True
+    verify_release_tag(release_ref, require_release_tag)
 
     return version
 
 
+def self_test() -> None:
+    import tempfile
+    from unittest.mock import patch
+
+    # Real Git objects distinguish annotated tags, lightweight tags and branches.
+    (ROOT / "tmp").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="marketplace-contract-", dir=ROOT / "tmp") as scratch:
+        repository = Path(scratch)
+
+        def git(*args: str) -> None:
+            subprocess.run(["git", "-C", scratch, *args], check=True, capture_output=True)
+
+        git("init")
+        git("config", "user.name", "Contract test")
+        git("config", "user.email", "contract@example.invalid")
+        git("commit", "--allow-empty", "-m", "release")
+        with patch.dict(globals(), ROOT=repository):
+            def expect_failure(required: bool, message: str) -> None:
+                try:
+                    verify_release_tag("v1.2.3", required)
+                except SystemExit as error:
+                    assert message in str(error), error
+                else:
+                    raise AssertionError(f"expected refusal: {message}")
+
+            verify_release_tag("v1.2.3", False)
+            expect_failure(True, "not available")
+            git("tag", "v1.2.3")
+            expect_failure(False, "must be annotated")
+            git("tag", "-d", "v1.2.3")
+            git("tag", "-a", "v1.2.3", "-m", "release")
+            verify_release_tag("v1.2.3", False)
+            verify_release_tag("v1.2.3", True)
+            git("commit", "--allow-empty", "-m", "development")
+            verify_release_tag("v1.2.3", False)
+            expect_failure(True, "not HEAD")
+    print("MADE marketplace tag self-test passed: 7 release/branch cases")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--allow-unpublished-tag", action="store_true")
+    parser.add_argument(
+        "--allow-unpublished-tag", action="store_true",
+        help="compatibility option: branch checks allow unpublished tags by default",
+    )
+    parser.add_argument(
+        "--require-release-tag", action="store_true",
+        help="require the annotated manifest-version tag to resolve to HEAD",
+    )
+    parser.add_argument("--self-test", action="store_true")
     parser.add_argument("--print-assets", action="store_true")
     args = parser.parse_args()
 
-    version = verify(args.allow_unpublished_tag)
+    if args.self_test:
+        self_test()
+        return
+    if args.allow_unpublished_tag and args.require_release_tag:
+        parser.error("--allow-unpublished-tag and --require-release-tag are mutually exclusive")
+    version = verify(args.require_release_tag)
     if args.print_assets:
         print("\n".join(expected_assets(version)))
     else:
