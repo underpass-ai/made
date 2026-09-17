@@ -64,7 +64,9 @@ fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView, ToolError>
         correlation_id: record.correlation_id().map(|id| id.as_str().to_owned()),
         causation_id: record.causation_id().map(|id| id.as_str().to_owned()),
         trace_id: record.trace_id().map(str::to_owned),
-        event_schema_version: record.event_schema_version().map(|version| version.get()),
+        event_schema_version: record
+            .event_schema_version()
+            .map(made_core::value_objects::EventSchemaVersion::get),
         event,
         previous_record_hash: record
             .previous_record_hash()
