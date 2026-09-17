@@ -366,15 +366,55 @@ mod tests {
         );
     }
 
+    /// A number the domain holds reaches the wire as a number.
+    ///
+    /// The test this replaces was called
+    /// `nan_in_json_is_carried_as_null_on_the_wire` and inserted
+    /// `1.0`: it never held a NaN, so it never showed what happened to
+    /// one, and it promised a clamp this direction does not perform.
     #[test]
-    fn nan_in_json_is_carried_as_null_on_the_wire() {
-        // Domain invariant: scores never hold NaN, but arbitrary
-        // payload values may; we clamp to Null to keep the wire valid.
+    fn a_number_the_domain_holds_reaches_the_wire_as_one() {
         let mut m = BTreeMap::new();
-        let bad = serde_json::Number::from_f64(1.0).unwrap();
-        m.insert("n".to_owned(), Value::Number(bad));
+        m.insert("n".to_owned(), json!(1.5));
         let pb = map_to_struct(&m);
-        assert!(pb.fields.contains_key("n"));
+        assert_eq!(
+            pb.fields["n"].kind,
+            Some(PbKind::NumberValue(1.5)),
+            "a fraction crosses as the double it is"
+        );
+    }
+
+    /// And the direction that can actually carry one: a `Struct` field
+    /// whose double is not a number at all.
+    ///
+    /// Refused rather than read as `null`, which is what this used to
+    /// do. `null` is a value a caller can write on purpose, and a
+    /// reader cannot tell one they wrote from one the mapper invented —
+    /// while the in-process arm can never produce either, because JSON
+    /// has no way to write a NaN. Refusing is what keeps the two arms
+    /// agreeing about what a payload may contain.
+    #[test]
+    fn a_double_that_is_not_a_number_is_refused_rather_than_read_as_null() {
+        for not_a_number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut fields: BTreeMap<String, PbValue> = BTreeMap::new();
+            fields.insert(
+                "n".to_owned(),
+                PbValue {
+                    kind: Some(PbKind::NumberValue(not_a_number)),
+                },
+            );
+            let error = attributes_from_struct(Some(PbStruct { fields })).unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    DomainError::OutOfRange {
+                        field: "attributes.number",
+                        ..
+                    }
+                ),
+                "{not_a_number} should be refused, not {error:?}"
+            );
+        }
     }
 
     #[test]
