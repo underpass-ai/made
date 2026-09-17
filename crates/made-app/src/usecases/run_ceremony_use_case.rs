@@ -21,8 +21,7 @@ use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
 
-/// Whole-millisecond duration between two clock readings, saturating at
-/// zero so a non-monotonic clock can never produce a negative latency.
+/// Drives a declarative ceremony through its steps and transitions.
 pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     stream: Arc<SessionStream>,
@@ -54,9 +53,8 @@ impl RunCeremonyUseCase {
         }
     }
 
-    /// Attach a metrics recorder so ceremony outcomes, durations and step
-    /// status are counted. The composition root wires the real recorder;
-    /// the default no-op keeps tests and bespoke uses free of one.
+    /// Count driver refusals and blocked transitions that produce no event.
+    /// Event subscribers record committed outcomes, durations and step status.
     #[must_use]
     pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = metrics;

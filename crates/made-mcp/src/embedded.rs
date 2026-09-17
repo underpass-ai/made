@@ -39,7 +39,9 @@ use made_core::value_objects::{CeremonyId, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext};
+use crate::backend::{
+    MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
+};
 use crate::protocol::{
     tool_success_result, ToolError, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
@@ -145,6 +147,15 @@ impl EmbeddedMadeMcpBackend {
 impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     fn backend_name(&self) -> &'static str {
         EMBEDDED_BACKEND_NAME
+    }
+
+    fn initialize(&self) -> MadeMcpBackendInitializationFuture<'_> {
+        Box::pin(async {
+            self.made
+                .recover_event_publication()
+                .await
+                .map_err(|error| format!("embedded event publication recovery failed: {error}"))
+        })
     }
 
     fn supports_tool(&self, name: &str) -> bool {

@@ -168,6 +168,15 @@ Use both layers deliberately:
 - MCP logs: adapter startup, request failures and tool-call diagnostics;
 - referenced artifacts: the actual external evidence produced by a stage.
 
+Set `MADE_MCP_EVENT_SINK_PATH` before startup to append the complete global
+ceremony feed to a JSON Lines file. Each line carries `global_position` beside
+the sealed record. Delivery progress lives in the same SQLite store under a
+durable consumer cursor. Startup drains any records left pending by a stopped
+process before stdio begins, so recovery does not depend on another ceremony
+append. If the sink cannot accept a pending record, startup fails visibly and
+leaves that cursor position unacknowledged for the next attempt; after three
+failed attempts the normal publisher quarantine rule applies.
+
 A consumer that needs a finalization notification should observe the terminal
 ceremony event in the sealed stream, not infer completion from a UI window
 closing. Exporting that event to an external observer is a separate host
