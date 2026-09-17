@@ -63,12 +63,14 @@ impl MadeGrpcService {
         let designed = DesignCeremonyUseCase::new()
             .execute(&document)
             .map_err(domain_error_to_status)?;
-        let draft = CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())
-            .map_err(domain_error_to_status)?;
+        let draft = designed.definition();
+        let yaml =
+            crate::yaml::DesignedCeremonyYaml::render(&designed).map_err(domain_error_to_status)?;
         let report = draft.analyze();
         Ok(Response::new(design_ceremony_response_from(
             &designed,
-            &CeremonyDraftView::project(&draft, &report),
+            yaml,
+            &CeremonyDraftView::project(draft, &report),
         )))
     }
 

@@ -238,8 +238,10 @@ mod tests {
     /// The whole point of rendering YAML: it goes back through the
     /// same parser every hand-authored draft does.
     fn parsed(designed: &DesignedCeremony) -> CeremonyDefinitionDraft {
-        CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())
-            .expect("a designed draft parses")
+        CeremonyDefinitionYaml::parse_draft_str(
+            &made_adapters::yaml::DesignedCeremonyYaml::render(designed).unwrap(),
+        )
+        .expect("a designed draft parses")
     }
 
     #[test]
@@ -249,11 +251,15 @@ mod tests {
         let report = draft.analyze();
 
         assert!(report.is_valid(), "{:?}", report.findings());
-        assert!(designed.definition_yaml().contains("type: human"));
-        assert!(designed
-            .definition_yaml()
+        assert!(made_adapters::yaml::DesignedCeremonyYaml::render(&designed)
+            .unwrap()
+            .contains("type: human"));
+        assert!(made_adapters::yaml::DesignedCeremonyYaml::render(&designed)
+            .unwrap()
             .contains("check: manual_approval"));
-        assert!(designed.definition_yaml().contains("rounds: 1"));
+        assert!(made_adapters::yaml::DesignedCeremonyYaml::render(&designed)
+            .unwrap()
+            .contains("rounds: 1"));
         assert!(designed.final_approval_required());
     }
 
@@ -267,7 +273,7 @@ mod tests {
         });
 
         let designed = design(&value).unwrap();
-        let yaml = designed.definition_yaml();
+        let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed).unwrap();
 
         assert!(yaml.contains("max_iterations: 5"), "{yaml}");
         assert!(yaml.contains("output_field: ready"), "{yaml}");

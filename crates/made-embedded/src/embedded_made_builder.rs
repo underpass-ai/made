@@ -91,6 +91,28 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    /// Keep ceremony state and session memory in one typed adapter.
+    ///
+    /// This is the durable Rust-host entry point. Its bounds make a split
+    /// composition impossible: the stream, its snapshot cache, memory writes
+    /// and memory reads all come from the same object. Hosts that deliberately
+    /// compose separate adapters can still use [`Self::with_ceremony_store`]
+    /// and [`Self::with_memory`].
+    #[must_use]
+    pub fn with_ceremony_store_and_memory<S>(mut self, adapter: Arc<S>) -> Self
+    where
+        S: CeremonyEventStorePort
+            + CeremonySnapshotStorePort
+            + MemoryWriterPort
+            + MemoryReaderPort
+            + 'static,
+    {
+        self.events = Some(adapter.clone());
+        self.snapshots = Some(adapter.clone());
+        self.memory = Some((adapter.clone(), adapter));
+        self
+    }
+
     /// Project something of the host's own from every sealed event.
     ///
     /// The engine's own projections are wired whatever the host does;
