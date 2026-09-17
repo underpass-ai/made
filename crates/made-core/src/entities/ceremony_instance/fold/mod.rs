@@ -42,7 +42,7 @@ impl CeremonyInstance {
             CeremonyEvent::StepCompleted(completed) => self.apply_step_completed(completed),
             CeremonyEvent::StepFailed(failed) => self.apply_step_failed(failed),
             CeremonyEvent::StateIterationStarted(started) => {
-                self.apply_state_iteration_started(started)
+                self.apply_state_iteration_started(started);
             }
             CeremonyEvent::TransitionApplied(applied) => self.apply_transition_applied(applied),
             CeremonyEvent::InterventionRequested(requested) => {

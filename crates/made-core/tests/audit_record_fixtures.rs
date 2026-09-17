@@ -7,8 +7,8 @@
 //! bytes it was pinned with, so a payload cannot change shape without
 //! bumping its version.
 
-use made_core::entities::{AuditChain, AuditRecord, CeremonyEventReader};
-use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion};
+use made_core::entities::{AuditChain, AuditRecord, CeremonyEvent, CeremonyEventReader};
+use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion, StateIteration};
 
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
@@ -175,4 +175,63 @@ fn pre_p2_sealed_event_chain_keeps_hashes_and_absent_coordinates() {
         let event = serde_json::to_value(record.event().unwrap()).unwrap();
         assert!(event.get("state_iteration").is_none());
     }
+}
+
+#[test]
+fn changed_payloads_require_coordinate_presence_to_match_their_version() {
+    for event_type in [
+        AuditEventType::StepStarted,
+        AuditEventType::StepCompleted,
+        AuditEventType::StepFailed,
+        AuditEventType::TransitionApplied,
+    ] {
+        let old: serde_json::Value = serde_json::from_str(golden(event_type).unwrap()).unwrap();
+        assert!(CeremonyEventReader::read(event_type, EventSchemaVersion::V1, old.clone()).is_ok());
+        assert!(
+            CeremonyEventReader::read(event_type, EventSchemaVersion::V2, old.clone()).is_err()
+        );
+
+        let mut current = old;
+        if event_type == AuditEventType::TransitionApplied {
+            current["transition"]["state_iteration"] = 1.into();
+        } else {
+            current["state_iteration"] = 1.into();
+        }
+        assert!(
+            CeremonyEventReader::read(event_type, EventSchemaVersion::V1, current.clone()).is_err()
+        );
+        let event = CeremonyEventReader::read(event_type, EventSchemaVersion::V2, current)
+            .unwrap_or_else(|error| panic!("{event_type:?}: {error}"));
+        assert_eq!(event.schema_version(), EventSchemaVersion::V2);
+    }
+}
+
+#[test]
+fn a_legacy_imported_snapshot_defaults_every_state_coordinate_to_one() {
+    let stored: serde_json::Value =
+        serde_json::from_str(golden(AuditEventType::InstanceImported).unwrap()).unwrap();
+    let event = CeremonyEventReader::read(
+        AuditEventType::InstanceImported,
+        EventSchemaVersion::V1,
+        stored.clone(),
+    )
+    .unwrap();
+    let CeremonyEvent::InstanceImported(imported) = event else {
+        panic!("the pinned payload is an import");
+    };
+
+    assert_eq!(
+        imported.snapshot.current_state_iteration(),
+        StateIteration::FIRST
+    );
+    assert!(imported
+        .snapshot
+        .step_records()
+        .values()
+        .all(|record| record.state_iteration() == StateIteration::FIRST));
+    assert_eq!(
+        serde_json::to_value(CeremonyEvent::InstanceImported(imported)).unwrap(),
+        stored,
+        "reopening the legacy snapshot must not synthesize coordinates"
+    );
 }

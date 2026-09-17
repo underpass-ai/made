@@ -61,7 +61,7 @@ impl CeremonyDefinitionParts<'_> {
                         DomainError::InvariantViolated {
                             reason: "state repeat condition must reference a step in that state",
                         },
-                    ))
+                    ));
                 }
                 Some(_) => {}
             }
