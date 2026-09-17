@@ -13,6 +13,22 @@
 //! current span becomes a fresh root — that is honest default
 //! behaviour for self-originated work.
 
+use made_core::value_objects::TraceContext;
+use tonic::Request;
+
+/// Parse the application trace scope carried by an incoming request.
+///
+/// This is independent of the optional OpenTelemetry bridge: audit records
+/// need the caller's trace identity in every build, including builds with no
+/// exporter installed.
+pub(super) fn trace_context_from_metadata<T>(request: &Request<T>) -> Option<TraceContext> {
+    request
+        .metadata()
+        .get("traceparent")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| TraceContext::parse(value).ok())
+}
+
 #[cfg(feature = "otel")]
 pub use enabled::link_span_to_metadata;
 

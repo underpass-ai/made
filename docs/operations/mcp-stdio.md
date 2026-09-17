@@ -459,6 +459,7 @@ advertises 43 executable tools:
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
 | `made_design_ceremony`          | `DesignCeremony`                      | Turn an author's structured intent into an unpublished ceremony draft. |
 | `made_read_ceremony_events`     | `ReadCeremonyEvents`                  | Read the sealed event stream of one session by position, with its hash chain. |
+| `made_pull_ceremony_events`     | `PullCeremonyEvents`                  | Read a named global feed; reading replays until `acknowledge_through` commits a position. |
 | `made_get_ceremony_transcript`  | `GetCeremonyTranscript`               | Read what the completed steps of one session contributed. |
 | `made_generate_ceremony_report` | `GenerateCeremonyReport`              | Render the Markdown report of one session from its persisted state. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |

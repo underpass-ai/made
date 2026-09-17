@@ -44,7 +44,7 @@ tonic = { workspace = true, optional = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 opentelemetry = { workspace = true }
-uuid = { workspace = true, optional = true }
+uuid = { workspace = true }
 testcontainers = { version = "0.28", optional = true }
 
 [features]
@@ -62,7 +62,6 @@ embedded = [
     "dep:serde",
     "dep:serde_yaml",
     "dep:time",
-    "dep:uuid",
 ]
 grpc = [
     "dep:made-mcp-proto",
@@ -70,7 +69,6 @@ grpc = [
     "dep:prost-types",
     "dep:time",
     "dep:tonic",
-    "dep:uuid",
 ]
 container-tests = ["dep:testcontainers"]
 

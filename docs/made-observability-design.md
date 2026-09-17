@@ -150,15 +150,13 @@ themselves (`agents/openai.rs`, `agents/vllm.rs`, `agents/anthropic.rs`).
 
 ### 2.5 Ceremonies
 
-All five families are recorded in
-`made-app/src/usecases/run_ceremony_use_case.rs` and **only** there. It is the
-one-shot driver behind `RunCeremony`: a host that claims, runs and completes
-steps itself moves none of them, in either edition. `run_step` acquires a
-`StepLease` in-loop and calls `execute_handler`; a step that fails aborts the
-whole run with `InvariantViolated` — there is no retry loop inside this use
-case, so "retries" would have to be measured as repeated `attempt` numbers
-across re-driven runs. `iteration` identifies a successful semantic repeat
-(ADR-010) and must not be aggregated as retry pressure.
+Thirteen families are projected from sealed records by
+`CeremonyMetricsSubscriber`, so the one-shot and step-at-a-time drivers record
+the same facts. `made_ceremony_transition_blocked_total` remains a command
+outcome because no record is sealed when a transition cannot be selected;
+the other non-completion outcomes are recorded at their one-shot return
+points. `attempt` identifies execution retries and `iteration` identifies a
+successful semantic repeat (ADR-010); they are separate labels and counters.
 
 | Metric | Type | Labels | Recorded at | Why it matters |
 |---|---|---|---|---|
@@ -167,6 +165,15 @@ across re-driven runs. `iteration` identifies a successful semantic repeat
 | `made_ceremony_step_duration_seconds` | histogram | `ceremony`, `step` | `execute`, clock delta around `run_step` | Slow-step isolation (a deliberating step vs a decision step). `step` is a bounded set per definition. |
 | `made_ceremony_step_total` | counter | `ceremony`, `step`, `status` | `execute`, from `step_result.status()` | Per-step volume and failure split; denominator for step failure rate. |
 | `made_ceremony_transition_blocked_total` | counter | `ceremony`, `from_state` | `execute`, where `next_satisfied_transition` returns `None` | Distinguishes a deadlocked state machine (guard never satisfiable) from waiting on a pending event. Guard names stay off the labels — guard sets can be large and varied; surface them on the trace instead. |
+| `made_ceremony_step_claimed_total` | counter | `ceremony`, `step` | `step_started` | Work claimed through either execution driver. |
+| `made_ceremony_step_attempt_total` | counter | `ceremony`, `step`, `attempt` | `step_started.attempt` | Retry pressure without conflating semantic iterations. |
+| `made_ceremony_step_iteration_total` | counter | `ceremony`, `step`, `iteration` | `step_started.iteration` | Repeating-stage activity by semantic iteration. |
+| `made_ceremony_guard_decided_total` | counter | `ceremony`, `guard`, `decision` | `human_approval_recorded`, `human_deferral_recorded` | Human decision volume and approval/deferral split. |
+| `made_ceremony_intervention_opened_total` | counter | `ceremony`, `kind` | `intervention_requested` | Dynamic agenda demand by bounded intervention kind. |
+| `made_ceremony_intervention_answered_total` | counter | `ceremony` | `intervention_responded` | Whether opened interventions receive answers. |
+| `made_ceremony_transition_applied_total` | counter | `ceremony`, `from_state`, `to_state` | `transition_applied` | Actual state-machine movement. |
+| `made_ceremony_lease_acquired_total` | counter | `ceremony`, `step` | `step_started.lease` | Delegated or server-owned claims that acquired a lease. |
+| `made_ceremony_lease_expired_total` | counter | `ceremony`, `step` | a `step_started` record replacing an unfinished lease | Failover after a worker did not finish before its lease elapsed. |
 
 > Cut: `ceremony_lease_contention_total` (this driver is single-driver;
 > idempotency rejection happens across distributed re-drives at the repository
@@ -357,7 +364,7 @@ statistics adapters.
 | Judge | `observe_judge_latency`, `observe_judge_score`, `record_judge_error`, `record_judge_tokens` | `made-adapters/src/agents/judge.rs`, `support_judge.rs` |
 | Scoring mode | `record_scoring_mode` | `made-adapters/src/scoring/judge_aware_scoring.rs` |
 | Providers | `observe_provider_request`, `inc_provider_in_flight`, `dec_provider_in_flight`, `record_provider_error`, `record_provider_tokens` | `made-adapters/src/agents/instrument.rs` (RAII guard) and `agents/{openai,vllm,anthropic}.rs` |
-| Ceremonies | `record_ceremony_outcome`, `observe_ceremony_duration`, `observe_ceremony_step_duration`, `record_ceremony_step`, `record_ceremony_transition_blocked` | `made-app/src/usecases/run_ceremony_use_case.rs` |
+| Ceremonies | the fourteen `record_ceremony_*` / `observe_ceremony_*` methods | `made-adapters/src/ceremony/subscribers/ceremony_metrics_subscriber.rs`; command outcomes with no sealed record remain in `made-app/src/usecases/run_ceremony_use_case.rs` |
 | Messaging | `observe_nats_publish`, `record_nats_publish_error` | `made-adapters/src/nats/messaging.rs` |
 | Pool | `set_postgres_pool_in_use` | `made/src/health.rs::metrics`, sampled at scrape |
 | Who is recording | `recorder_name` | read by `GetServiceStatusUseCase`; see §8 |
@@ -386,8 +393,6 @@ it.
 
 | What | Slice |
 |---|---|
-| Ceremony metrics from the event stream instead of thirteen hand-placed calls in one use case, so the step-at-a-time path records too; and the families that path needs — step claimed, **attempt**, iteration, guard decided, intervention opened/answered, transition applied, lease acquired/expired, fan-out width | G1 |
-| `trace_id`, `correlation_id` and `causation_id` on every sealed record, and exposed on the instance read, the event read and the report | G2 |
 | The embedded edition's registry on the `made_get_metrics` answer (and the gRPC backend answering the same registry instead of the five legacy counters); OTLP export from `made-mcp`; a JSON-lines file sink; a default log filter that does not drop `made_app` | G3 |
 | A span per ceremony step in the one-shot driver, a span for the step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |
@@ -426,16 +431,11 @@ what has code behind it is listed here.
 |---|---|---|
 | `MetricsRecorderPort` | `PrometheusMetricsRecorder` with its own `Registry`, wired by `EmbeddedMadeBuilder` when the host wires none | `PrometheusMetricsRecorder`, wired in `compose.rs` |
 | Exposition | none — the registry is in process and nothing renders it over a socket | `GET /metrics` on the HTTP port |
-| Families that move | the five ceremony families, and only from `RunCeremony` (§2.5) | every family in §2 |
+| Families that move | the fourteen ceremony families through both execution drivers (§2.5) | every family in §2 |
 | `made_get_status` / `made_get_metrics` | served, over `GetServiceStatusUseCase` / `GetServiceMetricsUseCase` | served, over the same two use cases |
 | Traces | none — no exporter is wired | OTLP over gRPC behind the `otel` feature |
 
-Three things follow, and each is a gap rather than a claim:
-
-- **The step-at-a-time path records nothing, in either edition.** The five
-  ceremony families are recorded from `RunCeremonyUseCase`; a host that
-  claims, runs and completes steps itself moves no counter. G1 is where that
-  changes.
+Two things follow, and each is a gap rather than a claim:
 - **`made_get_metrics` answers with the `Statistics` counters, not the
   registry.** Deliberations and orchestrations are council work, so an
   embedded engine reports them at zero however many sessions it runs — every

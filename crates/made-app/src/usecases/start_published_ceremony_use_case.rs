@@ -72,7 +72,7 @@ impl StartPublishedCeremonyUseCase {
             input.context,
             recalled,
             now,
-        );
+        )?;
         self.stream
             .open(opening, actor, now)
             .await

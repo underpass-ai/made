@@ -27,11 +27,14 @@ pub(super) fn handles(name: &str) -> bool {
 }
 
 #[allow(clippy::too_many_lines)] // One auditable match arm per general gRPC tool.
-pub(super) async fn dispatch(
-    client: &mut MadeServiceClient<Channel>,
+pub(super) async fn dispatch<I>(
+    client: &mut MadeServiceClient<tonic::service::interceptor::InterceptedService<Channel, I>>,
     name: &str,
     arguments: &Value,
-) -> Result<Value, ToolError> {
+) -> Result<Value, ToolError>
+where
+    I: tonic::service::Interceptor + Clone + Send + Sync + 'static,
+{
     match name {
         "made_deliberate" => {
             let request =

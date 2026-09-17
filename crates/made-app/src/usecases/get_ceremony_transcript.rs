@@ -3,8 +3,9 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyId, CeremonyTranscript, StreamVersion};
+use made_core::value_objects::{CeremonyId, CeremonyTranscript};
 
+use super::ReadWholeCeremonyEventsUseCase;
 use crate::services::ceremony_transcript_projection;
 
 /// The ordered contributions the steps of one session produced.
@@ -42,7 +43,9 @@ impl GetCeremonyTranscriptUseCase {
     /// session it named exists and has said nothing yet.
     #[tracing::instrument(name = "get_ceremony_transcript", skip_all, fields(ceremony_id = %id))]
     pub async fn execute(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        let records = self.events.read(id, StreamVersion::EMPTY).await?;
+        let records = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(id)
+            .await?;
         if records.is_empty() {
             return Err(DomainError::NotFound {
                 what: "ceremony_instance",

@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use super::MadeMcpToolFuture;
+use super::{MadeMcpToolFuture, ToolTraceContext};
 
 /// Single seam between the MCP request dispatcher and any concrete
 /// transport.
@@ -16,4 +16,13 @@ pub trait MadeMcpToolBackend: Send + Sync {
     }
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a>;
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        _trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        self.call_tool(name, arguments)
+    }
 }

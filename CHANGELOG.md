@@ -16,6 +16,18 @@ operator command.
 
 ### Changed
 
+- Ceremony telemetry now projects sealed records through metrics, tracing, and
+  structured-log subscribers in both editions. One-shot and step-at-a-time
+  execution produce the same ceremony metric deltas, and MCP tool calls carry
+  one trace through every record they seal. Instance reads, event reads, and
+  reports expose trace, correlation, and causation identifiers. Reports fold
+  and render one bounded stream snapshot, so a concurrent append cannot mix
+  two stream versions in one document. (#110)
+
+- Durable named ceremony-event cursors now drive explicit pull acknowledgements,
+  NATS publication on `made.ceremony.<event_type>`, and the embedded JSONL sink
+  selected with `MADE_MCP_EVENT_SINK_PATH` (#108).
+
 - MCP sealed records, instance listings, and statistics envelopes now use one
   JSON renderer across the embedded, gRPC, and fixture backends (#101).
 
@@ -27,11 +39,30 @@ operator command.
   Service uptime now reaches its use case through the clock port, and metrics
   recorder identity is carried by a value object (#112).
 
+- Split the embedded facade into definition, execution and participation
+  modules while preserving its public methods and behavior (#111).
+
+- Separate ceremony design validation and definition construction into private
+  modules while retaining the existing authoring behavior (#107).
+
+- Split ceremony definition collection validation and guard evaluation into
+  private modules without changing behavior (#106).
+
+- Split ceremony step configuration parsing into focused private modules,
+  preserving defaults and validation for phase 3a work (#105).
+
 - Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
   primitives; record their contracts and the deferred pattern work before
   implementation (#90).
 
 ### Fixed
+
+- Reject ceremony starts and runs with missing required context inputs before
+  opening an instance or event stream; report every missing name through all
+  execution surfaces and allow the same id to be retried with complete input (#113).
+
+- Refuse terminal ceremony transitions while an intervention remains open,
+  preserve the journal on refusal, and report that move disabled (#109).
 
 - Ceremony design returns a domain draft; one adapter renders YAML for both
   MCP paths, with serialization DTOs and serde_yaml removed from made-app

@@ -275,10 +275,15 @@ fn review() -> Vec<CeremonyCommand> {
             approved_by_kind: AuditActorKind::Human,
             now: at(18),
         }),
+        CeremonyCommand::CloseIntervention(CloseIntervention {
+            intervention_id: item("item-2"),
+            role_id: role("facilitator"),
+            now: at(19),
+        }),
         CeremonyCommand::ApplyTransition(ApplyTransition {
             role_id: Some(role("facilitator")),
             trigger: trigger("approve"),
-            now: at(19),
+            now: at(20),
         }),
     ]
 }
@@ -292,7 +297,8 @@ fn a_session_is_the_fold_of_the_events_its_mutations_decided() {
         CeremonyContext::empty(),
         None,
         OPENED_AT,
-    );
+    )
+    .expect("required ceremony inputs");
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 

@@ -10,11 +10,11 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-#[cfg(feature = "embedded")]
-use crate::backend::EMBEDDED_STORE_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
+use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext, MCP_BACKEND_ENV};
+#[cfg(feature = "embedded")]
+use crate::backend::{EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -87,7 +87,19 @@ impl MadeMcpServer {
     #[cfg(feature = "embedded")]
     pub fn embedded_sqlite(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         let path = path.as_ref();
-        let made = made_embedded::EmbeddedMade::open(path).map_err(|error| {
+        let sink = std::env::var(EVENT_SINK_PATH_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(made_adapters::event_sink::JsonLinesCeremonyEventSink::open)
+            .transpose()
+            .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
+        let made = match sink {
+            Some(sink) => {
+                made_embedded::EmbeddedMade::open_with_event_transport(path, Arc::new(sink))
+            }
+            None => made_embedded::EmbeddedMade::open(path),
+        }
+        .map_err(|error| {
             format!(
                 "failed to open the embedded SQLite ceremony store at `{}`: {error}",
                 path.display()
@@ -234,6 +246,19 @@ impl MadeMcpServer {
             return jsonrpc_error(id, -32602, "tools/call requires params.name");
         };
         let received = params.get("arguments").unwrap_or(&Value::Null);
+        let supplied_traceparent = params
+            .get("_meta")
+            .and_then(Value::as_object)
+            .and_then(|meta| meta.get("traceparent"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                received
+                    .get("_meta")
+                    .and_then(Value::as_object)
+                    .and_then(|meta| meta.get("traceparent"))
+                    .and_then(Value::as_str)
+            });
+        let trace = ToolTraceContext::from_metadata(supplied_traceparent);
         let start = Instant::now();
 
         // Two things happen to a call before a backend sees it, and
@@ -278,7 +303,11 @@ impl MadeMcpServer {
                 GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
                     .map(tool_success_result)
                     .map_err(ToolError::invalid_request),
-                _ => self.backend.call_tool(name, arguments).await,
+                _ => {
+                    self.backend
+                        .call_tool_with_trace(name, arguments, &trace)
+                        .await
+                }
             },
         };
 
@@ -333,6 +362,15 @@ where
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         self.as_ref().call_tool(name, arguments)
+    }
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        self.as_ref().call_tool_with_trace(name, arguments, trace)
     }
 }
 
@@ -413,7 +451,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC plus backend-independent discovery and help.
-        assert_eq!(tools.len(), 44);
+        assert_eq!(tools.len(), 45);
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));

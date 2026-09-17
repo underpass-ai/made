@@ -153,6 +153,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "made_complete_ceremony_step",
             "made_design_ceremony",
             "made_read_ceremony_events",
+            "made_pull_ceremony_events",
             "made_get_ceremony_transcript",
             "made_generate_ceremony_report",
             "made_get_status",
@@ -356,6 +357,42 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
             }),
             "{response:?}"
         );
+    }
+}
+
+#[tokio::test]
+async fn one_tool_call_supplies_one_trace_to_every_record_it_seals() {
+    let server = MadeMcpServer::embedded();
+    let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    let call = run_ceremony_call(1, "traced-one-shot");
+    let mut params = call["params"].clone();
+    params["_meta"] = json!({ "traceparent": traceparent });
+    let response = send(&server, jsonrpc(1, "tools/call", Some(params))).await;
+    assert!(!response["result"]["isError"].as_bool().unwrap_or(false));
+
+    let page = send(
+        &server,
+        tool_call(
+            2,
+            "made_read_ceremony_events",
+            &json!({"ceremony_id": "traced-one-shot"}),
+        ),
+    )
+    .await;
+    let records = structured(&page)["records"].as_array().unwrap();
+    assert!(records.len() >= 4, "{page:#}");
+    assert!(
+        records
+            .iter()
+            .all(|record| { record["trace_id"] == json!("0af7651916cd43dd8448eb211c80319c") }),
+        "{page:#}"
+    );
+    let opening = records[0]["event_id"].clone();
+    assert!(records
+        .iter()
+        .all(|record| record["correlation_id"] == opening));
+    for pair in records.windows(2) {
+        assert_eq!(pair[1]["causation_id"], pair[0]["event_id"]);
     }
 }
 
@@ -1073,7 +1110,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 30);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 31);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

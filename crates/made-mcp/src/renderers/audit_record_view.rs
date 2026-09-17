@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 /// proto3's empty scalar convention cannot leak into the rendered shape.
 #[derive(Clone, Debug, PartialEq)]
 pub(crate) struct AuditRecordView {
+    pub(crate) global_position: Option<u64>,
     pub(crate) event_id: String,
     pub(crate) event_type: String,
     pub(crate) schema_version: u32,
@@ -29,7 +30,7 @@ impl AuditRecordView {
     /// Render the serde shape a client can read back as an audit record.
     #[must_use]
     pub(crate) fn to_json(&self) -> Value {
-        json!({
+        let mut rendered = json!({
             "event_id": self.event_id,
             "event_type": self.event_type,
             "schema_version": self.schema_version,
@@ -46,7 +47,11 @@ impl AuditRecordView {
             "event": self.event,
             "previous_record_hash": self.previous_record_hash,
             "record_hash": self.record_hash,
-        })
+        });
+        if let Some(position) = self.global_position {
+            rendered["global_position"] = json!(position);
+        }
+        rendered
     }
 }
 
@@ -57,6 +62,7 @@ mod tests {
     #[test]
     fn renders_the_complete_sealed_record_contract() {
         let rendered = AuditRecordView {
+            global_position: None,
             event_id: "event-1".to_owned(),
             event_type: "ceremony_instance_started".to_owned(),
             schema_version: 2,

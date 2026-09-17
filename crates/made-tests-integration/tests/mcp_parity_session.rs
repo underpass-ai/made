@@ -369,11 +369,16 @@ impl ParityArms {
 /// One `tools/call`, returning the JSON-RPC `result` — the success
 /// envelope or the error envelope, whichever the server built.
 async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Value) -> Value {
+    let traceparent = deterministic_traceparent(id);
     let request = json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "tools/call",
-        "params": { "name": tool, "arguments": arguments },
+        "params": {
+            "name": tool,
+            "arguments": arguments,
+            "_meta": { "traceparent": traceparent },
+        },
     });
     let response = server
         .handle_json_line(&request.to_string())
@@ -384,6 +389,14 @@ async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Valu
     parsed.get("result").cloned().unwrap_or_else(|| {
         panic!("`{tool}` answered a JSON-RPC error rather than a result: {parsed}")
     })
+}
+
+/// Give both parity arms the same valid W3C context for each scripted call.
+/// Production still mints a fresh context when callers omit metadata; focused
+/// MCP trace-context tests cover that behavior independently.
+fn deterministic_traceparent(id: u64) -> String {
+    let non_zero_id = id.max(1);
+    format!("00-{non_zero_id:032x}-{non_zero_id:016x}-01")
 }
 
 fn structured(result: &Value) -> &Value {
@@ -580,6 +593,15 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "made_close_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "inspect-metrics",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+            }),
+        ),
+        (
             "made_defer_ceremony_guard",
             json!({
                 "ceremony_id": SESSION_ID,
@@ -639,6 +661,17 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
+        ),
+        // The named global feed is the same durable contract on both
+        // surfaces: a read replays, and only the next call's explicit
+        // acknowledgement advances it.
+        (
+            "made_pull_ceremony_events",
+            json!({ "consumer": "parity-global-feed", "limit": 2 }),
+        ),
+        (
+            "made_pull_ceremony_events",
+            json!({ "consumer": "parity-global-feed", "limit": 2, "acknowledge_through": 1 }),
         ),
         // The chain over the same records, asked of both arms: the
         // verdict is the engine's own answer to a question the caller

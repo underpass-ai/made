@@ -116,6 +116,39 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// wait.
     fn record_ceremony_transition_blocked(&self, ceremony: &str, from_state: &str);
 
+    /// Record that a worker claimed a ceremony step from the stream.
+    fn record_ceremony_step_claimed(&self, _ceremony: &str, _step: &str) {}
+
+    /// Record the attempt number assigned to a step claim.
+    fn record_ceremony_step_attempt(&self, _ceremony: &str, _step: &str, _attempt: u32) {}
+
+    /// Record the semantic iteration assigned to a step claim.
+    fn record_ceremony_step_iteration(&self, _ceremony: &str, _step: &str, _iteration: u32) {}
+
+    /// Record the outcome of a human guard decision.
+    fn record_ceremony_guard_decided(&self, _ceremony: &str, _guard: &str, _decision: &str) {}
+
+    /// Record that a dynamic intervention was opened.
+    fn record_ceremony_intervention_opened(&self, _ceremony: &str, _kind: &str) {}
+
+    /// Record that a dynamic intervention received an answer.
+    fn record_ceremony_intervention_answered(&self, _ceremony: &str) {}
+
+    /// Record an applied ceremony state transition.
+    fn record_ceremony_transition_applied(
+        &self,
+        _ceremony: &str,
+        _from_state: &str,
+        _to_state: &str,
+    ) {
+    }
+
+    /// Record that a step lease was acquired.
+    fn record_ceremony_lease_acquired(&self, _ceremony: &str, _step: &str) {}
+
+    /// Record that a prior step lease expired before a replacement claim.
+    fn record_ceremony_lease_expired(&self, _ceremony: &str, _step: &str) {}
+
     /// Observe the latency of one NATS publish, by event `subject_kind`.
     fn observe_nats_publish(&self, subject_kind: &str, duration: DurationMs);
 

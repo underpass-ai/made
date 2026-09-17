@@ -169,6 +169,7 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_assert_ceremony_reason" => rendered(build_assert_ceremony_reason_request(arguments)),
         "made_design_ceremony" => rendered(build_design_ceremony_request(arguments)),
         "made_read_ceremony_events" => rendered(build_read_ceremony_events_request(arguments)),
+        "made_pull_ceremony_events" => rendered(build_pull_ceremony_events_request(arguments)),
         "made_get_ceremony_transcript" => {
             rendered(build_get_ceremony_transcript_request(arguments))
         }
@@ -246,11 +247,11 @@ use super::{
     build_delete_council_request, build_deliberate_request, build_design_ceremony_request,
     build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
     build_get_deliberation_result_request, build_orchestrate_request,
-    build_process_trigger_event_request, build_read_ceremony_events_request,
-    build_register_agent_request, build_register_contract_request,
-    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
-    build_run_ceremony_request, build_run_ceremony_step_request,
-    build_run_council_decision_request, build_start_ceremony_request,
-    build_start_published_ceremony_request, build_stream_deliberation_request,
-    build_unregister_agent_request,
+    build_process_trigger_event_request, build_pull_ceremony_events_request,
+    build_read_ceremony_events_request, build_register_agent_request,
+    build_register_contract_request, build_request_ceremony_intervention_request,
+    build_respond_to_ceremony_intervention_request, build_run_ceremony_request,
+    build_run_ceremony_step_request, build_run_council_decision_request,
+    build_start_ceremony_request, build_start_published_ceremony_request,
+    build_stream_deliberation_request, build_unregister_agent_request,
 };

@@ -7,16 +7,18 @@
 //! all answer "what happened" from state the engine already holds, and
 //! none of them writes.
 
-use std::sync::Arc;
-
 use made_app::usecases::{
     CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, GenerateCeremonyReportInput,
-    GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ReadCeremonyEventsInput, ReadCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
+    GenerateCeremonyReportUseCase, GetCeremonyTranscriptUseCase, PullCeremonyEventsInput,
+    PullCeremonyEventsOutput, PullCeremonyEventsUseCase, ReadCeremonyEventsInput,
+    ReadCeremonyEventsUseCase, ReadWholeCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyId, CeremonyTranscript, StreamVersion};
+use made_core::value_objects::{
+    CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId, CeremonyTranscript, GlobalPosition,
+    StreamVersion,
+};
 
 use super::EmbeddedMade;
 
@@ -28,7 +30,9 @@ impl EmbeddedMade {
     /// given asks for the whole stream, and a caller that is following
     /// one asks for a page.
     pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        self.events.read(id, StreamVersion::EMPTY).await
+        ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(id)
+            .await
     }
 
     /// One page of a session's stream: the records after `from`, at
@@ -45,8 +49,28 @@ impl EmbeddedMade {
         from: StreamVersion,
         limit: Option<usize>,
     ) -> Result<CeremonyEventPage, DomainError> {
+        let limit = match limit {
+            Some(limit) => CeremonyEventPageLimit::new(limit)?,
+            None => CeremonyEventPageLimit::DEFAULT,
+        };
         ReadCeremonyEventsUseCase::new(self.events.clone())
-            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit)?)
+            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit))
+            .await
+    }
+
+    /// Read a named global feed, optionally acknowledging prior delivery first.
+    pub async fn pull_events(
+        &self,
+        consumer: CeremonyEventConsumer,
+        limit: CeremonyEventPageLimit,
+        acknowledge_through: Option<GlobalPosition>,
+    ) -> Result<PullCeremonyEventsOutput, DomainError> {
+        PullCeremonyEventsUseCase::new(self.events.clone(), self.cursors.clone())
+            .execute(PullCeremonyEventsInput::new(
+                consumer,
+                limit,
+                acknowledge_through,
+            ))
             .await
     }
 
@@ -66,13 +90,9 @@ impl EmbeddedMade {
         &self,
         input: GenerateCeremonyReportInput,
     ) -> Result<CeremonyReport, DomainError> {
-        GenerateCeremonyReportUseCase::new(
-            Arc::new(GetCeremonyInstanceUseCase::new(self.stream.clone())),
-            self.resolve_definition(),
-            self.events.clone(),
-        )
-        .execute(input)
-        .await
+        GenerateCeremonyReportUseCase::new(self.resolve_definition(), self.events.clone())
+            .execute(input)
+            .await
     }
 
     /// Whether one session's journal is sealed, positioned and linked

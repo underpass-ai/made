@@ -20,9 +20,8 @@ use made_app::usecases::{
 };
 use made_core::ports::CeremonyDefinitionRepositoryPort;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
-    IdempotencyKey, LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus,
-    TransitionTrigger,
+    AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, DurationMs, IdempotencyKey,
+    LeaseOwnerId, RoleId, StateId, StepAttempt, StepId, StepStatus, TransitionTrigger,
 };
 
 const FOUR_PERSON_CEREMONY: &str = r#"
@@ -124,7 +123,7 @@ async fn yaml_definition_can_drive_the_application_ceremony_flow() {
             CeremonyId::new("meeting-1").unwrap(),
             definition_name.clone(),
             definition_version.clone(),
-            CeremonyContext::empty(),
+            serde_json::from_value(serde_json::json!({"brief":"application fixture"})).unwrap(),
             "operator-1",
             AuditActorKind::Service,
         ))

@@ -20,7 +20,18 @@ async fn run_daily_standup_executes_threaded_ceremony() {
             actor_kind: "service".to_owned(),
             ceremony_id: "integration-daily-standup".to_owned(),
             definition_yaml: DAILY_STANDUP_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "sprint_goal".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "integration fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "integration-test".to_owned(),
             lease_ttl_ms: 60_000,
         })

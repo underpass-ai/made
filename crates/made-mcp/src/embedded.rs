@@ -21,6 +21,7 @@ mod embedded_generate_ceremony_report_request;
 mod embedded_get_status_request;
 mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
+mod embedded_pull_ceremony_events_request;
 mod embedded_read_ceremony_events_request;
 mod embedded_request_ceremony_intervention_request;
 mod embedded_request_fields;
@@ -32,12 +33,13 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
+use made_app::services::CeremonyTraceScope;
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::{CeremonyId, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
+use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext};
 use crate::protocol::{
     tool_success_result, ToolError, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
@@ -45,7 +47,7 @@ use crate::protocol::{
     DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
     GET_CEREMONY_TRANSCRIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
@@ -62,7 +64,7 @@ use self::embedded_ceremony_draft_presenter::{
 use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
 use self::embedded_ceremony_history_presenter::{
     present_ceremony_events, present_ceremony_journal_verdict, present_ceremony_report,
-    present_ceremony_transcript,
+    present_ceremony_transcript, present_pulled_ceremony_events,
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
@@ -77,6 +79,7 @@ use self::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyRep
 use self::embedded_get_status_request::EmbeddedGetStatusRequest;
 use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
 use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
+use self::embedded_pull_ceremony_events_request::EmbeddedPullCeremonyEventsRequest;
 use self::embedded_read_ceremony_events_request::EmbeddedReadCeremonyEventsRequest;
 use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
 use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
@@ -170,6 +173,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | DIFF_CEREMONY_DEFINITIONS_TOOL
                 | BIND_CEREMONY_PARTICIPANTS_TOOL
                 | READ_CEREMONY_EVENTS_TOOL
+                | PULL_CEREMONY_EVENTS_TOOL
                 | VERIFY_CEREMONY_JOURNAL_TOOL
                 | GET_CEREMONY_TRANSCRIPT_TOOL
                 | GENERATE_CEREMONY_REPORT_TOOL
@@ -318,10 +322,19 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .audit_records_from(
                             input.ceremony_id(),
                             input.from_version(),
-                            Some(input.limit()),
+                            Some(input.limit().value()),
                         )
                         .await?;
                     present_ceremony_events(&page).map(tool_success_result)
+                }
+                PULL_CEREMONY_EVENTS_TOOL => {
+                    let request = EmbeddedPullCeremonyEventsRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let output = self
+                        .made
+                        .pull_events(request.consumer, request.limit, request.acknowledge_through)
+                        .await?;
+                    present_pulled_ceremony_events(&output).map(tool_success_result)
                 }
                 VERIFY_CEREMONY_JOURNAL_TOOL => {
                     let request = EmbeddedCeremonyIdRequest::try_from(arguments)
@@ -395,6 +408,19 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     "embedded backend: unsupported tool `{name}`"
                 ))),
             }
+        })
+    }
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        Box::pin(async move {
+            let trace = TraceContext::parse(trace.traceparent())
+                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+            CeremonyTraceScope::run(trace, self.call_tool(name, arguments)).await
         })
     }
 }

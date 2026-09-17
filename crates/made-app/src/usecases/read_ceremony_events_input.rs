@@ -1,6 +1,4 @@
-use super::CeremonyEventReadLimit;
-use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyId, StreamVersion};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, StreamVersion};
 
 /// Where to start reading a ceremony's stream, and how much of it to
 /// take.
@@ -14,7 +12,7 @@ use made_core::value_objects::{CeremonyId, StreamVersion};
 pub struct ReadCeremonyEventsInput {
     ceremony_id: CeremonyId,
     from_version: StreamVersion,
-    limit: Option<CeremonyEventReadLimit>,
+    limit: CeremonyEventPageLimit,
 }
 
 impl ReadCeremonyEventsInput {
@@ -23,7 +21,7 @@ impl ReadCeremonyEventsInput {
     /// Big enough that a ceremony driven by hand comes back whole in
     /// one call, small enough that a caller who forgot to ask cannot
     /// pull an unbounded stream into memory.
-    pub const DEFAULT_LIMIT: usize = 200;
+    pub const DEFAULT_LIMIT: usize = CeremonyEventPageLimit::DEFAULT.value();
 
     /// The most any one read answers with. A page is a page; a caller
     /// who wants the whole stream asks again from `next_version`.
@@ -35,32 +33,22 @@ impl ReadCeremonyEventsInput {
     /// page than the one they asked for — the same request, two
     /// answers, which is the whole of what parity is about. One rule:
     /// the schema, the proto comment and this all say refused.
-    pub const MAX_LIMIT: usize = 1000;
+    pub const MAX_LIMIT: usize = CeremonyEventPageLimit::MAX;
 
     /// A limit above [`Self::MAX_LIMIT`] is the caller's to fix, so it
     /// is refused where the request is built rather than applied
     /// differently further in.
+    #[must_use]
     pub fn new(
         ceremony_id: CeremonyId,
         from_version: StreamVersion,
-        limit: Option<usize>,
-    ) -> Result<Self, DomainError> {
-        if let Some(asked) = limit {
-            if asked > Self::MAX_LIMIT {
-                #[allow(clippy::cast_precision_loss)] // a page size, nowhere near f64's range
-                return Err(DomainError::OutOfRange {
-                    field: "read_ceremony_events.limit",
-                    value: asked as f64,
-                    min: 0.0,
-                    max: Self::MAX_LIMIT as f64,
-                });
-            }
-        }
-        Ok(Self {
+        limit: CeremonyEventPageLimit,
+    ) -> Self {
+        Self {
             ceremony_id,
             from_version,
-            limit: limit.map(CeremonyEventReadLimit::new),
-        })
+            limit,
+        }
     }
 
     #[must_use]
@@ -80,41 +68,44 @@ impl ReadCeremonyEventsInput {
     /// no records" is not a question anyone means. Nothing is capped
     /// here — anything above the cap never became an input.
     #[must_use]
-    pub fn limit(&self) -> usize {
-        match self.limit.map(CeremonyEventReadLimit::get) {
-            None | Some(0) => Self::DEFAULT_LIMIT,
-            Some(asked) => asked,
-        }
+    pub const fn limit(&self) -> CeremonyEventPageLimit {
+        self.limit
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use made_core::error::DomainError;
 
-    fn input(limit: Option<usize>) -> ReadCeremonyEventsInput {
+    fn input(limit: CeremonyEventPageLimit) -> ReadCeremonyEventsInput {
         ReadCeremonyEventsInput::new(
             CeremonyId::new("session-1").unwrap(),
             StreamVersion::EMPTY,
             limit,
         )
-        .expect("this limit is within the cap")
     }
 
     #[test]
     fn an_unasked_for_limit_is_the_default() {
-        assert_eq!(input(None).limit(), ReadCeremonyEventsInput::DEFAULT_LIMIT);
         assert_eq!(
-            input(Some(0)).limit(),
+            input(CeremonyEventPageLimit::DEFAULT).limit().value(),
             ReadCeremonyEventsInput::DEFAULT_LIMIT
         );
     }
 
     #[test]
     fn a_limit_is_taken_exactly_as_asked_up_to_the_cap() {
-        assert_eq!(input(Some(3)).limit(), 3);
         assert_eq!(
-            input(Some(ReadCeremonyEventsInput::MAX_LIMIT)).limit(),
+            input(CeremonyEventPageLimit::new(3).unwrap())
+                .limit()
+                .value(),
+            3
+        );
+        assert_eq!(
+            input(CeremonyEventPageLimit::new(ReadCeremonyEventsInput::MAX_LIMIT).unwrap())
+                .limit()
+                .value(),
             ReadCeremonyEventsInput::MAX_LIMIT
         );
     }
@@ -126,19 +117,15 @@ mod tests {
     /// schema the MCP gate enforces — one request, two answers,
     /// depending on how the caller got here.
     #[test]
-    fn a_limit_above_the_cap_is_refused_rather_than_clamped() {
+    fn a_limit_above_the_cap_is_refused_before_an_input_exists() {
         for asked in [ReadCeremonyEventsInput::MAX_LIMIT + 1, usize::MAX] {
-            let error = ReadCeremonyEventsInput::new(
-                CeremonyId::new("session-1").unwrap(),
-                StreamVersion::EMPTY,
-                Some(asked),
-            )
-            .expect_err("a page bigger than a page is not a page");
+            let error = CeremonyEventPageLimit::new(asked)
+                .expect_err("a page bigger than a page is not a page");
             assert!(
                 matches!(
                     error,
                     DomainError::OutOfRange {
-                        field: "read_ceremony_events.limit",
+                        field: "ceremony_event_page_limit",
                         ..
                     }
                 ),

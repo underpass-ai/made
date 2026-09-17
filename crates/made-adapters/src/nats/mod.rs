@@ -11,11 +11,13 @@
 //!
 //! [`TriggerEvent`]: made_core::events::TriggerEvent
 
+mod ceremony_event_transport;
 mod config;
 mod messaging;
 mod nats_subjects;
 mod subscriber;
 
+pub use ceremony_event_transport::NatsCeremonyEventTransport;
 pub use config::NatsConfig;
 pub use messaging::NatsMessaging;
 pub use nats_subjects::NatsSubjects;

@@ -141,7 +141,12 @@ approver.
 
 Participant interventions remain agenda items. They can request an opinion,
 investigation or action, but cannot bypass host permissions or a ceremony
-guard.
+guard. A transition into a terminal state is refused while any intervention
+is open. Its error says `ceremony cannot enter a terminal state with open
+interventions`, and the refused move appends no event. Obtain the response and
+close the agenda item before retrying. A response alone leaves the item open;
+ordinary transitions between nonterminal states remain available. The same
+rule applies through the Rust facade, direct gRPC and both MCP backends.
 
 ## Observability and completion events
 
@@ -179,3 +184,13 @@ integration; embedded SQLite remains the authoritative local record.
 | completion rejected | The step was not claimed, is no longer in progress, or the result shape is invalid. Refresh the instance before retrying. |
 | failed result rejected | Supply a non-empty `error`; non-failed statuses must omit it. |
 | ceremony says complete but no real artifact exists | The no-op handler path was used or the host filed a false completion. Treat the run as invalid and use claim/perform/complete. |
+
+## Required opening inputs
+
+Every opening path checks `inputs.required` against the initial context before
+creating an instance or appending an event. A refusal lists all missing keys in
+alphabetical order, for example `missing required ceremony inputs: alpha, zeta`.
+Supply those keys and retry the same ceremony id. A present key counts as supplied
+even when its JSON value is `null`; `inputs.optional` may remain absent. This rule
+applies to start, start-published and whole-ceremony run through both MCP backends,
+direct gRPC and the Rust facade.

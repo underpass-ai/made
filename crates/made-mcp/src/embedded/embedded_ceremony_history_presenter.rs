@@ -6,7 +6,9 @@
 //! rebuilds exactly this JSON from the proto record, and the parity
 //! session compares the two field for field.
 
-use made_app::usecases::{CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport};
+use made_app::usecases::{
+    CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, PullCeremonyEventsOutput,
+};
 use made_core::entities::AuditRecord;
 use made_core::value_objects::CeremonyTranscript;
 use serde_json::{json, Value};
@@ -30,7 +32,25 @@ pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value,
     .to_json())
 }
 
-fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView, ToolError> {
+pub(super) fn present_pulled_ceremony_events(
+    output: &PullCeremonyEventsOutput,
+) -> Result<Value, ToolError> {
+    let records = output
+        .records()
+        .iter()
+        .map(|positioned| {
+            let mut view = audit_record_view(&positioned.record)?;
+            view.global_position = Some(positioned.position.value());
+            Ok(view.to_json())
+        })
+        .collect::<Result<Vec<_>, ToolError>>()?;
+    Ok(json!({
+        "records": records,
+        "acknowledged_through": output.acknowledged_through().map(made_core::value_objects::GlobalPosition::value),
+    }))
+}
+
+pub(super) fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView, ToolError> {
     let actor = serde_json::to_value(record.actor()).map_err(|error| {
         ToolError::refused(format!(
             "a sealed ceremony actor cannot be rendered: {error}"
@@ -52,6 +72,7 @@ fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView, ToolError>
     })?;
 
     Ok(AuditRecordView {
+        global_position: None,
         event_id: record.event_id().as_str().to_owned(),
         event_type: record.event_type().as_str().to_owned(),
         schema_version: record.schema_version(),

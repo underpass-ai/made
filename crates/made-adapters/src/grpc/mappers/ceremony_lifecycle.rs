@@ -142,9 +142,10 @@ mod tests {
         CeremonyInstance::start(
             CeremonyId::new("ceremony-lifecycle-1").unwrap(),
             definition,
-            CeremonyContext::empty(),
+            serde_json::from_value(serde_json::json!({"meeting_brief":"fixture meeting"})).unwrap(),
             OffsetDateTime::UNIX_EPOCH,
         )
+        .expect("required ceremony inputs")
     }
 
     fn step_request(step_id: &str) -> pb::RunCeremonyStepRequest {

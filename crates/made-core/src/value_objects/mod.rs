@@ -48,6 +48,7 @@ mod support_verdict;
 mod task_description;
 mod token_usage;
 mod trace_context;
+mod trace_id;
 mod validation_mode;
 mod validation_passed;
 
@@ -55,7 +56,10 @@ pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use audit::{
     AuditActor, AuditActorId, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
-    AuditRecordHash, AuditSequence, EventSchemaVersion, GlobalPosition, StreamVersion,
+    AuditRecordHash, AuditSequence, CeremonyEventConsumer, CeremonyEventCursorAttempt,
+    CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
+    CeremonyEventQuarantineReason, EventSchemaVersion, GlobalPosition, QuarantinedCeremonyEvent,
+    StreamVersion,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,
@@ -119,5 +123,6 @@ pub use support_verdict::SupportVerdict;
 pub use task_description::TaskDescription;
 pub use token_usage::TokenUsage;
 pub use trace_context::TraceContext;
+pub use trace_id::TraceId;
 pub use validation_mode::ValidationMode;
 pub use validation_passed::ValidationPassed;

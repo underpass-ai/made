@@ -16,7 +16,18 @@ pub(crate) async fn verify_technical_debate_ceremony(
             actor_kind: "service".to_owned(),
             ceremony_id: "e2e-technical-debate".to_owned(),
             definition_yaml: TECHNICAL_DEBATE_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "proposal".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "E2E ceremony fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "e2e-runner".to_owned(),
             lease_ttl_ms: 60_000,
         })

@@ -258,7 +258,11 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
     // the facade: the snapshot must equal the fold of the stream.
     let store = SqliteCeremonyStore::open(&path).expect("a second handle opens");
     let records = store
-        .read(&ceremony_id, StreamVersion::EMPTY)
+        .read(
+            &ceremony_id,
+            StreamVersion::EMPTY,
+            made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+        )
         .await
         .unwrap();
     let folded =
@@ -344,5 +348,10 @@ async fn a_session_from_an_earlier_store_without_a_stream_is_not_visible() {
         })
     ));
     assert!(engine.instances().await.unwrap().is_empty());
-    assert!(engine.audit_records(&ceremony_id).await.unwrap().is_empty());
+    assert!(matches!(
+        engine.audit_records(&ceremony_id).await,
+        Err(DomainError::NotFound {
+            what: "ceremony_instance"
+        })
+    ));
 }

@@ -19,6 +19,7 @@ use tracing::debug;
 
 use crate::backend::{
     endpoint_uri_for_tls_mode, MadeMcpGrpcTlsConfig, MadeMcpToolBackend, MadeMcpToolFuture,
+    ToolTraceContext,
 };
 use crate::protocol::ToolError;
 
@@ -69,6 +70,18 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
+            let trace = ToolTraceContext::from_metadata(None);
+            self.call_tool_with_trace(name, arguments, &trace).await
+        })
+    }
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        Box::pin(async move {
             debug!(
                 tool = name,
                 tls = self.tls.mode_name(),
@@ -78,7 +91,7 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
             // A channel that will not open is the engine out of
             // reach, not the engine refusing: waiting is the remedy.
             let channel = self.channel().await.map_err(ToolError::unavailable)?;
-            let structured = tools::dispatch(channel, name, arguments).await?;
+            let structured = tools::dispatch(channel, name, arguments, trace.traceparent()).await?;
             Ok(crate::protocol::tool_success_result(structured))
         })
     }

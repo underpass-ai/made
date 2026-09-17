@@ -17,6 +17,8 @@ pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
 /// the embedded backend is selected: where ceremony state survives a
 /// restart is an operator decision, never a default this crate invents.
 pub const EMBEDDED_STORE_PATH_ENV: &str = "MADE_MCP_STORE_PATH";
+/// Optional JSON Lines destination for the embedded global ceremony-event feed.
+pub const EVENT_SINK_PATH_ENV: &str = "MADE_MCP_EVENT_SINK_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";
 /// PEM bundle the client should trust as a CA when verifying the
@@ -34,11 +36,13 @@ mod made_mcp_grpc_tls_config;
 mod made_mcp_grpc_tls_mode;
 mod made_mcp_tool_backend;
 mod made_mcp_tool_future;
+mod tool_trace_context;
 
 pub use made_mcp_grpc_tls_config::MadeMcpGrpcTlsConfig;
 pub use made_mcp_grpc_tls_mode::MadeMcpGrpcTlsMode;
 pub use made_mcp_tool_backend::MadeMcpToolBackend;
 pub use made_mcp_tool_future::MadeMcpToolFuture;
+pub use tool_trace_context::ToolTraceContext;
 
 /// When TLS is enabled, automatically rewrite an `http://` endpoint to
 /// `https://` so callers can flip a single env var (the TLS knob)

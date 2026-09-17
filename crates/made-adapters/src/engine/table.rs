@@ -21,6 +21,10 @@ pub(crate) enum Table {
     /// Store-wide counters the seam has no primitive for, such as the
     /// last global position.
     Meta,
+    /// Last acknowledged global position and lease state per consumer.
+    EventCursors,
+    /// Visible poison records skipped by each consumer.
+    EventCursorQuarantine,
     /// Idempotent session-memory writes, grouped by memory scope.
     MemoryWrites,
 }
@@ -28,12 +32,13 @@ pub(crate) enum Table {
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies | Table::Meta => KeyShape::Str,
+            Table::Ceremonies | Table::Meta | Table::EventCursors => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
             | Table::EventLog
             | Table::Snapshots
+            | Table::EventCursorQuarantine
             | Table::MemoryWrites => KeyShape::Bytes,
         }
     }
@@ -49,6 +54,8 @@ impl fmt::Display for Table {
             Table::EventLog => "ceremony_event_log",
             Table::Snapshots => "ceremony_snapshots",
             Table::Meta => "store_meta",
+            Table::EventCursors => "ceremony_event_cursors",
+            Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
             Table::MemoryWrites => "session_memory_writes",
         })
     }

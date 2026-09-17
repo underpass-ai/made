@@ -39,9 +39,9 @@ impl ReadCeremonyEventsUseCase {
         &self,
         input: ReadCeremonyEventsInput,
     ) -> Result<CeremonyEventPage, DomainError> {
-        let mut records = self
+        let records = self
             .events
-            .read(input.ceremony_id(), input.from_version())
+            .read(input.ceremony_id(), input.from_version(), input.limit())
             .await?;
         // The head **after** the page, never before it. The two reads
         // are not one instant, and a session someone else is still
@@ -69,8 +69,6 @@ impl ReadCeremonyEventsUseCase {
             });
         }
 
-        records.truncate(input.limit());
-
         let next = records.last().map_or(head, |record| {
             StreamVersion::from_sequence(record.sequence())
         });
@@ -84,7 +82,9 @@ mod tests {
 
     use made_core::entities::{AuditChain, AuditFact, AuditRecord};
     use made_core::ports::{AppendOutcome, CeremonyEventStorePort, PositionedRecord};
-    use made_core::value_objects::{AuditActorKind, CeremonyId, StepOutput, StepResult};
+    use made_core::value_objects::{
+        AuditActorKind, CeremonyEventPageLimit, CeremonyId, StepOutput, StepResult,
+    };
     use made_core::value_objects::{EventId, GlobalPosition};
     use std::sync::Arc;
 
@@ -150,9 +150,11 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(
-                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id(),
+                StreamVersion::EMPTY,
+                CeremonyEventPageLimit::DEFAULT,
+            ))
             .await
             .unwrap();
 
@@ -171,9 +173,11 @@ mod tests {
         let usecase = read_events(store);
 
         let first = usecase
-            .execute(
-                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, Some(2)).unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id(),
+                StreamVersion::EMPTY,
+                CeremonyEventPageLimit::new(2).unwrap(),
+            ))
             .await
             .unwrap();
 
@@ -183,9 +187,11 @@ mod tests {
         assert!(first.has_more());
 
         let second = usecase
-            .execute(
-                ReadCeremonyEventsInput::new(ceremony_id(), first.next_version(), Some(2)).unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id(),
+                first.next_version(),
+                CeremonyEventPageLimit::new(2).unwrap(),
+            ))
             .await
             .unwrap();
 
@@ -213,9 +219,11 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(
-                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::new(99), None).unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id(),
+                StreamVersion::new(99),
+                CeremonyEventPageLimit::DEFAULT,
+            ))
             .await
             .unwrap();
 
@@ -240,9 +248,11 @@ mod tests {
         let interposing = Arc::new(AppendsDuringTheRead::over(store));
 
         let page = ReadCeremonyEventsUseCase::new(interposing.clone())
-            .execute(
-                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id(),
+                StreamVersion::EMPTY,
+                CeremonyEventPageLimit::DEFAULT,
+            ))
             .await
             .unwrap();
 
@@ -291,7 +301,11 @@ mod tests {
             let head = self.inner.head(stream).await.unwrap();
             let last = self
                 .inner
-                .read(stream, StreamVersion::EMPTY)
+                .read(
+                    stream,
+                    StreamVersion::EMPTY,
+                    CeremonyEventPageLimit::DEFAULT,
+                )
                 .await
                 .unwrap()
                 .pop()
@@ -327,17 +341,18 @@ mod tests {
             &self,
             stream: &CeremonyId,
             after: StreamVersion,
+            limit: CeremonyEventPageLimit,
         ) -> Result<Vec<AuditRecord>, DomainError> {
             if !self.appended.swap(true, Ordering::SeqCst) {
                 self.append_one_more(stream).await;
             }
-            self.inner.read(stream, after).await
+            self.inner.read(stream, after, limit).await
         }
 
         async fn read_all(
             &self,
             from: GlobalPosition,
-            limit: usize,
+            limit: CeremonyEventPageLimit,
         ) -> Result<Vec<PositionedRecord>, DomainError> {
             self.inner.read_all(from, limit).await
         }
@@ -356,14 +371,11 @@ mod tests {
         let store = three_record_stream().await;
 
         let error = read_events(store)
-            .execute(
-                ReadCeremonyEventsInput::new(
-                    CeremonyId::new("never-started").unwrap(),
-                    StreamVersion::EMPTY,
-                    None,
-                )
-                .unwrap(),
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                CeremonyId::new("never-started").unwrap(),
+                StreamVersion::EMPTY,
+                CeremonyEventPageLimit::DEFAULT,
+            ))
             .await
             .unwrap_err();
 

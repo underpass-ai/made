@@ -11,6 +11,8 @@ use made_core::entities::{AuditChain, AuditRecord};
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::protocol::ToolErrorCode;
 use made_mcp::GrpcMadeMcpBackend;
+use made_proto::v1::made_service_client::MadeServiceClient;
+use made_proto::v1::PullCeremonyEventsRequest;
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
@@ -207,6 +209,48 @@ async fn a_page_continues_where_the_last_one_ended() {
     assert_eq!(beyond["record_count"], json!(0));
     assert_eq!(beyond["next_version"], json!(head));
     assert_eq!(beyond["has_more"], json!(false));
+}
+
+#[tokio::test]
+async fn the_direct_grpc_global_feed_commits_only_an_explicit_ack() {
+    let fixture = fixture().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    session(&remote).await;
+    let mut client = MadeServiceClient::new(fixture.channel.clone());
+    let request = || PullCeremonyEventsRequest {
+        consumer: "grpc-history-test".to_owned(),
+        limit: 1,
+        acknowledge_through: None,
+    };
+
+    let first = client
+        .pull_ceremony_events(request())
+        .await
+        .unwrap()
+        .into_inner();
+    let replay = client
+        .pull_ceremony_events(request())
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(first.records, replay.records);
+    assert_eq!(first.acknowledged_through, None);
+    let first_position = first.records[0].global_position;
+
+    let resumed = client
+        .pull_ceremony_events(PullCeremonyEventsRequest {
+            consumer: "grpc-history-test".to_owned(),
+            limit: 1,
+            acknowledge_through: Some(first_position),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(resumed.acknowledged_through, Some(first_position));
+    assert_eq!(resumed.records[0].global_position, first_position + 1);
 }
 
 /// The engine's verdict and the caller's own verdict on the same

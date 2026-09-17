@@ -6,6 +6,7 @@
 use made_mcp_proto::v1 as pb;
 use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
+use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
@@ -39,13 +40,22 @@ fn bad_request(message: String) -> ToolError {
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
 /// `tool_success_result`).
-#[allow(clippy::too_many_lines)] // one arm per tool; splitting fragments the dispatch table
+#[allow(clippy::too_many_lines, clippy::result_large_err)] // one arm per tool; tonic's interceptor contract returns Status
 pub(crate) async fn dispatch(
     channel: Channel,
     name: &str,
     arguments: &Value,
+    traceparent: &str,
 ) -> Result<Value, ToolError> {
-    let mut client = MadeServiceClient::new(channel);
+    let traceparent = MetadataValue::try_from(traceparent)
+        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let mut client =
+        MadeServiceClient::with_interceptor(channel, move |mut request: tonic::Request<()>| {
+            request
+                .metadata_mut()
+                .insert("traceparent", traceparent.clone());
+            Ok(request)
+        });
     if general_dispatch::handles(name) {
         return general_dispatch::dispatch(&mut client, name, arguments).await;
     }
@@ -239,6 +249,13 @@ pub(crate) async fn dispatch(
             Ok(p2j::read_ceremony_events_to_json(response.into_inner()))
         }
 
+        "made_pull_ceremony_events" => {
+            let request = ceremony_history_requests::build_pull_ceremony_events_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.pull_ceremony_events(request).await?;
+            Ok(p2j::pull_ceremony_events_to_json(response.into_inner()))
+        }
+
         "made_verify_ceremony_journal" => {
             let request =
                 ceremony_history_requests::build_verify_ceremony_journal_request(arguments)
@@ -355,7 +372,7 @@ pub(crate) async fn dispatch(
 #[cfg(test)]
 use ceremony_history_requests::{
     build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
-    build_read_ceremony_events_request,
+    build_pull_ceremony_events_request, build_read_ceremony_events_request,
 };
 #[cfg(test)]
 use ceremony_requests::{

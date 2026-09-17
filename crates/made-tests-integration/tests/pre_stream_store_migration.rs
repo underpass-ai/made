@@ -67,7 +67,11 @@ async fn every_pre_stream_session_is_imported_and_folds_back() {
     );
     for id in [COMPLETE, MIDFLIGHT] {
         let records = store
-            .read(&ceremony(id), StreamVersion::EMPTY)
+            .read(
+                &ceremony(id),
+                StreamVersion::EMPTY,
+                made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+            )
             .await
             .unwrap();
 
@@ -143,7 +147,11 @@ async fn the_mid_flight_session_accepts_its_next_claim_after_the_import() {
 
     let store = SqliteCeremonyStore::open(&path).expect("the store reopens");
     let records = store
-        .read(&ceremony(MIDFLIGHT), StreamVersion::EMPTY)
+        .read(
+            &ceremony(MIDFLIGHT),
+            StreamVersion::EMPTY,
+            made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+        )
         .await
         .unwrap();
     assert_eq!(
