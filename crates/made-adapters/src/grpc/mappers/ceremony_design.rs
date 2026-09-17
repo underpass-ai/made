@@ -327,4 +327,73 @@ mod tests {
                 if guard.expected() == &serde_json::Value::Null
         ));
     }
+
+    #[test]
+    fn direct_grpc_maps_concurrent_group_join_and_definition_limit() {
+        let request = pb::DesignCeremonyRequest {
+            name: "parallel_review".to_owned(),
+            version: String::new(),
+            objective: "Review independently".to_owned(),
+            required_inputs: Vec::new(),
+            optional_inputs: Vec::new(),
+            outputs: vec!["decision".to_owned()],
+            participants: vec![
+                pb::CeremonyDesignParticipant {
+                    role_id: "A".to_owned(),
+                    capabilities: Vec::new(),
+                },
+                pb::CeremonyDesignParticipant {
+                    role_id: "B".to_owned(),
+                    capabilities: Vec::new(),
+                },
+            ],
+            stages: vec![pb::CeremonyDesignStage {
+                id: "review".to_owned(),
+                owner_role_id: String::new(),
+                instructions: String::new(),
+                handler: String::new(),
+                see_prior: None,
+                num_agents: None,
+                review_rounds: 0,
+                repeat: None,
+                group: Some(pb::CeremonyDesignGroup {
+                    execution: "concurrent".to_owned(),
+                    steps: ["A", "B"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, owner)| pb::CeremonyDesignGroupStep {
+                            id: format!("review_{}", index + 1),
+                            owner_role_id: owner.to_owned(),
+                            instructions: "Review".to_owned(),
+                            handler: String::new(),
+                            see_prior: None,
+                            num_agents: None,
+                            review_rounds: 0,
+                            repeat: None,
+                        })
+                        .collect(),
+                    join: Some(pb::CeremonyDesignGroupJoin {
+                        condition: "steps_completed".to_owned(),
+                        count: Some(1),
+                    }),
+                }),
+                exit_guards: Vec::new(),
+            }],
+            final_approval: None,
+            step_timeout_seconds: None,
+            max_attempts: None,
+            backoff_seconds: None,
+            max_parallel: Some(2),
+            pattern: String::new(),
+        };
+
+        let document = ceremony_design_document_from_proto(request).unwrap();
+        assert_eq!(document.max_parallel(), MaxParallel::new(2).unwrap());
+        assert!(matches!(
+            &document.stage_entries()[0],
+            CeremonyDesignStageEntry::Group(group)
+                if group.execution() == StateExecution::Concurrent
+                    && matches!(group.join(), CeremonyDesignJoin::StepsCompleted(count) if count.get() == 1)
+        ));
+    }
 }

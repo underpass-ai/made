@@ -1,10 +1,12 @@
-use made_core::entities::{CeremonyDefinition, CeremonyInstance};
+use made_core::entities::{
+    CeremonyDefinition, CeremonyDefinitionDraft, CeremonyInstance, PublishedCeremonyDefinition,
+};
 use made_core::value_objects::{
     CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
     CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition, GuardName,
     IdempotencyKey, JoinStepCount, LeaseOwnerId, MaxParallel, RetryPolicy, RoleAction, RoleId,
-    StateExecution, StateId, StepAttempt, StepExecutionRecord, StepHandlerConfig, StepHandlerKind,
-    StepId, StepLease, StepOutput, StepResult, TransitionTrigger,
+    StateExecution, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, TransitionTrigger,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -22,8 +24,13 @@ fn trigger(raw: &str) -> TransitionTrigger {
 }
 
 fn definition(max_parallel: u8) -> CeremonyDefinition {
-    let steps = ["a", "b", "c"]
-        .into_iter()
+    definition_with_steps(&["a", "b", "c"], max_parallel)
+}
+
+fn definition_with_steps(ids: &[&str], max_parallel: u8) -> CeremonyDefinition {
+    let steps = ids
+        .iter()
+        .copied()
         .map(|id| {
             CeremonyStep::new(
                 step_id(id),
@@ -35,8 +42,9 @@ fn definition(max_parallel: u8) -> CeremonyDefinition {
             )
         })
         .collect::<Vec<_>>();
-    let roles = ["a", "b", "c"]
-        .into_iter()
+    let roles = ids
+        .iter()
+        .copied()
         .map(|id| {
             CeremonyRole::new(
                 role_id(&format!("role_{id}")),
@@ -204,6 +212,39 @@ fn default_concurrency_fields_are_elided_and_round_trip_without_digest_drift() {
 }
 
 #[test]
+fn a_pre_concurrency_definition_reopens_and_keeps_its_published_binding() {
+    let legacy_source = include_str!("fixtures/legacy_definition_pre_concurrency.json");
+    let legacy: CeremonyDefinition = serde_json::from_str(legacy_source).unwrap();
+    assert_eq!(legacy.max_parallel(), MaxParallel::DEFAULT);
+    assert_eq!(
+        legacy.state(&state_id("work")).unwrap().execution(),
+        StateExecution::Sequential
+    );
+    let digest = legacy.digest().unwrap();
+    assert_eq!(
+        digest.to_hex(),
+        "13b375c0cc738e9c15304662a0734350ed1d2c42cb708567de94acb2839a170d"
+    );
+    let published = PublishedCeremonyDefinition::seal(legacy.clone()).unwrap();
+    let bound = CeremonyInstance::start_bound(
+        CeremonyId::new("legacy-bound").unwrap(),
+        &published,
+        CeremonyContext::empty(),
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+
+    let persisted = serde_json::to_string(&legacy).unwrap();
+    assert!(!persisted.contains("max_parallel"));
+    assert!(!persisted.contains("execution"));
+    let reopened: CeremonyDefinition = serde_json::from_str(&persisted).unwrap();
+
+    assert_eq!(reopened.digest().unwrap(), digest);
+    assert_eq!(bound.bound_definition(), Some(digest));
+    assert_eq!(published.digest(), digest);
+}
+
+#[test]
 fn joins_count_only_steps_from_the_transition_source_state() {
     let definition = definition(3);
     let transition = &definition.transitions()[0];
@@ -226,4 +267,104 @@ fn joins_count_only_steps_from_the_transition_source_state() {
             &CeremonyContext::empty(),
         ));
     }
+}
+
+#[test]
+fn a_lost_capacity_race_rechecks_all_candidates_against_the_winning_claim() {
+    let definition = definition(2);
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut persisted = opened(&definition);
+    persisted
+        .start_step(&definition, &step_id("a"), lease("a-1", now), now)
+        .unwrap();
+    assert_eq!(
+        persisted
+            .claimable_step_ids_at(&definition, now, MaxParallel::SERVER_MAX)
+            .unwrap(),
+        vec![&step_id("b"), &step_id("c")]
+    );
+
+    let mut stale = persisted.clone();
+    stale
+        .start_step(&definition, &step_id("c"), lease("c-stale", now), now)
+        .unwrap();
+    persisted
+        .start_step(&definition, &step_id("b"), lease("b-wins", now), now)
+        .unwrap();
+
+    assert!(persisted
+        .start_step(&definition, &step_id("c"), lease("c-retry", now), now)
+        .is_err());
+    assert!(persisted
+        .claimable_step_ids_at(&definition, now, MaxParallel::SERVER_MAX)
+        .unwrap()
+        .is_empty());
+}
+
+#[test]
+fn exhausted_retries_remove_only_that_step_from_concurrent_claims() {
+    let definition = definition(2);
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = opened(&definition);
+    for attempt in 1..=3 {
+        instance
+            .start_step(
+                &definition,
+                &step_id("a"),
+                lease(&format!("a-{attempt}"), now),
+                now,
+            )
+            .unwrap();
+        instance
+            .apply_step_result(
+                &definition,
+                &step_id("a"),
+                StepResult::failed(StepErrorMessage::new("retry").unwrap()).unwrap(),
+                now,
+            )
+            .unwrap();
+    }
+
+    assert_eq!(
+        instance
+            .claimable_step_ids_at(&definition, now, MaxParallel::SERVER_MAX)
+            .unwrap(),
+        vec![&step_id("b"), &step_id("c")]
+    );
+}
+
+#[test]
+fn analysis_rejects_a_concurrent_state_without_an_outgoing_join() {
+    let base = definition(3);
+    let draft = CeremonyDefinitionDraft::new(
+        base.name().clone(),
+        base.version().clone(),
+        base.description().cloned(),
+        base.inputs().values().cloned(),
+        base.outputs().values().cloned(),
+        base.states().values().cloned(),
+        Vec::new(),
+        base.steps_in_declaration_order().cloned(),
+        base.guards().values().cloned(),
+        base.roles().values().cloned(),
+    );
+
+    assert!(draft.analyze().errors().any(|finding| {
+        finding
+            .defect()
+            .to_string()
+            .contains("requires an outgoing join guard")
+    }));
+}
+
+#[test]
+fn analysis_warns_when_a_concurrent_state_has_more_than_three_owners() {
+    let report = definition_with_steps(&["a", "b", "c", "d"], 4).analyze();
+
+    assert!(report.warnings().any(|finding| {
+        finding
+            .defect()
+            .to_string()
+            .contains("more than three role owners")
+    }));
 }

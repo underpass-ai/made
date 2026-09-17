@@ -56,6 +56,7 @@ const MEMORY_FIRST_ID: &str = "parity-memory-first";
 const MEMORY_SECOND_ID: &str = "parity-memory-second";
 /// The scope both of them declare.
 const MEMORY_SCOPE: &str = "team:parity";
+const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
@@ -224,6 +225,45 @@ roles:
     allowed_actions:
       - work
       - opened
+"#;
+
+const CONCURRENT_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_concurrent"
+max_parallel: 2
+states:
+  - id: OPEN
+    initial: true
+    execution: concurrent
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+    guards:
+      - one_done
+guards:
+  one_done:
+    type: automated
+    check: any_step_completed
+steps:
+  - id: a
+    state: OPEN
+    handler: parity_step
+  - id: b
+    state: OPEN
+    handler: parity_step
+  - id: c
+    state: OPEN
+    handler: parity_step
+roles:
+  - id: A
+    allowed_actions: [a, finish]
+  - id: B
+    allowed_actions: [b]
+  - id: C
+    allowed_actions: [c]
 "#;
 
 /// The intent `made_design_ceremony` is asked to turn into a ceremony.
@@ -405,6 +445,68 @@ fn structured(result: &Value) -> &Value {
 
 fn failed(result: &Value) -> bool {
     result["isError"] == json!(true)
+}
+
+#[tokio::test]
+async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
+    let arms = ParityArms::start().await;
+    let (remote, embedded) = arms
+        .call(
+            901,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": CONCURRENT_SESSION_ID,
+                "definition_yaml": CONCURRENT_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service"
+            }),
+        )
+        .await;
+    assert_eq!(remote, embedded);
+    assert_eq!(
+        structured(&remote)["claimable_step_ids"],
+        json!(["a", "b", "c"])
+    );
+    assert_eq!(structured(&remote)["next_step_id"], "a");
+
+    let (remote, embedded) = arms
+        .call(
+            902,
+            "made_claim_ceremony_step",
+            &json!({
+                "ceremony_id": CONCURRENT_SESSION_ID,
+                "step_id": "a",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parallel-a",
+                "lease_ttl_ms": 60_000
+            }),
+        )
+        .await;
+    assert_eq!(remote, embedded);
+    assert_eq!(
+        structured(&remote)["claimable_step_ids"],
+        json!(["b", "c"]),
+        "one free slot still presents every candidate"
+    );
+
+    let (remote, embedded) = arms
+        .call(
+            903,
+            "made_claim_ceremony_step",
+            &json!({
+                "ceremony_id": CONCURRENT_SESSION_ID,
+                "step_id": "c",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parallel-c",
+                "lease_ttl_ms": 60_000
+            }),
+        )
+        .await;
+    assert_eq!(remote, embedded);
+    assert_eq!(structured(&remote)["claimable_step_ids"], json!([]));
+    assert_eq!(structured(&remote)["next_step_id"], Value::Null);
 }
 
 // ---------------------------------------------------------------------------

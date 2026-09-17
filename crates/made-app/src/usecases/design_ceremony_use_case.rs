@@ -568,4 +568,52 @@ mod tests {
             draft.analyze().findings()
         );
     }
+
+    #[test]
+    fn concurrent_group_analysis_rejects_reused_owners_and_impossible_counts() {
+        use crate::usecases::{
+            CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
+            CeremonyDesignStageEntry,
+        };
+        use made_core::value_objects::{JoinStepCount, StateExecution};
+
+        let base = document();
+        let grouped = CeremonyDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            base.final_approval().cloned(),
+            None,
+            None,
+            None,
+        )
+        .with_stage_entries(vec![CeremonyDesignStageEntry::Group(
+            CeremonyDesignGroup::new(
+                StepId::new("review_group").unwrap(),
+                StateExecution::Concurrent,
+                vec![
+                    CeremonyDesignGroupStep::new(stage("first", "WORKER")),
+                    CeremonyDesignGroupStep::new(stage("second", "WORKER")),
+                ],
+                CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(3).unwrap()),
+            ),
+        )]);
+
+        let report = designed(&grouped).definition().analyze();
+        let defects = report
+            .errors()
+            .map(|finding| finding.defect().to_string())
+            .collect::<Vec<_>>();
+        assert!(defects
+            .iter()
+            .any(|defect| defect.contains("distinct role owners")));
+        assert!(defects
+            .iter()
+            .any(|defect| defect.contains("join_step_count")));
+    }
 }

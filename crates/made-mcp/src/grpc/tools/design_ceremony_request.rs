@@ -339,4 +339,29 @@ mod tests {
         assert_eq!(request.pattern, "roundtable_fixed_order");
         assert!(request.stages.is_empty());
     }
+
+    #[test]
+    fn grouped_concurrency_crosses_the_mcp_grpc_boundary_without_defaulting() {
+        let mut value = intent();
+        value["max_parallel"] = json!(2);
+        value["stages"] = json!([{
+            "id": "parallel_review",
+            "group": {
+                "execution": "concurrent",
+                "steps": [
+                    {"id": "a", "owner_role_id": "A", "instructions": "Review A"},
+                    {"id": "b", "owner_role_id": "B", "instructions": "Review B"}
+                ],
+                "join": {"condition": "steps_completed", "count": 1}
+            }
+        }]);
+
+        let request = build_design_ceremony_request(&value).unwrap();
+        let group = request.stages[0].group.as_ref().unwrap();
+        assert_eq!(request.max_parallel, Some(2));
+        assert_eq!(group.execution, "concurrent");
+        assert_eq!(group.steps.len(), 2);
+        assert_eq!(group.join.as_ref().unwrap().condition, "steps_completed");
+        assert_eq!(group.join.as_ref().unwrap().count, Some(1));
+    }
 }

@@ -160,6 +160,10 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
         })
         .collect::<Vec<_>>();
     reject_duplicates(entry_ids.iter().cloned(), "stages.id")?;
+    reject_duplicates(
+        entry_ids.iter().map(|id| id.to_ascii_uppercase()),
+        "stages.id after state normalization",
+    )?;
     if entry_ids
         .iter()
         .any(|id| id.eq_ignore_ascii_case(COMPLETED_STATE))

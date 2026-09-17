@@ -265,10 +265,9 @@ impl CeremonyDefinitionParts<'_> {
                 .iter()
                 .filter(|transition| transition.from() == state.id())
                 .collect::<Vec<_>>();
-            if !outgoing.is_empty()
-                && !outgoing
-                    .iter()
-                    .any(|transition| self.transition_has_join(transition, &steps))
+            if !outgoing
+                .iter()
+                .any(|transition| self.transition_has_join(transition, &steps))
             {
                 findings.push(CeremonyValidationFinding::error(
                     CeremonyValidationLocus::state(state.id().clone()),

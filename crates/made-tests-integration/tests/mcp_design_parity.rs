@@ -13,9 +13,14 @@
 
 use made_adapters::yaml::DesignedCeremonyYaml;
 use made_app::usecases::{
-    CeremonyDesignDocument, CeremonyDesignParticipant, CeremonyPatternPreset,
+    CeremonyDesignDocument, CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
+    CeremonyDesignParticipant, CeremonyDesignStage, CeremonyDesignStageEntry,
+    CeremonyPatternPreset,
 };
-use made_core::value_objects::{CeremonyDescription, CeremonyName, OutputName, RoleId};
+use made_core::value_objects::{
+    CeremonyDescription, CeremonyName, JoinStepCount, MaxParallel, OutputName, RoleId, Rounds,
+    StateExecution, StepId, StepInstructions,
+};
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::protocol::ToolErrorCode;
@@ -118,6 +123,75 @@ fn pattern_document() -> CeremonyDesignDocument {
         None,
     )
     .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder)
+}
+
+fn concurrent_intent() -> Value {
+    json!({
+        "name": "parallel_review",
+        "objective": "Collect two independent reviews.",
+        "outputs": ["decision"],
+        "participants": [{"role_id": "A"}, {"role_id": "B"}],
+        "max_parallel": 2,
+        "stages": [{
+            "id": "review",
+            "group": {
+                "execution": "concurrent",
+                "steps": [
+                    {"id": "review_a", "owner_role_id": "A", "instructions": "Review A."},
+                    {"id": "review_b", "owner_role_id": "B", "instructions": "Review B."}
+                ],
+                "join": {"condition": "steps_completed", "count": 1}
+            }
+        }]
+    })
+}
+
+fn concurrent_document() -> CeremonyDesignDocument {
+    let participants = ["A", "B"]
+        .into_iter()
+        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .collect::<Vec<_>>();
+    let steps = [
+        ("review_a", "A", "Review A."),
+        ("review_b", "B", "Review B."),
+    ]
+    .into_iter()
+    .map(|(id, owner, instructions)| {
+        CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+            StepId::new(id).unwrap(),
+            RoleId::new(owner).unwrap(),
+            StepInstructions::new(instructions).unwrap(),
+            None,
+            None,
+            None,
+            Rounds::ZERO,
+            None,
+        ))
+    })
+    .collect();
+    CeremonyDesignDocument::new(
+        CeremonyName::new("parallel_review").unwrap(),
+        None,
+        CeremonyDescription::new("Collect two independent reviews.").unwrap(),
+        Vec::new(),
+        Vec::new(),
+        vec![OutputName::new("decision").unwrap()],
+        participants,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    )
+    .with_stage_entries(vec![CeremonyDesignStageEntry::Group(
+        CeremonyDesignGroup::new(
+            StepId::new("review").unwrap(),
+            StateExecution::Concurrent,
+            steps,
+            CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
+        ),
+    )])
+    .with_max_parallel(MaxParallel::new(2).unwrap())
 }
 
 #[tokio::test]
@@ -355,4 +429,42 @@ async fn invalid_pattern_values_are_refused_identically_by_both_mcp_arms() {
             "{invalid}"
         );
     }
+}
+
+#[tokio::test]
+async fn concurrent_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = concurrent_intent();
+
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the gRPC-backed MCP tool accepts grouped concurrency"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the embedded MCP tool accepts grouped concurrency"),
+    );
+    let facade = DesignedCeremonyYaml::render(
+        &EmbeddedMade::default()
+            .design(&concurrent_document())
+            .expect("the facade accepts typed grouped concurrency"),
+    )
+    .expect("the YAML adapter renders the facade result");
+
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["definition_yaml"], facade);
+    assert_eq!(over_the_wire["publishable"], true);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("max_parallel: 2"), "{yaml}");
+    assert!(yaml.contains("execution: concurrent"), "{yaml}");
+    assert!(yaml.contains("steps_completed:1"), "{yaml}");
 }
