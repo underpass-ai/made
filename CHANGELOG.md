@@ -182,6 +182,100 @@ operator command.
   work is, so a draft touching the aggregate got no feedback until it was
   marked ready. (#66)
 
+- The two observability documents now claim only what the code records.
+  `docs/made-observability-design.md` lists the twenty-one Prometheus families
+  the registry holds and the five legacy series `/metrics` hand-rolls, each row
+  naming the file that records it; the alerts and the dashboard read only
+  series that exist; the span tree drawn in
+  `docs/operations/observability-runbook.md` puts
+  `prepare_ceremony_participants` where the code puts it, beside `run_ceremony`
+  rather than under it, and the log-message table says which fields each
+  message actually carries instead of promising `ceremony_id`, `step_id` and
+  `specialty` on all six. What had no code behind it is gone from both:
+  gRPC front-door RED, Postgres query latency, deliberation phase durations,
+  proposals and revisions histograms, the three validator families, step
+  attempts, trace exemplars, provider and judge span attributes, and the
+  alerts and panels built on them. What a named slice will land — ceremony
+  metrics from the event seam, trace ids, the embedded exporter and registry,
+  spans on steps and adapters, the ceremony stream — is in one "Planned — not
+  implemented" section per document, each item carrying its slice id, because
+  a claim in the present tense about a future capability is the thing
+  PRINCIPLES §1 forbids. The runbook also says what the embedded edition has
+  had since #53 — an in-process registry, the two tools on both backends, no
+  exporter, no endpoint, and honest zeros for the council counters — where it
+  used to say there was nothing. `README.md`, `docs/index.md`,
+  `docs/editions.md` and `docs/embedded-made.md` follow: the embedded metrics
+  default is the Prometheus registry it has been since #53, not
+  `NoopMetricsRecorder`, and no surface is described as having embedded-only
+  ceremony controls. `docs/orchestration-patterns-plan.md` §0.4 names
+  `docs/architecture/parity.tsv` as the count rather than carrying four
+  numbers that moved with every slice of WS-F, and the slices that have landed
+  — A1–A4, F1–F4, G5, H1–H4, and H5 except its per-crate coverage floors —
+  say so in their rows, as ADR-012, ADR-013 and ADR-014 now do in their status
+  lines. Four counts that had drifted the other way go with them: the tool
+  table in `docs/operations/mcp-stdio.md` had 37 rows under a sentence
+  promising 41, and now carries every backend-owned tool in the order
+  `GRPC_TOOL_NAMES` lists them; `crates/made-mcp/README.md` said the container
+  test checks 35 tools and now names `parity.tsv`; the `justfile` said CI does
+  not run coverage, which it has since the impact planner landed; and
+  `docs/dev-loop.md` said a green `just check` means a green pull request,
+  when `just check` leaves out coverage, the chart and the container image.
+  (#69)
+- The tree proof accepts far less. `scripts/ci/tree-already-proved.sh` took
+  any successful `quality-gate` run whose commit tree matched, with no filter
+  on the plan, the event, the head repository or the age. So a docs-only pull
+  request — whose run skipped every Rust job and went green — proved the tree
+  of the merge commit behind it, and the push to `main` that was meant to run
+  the full matrix skipped instead; and because that push was itself a
+  successful run, the hole laundered forward. A run now proves its tree only
+  when it ran in this repository (`head_repository.full_name` equals
+  `GITHUB_REPOSITORY`), is younger than fourteen days, and shows **every** job
+  of the full matrix concluded `success` — not skipped, not cancelled. That
+  last test is also the plan check, and it is read from the run's job
+  conclusions rather than from the plan the run recorded, because on
+  `pull_request` the planner runs from the pull request's own head and its
+  word for "full" is the pull request's word; the `impact` job records the
+  plan — `full`, the gates, the event — in the run summary all the same, for
+  the reader. `--self-test` drives the same decision the live path drives,
+  with fixtures for the API answers: a partial pull-request proof refused, a
+  full one accepted, a push accepted, a fork refused, a stale proof refused,
+  a skipped job refused, a cancelled one refused. It runs in the `tree-proof`
+  job on every event and in `just workflow-contract`. The skip branch itself
+  can only be observed on a push to `main`. (#76)
+- `scripts/ci/dev-loop-workflow-contract.py` derives the quality-gate job
+  list from the workflow instead of reading a hard-coded table on both sides
+  of its own comparison, which is why four drifts were invisible to it: a new
+  gate job with no `impact` guard and absent from `gate`'s `needs`, the
+  trigger types shrunk to `[ready_for_review]`, its own `--self-test`
+  invocation deleted, and `gate` no longer treating `cancelled` as a failure.
+  Every job that is not `tree-proof`, `impact` or `gate` must need `impact`
+  and be routed by an output the planner's `GATES` tuple actually declares;
+  `gate`'s `needs` must equal the workflow's job list exactly, both
+  directions; the tree proof's idea of the full matrix must equal it too; and
+  all four trigger types are checked on all three workflows that stand down
+  on drafts. `quality-gate-plan.py`, `tree-already-proved.sh` and the two
+  workflows it had never read joined its sources, and it now fails on any
+  `uses:` pinned to a tag rather than a commit. 34 mutation guards, up from
+  19. (#76)
+- `.github/workflows/plugin-package.yml`: the four-host `package` job runs
+  scripts the pull request wrote — the marketplace contract, the plugin
+  smoke, the two bootstraps, the packager — and no longer holds
+  `contents: write`. The tag-gated release upload is its own job now, waits
+  for all four hosts and is the only one that writes.
+  `actions/upload-artifact` was unpinned there and again in
+  `publish-distribution.yml`, and both are on the commit `dev-loop.yml`
+  already used; `dependency-review.yml` dropped its workflow-level
+  `pull-requests: write`, which the action needs only to post a summary
+  comment this workflow never asks for. The packaging matrix also stops
+  waking for prose: its `paths` filter excludes `crates/made-mcp/**/*.md`,
+  narrowly, because the markdown under `plugins/made/**` is bundle content
+  and still wakes it. (#76)
+- The planner no longer exports `cargo_packages`. It was computed from the
+  reverse dependency closure, exported, and never read — `clippy`, `test`,
+  `coverage` and `benches` are all `--workspace` — and wiring it would have
+  been strictly weaker than leaving it out, not equal and not stricter. The
+  contract pins `--workspace` on `clippy` and `test` instead, and the closure
+  keeps its one honest job: deciding which gates run. (#76)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
@@ -360,6 +454,32 @@ operator command.
   backends other than the in-tree ones are out-of-tree adapters gated by
   the memory conformance suite. The last in-tree revision is `c7dad9f`
   at `crates/made-adapters/src/kmp/` for anyone who needs it.
+
+### Fixed
+
+- Three routing holes let a change reach `main` with no job run at all.
+  `docs/architecture/parity.tsv` and `docs/operations/support-matrix.md` are
+  `include_str!`'d into `made-mcp` and `made-tests-integration` tests, and the
+  ceremony definitions under `tests/e2e/ceremonies/` into `made-e2e-runner`'s
+  own sources plus nine more test and unit targets; all of them routed to no
+  gate, so a pull request editing only the TSV ran nothing and `gate`
+  reported green. They route to `clippy` and `test` now — not `coverage`,
+  which would re-run the very tests `test` has already proved. And the rule
+  is non-regressable: the planner's self-test walks every `include_str!` /
+  `include_bytes!` under `crates/**`, resolves the target relative to the
+  source file (and the `concat!(env!("CARGO_MANIFEST_DIR"), …)` form relative
+  to the crate), and fails when a target outside its own crate directory
+  would route to no Rust job. Thirteen files qualify today. The `tests/e2e/`
+  prefix route is gone with it: the kubernetes manifests, the compose file
+  and the four Dockerfiles are named one by one, so a new directory there
+  fails closed to the full matrix instead of inheriting an empty route from
+  its parent. (#76)
+- The planner's change boundary dropped deletions and rename sources.
+  `git diff --name-only --diff-filter=ACMR` turned `40cb7e5`'s sixteen-file
+  diff into three, so a pull request that deleted a crate source and edited a
+  document routed to nothing. It reads `git diff -M --name-status` now and
+  plans the union of both sides of a rename or a copy, which is the only
+  answer that is right whichever side carried the gate. (#76)
 
 ## 0.3.0 - 2026-09-03
 

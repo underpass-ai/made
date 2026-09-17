@@ -1,7 +1,8 @@
 # Observability runbook — wiring traces, metrics and logs in Kubernetes
 
 *Status: verified end-to-end on 2026-07-03 against a kube-prometheus-stack
-(Prometheus + Grafana), Grafana Tempo and Loki/promtail installation.*
+(Prometheus + Grafana), Grafana Tempo and Loki/promtail installation; claims
+re-checked against the code on 2026-09-17.*
 
 This is the operational companion to
 [made-observability-design.md](../made-observability-design.md)
@@ -10,22 +11,27 @@ on, how to prove it is flowing, and what to check when it is not**. Auditable
 decision traces are the product's core promise — a MADE instance running
 without trace export is running with its main feature dark.
 
+What the code does not do yet is in §5, not in the instructions.
+
 ## TL;DR
 
 | Signal | How it ships | One-line enable | Proof it works |
 |---|---|---|---|
-| Traces (deliberations, ceremonies, judge verdicts) | OTLP/gRPC, `otel` feature, dormant without endpoint | `MADE_OTLP_ENDPOINT` in `providerEnv` | `"otlp exporter wired"` in the pod log at boot |
+| Traces (the RPC, the ceremony run, each deliberation and its verdicts) | OTLP/gRPC, `otel` feature, dormant without endpoint | `MADE_OTLP_ENDPOINT` in `providerEnv` | `"otlp exporter wired"` in the pod log at boot |
 | Metrics | Prometheus `/metrics` on the HTTP port (8080) | ServiceMonitor (manifest below) | `made_*` series in Prometheus |
 | Logs | JSON to stdout | nothing (any log shipper: promtail, fluent-bit…) | `{namespace="<ns>", pod=~"MADE.*"}` in Loki |
+
+The table is the deployable edition. The embedded edition runs a registry and
+no exporter; §2.1 says exactly what an operator can read there.
 
 ## 1. Traces (OTLP)
 
 ### Wire it
 
-The image ships the `otel` feature but it stays **dormant** until
-`MADE_OTLP_ENDPOINT` is set (see `crates/made/src/telemetry.rs`: no
-endpoint → JSON logs only, no background exporter). Add the endpoint to the
-chart's `providerEnv`:
+The image ships the `otel` feature (`Dockerfile`, `--features made/otel`) but
+it stays **dormant** until `MADE_OTLP_ENDPOINT` is set (see
+`crates/made/src/telemetry.rs`: no endpoint → JSON logs only, no background
+exporter). Add the endpoint to the chart's `providerEnv`:
 
 ```yaml
 # values override
@@ -57,15 +63,22 @@ carries a worked example:
      dormant (the chart's post-install NOTES banner shouts about this case).
 2. **Run anything** (a `hello`-style noop ceremony is enough, no models
    needed) and search the trace backend. Verified span inventory for one
-   `RunCeremony` with two steps:
+   `RunCeremony` with two deliberating steps:
 
    ```
-   rpc.run_ceremony                    (root, service made)
+   rpc.run_ceremony                      (root, service made)
+   ├── prepare_ceremony_participants     (sibling of run_ceremony: the RPC
+   │                                      handler seats the council before
+   │                                      it drives the session)
    └── run_ceremony
-       ├── prepare_ceremony_participants
-       ├── deliberate                  (one per deliberating step;
-       └── deliberate                   per-proposal + judge-verdict span events)
+       ├── deliberate                    (one per deliberating step;
+       └── deliberate                     per-proposal, per-critique and
+                                          validator-verdict span events)
    ```
+
+   There is **no span per ceremony step**: `run_step` and the step handler
+   carry none, so a deliberating step shows up as its `deliberate` child and a
+   non-deliberating one shows up not at all (§5, G4).
 
    Tempo example:
 
@@ -121,26 +134,52 @@ Prove it: the target appears `up` in Prometheus (`Status → Targets`) and
 dashboard first: winner-score distribution, `NoValidProposal` rate, judge
 latency/error class, provider token usage, ceremony step durations.
 
-### The embedded edition
+Two shapes of this endpoint are worth knowing before you alert on it:
 
-There is nothing to scrape. `made-mcp` on the embedded backend, and any host
-holding `EmbeddedMade`, wires a Prometheus registry **inside the process** and
-exposes no port: it records, and nothing exports. What an operator can ask for
-is the two MCP tools, which both editions serve:
+- `made_service_ready` reads the **NATS connection state only**. Readiness is
+  `GET /readyz`, which checks NATS *and* Postgres; alert on the probe.
+- The five ceremony families move for a `RunCeremony` run and for nothing
+  else. A host driving steps one at a time leaves them at zero, correctly.
 
-```json
-{"name":"made_get_status","arguments":{"include_stats":true}}
-{"name":"made_get_metrics","arguments":{}}
-```
+### 2.1 The embedded edition
 
-`made_get_status` answers with the version of the engine that answered, how
-long *that* engine has been up, its condition and the counters. The counters
-are deliberations and orchestrations, which an edition running no council
-leaves at zero; the ceremony families a session does move live in the
-in-process registry and are not on this answer yet (plan §3.7 G3). A host that
-wants them today injects its own recorder through `EmbeddedMadeBuilder::with_metrics`
-and renders that registry itself — which is also how it can tell what is
-recording, since `EmbeddedMade::status` names the recorder.
+There is nothing to scrape, and there is something to read.
+
+`made-mcp` on the embedded backend, and any host holding `EmbeddedMade`, wires
+a `PrometheusMetricsRecorder` with its own registry **inside the process**
+(`EmbeddedMadeBuilder`, since #53) when the host injects none. What exists
+there today, exactly:
+
+- **An in-process registry.** It records the five ceremony families of a
+  `RunCeremony` run, like the deployable edition does.
+- **No exporter and no endpoint.** No OTLP, no `/metrics`, no socket of any
+  kind. Nothing renders that registry outside the process.
+- **The two MCP tools, on both backends:**
+
+  ```json
+  {"name":"made_get_status","arguments":{"include_stats":true}}
+  {"name":"made_get_metrics","arguments":{}}
+  ```
+
+  `made_get_status` answers with the version of the engine that answered, how
+  long *that* engine has been up, its condition and — when asked — the
+  counters. Both tools are composed by `GetServiceStatusUseCase` and
+  `GetServiceMetricsUseCase`, so the two editions cannot answer differently
+  about what they are.
+- **Honest zeros.** The counters on those answers are `Statistics`:
+  deliberations and orchestrations. They are council work, which an embedded
+  engine running no council never performs, so it reports them at zero however
+  many sessions it runs — every family present, every value true.
+- **The recorder's name off the wire.** `EmbeddedMade::status` names which
+  recorder is running, which is how a Rust host can tell whether its own
+  injection took; neither MCP arm renders it, because `GetStatusResponse`
+  carries four fields and giving one arm a fifth is the divergence ADR-014
+  exists to prevent.
+
+A host that wants the registry itself today injects its own recorder through
+`EmbeddedMadeBuilder::with_metrics` and renders it. Putting the registry on the
+`made_get_metrics` answer, and giving `made-mcp` an OTLP exporter and a file
+sink, is plan §3.7 **G3** (§5).
 
 ## 3. Logs
 
@@ -152,10 +191,28 @@ Loki/promtail, the ceremony timeline is queryable as:
 {namespace="<ns>", pod=~"MADE.*"} |= "ceremony step deliberation completed"
 ```
 
-Useful stable message keys: `ceremony participant prepared`,
-`proposal drafted`, `validator verdict`, `proposal scored`,
-`deliberation completed`, `ceremony step deliberation completed` — each
-carries `ceremony_id`/`step_id`/`specialty` fields for filtering.
+Stable message keys, with the fields each one actually carries:
+
+| Message | Fields |
+|---|---|
+| `ceremony step deliberation completed` | `ceremony_id`, `step_id`, `specialty`, `winner_proposal_id` |
+| `ceremony participant prepared` | `specialty`, `kind` |
+| `proposal drafted` | `proposal_id`, `author`, `content_len`, `preview` |
+| `peer critique and revision` | `round`, `reviewer`, `target_proposal`, `revised_preview` |
+| `validator verdict` | `proposal_id`, `validator`, `passed`, `verdict` |
+| `proposal scored` | `proposal_id`, `score` |
+| `deliberation completed` | `task_id`, `specialty`, `winner_id`, `winner_score`, `duration_ms` |
+
+Only the first carries `ceremony_id` **and** `step_id` **and** `specialty`, so
+it is the only one you can filter a single step's work by. The rest are joined
+through the trace, not through a label: they are emitted under the
+`deliberate` span of the step that produced them.
+
+`made-mcp`'s own default filter is
+`made_mcp=info,made_adapters::sqlite=info`, so on the embedded backend — where
+those events are emitted in the same process — none of the messages above
+reach stdout. Set `RUST_LOG` yourself to see them, until G3 widens the
+default.
 
 ## 4. Order of operations for a new install
 
@@ -167,3 +224,17 @@ carries `ceremony_id`/`step_id`/`specialty` fields for filtering.
    log lines land in your backends.
 5. Only then point real providers/models at it — from here on, every
    deliberation you rely on has an auditable trace.
+
+## 5. Planned — not implemented
+
+Not wired today, in any edition. Named here with the slice of
+[`orchestration-patterns-plan.md`](../orchestration-patterns-plan.md) §3.7
+that owns it, so that nothing above has to be written in the future tense.
+
+| What an operator would get | Slice |
+|---|---|
+| Ceremony metrics and one JSON log line per ceremony event from a single subscriber seam, so the step-at-a-time path is observable too, plus the families it needs (step claimed, attempt, iteration, guard decided, intervention opened/answered, transition applied, lease acquired/expired) | G1 |
+| `trace_id`, `correlation_id` and `causation_id` on every sealed record, so a journal record links to the trace that wrote it | G2 |
+| OTLP export from `made-mcp` with the same `MADE_OTLP_*` variables the server uses; the in-process registry on the `made_get_metrics` answer; a JSON-lines file sink at a host-chosen path; `made_app=info` in the default filter | G3 |
+| A span per ceremony step and per step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
+| Ceremony progress as a live stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |

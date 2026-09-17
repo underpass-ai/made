@@ -429,10 +429,10 @@ advertises 43 executable tools:
 | `made_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
 | `made_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
 | `made_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
-| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
 | `made_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `made_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `made_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
+| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
 | `made_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
 | `made_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
 | `made_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
@@ -453,6 +453,10 @@ advertises 43 executable tools:
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
 | `made_claim_ceremony_step`      | `ClaimCeremonyStep`                   | Lease one step the host will execute itself. |
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
+| `made_design_ceremony`          | `DesignCeremony`                      | Turn an author's structured intent into an unpublished ceremony draft. |
+| `made_read_ceremony_events`     | `ReadCeremonyEvents`                  | Read the sealed event stream of one session by position, with its hash chain. |
+| `made_get_ceremony_transcript`  | `GetCeremonyTranscript`               | Read what the completed steps of one session contributed. |
+| `made_generate_ceremony_report` | `GenerateCeremonyReport`              | Render the Markdown report of one session from its persisted state. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 

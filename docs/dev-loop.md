@@ -71,9 +71,12 @@ Before opening a PR:
 just check && just helm-lint
 ```
 
-This is exactly what the per-PR CI gates run. If `just check`
-passes, the PR will pass (excluding the container-backed gates,
-which need Docker/podman).
+Every recipe in the cascade runs the script its CI job runs, so a failure
+here is the failure CI would report. It is not the whole gate: `just check`
+leaves out coverage (`just coverage`), the chart (`just helm-lint`) and the
+container image, and a ready pull request runs all three when the impact
+planner routes them. `just check && just coverage && just helm-lint` is the
+closest a machine without Docker or podman gets.
 
 ## Draft and ready
 
@@ -129,6 +132,18 @@ for the change and every other job reads its outputs:
   (`charts/**`), the container image (`Dockerfile`), coverage and the
   publication dry run. `helm` and `contract` are the two gates no Rust
   source can reach; nothing routes them from a crate change.
+- **Documentation the workspace compiles is source.**
+  `docs/architecture/parity.tsv`, `docs/operations/support-matrix.md` and
+  the ceremony definitions under `tests/e2e/ceremonies/` are `include_str!`'d
+  into `made-mcp`, `made-tests-integration`, `made-e2e-runner` and
+  `made-adapters`, so editing one runs `clippy` and `test`. The planner's
+  self-test walks every `include_str!` / `include_bytes!` under `crates/**`
+  and fails if a target outside its own crate would route to no Rust job,
+  so that list cannot go stale.
+- **The change boundary keeps deletions and both sides of a rename.**
+  `git diff -M --name-status`, not `--diff-filter=ACMR`: removing a crate
+  source is a change to what compiles, and a rename's old path is where the
+  routed file used to live.
 - **It fails closed.** A path the router does not recognise, a change to
   `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml`, `quality-gate.yml`,
   the router itself or the tree proof, and every `workflow_dispatch` run
@@ -142,7 +157,8 @@ python3 scripts/ci/quality-gate-plan.py --base origin/main --head HEAD
 just workflow-contract     # the router's self-test + the workflow contract
 ```
 
-A docs-only pull request runs no Rust job at all.
+A docs-only pull request runs no Rust job — unless the docs are compiled
+into a crate, which the planner knows.
 
 ### Never twice for the same tree
 
@@ -152,11 +168,38 @@ head that was just proved green: same tree hash, different commit. The
 successful `quality-gate` run already covered this exact tree, and skips the
 gate when one did.
 
+"Already covered" is narrow, because a proof accepted wrongly makes the hole
+it came from permanent. A run proves its tree only when all of these hold:
+
+- it ran in **this** repository — `head_repository.full_name` equals
+  `GITHUB_REPOSITORY` — so a fork's run proves nothing here;
+- it is younger than 14 days (`TREE_PROOF_MAX_AGE_DAYS`): a tree proved
+  against a months-old toolchain, action pin or dependency graph is not
+  proved against today's;
+- **every job of the full matrix concluded `success`** — not skipped, not
+  cancelled. That single test is also the plan check: a partial plan skips
+  at least one gate, so a docs-only run cannot prove a tree, and neither can
+  a push that itself skipped the gate on an earlier proof.
+
+The script reads the run's job conclusions rather than the plan the run
+recorded, because on a `pull_request` the planner runs from the pull
+request's own head and its word for "full" is the pull request's word. The
+`impact` job records the plan — `full`, the gates it selected, the event —
+in the run summary all the same: it is the same statement in the form a
+person reads.
+
 The rule is "skip when this tree was already proved", never "trust the pull
 request". A merge from an out-of-date branch, a conflict resolved in the
 GitHub UI and a direct push each produce a tree nobody tested, and each
 still runs the full gate — as does any doubt at all: no green run to compare
 against, an API that will not answer, a commit that cannot be resolved.
+
+`bash scripts/ci/tree-already-proved.sh --self-test` drives the same
+decision the live path drives, with fixtures standing in for the API
+answers: a partial pull-request proof refused, a full one accepted, a push
+accepted, a fork refused, a stale proof refused, a skipped job refused, a
+cancelled one refused. It runs in the `tree-proof` job on every event, and
+in `just workflow-contract`.
 
 ### Changing `DEV_PACKAGES`
 
@@ -412,7 +455,7 @@ See [`docs/release.md`](release.md).
 | `container-image` | image builds from `Dockerfile` | every ready PR |
 | `dependency-review` | GitHub dependency-review-action | every ready PR |
 | `coverage` | `bash scripts/ci/rust-coverage.sh` (80 % workspace) | every ready PR |
-| `tree-proof` | `bash scripts/ci/tree-already-proved.sh` | pushes to `main` |
+| `tree-proof` | `bash scripts/ci/tree-already-proved.sh --self-test`, then the proof itself | self-test every run; the proof on pushes to `main` |
 | `impact` | `python3 scripts/ci/quality-gate-plan.py` | every ready PR |
 | `gate` | every required job passed and this is not a draft | every ready PR |
 | `e2e-compose` | full stack via docker compose + runner | **manual** |
