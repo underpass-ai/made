@@ -1,11 +1,27 @@
 # ADR-003: The engine owns the audit contract; the host owns durability
 
-Status: Accepted; embedded storage choice superseded by ADR-011; the
-"snapshot plus append-only journal plus outbox, not event sourcing"
-decision superseded by ADR-012 (the audit contract, the hash chain, the
-conformance rule and the host-owns-durability rule stand)
+Status: Partially superseded. ADR-011 supersedes only the embedded Redb storage
+choice. ADR-012 supersedes only the "snapshot plus append-only journal plus
+outbox, not event sourcing" decision. The audit contract, hash chain,
+conformance rule and host-owns-durability rule remain implemented.
 
-Implementation status last verified: 2026-08-14
+Implementation status last verified: 2026-09-18
+
+## Current implementation
+
+The engine still owns the sealed audit envelope, hash chain, verification and
+storage conformance contracts, while each host chooses its durability. The
+current ceremony source of truth is the event stream from ADR-012, with SQLite
+as its durable reference adapter; snapshots are optional fold caches.
+Publication uses durable consumer
+cursors rather than an outbox. The former `CeremonyUnitOfWorkPort`, whole-state
+write path, transcript store and outbox were removed during the stream
+migration (#42–#45, #83, #86, #108 and #110).
+
+The remainder of this ADR records the historical design that established the
+still-current audit and durability boundary. Statements about Redb,
+snapshot/journal transactions and an outbox describe that superseded storage
+implementation.
 
 ## Context
 
@@ -22,7 +38,7 @@ state when `MADE_CEREMONY_STORE_PATH` is absent and Redb-backed ceremony
 state when it is configured. A guard that disappears on restart is not a guard;
 a lease that does not outlive the failure it exists for is decorative.
 
-## Decision
+## Historical decision
 
 **The engine defines and verifies the contract. The host provides the storage.**
 `AuditRecord`, the hash chain, the event catalogue and `CeremonyUnitOfWorkPort`
