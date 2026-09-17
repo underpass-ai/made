@@ -16,6 +16,9 @@ operator command.
 
 ### Changed
 
+- Move ceremony step execution into a child module of the application driver,
+  preserving method bodies and all execution behavior. (#115)
+
 - Ceremony telemetry now projects sealed records through metrics, tracing, and
   structured-log subscribers in both editions. One-shot and step-at-a-time
   execution produce the same ceremony metric deltas, and MCP tool calls carry
