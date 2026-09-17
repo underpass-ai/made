@@ -32,7 +32,7 @@ version and definition version solve different compatibility problems.
 | Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
 | Surface today ([table](operations/support-matrix.md#editions)) | the **ceremony engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
 | Persistence | one local SQLite file for ceremony state and session memory | SQLite for ceremonies and session memory when a ceremony-store path is configured; Postgres or memory for other aggregates |
-| Messaging | none | optional NATS |
+| Messaging | durable pull cursors and optional event + registry-snapshot JSONL sink | optional NATS publication and the same durable pull cursors |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
 | Observability | an in-process Prometheus registry returned by `made_get_metrics`; optional OTLP traces in `made-mcp`; optional event + metric-snapshot JSONL sink; no scrape endpoint | the same registry through `made_get_metrics` and Prometheus at `/metrics`; OTLP traces |
@@ -43,9 +43,16 @@ There is also a **fixture backend** (`MADE_MCP_BACKEND=fixture`) that returns
 deterministic canned responses. It is for wiring an MCP client and validating
 tool choice; it is not an edition and must be selected explicitly.
 
+Phase 2 established this matrix through the SQLite memory composition (#102),
+cursor/pull/NATS/JSONL delivery (#108), stream-derived telemetry and bounded
+reports (#110), and the shared metrics registry plus embedded exporters
+(verified #119 integration). The final filled-optional and enum parity cases
+are supplied by #120 before the closure PR merges.
+
 ## Embedded edition
 
-Status: implemented first slice. The embedded surface covers the **ceremony
+Status: phase 2 implementation complete on the verified integration tree. The
+embedded surface covers the **ceremony
 engine**: every capability group the MCP server offers except the council
 surface — deliberation, and council, agent and contract configuration — which
 is cluster-only until B3.
@@ -121,6 +128,10 @@ injects. Details: [embedded-made.md](embedded-made.md).
   opening the same file recalls decisions recorded by an earlier process.
   `crates/made-mcp/tests/embedded_sqlite_stdio.rs` drives that restart through
   the shipped `made-mcp` binary.
+- **Durable event delivery** through named pull cursors. When a JSONL sink is
+  configured, the event line and current registry snapshot are written under
+  one lock and flush; a write failure leaves the cursor unacknowledged for
+  at-least-once retry.
 
 ### What it explicitly does not prove
 
@@ -294,6 +305,11 @@ Two caveats that make this less symmetric than the KMP equivalent:
   is a contract change and is not in this phase.
   [`architecture/struct-numbers.tsv`](./architecture/struct-numbers.tsv) is
   the table both implementations are pinned against.
+- **Shared list bounds remain catalogued debt.** Ceremony ids,
+  `reconsider_when` and target role ids are bounded at the MCP schema boundary
+  but do not yet share domain value objects across all four surfaces; issue
+  #100 owns that follow-up. Whole and paged history, the typed page limit and
+  bounded one-cut reports are already implemented in #108 and #110.
 - **Ceremony state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.

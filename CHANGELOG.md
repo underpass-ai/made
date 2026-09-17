@@ -14,6 +14,40 @@ operator command.
 
 ## Unreleased
 
+The entries below are the candidate **0.4.0** release notes. This section does
+not create a release, version bump or tag; the release procedure will do that
+after the final tree is approved.
+
+### 0.4.0 highlights
+
+- Ceremony event streams are now the source of truth: commands decide sealed
+  events, instances fold them, SQLite stores them with a global order, and
+  snapshots are optional caches (#42–#45).
+- Transcript and memory became projections of sealed records and the transcript
+  store port was removed (#83). Copy-on-write migration imports legacy stores,
+  then removes the old unit-of-work, whole-state write and outbox paths (#86).
+- Session memory is a MADE-owned bounded context with recall, nine-property
+  conformance and a durable SQLite reference adapter selected by path-aware
+  compositions; the generic builder remains forgetful (#84, #102). MADE ships
+  no KMP adapter (#41).
+- Durable named cursors now drive explicit pull acknowledgement, NATS
+  publication and the embedded JSONL sink; whole and paged event history share
+  a typed page limit (#108).
+- Metrics, traces, structured logs and reports consume the same bounded stream
+  cut in both editions (#110). The shared service-metrics projection preserves
+  legacy statistics and adds registry text and structured samples, while
+  embedded hosts can wire OTLP/mTLS and paired event/registry JSONL snapshots
+  through the same recorder (#119).
+- The final parity session fills optional fields and rotates enum variants in
+  #120. That tests-only PR is composed before these notes merge; it is not
+  described here as an already merged implementation change.
+
+### Remaining 0.4.0 debt
+
+- Shared domain value objects for the list bounds now enforced at MCP ingress
+  remain tracked in #100. Whole/paged history, its typed page limit and one-cut
+  reports are complete in #108 and #110.
+
 ### Changed
 
 - `made_get_metrics` now returns the same in-process Prometheus registry as

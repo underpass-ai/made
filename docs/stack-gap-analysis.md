@@ -1,7 +1,7 @@
 # Stack Gap Analysis
 
-Snapshot date: 2026-05-18 (ceremony engine + LLM-as-judge scorer added
-2026-06-09)
+Snapshot date: 2026-09-18 (phase 2 stream, memory, parity and observability
+closure)
 
 This document records the remaining gaps for MADE as an
 independent, domain-agnostic coordination product. The following repos
@@ -47,9 +47,10 @@ current implementation state of sibling repositories.
   `DispatchingAgentFactory`. `noop` is always accepted; `anthropic`,
   `openai`, and `vllm` require matching Cargo features and boot-time
   provider configuration.
-- Broker semantics are declared honestly as plain core NATS pub/sub.
-  The adapter does not claim JetStream durability, acknowledgement, or
-  replay semantics.
+- Broker transport is plain core NATS pub/sub. Durable named cursors in the
+  ceremony store give the publisher at-least-once retry, lease fencing and
+  quarantine before a record reaches NATS; the adapter still makes no claim
+  of JetStream-side acknowledgement or replay.
 - Server TLS/mTLS and Runtime client TLS are wired and covered by
   handshake-level integration tests.
 - The compose E2E runner covers the core scenarios: seeded council,
@@ -66,11 +67,27 @@ current implementation state of sibling repositories.
   finite-state machine (states/steps/transitions/guards/roles) with
   pluggable handlers, multi-agent panels, context threading between
   steps, and a Mermaid diagram in the response.
+- Ceremony state is a fold of complete, hash-sealed event streams. SQLite
+  stores their per-ceremony sequence and global order; optional snapshots are
+  caches, the migration command imports legacy stores copy-on-write, and
+  bounded whole/paged reads expose the same records through all four ceremony
+  surfaces.
+- Session memory is MADE's bounded context: value objects, recall, ports and
+  conformance live here. Path-aware embedded and server roots share the SQLite
+  memory adapter with ceremony state; the generic Rust builder remains
+  forgetful until its host injects memory. No KMP adapter ships in this tree.
+- Durable ceremony consumers support explicit pull/acknowledge, NATS
+  publication and an embedded JSONL event sink. Metrics, traces and structured
+  logs consume the same sealed records; both editions expose legacy statistics
+  plus the same in-process registry projection, and hosts may wire OTLP/mTLS.
 - Winner scoring is a pluggable `ScoringPort`: uniform pass-fraction by
   default, or an opt-in LLM-as-judge (`MADE_JUDGE_ENABLED`) that ranks
   by intrinsic quality and fails fast without a vLLM endpoint/model.
-- The stdio MCP adapter exposes all 35 gRPC RPCs as `made_*` tools
-  and has fixture + live gRPC backends.
+- Four ceremony surfaces are checked together: the gRPC contract, stdio MCP
+  over gRPC, stdio MCP over the embedded engine and the Rust facade. The
+  current capability rows and intentional council gaps live in
+  [`architecture/parity.tsv`](./architecture/parity.tsv); gates derive the
+  catalogs and support matrix from that file instead of a prose tool count.
 
 ## Remaining Gaps
 
@@ -84,9 +101,10 @@ direct transport integration to any specific context system.
 If a downstream product requires MADE to fetch context itself,
 that should be a new port, adapter, and E2E slice for that product.
 Until then, the honest claim is caller-supplied context, not KMP client
-ownership. The memory port is the same: the in-tree backends and the
-memory conformance suite live here, and a memory adapter for KMP or any
-other external memory is out of tree, gated by that suite.
+ownership. Memory is different from context transport: MADE owns its memory
+contract, recall behavior, in-tree backends and conformance suite. A memory
+adapter for KMP or another external system is out of tree and gated by that
+suite.
 
 ### 2. Real external provider validation is operator-run
 
@@ -136,11 +154,12 @@ callers can use `Deliberate` or the buffered MCP wrapper today.
 
 ## Honest Current Position
 
-MADE is now a real gRPC + NATS + persistence + Runtime
-executor + MCP application with structured-output validation, a
-declarative ceremony engine, an optional LLM judge, deliberation-native
-observability (Prometheus metrics + OTel traces of the debate), and
-repo-owned stack E2E over stubs.
+MADE is a gRPC + NATS + persistence + Runtime executor + MCP application with
+structured-output validation, a declarative ceremony engine, an optional LLM
+judge, SQLite event streams and session memory, cursor-based publication, and
+registry/OTLP/structured-log observability. Its four ceremony surfaces are
+checked against one capability table, with council capabilities still
+cluster-only for the documented reasons.
 
 It is not a product integration by itself. Downstream products still
 own their context materialization, provider credentials, Runtime tool
