@@ -58,7 +58,7 @@ fn rich_script() -> Vec<(&'static str, Value)> {
     script
 }
 
-async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: Value) -> Value {
+pub(super) async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: Value) -> Value {
     let (wire, embedded) = arms.call(id, tool, &arguments).await;
     assert!(!failed(&wire), "{tool} gRPC refused {arguments}: {wire:#}");
     assert!(
@@ -152,6 +152,10 @@ async fn assert_group_optionals(arms: &ParityArms) {
             "max_parallel": 2,
             "stages": [{"id": "review", "group": {
                 "execution": execution, "join": join,
+                "repeat": {
+                    "max_iterations": 4,
+                    "until": {"step": "b", "output_field": "approved", "equals": true}
+                },
                 "steps": [
                     {"id": "a", "owner_role_id": "A", "instructions": "Inspect the first perspective.", "handler": "host_callback"},
                     {"id": "b", "owner_role_id": "B", "instructions": "Inspect the second perspective.", "handler": "host_callback"}
@@ -178,6 +182,17 @@ async fn assert_group_optionals(arms: &ParityArms) {
             ["a", "b"]
         );
         assert_eq!(steps[0].state_id(), steps[1].state_id());
+        let repeat = definition
+            .state(steps[0].state_id())
+            .and_then(|state| state.repeat_policy())
+            .expect("the group repeat policy survives authoring and YAML parsing");
+        assert_eq!(repeat.max_iterations().get(), 4);
+        assert_eq!(repeat.until().step_id().as_str(), "b");
+        assert_eq!(repeat.until().output_field().as_str(), "approved");
+        assert_eq!(repeat.until().equals(), &json!(true));
+        assert!(yaml.contains("max_iterations: 4"), "{yaml}");
+        assert!(yaml.contains("step: b"), "{yaml}");
+        assert!(yaml.contains("output_field: approved"), "{yaml}");
         if execution == "concurrent" {
             assert!(yaml.contains("execution: concurrent"), "{yaml}");
             assert!(
