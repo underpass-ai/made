@@ -7,48 +7,43 @@
 
 use serde_json::{json, Value};
 
+use crate::renderers::{AuditRecordView, CeremonyEventPageView};
+
 /// The first record of the fixture session, sealed and whole.
 pub(super) fn read_ceremony_events_fixture() -> Value {
-    json!({
-        "records": [
-            {
-                "event_id": "ceremony-fixture-1:started",
-                "event_type": "ceremony_instance_started",
-                "schema_version": 2,
-                "ceremony_id": "ceremony-fixture-1",
-                "definition_name": "fixture_ceremony",
-                "definition_version": "1.0",
-                "sequence": 1,
-                "occurred_at": "2026-01-01T00:00:00Z",
-                "actor": {
-                    "actor_id": "operator-fixture-1",
-                    "kind": "service",
-                    "role_id": null
-                },
-                "correlation_id": "ceremony-fixture-1:started",
-                "causation_id": null,
-                "trace_id": null,
-                "event_schema_version": 1,
-                "event": {
-                    "type": "ceremony_instance_started",
-                    "ceremony_id": "ceremony-fixture-1",
-                    "definition_name": "fixture_ceremony",
-                    "definition_version": "1.0",
-                    "initial_state": "DECIDE",
-                    "step_ids": ["decide"],
-                    "context": { "brief": "ship the editorial calendar" },
-                    "bound_definition": null,
-                    "created_at": "2026-01-01T00:00:00Z"
-                },
-                "previous_record_hash": null,
-                "record_hash": FIXTURE_DIGEST
-            }
-        ],
-        "record_count": 1,
-        "next_version": 1,
-        "head_version": 1,
-        "has_more": false
-    })
+    let record = AuditRecordView {
+        event_id: "ceremony-fixture-1:started".to_owned(),
+        event_type: "ceremony_instance_started".to_owned(),
+        schema_version: 2,
+        ceremony_id: "ceremony-fixture-1".to_owned(),
+        definition_name: "fixture_ceremony".to_owned(),
+        definition_version: "1.0".to_owned(),
+        sequence: 1,
+        occurred_at: "2026-01-01T00:00:00Z".to_owned(),
+        actor: json!({
+            "actor_id": "operator-fixture-1",
+            "kind": "service",
+            "role_id": null
+        }),
+        correlation_id: Some("ceremony-fixture-1:started".to_owned()),
+        causation_id: None,
+        trace_id: None,
+        event_schema_version: Some(1),
+        event: Some(json!({
+            "type": "ceremony_instance_started",
+            "ceremony_id": "ceremony-fixture-1",
+            "definition_name": "fixture_ceremony",
+            "definition_version": "1.0",
+            "initial_state": "DECIDE",
+            "step_ids": ["decide"],
+            "context": { "brief": "ship the editorial calendar" },
+            "bound_definition": null,
+            "created_at": "2026-01-01T00:00:00Z"
+        })),
+        previous_record_hash: None,
+        record_hash: FIXTURE_DIGEST.to_vec(),
+    };
+    CeremonyEventPageView::new(vec![record], 1, 1).to_json()
 }
 
 /// The one-record fixture stream, whole: a fixture that answered

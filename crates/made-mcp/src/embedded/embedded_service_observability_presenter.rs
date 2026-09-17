@@ -1,6 +1,8 @@
 use made_app::usecases::ServiceStatus;
 use made_core::entities::Statistics;
-use serde_json::{json, Map, Number, Value};
+use serde_json::{json, Value};
+
+use crate::renderers::StatisticsView;
 
 /// Render a status the way the contract renders it.
 ///
@@ -11,43 +13,37 @@ use serde_json::{json, Map, Number, Value};
 /// read by a host through the facade and is not on either arm's wire —
 /// G3 puts the registry itself on both.
 pub(super) fn present_service_status(status: &ServiceStatus) -> Value {
+    let statistics = status.statistics().map(statistics_view);
     json!({
         "version": status.version(),
         "uptime_seconds": status.uptime_seconds(),
         "health": status.health().as_str(),
-        "stats": status.statistics().map_or(Value::Null, statistics_to_json),
+        "stats": statistics.as_ref().map_or(Value::Null, StatisticsView::to_json),
     })
 }
 
 /// Render the counter snapshot the way the contract renders it.
 pub(super) fn present_service_metrics(statistics: &Statistics) -> Value {
-    json!({ "stats": statistics_to_json(statistics) })
+    StatisticsView::envelope(Some(&statistics_view(statistics)))
 }
 
 /// The five counters `Statistics` carries on the wire.
 ///
-/// Mirrors `made-mcp`'s `proto_to_json::statistics_to_json` field for
-/// field, including `average_duration_ms` staying a fraction: a whole
-/// number there would be a different JSON type from the one the
-/// deployable edition sends.
-fn statistics_to_json(statistics: &Statistics) -> Value {
-    let per_specialty: Map<String, Value> = statistics
+/// Feeds the same shared view as the gRPC and fixture backends, including
+/// `average_duration_ms` staying a fraction.
+fn statistics_view(statistics: &Statistics) -> StatisticsView {
+    let per_specialty_counts = statistics
         .per_specialty()
         .iter()
-        .map(|(specialty, count)| {
-            (
-                specialty.as_str().to_owned(),
-                Value::Number(Number::from(*count)),
-            )
-        })
+        .map(|(specialty, count)| (specialty.as_str().to_owned(), *count))
         .collect();
-    json!({
-        "total_deliberations": statistics.total_deliberations(),
-        "total_orchestrations": statistics.total_orchestrations(),
-        "total_duration_ms": statistics.total_duration().get(),
-        "average_duration_ms": statistics.average_duration_ms(),
-        "per_specialty_counts": Value::Object(per_specialty),
-    })
+    StatisticsView {
+        total_deliberations: statistics.total_deliberations(),
+        total_orchestrations: statistics.total_orchestrations(),
+        total_duration_ms: statistics.total_duration().get(),
+        average_duration_ms: statistics.average_duration_ms(),
+        per_specialty_counts,
+    }
 }
 
 #[cfg(test)]
