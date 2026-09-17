@@ -273,7 +273,6 @@ fn optional_u32(value: Option<&Value>, field: &'static str) -> Result<Option<u32
 mod tests {
     use std::collections::BTreeMap;
 
-    use made_core::value_objects::OutputFormat;
     use serde_json::json;
 
     use super::*;
