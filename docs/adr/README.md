@@ -39,3 +39,7 @@ much as the decision itself.
 - [ADR-014](014-the-local-edition-leads-and-the-api-keeps-parity.md): the
   local edition leads and the API keeps parity; divergence is a named row in
   a checked-in exception list
+- [ADR-015](015-concurrent-states-and-join-guards.md): concurrent state claims,
+  join guards and bounded parallelism
+- [ADR-016](016-bounded-definition-primitives.md): state repetition, output
+  guards, role binding, context writes, cycle budgets and fragment location
