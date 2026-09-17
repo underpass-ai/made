@@ -15,7 +15,7 @@ command -v gh >/dev/null 2>&1 || {
 
 SCRATCH="$(mktemp -d)"
 trap 'rm -rf "${SCRATCH}"' EXIT
-python3 scripts/ci/made-marketplace-contract.py --print-assets \
+python3 scripts/ci/made-marketplace-contract.py --require-release-tag --print-assets \
   >"${SCRATCH}/expected.txt"
 
 for ((attempt = 1; attempt <= WAIT_ATTEMPTS; attempt++)); do

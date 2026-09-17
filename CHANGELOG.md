@@ -14,7 +14,17 @@ operator command.
 
 ## Unreleased
 
+### Architecture
+
+- Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
+  primitives; record their contracts and the deferred pattern work before
+  implementation (#90).
+
 ### Fixed
+
+- Development marketplace checks accept fetched tags from earlier releases;
+  tag builds and publication still require the annotated version tag at HEAD
+  (#89).
 
 - The divergences a read-only review of the parity chain (#55–#64) found
   between the two MCP arms, and the places the gate built to catch them could

@@ -601,8 +601,12 @@ tool emits it from `stages[].pattern` alone.
 
 ### 3.5 The generic primitives the patterns need
 
-Seven additions to the definition model. Each is an ADR-sized decision, each
-serves more than one pattern, each lands on the four surfaces in one PR.
+Seven additions to the definition model, accepted on 2026-09-17 in
+[ADR-015](adr/015-concurrent-states-and-join-guards.md) and
+[ADR-016](adr/016-bounded-definition-primitives.md). Each serves more than one
+pattern and lands on the four surfaces in one PR. Implementation is pending:
+phase 3a covers these primitives plus fragment infrastructure and G4; drivers,
+aggregation, broadcasting and complete patterns remain for corte 4.
 
 | Primitive | Used by | Note |
 |---|---|---|
@@ -741,21 +745,22 @@ draws from them:
    ported so that a change gets feedback in minutes and the full gate runs
    once, when the change is ready.
 
-## 6. Open questions
+## 6. Resolved questions and deferred work
 
-- State-level `repeat`: a new iteration coordinate on the state, or a
-  self-transition with an iteration counter? The first is simpler to present;
-  the second reuses transitions.
-- Snapshot cadence: every N events, at terminal only, or host-configured?
-  Cheap to change later; needs a default.
-- One `CeremonyEventSubscriberPort` with a dispatcher adapter, or separate
-  ports for metrics, tracing and the stream, as `MetricsRecorderPort` and
-  `DeliberationObserverPort` are separate today?
-- Where does the external KMP adapter live: a crate in this organisation, or
-  a module in the KMP repository that compiles against `made-core`?
-- Should `made-api` grow to contract v4 with `claim_step` / `complete_step`
-  and `read_events`, or does ADR-004's "mutations stay behind the engine's
-  own surfaces" hold for the delegated-host pair too?
-- When the council deliberation moves to event sourcing, do its five bus
-  events become variants of the ceremony stream (a step that deliberates)
-  or a stream of their own?
+Owner decisions of 2026-09-17:
+
+- State `repeat` is a state iteration coordinate; all steps rerun inside it.
+  Per-step repetition remains separate (ADR-016).
+- `max_parallel` defaults to 3 per definition. The server ceiling is 8 by
+  default through `MADE_MAX_PARALLEL` (ADR-015); analysis warns above three roles.
+- Fragment files live in `api/examples/ceremonies/fragments/`, embedded with
+  `include_str!` from `made-app`; the planner must route those files (ADR-016).
+- Snapshots remain after every append until measurement supports a change.
+- One infallible `CeremonyEventSubscriberPort` with a composite serves
+  projections; durable consumers advance explicit cursors.
+- `made-api` stays at its current contract version in phase 2. The five
+  council bus events stay outside the ceremony cursor.
+
+The external KMP adapter's repository and council event-sourcing design remain
+outside this cut. B3–B6, C1, D1–D5 and F5 are deferred to corte 4; phase 3a must
+not be described as completion of all phase 3 exit criteria.
