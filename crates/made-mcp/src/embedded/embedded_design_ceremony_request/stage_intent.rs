@@ -5,7 +5,7 @@ use made_core::value_objects::{
 };
 use serde::Deserialize;
 
-use super::RepeatIntent;
+use super::{ExitGuardIntent, RepeatIntent};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -23,10 +23,17 @@ pub(super) struct StageIntent {
     review_rounds: u64,
     #[serde(default)]
     repeat: Option<RepeatIntent>,
+    #[serde(default)]
+    exit_guards: Vec<ExitGuardIntent>,
 }
 
 impl StageIntent {
     pub(super) fn into_domain(self) -> Result<CeremonyDesignStage, DomainError> {
+        let exit_guards = self
+            .exit_guards
+            .into_iter()
+            .map(ExitGuardIntent::into_domain)
+            .collect::<Result<Vec<_>, _>>()?;
         Ok(CeremonyDesignStage::new(
             StepId::new(self.id)?,
             RoleId::new(self.owner_role_id)?,
@@ -38,6 +45,7 @@ impl StageIntent {
                 .transpose()?,
             Rounds::new(u32::try_from(self.review_rounds).unwrap_or(u32::MAX))?,
             self.repeat.map(RepeatIntent::into_domain).transpose()?,
-        ))
+        )
+        .with_exit_guards(exit_guards))
     }
 }

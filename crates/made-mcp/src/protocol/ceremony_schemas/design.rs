@@ -65,7 +65,13 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                             "minimum": 0,
                             "description": "Adversarial peer-review rounds. A positive value requires at least two agents."
                         },
-                        "repeat": repeat_stage_schema()
+                        "repeat": repeat_stage_schema(),
+                        "exit_guards": {
+                            "type": "array",
+                            "uniqueItems": true,
+                            "items": exit_guard_schema(),
+                            "description": "Additional conditions conjoined with stage completion and any final human approval."
+                        }
                     }
                 }
             },
@@ -96,6 +102,35 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                 "description": "Default retry backoff written into the draft. Defaults to one."
             }
         }
+    })
+}
+
+fn exit_guard_schema() -> Value {
+    json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step", "output_field", "equals"],
+                "properties": {
+                    "kind": { "const": "output_field" },
+                    "step": string_schema("Declared step whose current successful output is inspected."),
+                    "output_field": string_schema("Top-level structured output field."),
+                    "equals": {
+                        "description": format!("Exact JSON value required for this guard. {STRUCT_NUMBER_RULE}")
+                    }
+                }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step"],
+                "properties": {
+                    "kind": { "const": "step_repeat_exhausted" },
+                    "step": string_schema("Repeating step in this stage whose final iteration must be exhausted.")
+                }
+            }
+        ]
     })
 }
 

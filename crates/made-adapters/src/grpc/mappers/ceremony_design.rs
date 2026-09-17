@@ -13,9 +13,10 @@
 //! hand-authored one, so a client can read either the same way.
 
 use made_app::usecases::{
-    CeremonyDesignDocument, CeremonyDesignFinalApproval, CeremonyDesignParticipant,
-    CeremonyDesignRepeat, CeremonyDesignStage, CeremonyDraftView, CeremonyParticipantCapability,
-    DesignedCeremony,
+    CeremonyDesignDocument, CeremonyDesignExitGuard, CeremonyDesignFinalApproval,
+    CeremonyDesignOutputFieldGuard, CeremonyDesignParticipant, CeremonyDesignRepeat,
+    CeremonyDesignStage, CeremonyDesignStepRepeatExhaustedGuard, CeremonyDraftView,
+    CeremonyParticipantCapability, DesignedCeremony,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
@@ -103,6 +104,11 @@ fn participant_from_proto(
 }
 
 fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStage, DomainError> {
+    let exit_guards = stage
+        .exit_guards
+        .into_iter()
+        .map(exit_guard_from_proto)
+        .collect::<Result<Vec<_>, _>>()?;
     Ok(CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
@@ -115,7 +121,35 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
             .transpose()?,
         Rounds::new(u32::try_from(stage.review_rounds).unwrap_or(u32::MAX))?,
         stage.repeat.map(repeat_from_proto).transpose()?,
-    ))
+    )
+    .with_exit_guards(exit_guards))
+}
+
+fn exit_guard_from_proto(
+    guard: pb::CeremonyDesignExitGuard,
+) -> Result<CeremonyDesignExitGuard, DomainError> {
+    let guard = guard.guard.ok_or_else(|| DomainError::InvalidDocument {
+        reason: "field `stages[].exit_guards[].kind` is required".to_owned(),
+    })?;
+    match guard {
+        pb::ceremony_design_exit_guard::Guard::OutputField(guard) => {
+            let expected = guard.equals.ok_or_else(|| DomainError::InvalidDocument {
+                reason: "field `stages[].exit_guards[].equals` is required".to_owned(),
+            })?;
+            Ok(CeremonyDesignExitGuard::OutputField(
+                CeremonyDesignOutputFieldGuard::new(
+                    StepId::new(guard.step_id)?,
+                    StepOutputField::new(guard.output_field)?,
+                    pb_value_to_json(expected)?,
+                ),
+            ))
+        }
+        pb::ceremony_design_exit_guard::Guard::StepRepeatExhausted(guard) => {
+            Ok(CeremonyDesignExitGuard::StepRepeatExhausted(
+                CeremonyDesignStepRepeatExhaustedGuard::new(StepId::new(guard.step_id)?),
+            ))
+        }
+    }
 }
 
 fn repeat_from_proto(
@@ -162,4 +196,45 @@ fn each<T>(
     constructor: impl Fn(String) -> Result<T, DomainError>,
 ) -> Result<Vec<T>, DomainError> {
     values.into_iter().map(constructor).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use prost_types::value::Kind;
+
+    use super::*;
+
+    #[test]
+    fn direct_grpc_output_guard_distinguishes_absent_from_explicit_null() {
+        let absent = pb::CeremonyDesignExitGuard {
+            guard: Some(pb::ceremony_design_exit_guard::Guard::OutputField(
+                pb::CeremonyDesignOutputFieldGuard {
+                    step_id: "compose".to_owned(),
+                    output_field: "answer".to_owned(),
+                    equals: None,
+                },
+            )),
+        };
+        assert!(exit_guard_from_proto(absent)
+            .unwrap_err()
+            .to_string()
+            .contains("equals"));
+
+        let explicit_null = pb::CeremonyDesignExitGuard {
+            guard: Some(pb::ceremony_design_exit_guard::Guard::OutputField(
+                pb::CeremonyDesignOutputFieldGuard {
+                    step_id: "compose".to_owned(),
+                    output_field: "answer".to_owned(),
+                    equals: Some(prost_types::Value {
+                        kind: Some(Kind::NullValue(0)),
+                    }),
+                },
+            )),
+        };
+        assert!(matches!(
+            exit_guard_from_proto(explicit_null).unwrap(),
+            CeremonyDesignExitGuard::OutputField(guard)
+                if guard.expected() == &serde_json::Value::Null
+        ));
+    }
 }

@@ -89,6 +89,10 @@ fn completion_guard(stage_id: &str) -> String {
     format!("{stage_id}_completed")
 }
 
+fn exit_guard_name(stage_id: &str, index: usize) -> String {
+    format!("exit_{stage_id}_{}", index + 1)
+}
+
 fn approval_guard_name(document: &CeremonyDesignDocument) -> String {
     document.final_approval().map_or_else(
         || DEFAULT_APPROVAL_GUARD.to_owned(),

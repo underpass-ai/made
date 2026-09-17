@@ -145,6 +145,66 @@ retry_policies:
     }
 
     #[test]
+    fn parses_exact_output_guard_with_equals_in_the_field_and_json() {
+        let yaml = MULTI_STEP.replace(
+            "check: \"step_status:deliberate:COMPLETED\"",
+            "check: 'output_field:deliberate:decision=key={\"answer\":\"left=right\"}'",
+        );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::OutputField(condition)
+                if condition.step_id() == &StepId::new("deliberate").unwrap()
+                    && condition.output_field().as_str() == "decision=key"
+                    && condition.expected() == &serde_json::json!({"answer": "left=right"})
+        ));
+    }
+
+    #[test]
+    fn parses_exhausted_repeat_guard() {
+        let yaml = MULTI_STEP
+            .replace(
+                "      prompt: \"Deliberate on inputs\"",
+                "      prompt: \"Deliberate on inputs\"\n    repeat:\n      max_iterations: 4\n      until:\n        output_field: ready\n        equals: true",
+            )
+            .replace(
+                "check: \"step_status:deliberate:COMPLETED\"",
+                "check: \"step_repeat_exhausted:deliberate\"",
+            );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let guard = definition
+            .guards()
+            .get(&GuardName::new("deliberation_completed").unwrap())
+            .unwrap();
+
+        assert!(matches!(
+            guard.condition(),
+            GuardCondition::StepRepeatExhausted(condition)
+                if condition.step_id() == &StepId::new("deliberate").unwrap()
+        ));
+    }
+
+    #[test]
+    fn malformed_output_guard_is_rejected() {
+        let yaml = MULTI_STEP.replace(
+            "check: \"step_status:deliberate:COMPLETED\"",
+            "check: \"output_field:deliberate:ready=not-json\"",
+        );
+
+        assert!(matches!(
+            CeremonyDefinitionYaml::parse_str(&yaml),
+            Err(DomainError::InvariantViolated { .. })
+        ));
+    }
+
+    #[test]
     fn parses_bounded_structured_repeat_policy() {
         let yaml = MULTI_STEP.replace(
             "      prompt: \"Deliberate on inputs\"",
