@@ -78,11 +78,7 @@ impl<'a> CeremonyInstanceView<'a> {
                     .collect::<Result<Vec<_>, DomainError>>()?;
                 Ok(CeremonyTransitionView::new(
                     transition,
-                    definition.guards_are_satisfied(
-                        transition,
-                        instance.step_records(),
-                        instance.context(),
-                    ),
+                    instance.transition_is_enabled(definition, transition),
                     definition.repeat_requirements_are_satisfied(
                         transition.from(),
                         instance.step_records(),

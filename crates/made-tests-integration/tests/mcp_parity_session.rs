@@ -586,6 +586,15 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         (
+            "made_close_ceremony_intervention",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "intervention_id": "inspect-metrics",
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+            }),
+        ),
+        (
             "made_defer_ceremony_guard",
             json!({
                 "ceremony_id": SESSION_ID,

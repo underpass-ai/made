@@ -47,6 +47,7 @@ impl CeremonyInstance {
         }
 
         let to_state = transition.to().clone();
+        self.require_interventions_resolved_before_entering(definition, &to_state)?;
         let mut events = vec![CeremonyEvent::TransitionApplied(TransitionApplied {
             transition: CeremonyTransitionRecord::record(
                 command.trigger.clone(),

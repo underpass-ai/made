@@ -141,7 +141,12 @@ approver.
 
 Participant interventions remain agenda items. They can request an opinion,
 investigation or action, but cannot bypass host permissions or a ceremony
-guard.
+guard. A transition into a terminal state is refused while any intervention
+is open. Its error says `ceremony cannot enter a terminal state with open
+interventions`, and the refused move appends no event. Obtain the response and
+close the agenda item before retrying. A response alone leaves the item open;
+ordinary transitions between nonterminal states remain available. The same
+rule applies through the Rust facade, direct gRPC and both MCP backends.
 
 ## Observability and completion events
 
