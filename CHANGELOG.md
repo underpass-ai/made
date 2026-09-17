@@ -16,6 +16,10 @@ operator command.
 
 ### Fixed
 
+- Ceremony design returns a domain draft; one adapter renders YAML for both
+  MCP paths, with serialization DTOs and serde_yaml removed from made-app
+  (#104). Rust hosts read DesignedCeremony::definition() and render explicitly.
+
 - Development marketplace checks accept fetched tags from earlier releases;
   tag builds and publication still require the annotated version tag at HEAD
   (#89).
