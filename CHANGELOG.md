@@ -21,6 +21,12 @@ operator command.
 
 ### Architecture
 
+- Close the architecture gate blind spots for private primary types, primitive
+  fields on application use-case boundaries, and large files with no primary
+  type; pay every newly visible finding and keep the debt baseline at zero.
+  Service uptime now reaches its use case through the clock port, and metrics
+  recorder identity is carried by a value object (#112).
+
 - Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
   primitives; record their contracts and the deferred pattern work before
   implementation (#90).
