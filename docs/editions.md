@@ -210,8 +210,10 @@ that refuses a manifest which drops any of it:
   arrives in a later slice.
 - Provider-backed `RegisterAgent` kinds require the matching Cargo feature and
   boot-time credentials; `noop` is always available.
-- Deferred observability: gRPC front-door RED (already covered by request
-  traces) and per-query Postgres latency.
+- Observability is what the registry holds and nothing else: the families the
+  code records, what is planned with the slice that lands it, and what was
+  dropped are the three lists in
+  [`made-observability-design.md`](./made-observability-design.md) §2 and §7.
 
 ## Moving between them
 

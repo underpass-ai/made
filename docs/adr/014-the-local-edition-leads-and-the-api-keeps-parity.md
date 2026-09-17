@@ -1,7 +1,8 @@
 # ADR-014: The local edition leads, and the API keeps parity
 
-Status: Accepted (decided 2026-09-16); not yet implemented — the slices are
-§3.6 of [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
+Status: Accepted (decided 2026-09-16); F1–F4 and F6 implemented on `main`
+(#55–#64), F5 waits for B3 — the slices are §3.6 of
+[`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 ## Context
 

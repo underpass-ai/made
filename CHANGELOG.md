@@ -182,6 +182,45 @@ operator command.
   been strictly weaker than leaving it out, not equal and not stricter. The
   contract pins `--workspace` on `clippy` and `test` instead, and the closure
   keeps its one honest job: deciding which gates run. (#76)
+- The two observability documents now claim only what the code records.
+  `docs/made-observability-design.md` lists the twenty-one Prometheus families
+  the registry holds and the five legacy series `/metrics` hand-rolls, each row
+  naming the file that records it; the alerts and the dashboard read only
+  series that exist; the span tree drawn in
+  `docs/operations/observability-runbook.md` puts
+  `prepare_ceremony_participants` where the code puts it, beside `run_ceremony`
+  rather than under it, and the log-message table says which fields each
+  message actually carries instead of promising `ceremony_id`, `step_id` and
+  `specialty` on all six. What had no code behind it is gone from both:
+  gRPC front-door RED, Postgres query latency, deliberation phase durations,
+  proposals and revisions histograms, the three validator families, step
+  attempts, trace exemplars, provider and judge span attributes, and the
+  alerts and panels built on them. What a named slice will land — ceremony
+  metrics from the event seam, trace ids, the embedded exporter and registry,
+  spans on steps and adapters, the ceremony stream — is in one "Planned — not
+  implemented" section per document, each item carrying its slice id, because
+  a claim in the present tense about a future capability is the thing
+  PRINCIPLES §1 forbids. The runbook also says what the embedded edition has
+  had since #53 — an in-process registry, the two tools on both backends, no
+  exporter, no endpoint, and honest zeros for the council counters — where it
+  used to say there was nothing. `README.md`, `docs/index.md`,
+  `docs/editions.md` and `docs/embedded-made.md` follow: the embedded metrics
+  default is the Prometheus registry it has been since #53, not
+  `NoopMetricsRecorder`, and no surface is described as having embedded-only
+  ceremony controls. `docs/orchestration-patterns-plan.md` §0.4 names
+  `docs/architecture/parity.tsv` as the count rather than carrying four
+  numbers that moved with every slice of WS-F, and the slices that have landed
+  — A1–A4, F1–F4, G5, H1–H4, and H5 except its per-crate coverage floors —
+  say so in their rows, as ADR-012, ADR-013 and ADR-014 now do in their status
+  lines. Four counts that had drifted the other way go with them: the tool
+  table in `docs/operations/mcp-stdio.md` had 37 rows under a sentence
+  promising 41, and now carries every backend-owned tool in the order
+  `GRPC_TOOL_NAMES` lists them; `crates/made-mcp/README.md` said the container
+  test checks 35 tools and now names `parity.tsv`; the `justfile` said CI does
+  not run coverage, which it has since the impact planner landed; and
+  `docs/dev-loop.md` said a green `just check` means a green pull request,
+  when `just check` leaves out coverage, the chart and the container image.
+  (#69)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
