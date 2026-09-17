@@ -91,8 +91,9 @@ jobs:
       - name: Verify the co-located marketplace contract
         shell: bash
         run: |
+          python3 scripts/ci/made-marketplace-contract.py --self-test
           if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
-            python3 scripts/ci/made-marketplace-contract.py
+            python3 scripts/ci/made-marketplace-contract.py --require-release-tag
           else
             python3 scripts/ci/made-marketplace-contract.py --allow-unpublished-tag
           fi

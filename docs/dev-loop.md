@@ -434,6 +434,12 @@ provider is privileged — every one is a peer behind its flag.
 
 ## Release
 
+The marketplace contract checks manifest consistency on development branches even
+when older release tags are fetched locally. On the manifest-version tag it also
+requires an annotated tag at `HEAD`; release tooling explicitly requests that
+check with `--require-release-tag`. Run its seven Git-backed cases with
+`python3 scripts/ci/made-marketplace-contract.py --self-test`.
+
 See [`docs/release.md`](release.md).
 
 ## What the CI gates actually check
