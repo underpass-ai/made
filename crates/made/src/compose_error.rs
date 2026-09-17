@@ -25,4 +25,7 @@ pub enum ComposeError {
 
     #[error("ceremony store setup failed: {0}")]
     CeremonyStore(String),
+
+    #[error("session memory setup failed: {0}")]
+    Memory(String),
 }

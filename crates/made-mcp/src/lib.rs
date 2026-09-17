@@ -20,6 +20,7 @@ pub mod mcp_server_identity;
 pub mod migrate_store;
 pub mod observability;
 pub mod protocol;
+mod renderers;
 pub mod server;
 
 pub use backend::{

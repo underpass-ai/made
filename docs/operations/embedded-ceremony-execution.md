@@ -105,11 +105,12 @@ renders it as *What earlier sessions decided*. The scope's grammar, what is
 rendered and the size bound are in
 [the authoring runbook](ceremony-authoring-runbook.md#8-memory_scope--what-earlier-sessions-decided).
 
-The embedded plugin ships a memory that keeps nothing (`MADE_MEMORY` selects
-nothing else yet), so within one stdio process a later session recalls what an
-earlier one in the same scope decided only when the host wires a memory through
-`EmbeddedMadeBuilder::with_memory`. A durable memory in the ceremonies store is
-slice E3 of the orchestration plan and is not shipped.
+The embedded plugin stores memory in the same SQLite engine as ceremony state.
+It survives a `made-mcp` restart when the next process opens the same
+`MADE_MCP_STORE_PATH`. A Rust host using the generic builder still gets
+`ForgetfulMemory` unless it calls `with_memory` or the typed
+`with_ceremony_store_and_memory`; `EmbeddedMade::open(path)` chooses the typed
+durable composition.
 
 ## Recovery after restart
 
