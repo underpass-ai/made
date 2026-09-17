@@ -21,7 +21,7 @@ mod general_requests;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
 // one-shot run mapper lives in `json_to_proto` and uses the same one.
-pub(in crate::grpc) use ceremony_requests::lease_owner_id;
+pub(in crate::grpc) use ceremony_requests::{lease_owner_id, lease_ttl_ms};
 #[cfg(test)]
 mod schema_gate;
 

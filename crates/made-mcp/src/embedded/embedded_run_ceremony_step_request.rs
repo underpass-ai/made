@@ -4,16 +4,15 @@ use made_core::value_objects::{
 };
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
-use uuid::Uuid;
 
 use super::embedded_request_fields::{
     load_instance_definition, optional_string, optional_u64, required_actor_kind, required_string,
 };
 
 use crate::embedded::EMBEDDED_BACKEND_NAME;
-use crate::protocol::{default_lease_owner_id, ToolError};
-
-const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
+use crate::protocol::{
+    default_idempotency_key, default_lease_owner_id, ToolError, RUN_CEREMONY_STEP_LEASE_TTL_MS,
+};
 
 /// Validated MCP request that executes one step on a persistent instance.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -54,8 +53,8 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyStepRequest {
             .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
         let lease_owner_id = optional_string(object, "lease_owner_id")?
             .unwrap_or_else(|| default_lease_owner_id(EMBEDDED_BACKEND_NAME));
-        let idempotency_key = optional_string(object, "idempotency_key")?
-            .unwrap_or_else(|| format!("made-mcp-{}", Uuid::new_v4()));
+        let idempotency_key =
+            optional_string(object, "idempotency_key")?.unwrap_or_else(default_idempotency_key);
         let lease_ttl_ms = optional_u64(object, "lease_ttl_ms")?.unwrap_or_default();
 
         Ok(Self {
@@ -68,7 +67,7 @@ impl TryFrom<&Value> for EmbeddedRunCeremonyStepRequest {
             idempotency_key: IdempotencyKey::new(idempotency_key)
                 .map_err(|error| error.to_string())?,
             lease_ttl: DurationMs::from_millis(if lease_ttl_ms == 0 {
-                DEFAULT_LEASE_TTL_MS
+                RUN_CEREMONY_STEP_LEASE_TTL_MS
             } else {
                 lease_ttl_ms
             }),
@@ -105,6 +104,45 @@ mod tests {
         }))
         .expect_err("a blank runner is not a runner");
         assert!(error.contains("lease_owner_id"), "{error}");
+    }
+
+    /// The key is minted the same way on both arms, because it is
+    /// sealed into the journal and a session's evidence must not say
+    /// which process the client happened to be pointed at.
+    #[test]
+    fn an_omitted_execution_key_is_minted_the_same_way_on_both_arms() {
+        let request = EmbeddedRunCeremonyStepRequest::try_from(
+            &json!({ "ceremony_id": "c-1", "step_id": "work", "actor_kind": "agent" }),
+        )
+        .expect("the request should be accepted");
+        assert!(
+            request.idempotency_key.as_str().starts_with("made-mcp:"),
+            "{}",
+            request.idempotency_key.as_str()
+        );
+    }
+
+    #[test]
+    fn an_execution_key_the_caller_named_is_left_alone() {
+        let request = EmbeddedRunCeremonyStepRequest::try_from(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "idempotency_key": "retry-42",
+        }))
+        .expect("the request should be accepted");
+        assert_eq!(request.idempotency_key.as_str(), "retry-42");
+    }
+
+    /// The lease length is the same on both arms, because both read
+    /// the number the engine declares rather than choosing one.
+    #[test]
+    fn an_omitted_lease_length_is_the_one_both_arms_apply() {
+        let request = EmbeddedRunCeremonyStepRequest::try_from(
+            &json!({ "ceremony_id": "c-1", "step_id": "work", "actor_kind": "agent" }),
+        )
+        .expect("the request should be accepted");
+        assert_eq!(request.lease_ttl.get(), RUN_CEREMONY_STEP_LEASE_TTL_MS);
     }
 
     #[test]

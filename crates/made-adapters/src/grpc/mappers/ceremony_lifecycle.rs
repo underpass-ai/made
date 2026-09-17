@@ -22,7 +22,9 @@ use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 const DEFAULT_LEASE_OWNER_ID: &str = "grpc-run-ceremony-step";
-const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
+
+/// The engine's own number, read from the input that carries it.
+const DEFAULT_LEASE_TTL_MS: u64 = RunCeremonyStepInput::DEFAULT_LEASE_TTL_MS;
 
 /// A ceremony started from YAML supplied for the run. The definition
 /// travels with the input because the caller must persist it before

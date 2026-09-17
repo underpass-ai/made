@@ -21,7 +21,16 @@ container-tests = ["dep:testcontainers"]
 [dependencies]
 made-core = { workspace = true }
 made-app = { workspace = true }
-made-adapters = { workspace = true, features = ["grpc", "nats", "postgres", "runtime-grpc"] }
+made-adapters = { workspace = true, features = [
+    "grpc",
+    "nats",
+    "postgres",
+    "runtime-grpc",
+    # The canonical embedded store. The parity session drives its second
+    # pass over it, because SQLite is what the local edition ships with
+    # and an in-memory store is not what ADR-014 promises about.
+    "sqlite",
+] }
 made-proto = { workspace = true }
 # Tokio is always required for the in-process gRPC fixture; the
 # postgres_fixture additionally needs testcontainers when the

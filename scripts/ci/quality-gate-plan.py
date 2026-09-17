@@ -136,14 +136,16 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "scripts/ci/install-helm.sh": ("helm",),
     "scripts/ci/architecture-gate.sh": ("architecture",),
     "docs/architecture/conformance.tsv": ("architecture",),
-    # Two documents the workspace compiles. `parity.tsv` is `include_str!`'d
+    # Documents the workspace compiles. `parity.tsv` is `include_str!`'d
     # by crates/made-mcp/src/protocol/parity_tests.rs and by
     # crates/made-tests-integration/tests/mcp_parity_session.rs;
+    # `struct-numbers.tsv` by made-mcp and made-adapters tests; and
     # `support-matrix.md` by
-    # crates/made-mcp/src/protocol/editions_matrix_tests.rs. Both are
+    # crates/made-mcp/src/protocol/editions_matrix_tests.rs. All are
     # documentation to a reader and source to rustc, and
-    # `check_embedded_data_routing` below fails if either stops being routed.
+    # `check_embedded_data_routing` below fails if any stops being routed.
     "docs/architecture/parity.tsv": EMBEDDED_DATA_GATES,
+    "docs/architecture/struct-numbers.tsv": EMBEDDED_DATA_GATES,
     "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
     # The rest of the manual E2E surface, named one by one rather than by a
     # `tests/e2e/` prefix: nothing in the workspace compiles or reads these
@@ -516,12 +518,17 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         ["CHANGELOG.md"],
         {"clippy": False, "coverage": False, "full": False},
     ),
-    # Documentation that rustc compiles. Both files are `include_str!`'d
+    # Documentation that rustc compiles. These files are `include_str!`'d
     # into tests, so "docs-only" stops being the same thing as "no Rust
     # job" — and `check_embedded_data_routing` keeps that true.
     (
         "the parity file two crates compile in",
         ["docs/architecture/parity.tsv"],
+        {"test": True, "clippy": True, "coverage": False, "helm": False, "full": False},
+    ),
+    (
+        "the struct-number table two crates compile in",
+        ["docs/architecture/struct-numbers.tsv"],
         {"test": True, "clippy": True, "coverage": False, "helm": False, "full": False},
     ),
     (

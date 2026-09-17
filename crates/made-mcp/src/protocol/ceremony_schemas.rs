@@ -1,7 +1,13 @@
 use serde_json::{json, Value};
 
+use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
-use super::schema_primitives::{attributes_schema, string_schema};
+use super::default_lease_ttl::{
+    lease_ttl_rule, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS,
+    RUN_CEREMONY_STEP_LEASE_TTL_MS,
+};
+use super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
+use super::struct_numbers::STRUCT_NUMBER_RULE;
 
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
@@ -32,28 +38,40 @@ pub(super) fn start_published_ceremony_schema() -> Value {
             "ceremony": string_schema("Name of the published ceremony to run."),
             "version": string_schema("Published version to bind this instance to."),
             "ceremony_id": string_schema("Identifier for the new instance. Generated when omitted."),
-            "context": {
-                "type": "object",
-                "description": "Opening context for the working session.",
-                "additionalProperties": true
-            }
+            "context": attributes_schema("Opening context for the working session.")
         }
     })
 }
 
 /// Either a published version, named, or a document supplied for the
 /// occasion. Both at once has no sensible reading, and the schema says
-/// so rather than leaving the server to discover it.
+/// so — in `oneOf`, not only in prose, so a caller's own validator
+/// refuses what this server refuses.
 pub(super) fn ceremony_definition_ref_schema(description: &str) -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "description": description,
+        "description": format!(
+            "{description} Exactly one of the two ways to name a definition: \
+             `ceremony` with `version`, or `definition_yaml` on its own."
+        ),
         "properties": {
             "ceremony": string_schema("Name of a published definition. Give this with `version`."),
             "version": string_schema("Version of a published definition. Give this with `ceremony`."),
             "definition_yaml": string_schema("A definition supplied for the comparison, instead of naming a published one.")
-        }
+        },
+        "oneOf": [
+            {
+                "required": ["ceremony", "version"],
+                "not": { "required": ["definition_yaml"] }
+            },
+            {
+                "required": ["definition_yaml"],
+                "not": {
+                    "anyOf": [{ "required": ["ceremony"] }, { "required": ["version"] }]
+                }
+            }
+        ]
     })
 }
 
@@ -183,7 +201,10 @@ pub(super) fn repeat_stage_schema() -> Value {
             },
             "output_field": string_schema("Top-level structured step-output field tested after each successful iteration."),
             "equals": {
-                "description": "Exact JSON value that ends repetition. Missing or unequal output repeats the stage."
+                "description": format!(
+                    "Exact JSON value that ends repetition. Missing or unequal output repeats \
+                     the stage. {STRUCT_NUMBER_RULE}"
+                )
             }
         },
         "description": "Optional bounded repeat-until policy. Iterations are distinct from technical retry attempts."
@@ -213,16 +234,12 @@ pub(super) fn run_ceremony_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
             },
-            "context": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque initial ceremony context forwarded to guards and handlers."
-            },
+            "context": attributes_schema("Opaque initial ceremony context forwarded to guards and handlers."),
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+                "description": lease_ttl_rule(RUN_CEREMONY_LEASE_TTL_MS)
             }
         }
     })
@@ -242,11 +259,7 @@ pub(super) fn start_ceremony_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
             },
-            "context": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque initial ceremony context forwarded to guards and handlers."
-            }
+            "context": attributes_schema("Opaque initial ceremony context forwarded to guards and handlers.")
         }
     })
 }
@@ -265,11 +278,11 @@ pub(super) fn run_ceremony_step_schema() -> Value {
                 "description": "What kind of party is running it. Declared by you, because only you know: which seat runs this step comes from the definition, and that says which seat was required, not what turned up. This records who ran the step, not what produced its output — the handler is named by a host-defined string the engine will not classify."
             },
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "idempotency_key": string_schema("Optional unique execution key. The server mints one when omitted."),
+            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Step lease TTL in milliseconds. Zero or omitted uses the server default."
+                "description": lease_ttl_rule(RUN_CEREMONY_STEP_LEASE_TTL_MS)
             }
         }
     })
@@ -289,11 +302,11 @@ pub(super) fn claim_ceremony_step_schema() -> Value {
                 "description": "What kind of party fills the step's declared seat. The engine records this declaration and never infers it."
             },
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "idempotency_key": string_schema("Unique execution key for this claim. The server mints one when omitted."),
+            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
                 "minimum": 0,
-                "description": "Lease TTL in milliseconds. Zero or omitted uses the five-minute external-host default."
+                "description": lease_ttl_rule(CLAIM_CEREMONY_STEP_LEASE_TTL_MS)
             }
         }
     })
@@ -304,6 +317,17 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "required": ["ceremony_id", "step_id", "actor_kind", "status"],
+        // What `status` is decides whether `error` belongs, and the
+        // schema says so rather than only describing it: a failure with
+        // no reason is not a report, and a reason attached to a success
+        // is a contradiction the engine would have to resolve for the
+        // caller.
+        "if": {
+            "required": ["status"],
+            "properties": { "status": { "enum": ["failed"] } }
+        },
+        "then": { "required": ["error"] },
+        "else": { "not": { "required": ["error"] } },
         "properties": {
             "ceremony_id": string_schema("Started ceremony instance id."),
             "step_id": string_schema("Previously claimed ceremony step receiving the host's result."),
@@ -360,9 +384,13 @@ pub(super) fn ceremony_guard_deferral_schema() -> Value {
             "reconsider_when": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
-                "description": "Concrete conditions that would make it appropriate to ask again."
+                "description": format!(
+                    "Concrete conditions that would make it appropriate to ask again. \
+                     At least one, at most {MAX_ID_LIST_ITEMS}, each distinct."
+                )
             }
         }
     })

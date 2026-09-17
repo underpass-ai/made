@@ -2,9 +2,19 @@
 //! conversion helpers.
 //!
 //! Both `Attributes` and `Rubric` are opaque `BTreeMap<String, Value>`
-//! wrappers around `serde_json::Value`, which maps cleanly onto the
-//! Struct/Value/ListValue proto tree. All conversions preserve
-//! semantics losslessly (numbers are carried as f64 in both sides).
+//! wrappers around `serde_json::Value`, which maps onto the
+//! Struct/Value/ListValue proto tree shape for shape.
+//!
+//! It is **not** lossless, and the doc here used to say it was. A
+//! `Struct` carries every number as a double: `1` and `1.0` are the
+//! same eight bytes on it, and an integer past 2^53 cannot be counted
+//! one at a time once it is one. Nothing downstream can recover what
+//! the caller wrote, so this ingress decides it, by the rule in
+//! `docs/architecture/struct-numbers.tsv` — a whole-valued number is
+//! read whole, a number outside ±2^53 is refused. `made-mcp` applies
+//! the same rule at its request gate, for callers that arrive through a
+//! tool rather than through the RPC, and a test in each place is pinned
+//! against the same rows (issue #75).
 
 use std::collections::BTreeMap;
 
@@ -15,7 +25,7 @@ use serde_json::Value;
 
 /// Convert a proto `Struct` into a domain `Attributes`.
 pub fn attributes_from_struct(s: Option<PbStruct>) -> Result<Attributes, DomainError> {
-    Attributes::new(struct_to_map(s))
+    Attributes::new(struct_to_map(s)?)
 }
 
 /// Convert a domain `Attributes` into a proto `Struct`.
@@ -25,7 +35,7 @@ pub fn attributes_to_struct(attrs: &Attributes) -> PbStruct {
 
 /// Convert a proto `Struct` into a domain `Rubric`.
 pub fn rubric_from_struct(s: Option<PbStruct>) -> Result<Rubric, DomainError> {
-    Rubric::new(struct_to_map(s))
+    Rubric::new(struct_to_map(s)?)
 }
 
 /// Convert a domain `Rubric` into a proto `Struct`.
@@ -45,13 +55,13 @@ pub fn rubric_to_struct(rubric: &Rubric) -> PbStruct {
 // Low-level helpers
 // ---------------------------------------------------------------------------
 
-fn struct_to_map(s: Option<PbStruct>) -> BTreeMap<String, Value> {
+fn struct_to_map(s: Option<PbStruct>) -> Result<BTreeMap<String, Value>, DomainError> {
     let Some(s) = s else {
-        return BTreeMap::new();
+        return Ok(BTreeMap::new());
     };
     s.fields
         .into_iter()
-        .map(|(k, v)| (k, pb_value_to_json(v)))
+        .map(|(k, v)| Ok((k, pb_value_to_json(v)?)))
         .collect()
 }
 
@@ -90,36 +100,62 @@ const EXACT_WHOLE_LIMIT: f64 = 9_007_199_254_740_992.0;
 /// parity session (slice F3c), which is the first read that put a
 /// digest where a test could see it.
 ///
-/// A whole number is stored whole; anything with a fraction, and
-/// anything past the range where a double still counts one at a time,
-/// is untouched.
-fn number_to_json(value: f64) -> Value {
-    if value.is_finite() && value.fract() == 0.0 && value.abs() <= EXACT_WHOLE_LIMIT {
+/// A whole number is read whole; a fraction is left exactly as it
+/// arrived; and a whole number past the range where a double still
+/// counts one at a time is **refused**, because it did not survive the
+/// wire and answering with a different number would be worse than
+/// saying so. `docs/architecture/struct-numbers.tsv` is the table, and
+/// `made-mcp`'s request gate follows the same one.
+fn number_to_json(value: f64) -> Result<Value, DomainError> {
+    if value.is_finite() && value.fract() == 0.0 {
+        if value.abs() > EXACT_WHOLE_LIMIT {
+            return Err(out_of_range(value));
+        }
         #[allow(clippy::cast_possible_truncation)] // guarded above: whole, finite and within 2^53
         let whole = value as i64;
-        return Value::Number(serde_json::Number::from(whole));
+        return Ok(Value::Number(serde_json::Number::from(whole)));
     }
-    serde_json::Number::from_f64(value).map_or(Value::Null, Value::Number)
+    serde_json::Number::from_f64(value)
+        .map(Value::Number)
+        .ok_or_else(|| out_of_range(value))
 }
 
-pub(super) fn pb_value_to_json(v: PbValue) -> Value {
-    match v.kind {
+/// The complaint a number past the range earns.
+///
+/// `OutOfRange` and not something vaguer: the caller can fix it without
+/// knowing anything about the session, which is what this code means
+/// everywhere else here, and it reaches a client as `invalid_argument`
+/// — the same classification the MCP arms give it.
+fn out_of_range(value: f64) -> DomainError {
+    DomainError::OutOfRange {
+        field: "attributes.number",
+        value,
+        min: -EXACT_WHOLE_LIMIT,
+        max: EXACT_WHOLE_LIMIT,
+    }
+}
+
+pub(super) fn pb_value_to_json(v: PbValue) -> Result<Value, DomainError> {
+    Ok(match v.kind {
         None | Some(PbKind::NullValue(_)) => Value::Null,
-        Some(PbKind::NumberValue(n)) => number_to_json(n),
+        Some(PbKind::NumberValue(n)) => number_to_json(n)?,
         Some(PbKind::StringValue(s)) => Value::String(s),
         Some(PbKind::BoolValue(b)) => Value::Bool(b),
         Some(PbKind::StructValue(s)) => {
             let obj: serde_json::Map<_, _> = s
                 .fields
                 .into_iter()
-                .map(|(k, v)| (k, pb_value_to_json(v)))
-                .collect();
+                .map(|(k, v)| Ok((k, pb_value_to_json(v)?)))
+                .collect::<Result<_, DomainError>>()?;
             Value::Object(obj)
         }
-        Some(PbKind::ListValue(lv)) => {
-            Value::Array(lv.values.into_iter().map(pb_value_to_json).collect())
-        }
-    }
+        Some(PbKind::ListValue(lv)) => Value::Array(
+            lv.values
+                .into_iter()
+                .map(pb_value_to_json)
+                .collect::<Result<_, DomainError>>()?,
+        ),
+    })
 }
 
 fn json_to_pb_value(v: &Value) -> PbValue {
@@ -178,8 +214,11 @@ mod tests {
         assert_eq!(back.get("s"), Some(&json!("hello")));
         assert_eq!(back.get("b"), Some(&json!(true)));
         assert_eq!(back.get("null"), Some(&json!(null)));
-        // Numbers roundtrip through f64; compare numerically.
-        assert_eq!(back.get("n").unwrap().as_f64().unwrap(), 42.0,);
+        // The JSON value, not its `as_f64`. Comparing numerically is
+        // what let `42` and `42.0` pass as the same answer here while
+        // they sealed two different digests: `as_f64` is exactly the
+        // reading this ingress exists to settle.
+        assert_eq!(back.get("n"), Some(&json!(42)));
     }
 
     #[test]
@@ -198,15 +237,12 @@ mod tests {
         let payload = back.get("payload").unwrap().as_object().unwrap();
         assert_eq!(payload.get("severity").unwrap(), "p1");
         assert_eq!(payload.get("tags").unwrap(), &json!(["latency", "prod"]));
+        // Again the value itself: a nested whole number comes back
+        // whole, at any depth, which is what the record's digest
+        // covers.
         assert_eq!(
-            payload
-                .get("counts")
-                .unwrap()
-                .get("p50")
-                .unwrap()
-                .as_f64()
-                .unwrap(),
-            100.0,
+            payload.get("counts").unwrap(),
+            &json!({"p50": 100, "p99": 500})
         );
     }
 
@@ -219,15 +255,166 @@ mod tests {
         assert_eq!(back.get("rigor"), Some(&json!("high")));
     }
 
+    /// The checked-in table this ingress and `made-mcp`'s request gate
+    /// both follow.
+    const STRUCT_NUMBERS_TSV: &str =
+        include_str!("../../../../../docs/architecture/struct-numbers.tsv");
+
+    /// One row of it: the literal a caller writes, what becomes of it,
+    /// and what it is read as.
+    struct NumberRow {
+        input: String,
+        outcome: String,
+        read_as: String,
+    }
+
+    fn number_rows() -> Vec<NumberRow> {
+        let mut rows = Vec::new();
+        for (index, line) in STRUCT_NUMBERS_TSV.lines().enumerate() {
+            let number = index + 1;
+            if line.trim().is_empty() || line.starts_with('#') {
+                continue;
+            }
+            let cells: Vec<&str> = line.split('\t').collect();
+            assert_eq!(
+                cells.len(),
+                4,
+                "struct-numbers.tsv line {number} has {} tab-separated columns, expected 4",
+                cells.len()
+            );
+            if cells[0] == "input" {
+                continue;
+            }
+            rows.push(NumberRow {
+                input: cells[0].to_owned(),
+                outcome: cells[1].to_owned(),
+                read_as: cells[2].to_owned(),
+            });
+        }
+        assert!(rows.len() > 5, "struct-numbers.tsv has no rows to follow");
+        rows
+    }
+
+    /// The gRPC server reads a number exactly as the MCP request gate
+    /// does, and the two are pinned against the same rows rather than
+    /// against each other's code. A client that speaks the RPC directly
+    /// never passes through the gate, so "the same rule" has to be a
+    /// property of both and not of one calling the other.
     #[test]
-    fn nan_in_json_is_carried_as_null_on_the_wire() {
-        // Domain invariant: scores never hold NaN, but arbitrary
-        // payload values may; we clamp to Null to keep the wire valid.
+    fn every_row_of_the_table_is_read_the_way_the_table_says() {
+        for row in number_rows() {
+            let written: Value = serde_json::from_str(&row.input)
+                .unwrap_or_else(|error| panic!("`{}` is not JSON: {error}", row.input));
+            // What the wire hands this ingress is always a double.
+            let sent = written
+                .as_f64()
+                .unwrap_or_else(|| panic!("`{}` is not a number", row.input));
+            let read = number_to_json(sent);
+
+            if row.outcome == "refused" {
+                let error = read.unwrap_err();
+                assert!(
+                    matches!(
+                        error,
+                        DomainError::OutOfRange {
+                            field: "attributes.number",
+                            ..
+                        }
+                    ),
+                    "`{}` should be refused as out of range, not {error:?}",
+                    row.input
+                );
+                continue;
+            }
+
+            let expected: Value = serde_json::from_str(&row.read_as)
+                .unwrap_or_else(|error| panic!("`{}` is not JSON: {error}", row.read_as));
+            let read =
+                read.unwrap_or_else(|error| panic!("`{}` should be read: {error}", row.input));
+            assert_eq!(read, expected, "`{}` was read as {read}", row.input);
+            if row.outcome == "whole" {
+                assert!(
+                    read.is_i64() || read.is_u64(),
+                    "`{}` is whole and must be read as an integer, not {read}",
+                    row.input
+                );
+            }
+        }
+    }
+
+    /// The refusal reaches a direct gRPC client rather than being
+    /// rounded away inside the mapper.
+    #[test]
+    fn a_number_past_the_range_is_refused_rather_than_rounded() {
+        let mut fields: BTreeMap<String, PbValue> = BTreeMap::new();
+        fields.insert(
+            "id".to_owned(),
+            PbValue {
+                kind: Some(PbKind::NumberValue(1e17)),
+            },
+        );
+        let error = attributes_from_struct(Some(PbStruct { fields })).unwrap_err();
+        assert!(
+            matches!(
+                error,
+                DomainError::OutOfRange {
+                    field: "attributes.number",
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+    }
+
+    /// A number the domain holds reaches the wire as a number.
+    ///
+    /// The test this replaces was called
+    /// `nan_in_json_is_carried_as_null_on_the_wire` and inserted
+    /// `1.0`: it never held a NaN, so it never showed what happened to
+    /// one, and it promised a clamp this direction does not perform.
+    #[test]
+    fn a_number_the_domain_holds_reaches_the_wire_as_one() {
         let mut m = BTreeMap::new();
-        let bad = serde_json::Number::from_f64(1.0).unwrap();
-        m.insert("n".to_owned(), Value::Number(bad));
+        m.insert("n".to_owned(), json!(1.5));
         let pb = map_to_struct(&m);
-        assert!(pb.fields.contains_key("n"));
+        assert_eq!(
+            pb.fields["n"].kind,
+            Some(PbKind::NumberValue(1.5)),
+            "a fraction crosses as the double it is"
+        );
+    }
+
+    /// And the direction that can actually carry one: a `Struct` field
+    /// whose double is not a number at all.
+    ///
+    /// Refused rather than read as `null`, which is what this used to
+    /// do. `null` is a value a caller can write on purpose, and a
+    /// reader cannot tell one they wrote from one the mapper invented —
+    /// while the in-process arm can never produce either, because JSON
+    /// has no way to write a NaN. Refusing is what keeps the two arms
+    /// agreeing about what a payload may contain.
+    #[test]
+    fn a_double_that_is_not_a_number_is_refused_rather_than_read_as_null() {
+        for not_a_number in [f64::NAN, f64::INFINITY, f64::NEG_INFINITY] {
+            let mut fields: BTreeMap<String, PbValue> = BTreeMap::new();
+            fields.insert(
+                "n".to_owned(),
+                PbValue {
+                    kind: Some(PbKind::NumberValue(not_a_number)),
+                },
+            );
+            let error = attributes_from_struct(Some(PbStruct { fields })).unwrap_err();
+            assert!(
+                matches!(
+                    error,
+                    DomainError::OutOfRange {
+                        field: "attributes.number",
+                        ..
+                    }
+                ),
+                "{not_a_number} should be refused, not {error:?}"
+            );
+        }
     }
 
     #[test]

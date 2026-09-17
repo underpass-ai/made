@@ -13,8 +13,14 @@ pub(super) struct EmbeddedReadCeremonyEventsRequest {
 }
 
 impl EmbeddedReadCeremonyEventsRequest {
-    pub(super) fn into_input(self) -> ReadCeremonyEventsInput {
+    /// Fallible for one reason: a limit above the cap is refused by the
+    /// engine, as the tool's own schema says (`maximum: 1000`) and as
+    /// the request gate already refuses before this is ever built. The
+    /// two agree by saying the same thing rather than by one of them
+    /// quietly making the other's answer smaller.
+    pub(super) fn into_input(self) -> Result<ReadCeremonyEventsInput, String> {
         ReadCeremonyEventsInput::new(self.ceremony_id, self.from_version, self.limit)
+            .map_err(|error| error.to_string())
     }
 }
 
@@ -51,7 +57,8 @@ mod tests {
         let request =
             EmbeddedReadCeremonyEventsRequest::try_from(&json!({ "ceremony_id": "session-1" }))
                 .unwrap()
-                .into_input();
+                .into_input()
+                .unwrap();
 
         assert_eq!(request.from_version(), StreamVersion::EMPTY);
         assert_eq!(request.limit(), ReadCeremonyEventsInput::DEFAULT_LIMIT);
@@ -65,7 +72,8 @@ mod tests {
             "limit": 3,
         }))
         .unwrap()
-        .into_input();
+        .into_input()
+        .unwrap();
 
         assert_eq!(request.from_version(), StreamVersion::new(7));
         assert_eq!(request.limit(), 3);
@@ -77,9 +85,25 @@ mod tests {
             &json!({ "ceremony_id": "session-1", "limit": 0 }),
         )
         .unwrap()
-        .into_input();
+        .into_input()
+        .unwrap();
 
         assert_eq!(request.limit(), ReadCeremonyEventsInput::DEFAULT_LIMIT);
+    }
+
+    /// The engine refuses what the schema refuses, so a caller cannot
+    /// reach one answer through the gate and a different one past it.
+    #[test]
+    fn a_limit_above_the_cap_is_refused_rather_than_clamped() {
+        let error = EmbeddedReadCeremonyEventsRequest::try_from(&json!({
+            "ceremony_id": "session-1",
+            "limit": 1_001,
+        }))
+        .unwrap()
+        .into_input()
+        .expect_err("a page bigger than a page is not a page");
+
+        assert!(error.contains("limit"), "{error}");
     }
 
     #[test]

@@ -7,7 +7,7 @@
 
 use serde_json::{json, Value};
 
-use crate::protocol::schema_primitives::string_schema;
+use crate::protocol::schema_primitives::{string_schema, MAX_ID_LIST_ITEMS};
 
 /// Whether a report is stored anywhere. It is not, on either edition:
 /// ADR-006 makes a report a projection of persisted state, and nothing
@@ -33,9 +33,13 @@ pub(crate) fn ceremony_report_schema() -> Value {
             "ceremony_ids": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": string_schema("Identifier of a persisted ceremony instance."),
-                "description": "One or more ceremony ids, reported in caller order. Empty lists, duplicates and unknown ids are errors."
+                "description": format!(
+                    "One or more ceremony ids, reported in caller order, at most \
+                     {MAX_ID_LIST_ITEMS}. Empty lists, duplicates and unknown ids are errors."
+                )
             },
             "title": string_schema("Optional report heading. It affects presentation only and is escaped as untrusted Markdown text.")
         }
@@ -43,7 +47,7 @@ pub(crate) fn ceremony_report_schema() -> Value {
 }
 
 /// What an unasked-for `limit` takes, and the most any read answers
-/// with.
+/// with — above which a read is refused rather than cut down.
 ///
 /// The engine owns both — they are
 /// `made_app::usecases::ReadCeremonyEventsInput::DEFAULT_LIMIT` and
@@ -72,8 +76,9 @@ pub(crate) fn read_ceremony_events_schema() -> Value {
                 "maximum": EVENT_PAGE_LIMIT_CAP,
                 "description": format!(
                     "How many records at most. Omitted or 0 takes {DEFAULT_EVENT_PAGE_LIMIT}; \
-                     {EVENT_PAGE_LIMIT_CAP} is the cap, and a longer stream is read in further \
-                     calls from `next_version`."
+                     {EVENT_PAGE_LIMIT_CAP} is the cap and asking for more is refused, never \
+                     quietly cut down, so a longer stream is read in further calls from \
+                     `next_version`."
                 )
             }
         }

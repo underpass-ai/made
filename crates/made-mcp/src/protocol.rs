@@ -7,7 +7,9 @@ mod catalog;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 mod ceremony_journal_verdict_view;
 mod ceremony_schemas;
+mod default_idempotency_key;
 mod default_lease_owner;
+mod default_lease_ttl;
 #[cfg(test)]
 mod editions_matrix_tests;
 mod general_schemas;
@@ -17,6 +19,7 @@ mod parity_tests;
 mod request_gate;
 mod result_envelopes;
 mod schema_primitives;
+mod struct_numbers;
 #[cfg(test)]
 mod tests;
 mod tool_error;
@@ -34,12 +37,19 @@ pub(crate) use ceremony_journal_verdict_view::CeremonyJournalVerdictView;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use ceremony_schemas::REPORT_IS_PERSISTED;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use default_idempotency_key::default_idempotency_key;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use default_lease_owner::default_lease_owner_id;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use default_lease_ttl::{
+    CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS, RUN_CEREMONY_STEP_LEASE_TTL_MS,
+};
 pub(crate) use initialization::initialize_result;
 pub(crate) use request_gate::validate_tool_request;
 pub(crate) use result_envelopes::{
     jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
 };
+pub(crate) use struct_numbers::normalise_numbers;
 pub use tool_error::ToolError;
 pub use tool_error_code::ToolErrorCode;
 // Only the tests ask which tools this server owns; the catalog and the

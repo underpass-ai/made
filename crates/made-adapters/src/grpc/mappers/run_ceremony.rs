@@ -13,7 +13,11 @@ use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
 
 const DEFAULT_LEASE_OWNER_ID: &str = "grpc-run-ceremony";
-const DEFAULT_LEASE_TTL_MS: u64 = 60_000;
+
+/// The engine's own number, read from the input that carries it
+/// rather than written again here: a direct gRPC client that omits
+/// the field gets the same lease as every other caller.
+const DEFAULT_LEASE_TTL_MS: u64 = RunCeremonyInput::DEFAULT_LEASE_TTL_MS;
 
 pub fn run_ceremony_input_from_proto(
     request: pb::RunCeremonyRequest,

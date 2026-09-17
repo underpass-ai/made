@@ -81,6 +81,12 @@ impl CeremonyEngineApi for EmbeddedMade {
             Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
                 ceremony_id: "the ceremony the intervention names".to_owned(),
             }),
+            // A lost race, not a refusal: reading the session again and
+            // repeating the call is the remedy, which is the one thing a
+            // refusal never is.
+            Err(DomainError::Conflict { what }) => Err(ApiError::Conflict {
+                what: what.to_owned(),
+            }),
             Err(error) => Err(ApiError::Refused {
                 reason: error.to_string(),
             }),
@@ -98,6 +104,12 @@ impl CeremonyEngineApi for EmbeddedMade {
             Ok(instance) => Ok(summarize(&instance)),
             Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
                 ceremony_id: "the ceremony the intervention names".to_owned(),
+            }),
+            // A lost race, not a refusal: reading the session again and
+            // repeating the call is the remedy, which is the one thing a
+            // refusal never is.
+            Err(DomainError::Conflict { what }) => Err(ApiError::Conflict {
+                what: what.to_owned(),
             }),
             Err(error) => Err(ApiError::Refused {
                 reason: error.to_string(),
@@ -206,6 +218,11 @@ impl CeremonyEngineApi for EmbeddedMade {
             // remedy, not retrying.
             Err(DomainError::NotFound { .. }) => Err(ApiError::CeremonyNotFound {
                 ceremony_id: format!("no published definition for `{ceremony_id}`"),
+            }),
+            // A lost race, which is worth repeating once the session has
+            // been read again.
+            Err(DomainError::Conflict { what }) => Err(ApiError::Conflict {
+                what: what.to_owned(),
             }),
             // Everything else the domain says here is about the request — a
             // taken identity, a defective field. Refused, so nobody retries an

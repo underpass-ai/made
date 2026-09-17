@@ -39,6 +39,26 @@ impl ReadCeremonyEventsUseCase {
         &self,
         input: ReadCeremonyEventsInput,
     ) -> Result<CeremonyEventPage, DomainError> {
+        let mut records = self
+            .events
+            .read(input.ceremony_id(), input.from_version())
+            .await?;
+        // The head **after** the page, never before it. The two reads
+        // are not one instant, and a session someone else is still
+        // driving grows between them: sampled first, the head could be
+        // older than the last record handed out, and the answer said
+        // `next_version > head_version` with `has_more() == false` —
+        // caught up, and past the end of the stream it was caught up
+        // with. Read afterwards, the head is at least what was read, so
+        // a concurrent append shows up as more to read rather than as
+        // an impossible answer.
+        //
+        // Reading the page first also makes the not-found check truthful
+        // for a stream that was started between the two calls.
+        //
+        // #70 owns the two things this cannot fix here: a `limit` at the
+        // port, so a page is not read whole and then truncated, and a
+        // head that does not cost a scan.
         let head = self.events.head(input.ceremony_id()).await?;
         // A stream nothing was ever appended to is a ceremony that was
         // never started. Answering with an empty page would tell a
@@ -49,10 +69,6 @@ impl ReadCeremonyEventsUseCase {
             });
         }
 
-        let mut records = self
-            .events
-            .read(input.ceremony_id(), input.from_version())
-            .await?;
         records.truncate(input.limit());
 
         let next = records.last().map_or(head, |record| {
@@ -64,8 +80,12 @@ impl ReadCeremonyEventsUseCase {
 
 #[cfg(test)]
 mod tests {
-    use made_core::entities::AuditChain;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    use made_core::entities::{AuditChain, AuditFact, AuditRecord};
+    use made_core::ports::{AppendOutcome, CeremonyEventStorePort, PositionedRecord};
     use made_core::value_objects::{AuditActorKind, CeremonyId, StepOutput, StepResult};
+    use made_core::value_objects::{EventId, GlobalPosition};
     use std::sync::Arc;
 
     use super::*;
@@ -130,11 +150,9 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::EMPTY,
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -153,11 +171,9 @@ mod tests {
         let usecase = read_events(store);
 
         let first = usecase
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::EMPTY,
-                Some(2),
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, Some(2)).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -167,11 +183,9 @@ mod tests {
         assert!(first.has_more());
 
         let second = usecase
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                first.next_version(),
-                Some(2),
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), first.next_version(), Some(2)).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -199,11 +213,9 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::new(99),
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::new(99), None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -213,16 +225,145 @@ mod tests {
         assert!(!page.has_more());
     }
 
+    /// Somebody else was still driving the session while it was being
+    /// read.
+    ///
+    /// The wrapper appends one record during the `read` call, which is
+    /// exactly the window the two calls leave open. Sampling the head
+    /// first, the answer came back with `next_version` past
+    /// `head_version` and `has_more()` false at the same time: caught
+    /// up, and past the end of what it was caught up with. There is no
+    /// reading of that a client can act on.
+    #[tokio::test]
+    async fn an_append_during_the_read_leaves_the_head_at_least_at_the_page() {
+        let store = three_record_stream().await;
+        let interposing = Arc::new(AppendsDuringTheRead::over(store));
+
+        let page = ReadCeremonyEventsUseCase::new(interposing.clone())
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert!(
+            interposing.appended(),
+            "the wrapper must have written during the read; otherwise this proves nothing"
+        );
+        assert_eq!(page.records().len(), 4);
+        assert!(
+            page.next_version() <= page.head_version(),
+            "next_version {:?} is past head_version {:?}",
+            page.next_version(),
+            page.head_version()
+        );
+        assert!(
+            !page.has_more(),
+            "everything the store held was read, so there is nothing further to fetch"
+        );
+    }
+
+    /// A store that somebody else writes to in the middle of a read.
+    ///
+    /// It appends once, on the first `read`, before answering — the one
+    /// moment a concurrent writer can land between a page and a head.
+    /// The record it writes is the stream's own last one again under a
+    /// fresh event id, so what lands is a record the chain accepts
+    /// rather than something invented for the test.
+    struct AppendsDuringTheRead {
+        inner: Arc<EventStoreFake>,
+        appended: AtomicBool,
+    }
+
+    impl AppendsDuringTheRead {
+        fn over(inner: Arc<EventStoreFake>) -> Self {
+            Self {
+                inner,
+                appended: AtomicBool::new(false),
+            }
+        }
+
+        fn appended(&self) -> bool {
+            self.appended.load(Ordering::SeqCst)
+        }
+
+        async fn append_one_more(&self, stream: &CeremonyId) {
+            let head = self.inner.head(stream).await.unwrap();
+            let last = self
+                .inner
+                .read(stream, StreamVersion::EMPTY)
+                .await
+                .unwrap()
+                .pop()
+                .expect("the stream this wrapper is used over is not empty");
+            let fact = AuditFact {
+                event_id: EventId::new(format!("{}:concurrent", last.event_id())).unwrap(),
+                event: last.event().cloned().expect("the record carries its event"),
+                ceremony_id: last.ceremony_id().clone(),
+                definition_name: last.definition_name().clone(),
+                definition_version: last.definition_version().clone(),
+                occurred_at: last.occurred_at(),
+                actor: last.actor().clone(),
+                correlation_id: last.correlation_id().cloned(),
+                causation_id: last.causation_id().cloned(),
+                trace: None,
+            };
+            self.inner.append(stream, head, vec![fact]).await.unwrap();
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl CeremonyEventStorePort for AppendsDuringTheRead {
+        async fn append(
+            &self,
+            stream: &CeremonyId,
+            expected: StreamVersion,
+            facts: Vec<AuditFact>,
+        ) -> Result<AppendOutcome, DomainError> {
+            self.inner.append(stream, expected, facts).await
+        }
+
+        async fn read(
+            &self,
+            stream: &CeremonyId,
+            after: StreamVersion,
+        ) -> Result<Vec<AuditRecord>, DomainError> {
+            if !self.appended.swap(true, Ordering::SeqCst) {
+                self.append_one_more(stream).await;
+            }
+            self.inner.read(stream, after).await
+        }
+
+        async fn read_all(
+            &self,
+            from: GlobalPosition,
+            limit: usize,
+        ) -> Result<Vec<PositionedRecord>, DomainError> {
+            self.inner.read_all(from, limit).await
+        }
+
+        async fn head(&self, stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
+            self.inner.head(stream).await
+        }
+
+        async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
+            self.inner.streams().await
+        }
+    }
+
     #[tokio::test]
     async fn a_ceremony_with_no_stream_is_not_found() {
         let store = three_record_stream().await;
 
         let error = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                CeremonyId::new("never-started").unwrap(),
-                StreamVersion::EMPTY,
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(
+                    CeremonyId::new("never-started").unwrap(),
+                    StreamVersion::EMPTY,
+                    None,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap_err();
 

@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use made_adapters::memory::InProcessSessionMemory;
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
@@ -284,12 +285,52 @@ fn design_intent() -> Value {
 struct ParityArms {
     /// Dropping it stops the in-process server.
     _fixture: GrpcFixture,
+    /// Dropping it removes the durable store's directory, on the pass
+    /// that has one.
+    _store_dir: Option<tempfile::TempDir>,
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
 }
 
 impl ParityArms {
+    /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
+        Self::over(EmbeddedMade::builder(), None).await
+    }
+
+    /// The in-process arm over **the store the local edition ships
+    /// with**: WAL-mode SQLite in a directory of its own.
+    ///
+    /// The session was only ever driven over `InMemoryCeremonyEventStore`
+    /// on both arms, and that is not what `made-mcp` opens when somebody
+    /// runs it: `EmbeddedMade::open` builds over `SqliteCeremonyStore`.
+    /// A gate that compares two in-memory engines proves parity of
+    /// something nobody ships (ADR-014).
+    ///
+    /// Built through the builder rather than through
+    /// `EmbeddedMade::open`, and with the same store type `open` uses,
+    /// because the session needs the parity handler, evidence source and
+    /// clock on both arms — the whole reason its values can be compared
+    /// at all — and `open` composes an engine that takes none of them.
+    async fn start_on_the_shipped_store() -> Self {
+        let directory = tempfile::tempdir().expect("a directory for the durable store");
+        let store = Arc::new(
+            SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
+                .expect("the durable SQLite ceremony store should open"),
+        );
+        Self::over(
+            EmbeddedMade::builder()
+                .with_ceremony_store(store.clone())
+                .with_definition_publications(store),
+            Some(directory),
+        )
+        .await
+    }
+
+    async fn over(
+        builder: made_embedded::EmbeddedMadeBuilder,
+        store_dir: Option<tempfile::TempDir>,
+    ) -> Self {
         // One memory per arm, not one between them. Both are
         // in-process and equivalent, so each arm recalls what that arm
         // wrote and the two answers are equal because the engines
@@ -307,7 +348,7 @@ impl ParityArms {
             MadeMcpGrpcTlsConfig::disabled(),
         ));
         let in_process = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(
-            EmbeddedMade::builder()
+            builder
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
@@ -316,6 +357,7 @@ impl ParityArms {
         ));
         Self {
             _fixture: fixture,
+            _store_dir: store_dir,
             over_the_wire,
             in_process,
         }
@@ -474,7 +516,12 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "role_kind": "human",
                 "kind": "opinion",
                 "message": "What did you see?",
-                "details": { "asked_at_state": "REVIEW" },
+                // A whole number written with a decimal point and one
+                // written without: a `Struct` cannot tell them apart,
+                // so before this they were sealed differently by the
+                // two engines and the two digests disagreed on an
+                // intact chain.
+                "details": { "asked_at_state": "REVIEW", "severity": 1.0, "attempt": 1 },
             }),
         ),
         (
@@ -485,7 +532,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
                 "message": "The queue was backing up.",
-                "details": { "observed": ["queue_depth", "error_rate"] },
+                "details": {
+                    "observed": ["queue_depth", "error_rate"],
+                    "confidence": 1.0,
+                    "samples": 12,
+                },
             }),
         ),
         (
@@ -563,6 +614,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_get_ceremony_instance",
             json!({ "ceremony_id": SESSION_ID }),
         ),
+        // The runner is named here for the reason it is named
+        // everywhere else in this script: an omitted one becomes
+        // `made-mcp:<backend>`, which is the engine's own name and
+        // differs by arm on purpose (F2). Reading this stream back is
+        // what first put the lease where a comparison could see it.
         (
             "made_run_ceremony",
             json!({
@@ -570,6 +626,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "definition_yaml": ONE_SHOT_CEREMONY,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
+                "lease_owner_id": "parity-host",
             }),
         ),
         ("made_list_ceremony_instances", json!({})),
@@ -597,17 +654,31 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_verify_ceremony_journal",
             json!({ "ceremony_id": SESSION_ID }),
         ),
+        // And the other two streams this session left behind. One
+        // digest compared is one stream proved; the run the engine took
+        // end to end and the session bound to a published version are
+        // written by different code paths and were never read back.
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": ONE_SHOT_ID }),
+        ),
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": PUBLISHED_SESSION_ID }),
+        ),
         (
             "made_get_ceremony_transcript",
             json!({ "ceremony_id": SESSION_ID }),
         ),
         // Two sessions in one report, so the order the caller asked
-        // for is compared too, and a title so the escaping is.
+        // for is compared too, and a title so the escaping is. The
+        // padding is the point: one arm trimmed the heading and the
+        // other did not, so one request rendered two documents.
         (
             "made_generate_ceremony_report",
             json!({
                 "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
-                "title": "Parity review <both arms>",
+                "title": "  Parity review <both arms>  ",
             }),
         ),
         // How the engine that served all of the above is doing, asked
@@ -677,7 +748,22 @@ fn session_script() -> Vec<(&'static str, Value)> {
 
 #[tokio::test]
 async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends() {
-    let arms = ParityArms::start().await;
+    drive_the_whole_session(&ParityArms::start().await).await;
+}
+
+/// And again over the store the local edition actually ships with.
+///
+/// The same script, the same comparison, the same golden document — with
+/// the in-process engine writing to WAL-mode SQLite instead of to a map
+/// in memory. ADR-014 says the local edition leads and the API keeps
+/// parity with it; a gate that only ever compared two in-memory engines
+/// was comparing something nobody runs.
+#[tokio::test]
+async fn the_same_session_answers_the_same_over_the_store_the_edition_ships_with() {
+    drive_the_whole_session(&ParityArms::start_on_the_shipped_store().await).await;
+}
+
+async fn drive_the_whole_session(arms: &ParityArms) {
     let shared = shared_tools();
     let mut called: BTreeSet<String> = BTreeSet::new();
 
@@ -694,6 +780,9 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
         assert_same_answer(tool, &over_the_wire, &in_process);
+        if tool == "made_generate_ceremony_report" {
+            assert_the_report_is_the_committed_document(structured(&in_process));
+        }
         called.insert((*tool).to_owned());
     }
 
@@ -765,6 +854,54 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
 }
 
 // ---------------------------------------------------------------------------
+// The rendered document
+// ---------------------------------------------------------------------------
+
+/// The report this session renders, committed.
+const PARITY_SESSION_REPORT: &str = include_str!("golden/parity_session_report.md");
+
+/// Set it to rewrite the file from what the session renders. Read the
+/// diff before committing it: that is the whole point of the file.
+const UPDATE_GOLDEN: &str = "MADE_UPDATE_GOLDEN";
+
+/// Where the golden lives, for the message that tells you how to refresh
+/// it.
+const GOLDEN_PATH: &str = "crates/made-tests-integration/tests/golden/parity_session_report.md";
+
+/// The report is the serde form of `made-core`'s own entities, fenced as
+/// JSON (ADR-006). That makes a `#[serde(rename)]` anywhere in the
+/// domain a change to a document operators read — and nothing said so.
+/// Both arms render the same bytes, which the comparison above already
+/// proves; what it cannot prove is that those bytes are still the ones
+/// anybody decided on.
+///
+/// Committed, so such a change shows up as a diff in review rather than
+/// as nothing at all. The session is deterministic — named ids, a frozen
+/// clock, a handler whose output is derived from the step — so the
+/// document is too.
+fn assert_the_report_is_the_committed_document(report: &Value) {
+    let rendered = report["report_markdown"]
+        .as_str()
+        .expect("a report answers with its markdown");
+
+    if std::env::var_os(UPDATE_GOLDEN).is_some() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/golden/parity_session_report.md");
+        std::fs::write(&path, rendered).expect("the golden document should be writable");
+        return;
+    }
+
+    assert_eq!(
+        rendered, PARITY_SESSION_REPORT,
+        "the rendered report is not the committed document ({GOLDEN_PATH}).\n\n\
+         A report is the serde form of the entities it quotes, so a rename in \
+         `made-core` lands here. If the change is intended, refresh the file with \
+         `{UPDATE_GOLDEN}=1 cargo test -p made-tests-integration --test \
+         mcp_parity_session` and read the diff."
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Request acceptance
 // ---------------------------------------------------------------------------
 
@@ -776,7 +913,45 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
 async fn both_backends_accept_and_refuse_the_same_requests() {
     let arms = ParityArms::start().await;
 
-    let refused: Vec<(&str, &str, Value)> = vec![
+    for (index, (what, tool, arguments)) in requests_the_gate_refuses().into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 1, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                failed(answer),
+                "{what} was accepted by the {backend} backend: {answer:#}"
+            );
+            assert_eq!(
+                structured(answer)["code"],
+                json!("invalid_request"),
+                "{what} on the {backend} backend: {answer:#}"
+            );
+            assert_eq!(structured(answer)["retryable"], json!(false));
+        }
+        assert_eq!(
+            over_the_wire, in_process,
+            "{what} was refused two different ways"
+        );
+    }
+
+    // And the other direction: a call that leaves out everything it is
+    // allowed to leave out, or spells an omission the way a typed host
+    // does, is accepted by both.
+    for (index, (what, tool, arguments)) in requests_the_gate_accepts().into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 50, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                !failed(answer),
+                "{what} was refused by the {backend} backend: {answer:#}"
+            );
+        }
+    }
+}
+
+/// Every call the published schemas do not admit, with what is wrong
+/// with it.
+#[allow(clippy::too_many_lines)] // one entry per case; splitting fragments the table
+fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
+    vec![
         (
             "a required field left out",
             "made_get_ceremony_instance",
@@ -809,31 +984,69 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
             }),
         ),
         ("a tool that does not exist", "made_do_the_thing", json!({})),
-    ];
+        (
+            "a report heading that is nothing but space",
+            "made_generate_ceremony_report",
+            json!({ "ceremony_ids": [SESSION_ID], "title": "   " }),
+        ),
+        // The three constraints the schemas used to promise in prose
+        // only, and the bound every caller-supplied list of ids now
+        // declares.
+        (
+            "both ways of naming a definition at once",
+            "made_diff_ceremony_definitions",
+            json!({
+                "before": { "ceremony": "parity_published", "version": "1.0", "definition_yaml": PARITY_CEREMONY },
+                "after": { "definition_yaml": ALTERED_CEREMONY },
+            }),
+        ),
+        (
+            "a table with nobody seated at it",
+            "made_bind_ceremony_participants",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "seating": {},
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "a failed step that does not say why",
+            "made_complete_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "handoff",
+                "actor_kind": "agent",
+                "status": "failed",
+            }),
+        ),
+        (
+            "a report naming more sessions than the bound allows",
+            "made_generate_ceremony_report",
+            json!({
+                "ceremony_ids": (0..101)
+                    .map(|index| format!("session-{index}"))
+                    .collect::<Vec<_>>(),
+            }),
+        ),
+        (
+            "a number no double can count one at a time",
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": "out-of-range-session",
+                "definition_yaml": PARITY_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": { "ticket": 1e17 },
+            }),
+        ),
+    ]
+}
 
-    for (index, (what, tool, arguments)) in refused.into_iter().enumerate() {
-        let (over_the_wire, in_process) = arms.call(index as u64 + 1, tool, &arguments).await;
-        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
-            assert!(
-                failed(answer),
-                "{what} was accepted by the {backend} backend: {answer:#}"
-            );
-            assert_eq!(
-                structured(answer)["code"],
-                json!("invalid_request"),
-                "{what} on the {backend} backend: {answer:#}"
-            );
-            assert_eq!(structured(answer)["retryable"], json!(false));
-        }
-        assert_eq!(
-            over_the_wire, in_process,
-            "{what} was refused two different ways"
-        );
-    }
-
-    // And the other direction: a call that leaves out everything it is
-    // allowed to leave out is accepted by both.
-    let accepted: Vec<(&str, &str, Value)> = vec![
+/// Every call that leaves out what it may leave out, or spells an
+/// omission the way a host generated from a typed SDK does.
+fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
+    vec![
         (
             "a session opened without a context",
             "made_start_ceremony",
@@ -869,17 +1082,44 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
             "made_list_ceremony_instances",
             json!({}),
         ),
-    ];
-
-    for (index, (what, tool, arguments)) in accepted.into_iter().enumerate() {
-        let (over_the_wire, in_process) = arms.call(index as u64 + 50, tool, &arguments).await;
-        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
-            assert!(
-                !failed(answer),
-                "{what} was refused by the {backend} backend: {answer:#}"
-            );
-        }
-    }
+        // A host generated from a typed SDK writes an unset optional as
+        // `null`, and MCP reserves `_meta` on any object it defines.
+        // Both were refused, on both arms, so pointing a client
+        // somewhere else did not help it.
+        (
+            "an intervention whose unset optionals are written as null",
+            "made_request_ceremony_intervention",
+            json!({
+                "ceremony_id": "optional-fields-session",
+                "intervention_id": null,
+                "role_id": "FACILITATOR",
+                "role_kind": "human",
+                "kind": "opinion",
+                "message": "Anything else?",
+                "target_role_ids": null,
+                "details": null,
+            }),
+        ),
+        (
+            "a listing carrying the host's own `_meta`",
+            "made_list_ceremony_instances",
+            json!({ "_meta": { "progressToken": 7 } }),
+        ),
+        // A whole number written with a decimal point is read whole on
+        // both arms, so it is accepted rather than refused as a
+        // non-integer where an integer is declared.
+        (
+            "a lease length written with a decimal point",
+            "made_run_ceremony",
+            json!({
+                "ceremony_id": "decimal-lease-session",
+                "definition_yaml": ONE_SHOT_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "lease_ttl_ms": 60000.0,
+            }),
+        ),
+    ]
 }
 
 // ---------------------------------------------------------------------------

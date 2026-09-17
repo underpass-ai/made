@@ -18,6 +18,15 @@ pub struct RunCeremonyStepInput {
 }
 
 impl RunCeremonyStepInput {
+    /// How long the lease on one engine-run step lasts when the caller
+    /// asked for no particular length.
+    ///
+    /// The engine holds it for the length of one handler call, so the
+    /// number only has to cover that. Declared here, on the input that
+    /// carries it, so every adapter sends the same number rather than
+    /// inventing one.
+    pub const DEFAULT_LEASE_TTL_MS: u64 = 30_000;
+
     #[must_use]
     pub fn new(
         instance_id: CeremonyId,

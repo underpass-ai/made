@@ -1632,8 +1632,9 @@ message ReadCeremonyEventsRequest {
   // The version already seen: the answer starts at the record after
   // it, and zero reads from the beginning of the stream.
   uint64 from_version = 2;
-  // How many records at most. Zero takes the server's default;
-  // anything above its cap takes the cap.
+  // How many records at most. Zero takes the server's default, 200;
+  // anything above the cap, 1000, is refused above the cap rather than
+  // answered with a smaller page than the one asked for.
   uint32 limit = 3;
 }
 

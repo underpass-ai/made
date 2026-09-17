@@ -2,10 +2,11 @@ use serde::{Deserialize, Serialize};
 
 /// How this contract fails.
 ///
-/// Three shapes, because a consumer acts differently on each: waiting is a
+/// Four shapes, because a consumer acts differently on each: waiting is a
 /// remedy for `Unavailable`, asking for something else is the remedy for
-/// `CeremonyNotFound`, and `Refused` means the engine looked at the request and
-/// said no — retrying it unchanged will not change the answer.
+/// `CeremonyNotFound`, reading the session again and trying once more is the
+/// remedy for `Conflict`, and `Refused` means the engine looked at the request
+/// and said no — retrying it unchanged will not change the answer.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, thiserror::Error)]
 pub enum ApiError {
     #[error("the ceremony engine is unavailable: {reason}")]
@@ -13,6 +14,16 @@ pub enum ApiError {
 
     #[error("no ceremony named `{ceremony_id}`")]
     CeremonyNotFound { ceremony_id: String },
+
+    /// Somebody else wrote to what this call was writing to.
+    ///
+    /// Distinct from `Refused` because the remedies are opposites: a
+    /// refusal will answer the same way however often it is asked, while a
+    /// lost race is worth reading again and repeating. Folding the two
+    /// together makes a consumer either give up on races it would have won
+    /// or hammer a call that will never succeed.
+    #[error("the ceremony engine lost a race on {what}; read it again and retry")]
+    Conflict { what: String },
 
     #[error("the ceremony engine refused: {reason}")]
     Refused { reason: String },
@@ -26,7 +37,7 @@ impl ApiError {
     /// stale the first time this enum grows.
     #[must_use]
     pub fn is_transient(&self) -> bool {
-        matches!(self, Self::Unavailable { .. })
+        matches!(self, Self::Unavailable { .. } | Self::Conflict { .. })
     }
 }
 
@@ -35,11 +46,18 @@ mod tests {
     use super::*;
 
     #[test]
-    fn only_unavailability_invites_a_retry() {
+    fn what_can_change_by_itself_invites_a_retry() {
         assert!(ApiError::Unavailable {
             reason: "starting".to_owned()
         }
         .is_transient());
+        assert!(
+            ApiError::Conflict {
+                what: "ceremony_instance".to_owned()
+            }
+            .is_transient(),
+            "a lost race is the one failure repeating unchanged can win"
+        );
         assert!(!ApiError::CeremonyNotFound {
             ceremony_id: "c-1".to_owned()
         }

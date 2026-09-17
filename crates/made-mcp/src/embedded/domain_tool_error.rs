@@ -29,10 +29,26 @@ impl From<DomainError> for ToolError {
             // fixing it needs nothing the caller does not have.
             | DomainError::InvalidDocument { .. } => Self::invalid_request(message),
             DomainError::NotFound { .. } => Self::not_found(message),
-            // Everything else is the engine having looked: an illegal
-            // transition, a violated invariant, a lost race, a session
-            // that already exists, a record no reader can read.
-            _ => Self::refused(message),
+            // A write that lost a race. Worth reading the session again
+            // and repeating, which is what the server's own mapper says
+            // by answering `aborted` and what `AppendOutcome`'s doc says
+            // about the outcome that produces it.
+            DomainError::Conflict { .. } => Self::conflict(message),
+            // The engine having looked: an illegal transition, a
+            // violated invariant, a session that already exists, a
+            // proposal nothing validated, a record no reader can read.
+            //
+            // Written out rather than left to a `_`, because the server
+            // mapper in `made-adapters` is exhaustive and the two have
+            // to agree: a variant added to `DomainError` must make
+            // somebody choose a code on both arms, not silently become a
+            // refusal on one. `mcp_error_vocabulary.rs` composes the two
+            // and compares them on every variant there is.
+            DomainError::InvalidTransition { .. }
+            | DomainError::InvariantViolated { .. }
+            | DomainError::AlreadyExists { .. }
+            | DomainError::NoValidProposal { .. }
+            | DomainError::UnreadableCeremonyEvent { .. } => Self::refused(message),
         }
     }
 }
@@ -78,6 +94,17 @@ mod tests {
         );
     }
 
+    /// A lost race is not a refusal, and a client that cannot tell
+    /// them apart retries the wrong ones.
+    #[test]
+    fn a_lost_race_is_worth_repeating() {
+        let error = ToolError::from(DomainError::Conflict {
+            what: "ceremony_instance",
+        });
+        assert_eq!(error.code(), ToolErrorCode::Conflict);
+        assert!(error.is_retryable());
+    }
+
     #[test]
     fn the_engine_having_looked_is_a_refusal() {
         for error in [
@@ -86,9 +113,6 @@ mod tests {
                 to: "DONE",
             },
             DomainError::InvariantViolated { reason: "no" },
-            DomainError::Conflict {
-                what: "ceremony_instance",
-            },
             DomainError::AlreadyExists {
                 what: "ceremony_instance",
             },

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::schema_primitives::string_schema;
+use super::schema_primitives::{attributes_schema, string_schema};
 
 pub(super) fn help_schema() -> Value {
     json!({
@@ -68,11 +68,7 @@ pub(super) fn task_schema() -> Value {
             "description": string_schema("Free-form prompt the council deliberates over."),
             "specialty": string_schema("Specialty label of the council to dispatch to."),
             "constraints": constraints_schema(),
-            "attributes": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque per-task attributes. Forwarded to agents and validators."
-            },
+            "attributes": attributes_schema("Opaque per-task attributes. Forwarded to agents and validators."),
             "external_context": external_context_bundle_schema(),
             "metadata": task_metadata_schema()
         }
@@ -84,11 +80,7 @@ fn constraints_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-            "rubric": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque rubric forwarded to agents and validators."
-            },
+            "rubric": attributes_schema("Opaque rubric forwarded to agents and validators."),
             "rounds": { "type": "integer", "minimum": 0, "description": "Peer-review rounds (0 = adapter default)." },
             "num_agents": { "type": "integer", "minimum": 0, "description": "Requested parallelism (0 = use council size)." },
             "deadline_ms": { "type": "integer", "minimum": 0, "description": "Optional soft deadline in ms (0 = none)." },
@@ -148,10 +140,9 @@ fn external_context_bundle_schema() -> Value {
                 "additionalProperties": false,
                 "properties": {
                     "text": string_schema("Human-facing summary."),
-                    "attributes": {
-                        "type": "object",
-                        "additionalProperties": true
-                    }
+                    "attributes": attributes_schema(
+                        "Opaque summary attributes. made treats these as opaque."
+                    )
                 }
             },
             "items": {
@@ -162,11 +153,7 @@ fn external_context_bundle_schema() -> Value {
                 "type": "array",
                 "items": context_reference_schema()
             },
-            "metadata": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Application-owned bundle metadata. made treats this as opaque."
-            }
+            "metadata": attributes_schema("Application-owned bundle metadata. made treats this as opaque.")
         }
     })
 }
@@ -181,7 +168,7 @@ fn context_item_schema() -> Value {
             "kind": string_schema("Caller-defined kind label."),
             "title": { "type": "string" },
             "narrative": { "type": "string" },
-            "attributes": { "type": "object", "additionalProperties": true },
+            "attributes": attributes_schema("Opaque item attributes. made treats these as opaque."),
             "reference_ids": {
                 "type": "array",
                 "items": { "type": "string" }
@@ -200,7 +187,7 @@ fn context_reference_schema() -> Value {
             "uri": string_schema("Pointer to the referenced artifact."),
             "title": { "type": "string" },
             "media_type": { "type": "string" },
-            "attributes": { "type": "object", "additionalProperties": true }
+            "attributes": attributes_schema("Opaque reference attributes. made treats these as opaque.")
         }
     })
 }
@@ -215,11 +202,7 @@ fn task_metadata_schema() -> Value {
             "correlation_id": { "type": "string" },
             "council_contract_id": { "type": "string" },
             "output_contract_id": { "type": "string" },
-            "execution_profile": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque executor hints. Explicit Orchestrate options take precedence on overlap."
-            }
+            "execution_profile": attributes_schema("Opaque executor hints. Explicit Orchestrate options take precedence on overlap.")
         }
     })
 }
@@ -233,11 +216,7 @@ pub(super) fn agent_summary_schema() -> Value {
             "agent_id": string_schema("Stable agent id."),
             "specialty": string_schema("Specialty the agent serves."),
             "kind": string_schema("Adapter-defined agent kind (e.g. noop, vllm, anthropic, openai)."),
-            "attributes": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Per-agent factory hints (provider.model, provider.endpoint, …)."
-            }
+            "attributes": attributes_schema("Per-agent factory hints (provider.model, provider.endpoint, …).")
         }
     })
 }
@@ -259,11 +238,7 @@ pub(super) fn trigger_event_schema() -> Value {
             },
             "task_description_template": { "type": "string" },
             "constraints": constraints_schema(),
-            "payload": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque domain payload."
-            },
+            "payload": attributes_schema("Opaque domain payload."),
             "external_context": external_context_bundle_schema(),
             "correlation_id": { "type": "string" },
             "causation_id": { "type": "string" }

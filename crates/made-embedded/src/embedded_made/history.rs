@@ -35,7 +35,8 @@ impl EmbeddedMade {
     /// most `limit` of them, and where the reader now stands.
     ///
     /// `limit` absent takes [`ReadCeremonyEventsInput::DEFAULT_LIMIT`]
-    /// and is capped at `MAX_LIMIT`; a ceremony with no stream is
+    /// and anything above `MAX_LIMIT` is refused rather than cut down
+    /// to it; a ceremony with no stream is
     /// `NotFound`, where the whole-stream read above answers with
     /// nothing.
     pub async fn audit_records_from(
@@ -45,7 +46,7 @@ impl EmbeddedMade {
         limit: Option<usize>,
     ) -> Result<CeremonyEventPage, DomainError> {
         ReadCeremonyEventsUseCase::new(self.events.clone())
-            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit))
+            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit)?)
             .await
     }
 

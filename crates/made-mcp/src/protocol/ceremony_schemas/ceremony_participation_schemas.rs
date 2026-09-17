@@ -9,7 +9,7 @@
 
 use serde_json::{json, Value};
 
-use super::super::schema_primitives::{attributes_schema, string_schema};
+use super::super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
 
 /// Something this session produced that a reason can point at.
 fn ceremony_record_ref_schema(description: &str) -> Value {
@@ -97,9 +97,13 @@ pub(crate) fn request_ceremony_intervention_schema() -> Value {
             "target_role_ids": {
                 "type": "array",
                 "minItems": 1,
+                "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
-                "description": "Optional responding roles. Omit to address the whole table."
+                "description": format!(
+                    "Optional responding roles. Omit to address the whole table; \
+                     at most {MAX_ID_LIST_ITEMS}, each distinct."
+                )
             },
             "message": string_schema("Participant's request in their own words."),
             "details": attributes_schema("Structured request context or evidence references."),

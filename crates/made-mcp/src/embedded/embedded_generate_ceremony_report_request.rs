@@ -1,8 +1,8 @@
-use made_app::usecases::GenerateCeremonyReportInput;
+use made_app::usecases::{GenerateCeremonyReportInput, ReportTitle};
 use made_core::value_objects::CeremonyId;
 use serde_json::Value;
 
-use super::embedded_request_fields::{optional_string, required_strings};
+use super::embedded_request_fields::required_strings;
 
 /// Validated request for a deterministic, read-only ceremony report.
 ///
@@ -12,7 +12,7 @@ use super::embedded_request_fields::{optional_string, required_strings};
 #[derive(Debug)]
 pub(super) struct EmbeddedGenerateCeremonyReportRequest {
     ceremony_ids: Vec<CeremonyId>,
-    title: Option<String>,
+    title: Option<ReportTitle>,
 }
 
 impl EmbeddedGenerateCeremonyReportRequest {
@@ -36,7 +36,18 @@ impl TryFrom<&Value> for EmbeddedGenerateCeremonyReportRequest {
                     .map_err(|error| format!("invalid ceremony_ids[{index}]: {error}"))
             })
             .collect::<Result<Vec<_>, String>>()?;
-        let title = optional_string(object, "title")?;
+        // Built here rather than trimmed here: the trim rule and the
+        // blank rule are the value object's, so this arm and the gRPC
+        // server apply one rule instead of two.
+        let title = object
+            .get("title")
+            .map(|value| {
+                let raw = value
+                    .as_str()
+                    .ok_or_else(|| "field `title` must be a string".to_owned())?;
+                ReportTitle::new(raw).map_err(|error| error.to_string())
+            })
+            .transpose()?;
 
         // Reject unknown fields here even when the caller did not obtain the schema first.
         for field in object.keys() {

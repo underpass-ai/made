@@ -6,7 +6,7 @@
 //! transcript are facts about a ceremony rather than views of its
 //! current state.
 
-use made_app::usecases::{GenerateCeremonyReportInput, ReadCeremonyEventsInput};
+use made_app::usecases::{GenerateCeremonyReportInput, ReadCeremonyEventsInput, ReportTitle};
 use made_core::value_objects::StreamVersion;
 
 use super::{
@@ -32,11 +32,14 @@ impl MadeGrpcService {
         let limit = (request.limit > 0).then_some(request.limit as usize);
         let page = self
             .read_ceremony_events
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id,
-                StreamVersion::new(request.from_version),
-                limit,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(
+                    ceremony_id,
+                    StreamVersion::new(request.from_version),
+                    limit,
+                )
+                .map_err(domain_error_to_status)?,
+            )
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(
@@ -99,10 +102,17 @@ impl MadeGrpcService {
             .map(CeremonyId::new)
             .collect::<Result<Vec<_>, _>>()
             .map_err(domain_error_to_status)?;
-        // An empty title is an absent one: proto3 has no other way to
-        // say it, and the schema that fronts the tool refuses a blank
-        // one anyway.
-        let title = (!request.title.is_empty()).then_some(request.title);
+        // An unset title is the empty string: proto3 has no other way
+        // to say it, and that is the only reading this handler gives
+        // it. Everything else — what a heading is once it is present,
+        // and that a heading of nothing but space is not one — is
+        // `ReportTitle`'s, which is the rule the in-process arm applies
+        // too. So a padded heading renders one document rather than
+        // two, and a blank one is refused identically on both arms.
+        let title = (!request.title.is_empty())
+            .then(|| ReportTitle::new(request.title))
+            .transpose()
+            .map_err(domain_error_to_status)?;
         let report = self
             .generate_ceremony_report
             .execute(GenerateCeremonyReportInput::new(ceremony_ids, title))
