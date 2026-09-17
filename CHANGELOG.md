@@ -21,7 +21,7 @@ operator command.
   in declaration order into sequential speaking turns, gives prior context to
   every turn after the first, and ships its discoverable YAML fragment under
   `api/examples/ceremonies/fragments/`. Explicit-stage design remains unchanged.
-  (#PR)
+  (#114)
 
 ### Changed
 
