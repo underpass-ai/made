@@ -14,6 +14,11 @@ operator command.
 
 ## Unreleased
 
+### Changed
+
+- MCP sealed records, instance listings, and statistics envelopes now use one
+  JSON renderer across the embedded, gRPC, and fixture backends (#101).
+
 ### Architecture
 
 - Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
