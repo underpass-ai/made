@@ -21,6 +21,9 @@ operator command.
 
 ### Architecture
 
+- Split the embedded facade into definition, execution and participation
+  modules while preserving its public methods and behavior (#111).
+
 - Separate ceremony design validation and definition construction into private
   modules while retaining the existing authoring behavior (#107).
 
