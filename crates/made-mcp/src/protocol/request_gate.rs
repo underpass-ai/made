@@ -533,6 +533,36 @@ mod tests {
     }
 
     #[test]
+    fn a_pattern_accepts_proto_s_empty_stage_list_but_not_explicit_stages() {
+        let base = json!({
+            "name": "roundtable",
+            "objective": "Collect each perspective.",
+            "outputs": ["notes"],
+            "participants": [
+                { "role_id": "FIRST" },
+                { "role_id": "SECOND" }
+            ],
+            "pattern": "roundtable_fixed_order"
+        });
+        gate("made_design_ceremony", &base)
+            .expect("an omitted repeated proto field reaches the preset as an empty list");
+
+        let mut empty = base.clone();
+        empty["stages"] = json!([]);
+        gate("made_design_ceremony", &empty)
+            .expect("an explicit empty list has the same meaning as an omitted repeated field");
+
+        let mut both = base;
+        both["stages"] = json!([{
+            "id": "speak",
+            "owner_role_id": "FIRST",
+            "instructions": "Speak."
+        }]);
+        let message = complaint("made_design_ceremony", &both);
+        assert!(message.contains("mutually exclusive"), "{message}");
+    }
+
+    #[test]
     fn a_free_form_object_takes_whatever_the_caller_puts_in_it() {
         gate(
             "made_start_ceremony",

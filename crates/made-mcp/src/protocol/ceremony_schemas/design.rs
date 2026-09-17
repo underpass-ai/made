@@ -1,10 +1,13 @@
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
+use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
 
 pub(in crate::protocol) fn ceremony_design_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "objective", "outputs", "participants", "stages"],
+        "required": ["name", "objective", "outputs", "participants"],
+        "oneOf": design_shape_schema(),
+        "x-made-pattern-catalog": design_pattern_catalog(),
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
             "version": string_schema("Immutable publication version. Defaults to 1.0."),
@@ -41,7 +44,6 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
             },
             "stages": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
@@ -69,6 +71,7 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                     }
                 }
             },
+            "pattern": pattern_schema(),
             "final_approval": {
                 "type": "object",
                 "additionalProperties": false,
@@ -96,6 +99,28 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                 "description": "Default retry backoff written into the draft. Defaults to one."
             }
         }
+    })
+}
+
+fn design_shape_schema() -> Value {
+    json!([
+        {
+            "required": ["stages"],
+            "not": { "required": ["pattern"] },
+            "properties": { "stages": { "minItems": 1 } }
+        },
+        {
+            "required": ["pattern"],
+            "properties": { "stages": { "maxItems": 0 } }
+        }
+    ])
+}
+
+fn pattern_schema() -> Value {
+    json!({
+        "type": "string",
+        "enum": [ROUNDTABLE_FIXED_ORDER_ID],
+        "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
     })
 }
 

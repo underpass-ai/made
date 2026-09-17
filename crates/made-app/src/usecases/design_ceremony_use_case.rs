@@ -25,9 +25,11 @@ use super::ceremony_design_stage::CeremonyDesignStage;
 use super::designed_ceremony::DesignedCeremony;
 
 mod definition;
+mod pattern;
 mod validation;
 
 use definition::build_definition;
+use pattern::materialize;
 use validation::validate;
 
 /// The terminal state every designed ceremony ends in.
@@ -73,9 +75,10 @@ impl DesignCeremonyUseCase {
         &self,
         document: &CeremonyDesignDocument,
     ) -> Result<DesignedCeremony, DomainError> {
-        validate(document)?;
+        let document = materialize(document)?;
+        validate(&document)?;
 
-        Ok(DesignedCeremony::new(build_definition(document)?))
+        Ok(DesignedCeremony::new(build_definition(&document)?))
     }
 }
 
@@ -120,6 +123,7 @@ mod tests {
     use crate::usecases::ceremony_design_participant::CeremonyDesignParticipant;
     use crate::usecases::ceremony_design_repeat::CeremonyDesignRepeat;
     use crate::usecases::ceremony_participant_capability::CeremonyParticipantCapability;
+    use crate::usecases::CeremonyPatternPreset;
     use made_core::value_objects::{
         CeremonyDescription, CeremonyName, InputName, NumAgents, OutputName, RoleId, Rounds,
         StepId, StepInstructions, StepIteration, StepOutputField,
@@ -419,5 +423,79 @@ mod tests {
         );
         assert_eq!(step.timeout().unwrap().duration().get(), 300_000);
         assert_eq!(step.retry_policy().backoff().get(), 1_000);
+    }
+
+    #[test]
+    fn roundtable_preset_gives_each_participant_one_ordered_turn() {
+        let base = document();
+        let intent = CeremonyDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            base.required_inputs().to_vec(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            base.participants().to_vec(),
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder);
+
+        let designed = designed(&intent);
+        let draft = designed.definition();
+        assert_eq!(draft.steps().len(), 2);
+        assert_eq!(draft.steps()[0].id().as_str(), "roundtable_turn_1");
+        assert_eq!(draft.steps()[1].id().as_str(), "roundtable_turn_2");
+        assert_eq!(draft.roles()[0].id().as_str(), "WORKER");
+        assert_eq!(draft.roles()[1].id().as_str(), "ARTIST");
+        assert_eq!(
+            draft.steps()[0]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(false))
+        );
+        assert_eq!(
+            draft.steps()[1]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(true))
+        );
+    }
+
+    #[test]
+    fn a_pattern_refuses_explicit_stages_or_a_one_person_roundtable() {
+        let base = document();
+        let both = base
+            .clone()
+            .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder);
+        assert!(
+            refused(&both).contains("mutually exclusive"),
+            "pattern plus stages must be refused"
+        );
+
+        let one_person = CeremonyDesignDocument::new(
+            base.name().clone(),
+            None,
+            base.objective().clone(),
+            Vec::new(),
+            Vec::new(),
+            base.outputs().to_vec(),
+            vec![base.participants()[0].clone()],
+            Vec::new(),
+            None,
+            None,
+            None,
+            None,
+        )
+        .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder);
+        assert!(
+            refused(&one_person).contains("at least two participants"),
+            "a roundtable needs more than one role"
+        );
     }
 }

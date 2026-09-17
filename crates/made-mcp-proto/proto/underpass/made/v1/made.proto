@@ -1553,6 +1553,9 @@ message DesignCeremonyRequest {
   // Retry backoff. Absent takes one second; zero is a legitimate
   // choice, which is why absent has to be tellable from it.
   optional uint64 backoff_seconds = 12;
+  // Shipped authoring preset. Mutually exclusive with explicit stages.
+  // Empty preserves legacy explicit-stage design.
+  string pattern = 14;
 }
 
 // What the design decided, beside the document it rendered. Counting

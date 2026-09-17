@@ -6,6 +6,7 @@ use made_core::value_objects::{
 use super::ceremony_design_final_approval::CeremonyDesignFinalApproval;
 use super::ceremony_design_participant::CeremonyDesignParticipant;
 use super::ceremony_design_stage::CeremonyDesignStage;
+use super::ceremony_pattern_preset::CeremonyPatternPreset;
 
 /// What an author wants, before anything mechanical is decided.
 ///
@@ -30,6 +31,7 @@ pub struct CeremonyDesignDocument {
     step_timeout: Option<StepTimeout>,
     max_attempts: Option<StepAttempt>,
     retry_backoff: Option<DurationMs>,
+    pattern: Option<CeremonyPatternPreset>,
 }
 
 impl CeremonyDesignDocument {
@@ -61,7 +63,15 @@ impl CeremonyDesignDocument {
             step_timeout,
             max_attempts,
             retry_backoff,
+            pattern: None,
         }
+    }
+
+    /// Select a shipped preset instead of supplying explicit stages.
+    #[must_use]
+    pub const fn with_pattern(mut self, pattern: CeremonyPatternPreset) -> Self {
+        self.pattern = Some(pattern);
+        self
     }
 
     #[must_use]
@@ -122,5 +132,17 @@ impl CeremonyDesignDocument {
     #[must_use]
     pub const fn retry_backoff(&self) -> Option<DurationMs> {
         self.retry_backoff
+    }
+
+    #[must_use]
+    pub const fn pattern(&self) -> Option<CeremonyPatternPreset> {
+        self.pattern
+    }
+
+    pub(crate) fn materialized_with_stages(&self, stages: Vec<CeremonyDesignStage>) -> Self {
+        let mut materialized = self.clone();
+        materialized.stages = stages;
+        materialized.pattern = None;
+        materialized
     }
 }

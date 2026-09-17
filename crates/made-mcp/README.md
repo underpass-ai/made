@@ -120,7 +120,7 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`      | seat participants in declared roles |
 | `made_claim_ceremony_step`      | `ClaimCeremonyStep`               | lease one step the MCP host will execute itself |
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
-| `made_design_ceremony`          | `DesignCeremony`                  | turn structured intent into an analysed, unpublished linear draft |
+| `made_design_ceremony`          | `DesignCeremony`                  | turn explicit stages or the `roundtable_fixed_order` preset into an analysed, unpublished linear draft |
 | `made_read_ceremony_events`     | `ReadCeremonyEvents`              | read one page of the sealed event stream, chain included |
 | `made_pull_ceremony_events`     | `PullCeremonyEvents`              | read a durable named global feed; only `acknowledge_through` commits progress |
 | `made_get_ceremony_transcript`  | `GetCeremonyTranscript`           | read the ordered contributions the steps produced |

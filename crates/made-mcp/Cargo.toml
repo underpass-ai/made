@@ -13,6 +13,7 @@ publish = true
 readme = "README.md"
 include = [
     "src/**/*.rs",
+    "src/**/*.yaml",
     "Cargo.toml",
     "README.md",
     "LICENSE*",

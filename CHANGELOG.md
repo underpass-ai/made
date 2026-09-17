@@ -14,9 +14,10 @@ operator command.
 
 ## Unreleased
 
-The entries below are the candidate **0.4.0** release notes. This section does
-not create a release, version bump or tag; the release procedure will do that
-after the final tree is approved.
+Phase 3a additions target **0.5.0**. The phase 2 **0.4.0** baseline includes
+the documentation closure in #121 and publication review repairs in #126.
+Its highlights remain recorded separately here until the release procedure
+creates the immutable tagged sections.
 
 ### 0.4.0 highlights
 
@@ -33,6 +34,9 @@ after the final tree is approved.
 - Durable named cursors now drive explicit pull acknowledgement, NATS
   publication and the embedded JSONL sink; whole and paged event history share
   a typed page limit (#108).
+- Automatic publication retries a transient failure without another append.
+  Core NATS drains the client buffer under a five-second deadline before
+  advancing the cursor; this does not promise remote acknowledgement (#126).
 - Metrics, traces and structured logs consume the same sealed records in both
   editions, while reports alone capture one bounded stream cut (#110). The
   shared service-metrics projection preserves legacy statistics and adds
@@ -49,6 +53,15 @@ after the final tree is approved.
 - Shared domain value objects for the list bounds now enforced at MCP ingress
   remain tracked in #100. Whole/paged history, its typed page limit and one-cut
   reports are complete in #108 and #110.
+
+### Added
+
+- `made_design_ceremony` accepts the typed `roundtable_fixed_order` preset on
+  the proto, both MCP backends, and the embedded facade. It expands participants
+  in declaration order into sequential speaking turns, gives prior context to
+  every turn after the first, and ships its discoverable YAML fragment under
+  `api/examples/ceremonies/fragments/`. Explicit-stage design remains unchanged.
+  (#114)
 
 ### Changed
 

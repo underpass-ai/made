@@ -123,6 +123,33 @@ async fn drive_rich_session(arms: &ParityArms) {
     .await;
     assert_eq!(structured(&transcript)["entry_count"], 2);
     assert_eq!(structured(&transcript)["entries"][1]["step_id"], "handoff");
+    assert_pattern_optional(arms).await;
+}
+
+async fn assert_pattern_optional(arms: &ParityArms) {
+    let arguments = json!({
+        "name": "parity_roundtable", "objective": "Review one bounded question.",
+        "outputs": ["discussion"], "stages": [],
+        "participants": [{"role_id": "FACILITATOR"}, {"role_id": "REVIEWER"}],
+        "pattern": "roundtable_fixed_order"
+    });
+    let answer = checked(arms, 1_950, "made_design_ceremony", arguments).await;
+    assert_eq!(structured(&answer)["publishable"], true);
+    let definition = made_adapters::yaml::CeremonyDefinitionYaml::parse_str(
+        structured(&answer)["definition_yaml"].as_str().unwrap(),
+    )
+    .unwrap();
+    let owners = definition
+        .steps_in_declaration_order()
+        .map(|step| {
+            definition
+                .role_id_for_step(step.id())
+                .unwrap()
+                .as_str()
+                .to_owned()
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(owners, ["FACILITATOR", "REVIEWER"]);
 }
 
 fn assert_design_optionals(answer: &Value) {
