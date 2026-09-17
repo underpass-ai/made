@@ -179,6 +179,7 @@ fn snapshot(
             &definition,
             CeremonyContext::empty(),
             OffsetDateTime::UNIX_EPOCH,
-        ),
+        )
+        .expect("required ceremony inputs"),
     })
 }

@@ -202,12 +202,15 @@ mod tests {
         let elsewhere = Arc::new(DefinitionRepositoryFake::new(approval_definition()));
         let instances = Arc::new(EventStoreFake::default());
         instances
-            .save(&made_core::entities::CeremonyInstance::start_bound(
-                ceremony_id(),
-                &published,
-                made_core::value_objects::CeremonyContext::empty(),
-                now(),
-            ))
+            .save(
+                &made_core::entities::CeremonyInstance::start_bound(
+                    ceremony_id(),
+                    &published,
+                    made_core::value_objects::CeremonyContext::empty(),
+                    now(),
+                )
+                .expect("required ceremony inputs"),
+            )
             .await
             .unwrap();
         let usecase = RunCeremonyStepUseCase::new(

@@ -170,7 +170,8 @@ mod tests {
             &definition,
             CeremonyContext::empty(),
             now(),
-        );
+        )
+        .expect("required ceremony inputs");
         store.save(&other).await.unwrap();
 
         Fixture {

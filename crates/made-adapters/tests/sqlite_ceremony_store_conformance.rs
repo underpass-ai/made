@@ -184,6 +184,7 @@ mod support {
             CeremonyContext::empty(),
             OffsetDateTime::UNIX_EPOCH,
         )
+        .expect("required ceremony inputs")
     }
 
     pub fn fact(ceremony_id: &CeremonyId, ordinal: u64) -> AuditFact {

@@ -43,6 +43,10 @@ operator command.
 
 ### Fixed
 
+- Reject ceremony starts and runs with missing required context inputs before
+  opening an instance or event stream; report every missing name through all
+  execution surfaces and allow the same id to be retried with complete input (#113).
+
 - Refuse terminal ceremony transitions while an intervention remains open,
   preserve the journal on refusal, and report that move disabled (#109).
 

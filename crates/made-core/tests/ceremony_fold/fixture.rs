@@ -220,4 +220,5 @@ pub(crate) fn opened(definition: &CeremonyDefinition) -> CeremonyInstance {
         CeremonyContext::empty(),
         OPENED_AT,
     )
+    .expect("required ceremony inputs")
 }

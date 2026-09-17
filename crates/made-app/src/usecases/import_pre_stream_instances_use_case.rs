@@ -186,6 +186,7 @@ mod tests {
             CeremonyContext::empty(),
             now(),
         )
+        .expect("required ceremony inputs")
     }
 
     /// A session the old engine had already moved: the fold has to

@@ -165,7 +165,8 @@ roles:
             &definition,
             CeremonyContext::empty(),
             datetime!(2026-06-06 12:00:00 UTC),
-        );
+        )
+        .expect("required ceremony inputs");
         let step_id = StepId::new("work").unwrap();
         instance
             .start_step(

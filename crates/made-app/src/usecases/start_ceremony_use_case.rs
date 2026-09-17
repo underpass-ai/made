@@ -67,7 +67,7 @@ impl StartCeremonyUseCase {
         let recalled = session_recall::recall(self.memory.as_ref(), &scope).await;
         let now = self.clock.now();
         let opening =
-            CeremonyInstance::decide_start(input.id, &definition, input.context, recalled, now);
+            CeremonyInstance::decide_start(input.id, &definition, input.context, recalled, now)?;
         self.stream
             .open(opening, actor, now)
             .await

@@ -161,7 +161,8 @@ mod tests {
                     CeremonyContext::empty(),
                     None,
                     OffsetDateTime::UNIX_EPOCH,
-                ),
+                )
+                .expect("required ceremony inputs"),
                 AuditActor::new("test", AuditActorKind::Service, None).unwrap(),
                 OffsetDateTime::UNIX_EPOCH,
             )

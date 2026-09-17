@@ -73,6 +73,7 @@ fn an_import_after_the_first_position_is_refused() {
         None,
         at(0),
     )
+    .expect("required ceremony inputs")
     .into_iter()
     .next()
     {
