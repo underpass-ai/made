@@ -113,6 +113,7 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`            | record the observable result of a claimed host-executed step |
 | `made_design_ceremony`          | `DesignCeremony`                  | turn structured intent into an analysed, unpublished linear draft |
 | `made_read_ceremony_events`     | `ReadCeremonyEvents`              | read one page of the sealed event stream, chain included |
+| `made_pull_ceremony_events`     | `PullCeremonyEvents`              | read a durable named global feed; only `acknowledge_through` commits progress |
 | `made_get_ceremony_transcript`  | `GetCeremonyTranscript`           | read the ordered contributions the steps produced |
 | `made_generate_ceremony_report` | `GenerateCeremonyReport`          | render one or more persisted instances and their audit journals as deterministic Markdown |
 | `made_get_status`               | `GetStatus`                       | observability |

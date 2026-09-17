@@ -1,0 +1,209 @@
+use std::sync::{Arc, Mutex};
+
+use async_trait::async_trait;
+use made_adapters::clock::SystemClock;
+use made_adapters::event_sink::JsonLinesCeremonyEventSink;
+use made_adapters::memory::{InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore};
+use made_app::usecases::{
+    PublishCeremonyEventsUseCase, PullCeremonyEventsInput, PullCeremonyEventsUseCase,
+};
+use made_core::entities::ceremony_events::CeremonyCompleted;
+use made_core::entities::{AuditFact, CeremonyEvent};
+use made_core::error::DomainError;
+use made_core::ports::{
+    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventTransportPort, PositionedRecord,
+};
+use made_core::value_objects::{
+    AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
+    CeremonyName, CeremonyVersion, EventId, GlobalPosition, StateId, StreamVersion,
+};
+use time::OffsetDateTime;
+
+#[derive(Debug, Default)]
+struct RecordingTransport {
+    failures_remaining: Mutex<usize>,
+    attempts: Mutex<Vec<(u64, String)>>,
+}
+
+impl RecordingTransport {
+    fn failing(times: usize) -> Self {
+        Self {
+            failures_remaining: Mutex::new(times),
+            attempts: Mutex::new(Vec::new()),
+        }
+    }
+}
+
+#[async_trait]
+impl CeremonyEventTransportPort for RecordingTransport {
+    async fn deliver(&self, record: &PositionedRecord) -> Result<(), DomainError> {
+        self.attempts.lock().unwrap().push((
+            record.position.value(),
+            record.record.event_id().as_str().to_owned(),
+        ));
+        let mut remaining = self.failures_remaining.lock().unwrap();
+        if *remaining > 0 {
+            *remaining -= 1;
+            Err(DomainError::InvariantViolated {
+                reason: "deliberate transport failure",
+            })
+        } else {
+            Ok(())
+        }
+    }
+}
+
+fn fact(ceremony: &CeremonyId, event: &str) -> AuditFact {
+    AuditFact {
+        event_id: EventId::new(event).unwrap(),
+        event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+            final_state: StateId::new("DONE").unwrap(),
+            completed_at: OffsetDateTime::UNIX_EPOCH,
+        }),
+        ceremony_id: ceremony.clone(),
+        definition_name: CeremonyName::new("delivery").unwrap(),
+        definition_version: CeremonyVersion::v1(),
+        occurred_at: OffsetDateTime::UNIX_EPOCH,
+        actor: AuditActor::new("test", AuditActorKind::Engine, None).unwrap(),
+        correlation_id: None,
+        causation_id: None,
+        trace: None,
+    }
+}
+
+async fn store_with_two_events() -> Arc<InMemoryCeremonyEventStore> {
+    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    for (ceremony, event) in [("one", "event-1"), ("two", "event-2")] {
+        let ceremony = CeremonyId::new(ceremony).unwrap();
+        store
+            .append(
+                &ceremony,
+                StreamVersion::EMPTY,
+                vec![fact(&ceremony, event)],
+            )
+            .await
+            .unwrap();
+    }
+    store
+}
+
+#[tokio::test]
+async fn pull_replays_until_ack_and_then_resumes_after_it() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let pull = PullCeremonyEventsUseCase::new(store, cursors.clone());
+    let consumer = CeremonyEventConsumer::new("dashboard").unwrap();
+    let limit = CeremonyEventPageLimit::new(1).unwrap();
+
+    let first = pull
+        .execute(PullCeremonyEventsInput::new(consumer.clone(), limit, None))
+        .await
+        .unwrap();
+    let replay = pull
+        .execute(PullCeremonyEventsInput::new(consumer.clone(), limit, None))
+        .await
+        .unwrap();
+    assert_eq!(first.records(), replay.records());
+    assert_eq!(cursors.position(&consumer).await.unwrap(), None);
+
+    let second = pull
+        .execute(PullCeremonyEventsInput::new(
+            consumer.clone(),
+            limit,
+            Some(GlobalPosition::FIRST),
+        ))
+        .await
+        .unwrap();
+    assert_eq!(
+        second.records()[0].position,
+        GlobalPosition::new(2).unwrap()
+    );
+    assert_eq!(second.acknowledged_through(), Some(GlobalPosition::FIRST));
+}
+
+#[tokio::test]
+async fn publisher_retries_the_same_event_id_before_advancing() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let transport = Arc::new(RecordingTransport::failing(1));
+    let publisher = PublishCeremonyEventsUseCase::new(
+        store,
+        cursors.clone(),
+        transport.clone(),
+        Arc::new(SystemClock::new()),
+    );
+    let consumer = CeremonyEventConsumer::new("publisher").unwrap();
+
+    let failed = publisher
+        .execute(&consumer, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    assert_eq!(failed.failed, 1);
+    assert_eq!(cursors.position(&consumer).await.unwrap(), None);
+    let delivered = publisher
+        .execute(&consumer, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    assert_eq!(delivered.delivered, 2);
+    let attempts = transport.attempts.lock().unwrap();
+    assert_eq!(attempts[0], attempts[1]);
+    assert_eq!(attempts[2].0, 2);
+}
+
+#[tokio::test]
+async fn a_three_time_failure_is_quarantined_and_made_visible() {
+    let store = store_with_two_events().await;
+    let cursors = Arc::new(InMemoryCeremonyEventCursor::new());
+    let publisher = PublishCeremonyEventsUseCase::new(
+        store,
+        cursors.clone(),
+        Arc::new(RecordingTransport::failing(usize::MAX)),
+        Arc::new(SystemClock::new()),
+    );
+    let consumer = CeremonyEventConsumer::new("quarantine-test").unwrap();
+
+    for _ in 0..3 {
+        assert_eq!(
+            publisher
+                .execute(&consumer, CeremonyEventPageLimit::DEFAULT)
+                .await
+                .unwrap()
+                .failed,
+            1
+        );
+    }
+    let fourth = publisher
+        .execute(&consumer, CeremonyEventPageLimit::new(1).unwrap())
+        .await
+        .unwrap();
+    assert_eq!(fourth.quarantined, 1);
+    let quarantine = cursors.quarantined(&consumer).await.unwrap();
+    assert_eq!(quarantine.len(), 1);
+    assert_eq!(quarantine[0].position(), GlobalPosition::FIRST);
+}
+
+#[tokio::test]
+async fn json_lines_sink_appends_complete_positioned_records() {
+    let store = store_with_two_events().await;
+    let record = store
+        .read_all(
+            GlobalPosition::FIRST,
+            CeremonyEventPageLimit::new(1).unwrap(),
+        )
+        .await
+        .unwrap()
+        .remove(0);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ceremony-events.jsonl");
+    let sink = JsonLinesCeremonyEventSink::open(&path).unwrap();
+
+    sink.deliver(&record).await.unwrap();
+
+    let line = std::fs::read_to_string(path).unwrap();
+    assert_eq!(line.lines().count(), 1);
+    let json: serde_json::Value = serde_json::from_str(line.trim()).unwrap();
+    assert_eq!(json["global_position"], 1);
+    assert_eq!(json["event_id"], "event-1");
+    assert_eq!(json["event_type"], "ceremony_completed");
+    assert!(json["record_hash"].is_array());
+}

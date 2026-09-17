@@ -17,12 +17,14 @@ use crate::engine::Engine;
 use super::error::{encoding_failure, join_failure};
 
 mod definition_publication;
+mod event_cursor;
 mod event_store;
 mod legacy_snapshot_source;
 #[cfg(test)]
 mod legacy_store_fixture;
 mod lifecycle;
 mod snapshot_store;
+mod stored_cursor;
 mod stored_event;
 mod stored_snapshot;
 

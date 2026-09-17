@@ -36,6 +36,11 @@ impl CeremonyEventPage {
     }
 
     #[must_use]
+    pub fn into_records(self) -> Vec<AuditRecord> {
+        self.records
+    }
+
+    #[must_use]
     pub const fn next_version(&self) -> StreamVersion {
         self.next_version
     }

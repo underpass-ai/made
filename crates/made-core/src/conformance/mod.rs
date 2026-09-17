@@ -9,6 +9,7 @@
 //! repository or outside it.
 
 mod ceremony_definition_publication_conformance;
+mod ceremony_event_cursor_conformance;
 mod ceremony_event_store_conformance;
 mod ceremony_snapshot_store_conformance;
 mod conformance_failure;
@@ -18,6 +19,7 @@ mod memory_conformance_capabilities;
 mod memory_conformance_failure;
 
 pub use ceremony_definition_publication_conformance::CeremonyDefinitionPublicationConformance;
+pub use ceremony_event_cursor_conformance::CeremonyEventCursorConformance;
 pub use ceremony_event_store_conformance::CeremonyEventStoreConformance;
 pub use ceremony_snapshot_store_conformance::CeremonySnapshotStoreConformance;
 pub use conformance_failure::ConformanceFailure;

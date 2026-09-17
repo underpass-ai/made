@@ -18,7 +18,7 @@ use futures::future::join_all;
 use crate::entities::{AuditChain, AuditFact};
 use crate::error::DomainError;
 use crate::ports::{AppendOutcome, CeremonyEventStorePort};
-use crate::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+use crate::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 
 use super::conformance_fixtures::{audit_fact, definition};
 use super::ConformanceFailure;
@@ -81,7 +81,7 @@ impl CeremonyEventStoreConformance {
                 format!("a stream nothing was appended to has head {head:?}"),
             ));
         }
-        let records = call(PROPERTY, store.read(&stream, StreamVersion::EMPTY).await)?;
+        let records = read(store, PROPERTY, &stream, StreamVersion::EMPTY).await?;
         if !records.is_empty() {
             return Err(failure(PROPERTY, "an unknown stream returned records"));
         }
@@ -112,7 +112,7 @@ impl CeremonyEventStoreConformance {
         }
         expect_sequences(PROPERTY, &records, 1..=3)?;
 
-        let stored = call(PROPERTY, store.read(&stream, StreamVersion::EMPTY).await)?;
+        let stored = read(store, PROPERTY, &stream, StreamVersion::EMPTY).await?;
         if stored != records {
             return Err(failure(
                 PROPERTY,
@@ -131,7 +131,7 @@ impl CeremonyEventStoreConformance {
         let stream = ceremony_id(PROPERTY, "stale")?;
 
         append(store, PROPERTY, &stream, StreamVersion::EMPTY, 1..=2).await?;
-        let before = call(PROPERTY, store.read(&stream, StreamVersion::EMPTY).await)?;
+        let before = read(store, PROPERTY, &stream, StreamVersion::EMPTY).await?;
 
         let outcome = append(store, PROPERTY, &stream, StreamVersion::EMPTY, 3..=4).await?;
         match outcome {
@@ -151,7 +151,7 @@ impl CeremonyEventStoreConformance {
             }
         }
 
-        let after = call(PROPERTY, store.read(&stream, StreamVersion::EMPTY).await)?;
+        let after = read(store, PROPERTY, &stream, StreamVersion::EMPTY).await?;
         if after != before {
             return Err(failure(
                 PROPERTY,
@@ -176,7 +176,7 @@ impl CeremonyEventStoreConformance {
             })?;
         }
 
-        let records = call(PROPERTY, store.read(&stream, StreamVersion::EMPTY).await)?;
+        let records = read(store, PROPERTY, &stream, StreamVersion::EMPTY).await?;
         expect_sequences(PROPERTY, &records, 1..=6)?;
         let verdict = AuditChain::verify(&records);
         if !verdict.is_intact() {
@@ -296,13 +296,13 @@ impl CeremonyEventStoreConformance {
 
         append(store, PROPERTY, &stream, StreamVersion::EMPTY, 1..=5).await?;
 
-        let tail = call(PROPERTY, store.read(&stream, StreamVersion::new(3)).await)?;
+        let tail = read(store, PROPERTY, &stream, StreamVersion::new(3)).await?;
         expect_sequences(PROPERTY, &tail, 4..=5)?;
-        let nothing = call(PROPERTY, store.read(&stream, StreamVersion::new(5)).await)?;
+        let nothing = read(store, PROPERTY, &stream, StreamVersion::new(5)).await?;
         if !nothing.is_empty() {
             return Err(failure(PROPERTY, "reading after the head returned records"));
         }
-        let beyond = call(PROPERTY, store.read(&stream, StreamVersion::new(9)).await)?;
+        let beyond = read(store, PROPERTY, &stream, StreamVersion::new(9)).await?;
         if !beyond.is_empty() {
             return Err(failure(
                 PROPERTY,
@@ -327,7 +327,9 @@ impl CeremonyEventStoreConformance {
 
         let rows = call(
             PROPERTY,
-            store.read_all(GlobalPosition::FIRST, usize::MAX).await,
+            store
+                .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+                .await,
         )?;
         if !rows
             .windows(2)
@@ -360,11 +362,15 @@ impl CeremonyEventStoreConformance {
 
         let all = call(
             PROPERTY,
-            store.read_all(GlobalPosition::FIRST, usize::MAX).await,
+            store
+                .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+                .await,
         )?;
         let again = call(
             PROPERTY,
-            store.read_all(GlobalPosition::FIRST, usize::MAX).await,
+            store
+                .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+                .await,
         )?;
         if all != again {
             return Err(failure(PROPERTY, "two consecutive reads differ"));
@@ -373,7 +379,15 @@ impl CeremonyEventStoreConformance {
             return Err(failure(PROPERTY, "fewer than two rows after four appends"));
         };
 
-        let page = call(PROPERTY, store.read_all(second.position, 2).await)?;
+        let page = call(
+            PROPERTY,
+            store
+                .read_all(
+                    second.position,
+                    CeremonyEventPageLimit::new(2).expect("two is a valid page"),
+                )
+                .await,
+        )?;
         if page.len() != 2 {
             return Err(failure(
                 PROPERTY,
@@ -388,10 +402,6 @@ impl CeremonyEventStoreConformance {
                 PROPERTY,
                 "a page does not continue the global order",
             ));
-        }
-        let empty = call(PROPERTY, store.read_all(GlobalPosition::FIRST, 0).await)?;
-        if !empty.is_empty() {
-            return Err(failure(PROPERTY, "a limit of 0 returned rows"));
         }
         Ok(())
     }
@@ -424,7 +434,13 @@ impl CeremonyEventStoreConformance {
         let positioned = outcome.positioned();
         let read = call(
             PROPERTY,
-            store.read_all(first_position, positioned.len()).await,
+            store
+                .read_all(
+                    first_position,
+                    CeremonyEventPageLimit::new(positioned.len())
+                        .expect("the append fixture fits one page"),
+                )
+                .await,
         )?;
         if positioned != read {
             return Err(failure(
@@ -470,7 +486,7 @@ impl CeremonyEventStoreConformance {
     }
 }
 
-async fn append(
+pub(super) async fn append(
     store: &dyn CeremonyEventStorePort,
     property: &'static str,
     stream: &CeremonyId,
@@ -481,6 +497,20 @@ async fn append(
         .map(|ordinal| fact(property, stream, ordinal))
         .collect::<Result<Vec<_>, _>>()?;
     call(property, store.append(stream, expected, facts).await)
+}
+
+async fn read(
+    store: &dyn CeremonyEventStorePort,
+    property: &'static str,
+    stream: &CeremonyId,
+    after: StreamVersion,
+) -> Result<Vec<crate::entities::AuditRecord>, ConformanceFailure> {
+    call(
+        property,
+        store
+            .read(stream, after, CeremonyEventPageLimit::DEFAULT)
+            .await,
+    )
 }
 
 async fn expect_head(
@@ -531,18 +561,21 @@ fn expect_refused(
     }
 }
 
-fn call<T>(
+pub(super) fn call<T>(
     property: &'static str,
     outcome: Result<T, DomainError>,
 ) -> Result<T, ConformanceFailure> {
     outcome.map_err(|error| failure(property, format!("the adapter returned an error: {error}")))
 }
 
-fn failure(property: &'static str, detail: impl Into<String>) -> ConformanceFailure {
+pub(super) fn failure(property: &'static str, detail: impl Into<String>) -> ConformanceFailure {
     ConformanceFailure::new(property, detail)
 }
 
-fn ceremony_id(property: &'static str, suffix: &str) -> Result<CeremonyId, ConformanceFailure> {
+pub(super) fn ceremony_id(
+    property: &'static str,
+    suffix: &str,
+) -> Result<CeremonyId, ConformanceFailure> {
     CeremonyId::new(format!("conformance-{property}-{suffix}")).map_err(|error| {
         failure(
             property,

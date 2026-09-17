@@ -16,7 +16,7 @@ use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyEventStorePort, PositionedRecord,
 };
-use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 
 use crate::engine::{Key, ReadTx, Table};
 use crate::sqlite::keys::{ceremony_of, position, scoped};
@@ -32,11 +32,13 @@ fn records_after(
     tx: &dyn ReadTx,
     stream: &CeremonyId,
     after: StreamVersion,
+    limit: Option<CeremonyEventPageLimit>,
 ) -> Result<Vec<AuditRecord>, DomainError> {
     let start = scoped(stream, after.value().saturating_add(1));
     let end = scoped(stream, u64::MAX);
     tx.scan_bytes_range(Table::Events, &start, &end)?
         .into_iter()
+        .take(limit.map_or(usize::MAX, CeremonyEventPageLimit::value))
         .map(|(_, value)| decode::<StoredEvent>(&value, "decode stored event").map(|e| e.record))
         .collect()
 }
@@ -65,7 +67,7 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
         self.blocking("append events", move |engine| {
             let mut tx = engine.begin_write()?;
 
-            let existing = records_after(tx.as_ref(), &stream, StreamVersion::EMPTY)?;
+            let existing = records_after(tx.as_ref(), &stream, StreamVersion::EMPTY, None)?;
             let actual = version_of(&existing);
             if actual != expected {
                 // Dropping the transaction without committing is what
@@ -115,11 +117,12 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         let stream = stream.clone();
         self.blocking("read events", move |engine| {
             let tx = engine.begin_read()?;
-            records_after(tx.as_ref(), &stream, after)
+            records_after(tx.as_ref(), &stream, after, Some(limit))
         })
         .await
     }
@@ -127,20 +130,19 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
-        if limit == 0 {
-            return Ok(Vec::new());
-        }
         self.blocking("read all events", move |engine| {
             let tx = engine.begin_read()?;
             // Positions are contiguous, so the log range that ends
             // `limit - 1` past `from` holds exactly the page wanted.
-            let span = u64::try_from(limit).unwrap_or(u64::MAX).saturating_sub(1);
+            let span = u64::try_from(limit.value())
+                .unwrap_or(u64::MAX)
+                .saturating_sub(1);
             let end = from.value().saturating_add(span);
             tx.scan_bytes_range(Table::EventLog, &position(from.value()), &position(end))?
                 .into_iter()
-                .take(limit)
+                .take(limit.value())
                 .map(|(_, events_key)| {
                     let value = tx.get(Table::Events, Key::Bytes(&events_key))?.ok_or(
                         DomainError::InvariantViolated {
@@ -166,6 +168,7 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
                 tx.as_ref(),
                 &stream,
                 StreamVersion::EMPTY,
+                None,
             )?))
         })
         .await

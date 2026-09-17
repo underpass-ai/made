@@ -2,12 +2,13 @@ use std::sync::Arc;
 
 use made_adapters::config::{MemorySelection, ServiceConfig};
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyEventStore,
+    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyEventCursor,
+    InMemoryCeremonyEventStore,
 };
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
-    MemoryReaderPort, MemoryWriterPort,
+    CeremonyDefinitionPublicationPort, CeremonyEventCursorPort, CeremonyEventStorePort,
+    CeremonySnapshotStorePort, MemoryReaderPort, MemoryWriterPort,
 };
 use tracing::{info, warn};
 
@@ -16,6 +17,7 @@ use crate::ComposeError;
 /// Ceremony state and session memory selected as one composition decision.
 pub(super) struct CeremonyPersistence {
     pub(super) events: Arc<dyn CeremonyEventStorePort>,
+    pub(super) cursors: Arc<dyn CeremonyEventCursorPort>,
     pub(super) snapshots: Arc<dyn CeremonySnapshotStorePort>,
     pub(super) publications: Arc<dyn CeremonyDefinitionPublicationPort>,
     pub(super) memory_writer: Arc<dyn MemoryWriterPort>,
@@ -45,6 +47,7 @@ pub(super) fn wire(config: &ServiceConfig) -> Result<CeremonyPersistence, Compos
             let memory = Arc::new(ForgetfulMemory::new());
             Ok(CeremonyPersistence {
                 events: store.clone(),
+                cursors: Arc::new(InMemoryCeremonyEventCursor::new()),
                 snapshots: store,
                 publications: Arc::new(InMemoryCeremonyDefinitionPublications::new()),
                 memory_writer: memory.clone(),
@@ -79,6 +82,7 @@ fn durable(
 
     Ok(CeremonyPersistence {
         events: store.clone(),
+        cursors: store.clone(),
         snapshots: store.clone(),
         publications: store,
         memory_writer,

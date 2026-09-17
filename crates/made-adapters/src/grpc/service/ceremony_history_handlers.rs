@@ -6,17 +6,55 @@
 //! transcript are facts about a ceremony rather than views of its
 //! current state.
 
-use made_app::usecases::{GenerateCeremonyReportInput, ReadCeremonyEventsInput, ReportTitle};
-use made_core::value_objects::StreamVersion;
+use made_app::usecases::{
+    GenerateCeremonyReportInput, PullCeremonyEventsInput, ReadCeremonyEventsInput, ReportTitle,
+};
+use made_core::value_objects::{
+    CeremonyEventConsumer, CeremonyEventPageLimit, GlobalPosition, StreamVersion,
+};
 
 use super::{
     domain_error_to_status, generate_ceremony_report_response_from,
     get_ceremony_transcript_response_from, link_span_to_metadata, pb,
-    read_ceremony_events_response_from, verify_ceremony_journal_response_from, CeremonyId,
-    GrpcResult, MadeGrpcService, Request, Response,
+    pull_ceremony_events_response_from, read_ceremony_events_response_from,
+    verify_ceremony_journal_response_from, CeremonyId, GrpcResult, MadeGrpcService, Request,
+    Response,
 };
 
 impl MadeGrpcService {
+    #[tracing::instrument(name = "rpc.pull_ceremony_events", skip_all)]
+    pub(super) async fn handle_pull_ceremony_events(
+        &self,
+        request: Request<pb::PullCeremonyEventsRequest>,
+    ) -> GrpcResult<pb::PullCeremonyEventsResponse> {
+        link_span_to_metadata(&request);
+        let request = request.into_inner();
+        let consumer =
+            CeremonyEventConsumer::new(request.consumer).map_err(domain_error_to_status)?;
+        let limit = if request.limit == 0 {
+            CeremonyEventPageLimit::DEFAULT
+        } else {
+            CeremonyEventPageLimit::new(request.limit as usize).map_err(domain_error_to_status)?
+        };
+        let acknowledge_through = request
+            .acknowledge_through
+            .map(GlobalPosition::new)
+            .transpose()
+            .map_err(domain_error_to_status)?;
+        let output = self
+            .pull_ceremony_events
+            .execute(PullCeremonyEventsInput::new(
+                consumer,
+                limit,
+                acknowledge_through,
+            ))
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(
+            pull_ceremony_events_response_from(&output).map_err(domain_error_to_status)?,
+        ))
+    }
+
     #[tracing::instrument(name = "rpc.read_ceremony_events", skip_all)]
     pub(super) async fn handle_read_ceremony_events(
         &self,
@@ -29,17 +67,18 @@ impl MadeGrpcService {
         // turns that into the default. Proto3 has no other way to say
         // an absent scalar, and asking for no records is not a
         // question anyone means.
-        let limit = (request.limit > 0).then_some(request.limit as usize);
+        let limit = if request.limit == 0 {
+            CeremonyEventPageLimit::DEFAULT
+        } else {
+            CeremonyEventPageLimit::new(request.limit as usize).map_err(domain_error_to_status)?
+        };
         let page = self
             .read_ceremony_events
-            .execute(
-                ReadCeremonyEventsInput::new(
-                    ceremony_id,
-                    StreamVersion::new(request.from_version),
-                    limit,
-                )
-                .map_err(domain_error_to_status)?,
-            )
+            .execute(ReadCeremonyEventsInput::new(
+                ceremony_id,
+                StreamVersion::new(request.from_version),
+                limit,
+            ))
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(

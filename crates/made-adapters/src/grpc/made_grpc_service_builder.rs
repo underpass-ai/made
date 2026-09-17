@@ -10,9 +10,10 @@ use made_app::usecases::{
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
     GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
@@ -51,6 +52,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
+    pub(super) pull_ceremony_events: Option<Arc<PullCeremonyEventsUseCase>>,
     pub(super) verify_ceremony_journal: Option<Arc<VerifyCeremonyJournalUseCase>>,
     pub(super) get_ceremony_transcript: Option<Arc<GetCeremonyTranscriptUseCase>>,
     pub(super) generate_ceremony_report: Option<Arc<GenerateCeremonyReportUseCase>>,
@@ -195,6 +197,11 @@ impl MadeGrpcServiceBuilder {
         read_ceremony_events
     );
     setter!(
+        pull_ceremony_events,
+        PullCeremonyEventsUseCase,
+        pull_ceremony_events
+    );
+    setter!(
         verify_ceremony_journal,
         VerifyCeremonyJournalUseCase,
         verify_ceremony_journal
@@ -310,6 +317,7 @@ impl MadeGrpcServiceBuilder {
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
             read_ceremony_events: required!(self, read_ceremony_events),
+            pull_ceremony_events: required!(self, pull_ceremony_events),
             verify_ceremony_journal: required!(self, verify_ceremony_journal),
             get_ceremony_transcript: required!(self, get_ceremony_transcript),
             generate_ceremony_report: required!(self, generate_ceremony_report),
