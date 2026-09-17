@@ -22,9 +22,16 @@ const PARITY_TSV: &str = include_str!("../../../../docs/architecture/parity.tsv"
 /// source.
 const MADE_PROTO: &str = include_str!("../../../made-proto/proto/underpass/made/v1/made.proto");
 
-/// The facade. Parsed rather than mirrored in a const list, so that adding a
-/// method is enough to break this test — a mirror has to be updated to break.
-const EMBEDDED_MADE_SOURCE: &str = include_str!("../../../made-embedded/src/embedded_made.rs");
+/// Where the facade lives. **The directory**, not one file in it.
+///
+/// Parsed rather than mirrored in a const list, so that adding a method is
+/// enough to break this test — a mirror has to be updated to break. Read at
+/// test time rather than with `include_str!` for the same reason one step
+/// further out: `include_str!` names a file, and a file named in a test is a
+/// file the test stops seeing the day somebody splits it. `embedded_made.rs`
+/// is being split right now (#67), and the scan below has to find the halves
+/// without anyone remembering to tell it.
+const EMBEDDED_MADE_SOURCE_DIR: &str = "../made-embedded/src";
 
 /// The versioned read-mostly subset (ADR-004).
 const CEREMONY_ENGINE_API_SOURCE: &str =
@@ -51,9 +58,27 @@ const FACADE_VARIANTS: [(&str, &str); 7] = [
     ("audit_records_from", "read_ceremony_events"),
 ];
 
-/// Constructors. They open or configure the facade; they are not capabilities
-/// on any surface.
-const FACADE_CONSTRUCTORS: [&str; 2] = ["open", "builder"];
+/// Facade methods that are not capabilities, each with the reason it is not.
+///
+/// Constructor-like: they make or describe the engine rather than asking it
+/// to do anything, so no surface could carry them as a row. Listed the way
+/// `FACADE_VARIANTS` is — an unlisted public method fails the test rather
+/// than being waved through — and with a reason each, because "not a
+/// capability" is a judgement and a judgement with no reason is a hole.
+const FACADE_NON_CAPABILITIES: [(&str, &str); 3] = [
+    (
+        "open",
+        "opens the durable store the engine runs over; making an engine is not          something an engine does",
+    ),
+    (
+        "builder",
+        "configures the ports an engine is built from; the same reason as `open`",
+    ),
+    (
+        "version",
+        "reports which build of the crate this is. `made_get_status` carries the          version as a field of an answer, which is the capability; a bare          accessor for it is not a second one",
+    ),
+];
 
 /// The marker a cell uses for "this surface does not have it".
 pub(super) const GAP: &str = "-";
@@ -191,7 +216,10 @@ fn facade_column_matches_the_public_methods_of_embedded_made() {
 
     let mut methods = BTreeSet::new();
     for method in embedded_made_public_methods() {
-        if FACADE_CONSTRUCTORS.contains(&method.as_str()) {
+        if FACADE_NON_CAPABILITIES
+            .iter()
+            .any(|(excused, _)| *excused == method)
+        {
             continue;
         }
         if let Some((_, capability)) = FACADE_VARIANTS
@@ -220,6 +248,156 @@ fn facade_column_matches_the_public_methods_of_embedded_made() {
         &filled(column(&rows, |row| &row.facade)),
         &methods,
     );
+}
+
+/// Every excuse names something that is really there.
+///
+/// An excuse for a method nobody declares excuses nothing and hides the next
+/// one — the same failure mode as a normalised path for a tool nobody drives.
+/// It is also what keeps the scan honest in the direction a scan cannot fail
+/// by itself: a scan that finds too little agrees with every list there is,
+/// and `pub const fn version` was invisible to the old one for exactly that
+/// reason.
+#[test]
+fn every_excused_facade_method_is_one_the_scan_finds() {
+    let found = embedded_made_public_methods();
+    for (method, reason) in FACADE_NON_CAPABILITIES {
+        assert!(
+            found.contains(method),
+            "`EmbeddedMade::{method}` is excused from the facade column, and the scan \
+             does not find it: either it is gone and the entry should go with it, or \
+             the scan has stopped seeing it"
+        );
+        assert!(
+            !reason.trim().is_empty(),
+            "`EmbeddedMade::{method}` is excused with no reason"
+        );
+    }
+    for (method, capability) in FACADE_VARIANTS {
+        assert!(
+            found.contains(method),
+            "`EmbeddedMade::{method}` is mapped to the capability `{capability}`, and \
+             the scan does not find it"
+        );
+    }
+    // And the one the old scan could not see at all, named on purpose: the
+    // whole point of reading every `pub` form is that this is found.
+    assert!(
+        found.contains("version"),
+        "`EmbeddedMade::version` is a `pub const fn`, and the scan must read that form"
+    );
+}
+
+/// The cells of a row, derived from its key rather than compared as a set.
+///
+/// Set equality says the file and the code name the same things. It cannot
+/// say they name them on the same rows: swap `run_ceremony`'s and
+/// `start_ceremony`'s proto cells and both sets are unchanged, so both
+/// comparisons pass while the file says something false about every surface.
+///
+/// A capability key is `run_ceremony`; its RPC is `RunCeremony` and its tool
+/// is `made_run_ceremony`, through the one transform `protocol/tests.rs`
+/// owns. The facade is not mechanical everywhere, so it is derived where it
+/// is — drop the word `ceremony` — and listed where it is not.
+#[test]
+fn each_row_names_the_cells_its_capability_implies() {
+    for row in parity_rows() {
+        let capability = row.capability.as_str();
+        if row.proto != GAP {
+            assert_eq!(
+                row.proto,
+                super::tests::capability_to_rpc_name(capability),
+                "parity.tsv row `{capability}` names the RPC `{}`",
+                row.proto
+            );
+        }
+        let tool = format!("made_{capability}");
+        for (column, cell) in [
+            ("mcp_grpc", &row.mcp_grpc),
+            ("mcp_embedded", &row.mcp_embedded),
+        ] {
+            if cell != GAP {
+                assert_eq!(
+                    cell, &tool,
+                    "parity.tsv row `{capability}` names `{cell}` in column `{column}`"
+                );
+            }
+        }
+        if row.facade != GAP {
+            assert_eq!(
+                row.facade,
+                expected_facade_method(capability),
+                "parity.tsv row `{capability}` names the facade method `{}`",
+                row.facade
+            );
+        }
+    }
+}
+
+/// `get_ceremony_instance` -> `instance`: the facade drops the word
+/// `ceremony`, because every one of its methods is about a ceremony and
+/// saying so in each name says nothing.
+///
+/// The exceptions are the methods whose name is a noun where the capability
+/// is a verb phrase, plus the two reads named after what they answer with
+/// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
+/// reason each.
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 9] = [
+    ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
+    ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
+    ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),
+    ("get_ceremony_transcript", "transcript", "named after what it answers with"),
+    ("get_status", "status", "named after what it answers with"),
+    ("get_metrics", "metrics", "named after what it answers with"),
+    (
+        "generate_ceremony_report",
+        "report",
+        "the facade hands back the report; generating it is what a tool call is for",
+    ),
+    (
+        "read_ceremony_events",
+        "audit_records",
+        "the facade answers with the audit records themselves; `audit_records_from` \
+         is the paged half of the same capability and is mapped in FACADE_VARIANTS",
+    ),
+    (
+        "claim_ceremony_step",
+        "start_step",
+        "the facade calls it starting because that is the use case it runs          (`StartCeremonyStepUseCase`); claiming is what the tool calls the same act",
+    ),
+];
+
+fn expected_facade_method(capability: &str) -> String {
+    if let Some((_, method, _)) = FACADE_NAME_EXCEPTIONS
+        .iter()
+        .find(|(named, _, _)| *named == capability)
+    {
+        return (*method).to_owned();
+    }
+    let parts: Vec<&str> = capability
+        .split('_')
+        .filter(|word| *word != "ceremony")
+        .collect();
+    parts.join("_")
+}
+
+#[test]
+fn every_facade_naming_exception_is_one_a_row_still_needs() {
+    let rows = parity_rows();
+    for (capability, method, reason) in FACADE_NAME_EXCEPTIONS {
+        let row = rows
+            .iter()
+            .find(|row| row.capability == capability)
+            .unwrap_or_else(|| panic!("parity.tsv has no row for `{capability}`"));
+        assert_eq!(
+            row.facade, method,
+            "the exception for `{capability}` is stale"
+        );
+        assert!(
+            !reason.trim().is_empty(),
+            "the exception for `{capability}` carries no reason"
+        );
+    }
 }
 
 #[test]
@@ -320,8 +498,114 @@ fn proto_rpc_names() -> BTreeSet<String> {
         .collect()
 }
 
+/// Every public method of `EmbeddedMade`, wherever it is declared.
+///
+/// Two things this used to miss, both of them the kind of gap a gate is
+/// supposed to be immune to: it read one file, so a second `impl` block in a
+/// second file was invisible; and it matched two spellings, `pub fn ` and
+/// `pub async fn `, so `pub const fn version` was invisible in the file it
+/// did read. Neither failure announces itself — the test stays green and
+/// stops covering something.
+///
+/// Now: every `.rs` file under the facade's crate, every `impl EmbeddedMade`
+/// block in it, and every form of `pub fn` inside one — `pub fn`, `pub async
+/// fn`, `pub const fn`, and any order of those modifiers. `pub(crate)` and
+/// `pub(super)` are not public and are left out, which is why the prefix
+/// tested is `pub ` with its space.
 fn embedded_made_public_methods() -> BTreeSet<String> {
-    declared_fn_names(EMBEDDED_MADE_SOURCE, &["pub async fn ", "pub fn "])
+    let mut methods = BTreeSet::new();
+    let mut blocks = 0_usize;
+    for source in facade_sources() {
+        for block in impl_blocks(&source, "EmbeddedMade") {
+            blocks += 1;
+            methods.extend(public_fn_names(block));
+        }
+    }
+    assert!(
+        blocks > 0,
+        "no `impl EmbeddedMade` block was found under {EMBEDDED_MADE_SOURCE_DIR}; \
+         the scan is reading the wrong place, and a scan that finds nothing \
+         agrees with every exception file there is"
+    );
+    methods
+}
+
+/// The text of every Rust source of the facade's crate.
+fn facade_sources() -> Vec<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EMBEDDED_MADE_SOURCE_DIR);
+    let mut sources = Vec::new();
+    let mut pending = vec![root.clone()];
+    while let Some(directory) = pending.pop() {
+        let entries = std::fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("{} cannot be read: {error}", directory.display()));
+        for entry in entries {
+            let path = entry.expect("a directory entry").path();
+            if path.is_dir() {
+                pending.push(path);
+            } else if path.extension().is_some_and(|extension| extension == "rs") {
+                sources.push(
+                    std::fs::read_to_string(&path).unwrap_or_else(|error| {
+                        panic!("{} cannot be read: {error}", path.display())
+                    }),
+                );
+            }
+        }
+    }
+    assert!(
+        !sources.is_empty(),
+        "no Rust source was found under {}",
+        root.display()
+    );
+    sources
+}
+
+/// The lines inside each `impl <type> {` block of one source.
+///
+/// A block ends at the first line that is a lone `}` in column zero, which
+/// is what rustfmt writes and what the formatting gate enforces. Trait impls
+/// (`impl Trait for <type>`) are not this type's own surface and do not
+/// match: the line has to be `impl <type> {` exactly.
+fn impl_blocks<'a>(source: &'a str, type_name: &str) -> Vec<Vec<&'a str>> {
+    let opening = format!("impl {type_name} {{");
+    let mut blocks = Vec::new();
+    let mut current: Option<Vec<&str>> = None;
+    for line in source.lines() {
+        match current.as_mut() {
+            None => {
+                if line.trim() == opening {
+                    current = Some(Vec::new());
+                }
+            }
+            Some(block) => {
+                if line == "}" {
+                    blocks.push(current.take().expect("a block is open"));
+                } else {
+                    block.push(line);
+                }
+            }
+        }
+    }
+    blocks
+}
+
+/// Every `pub fn` in one block, in whatever order its modifiers are written.
+fn public_fn_names(block: Vec<&str>) -> BTreeSet<String> {
+    block
+        .into_iter()
+        .filter_map(|line| {
+            // `pub ` with the space: `pub(crate)` and `pub(super)` are not
+            // public surface and must not be counted as capabilities.
+            let mut rest = line.trim().strip_prefix("pub ")?;
+            loop {
+                if let Some(after) = rest.strip_prefix("fn ") {
+                    return after.split(['(', '<', ' ']).next().map(str::to_owned);
+                }
+                rest = ["async ", "const ", "unsafe ", "extern "]
+                    .iter()
+                    .find_map(|modifier| rest.strip_prefix(modifier))?;
+            }
+        })
+        .collect()
 }
 
 fn ceremony_engine_api_capabilities() -> BTreeSet<String> {

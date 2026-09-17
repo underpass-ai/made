@@ -175,6 +175,26 @@ fn grpc_catalog_tool_names() -> Vec<String> {
         .collect()
 }
 
+/// `run_ceremony` -> `RunCeremony`: the same transform read backwards,
+/// from the capability key `parity.tsv` is indexed by.
+pub(super) fn capability_to_rpc_name(capability: &str) -> String {
+    let mut pascal = String::new();
+    let mut capitalise = true;
+    for character in capability.chars() {
+        if character == '_' {
+            capitalise = true;
+            continue;
+        }
+        if capitalise {
+            pascal.extend(character.to_uppercase());
+            capitalise = false;
+        } else {
+            pascal.push(character);
+        }
+    }
+    pascal
+}
+
 fn proto_rpc_names() -> Vec<&'static str> {
     const MADE_PROTO: &str =
         include_str!("../../../made-mcp-proto/proto/underpass/made/v1/made.proto");
@@ -189,7 +209,13 @@ fn proto_rpc_names() -> Vec<&'static str> {
         .collect()
 }
 
-fn rpc_name_to_tool_name(rpc: &str) -> String {
+/// `RunCeremony` -> `made_run_ceremony`.
+///
+/// The one transform between a contract name and a tool name. The
+/// parity gate next door reads it from here rather than keeping a
+/// second one, so a row whose cells were swapped fails by name instead
+/// of passing a comparison of two sets.
+pub(super) fn rpc_name_to_tool_name(rpc: &str) -> String {
     let mut snake = String::new();
     for (idx, ch) in rpc.chars().enumerate() {
         if ch.is_uppercase() {
@@ -202,4 +228,21 @@ fn rpc_name_to_tool_name(rpc: &str) -> String {
         }
     }
     format!("made_{snake}")
+}
+
+/// The two directions agree on every RPC the contract declares, which
+/// is what lets the parity gate derive a row's cells from its key.
+#[test]
+fn the_transform_reads_the_same_way_backwards() {
+    for rpc in proto_rpc_names() {
+        let tool = rpc_name_to_tool_name(rpc);
+        let capability = tool
+            .strip_prefix("made_")
+            .expect("every tool name is `made_` and the capability");
+        assert_eq!(
+            capability_to_rpc_name(capability),
+            rpc,
+            "`{rpc}` does not survive the round trip through `{tool}`"
+        );
+    }
 }
