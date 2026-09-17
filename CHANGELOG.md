@@ -50,6 +50,11 @@ after the final tree is approved.
 
 ### Changed
 
+- Align ADR-003, ADR-012, ADR-013, the phase plan, Editions, the platform
+  boundary and stack analysis with the verified phase 2 implementation; keep
+  future pattern work and the remaining list-bound value-object debt explicit
+  (#121).
+
 - `made_get_metrics` now returns the same in-process Prometheus registry as
   text and structured families/samples in both editions while preserving the
   legacy statistics. Embedded hosts can share one recorder/reader adapter,
