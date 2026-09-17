@@ -8,6 +8,7 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 
 use super::optional_pb_struct_to_json;
+use crate::renderers::CeremonyInstanceListingEntry;
 
 /// A live working session as the MCP contract carries it.
 ///
@@ -22,20 +23,16 @@ use super::optional_pb_struct_to_json;
 /// field instead of inferring readability from a field that is not
 /// there. An entry that could not be read carries its id and the
 /// reason and nothing else: there is nothing else to carry.
-pub(crate) fn ceremony_instance_listing_to_json(state: pb::CeremonyInstanceState) -> Value {
+pub(crate) fn ceremony_instance_listing_entry(
+    state: pb::CeremonyInstanceState,
+) -> CeremonyInstanceListingEntry {
     if !state.rehydratable {
-        return json!({
-            "ceremony_id": state.ceremony_id,
-            "rehydratable": false,
-            "reason": state.unrehydratable_reason,
-        });
+        return CeremonyInstanceListingEntry::unrehydratable(
+            state.ceremony_id,
+            state.unrehydratable_reason,
+        );
     }
-    let mut entry = ceremony_instance_state_to_json(state);
-    if let Some(fields) = entry.as_object_mut() {
-        fields.insert("rehydratable".to_owned(), Value::Bool(true));
-        fields.insert("reason".to_owned(), Value::Null);
-    }
-    entry
+    CeremonyInstanceListingEntry::rehydratable(ceremony_instance_state_to_json(state))
 }
 
 pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {

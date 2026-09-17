@@ -7,27 +7,72 @@
 //! session compares the two field for field.
 
 use made_app::usecases::{CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport};
+use made_core::entities::AuditRecord;
 use made_core::value_objects::CeremonyTranscript;
 use serde_json::{json, Value};
+use time::format_description::well_known::Rfc3339;
 
 use crate::protocol::{CeremonyJournalVerdictView, ToolError, REPORT_IS_PERSISTED};
+use crate::renderers::{AuditRecordView, CeremonyEventPageView};
 
 /// One page of a stream.
 pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value, ToolError> {
-    // Serializing a sealed record fails only where the engine's own
-    // types cannot be written, which is not the caller's doing.
-    let records = serde_json::to_value(page.records()).map_err(|error| {
+    let records = page
+        .records()
+        .iter()
+        .map(audit_record_view)
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(CeremonyEventPageView::new(
+        records,
+        page.next_version().value(),
+        page.head_version().value(),
+    )
+    .to_json())
+}
+
+fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView, ToolError> {
+    let actor = serde_json::to_value(record.actor()).map_err(|error| {
         ToolError::refused(format!(
-            "a sealed ceremony record cannot be rendered: {error}"
+            "a sealed ceremony actor cannot be rendered: {error}"
         ))
     })?;
-    Ok(json!({
-        "records": records,
-        "record_count": page.records().len(),
-        "next_version": page.next_version().value(),
-        "head_version": page.head_version().value(),
-        "has_more": page.has_more(),
-    }))
+    let event = record
+        .event()
+        .map(serde_json::to_value)
+        .transpose()
+        .map_err(|error| {
+            ToolError::refused(format!(
+                "a sealed ceremony event cannot be rendered: {error}"
+            ))
+        })?;
+    let occurred_at = record.occurred_at().format(&Rfc3339).map_err(|error| {
+        ToolError::refused(format!(
+            "a sealed ceremony record timestamp cannot be rendered: {error}"
+        ))
+    })?;
+
+    Ok(AuditRecordView {
+        event_id: record.event_id().as_str().to_owned(),
+        event_type: record.event_type().as_str().to_owned(),
+        schema_version: record.schema_version(),
+        ceremony_id: record.ceremony_id().as_str().to_owned(),
+        definition_name: record.definition_name().as_str().to_owned(),
+        definition_version: record.definition_version().as_str().to_owned(),
+        sequence: record.sequence().value(),
+        occurred_at,
+        actor,
+        correlation_id: record.correlation_id().map(|id| id.as_str().to_owned()),
+        causation_id: record.causation_id().map(|id| id.as_str().to_owned()),
+        trace_id: record.trace_id().map(str::to_owned),
+        event_schema_version: record
+            .event_schema_version()
+            .map(made_core::value_objects::EventSchemaVersion::get),
+        event,
+        previous_record_hash: record
+            .previous_record_hash()
+            .map(|hash| hash.as_bytes().to_vec()),
+        record_hash: record.record_hash().as_bytes().to_vec(),
+    })
 }
 
 /// The verdict on one session's chain.
