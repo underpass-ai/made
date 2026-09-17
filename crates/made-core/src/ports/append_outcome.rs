@@ -3,8 +3,7 @@ use crate::value_objects::{GlobalPosition, StreamVersion};
 
 /// What an event store did with a batch of facts.
 ///
-/// A conflict is an outcome rather than an error for the same reason
-/// [`crate::entities::CommitOutcome::Conflict`] is: another caller got
+/// A conflict is an outcome rather than an error: another caller got
 /// there first, nothing landed, and the right response is to reload
 /// and decide again — not to give up.
 #[derive(Debug, Clone, PartialEq, Eq)]

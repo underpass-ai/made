@@ -132,8 +132,8 @@ Executable scope:
   `made_close_ceremony_intervention` for participant-created live agenda
   items controlled by the requesting role.
 
-The bundled zero-infrastructure process persists ceremony instances, published
-definitions, the audit journal and outbox in SQLite. Mounted definitions and
+The bundled zero-infrastructure process persists the ceremony event streams,
+their folded snapshots and published definitions in SQLite. Mounted definitions and
 transcripts remain in memory — so `made_get_ceremony_transcript` empties on
 restart while `made_read_ceremony_events` does not. `made_list_ceremony_instances` therefore recovers
 published-definition sessions after a process restart and marks ad-hoc sessions

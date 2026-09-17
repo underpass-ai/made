@@ -145,8 +145,8 @@ step, perform the real work through authorized host capabilities, complete it
 with observable output/evidence, refresh the instance, and only then apply an
 enabled transition. These adapters invoke existing application use cases and
 add no external authority or approval policy.
-The MCP embedded composition stores ceremony instances, published definitions,
-the audit journal and outbox in the SQLite file named by
+The MCP embedded composition stores the ceremony event streams, their folded
+snapshots and published definitions in the SQLite file named by
 `MADE_MCP_STORE_PATH`. Mounted definitions and transcripts remain in memory;
 start from a published definition when an instance must rehydrate after a
 process restart.

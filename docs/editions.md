@@ -111,9 +111,9 @@ everything it injects. Details: [embedded-made.md](embedded-made.md).
 
 - **The real engine.** Same use cases, same domain invariants, same FSM as the
   deployable binary.
-- **Durable ceremony state** in SQLite: ceremony snapshots,
-  unit-of-work state, the audit journal, outbox rows and published definitions
-  survive process restarts. Crash/reopen behaviour is exercised by
+- **Durable ceremony state** in SQLite: the sealed event streams, their global
+  order, the folded snapshots and published definitions survive process
+  restarts. Crash/reopen behaviour is exercised by
   `crates/made-embedded/tests/sqlite_store_api.rs`.
 
 ### What it explicitly does not prove

@@ -6,12 +6,9 @@
 //! multi-replica use cases, swap them for a persistent adapter.
 
 mod agent_registry;
-mod audit_journal;
 mod ceremony_definition_publications;
 mod ceremony_definition_repository;
 mod ceremony_event_store;
-mod ceremony_instance_repository;
-mod ceremony_store;
 mod ceremony_transcript_store;
 mod contract_registry;
 mod council_registry;
@@ -21,12 +18,9 @@ mod session_memory;
 mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
-pub use audit_journal::InMemoryAuditJournal;
 pub use ceremony_definition_publications::InMemoryCeremonyDefinitionPublications;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
 pub use ceremony_event_store::InMemoryCeremonyEventStore;
-pub use ceremony_instance_repository::InMemoryCeremonyInstanceRepository;
-pub use ceremony_store::InMemoryCeremonyStore;
 pub use ceremony_transcript_store::InMemoryCeremonyTranscriptStore;
 pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;

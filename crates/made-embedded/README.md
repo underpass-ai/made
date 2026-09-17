@@ -21,8 +21,8 @@ let engine = EmbeddedMade::open("ceremonies.sqlite3")?;
 
 ## What durable does and does not mean
 
-With SQLite, ceremony snapshots, the unit of work, the audit journal, the
-outbox and definition publications are persisted. Mounted definitions and
+With SQLite, the ceremony event streams, their global order, the folded
+snapshots and definition publications are persisted. Mounted definitions and
 transcripts stay in memory unless the host replaces those ports.
 
 That difference has a consequence worth knowing before you rely on it: an
