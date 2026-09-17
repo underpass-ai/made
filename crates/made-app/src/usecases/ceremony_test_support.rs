@@ -464,6 +464,7 @@ pub(super) fn approval_definition() -> CeremonyDefinition {
 
 pub(super) fn started_instance(definition: &CeremonyDefinition) -> CeremonyInstance {
     CeremonyInstance::start(ceremony_id(), definition, CeremonyContext::empty(), now())
+        .expect("required ceremony inputs")
 }
 
 /// The published catalogue. Empty by default, because most tests run

@@ -120,7 +120,7 @@ fn step_status_from_proto(raw: &str) -> Result<StepStatus, DomainError> {
 
 #[cfg(test)]
 mod tests {
-    use made_core::value_objects::{AuditActorKind, CeremonyContext};
+    use made_core::value_objects::AuditActorKind;
     use time::OffsetDateTime;
 
     use super::*;
@@ -137,9 +137,10 @@ mod tests {
         CeremonyInstance::start(
             CeremonyId::new("ceremony-delegation-1").unwrap(),
             definition,
-            CeremonyContext::empty(),
+            serde_json::from_value(serde_json::json!({"meeting_brief":"fixture meeting"})).unwrap(),
             OffsetDateTime::UNIX_EPOCH,
         )
+        .expect("required ceremony inputs")
     }
 
     fn claim_request(step_id: &str) -> pb::ClaimCeremonyStepRequest {

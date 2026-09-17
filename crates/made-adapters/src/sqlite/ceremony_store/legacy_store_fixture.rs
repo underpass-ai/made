@@ -59,7 +59,8 @@ pub(super) fn write_legacy_instance(
         &definition,
         CeremonyContext::empty(),
         OffsetDateTime::UNIX_EPOCH,
-    );
+    )
+    .expect("required ceremony inputs");
     let record = AuditRecord::first(AuditFact {
         event_id: EventId::new(format!("{}:legacy", id.as_str())).unwrap(),
         event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {

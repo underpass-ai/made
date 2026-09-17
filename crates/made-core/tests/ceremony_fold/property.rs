@@ -339,7 +339,8 @@ fn run(seed: u64, coverage: &mut BTreeMap<AuditEventType, usize>) {
         CeremonyContext::empty(),
         None,
         at(0),
-    );
+    )
+    .expect("required ceremony inputs");
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 

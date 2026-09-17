@@ -100,7 +100,8 @@ fn starting_is_the_fold_of_the_opening_event() {
         CeremonyContext::empty(),
         None,
         OPENED_AT,
-    );
+    )
+    .expect("required ceremony inputs");
     let [opening] = started.as_slice() else {
         panic!("a session that recalls nothing opens with one event, got {started:?}");
     };
@@ -133,7 +134,8 @@ fn starting_is_the_fold_of_the_opening_event() {
         CeremonyContext::empty(),
         None,
         OPENED_AT,
-    );
+    )
+    .expect("required ceremony inputs");
     let [CeremonyEvent::CeremonyInstanceStarted(bound)] = bound_opening.as_slice() else {
         panic!("starting bound yields the opening event, got {bound_opening:?}");
     };
@@ -141,6 +143,7 @@ fn starting_is_the_fold_of_the_opening_event() {
     assert_eq!(
         CeremonyInstance::from_started(bound),
         CeremonyInstance::start_bound(id, &published, CeremonyContext::empty(), OPENED_AT)
+            .expect("required ceremony inputs")
     );
 }
 
@@ -871,7 +874,8 @@ fn a_second_opening_leaves_the_session_untouched() {
         CeremonyContext::empty(),
         None,
         at(9),
-    );
+    )
+    .expect("required ceremony inputs");
 
     let mut applied = instance.clone();
     for event in &reopening {

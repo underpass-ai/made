@@ -30,7 +30,18 @@ async fn start(
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "meeting_brief".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "fixture meeting".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
         })
         .await
         .expect("StartCeremony should succeed")

@@ -184,3 +184,13 @@ integration; embedded SQLite remains the authoritative local record.
 | completion rejected | The step was not claimed, is no longer in progress, or the result shape is invalid. Refresh the instance before retrying. |
 | failed result rejected | Supply a non-empty `error`; non-failed statuses must omit it. |
 | ceremony says complete but no real artifact exists | The no-op handler path was used or the host filed a false completion. Treat the run as invalid and use claim/perform/complete. |
+
+## Required opening inputs
+
+Every opening path checks `inputs.required` against the initial context before
+creating an instance or appending an event. A refusal lists all missing keys in
+alphabetical order, for example `missing required ceremony inputs: alpha, zeta`.
+Supply those keys and retry the same ceremony id. A present key counts as supplied
+even when its JSON value is `null`; `inputs.optional` may remain absent. This rule
+applies to start, start-published and whole-ceremony run through both MCP backends,
+direct gRPC and the Rust facade.
