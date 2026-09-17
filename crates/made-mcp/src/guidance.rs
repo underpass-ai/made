@@ -11,12 +11,12 @@ use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
-    available_tool_catalog, APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    available_tool_catalog, design_pattern_catalog, APPLY_CEREMONY_TRANSITION_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL,
+    DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
@@ -74,6 +74,11 @@ pub(crate) fn discovery_result(
     } else {
         Vec::new()
     };
+    let design_patterns = if names.contains(DESIGN_CEREMONY_TOOL) {
+        design_pattern_catalog()
+    } else {
+        Vec::new()
+    };
 
     Ok(json!({
         "schema_version": SCHEMA_VERSION,
@@ -89,6 +94,7 @@ pub(crate) fn discovery_result(
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
         "artifact_generators": artifact_generators,
+        "design_patterns": design_patterns,
         "help": {
             "tool": GET_HELP_TOOL,
             "audiences": ["user", "agent"],
@@ -590,6 +596,10 @@ mod tests {
             result["artifact_generators"][0]["response_field"],
             "structuredContent.report_markdown"
         );
+        assert_eq!(result["design_patterns"][0]["id"], "roundtable_fixed_order");
+        assert!(result["design_patterns"][0]["definition_fragment_yaml"]
+            .as_str()
+            .is_some_and(|yaml| yaml.contains("name: \"roundtable_fixed_order\"")));
     }
 
     /// Discovery advertises what the active backend can run, and
@@ -642,6 +652,7 @@ mod tests {
             BTreeSet::from([DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL])
         );
         assert!(bare["artifact_generators"].as_array().unwrap().is_empty());
+        assert!(bare["design_patterns"].as_array().unwrap().is_empty());
     }
 
     #[test]

@@ -40,6 +40,19 @@ if ! diff -u "${PROTO_DIR}/underpass/made/v1/made.proto" \
   exit 1
 fi
 
+echo ">>> [contract-gate] packaged ceremony fragments match the canonical API examples"
+CANONICAL_FRAGMENT="api/examples/ceremonies/fragments/roundtable_fixed_order.yaml"
+for packaged_fragment in \
+  "crates/made-app/src/usecases/fragments/roundtable_fixed_order.yaml" \
+  "crates/made-mcp/src/protocol/fragments/roundtable_fixed_order.yaml"; do
+  if ! cmp --silent "${CANONICAL_FRAGMENT}" "${packaged_fragment}"; then
+    echo "::error::${packaged_fragment} has drifted from ${CANONICAL_FRAGMENT}" >&2
+    diff -u "${CANONICAL_FRAGMENT}" "${packaged_fragment}" >&2 || true
+    echo "fix: cp ${CANONICAL_FRAGMENT} ${packaged_fragment}" >&2
+    exit 1
+  fi
+done
+
 echo ">>> [contract-gate] asyncapi validate"
 asyncapi validate "${ASYNCAPI_SPEC}"
 

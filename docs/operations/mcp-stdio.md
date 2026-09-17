@@ -43,6 +43,46 @@ Fixture mode returns deterministic canned responses for every tool. It
 is for MCP client setup, tool-choice validation, and demos; it is not a
 live MADE integration test.
 
+## Design a fixed-order roundtable
+
+The embedded backend can design and run the shipped
+`roundtable_fixed_order` preset without a separate MADE service. Discover the
+active pattern catalog through `made_discover_capabilities`; its
+`design_patterns` array includes the preset description and the embedded YAML
+fragment. Design requests select either `pattern` or non-empty explicit
+`stages`. With a pattern, `stages` may be omitted or empty; repeated proto
+fields represent both forms as the same empty list.
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "method": "tools/call",
+  "params": {
+    "name": "made_design_ceremony",
+    "arguments": {
+      "name": "incident_roundtable",
+      "objective": "Review the incident from each declared perspective.",
+      "required_inputs": ["incident"],
+      "outputs": ["roundtable_notes"],
+      "participants": [
+        { "role_id": "OBSERVER" },
+        { "role_id": "DATABASE_SPECIALIST" },
+        { "role_id": "QUEUE_SPECIALIST" }
+      ],
+      "pattern": "roundtable_fixed_order"
+    }
+  }
+}
+```
+
+The response is an unpublished, analysed draft. Supply its
+`structuredContent.definition_yaml` unchanged to `made_run_ceremony`. The
+preset creates one sequential turn per participant in declaration order. The
+first turn has `see_prior: false`; each later turn has `see_prior: true` and
+therefore receives the complete transcript produced before it. The preset
+does not aggregate contributions or select speakers dynamically.
+
 ## Quickstart — live local gRPC
 
 To test the MCP adapter against a real local MADE, use two

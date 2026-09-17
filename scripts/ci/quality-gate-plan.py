@@ -80,6 +80,12 @@ PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
 # property of Rust sources, which these files are not.
 EMBEDDED_DATA_GATES = ("clippy", "test")
 
+FRAGMENT_SYNC_PATHS = {
+    "api/examples/ceremonies/fragments/roundtable_fixed_order.yaml",
+    "crates/made-app/src/usecases/fragments/roundtable_fixed_order.yaml",
+    "crates/made-mcp/src/protocol/fragments/roundtable_fixed_order.yaml",
+}
+
 # Changing any of these changes what "proved" means, so the answer is the
 # whole matrix rather than a cleverer plan.
 FULL_MATRIX_PATHS = {
@@ -98,6 +104,13 @@ FULL_MATRIX_PATHS = {
 PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("charts/", ("helm",)),
     ("specs/asyncapi/", ("contract",)),
+    # Canonical fragment edits compile both consumers, prove the MCP build
+    # without the embedded engine, and compare the packaged copies byte for
+    # byte. Keep this before the broader api/ route.
+    (
+        "api/examples/ceremonies/fragments/",
+        EMBEDDED_DATA_GATES + ("embedded_boundary", "contract"),
+    ),
     ("api/", ("contract",)),
     ("plugins/", ("embedded_sqlite",)),
     ("tests/plugin/", ("embedded_sqlite",)),
@@ -316,6 +329,8 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
         # `contract` job lints it, checks it for breaking changes, and
         # proves the vendored copy has not drifted.
         if any("/proto/" in path for path in crate_paths):
+            plan["contract"] = True
+        if FRAGMENT_SYNC_PATHS & crate_paths:
             plan["contract"] = True
 
     if changed_packages:
@@ -545,6 +560,40 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
             "architecture": False,
             "coverage": False,
             "container": False,
+            "full": False,
+        },
+    ),
+    (
+        "a ceremony fragment made-app compiles in",
+        ["api/examples/ceremonies/fragments/roundtable_fixed_order.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "embedded_boundary": True,
+            "contract": True,
+            "coverage": False,
+            "full": False,
+        },
+    ),
+    (
+        "the packaged made-app fragment stays synchronized",
+        ["crates/made-app/src/usecases/fragments/roundtable_fixed_order.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "embedded_boundary": True,
+            "contract": True,
+            "full": False,
+        },
+    ),
+    (
+        "the packaged grpc-only MCP fragment stays synchronized",
+        ["crates/made-mcp/src/protocol/fragments/roundtable_fixed_order.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "embedded_boundary": True,
+            "contract": True,
             "full": False,
         },
     ),

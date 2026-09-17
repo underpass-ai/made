@@ -14,6 +14,15 @@ operator command.
 
 ## Unreleased
 
+### Added
+
+- `made_design_ceremony` accepts the typed `roundtable_fixed_order` preset on
+  the proto, both MCP backends, and the embedded facade. It expands participants
+  in declaration order into sequential speaking turns, gives prior context to
+  every turn after the first, and ships its discoverable YAML fragment under
+  `api/examples/ceremonies/fragments/`. Explicit-stage design remains unchanged.
+  (#114)
+
 ### Changed
 
 - Ceremony definitions and `made_design_ceremony` can require exact JSON from
@@ -21,6 +30,12 @@ operator command.
   step-repeat exhaustion. An exhaustion route waives only that step's repeat
   condition on that transition; all other guards and invariants remain in
   force. (#116)
+
+- Preserve waiting-for-human and cancelled step-result labels in ceremony
+  metrics instead of counting both as failed results. (#118)
+
+- Move ceremony step execution into a child module of the application driver,
+  preserving method bodies and all execution behavior. (#115)
 
 - Ceremony telemetry now projects sealed records through metrics, tracing, and
   structured-log subscribers in both editions. One-shot and step-at-a-time

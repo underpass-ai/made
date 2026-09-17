@@ -1,4 +1,4 @@
-use made_app::usecases::{CeremonyDesignDocument, DesignedCeremony};
+use made_app::usecases::{CeremonyDesignDocument, CeremonyPatternPreset, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
@@ -46,7 +46,10 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     optional_inputs: Vec<String>,
     outputs: Vec<String>,
     participants: Vec<ParticipantIntent>,
+    #[serde(default)]
     stages: Vec<StageIntent>,
+    #[serde(default)]
+    pattern: Option<String>,
     #[serde(default)]
     final_approval: Option<FinalApprovalIntent>,
     #[serde(default)]
@@ -61,11 +64,21 @@ impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
     type Error = String;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        if !value.is_object() {
-            return Err("tools/call.arguments must be an object".to_owned());
-        }
+        let object = value
+            .as_object()
+            .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
+        validate_pattern(object)?;
         serde_json::from_value(value.clone())
             .map_err(|error| format!("invalid ceremony design intent: {error}"))
+    }
+}
+
+fn validate_pattern(object: &serde_json::Map<String, Value>) -> Result<(), String> {
+    match object.get("pattern") {
+        None => Ok(()),
+        Some(Value::String(pattern)) if !pattern.is_empty() => Ok(()),
+        Some(Value::String(_)) => Err("`pattern` must not be empty".to_owned()),
+        Some(_) => Err("`pattern` must be a string".to_owned()),
     }
 }
 
@@ -90,7 +103,7 @@ impl EmbeddedDesignCeremonyRequest {
             .map(FinalApprovalIntent::into_domain)
             .transpose()?;
 
-        Ok(CeremonyDesignDocument::new(
+        let document = CeremonyDesignDocument::new(
             CeremonyName::new(self.name)?,
             self.version.map(CeremonyVersion::new).transpose()?,
             CeremonyDescription::new(self.objective)?,
@@ -108,7 +121,12 @@ impl EmbeddedDesignCeremonyRequest {
             self.max_attempts.map(StepAttempt::new).transpose()?,
             self.backoff_seconds
                 .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-        ))
+        );
+        let pattern = self
+            .pattern
+            .map(|pattern| CeremonyPatternPreset::parse(&pattern))
+            .transpose()?;
+        Ok(pattern.map_or(document.clone(), |pattern| document.with_pattern(pattern)))
     }
 }
 
