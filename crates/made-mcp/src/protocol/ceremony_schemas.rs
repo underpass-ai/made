@@ -7,6 +7,7 @@ use super::default_lease_ttl::{
     RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
 use super::schema_primitives::{attributes_schema, string_schema};
+use super::struct_numbers::STRUCT_NUMBER_RULE;
 
 mod ceremony_history_schemas;
 
@@ -31,11 +32,7 @@ pub(super) fn start_published_ceremony_schema() -> Value {
             "ceremony": string_schema("Name of the published ceremony to run."),
             "version": string_schema("Published version to bind this instance to."),
             "ceremony_id": string_schema("Identifier for the new instance. Generated when omitted."),
-            "context": {
-                "type": "object",
-                "description": "Opening context for the working session.",
-                "additionalProperties": true
-            }
+            "context": attributes_schema("Opening context for the working session.")
         }
     })
 }
@@ -182,7 +179,10 @@ pub(super) fn repeat_stage_schema() -> Value {
             },
             "output_field": string_schema("Top-level structured step-output field tested after each successful iteration."),
             "equals": {
-                "description": "Exact JSON value that ends repetition. Missing or unequal output repeats the stage."
+                "description": format!(
+                    "Exact JSON value that ends repetition. Missing or unequal output repeats \
+                     the stage. {STRUCT_NUMBER_RULE}"
+                )
             }
         },
         "description": "Optional bounded repeat-until policy. Iterations are distinct from technical retry attempts."
@@ -212,11 +212,7 @@ pub(super) fn run_ceremony_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
             },
-            "context": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque initial ceremony context forwarded to guards and handlers."
-            },
+            "context": attributes_schema("Opaque initial ceremony context forwarded to guards and handlers."),
             "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
             "lease_ttl_ms": {
                 "type": "integer",
@@ -241,11 +237,7 @@ pub(super) fn start_ceremony_schema() -> Value {
                 "enum": ["human", "agent", "service", "engine"],
                 "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
             },
-            "context": {
-                "type": "object",
-                "additionalProperties": true,
-                "description": "Opaque initial ceremony context forwarded to guards and handlers."
-            }
+            "context": attributes_schema("Opaque initial ceremony context forwarded to guards and handlers.")
         }
     })
 }

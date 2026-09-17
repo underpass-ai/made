@@ -1,0 +1,35 @@
+# How a number a caller writes into an open payload is read, before anything is sealed (issue #75).
+#
+# `google.protobuf.Struct` carries every number as a double, so `{"score": 1.0}` and
+# `{"score": 1}` are the same eight bytes on the wire and cannot be told apart again.
+# Rather than let the distinction be decided by which engine answered, it is decided at
+# ingress, the same way everywhere: a whole-valued number is read whole, and a number a
+# double can no longer count one at a time is refused rather than quietly rounded.
+#
+# Two implementations follow this file, and a test in each pins it against these rows:
+#   crates/made-mcp/src/protocol/struct_numbers.rs      — both MCP arms, at the request gate
+#   crates/made-adapters/src/grpc/mappers/attributes.rs — the gRPC server, for direct clients
+#
+# Every row is a number both implementations can be handed as written. An integer past
+# 2^53 is not one of those — it reaches the gRPC server already rounded, because the wire
+# rounded it, which is the whole reason the range is refused rather than trusted. That
+# case is pinned where it can be: in `struct_numbers.rs`, against what a client sends.
+#
+# outcome: `whole` (read as an integer), `kept` (unchanged), `refused` (invalid_request).
+# read_as: the JSON the value is read as; empty for a refusal.
+input	outcome	read_as	why
+0	whole	0	zero is whole
+1	whole	1	an integer stays one
+1.0	whole	1	the divergence itself: sealed as `1.0` in process and `1` over the wire
+-1.0	whole	-1	the sign changes nothing about being whole
+2	whole	2	the number the parity session's context carries
+42.0	whole	42	the ordinary case: a caller writing a count with a decimal point
+-273.0	whole	-273	negative and whole
+9007199254740992	whole	9007199254740992	2^53 exactly: the last whole number a double still counts one at a time
+-9007199254740992	whole	-9007199254740992	2^53 exactly, negative
+1.5	kept	1.5	a fraction is a fraction on every surface
+-0.5	kept	-0.5	negative and not whole
+0.1	kept	0.1	the classic double that is not what it looks like, and is left alone
+1e17	refused		past 2^53: a double cannot count it one at a time, so no surface can promise it back
+-1e17	refused		past 2^53, negative
+1.7976931348623157e308	refused		the largest double there is, whole and far past 2^53

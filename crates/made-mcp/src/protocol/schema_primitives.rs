@@ -1,10 +1,20 @@
 use serde_json::{json, Value};
 
+use super::struct_numbers::STRUCT_NUMBER_RULE;
+
+/// An object MADE does not look inside — a context, an output, an
+/// evidence request, a payload, a bag of attributes.
+///
+/// Open means open, with one exception a caller has to be told about:
+/// the contract carries these as `google.protobuf.Struct`, whose
+/// numbers are doubles, so what counts as a number is decided at
+/// ingress on every backend. The rule travels with the field rather
+/// than living in a page somebody has to find (issue #75).
 pub(super) fn attributes_schema(description: &str) -> Value {
     json!({
         "type": "object",
         "additionalProperties": true,
-        "description": description
+        "description": format!("{description} {STRUCT_NUMBER_RULE}")
     })
 }
 

@@ -15,7 +15,7 @@ use super::general_schemas::{
     agent_summary_schema, empty_object_schema, help_schema, output_contract_schema,
     run_council_decision_schema, task_schema, trigger_event_schema,
 };
-use super::schema_primitives::{string_schema, tool_def};
+use super::schema_primitives::{attributes_schema, string_schema, tool_def};
 use super::tool_names::{
     is_server_tool, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
@@ -112,11 +112,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                 "required": ["task"],
                 "properties": {
                     "task": task_schema(),
-                    "execution_options": {
-                        "type": "object",
-                        "additionalProperties": true,
-                        "description": "Opaque executor options. Forwarded verbatim to the configured ExecutorPort."
-                    }
+                    "execution_options": attributes_schema("Opaque executor options. Forwarded verbatim to the configured ExecutorPort.")
                 }
             }),
         ),

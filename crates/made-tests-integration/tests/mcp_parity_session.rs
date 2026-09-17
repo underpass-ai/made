@@ -459,7 +459,12 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "role_kind": "human",
                 "kind": "opinion",
                 "message": "What did you see?",
-                "details": { "asked_at_state": "REVIEW" },
+                // A whole number written with a decimal point and one
+                // written without: a `Struct` cannot tell them apart,
+                // so before this they were sealed differently by the
+                // two engines and the two digests disagreed on an
+                // intact chain.
+                "details": { "asked_at_state": "REVIEW", "severity": 1.0, "attempt": 1 },
             }),
         ),
         (
@@ -470,7 +475,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "role_id": "OBSERVER",
                 "role_kind": "agent",
                 "message": "The queue was backing up.",
-                "details": { "observed": ["queue_depth", "error_rate"] },
+                "details": {
+                    "observed": ["queue_depth", "error_rate"],
+                    "confidence": 1.0,
+                    "samples": 12,
+                },
             }),
         ),
         (
@@ -548,6 +557,11 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_get_ceremony_instance",
             json!({ "ceremony_id": SESSION_ID }),
         ),
+        // The runner is named here for the reason it is named
+        // everywhere else in this script: an omitted one becomes
+        // `made-mcp:<backend>`, which is the engine's own name and
+        // differs by arm on purpose (F2). Reading this stream back is
+        // what first put the lease where a comparison could see it.
         (
             "made_run_ceremony",
             json!({
@@ -555,6 +569,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "definition_yaml": ONE_SHOT_CEREMONY,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
+                "lease_owner_id": "parity-host",
             }),
         ),
         ("made_list_ceremony_instances", json!({})),
@@ -573,6 +588,18 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
+        ),
+        // And the other two streams this session left behind. One
+        // digest compared is one stream proved; the run the engine took
+        // end to end and the session bound to a published version are
+        // written by different code paths and were never read back.
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": ONE_SHOT_ID }),
+        ),
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": PUBLISHED_SESSION_ID }),
         ),
         (
             "made_get_ceremony_transcript",

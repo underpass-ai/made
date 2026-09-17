@@ -17,6 +17,7 @@ mod parity_tests;
 mod request_gate;
 mod result_envelopes;
 mod schema_primitives;
+mod struct_numbers;
 #[cfg(test)]
 mod tests;
 mod tool_error;
@@ -44,6 +45,7 @@ pub(crate) use request_gate::validate_tool_request;
 pub(crate) use result_envelopes::{
     jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
 };
+pub(crate) use struct_numbers::normalise_numbers;
 pub use tool_error::ToolError;
 pub use tool_error_code::ToolErrorCode;
 // Only the tests ask which tools this server owns; the catalog and the

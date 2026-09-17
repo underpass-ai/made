@@ -24,9 +24,9 @@ use crate::guidance::{discovery_result, help_result};
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::observability::{record_tool_error, record_tool_success, ToolErrorKind};
 use crate::protocol::{
-    initialize_result, jsonrpc_error, jsonrpc_result, tool_error_result, tool_success_result,
-    tools_list_result, validate_tool_request, ToolError, ToolErrorCode, DISCOVER_CAPABILITIES_TOOL,
-    GET_HELP_TOOL,
+    initialize_result, jsonrpc_error, jsonrpc_result, normalise_numbers, tool_error_result,
+    tool_success_result, tools_list_result, validate_tool_request, ToolError, ToolErrorCode,
+    DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].
@@ -233,24 +233,37 @@ impl MadeMcpServer {
         let Some(name) = params.get("name").and_then(Value::as_str) else {
             return jsonrpc_error(id, -32602, "tools/call requires params.name");
         };
-        let arguments = params.get("arguments").unwrap_or(&Value::Null);
+        let received = params.get("arguments").unwrap_or(&Value::Null);
         let start = Instant::now();
 
-        // The published schema decides what is acceptable, once, before
-        // any backend is reached: the same call is accepted or refused
-        // the same way whichever engine is mounted, and the refusal is
-        // worded by this layer rather than by whichever mapper looked
-        // first. Everything it reports is the call's own fault
+        // Two things happen to a call before a backend sees it, and
+        // both happen here so that both happen identically whichever
+        // engine is mounted.
+        //
+        // First the numbers are read by one rule, because the contract
+        // carries an open payload as `google.protobuf.Struct` and a
+        // `Struct` cannot tell `1` from `1.0`: settled at ingress, or
+        // settled by whichever engine answered (issue #75).
+        //
+        // Then the published schema decides what is acceptable. The
+        // engine is never reached, so the refusal is worded by this
+        // layer rather than by whichever mapper looked first, and
+        // everything either step reports is the call's own fault
         // (ADR-014, plan §3.6 F4).
-        let refused_by_the_gate =
-            validate_tool_request(name, arguments, |tool| self.backend.supports_tool(tool));
+        let accepted = normalise_numbers(received).and_then(|arguments| {
+            validate_tool_request(name, &arguments, |tool| self.backend.supports_tool(tool))?;
+            Ok(arguments)
+        });
+        // What is recorded is what ran; a call that never ran is
+        // recorded as the client wrote it.
+        let arguments = accepted.as_ref().unwrap_or(received);
         // The two server-owned tools answer about this process and
         // reach no engine, so the only way either can fail is the call
         // itself: an unknown field, a missing one, an audience that is
         // not one of the two. One place says so, on both backends.
-        let outcome = match refused_by_the_gate {
-            Err(error) => Err(error),
-            Ok(()) => match name {
+        let outcome = match &accepted {
+            Err(error) => Err(error.clone()),
+            Ok(arguments) => match name {
                 DISCOVER_CAPABILITIES_TOOL => discovery_result(
                     self.identity,
                     self.backend_name(),

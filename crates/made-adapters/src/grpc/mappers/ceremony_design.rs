@@ -119,7 +119,7 @@ fn repeat_from_proto(
         // on the wire.
         repeat
             .equals
-            .map_or(serde_json::Value::Null, pb_value_to_json),
+            .map_or(Ok(serde_json::Value::Null), pb_value_to_json)?,
     ))
 }
 
