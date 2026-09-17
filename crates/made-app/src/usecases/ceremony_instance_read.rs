@@ -1,11 +1,11 @@
 use made_core::entities::CeremonyInstance;
-use made_core::value_objects::EventId;
+use made_core::value_objects::{EventId, TraceId};
 
 /// A folded instance together with the audit identity of its stream head.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CeremonyInstanceRead {
     instance: CeremonyInstance,
-    trace_id: Option<String>,
+    trace_id: Option<TraceId>,
     correlation_id: Option<EventId>,
     causation_id: Option<EventId>,
 }
@@ -14,7 +14,7 @@ impl CeremonyInstanceRead {
     #[must_use]
     pub fn new(
         instance: CeremonyInstance,
-        trace_id: Option<String>,
+        trace_id: Option<TraceId>,
         correlation_id: Option<EventId>,
         causation_id: Option<EventId>,
     ) -> Self {
@@ -37,8 +37,8 @@ impl CeremonyInstanceRead {
     }
 
     #[must_use]
-    pub fn trace_id(&self) -> Option<&str> {
-        self.trace_id.as_deref()
+    pub fn trace_id(&self) -> Option<&TraceId> {
+        self.trace_id.as_ref()
     }
 
     #[must_use]

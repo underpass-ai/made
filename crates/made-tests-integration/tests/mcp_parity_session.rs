@@ -77,36 +77,6 @@ const MEMORY_SCOPE: &str = "team:parity";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
-    ("made_start_published_ceremony", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_start_ceremony", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_bind_ceremony_participants", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_run_ceremony_step", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_apply_ceremony_transition", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_claim_ceremony_step", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_complete_ceremony_step", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_request_ceremony_intervention", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_respond_to_ceremony_intervention", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_collect_ceremony_evidence", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_assert_ceremony_reason", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_close_ceremony_intervention", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_defer_ceremony_guard", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_approve_ceremony_guard", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_get_ceremony_instance", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_run_ceremony", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_list_ceremony_instances", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized"),
-    ("made_read_ceremony_events", "<trace_id>", "the two MCP servers mint independent tool-call traces; only trace_id leaves and their text mirror are normalized; correlation and causation remain compared"),
-    ("made_read_ceremony_events", "<trace_derived_hashes>", "audit hashes commit the independently minted trace ids, so record_hash and previous_record_hash are normalized while the remaining sealed record stays compared"),
-    (
-        "made_generate_ceremony_report",
-        ".structuredContent.report_markdown",
-        "the report quotes audit trace ids minted independently by each MCP server; only those \
-         32-hex values are replaced before the rest of the document is compared",
-    ),
-    (
-        "made_generate_ceremony_report",
-        ".content[].text",
-        "the text block mirrors the report already compared in structuredContent after its quoted trace ids and trace-derived hashes are normalized",
-    ),
     (
         "made_get_status",
         ".structuredContent.version",
@@ -405,11 +375,16 @@ impl ParityArms {
 /// One `tools/call`, returning the JSON-RPC `result` — the success
 /// envelope or the error envelope, whichever the server built.
 async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Value) -> Value {
+    let traceparent = deterministic_traceparent(id);
     let request = json!({
         "jsonrpc": "2.0",
         "id": id,
         "method": "tools/call",
-        "params": { "name": tool, "arguments": arguments },
+        "params": {
+            "name": tool,
+            "arguments": arguments,
+            "_meta": { "traceparent": traceparent },
+        },
     });
     let response = server
         .handle_json_line(&request.to_string())
@@ -420,6 +395,14 @@ async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Valu
     parsed.get("result").cloned().unwrap_or_else(|| {
         panic!("`{tool}` answered a JSON-RPC error rather than a result: {parsed}")
     })
+}
+
+/// Give both parity arms the same valid W3C context for each scripted call.
+/// Production still mints a fresh context when callers omit metadata; focused
+/// MCP trace-context tests cover that behavior independently.
+fn deterministic_traceparent(id: u64) -> String {
+    let non_zero_id = id.max(1);
+    format!("00-{non_zero_id:032x}-{non_zero_id:016x}-01")
 }
 
 fn structured(result: &Value) -> &Value {
@@ -914,8 +897,6 @@ fn assert_the_report_is_the_committed_document(report: &Value) {
         .as_str()
         .expect("a report answers with its markdown");
 
-    let rendered = normalise_report_trace_ids(rendered);
-
     if std::env::var_os(UPDATE_GOLDEN).is_some() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/golden/parity_session_report.md");
@@ -1333,40 +1314,10 @@ fn assert_same_answer(tool: &str, over_the_wire: &Value, in_process: &Value) {
 /// them at all. A path excused for one tool stays compared for every
 /// other.
 fn normalise(value: &Value, path: &str, tool: &str) -> Value {
-    let normalises_trace = NORMALISED.iter().any(|(normalised_tool, normalised, _)| {
-        *normalised_tool == tool && *normalised == "<trace_id>"
-    });
-    if normalises_trace && path.ends_with(".trace_id") {
-        return json!("<trace-id>");
-    }
-    if normalises_trace && path == ".content[].text" {
-        return json!("<trace-normalised content mirror>");
-    }
-    let normalises_trace_derived_hashes =
-        NORMALISED.iter().any(|(normalised_tool, normalised, _)| {
-            *normalised_tool == tool && *normalised == "<trace_derived_hashes>"
-        });
-    if normalises_trace_derived_hashes
-        && (path.ends_with(".record_hash") || path.ends_with(".previous_record_hash"))
-    {
-        return value
-            .is_array()
-            .then(|| json!(vec![0_u8; 32]))
-            .unwrap_or_else(|| value.clone());
-    }
     if NORMALISED
         .iter()
         .any(|(normalised_tool, normalised, _)| *normalised_tool == tool && *normalised == path)
     {
-        if tool == "made_generate_ceremony_report" {
-            if path == ".content[].text" {
-                return json!("<normalised report content mirror>");
-            }
-            return value.as_str().map_or_else(
-                || json!("<normalised>"),
-                |rendered| json!(normalise_report_trace_ids(rendered)),
-            );
-        }
         return json!("<normalised>");
     }
     match value {
@@ -1389,42 +1340,6 @@ fn normalise(value: &Value, path: &str, tool: &str) -> Value {
         ),
         leaf => leaf.clone(),
     }
-}
-
-fn normalise_report_trace_ids(rendered: &str) -> String {
-    const NORMALISED_HASH: &str =
-        "[0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]";
-    let mut normalised = rendered.to_owned();
-    for marker in ["\"trace_id\": \"", "\\\"trace_id\\\": \\\""] {
-        let mut from = 0;
-        while let Some(relative) = normalised[from..].find(marker) {
-            let start = from + relative + marker.len();
-            let end = start.saturating_add(32);
-            if end > normalised.len()
-                || !normalised[start..end]
-                    .bytes()
-                    .all(|byte| byte.is_ascii_hexdigit())
-            {
-                from = start;
-                continue;
-            }
-            normalised.replace_range(start..end, "<trace-id>");
-            from = start + "<trace-id>".len();
-        }
-    }
-    for marker in ["\"record_hash\": [", "\"previous_record_hash\": ["] {
-        let mut from = 0;
-        while let Some(relative) = normalised[from..].find(marker) {
-            let start = from + relative + marker.len() - 1;
-            let Some(relative_end) = normalised[start..].find(']') else {
-                break;
-            };
-            let end = start + relative_end + 1;
-            normalised.replace_range(start..end, NORMALISED_HASH);
-            from = start + NORMALISED_HASH.len();
-        }
-    }
-    normalised
 }
 
 /// Every path the two answers disagree about, named. Reporting all of

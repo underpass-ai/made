@@ -47,6 +47,7 @@ mod support_verdict;
 mod task_description;
 mod token_usage;
 mod trace_context;
+mod trace_id;
 mod validation_mode;
 
 pub use agent_kind::AgentKind;
@@ -116,4 +117,5 @@ pub use support_verdict::SupportVerdict;
 pub use task_description::TaskDescription;
 pub use token_usage::TokenUsage;
 pub use trace_context::TraceContext;
+pub use trace_id::TraceId;
 pub use validation_mode::ValidationMode;
