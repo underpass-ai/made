@@ -38,43 +38,12 @@ impl CeremonyMetricsSubscriber {
                     .insert(record.ceremony_id().as_str().to_owned(), started.created_at);
             }
             CeremonyEvent::StepStarted(started) => {
-                let step = started.step_id.as_str();
-                self.metrics.record_ceremony_step_claimed(ceremony, step);
-                self.metrics
-                    .record_ceremony_step_attempt(ceremony, step, started.attempt.get());
-                self.metrics.record_ceremony_step_iteration(
+                self.start_step(
+                    record.ceremony_id().as_str(),
                     ceremony,
-                    step,
+                    started.step_id.as_str(),
                     started.iteration.get(),
-                );
-                self.metrics.record_ceremony_lease_acquired(ceremony, step);
-                let mut step_starts = self
-                    .step_starts
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner);
-                let ceremony_id = record.ceremony_id().as_str();
-                let iteration = started.iteration.get();
-                let unfinished_lease = step_starts
-                    .keys()
-                    .find(
-                        |(candidate_ceremony, candidate_step, candidate_iteration, _)| {
-                            candidate_ceremony == ceremony_id
-                                && candidate_step == step
-                                && *candidate_iteration == iteration
-                        },
-                    )
-                    .cloned();
-                if let Some(expired) = unfinished_lease {
-                    step_starts.remove(&expired);
-                    self.metrics.record_ceremony_lease_expired(ceremony, step);
-                }
-                step_starts.insert(
-                    (
-                        ceremony_id.to_owned(),
-                        step.to_owned(),
-                        iteration,
-                        started.attempt.get(),
-                    ),
+                    started.attempt.get(),
                     started.started_at,
                 );
             }
@@ -133,19 +102,11 @@ impl CeremonyMetricsSubscriber {
                 self.metrics.record_ceremony_intervention_answered(ceremony);
             }
             CeremonyEvent::CeremonyCompleted(completed) => {
-                if let Some(started_at) = self
-                    .ceremony_starts
-                    .lock()
-                    .unwrap_or_else(std::sync::PoisonError::into_inner)
-                    .remove(record.ceremony_id().as_str())
-                {
-                    self.metrics.observe_ceremony_duration(
-                        ceremony,
-                        elapsed(started_at, completed.completed_at),
-                    );
-                }
-                self.metrics
-                    .record_ceremony_outcome(ceremony, CeremonyOutcome::Completed);
+                self.finish_ceremony(
+                    record.ceremony_id().as_str(),
+                    ceremony,
+                    completed.completed_at,
+                );
             }
             CeremonyEvent::ParticipantsBound(_)
             | CeremonyEvent::InterventionClosed(_)
@@ -154,6 +115,59 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::InstanceImported(_)
             | CeremonyEvent::MemoryRecalled(_) => {}
         }
+    }
+
+    fn start_step(
+        &self,
+        ceremony_id: &str,
+        ceremony: &str,
+        step: &str,
+        iteration: u32,
+        attempt: u32,
+        started_at: OffsetDateTime,
+    ) {
+        self.metrics.record_ceremony_step_claimed(ceremony, step);
+        self.metrics
+            .record_ceremony_step_attempt(ceremony, step, attempt);
+        self.metrics
+            .record_ceremony_step_iteration(ceremony, step, iteration);
+        self.metrics.record_ceremony_lease_acquired(ceremony, step);
+        let mut step_starts = self
+            .step_starts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let unfinished_lease = step_starts
+            .keys()
+            .find(
+                |(candidate_ceremony, candidate_step, candidate_iteration, _)| {
+                    candidate_ceremony == ceremony_id
+                        && candidate_step == step
+                        && *candidate_iteration == iteration
+                },
+            )
+            .cloned();
+        if let Some(expired) = unfinished_lease {
+            step_starts.remove(&expired);
+            self.metrics.record_ceremony_lease_expired(ceremony, step);
+        }
+        step_starts.insert(
+            (ceremony_id.to_owned(), step.to_owned(), iteration, attempt),
+            started_at,
+        );
+    }
+
+    fn finish_ceremony(&self, ceremony_id: &str, ceremony: &str, finished_at: OffsetDateTime) {
+        if let Some(started_at) = self
+            .ceremony_starts
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(ceremony_id)
+        {
+            self.metrics
+                .observe_ceremony_duration(ceremony, elapsed(started_at, finished_at));
+        }
+        self.metrics
+            .record_ceremony_outcome(ceremony, CeremonyOutcome::Completed);
     }
 
     #[allow(clippy::too_many_arguments)]

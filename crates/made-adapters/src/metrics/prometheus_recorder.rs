@@ -608,6 +608,56 @@ mod tests {
         Specialty::new("reviewer").unwrap()
     }
 
+    fn assert_ceremony_families_name_their_source_event(text: &str) {
+        for (family, source_event) in [
+            (
+                "made_ceremony_completed_total",
+                "ceremony_completed | step_failed",
+            ),
+            (
+                "made_ceremony_duration_seconds",
+                "ceremony_instance_started + ceremony_completed",
+            ),
+            (
+                "made_ceremony_step_duration_seconds",
+                "step_started + step_completed | step_failed",
+            ),
+            ("made_ceremony_step_total", "step_completed | step_failed"),
+            ("made_ceremony_step_claimed_total", "step_started"),
+            ("made_ceremony_step_attempt_total", "step_started.attempt"),
+            (
+                "made_ceremony_step_iteration_total",
+                "step_started.iteration",
+            ),
+            (
+                "made_ceremony_guard_decided_total",
+                "human_approval_recorded | human_deferral_recorded",
+            ),
+            (
+                "made_ceremony_intervention_opened_total",
+                "intervention_requested",
+            ),
+            (
+                "made_ceremony_intervention_answered_total",
+                "intervention_responded",
+            ),
+            (
+                "made_ceremony_transition_applied_total",
+                "transition_applied",
+            ),
+            ("made_ceremony_lease_acquired_total", "step_started.lease"),
+            (
+                "made_ceremony_lease_expired_total",
+                "step_started replaces an unfinished lease",
+            ),
+        ] {
+            assert!(
+                text.contains(&format!("# TYPE {family} ")),
+                "metric family {family} sourced by {source_event} was not registered"
+            );
+        }
+    }
+
     #[test]
     fn registered_families_render_their_type_metadata_once_observed() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
@@ -660,53 +710,7 @@ mod tests {
         assert!(text.contains("# TYPE made_ceremony_step_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_ceremony_step_total counter"));
         assert!(text.contains("# TYPE made_ceremony_transition_blocked_total counter"));
-        for (family, source_event) in [
-            (
-                "made_ceremony_completed_total",
-                "ceremony_completed | step_failed",
-            ),
-            (
-                "made_ceremony_duration_seconds",
-                "ceremony_instance_started + ceremony_completed",
-            ),
-            (
-                "made_ceremony_step_duration_seconds",
-                "step_started + step_completed | step_failed",
-            ),
-            ("made_ceremony_step_total", "step_completed | step_failed"),
-            ("made_ceremony_step_claimed_total", "step_started"),
-            ("made_ceremony_step_attempt_total", "step_started.attempt"),
-            (
-                "made_ceremony_step_iteration_total",
-                "step_started.iteration",
-            ),
-            (
-                "made_ceremony_guard_decided_total",
-                "human_approval_recorded | human_deferral_recorded",
-            ),
-            (
-                "made_ceremony_intervention_opened_total",
-                "intervention_requested",
-            ),
-            (
-                "made_ceremony_intervention_answered_total",
-                "intervention_responded",
-            ),
-            (
-                "made_ceremony_transition_applied_total",
-                "transition_applied",
-            ),
-            ("made_ceremony_lease_acquired_total", "step_started.lease"),
-            (
-                "made_ceremony_lease_expired_total",
-                "step_started replaces an unfinished lease",
-            ),
-        ] {
-            assert!(
-                text.contains(&format!("# TYPE {family} ")),
-                "metric family {family} sourced by {source_event} was not registered"
-            );
-        }
+        assert_ceremony_families_name_their_source_event(&text);
         assert!(text.contains("# TYPE made_nats_publish_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_nats_publish_errors_total counter"));
         // The single label-less pool gauge renders even unset.

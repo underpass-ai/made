@@ -148,7 +148,7 @@ impl MadeGrpcService {
             .execute(read.instance())
             .await
             .map_err(domain_error_to_status)?;
-        let state = Self::render_read(&read, &definition)?;
+        let state = Self::render_read(&read, &definition).map_err(domain_error_to_status)?;
         Ok(Response::new(pb::GetCeremonyInstanceResponse {
             instance: Some(state),
         }))
