@@ -150,11 +150,9 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::EMPTY,
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -173,11 +171,9 @@ mod tests {
         let usecase = read_events(store);
 
         let first = usecase
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::EMPTY,
-                Some(2),
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, Some(2)).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -187,11 +183,9 @@ mod tests {
         assert!(first.has_more());
 
         let second = usecase
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                first.next_version(),
-                Some(2),
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), first.next_version(), Some(2)).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -219,11 +213,9 @@ mod tests {
         let store = three_record_stream().await;
 
         let page = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::new(99),
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::new(99), None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -248,11 +240,9 @@ mod tests {
         let interposing = Arc::new(AppendsDuringTheRead::over(store));
 
         let page = ReadCeremonyEventsUseCase::new(interposing.clone())
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id(),
-                StreamVersion::EMPTY,
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(ceremony_id(), StreamVersion::EMPTY, None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -366,11 +356,14 @@ mod tests {
         let store = three_record_stream().await;
 
         let error = read_events(store)
-            .execute(ReadCeremonyEventsInput::new(
-                CeremonyId::new("never-started").unwrap(),
-                StreamVersion::EMPTY,
-                None,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(
+                    CeremonyId::new("never-started").unwrap(),
+                    StreamVersion::EMPTY,
+                    None,
+                )
+                .unwrap(),
+            )
             .await
             .unwrap_err();
 

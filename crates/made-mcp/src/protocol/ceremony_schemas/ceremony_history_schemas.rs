@@ -43,7 +43,7 @@ pub(crate) fn ceremony_report_schema() -> Value {
 }
 
 /// What an unasked-for `limit` takes, and the most any read answers
-/// with.
+/// with — above which a read is refused rather than cut down.
 ///
 /// The engine owns both — they are
 /// `made_app::usecases::ReadCeremonyEventsInput::DEFAULT_LIMIT` and
@@ -72,8 +72,9 @@ pub(crate) fn read_ceremony_events_schema() -> Value {
                 "maximum": EVENT_PAGE_LIMIT_CAP,
                 "description": format!(
                     "How many records at most. Omitted or 0 takes {DEFAULT_EVENT_PAGE_LIMIT}; \
-                     {EVENT_PAGE_LIMIT_CAP} is the cap, and a longer stream is read in further \
-                     calls from `next_version`."
+                     {EVENT_PAGE_LIMIT_CAP} is the cap and asking for more is refused, never \
+                     quietly cut down, so a longer stream is read in further calls from \
+                     `next_version`."
                 )
             }
         }

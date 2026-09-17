@@ -30,11 +30,14 @@ impl MadeGrpcService {
         let limit = (request.limit > 0).then_some(request.limit as usize);
         let page = self
             .read_ceremony_events
-            .execute(ReadCeremonyEventsInput::new(
-                ceremony_id,
-                StreamVersion::new(request.from_version),
-                limit,
-            ))
+            .execute(
+                ReadCeremonyEventsInput::new(
+                    ceremony_id,
+                    StreamVersion::new(request.from_version),
+                    limit,
+                )
+                .map_err(domain_error_to_status)?,
+            )
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(

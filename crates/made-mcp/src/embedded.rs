@@ -323,7 +323,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 READ_CEREMONY_EVENTS_TOOL => {
                     let request = EmbeddedReadCeremonyEventsRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let input = request.into_input();
+                    let input = request.into_input().map_err(ToolError::invalid_request)?;
                     let page = self
                         .made
                         .audit_records_from(
