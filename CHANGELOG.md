@@ -65,6 +65,11 @@ creates the immutable tagged sections.
 
 ### Changed
 
+- Ceremony runs now export step and handler spans on every execution surface,
+  while provider and judge adapters export concrete identity, stable failure
+  class and upstream-reported token usage. Empty or malformed model content no
+  longer hides token usage that the provider already reported. (#123)
+
 - Ceremony definitions and `made_design_ceremony` can require exact JSON from
   a declared step's current successful output and explicitly route a bounded
   step-repeat exhaustion. An exhaustion route waives only that step's repeat

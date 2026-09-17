@@ -378,6 +378,17 @@ handlers (`rpc.*`), JSON logs always, and OTLP/gRPC export with optional mTLS
 behind the `otel` feature of the `made` and `made-mcp` binaries. Both call the
 shared initializer in `made-adapters/src/telemetry.rs` and accept the same
 `MADE_OTLP_*` variables.
+
+The one-shot driver exports `ceremony_step` below `run_ceremony`, and both
+drivers export `ceremony_step_handler` below their step span. The step spans
+carry ceremony, state, role, step iteration/attempt, outcome and final status.
+HTTP agent adapters export `provider_call`; quality and evidence-support judges
+export `judge_call`. Those adapter spans carry the observed provider/model,
+operation or judge kind, success/error classification, and prompt/completion
+tokens only when the upstream response reported them. Prompts, response bodies,
+endpoints, credentials and arbitrary error text are excluded. Available token
+usage is recorded before response-content validation, so an empty or malformed
+model reply does not erase its observed cost.
 The operator-facing half of that is
 [`operations/observability-runbook.md`](operations/observability-runbook.md).
 
@@ -395,7 +406,6 @@ it.
 
 | What | Slice |
 |---|---|
-| A span per ceremony step in the one-shot driver, a span for the step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |
 
 **Not scheduled.** These were in the catalogue, the alert list or the dashboard

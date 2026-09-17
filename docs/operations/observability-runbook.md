@@ -72,14 +72,17 @@ carries a worked example:
    │                                      handler seats the council before
    │                                      it drives the session)
    └── run_ceremony
-       ├── deliberate                    (one per deliberating step;
-       └── deliberate                     per-proposal, per-critique and
-                                          validator-verdict span events)
+       └── ceremony_step                 (one per semantic step execution)
+           └── ceremony_step_handler     (the selected handler boundary)
+               └── deliberate            (for a deliberating handler;
+                   ├── provider_call       provider/model/error/tokens)
+                   └── judge_call          quality or evidence-support judge)
    ```
 
-   There is **no span per ceremony step**: `run_step` and the step handler
-   carry none, so a deliberating step shows up as its `deliberate` child and a
-   non-deliberating one shows up not at all (§5, G4).
+   An incrementally driven step starts at `run_ceremony_step` and has the same
+   `ceremony_step_handler` child. Provider and judge token fields are absent
+   when upstream omitted usage; reported zero remains zero. On failure,
+   `error_kind` is a stable low-cardinality label rather than error text.
 
    Tempo example:
 
@@ -249,5 +252,4 @@ that owns it, so that nothing above has to be written in the future tense.
 
 | What an operator would get | Slice |
 |---|---|
-| A span per ceremony step and per step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a live stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |

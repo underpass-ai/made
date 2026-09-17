@@ -110,6 +110,7 @@ mod start_ceremony_step_input;
 mod start_ceremony_step_use_case;
 mod start_ceremony_use_case;
 mod start_published_ceremony_use_case;
+mod step_span;
 mod unregister_agent;
 mod verify_ceremony_journal_use_case;
 mod winner_selection;

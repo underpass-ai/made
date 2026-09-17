@@ -54,6 +54,10 @@ default `made_mcp=info,made_app=info,made_adapters::sqlite=info`). Build with
 `--features otel` to export the same spans over OTLP/gRPC as `made`; the
 exporter stays dormant until `MADE_OTLP_ENDPOINT` is set and accepts the same
 `MADE_OTLP_TLS_{CA,CERT,KEY}_PATH` and `MADE_OTLP_TLS_DOMAIN_NAME` variables.
+Ceremony execution exports `ceremony_step_handler` below
+`run_ceremony_step`; one-shot runs also include `ceremony_step` below
+`run_ceremony`. Provider-backed compositions add `provider_call` and
+`judge_call` with provider/model, stable error kind and observed token usage.
 
 On the embedded backend, `MADE_MCP_EVENT_SINK_PATH` enables an append-only
 JSON-lines sink. Every delivered ceremony-event line is followed by a
