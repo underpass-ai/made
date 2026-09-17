@@ -151,7 +151,11 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
     // the facade: the snapshot must equal the fold of the stream.
     let store = SqliteCeremonyStore::open(&path).expect("a second handle opens");
     let records = store
-        .read(&ceremony_id, StreamVersion::EMPTY)
+        .read(
+            &ceremony_id,
+            StreamVersion::EMPTY,
+            made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+        )
         .await
         .unwrap();
     let folded =

@@ -1,5 +1,5 @@
 use made_app::usecases::ReadCeremonyEventsInput;
-use made_core::value_objects::{CeremonyId, StreamVersion};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, StreamVersion};
 use serde_json::Value;
 
 use super::embedded_request_fields::{optional_u64, required_string};
@@ -19,8 +19,17 @@ impl EmbeddedReadCeremonyEventsRequest {
     /// two agree by saying the same thing rather than by one of them
     /// quietly making the other's answer smaller.
     pub(super) fn into_input(self) -> Result<ReadCeremonyEventsInput, String> {
-        ReadCeremonyEventsInput::new(self.ceremony_id, self.from_version, self.limit)
-            .map_err(|error| error.to_string())
+        let limit = self
+            .limit
+            .map(CeremonyEventPageLimit::new)
+            .transpose()
+            .map_err(|error| error.to_string())?
+            .unwrap_or_default();
+        Ok(ReadCeremonyEventsInput::new(
+            self.ceremony_id,
+            self.from_version,
+            limit,
+        ))
     }
 }
 
@@ -61,7 +70,10 @@ mod tests {
                 .unwrap();
 
         assert_eq!(request.from_version(), StreamVersion::EMPTY);
-        assert_eq!(request.limit(), ReadCeremonyEventsInput::DEFAULT_LIMIT);
+        assert_eq!(
+            request.limit().value(),
+            ReadCeremonyEventsInput::DEFAULT_LIMIT
+        );
     }
 
     #[test]
@@ -76,7 +88,7 @@ mod tests {
         .unwrap();
 
         assert_eq!(request.from_version(), StreamVersion::new(7));
-        assert_eq!(request.limit(), 3);
+        assert_eq!(request.limit().value(), 3);
     }
 
     #[test]
@@ -88,7 +100,10 @@ mod tests {
         .into_input()
         .unwrap();
 
-        assert_eq!(request.limit(), ReadCeremonyEventsInput::DEFAULT_LIMIT);
+        assert_eq!(
+            request.limit().value(),
+            ReadCeremonyEventsInput::DEFAULT_LIMIT
+        );
     }
 
     /// The engine refuses what the schema refuses, so a caller cannot

@@ -9,8 +9,9 @@ use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
+    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
@@ -37,8 +38,8 @@ use made_app::usecases::{
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
@@ -46,9 +47,10 @@ use made_app::usecases::{
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    ExecutorPort, MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ContractRegistryPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutorPort, MetricsRecorderPort, ScoringPort, StatisticsPort,
+    ValidatorPort,
 };
 use tracing::{info, warn};
 
@@ -168,8 +170,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // versions that are gone; and a snapshot is a cache of a stream's
     // fold, which it cannot be if it lives somewhere the stream does
     // not.
-    let (ceremony_events, ceremony_snapshots, ceremony_publications): (
+    let (ceremony_events, ceremony_cursors, ceremony_snapshots, ceremony_publications): (
         Arc<dyn CeremonyEventStorePort>,
+        Arc<dyn CeremonyEventCursorPort>,
         Arc<dyn CeremonySnapshotStorePort>,
         Arc<dyn CeremonyDefinitionPublicationPort>,
     ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
@@ -178,7 +181,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
                 .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
         );
         info!(path, "ceremony state is durable");
-        (store.clone(), store.clone(), store)
+        (store.clone(), store.clone(), store.clone(), store)
     } else {
         warn!(
             "MADE_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
@@ -187,6 +190,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         let store = Arc::new(InMemoryCeremonyEventStore::new());
         (
             store.clone(),
+            Arc::new(InMemoryCeremonyEventCursor::new()),
             store,
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
@@ -403,6 +407,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // its stream into the one projection both editions render
     // (ADR-006, ADR-012).
     let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
+    let pull_ceremony_events = Arc::new(PullCeremonyEventsUseCase::new(
+        ceremony_events.clone(),
+        ceremony_cursors,
+    ));
     let verify_ceremony_journal =
         Arc::new(VerifyCeremonyJournalUseCase::new(ceremony_events.clone()));
     let get_ceremony_transcript =
@@ -438,6 +446,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .read_ceremony_events(read_ceremony_events)
+        .pull_ceremony_events(pull_ceremony_events)
         .verify_ceremony_journal(verify_ceremony_journal)
         .get_ceremony_transcript(get_ceremony_transcript)
         .generate_ceremony_report(generate_ceremony_report)

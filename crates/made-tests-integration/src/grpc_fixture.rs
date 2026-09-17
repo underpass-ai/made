@@ -25,8 +25,9 @@ use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
+    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
+    InMemoryStatistics,
 };
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use made_adapters::scoring::UniformScoring;
@@ -45,8 +46,8 @@ use made_app::usecases::{
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
@@ -344,6 +345,10 @@ impl GrpcFixture {
             // runs.
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
+            )))
+            .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+                Arc::new(InMemoryCeremonyEventCursor::new()),
             )))
             .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
                 ceremony_store.clone(),
@@ -652,6 +657,10 @@ impl GrpcFixture {
             // runs.
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
+            )))
+            .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
+                ceremony_store.clone(),
+                Arc::new(InMemoryCeremonyEventCursor::new()),
             )))
             .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
                 ceremony_store.clone(),

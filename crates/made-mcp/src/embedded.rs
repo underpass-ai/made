@@ -331,7 +331,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .audit_records_from(
                             input.ceremony_id(),
                             input.from_version(),
-                            Some(input.limit()),
+                            Some(input.limit().value()),
                         )
                         .await?;
                     present_ceremony_events(&page).map(tool_success_result)
