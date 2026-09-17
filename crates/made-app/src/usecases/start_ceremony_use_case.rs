@@ -58,7 +58,7 @@ impl StartCeremonyUseCase {
         // Named before the opening is sealed so a caller who named
         // themselves badly is refused without a session being left
         // behind.
-        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
+        let actor = session_facts::party(input.actor_id.as_str(), input.actor_kind)?;
         // Resolved before anything is sealed: a scope the caller
         // declared and got wrong is a caller's mistake, and refusing it
         // here is what keeps it from becoming a session that quietly

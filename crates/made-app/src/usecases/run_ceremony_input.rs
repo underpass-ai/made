@@ -1,6 +1,6 @@
 use made_core::entities::CeremonyDefinition;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
+    AuditActorId, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -10,7 +10,7 @@ pub struct RunCeremonyInput {
     context: CeremonyContext,
     lease_owner_id: LeaseOwnerId,
     lease_ttl: DurationMs,
-    actor_id: String,
+    actor_id: AuditActorId,
     actor_kind: AuditActorKind,
 }
 
@@ -45,7 +45,7 @@ impl RunCeremonyInput {
             context,
             lease_owner_id,
             lease_ttl,
-            actor_id: actor_id.into(),
+            actor_id: AuditActorId::new(actor_id),
             actor_kind,
         }
     }
@@ -84,7 +84,7 @@ impl RunCeremonyInput {
         CeremonyContext,
         LeaseOwnerId,
         DurationMs,
-        String,
+        AuditActorId,
         AuditActorKind,
     ) {
         (

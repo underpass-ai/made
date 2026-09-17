@@ -23,7 +23,6 @@ use made_core::value_objects::CeremonyEventPageLimit;
 use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
 use std::fmt;
 use std::sync::Arc;
-use std::time::Instant;
 
 mod definitions;
 mod execution;
@@ -53,9 +52,6 @@ pub struct EmbeddedMade {
     /// council they stay at zero — which is the honest answer, not a
     /// missing one.
     statistics: Arc<dyn StatisticsPort>,
-    /// When this engine was built. Monotonic, so uptime does not
-    /// move when the host's wall clock does.
-    started_at: Instant,
     /// The same adapter the recorder writes through, read back.
     ///
     /// The writer side is a subscriber of the stream (ADR-012), so the
@@ -169,7 +165,6 @@ impl EmbeddedMade {
             clock,
             metrics_recorder,
             statistics,
-            started_at: Instant::now(),
             memory_reader,
             event_publisher,
             event_publisher_consumer,
@@ -242,7 +237,7 @@ impl EmbeddedMade {
             self.statistics.clone(),
             self.metrics_recorder.clone(),
             VERSION,
-            self.started_at,
+            self.clock.clone(),
         )
         .execute(include_statistics)
         .await

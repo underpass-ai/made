@@ -25,10 +25,16 @@ inward; DTO mapping and infrastructure stay at the edge.
 - Incoming DTOs are converted by mappers before a use case is invoked; domain
   objects never deserialize transport concerns directly.
 - A production source file owns at most one primary `struct`, `enum`, `trait`,
-  `union` or public type alias.
+  `union` or public type alias, regardless of the primary type's visibility.
 - Production sections over 600 lines are migration debt and may only shrink;
   colocated unit tests and test-driver/support crates are excluded from this
   size metric, but still obey the one-primary-type rule.
+- A production file with no primary type has a lower 400-line budget. Helper
+  modules must split before procedural catalogs, schemas or mappers can grow
+  into hidden monoliths.
+- Primitive fields are forbidden both in `made-core` and in `made-app` use-case
+  input/output, document, stage and summary types. `Option<primitive>` is still
+  a primitive boundary.
 - The full quality gate enforces at least 80% line coverage. Test-driver crates
   are not used to hide uncovered production code.
 
@@ -54,8 +60,11 @@ inventory, not an exemption: it can shrink but CI rejects growth or new debt.
 
 On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
 
-- All 674 Rust source files have at most one primary public type. The gate also
-  rejects any regression in that rule for production and test code.
+- All production Rust source files have at most one primary type. The gate
+  counts private and public module items, including items indented inside an
+  inline module, while ignoring function-local and `#[cfg(test)]` types. Its
+  built-in `--self-test` pins those distinctions and the primitive and
+  zero-type-file rules.
 - `made-core` has typed agent, execution, evidence, support and contract
   boundaries, no public primitive fields, and no deployment configuration
   port. `CeremonyInstance` keeps its aggregate boundary while delegating step

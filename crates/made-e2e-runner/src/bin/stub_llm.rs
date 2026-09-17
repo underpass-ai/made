@@ -34,75 +34,31 @@ use axum::extract::Json as JsonExtractor;
 use axum::http::StatusCode;
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::net::TcpListener;
 use tracing::{info, warn};
 use tracing_subscriber::EnvFilter;
 
+#[path = "stub_llm/chat_choice.rs"]
+mod chat_choice;
+#[path = "stub_llm/chat_completions_request.rs"]
+mod chat_completions_request;
+#[path = "stub_llm/chat_completions_response.rs"]
+mod chat_completions_response;
+#[path = "stub_llm/chat_message.rs"]
+mod chat_message;
+#[path = "stub_llm/chat_usage.rs"]
+mod chat_usage;
+
+use chat_choice::ChatChoice;
+use chat_completions_request::ChatCompletionsRequest;
+use chat_completions_response::ChatCompletionsResponse;
+use chat_message::ChatMessage;
+use chat_usage::ChatUsage;
+
 /// Hard-coded report id baked into every response. Deterministic on
 /// purpose so e2e assertions can compare equality across runs.
 const STUB_REPORT_ID: &str = "stub-report-1";
-
-/// Request body we accept on `/v1/chat/completions`. We deserialize
-/// loosely (every field is optional) so the stub does not couple to
-/// the real OpenAI shape beyond what the adapter actually sends —
-/// the body is logged for diagnostics and otherwise ignored.
-#[derive(Deserialize, Debug, Default)]
-#[serde(default)]
-struct ChatCompletionsRequest {
-    #[serde(default)]
-    model: Option<String>,
-    #[serde(default)]
-    messages: Vec<Value>,
-    #[serde(default)]
-    max_tokens: Option<u32>,
-}
-
-/// Reduced OpenAI response shape. Only the fields the adapter reads
-/// (`choices[0].message.content`) carry meaning; the rest are
-/// populated with stable placeholders so the envelope looks well-
-/// formed to operators inspecting compose logs.
-#[derive(Serialize)]
-struct ChatCompletionsResponse {
-    id: &'static str,
-    object: &'static str,
-    created: u64,
-    model: String,
-    choices: Vec<ChatChoice>,
-    usage: ChatUsage,
-}
-
-#[derive(Serialize)]
-struct ChatChoice {
-    index: u32,
-    message: ChatMessage,
-    finish_reason: &'static str,
-}
-
-#[derive(Serialize)]
-struct ChatMessage {
-    role: &'static str,
-    /// JSON-encoded Report payload. The OpenAI Chat Completions
-    /// contract requires `content` to be a string; the
-    /// `OpenAiAgent::generate` path returns whatever string lands
-    /// here as the proposal content, and the JSON-Schema validator
-    /// downstream parses that string as JSON.
-    content: String,
-}
-
-// Clippy flags every-field-`_tokens` as a struct_field_names smell.
-// Here the postfix is dictated by the OpenAI Chat Completions wire
-// contract — the response field names are `prompt_tokens`,
-// `completion_tokens`, `total_tokens`. Renaming would break the
-// shape MADE's adapter expects.
-#[allow(clippy::struct_field_names)]
-#[derive(Serialize)]
-struct ChatUsage {
-    prompt_tokens: u32,
-    completion_tokens: u32,
-    total_tokens: u32,
-}
 
 /// Build a Report payload that satisfies
 /// `api/examples/output-contracts/report.schema.json`. The schema's

@@ -60,7 +60,7 @@ impl AssertCeremonyReasonUseCase {
                 input.from,
                 input.to,
                 input.kind,
-                input.why,
+                input.why.into_inner(),
                 input.confidence,
                 Some(input.role_id),
                 now,

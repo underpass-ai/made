@@ -134,7 +134,7 @@ pub fn run_council_decision_response_from(
         task_id: output.task_id.as_str().to_owned(),
         winner,
         validation: Some(pb::ValidationOutcomeSummary {
-            passed: output.passed,
+            passed: output.passed.get(),
             candidates_passed,
             candidates_total,
         }),
@@ -295,7 +295,7 @@ mod tests {
             winner: winner.clone(),
             candidates: vec![winner, loser],
             validation_mode: ValidationMode::Strict,
-            passed: true,
+            passed: made_core::value_objects::ValidationPassed::new(true),
             duration_ms: DurationMs::from_millis(123),
         };
         let resp = run_council_decision_response_from(&output);
@@ -318,7 +318,7 @@ mod tests {
             winner: only.clone(),
             candidates: vec![only],
             validation_mode: ValidationMode::Warn,
-            passed: false,
+            passed: made_core::value_objects::ValidationPassed::new(false),
             duration_ms: DurationMs::from_millis(10),
         };
         let resp = run_council_decision_response_from(&output);

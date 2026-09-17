@@ -13,13 +13,8 @@ use made_core::value_objects::{
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
 
-#[derive(Debug, Default)]
-struct CursorState {
-    acknowledged_through: Option<GlobalPosition>,
-    attempt: CeremonyEventCursorAttempt,
-    lease: Option<CeremonyEventCursorLease>,
-    quarantined: Vec<QuarantinedCeremonyEvent>,
-}
+mod cursor_state;
+use cursor_state::CursorState;
 
 /// Process-local implementation of durable-cursor semantics.
 #[derive(Debug, Default, Clone)]

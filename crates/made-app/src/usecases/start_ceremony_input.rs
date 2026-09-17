@@ -1,5 +1,5 @@
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
+    AuditActorId, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -13,7 +13,7 @@ pub struct StartCeremonyInput {
     /// Not a role from the definition: at the start its roles are not
     /// filled yet, and whoever opens a session may be a participant,
     /// an operator, or a scheduler that never takes part.
-    pub(crate) actor_id: String,
+    pub(crate) actor_id: AuditActorId,
     /// What kind of party that is.
     ///
     /// Carried, never worked out.
@@ -35,7 +35,7 @@ impl StartCeremonyInput {
             definition_name,
             definition_version,
             context,
-            actor_id: actor_id.into(),
+            actor_id: AuditActorId::new(actor_id),
             actor_kind,
         }
     }

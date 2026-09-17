@@ -1,6 +1,7 @@
 //! Value objects for the tamper-evident audit journal.
 
 mod audit_actor;
+mod audit_actor_id;
 mod audit_actor_kind;
 mod audit_chain_defect;
 mod audit_chain_verdict;
@@ -19,6 +20,7 @@ mod quarantined_ceremony_event;
 mod stream_version;
 
 pub use audit_actor::AuditActor;
+pub use audit_actor_id::AuditActorId;
 pub use audit_actor_kind::AuditActorKind;
 pub use audit_chain_defect::AuditChainDefect;
 pub use audit_chain_verdict::AuditChainVerdict;

@@ -17,7 +17,7 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
-    CeremonyDefinitionRepositoryPort, ContractRegistryPort, MetricsRecorderPort,
+    CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
     NoopMetricsRecorder, StatisticsPort,
 };
 
@@ -71,6 +71,7 @@ pub struct MadeGrpcServiceBuilder {
     /// recording, which is the true answer rather than silence.
     pub(super) metrics: Option<Arc<dyn MetricsRecorderPort>>,
     pub(super) service_version: Option<&'static str>,
+    pub(super) clock: Option<Arc<dyn ClockPort>>,
 }
 
 use made_core::error::DomainError;
@@ -271,6 +272,12 @@ impl MadeGrpcServiceBuilder {
         self
     }
 
+    #[must_use]
+    pub fn clock(mut self, value: Arc<dyn ClockPort>) -> Self {
+        self.clock = Some(value);
+        self
+    }
+
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
@@ -286,7 +293,9 @@ impl MadeGrpcServiceBuilder {
             statistics.clone(),
             metrics,
             self.service_version.unwrap_or(""),
-            std::time::Instant::now(),
+            self.clock.unwrap_or_else(|| {
+                Arc::new(crate::clock::SystemClock::new()) as Arc<dyn ClockPort>
+            }),
         ));
         let get_service_metrics = Arc::new(GetServiceMetricsUseCase::new(statistics));
         Ok(MadeGrpcService {

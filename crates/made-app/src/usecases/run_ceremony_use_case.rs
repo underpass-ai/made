@@ -89,7 +89,7 @@ impl RunCeremonyUseCase {
             });
         }
         let started_at = self.clock.now();
-        let opener = session_facts::party(&actor_id, actor_kind)?;
+        let opener = session_facts::party(actor_id.as_str(), actor_kind)?;
         // The one-shot driver reads no memory. It takes a definition
         // handed to it and runs it end to end; a recollection is what a
         // session that outlives one call is opened with, and E1 gives

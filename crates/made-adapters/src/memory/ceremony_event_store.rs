@@ -12,53 +12,18 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_core::entities::{AuditFact, AuditRecord, CeremonyInstance};
+use made_core::entities::{AuditFact, AuditRecord};
 use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonySnapshot,
     CeremonySnapshotStorePort, PositionedRecord,
 };
-use made_core::value_objects::{
-    AuditSequence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
-};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 use tokio::sync::RwLock;
 
-/// Where in which stream the record at a global position lives. The
-/// record itself stays in its stream: the log is an index, not a copy.
-type LogEntry = (GlobalPosition, CeremonyId, AuditSequence);
+mod event_store_state;
 
-#[derive(Debug, Default)]
-struct EventStoreState {
-    streams: BTreeMap<CeremonyId, Vec<AuditRecord>>,
-    log: Vec<LogEntry>,
-    snapshots: BTreeMap<CeremonyId, BTreeMap<StreamVersion, CeremonyInstance>>,
-}
-
-impl EventStoreState {
-    fn stream(&self, stream: &CeremonyId) -> &[AuditRecord] {
-        self.streams.get(stream).map_or(&[], Vec::as_slice)
-    }
-
-    fn next_position(&self) -> GlobalPosition {
-        self.log
-            .last()
-            .map_or(GlobalPosition::FIRST, |(position, _, _)| position.next())
-    }
-
-    fn record_at(&self, entry: &LogEntry) -> Result<PositionedRecord, DomainError> {
-        let (position, stream, sequence) = entry;
-        let index = usize::try_from(sequence.value().saturating_sub(1)).ok();
-        let record = index
-            .and_then(|index| self.stream(stream).get(index))
-            .ok_or(DomainError::InvariantViolated {
-                reason: "in-memory event store: the global log points at a missing record",
-            })?;
-        Ok(PositionedRecord {
-            position: *position,
-            record: record.clone(),
-        })
-    }
-}
+use event_store_state::EventStoreState;
 
 /// Implements both [`CeremonyEventStorePort`] and
 /// [`CeremonySnapshotStorePort`] over the same state, for tests and

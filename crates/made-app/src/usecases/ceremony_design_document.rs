@@ -1,5 +1,6 @@
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, InputName, OutputName,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
+    StepAttempt, StepTimeout,
 };
 
 use super::ceremony_design_final_approval::CeremonyDesignFinalApproval;
@@ -26,9 +27,9 @@ pub struct CeremonyDesignDocument {
     participants: Vec<CeremonyDesignParticipant>,
     stages: Vec<CeremonyDesignStage>,
     final_approval: Option<CeremonyDesignFinalApproval>,
-    step_timeout_seconds: Option<u64>,
-    max_attempts: Option<u32>,
-    backoff_seconds: Option<u64>,
+    step_timeout: Option<StepTimeout>,
+    max_attempts: Option<StepAttempt>,
+    retry_backoff: Option<DurationMs>,
 }
 
 impl CeremonyDesignDocument {
@@ -43,9 +44,9 @@ impl CeremonyDesignDocument {
         participants: Vec<CeremonyDesignParticipant>,
         stages: Vec<CeremonyDesignStage>,
         final_approval: Option<CeremonyDesignFinalApproval>,
-        step_timeout_seconds: Option<u64>,
-        max_attempts: Option<u32>,
-        backoff_seconds: Option<u64>,
+        step_timeout: Option<StepTimeout>,
+        max_attempts: Option<StepAttempt>,
+        retry_backoff: Option<DurationMs>,
     ) -> Self {
         Self {
             name,
@@ -57,9 +58,9 @@ impl CeremonyDesignDocument {
             participants,
             stages,
             final_approval,
-            step_timeout_seconds,
+            step_timeout,
             max_attempts,
-            backoff_seconds,
+            retry_backoff,
         }
     }
 
@@ -109,17 +110,17 @@ impl CeremonyDesignDocument {
     }
 
     #[must_use]
-    pub const fn step_timeout_seconds(&self) -> Option<u64> {
-        self.step_timeout_seconds
+    pub const fn step_timeout(&self) -> Option<StepTimeout> {
+        self.step_timeout
     }
 
     #[must_use]
-    pub const fn max_attempts(&self) -> Option<u32> {
+    pub const fn max_attempts(&self) -> Option<StepAttempt> {
         self.max_attempts
     }
 
     #[must_use]
-    pub const fn backoff_seconds(&self) -> Option<u64> {
-        self.backoff_seconds
+    pub const fn retry_backoff(&self) -> Option<DurationMs> {
+        self.retry_backoff
     }
 }

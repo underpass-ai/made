@@ -14,7 +14,7 @@
 
 use std::time::Duration;
 
-use clap::{Parser, ValueEnum};
+use clap::Parser;
 use made_consumer_smoke::outcome::AssertionStatus;
 use made_consumer_smoke::{
     run_chain_1, run_chain_2, run_positive_path, ChainOutcome, Harness, HarnessConfig,
@@ -22,66 +22,13 @@ use made_consumer_smoke::{
 };
 use tracing_subscriber::EnvFilter;
 
-#[derive(Parser, Debug)]
-#[command(
-    name = "made-consumer-smoke",
-    about = "Drive the MADE's public surface as a generic consumer would."
-)]
-struct Args {
-    #[arg(long, env = "MADE_ENDPOINT", default_value = "http://localhost:50055")]
-    endpoint: String,
-    #[arg(long, env = "MADE_NATS_URL")]
-    nats_url: Option<String>,
-    #[arg(long, default_value = "triage")]
-    specialty: String,
-    #[arg(long, default_value = "consumer-smoke-report-v1")]
-    contract_id: String,
-    #[arg(long, value_enum, default_value_t = ChainSelector::All)]
-    chain: ChainSelector,
-    #[arg(
-        long,
-        value_enum,
-        default_value_t = ProviderKind::Openai,
-        env = "CONSUMER_SMOKE_PROVIDER_KIND"
-    )]
-    provider_kind: ProviderKind,
-    #[arg(long, env = "CONSUMER_SMOKE_PROVIDER_ENDPOINT")]
-    provider_endpoint: Option<String>,
-    #[arg(
-        long,
-        env = "CONSUMER_SMOKE_PROVIDER_MODEL",
-        default_value = "stub-report-v1"
-    )]
-    provider_model: String,
-    #[arg(long, env = "CONSUMER_SMOKE_POSITIVE_SPECIALTY")]
-    positive_specialty: Option<String>,
-    #[arg(long, default_value_t = 30)]
-    connect_budget_secs: u64,
-}
+mod args;
+mod chain_selector;
+mod provider_kind;
 
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
-enum ChainSelector {
-    One,
-    Two,
-    #[value(name = "positive-path", alias = "positive", alias = "three")]
-    PositivePath,
-    All,
-}
-
-#[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
-enum ProviderKind {
-    Openai,
-    Vllm,
-}
-
-impl ProviderKind {
-    const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Openai => "openai",
-            Self::Vllm => "vllm",
-        }
-    }
-}
+use args::Args;
+use chain_selector::ChainSelector;
+use provider_kind::ProviderKind;
 
 #[tokio::main]
 async fn main() {

@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use made_core::entities::Statistics;
+use made_core::value_objects::RecorderName;
 
 use super::ServiceHealth;
 
@@ -20,7 +21,7 @@ pub struct ServiceStatus {
     version: &'static str,
     uptime: Duration,
     health: ServiceHealth,
-    recorder: &'static str,
+    recorder: RecorderName,
     statistics: Option<Statistics>,
 }
 
@@ -30,7 +31,7 @@ impl ServiceStatus {
         version: &'static str,
         uptime: Duration,
         health: ServiceHealth,
-        recorder: &'static str,
+        recorder: RecorderName,
         statistics: Option<Statistics>,
     ) -> Self {
         Self {
@@ -64,7 +65,7 @@ impl ServiceStatus {
     /// `prometheus`, or whatever a host injected.
     #[must_use]
     pub const fn recorder(&self) -> &'static str {
-        self.recorder
+        self.recorder.as_str()
     }
 
     /// The counter snapshot, present only when the caller asked for it.

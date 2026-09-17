@@ -80,7 +80,9 @@ impl DesignCeremonyUseCase {
 }
 
 fn num_agents(stage: &CeremonyDesignStage) -> u64 {
-    stage.num_agents().unwrap_or(DEFAULT_NUM_AGENTS)
+    stage
+        .num_agents()
+        .map_or(DEFAULT_NUM_AGENTS, |agents| u64::from(agents.get()))
 }
 
 fn completion_guard(stage_id: &str) -> String {
@@ -119,8 +121,8 @@ mod tests {
     use crate::usecases::ceremony_design_repeat::CeremonyDesignRepeat;
     use crate::usecases::ceremony_participant_capability::CeremonyParticipantCapability;
     use made_core::value_objects::{
-        CeremonyDescription, CeremonyName, InputName, OutputName, RoleId, StepId, StepIteration,
-        StepOutputField,
+        CeremonyDescription, CeremonyName, InputName, NumAgents, OutputName, RoleId, Rounds,
+        StepId, StepInstructions, StepIteration, StepOutputField,
     };
     use made_core::value_objects::{GuardCondition, RepeatUntilCondition, StepStatus};
     use serde_json::json;
@@ -129,15 +131,27 @@ mod tests {
         RoleId::new(id).expect("a role id")
     }
 
+    fn instructions(value: impl Into<String>) -> StepInstructions {
+        StepInstructions::new(value).expect("stage instructions")
+    }
+
+    fn agents(value: u32) -> NumAgents {
+        NumAgents::new(value).expect("an agent count")
+    }
+
+    fn rounds(value: u32) -> Rounds {
+        Rounds::new(value).expect("review rounds")
+    }
+
     fn stage(id: &str, owner: &str) -> CeremonyDesignStage {
         CeremonyDesignStage::new(
             StepId::new(id).expect("a step id"),
             role(owner),
-            format!("Do the {id} work."),
+            instructions(format!("Do the {id} work.")),
             None,
             None,
             None,
-            0,
+            rounds(0),
             None,
         )
     }
@@ -171,11 +185,11 @@ mod tests {
                 CeremonyDesignStage::new(
                     StepId::new("review").expect("a step id"),
                     role("ARTIST"),
-                    "Review the candidate.",
+                    instructions("Review the candidate."),
                     None,
                     None,
-                    Some(2),
-                    1,
+                    Some(agents(2)),
+                    rounds(1),
                     None,
                 ),
             ],
@@ -256,11 +270,11 @@ mod tests {
             CeremonyDesignStage::new(
                 StepId::new("compose").expect("a step id"),
                 role("WORKER"),
-                "Compose the candidate.",
+                instructions("Compose the candidate."),
                 None,
                 None,
                 None,
-                0,
+                rounds(0),
                 Some(CeremonyDesignRepeat::new(
                     StepIteration::new(5).expect("an iteration cap"),
                     StepOutputField::new("ready").expect("an output field"),
@@ -329,11 +343,11 @@ mod tests {
             CeremonyDesignStage::new(
                 StepId::new("review").expect("a step id"),
                 role("ARTIST"),
-                "Review the candidate.",
+                instructions("Review the candidate."),
                 None,
                 None,
-                Some(1),
-                1,
+                Some(agents(1)),
+                rounds(1),
                 None,
             ),
         ]));

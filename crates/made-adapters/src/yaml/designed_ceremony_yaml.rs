@@ -197,8 +197,8 @@ mod tests {
         CeremonyDesignStage, CeremonyParticipantCapability, DesignCeremonyUseCase,
     };
     use made_core::value_objects::{
-        CeremonyDescription, CeremonyName, InputName, OutputName, RoleId, StepId, StepIteration,
-        StepOutputField,
+        CeremonyDescription, CeremonyName, DurationMs, InputName, OutputName, RoleId, Rounds,
+        StepAttempt, StepId, StepInstructions, StepIteration, StepOutputField, StepTimeout,
     };
 
     fn intent(seconds: u64) -> CeremonyDesignDocument {
@@ -216,11 +216,11 @@ mod tests {
             vec![CeremonyDesignStage::new(
                 StepId::new("review").unwrap(),
                 RoleId::new("REVIEWER").unwrap(),
-                "Review evidence",
+                StepInstructions::new("Review evidence").unwrap(),
                 None,
                 None,
                 None,
-                0,
+                Rounds::ZERO,
                 Some(CeremonyDesignRepeat::new(
                     StepIteration::new(3).unwrap(),
                     StepOutputField::new("ready").unwrap(),
@@ -228,9 +228,9 @@ mod tests {
                 )),
             )],
             None,
-            Some(seconds),
-            Some(2),
-            Some(seconds),
+            Some(StepTimeout::new(DurationMs::from_millis(seconds.saturating_mul(1_000))).unwrap()),
+            Some(StepAttempt::new(2).unwrap()),
+            Some(DurationMs::from_millis(seconds.saturating_mul(1_000))),
         )
     }
 

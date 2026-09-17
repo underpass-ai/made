@@ -799,8 +799,8 @@ mod tests {
         discriminations: Mutex<Vec<(String, &'static str)>>,
     }
     impl MetricsRecorderPort for RecordingMetrics {
-        fn recorder_name(&self) -> &'static str {
-            "test"
+        fn recorder_name(&self) -> made_core::value_objects::RecorderName {
+            made_core::value_objects::RecorderName::new("test")
         }
 
         fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {

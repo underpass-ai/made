@@ -59,20 +59,18 @@ pub(super) fn build_definition(
         .collect::<Vec<_>>();
     states.push(CeremonyState::terminal(terminal.clone()));
     let retry = RetryPolicy::new(
-        StepAttempt::new(document.max_attempts().unwrap_or(DEFAULT_MAX_ATTEMPTS))?,
-        DurationMs::from_millis(
-            document
-                .backoff_seconds()
-                .unwrap_or(DEFAULT_BACKOFF_SECONDS)
-                .saturating_mul(1000),
-        ),
-    );
-    let timeout = StepTimeout::new(DurationMs::from_millis(
         document
-            .step_timeout_seconds()
-            .unwrap_or(DEFAULT_STEP_TIMEOUT_SECONDS)
-            .saturating_mul(1000),
-    ))?;
+            .max_attempts()
+            .unwrap_or(StepAttempt::new(DEFAULT_MAX_ATTEMPTS)?),
+        document.retry_backoff().unwrap_or(DurationMs::from_millis(
+            DEFAULT_BACKOFF_SECONDS.saturating_mul(1_000),
+        )),
+    );
+    let timeout = document
+        .step_timeout()
+        .unwrap_or(StepTimeout::new(DurationMs::from_millis(
+            DEFAULT_STEP_TIMEOUT_SECONDS.saturating_mul(1_000),
+        ))?);
     let mut guards = Vec::new();
     let mut transitions = Vec::new();
     let mut steps = Vec::new();
@@ -194,11 +192,14 @@ fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, V
             // Earlier stages are context by default for everything
             // after the first, which has nothing to see.
             "see_prior".to_owned(),
-            json!(stage.see_prior().unwrap_or(index > 0)),
+            json!(stage.prior_context().map_or(
+                index > 0,
+                made_core::value_objects::PriorContext::is_visible
+            )),
         ),
     ]);
-    if stage.review_rounds() > 0 {
-        config.insert("rounds".to_owned(), json!(stage.review_rounds()));
+    if stage.review_rounds().get() > 0 {
+        config.insert("rounds".to_owned(), json!(stage.review_rounds().get()));
     }
     config
 }

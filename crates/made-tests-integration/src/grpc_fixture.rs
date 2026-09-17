@@ -366,6 +366,7 @@ impl GrpcFixture {
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
             .service_version("made-tests")
+            .clock(wiring.clock())
             .build()
             .expect("grpc service wiring should succeed");
 

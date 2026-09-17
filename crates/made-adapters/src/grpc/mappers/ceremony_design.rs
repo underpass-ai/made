@@ -19,8 +19,9 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, GuardName, InputName, OutputName, RoleId,
-    StepHandlerKind, StepId, StepIteration, StepOutputField, TransitionTrigger,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, GuardName, InputName,
+    NumAgents, OutputName, PriorContext, RoleId, Rounds, StepAttempt, StepHandlerKind, StepId,
+    StepInstructions, StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -55,9 +56,14 @@ pub fn ceremony_design_document_from_proto(
         participants,
         stages,
         final_approval,
-        request.step_timeout_seconds,
-        request.max_attempts,
-        request.backoff_seconds,
+        request
+            .step_timeout_seconds
+            .map(|seconds| StepTimeout::new(DurationMs::from_millis(seconds.saturating_mul(1_000))))
+            .transpose()?,
+        request.max_attempts.map(StepAttempt::new).transpose()?,
+        request
+            .backoff_seconds
+            .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
     ))
 }
 
@@ -100,11 +106,14 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     Ok(CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
-        stage.instructions,
+        StepInstructions::new(stage.instructions)?,
         named(stage.handler, StepHandlerKind::new)?,
-        stage.see_prior,
-        stage.num_agents,
-        stage.review_rounds,
+        stage.see_prior.map(PriorContext::from_visible),
+        stage
+            .num_agents
+            .map(|value| NumAgents::new(u32::try_from(value).unwrap_or(u32::MAX)))
+            .transpose()?,
+        Rounds::new(u32::try_from(stage.review_rounds).unwrap_or(u32::MAX))?,
         stage.repeat.map(repeat_from_proto).transpose()?,
     ))
 }

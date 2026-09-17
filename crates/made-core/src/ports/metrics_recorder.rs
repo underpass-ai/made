@@ -19,8 +19,8 @@
 //! [`StatisticsPort`]: super::StatisticsPort
 
 use crate::value_objects::{
-    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
-    ScoringMode, Specialty, StepStatus, TokenUsage,
+    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, RecorderName,
+    Score, ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 
 pub trait MetricsRecorderPort: Send + Sync {
@@ -32,7 +32,7 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// host's choice. Required rather than defaulted: a recorder that
     /// forgot to name itself would answer `unknown`, and there is no
     /// honest value for that.
-    fn recorder_name(&self) -> &'static str;
+    fn recorder_name(&self) -> RecorderName;
 
     /// Observe the end-to-end wall-clock duration of a deliberation that
     /// ran to completion, regardless of its terminal outcome.

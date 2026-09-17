@@ -26,15 +26,6 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     if document.stages().is_empty() {
         return Err(invalid("field `stages` must contain at least one stage"));
     }
-    if document.step_timeout_seconds() == Some(0) {
-        return Err(invalid(
-            "field `step_timeout_seconds` must be greater than zero",
-        ));
-    }
-    if document.max_attempts() == Some(0) {
-        return Err(invalid("field `max_attempts` must be greater than zero"));
-    }
-
     reject_duplicates(
         document
             .required_inputs()
@@ -67,7 +58,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     let participant_set = participant_ids.into_iter().collect::<BTreeSet<_>>();
 
     let mut stage_ids = Vec::with_capacity(document.stages().len());
-    for (index, stage) in document.stages().iter().enumerate() {
+    for stage in document.stages() {
         stage_ids.push(stage.id().as_str().to_owned());
         if !participant_set.contains(stage.owner_role_id().as_str()) {
             return Err(invalid(format!(
@@ -76,18 +67,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                 stage.owner_role_id()
             )));
         }
-        if stage.instructions().trim().is_empty() {
-            return Err(invalid(format!(
-                "field `stages[{index}].instructions` must not be blank"
-            )));
-        }
-        if stage.num_agents() == Some(0) {
-            return Err(invalid(format!(
-                "stage `{}` must request at least one agent",
-                stage.id()
-            )));
-        }
-        if stage.review_rounds() > 0 && num_agents(stage) < 2 {
+        if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
             return Err(invalid(format!(
                 "stage `{}` requests review rounds with fewer than two agents",
                 stage.id()
@@ -156,9 +136,6 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     Ok(())
 }
 
-/// Every name this design generates on its own. A stage, a guard or a
-/// trigger the author names must not be one of them, because the
-/// generated one would silently win.
 fn completion_guards(stage_ids: &[String]) -> BTreeSet<String> {
     stage_ids
         .iter()

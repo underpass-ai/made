@@ -29,7 +29,11 @@ fn tools_catalog_is_derived_one_for_one_from_grpc_service() {
 
 #[test]
 fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
-    let grpc_dispatch_source = include_str!("../grpc/tools.rs");
+    let grpc_dispatch_source = [
+        include_str!("../grpc/tools.rs"),
+        include_str!("../grpc/tools/general_dispatch.rs"),
+    ]
+    .concat();
     let fixture_source = include_str!("../fixture.rs");
 
     for tool in grpc_catalog_tool_names() {

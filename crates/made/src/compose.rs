@@ -470,6 +470,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         // renders, so `GetStatus` names what is actually recording.
         .metrics(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
+        .clock(clock.clone())
         .build()?;
 
     let health_state = crate::health::HealthState::new(

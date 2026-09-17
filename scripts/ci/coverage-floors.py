@@ -14,6 +14,13 @@ FLOORS = "docs/architecture/coverage-floors.tsv"
 PRODUCTION = {"made-core", "made-api", "made-app", "made-adapters", "made-embedded", "made", "made-mcp"}
 
 
+def default_baseline_ref(environment: dict[str, str]) -> str:
+    if (environment.get("GITHUB_EVENT_NAME") == "push"
+            and environment.get("GITHUB_REF") == "refs/heads/main"):
+        return "HEAD^"
+    return "origin/" + (environment.get("GITHUB_BASE_REF") or "main")
+
+
 def read_floors(text: str) -> dict[str, float]:
     floors: dict[str, float] = {}
     for line in text.splitlines():
@@ -113,17 +120,23 @@ def self_test() -> None:
     files.append({"filename": "/workspace/crates/made-proto/src/generated.rs",
                   "summary": {"lines": {"covered": 0, "count": 999999}}})
     assert coverage_totals({"data": [{"files": files}]}) == totals
-    print("coverage floor self-test passed: boundaries, missing data, ratchet, invalid policy, exclusions")
+    assert default_baseline_ref({}) == "origin/main"
+    assert default_baseline_ref({"GITHUB_BASE_REF": ""}) == "origin/main"
+    assert default_baseline_ref({"GITHUB_BASE_REF": "release"}) == "origin/release"
+    assert default_baseline_ref({
+        "GITHUB_EVENT_NAME": "push", "GITHUB_REF": "refs/heads/main"
+    }) == "HEAD^"
+    print(
+        "coverage floor self-test passed: boundaries, missing data, ratchet, "
+        "invalid policy, exclusions, baseline refs"
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("summary", nargs="?", type=Path)
     parser.add_argument("--minimum", type=float, default=80)
-    default_ref = ("HEAD^" if os.environ.get("GITHUB_EVENT_NAME") == "push"
-                   and os.environ.get("GITHUB_REF") == "refs/heads/main"
-                   else "origin/" + os.environ.get("GITHUB_BASE_REF", "main"))
-    parser.add_argument("--baseline-ref", default=default_ref)
+    parser.add_argument("--baseline-ref", default=default_baseline_ref(os.environ))
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
     if args.self_test:

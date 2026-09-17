@@ -1,6 +1,5 @@
 use std::fmt;
 use std::sync::Arc;
-use std::time::Instant;
 
 use made_core::error::DomainError;
 use made_core::ports::{MetricsRecorderPort, StatisticsPort};
@@ -20,9 +19,7 @@ pub struct GetServiceStatusUseCase {
     statistics: Arc<dyn StatisticsPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
     version: &'static str,
-    /// When this engine started. A monotonic instant rather than a
-    /// wall clock: uptime must not move when the host's clock does.
-    started_at: Instant,
+    clock: Arc<dyn made_core::ports::ClockPort>,
 }
 
 impl fmt::Debug for GetServiceStatusUseCase {
@@ -40,13 +37,13 @@ impl GetServiceStatusUseCase {
         statistics: Arc<dyn StatisticsPort>,
         metrics: Arc<dyn MetricsRecorderPort>,
         version: &'static str,
-        started_at: Instant,
+        clock: Arc<dyn made_core::ports::ClockPort>,
     ) -> Self {
         Self {
             statistics,
             metrics,
             version,
-            started_at,
+            clock,
         }
     }
 
@@ -62,7 +59,7 @@ impl GetServiceStatusUseCase {
         };
         Ok(ServiceStatus::new(
             self.version,
-            self.started_at.elapsed(),
+            std::time::Duration::from_millis(self.clock.uptime().get()),
             // Nothing computes a condition yet, on either edition, and
             // both have always answered `healthy`. One place says so
             // now, so the day something does compute it, both editions
@@ -136,10 +133,20 @@ mod tests {
             statistics,
             Arc::new(NoopMetricsRecorder),
             "0.0.0-test",
-            Instant::now()
-                .checked_sub(Duration::from_secs(90))
-                .expect("ninety seconds ago is a representable instant"),
+            Arc::new(StatusClock),
         )
+    }
+
+    struct StatusClock;
+
+    impl made_core::ports::ClockPort for StatusClock {
+        fn now(&self) -> time::OffsetDateTime {
+            time::OffsetDateTime::UNIX_EPOCH
+        }
+
+        fn uptime(&self) -> DurationMs {
+            DurationMs::from_millis(Duration::from_secs(90).as_millis() as u64)
+        }
     }
 
     #[tokio::test]

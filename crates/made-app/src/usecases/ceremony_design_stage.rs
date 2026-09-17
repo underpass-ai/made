@@ -1,4 +1,6 @@
-use made_core::value_objects::{RoleId, StepHandlerKind, StepId};
+use made_core::value_objects::{
+    NumAgents, PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions,
+};
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
 
@@ -19,11 +21,11 @@ pub struct CeremonyDesignStage {
     /// What the stage asks of whoever runs it, and how they know they
     /// are done. Free text: it reaches the step handler as its prompt
     /// and the engine never reads it.
-    instructions: String,
+    instructions: StepInstructions,
     handler: Option<StepHandlerKind>,
-    see_prior: Option<bool>,
-    num_agents: Option<u64>,
-    review_rounds: u64,
+    prior_context: Option<PriorContext>,
+    num_agents: Option<NumAgents>,
+    review_rounds: Rounds,
     repeat: Option<CeremonyDesignRepeat>,
 }
 
@@ -32,19 +34,19 @@ impl CeremonyDesignStage {
     pub fn new(
         id: StepId,
         owner_role_id: RoleId,
-        instructions: impl Into<String>,
+        instructions: StepInstructions,
         handler: Option<StepHandlerKind>,
-        see_prior: Option<bool>,
-        num_agents: Option<u64>,
-        review_rounds: u64,
+        prior_context: Option<PriorContext>,
+        num_agents: Option<NumAgents>,
+        review_rounds: Rounds,
         repeat: Option<CeremonyDesignRepeat>,
     ) -> Self {
         Self {
             id,
             owner_role_id,
-            instructions: instructions.into(),
+            instructions,
             handler,
-            see_prior,
+            prior_context,
             num_agents,
             review_rounds,
             repeat,
@@ -63,7 +65,7 @@ impl CeremonyDesignStage {
 
     #[must_use]
     pub fn instructions(&self) -> &str {
-        &self.instructions
+        self.instructions.as_str()
     }
 
     #[must_use]
@@ -72,17 +74,17 @@ impl CeremonyDesignStage {
     }
 
     #[must_use]
-    pub const fn see_prior(&self) -> Option<bool> {
-        self.see_prior
+    pub const fn prior_context(&self) -> Option<PriorContext> {
+        self.prior_context
     }
 
     #[must_use]
-    pub const fn num_agents(&self) -> Option<u64> {
+    pub const fn num_agents(&self) -> Option<NumAgents> {
         self.num_agents
     }
 
     #[must_use]
-    pub const fn review_rounds(&self) -> u64 {
+    pub const fn review_rounds(&self) -> Rounds {
         self.review_rounds
     }
 

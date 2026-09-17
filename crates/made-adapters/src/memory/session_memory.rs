@@ -18,12 +18,9 @@ use made_core::value_objects::{
 };
 use tokio::sync::RwLock;
 
-#[derive(Debug, Default)]
-struct Remembered {
-    entries: Vec<MemoryEntry>,
-    relations: Vec<MemoryRelation>,
-    keys: BTreeSet<String>,
-}
+mod remembered;
+
+use remembered::Remembered;
 
 /// Memory that lives as long as the process does.
 #[derive(Debug, Default)]

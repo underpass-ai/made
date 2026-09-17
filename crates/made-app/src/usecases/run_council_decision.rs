@@ -116,7 +116,7 @@ impl RunCouncilDecisionUseCase {
                     winner,
                     candidates,
                     validation_mode: input.validation_mode,
-                    passed: true,
+                    passed: made_core::value_objects::ValidationPassed::new(true),
                     duration_ms,
                 })
             }
@@ -144,7 +144,7 @@ impl RunCouncilDecisionUseCase {
                     winner,
                     candidates,
                     validation_mode: input.validation_mode,
-                    passed: false,
+                    passed: made_core::value_objects::ValidationPassed::new(false),
                     duration_ms,
                 })
             }
