@@ -111,13 +111,15 @@ sourcing", and the code matches that decision exactly:
 ### 0.3 Memory
 
 - The memory ports (`MemoryWriterPort`, `MemoryReaderPort`), their value
-  objects and the ten-property conformance suite name no kernel, no tool and
-  no JSON key. Two non-KMP implementations pass the suite today
-  (`InProcessSessionMemory`, `ForgetfulMemory`).
+  objects and the conformance suite name no kernel, no tool and no JSON key.
+  Two non-KMP implementations pass the suite today
+  (`InProcessSessionMemory`, `ForgetfulMemory`). *[E1/E2: the suite states
+  nine properties; the tenth went with `ask`.]*
 - **The engine writes memory and never reads it.** `MemoryReaderPort` has no
   consumer outside the conformance suite; `AnsweringQuestions`,
   `MemoryQuestion` and `MemoryDimension` are declared by no implementation and
-  read by nobody.
+  read by nobody. *[Done in E1/E2: `recall` is called at every start, and the
+  three unread declarations are gone.]*
 - The KMP adapter (`crates/made-adapters/src/kmp/`) sits behind an empty Cargo
   feature, is selectable by no configuration, and is wired into no binary.
   Both composition roots ship `ForgetfulMemory`. The adapter launches
@@ -126,10 +128,13 @@ sourcing", and the code matches that decision exactly:
   English refusals. KMP still aliases `kernel_*` tool names, but the binary
   name and the environment are stale.
 - Memory scope is `ceremony:{id}`, so even a working adapter would never let
-  one ceremony recall another.
+  one ceremony recall another. *[Done in E1: a ceremony declares
+  `memory_scope` in its context; the default still means no shared memory and
+  says so.]*
 - Residue of KMP inside the domain: a doc comment on
   `MemoryRelationKind::Authorizes` citing a KMP issue number, `"kmp: …"`
-  prefixes in `DomainError` reasons, `kmp_*` span names.
+  prefixes in `DomainError` reasons, `kmp_*` span names. *[Done: the
+  vocabulary gate is what keeps it out now.]*
 - Memory writes are already shaped as a projection
   (`services/session_memory_projection.rs` + `session_memory_recorder.rs`),
   fire-and-forget after commit.
@@ -654,8 +659,8 @@ adapter and maps at the boundary with DTOs.
 | Slice | Change | Gate |
 |---|---|---|
 | E0 | Measure the current adapter against `kmp-mcp` 0.18 with the binary name and environment it expects, and record the result under `docs/experiments/`. | A recorded run. |
-| E1 | **Add the consumer.** At ceremony start, `MemoryReaderPort::recall(scope)` for the declared scope; the recollection is rendered into the first brief as "what earlier sessions decided" (bounded size, decisions and constraints first). Scope comes from a new definition input `memory_scope`; default stays `ceremony:{id}`, which means "no shared memory", stated as such. | A second ceremony in the same scope sees the first one's decision in its brief. |
-| E2 | **Trim the port to what MADE uses.** Remove `AnsweringQuestions` / `MemoryQuestion` and `MemoryDimension` (or give each a consumer in E1); delete the kernel-citing doc comment on `Authorizes` and add the variant to the MCP schema enum where it is missing; replace `"kmp: …"` error prefixes; rename `kmp_*` spans to `memory_*`. Keep the ten-property conformance suite as the contract. | Conformance green; grep gate for `kmp` / `kernel` in `made-core`. |
+| E1 | **Add the consumer.** At ceremony start, `MemoryReaderPort::recall(scope)` for the declared scope; the recollection is rendered into the first brief as "what earlier sessions decided" (bounded size, decisions and constraints first). Scope comes from a new definition input `memory_scope`; default stays `ceremony:{id}`, which means "no shared memory", stated as such. | A second ceremony in the same scope sees the first one's decision in its brief. *[Done: `memory_scope` is a reserved context key resolved by `services/memory_scope_resolver.rs`; the rendering is `SessionRecollection` (decisions and constraints first, 4096 bytes of summary, `truncated` when the bound bit); it is sealed as `MemoryRecalled` in the opening batch and exposed on the four surfaces. `crates/made-tests-integration/tests/mcp_parity_session.rs::a_session_in_a_shared_scope_is_told_what_the_last_one_decided` is the gate.]* |
+| E2 | **Trim the port to what MADE uses.** Remove `AnsweringQuestions` / `MemoryQuestion` and `MemoryDimension` (or give each a consumer in E1); delete the kernel-citing doc comment on `Authorizes` and add the variant to the MCP schema enum where it is missing; replace `"kmp: …"` error prefixes; rename `kmp_*` spans to `memory_*`. Keep the conformance suite as the contract. | Conformance green; grep gate for `kmp` / `kernel` in `made-core`. *[Done: `ask`, `MemoryQuestion`, `AnsweringQuestions` and `MemoryDimension` are gone and the suite states **nine** properties, not ten — the tenth asked whether a backend answered a question in words. `authorizes` joined the `made_assert_ceremony_reason` schema enum. The error prefixes and span names #41 removed stay out because `scripts/ci/domain-vocabulary-boundary.sh` is a gate.]* |
 | E3 | **Ship a durable default.** `SqliteSessionMemory` in the ceremonies store (new tables under the same seam), passing conformance, wired by default in the embedded builder (replacing `ForgetfulMemory`) and in the server behind `MADE_MEMORY=sqlite\|none`. The memory recorder becomes a subscriber of the event stream (A5). | Conformance on SQLite; restart test: a decision survives reopen. |
 | E4 | **Move the KMP adapter out of the tree** into its own crate (`made-memory-kmp`, depending on `made-core` only) or into the KMP repository as "MADE adapter", with the conformance suite as its gate. Fix its names there (`kmp-mcp`, `KMP_MCP_*`, `kmp_*` tools) and replace refusal-string matching with structured error codes once KMP exposes them. | `made-adapters` has no `kmp` module; CI matrix drops the `kmp` feature; the external crate's CI runs the suite. |
 | E5 | **ADR-013 (memory)**: memory is MADE's own bounded context; recall is a first-class use case; SQLite is the reference implementation; kernels are out-of-tree adapters. Update `docs/index.md`, `stack-gap-analysis.md`, the platform table in `README.md`. | ADR review. |

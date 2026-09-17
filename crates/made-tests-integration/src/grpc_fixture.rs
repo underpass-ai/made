@@ -23,7 +23,6 @@ use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
-use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore, InMemoryContractRegistry,
@@ -111,6 +110,7 @@ impl GrpcFixture {
     pub async fn start_with(wiring: GrpcFixtureWiring) -> Self {
         let ceremony_store = wiring.ceremony_store();
         let clock = wiring.clock();
+        let memory = wiring.memory();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
             Arc::new(ContentNonEmptyValidator::new()),
             Arc::new(JsonObjectOutputValidator::new()),
@@ -129,13 +129,16 @@ impl GrpcFixture {
             Arc::new(InMemoryContractRegistry::new());
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
-        // The composition root's own wiring: memory is a subscriber of
-        // the stream, and the one the fixture wires forgets.
+        // One adapter, both directions: what a session records is what
+        // the next session in that scope is told. The composition
+        // root's own wiring: memory is a subscriber of the stream, and
+        // the one the fixture wires by default forgets.
+        let (memory_writer, memory_reader) = memory;
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
             Arc::new(SessionMemoryRecorder::new(
-                Arc::new(ForgetfulMemory::new()),
+                memory_writer,
                 ceremony_store.clone(),
             )),
         ));
@@ -191,11 +194,13 @@ impl GrpcFixture {
             ceremony_definitions.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+            memory_reader.clone(),
         ));
         let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
             ceremony_publications.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+            memory_reader.clone(),
         ));
         let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -217,7 +222,6 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
-        // No memory configured, and said so rather than pretended.
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
@@ -416,6 +420,7 @@ impl GrpcFixture {
     #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start_with_tls(setup: TlsServerSetup) -> Self {
         let clock = Arc::new(SystemClock::new());
+        let memory = GrpcFixtureWiring::new().memory();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
             Arc::new(ContentNonEmptyValidator::new()),
             Arc::new(JsonObjectOutputValidator::new()),
@@ -435,13 +440,16 @@ impl GrpcFixture {
         let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
             Arc::new(InMemoryCeremonyDefinitionRepository::new());
         let ceremony_store = Arc::new(InMemoryCeremonyEventStore::new());
-        // The composition root's own wiring: memory is a subscriber of
-        // the stream, and the one the fixture wires forgets.
+        // One adapter, both directions: what a session records is what
+        // the next session in that scope is told. The composition
+        // root's own wiring: memory is a subscriber of the stream, and
+        // the one the fixture wires by default forgets.
+        let (memory_writer, memory_reader) = memory;
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
             Arc::new(SessionMemoryRecorder::new(
-                Arc::new(ForgetfulMemory::new()),
+                memory_writer,
                 ceremony_store.clone(),
             )),
         ));
@@ -493,11 +501,13 @@ impl GrpcFixture {
             ceremony_definitions.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+            memory_reader.clone(),
         ));
         let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
             ceremony_publications.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+            memory_reader.clone(),
         ));
         let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -519,7 +529,6 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
-        // No memory configured, and said so rather than pretended.
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),

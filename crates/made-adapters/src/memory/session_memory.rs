@@ -13,8 +13,8 @@ use made_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use made_core::value_objects::{
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryMoment, MemoryQuestion,
-    MemoryRelation, MemoryScope, MemoryWrite,
+    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryMoment, MemoryRelation,
+    MemoryScope, MemoryWrite,
 };
 use tokio::sync::RwLock;
 
@@ -37,10 +37,9 @@ impl InProcessSessionMemory {
         Self::default()
     }
 
-    /// Everything this backend does. Questions in words are not among
-    /// them: answering one takes a reader that can weigh entries, and
-    /// pretending otherwise by returning everything would be worse
-    /// than saying no.
+    /// Everything this backend does, which is everything the port
+    /// declares: it keeps entries, the reasons between them and the
+    /// evidence behind them, and it can be read as of a moment.
     #[must_use]
     fn declared() -> MemoryCapabilities {
         MemoryCapabilities::none()
@@ -141,14 +140,6 @@ impl MemoryReaderPort for InProcessSessionMemory {
             entries: remembered.entries.clone(),
             relations: remembered.relations.clone(),
         })
-    }
-
-    async fn ask(
-        &self,
-        _scope: &MemoryScope,
-        _question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
-        Ok(MemoryRecollection::Unsupported)
     }
 
     async fn as_known_at(

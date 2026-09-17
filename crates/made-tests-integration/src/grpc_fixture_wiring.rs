@@ -14,9 +14,12 @@
 
 use std::sync::Arc;
 
-use made_adapters::memory::InMemoryCeremonyEventStore;
+use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyEventStore};
 use made_adapters::noop::NoopCeremonyEvidenceSource;
-use made_core::ports::{CeremonyEvidenceSourcePort, CeremonyStepHandlerPort, ClockPort};
+use made_core::ports::{
+    CeremonyEvidenceSourcePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
+    MemoryWriterPort,
+};
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
@@ -24,6 +27,7 @@ pub struct GrpcFixtureWiring {
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
+    memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
 }
 
 impl Default for GrpcFixtureWiring {
@@ -33,6 +37,7 @@ impl Default for GrpcFixtureWiring {
             step_handler: None,
             evidence_source: None,
             clock: None,
+            memory: None,
         }
     }
 }
@@ -72,6 +77,22 @@ impl GrpcFixtureWiring {
         self
     }
 
+    /// Remember what sessions decide in this memory, and read it back
+    /// from the same one.
+    ///
+    /// One adapter for both directions, as the embedded builder takes
+    /// it: a server that wrote to one backend and read from another
+    /// would make the parity session compare two engines that disagree
+    /// about what they remember for a reason that is not parity.
+    #[must_use]
+    pub fn with_memory<M>(mut self, memory: Arc<M>) -> Self
+    where
+        M: MemoryWriterPort + MemoryReaderPort + 'static,
+    {
+        self.memory = Some((memory.clone(), memory));
+        self
+    }
+
     #[must_use]
     pub fn ceremony_store(&self) -> Arc<InMemoryCeremonyEventStore> {
         self.ceremony_store.clone()
@@ -100,5 +121,15 @@ impl GrpcFixtureWiring {
         self.clock
             .clone()
             .unwrap_or_else(|| Arc::new(made_adapters::clock::SystemClock::new()))
+    }
+
+    /// The memory a test asked for, or the one the composition picks:
+    /// a backend that keeps nothing and says so.
+    #[must_use]
+    pub fn memory(&self) -> (Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>) {
+        self.memory.clone().unwrap_or_else(|| {
+            let forgetful = Arc::new(ForgetfulMemory::new());
+            (forgetful.clone(), forgetful)
+        })
     }
 }

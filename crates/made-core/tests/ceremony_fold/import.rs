@@ -63,17 +63,22 @@ fn what_follows_an_import_is_applied_to_the_imported_session() {
 #[test]
 fn an_import_after_the_first_position_is_refused() {
     let snapshot = opened(&definition());
-    let opening = CeremonyEvent::CeremonyInstanceStarted(
-        match CeremonyInstance::decide_start(
-            snapshot.id().clone(),
-            &definition(),
-            snapshot.context().clone(),
-            at(0),
-        ) {
-            CeremonyEvent::CeremonyInstanceStarted(started) => started,
-            other => panic!("starting decides its own opening, got {other:?}"),
-        },
-    );
+    // `decide_start` returns the opening batch: the start, and the
+    // recollection when the session was told something. This one
+    // declares no scope, so the batch is the start alone.
+    let opening = match CeremonyInstance::decide_start(
+        snapshot.id().clone(),
+        &definition(),
+        snapshot.context().clone(),
+        None,
+        at(0),
+    )
+    .into_iter()
+    .next()
+    {
+        Some(opening @ CeremonyEvent::CeremonyInstanceStarted(_)) => opening,
+        other => panic!("starting decides its own opening, got {other:?}"),
+    };
 
     let refused = CeremonyInstance::rehydrate([&opening, &imported_event(&snapshot)]);
 

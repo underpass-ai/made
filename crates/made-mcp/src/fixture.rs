@@ -398,7 +398,23 @@ fn ceremony_instance_fixture() -> Value {
                 "bound_at": "2026-01-01T00:00:00Z"
             }
         ],
-        "context": { "brief": "ship the editorial calendar" }
+        "context": {
+            "brief": "ship the editorial calendar",
+            "memory_scope": "team:editorial"
+        },
+        "recollection": {
+            "scope": "team:editorial",
+            "truncated": false,
+            "entries": [
+                {
+                    "entry_id": "guard:budget_approved",
+                    "kind": "decision",
+                    "summary": "`budget_approved` was approved",
+                    "from_ceremony_id": "ceremony-fixture-0",
+                    "observed_at": "2025-12-01T00:00:00Z"
+                }
+            ]
+        }
     })
 }
 

@@ -223,3 +223,105 @@ Treat `action` as coordination, not authority. “Look at the queue” should be
 implemented as read-only observation or peek, never consuming messages; any
 external mutation still requires the host's permissions and the ceremony's
 explicit human guards.
+
+## 8. `memory_scope` — what earlier sessions decided
+
+*Status: verified on 2026-09-17 by `made-app`'s start tests, `made-core`'s
+rendering tests and the MCP parity session, which drives two sessions in one
+scope on both backends and compares what the second one was told.*
+
+A working session records what it decides — contributions, guard decisions,
+how it ended, and the reasons between them — into memory under a **scope**. A
+session that declares none gets `ceremony:{its own id}`, and that means **no
+shared memory**: nobody else ever looks there, so nothing it writes reaches a
+later session and nothing a later session decides reaches it.
+
+Declaring a scope is one reserved key in the ceremony's start context:
+
+```json
+{
+  "ceremony_id": "editorial-2026-09-17",
+  "definition_yaml": "...",
+  "actor_id": "operator-1",
+  "actor_kind": "service",
+  "context": { "memory_scope": "team:editorial" }
+}
+```
+
+When the session opens, the engine reads that scope and seals what it was told
+into the stream as `memory_recalled`, right after `ceremony_instance_started`.
+It is then in every read of the session — `made_get_ceremony_instance`,
+`made_read_ceremony_events`, the report's *What earlier sessions decided*
+section, the facade's `CeremonySummary` — on both editions:
+
+```json
+"recollection": {
+  "scope": "team:editorial",
+  "truncated": false,
+  "entries": [
+    {
+      "entry_id": "agenda:which-rollback:contribution:0",
+      "kind": "decision",
+      "summary": "Roll back rather than restart.",
+      "from_ceremony_id": "editorial-2026-09-10",
+      "observed_at": "2026-09-10T09:12:00Z"
+    }
+  ]
+}
+```
+
+A session that was told nothing carries `"recollection": null`, which is what
+every session that declares no scope carries and what a declared scope nobody
+has written to carries too.
+
+### The scope's grammar
+
+`kind:name` — the kind lowercase ASCII letters, digits, `_` or `-`; the name
+non-empty and free of control characters; at most 256 characters in all. The
+kind is required and is what keeps two hosts that both keep memory — about
+their cases, their tickets, their teams — from sharing one namespace by
+accident. `ceremony:{id}` is the same grammar, which is why the default needs
+no exception.
+
+A `memory_scope` that is present and is **not** a usable scope refuses the
+start. Falling back to the private default would hand you a session that
+remembers alone while you believe it is sharing, which reads exactly like a
+memory that lost the entries.
+
+### What comes back, and how much
+
+Decisions and constraints first, then observations and outcomes, each group in
+the order memory returned them, up to **4096 bytes of summary**. The rendering
+stops at the first entry that will not fit and says `"truncated": true`; an
+entry larger than the whole budget is dropped rather than cut, because half a
+decision is a sentence that says something else.
+
+Memory is not the transaction. A memory backend that cannot be read costs the
+session its recollection and nothing else: the start succeeds, a warning is
+logged with the scope, and `recollection` is `null`.
+
+### Declaring it in the definition
+
+The engine reads the context, not the definition, so a definition does not have
+to mention it. Declaring it anyway is how a reader of the YAML learns that this
+ceremony is meant to share a memory:
+
+```yaml
+inputs:
+  required:
+    - brief
+  optional:
+    - memory_scope
+```
+
+`made_design_ceremony` carries the same names through its `optional_inputs`.
+Note that inputs are not enforced at start today (issue #28), so this is
+documentation for whoever reads the definition, and the value still travels in
+the start context.
+
+### What is not remembered
+
+A step running is machinery and an agenda item is a question; neither is a
+decision, an observation, a constraint or an outcome, and memory has no fifth
+kind for the rest. Transcripts are not memory: the reference is remembered, the
+narrative stays where it was produced.

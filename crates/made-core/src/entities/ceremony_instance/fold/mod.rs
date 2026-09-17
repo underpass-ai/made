@@ -15,6 +15,7 @@ mod import;
 mod interventions;
 mod participant_bindings;
 mod reasons;
+mod recollection;
 mod start;
 mod step_execution;
 mod transitions;
@@ -58,6 +59,7 @@ impl CeremonyInstance {
             }
             CeremonyEvent::CeremonyCompleted(completed) => self.apply_ceremony_completed(completed),
             CeremonyEvent::InstanceImported(imported) => self.apply_instance_imported(imported),
+            CeremonyEvent::MemoryRecalled(recalled) => self.apply_memory_recalled(recalled),
         }
     }
 

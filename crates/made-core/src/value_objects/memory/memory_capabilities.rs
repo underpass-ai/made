@@ -29,7 +29,6 @@ impl MemoryCapabilities {
         Self::none()
             .with(MemoryCapability::Remembering)
             .with(MemoryCapability::Recalling)
-            .with(MemoryCapability::AnsweringQuestions)
             .with(MemoryCapability::TravellingInTime)
             .with(MemoryCapability::KeepingEvidence)
             .with(MemoryCapability::KeepingReasons)
@@ -55,11 +54,6 @@ impl MemoryCapabilities {
     #[must_use]
     pub fn recalls(&self) -> bool {
         self.has(MemoryCapability::Recalling)
-    }
-
-    #[must_use]
-    pub fn answers_questions(&self) -> bool {
-        self.has(MemoryCapability::AnsweringQuestions)
     }
 
     #[must_use]

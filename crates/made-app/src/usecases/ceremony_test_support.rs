@@ -11,17 +11,17 @@ use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
     CeremonySnapshot, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort, MemoryWriteOutcome, MemoryWriterPort,
-    NoopCeremonyEventSubscriber, PositionedRecord,
+    CeremonyStepHandlerRequest, ClockPort, MemoryReaderPort, MemoryRecollection,
+    MemoryWriteOutcome, MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GlobalPosition,
-    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability,
-    MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy,
-    RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
-    StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion,
-    TransitionTrigger,
+    Attributes, AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName,
+    CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs,
+    GlobalPosition, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities,
+    MemoryCapability, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryMoment, MemoryProvenance,
+    MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction,
+    RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
+    StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -34,6 +34,7 @@ use crate::services::{session_facts, SessionMemoryRecorder, SessionStream};
 mod definition_repository_fake;
 mod event_store_fake;
 mod fixed_clock;
+mod memory_that_is_out;
 mod publications_fake;
 mod recording_memory;
 mod sequence_step_handler_fake;
@@ -44,6 +45,7 @@ mod store_that_loses_every_race;
 pub(super) use definition_repository_fake::DefinitionRepositoryFake;
 pub(super) use event_store_fake::EventStoreFake;
 pub(super) use fixed_clock::FixedClock;
+pub(super) use memory_that_is_out::MemoryThatIsOut;
 pub(super) use publications_fake::PublicationsFake;
 pub(super) use recording_memory::RecordingMemory;
 pub(super) use sequence_step_handler_fake::SequenceStepHandlerFake;
@@ -587,6 +589,76 @@ impl MemoryWriterPort for RecordingMemory {
     }
 }
 
+/// What was written comes back, which is what a session recalling its
+/// own scope has to see.
+#[async_trait]
+impl MemoryReaderPort for RecordingMemory {
+    async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::of(
+            self.written
+                .read()
+                .await
+                .iter()
+                .filter(|(written_to, _, _)| written_to == scope)
+                .flat_map(|(_, write, _)| write.entries().to_vec())
+                .collect(),
+        ))
+    }
+
+    async fn as_known_at(
+        &self,
+        _scope: &MemoryScope,
+        _moment: MemoryMoment,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    async fn follow(
+        &self,
+        _scope: &MemoryScope,
+        _from: &MemoryEntryId,
+        _to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    fn capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::none()
+            .with(MemoryCapability::Remembering)
+            .with(MemoryCapability::Recalling)
+    }
+}
+
+#[async_trait]
+impl MemoryReaderPort for MemoryThatIsOut {
+    async fn recall(&self, _scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
+        Err(DomainError::InvalidDocument {
+            reason: "the memory backend did not answer".to_owned(),
+        })
+    }
+
+    async fn as_known_at(
+        &self,
+        _scope: &MemoryScope,
+        _moment: MemoryMoment,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    async fn follow(
+        &self,
+        _scope: &MemoryScope,
+        _from: &MemoryEntryId,
+        _to: &MemoryEntryId,
+    ) -> Result<MemoryRecollection, DomainError> {
+        Ok(MemoryRecollection::Unsupported)
+    }
+
+    fn capabilities(&self) -> MemoryCapabilities {
+        MemoryCapabilities::none()
+    }
+}
+
 pub(super) fn recording_memory() -> Arc<RecordingMemory> {
     Arc::new(RecordingMemory::default())
 }
@@ -605,6 +677,29 @@ pub(super) fn remembering_stream(
         store.clone(),
         Arc::new(SessionMemoryRecorder::new(memory, store)),
     )
+}
+
+/// Something a start use case can read, for the many tests that do not
+/// care what is in it.
+pub(super) fn a_memory() -> Arc<dyn MemoryReaderPort> {
+    recording_memory()
+}
+
+/// One decision, already remembered, as an earlier session would have
+/// left it.
+pub(super) fn remembered_decision(summary: &str) -> MemoryEntry {
+    MemoryEntry::new(
+        MemoryEntryId::new(summary).expect("a valid entry id"),
+        MemoryEntryKind::Decision,
+        summary,
+        MemoryProvenance::new(
+            CeremonyId::new("earlier-session").expect("a valid ceremony id"),
+            None,
+            datetime!(2026-07-28 09:00:00 UTC),
+        ),
+        Attributes::empty(),
+    )
+    .expect("a valid entry")
 }
 
 /// The store every session test reads from and appends to.
