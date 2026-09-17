@@ -159,6 +159,7 @@ mod tests {
                     streamed.clone(),
                     &definition(),
                     CeremonyContext::empty(),
+                    None,
                     OffsetDateTime::UNIX_EPOCH,
                 ),
                 AuditActor::new("test", AuditActorKind::Service, None).unwrap(),

@@ -2,6 +2,7 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
@@ -31,7 +32,8 @@ use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
+    StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyVersion, StepAttempt,
@@ -66,6 +68,12 @@ pub struct EmbeddedMade {
     /// When this engine was built. Monotonic, so uptime does not
     /// move when the host's wall clock does.
     started_at: Instant,
+    /// The same adapter the recorder writes through, read back.
+    ///
+    /// The writer side is a subscriber of the stream (ADR-012), so the
+    /// recorder is not a field here; this is the read the start use
+    /// cases make before a session opens.
+    memory_reader: Arc<dyn MemoryReaderPort>,
 }
 
 impl EmbeddedMade {
@@ -88,6 +96,10 @@ impl EmbeddedMade {
         Self::builder()
             .with_ceremony_store(store.clone())
             .with_definition_publications(store)
+            // Memory that lives as long as this process: not durable,
+            // and not pretending to be (E3 puts it in the store). It
+            // is what makes a declared scope usable at all.
+            .with_memory(Arc::new(InProcessSessionMemory::new()))
             .build()
     }
 
@@ -102,6 +114,7 @@ impl EmbeddedMade {
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
+        memory_reader: Arc<dyn MemoryReaderPort>,
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
@@ -123,6 +136,7 @@ impl EmbeddedMade {
             metrics_recorder,
             statistics,
             started_at: Instant::now(),
+            memory_reader,
         }
     }
 
@@ -330,6 +344,7 @@ impl EmbeddedMade {
             self.publications.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await
@@ -340,6 +355,7 @@ impl EmbeddedMade {
             self.definitions.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await

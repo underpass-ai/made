@@ -10,8 +10,8 @@ use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_api::{
     ApiCapabilities, ApiError, CeremonyEngineApi, CeremonyParticipant, CeremonySummary,
     DefinitionAnalysisView, DefinitionDefectView, InterventionResponseView, InterventionView,
-    PublishedDefinitionView, RaiseInterventionRequest, RespondToInterventionRequest,
-    StartCeremonyRequest, CONTRACT_VERSION,
+    PublishedDefinitionView, RaiseInterventionRequest, RecalledEntryView, RecollectionView,
+    RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
 };
 use made_app::usecases::{
     RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput, StartCeremonyInput,
@@ -255,9 +255,35 @@ fn summarize(instance: &CeremonyInstance) -> CeremonySummary {
             })
             .collect(),
         context: instance.context().attributes().as_map().clone(),
+        recollection: instance.recollection().map(recollection_view),
         created_at_millis: millis(instance.created_at()),
         updated_at_millis: millis(instance.updated_at()),
         completed_at_millis: instance.completed_at().map(millis),
+    }
+}
+
+/// What earlier sessions decided, as a consumer sees it.
+///
+/// Absent rather than empty when the ceremony was told nothing: a
+/// consumer that read an empty list would have no way to tell a scope
+/// nobody has written to from a ceremony that shares no memory at all.
+fn recollection_view(
+    recollection: &made_core::value_objects::SessionRecollection,
+) -> RecollectionView {
+    RecollectionView {
+        scope: recollection.scope().as_str().to_owned(),
+        entries: recollection
+            .entries()
+            .iter()
+            .map(|entry| RecalledEntryView {
+                entry_id: entry.id().as_str().to_owned(),
+                kind: entry.kind().as_label().to_owned(),
+                summary: entry.summary().to_owned(),
+                from_ceremony_id: entry.from_ceremony().as_str().to_owned(),
+                observed_at_millis: millis(entry.observed_at()),
+            })
+            .collect(),
+        truncated: recollection.completeness().is_truncated(),
     }
 }
 

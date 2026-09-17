@@ -24,8 +24,8 @@
 use crate::conformance::MemoryConformanceFailure;
 use crate::ports::{MemoryReaderPort, MemoryWriteOutcome, MemoryWriterPort};
 use crate::value_objects::{
-    Attributes, MemoryConfidence, MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryQuestion,
-    MemoryRelation, MemoryRelationKind, MemoryWrite,
+    Attributes, MemoryConfidence, MemoryEntryKind, MemoryEvidence, MemoryMoment, MemoryRelation,
+    MemoryRelationKind, MemoryWrite,
 };
 
 mod support;
@@ -33,6 +33,10 @@ mod support;
 use support::{entry, expect_unsupported, moment, named, scope, write, Checked};
 
 /// Every property a memory adapter must satisfy.
+///
+/// Nine of them. The tenth asked whether a backend answered a question
+/// put in words; the port no longer has that method, because nothing in
+/// this engine ever asked one (ADR-013, E2).
 #[derive(Debug)]
 pub struct MemoryConformance;
 
@@ -71,9 +75,6 @@ impl MemoryConformance {
 
         Self::evidence_survives_the_round_trip(writer, reader).await?;
         passed.push("evidence_survives_the_round_trip");
-
-        Self::questions_are_answered_or_declined(writer, reader).await?;
-        passed.push("questions_are_answered_or_declined");
 
         Self::time_travel_is_honoured_or_declined(writer, reader).await?;
         passed.push("time_travel_is_honoured_or_declined");
@@ -494,41 +495,6 @@ impl MemoryConformance {
                 PROPERTY,
                 "the evidenced entry did not come back at all",
             )),
-        }
-    }
-
-    async fn questions_are_answered_or_declined(
-        writer: &dyn MemoryWriterPort,
-        reader: &dyn MemoryReaderPort,
-    ) -> Checked {
-        const PROPERTY: &str = "questions_are_answered_or_declined";
-        let scope = scope("asked");
-        if writer.capabilities().remembers() {
-            writer
-                .remember(
-                    &scope,
-                    write(vec![entry(
-                        "we restarted the ingester",
-                        MemoryEntryKind::Outcome,
-                        moment(30),
-                    )]),
-                    "conformance:asked",
-                )
-                .await
-                .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
-        }
-
-        let question =
-            MemoryQuestion::new("did we restart the ingester?").expect("question should be valid");
-        let answer = reader
-            .ask(&scope, &question)
-            .await
-            .map_err(|error| MemoryConformanceFailure::new(PROPERTY, error.to_string()))?;
-
-        if reader.capabilities().answers_questions() {
-            Ok(())
-        } else {
-            expect_unsupported(PROPERTY, &answer, "ask")
         }
     }
 

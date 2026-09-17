@@ -12,8 +12,7 @@ use made_core::ports::{
     MemoryReaderPort, MemoryRecollection, MemoryWriteOutcome, MemoryWriterPort,
 };
 use made_core::value_objects::{
-    MemoryCapabilities, MemoryCapability, MemoryEntryId, MemoryMoment, MemoryQuestion, MemoryScope,
-    MemoryWrite,
+    MemoryCapabilities, MemoryCapability, MemoryEntryId, MemoryMoment, MemoryScope, MemoryWrite,
 };
 
 #[tokio::test]
@@ -24,7 +23,7 @@ async fn in_process_memory_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 10, "{passed:?}");
+    assert_eq!(passed.len(), 9, "{passed:?}");
 }
 
 /// A backend that keeps nothing is not a broken backend. It declares
@@ -39,7 +38,7 @@ async fn a_backend_that_declares_nothing_still_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 10, "{passed:?}");
+    assert_eq!(passed.len(), 9, "{passed:?}");
 }
 
 /// The failure mode the suite exists for: a backend that claims to
@@ -70,14 +69,6 @@ impl MemoryWriterPort for MemoryThatForgetsQuietly {
 impl MemoryReaderPort for MemoryThatForgetsQuietly {
     async fn recall(&self, _scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         Ok(MemoryRecollection::nothing())
-    }
-
-    async fn ask(
-        &self,
-        _scope: &MemoryScope,
-        _question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
-        Ok(MemoryRecollection::Unsupported)
     }
 
     async fn follow(
@@ -151,14 +142,6 @@ impl MemoryReaderPort for MemoryThatDoublesOnRetry {
         self.inner.recall(scope).await
     }
 
-    async fn ask(
-        &self,
-        scope: &MemoryScope,
-        question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
-        self.inner.ask(scope, question).await
-    }
-
     async fn as_known_at(
         &self,
         scope: &MemoryScope,
@@ -220,14 +203,6 @@ impl MemoryWriterPort for MemoryThatCannotKeepTime {
 impl MemoryReaderPort for MemoryThatCannotKeepTime {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         self.inner.recall(scope).await
-    }
-
-    async fn ask(
-        &self,
-        scope: &MemoryScope,
-        question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
-        self.inner.ask(scope, question).await
     }
 
     async fn as_known_at(
@@ -301,14 +276,6 @@ impl MemoryWriterPort for MemoryThatKeepsEntriesAndDropsReasons {
 impl MemoryReaderPort for MemoryThatKeepsEntriesAndDropsReasons {
     async fn recall(&self, scope: &MemoryScope) -> Result<MemoryRecollection, DomainError> {
         self.inner.recall(scope).await
-    }
-
-    async fn ask(
-        &self,
-        scope: &MemoryScope,
-        question: &MemoryQuestion,
-    ) -> Result<MemoryRecollection, DomainError> {
-        self.inner.ask(scope, question).await
     }
 
     async fn as_known_at(

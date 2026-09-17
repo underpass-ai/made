@@ -133,7 +133,7 @@ impl SessionStream {
         Ok(LoadedSession::new(instance, version, head))
     }
 
-    /// Open a stream with the event that starts it.
+    /// Open a stream with the events that start it.
     ///
     /// Appended against the empty version, which is what makes opening
     /// atomic: two starts of the same id both seal an opening, the
@@ -141,25 +141,39 @@ impl SessionStream {
     /// `AlreadyExists` rather than `Conflict`, because that is what
     /// happened and it is the answer a caller starting a session knows
     /// how to handle. The opening fact correlates to itself.
+    ///
+    /// A batch rather than one fact, because an opening is sometimes
+    /// more than what was started: a session that recalled what earlier
+    /// ones decided seals that beside it, in the same append, so a
+    /// session cannot exist without what it was told. Everything after
+    /// the first fact is correlated and chained exactly as
+    /// [`Self::commit`] does.
     pub async fn open(
         &self,
-        started: CeremonyEvent,
+        opening: Vec<CeremonyEvent>,
         actor: AuditActor,
         occurred_at: OffsetDateTime,
     ) -> Result<LoadedSession, DomainError> {
-        let CeremonyEvent::CeremonyInstanceStarted(opening) = &started else {
+        let Some(CeremonyEvent::CeremonyInstanceStarted(started)) = opening.first() else {
             return Err(DomainError::InvariantViolated {
                 reason: "a session opens with its start event",
             });
         };
-        let instance = CeremonyInstance::from_started(opening);
-        let mut fact = session_facts::fact(&instance, started, actor, occurred_at)?;
-        fact.correlation_id = Some(fact.event_id.clone());
-        let head = fact.event_id.clone();
+        let mut instance = CeremonyInstance::from_started(started);
+        let mut facts = session_facts::facts(&instance, opening, &actor, occurred_at)?;
+        let mut correlation = None;
+        let mut causation = None;
+        for fact in &mut facts {
+            fact.correlation_id = Some(correlation.get_or_insert(fact.event_id.clone()).clone());
+            fact.causation_id = causation.take();
+            causation = Some(fact.event_id.clone());
+            instance.apply(&fact.event);
+        }
+        let head = causation;
 
         match self
             .events
-            .append(instance.id(), StreamVersion::EMPTY, vec![fact])
+            .append(instance.id(), StreamVersion::EMPTY, facts)
             .await?
         {
             outcome @ AppendOutcome::Appended { .. } => {
@@ -168,7 +182,7 @@ impl SessionStream {
                     .unwrap_or(StreamVersion::EMPTY.next());
                 self.snapshot(&instance, version).await;
                 self.observe(&outcome).await;
-                Ok(LoadedSession::new(instance, version, Some(head)))
+                Ok(LoadedSession::new(instance, version, head))
             }
             AppendOutcome::Conflict { .. } => Err(DomainError::AlreadyExists {
                 what: "ceremony_instance",

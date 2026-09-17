@@ -193,14 +193,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
     };
     // No memory configured, and said so rather than pretended: a
     // session with nowhere to record what it decided still runs, it
-    // just forgets. Swapping this for a durable writer is the whole of
-    // turning it on.
+    // just forgets, and a session opening in a shared scope is told
+    // nothing because there is nothing there. One adapter serves both
+    // directions, so swapping this for a durable one is the whole of
+    // turning memory on.
     //
-    // It is a subscriber of the stream, not something a use case
-    // holds: what a session leaves behind is a projection of what it
-    // sealed (ADR-012, ADR-013).
+    // The writer is a subscriber of the stream, not something a use
+    // case holds: what a session leaves behind is a projection of what
+    // it sealed (ADR-012, ADR-013).
+    let memory = Arc::new(ForgetfulMemory::new());
     let session_memory = Arc::new(SessionMemoryRecorder::new(
-        Arc::new(ForgetfulMemory::new()),
+        memory.clone(),
         ceremony_events.clone(),
     ));
     let ceremony_stream = Arc::new(SessionStream::new(
@@ -269,11 +272,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_definitions.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        memory.clone(),
     ));
     let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
         ceremony_publications.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        memory.clone(),
     ));
     let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
         resolve_ceremony_definition.clone(),

@@ -78,6 +78,15 @@ pub(super) fn render_markdown(
             .expect("writing to a String cannot fail");
         }
 
+        // What this session was told when it opened, ahead of what it
+        // did, because a reader weighing the session's decisions needs
+        // to know what it already knew. Left out entirely when it was
+        // told nothing: an empty section would read as a scope that
+        // holds nothing, which is not the same as a session that shares
+        // no memory.
+        if let Some(recollection) = instance.recollection() {
+            section(&mut markdown, "What earlier sessions decided", recollection)?;
+        }
         section(&mut markdown, "Definition", &session.definition)?;
         section(&mut markdown, "Steps and outputs", instance.step_records())?;
         section(&mut markdown, "Transitions", instance.transitions())?;

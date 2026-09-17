@@ -75,6 +75,12 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
                 "bound_at": binding.bound_at,
             }))
             .collect::<Vec<_>>(),
+        // What this session was told when it opened, or `null` when it
+        // was told nothing. Proto says absence with message presence
+        // and JSON says it with null; keeping the two apart here is
+        // what stops "recalled nothing" reading as "recalled an empty
+        // scope".
+        "recollection": state.recollection.map(recollection_to_json),
         // Both backends answer the same shape or neither does: the
         // parity gate is what says so, and it is the reason this had to
         // be added here the moment the embedded side grew it.
@@ -89,6 +95,24 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
                 "confidence": reason.confidence,
                 "asserted_by_role_id": empty_as_null(reason.asserted_by_role_id),
                 "asserted_at": reason.asserted_at,
+            }))
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn recollection_to_json(recollection: pb::CeremonyRecollectionState) -> Value {
+    json!({
+        "scope": recollection.scope,
+        "truncated": recollection.truncated,
+        "entries": recollection
+            .entries
+            .into_iter()
+            .map(|entry| json!({
+                "entry_id": entry.entry_id,
+                "kind": entry.kind,
+                "summary": entry.summary,
+                "from_ceremony_id": entry.from_ceremony_id,
+                "observed_at": entry.observed_at,
             }))
             .collect::<Vec<_>>(),
     })

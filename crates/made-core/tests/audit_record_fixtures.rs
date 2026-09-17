@@ -13,7 +13,7 @@ use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion};
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
 
-const EVERY_EVENT_TYPE: [AuditEventType; 18] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 19] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
@@ -32,6 +32,7 @@ const EVERY_EVENT_TYPE: [AuditEventType; 18] = [
     AuditEventType::CeremonyCompleted,
     AuditEventType::CeremonyFailed,
     AuditEventType::InstanceImported,
+    AuditEventType::MemoryRecalled,
 ];
 
 /// The pinned version-1 payload of each event type a stream can hold.
@@ -87,6 +88,9 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         )),
         AuditEventType::InstanceImported => Some(include_str!(
             "fixtures/ceremony_events/v1/instance_imported.json"
+        )),
+        AuditEventType::MemoryRecalled => Some(include_str!(
+            "fixtures/ceremony_events/v1/memory_recalled.json"
         )),
     }
 }
@@ -153,5 +157,5 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 15);
+    assert_eq!(pinned, 16);
 }

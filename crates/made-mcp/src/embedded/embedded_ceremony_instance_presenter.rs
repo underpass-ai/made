@@ -1,7 +1,8 @@
 use made_app::usecases::CeremonyInstanceView;
 use made_core::entities::CeremonyInstance;
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RoleId, StepId,
+    CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RecalledEntry, RoleId,
+    SessionRecollection, StepId,
 };
 use made_embedded::EmbeddedMade;
 use time::OffsetDateTime;
@@ -99,6 +100,10 @@ impl EmbeddedCeremonyInstancePresenter {
             "interventions": interventions,
             "open_intervention_ids": open_intervention_ids,
             "context": instance.context(),
+            // What this session was told when it opened, or `null` when
+            // it was told nothing — which is every session that
+            // declares no `memory_scope`.
+            "recollection": instance.recollection().map(recollection_value),
             "participant_bindings": view
                 .participant_bindings()
                 .values()
@@ -126,6 +131,29 @@ impl EmbeddedCeremonyInstancePresenter {
                 .collect::<Vec<_>>(),
         }))
     }
+}
+
+/// What earlier sessions in this scope decided, as this one was told.
+fn recollection_value(recollection: &SessionRecollection) -> Value {
+    json!({
+        "scope": recollection.scope().as_str(),
+        "truncated": recollection.completeness().is_truncated(),
+        "entries": recollection
+            .entries()
+            .iter()
+            .map(recalled_entry_value)
+            .collect::<Vec<_>>(),
+    })
+}
+
+fn recalled_entry_value(entry: &RecalledEntry) -> Value {
+    json!({
+        "entry_id": entry.id().as_str(),
+        "kind": entry.kind().as_label(),
+        "summary": entry.summary(),
+        "from_ceremony_id": entry.from_ceremony().as_str(),
+        "observed_at": moment(entry.observed_at()),
+    })
 }
 
 /// What a reason points at, flat with a discriminator.

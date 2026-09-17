@@ -9,7 +9,8 @@ use made_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTransit
 use made_core::entities::{CeremonyInstance, CeremonyIntervention};
 use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
-    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RoleId, StepId,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RecalledEntry, RoleId,
+    SessionRecollection, StepId,
 };
 use made_proto::v1 as pb;
 use time::OffsetDateTime;
@@ -82,6 +83,34 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
         // say otherwise is the listing below.
         rehydratable: true,
         unrehydratable_reason: String::new(),
+        recollection: instance.recollection().map(recollection_state_from),
+    }
+}
+
+/// What this session was told when it opened.
+///
+/// Absent rather than empty for a session that was told nothing: proto
+/// message presence is the one place in this contract where absence can
+/// be said, and "recalled nothing" is not "recalled an empty scope".
+fn recollection_state_from(recollection: &SessionRecollection) -> pb::CeremonyRecollectionState {
+    pb::CeremonyRecollectionState {
+        scope: recollection.scope().as_str().to_owned(),
+        entries: recollection
+            .entries()
+            .iter()
+            .map(recalled_entry_state_from)
+            .collect(),
+        truncated: recollection.completeness().is_truncated(),
+    }
+}
+
+fn recalled_entry_state_from(entry: &RecalledEntry) -> pb::CeremonyRecalledEntryState {
+    pb::CeremonyRecalledEntryState {
+        entry_id: entry.id().as_str().to_owned(),
+        kind: entry.kind().as_label().to_owned(),
+        summary: entry.summary().to_owned(),
+        from_ceremony_id: entry.from_ceremony().as_str().to_owned(),
+        observed_at: moment(entry.observed_at()),
     }
 }
 

@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::DomainError;
 use crate::value_objects::Attributes;
 
-use super::{MemoryDimension, MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryProvenance};
+use super::{MemoryEntryId, MemoryEntryKind, MemoryEvidence, MemoryProvenance};
 
 const MAX_SUMMARY: usize = 2_048;
 
@@ -24,7 +24,6 @@ pub struct MemoryEntry {
     id: MemoryEntryId,
     kind: MemoryEntryKind,
     summary: String,
-    dimension: Option<MemoryDimension>,
     provenance: MemoryProvenance,
     evidence: Vec<MemoryEvidence>,
     detail: Attributes,
@@ -35,7 +34,6 @@ impl MemoryEntry {
         id: MemoryEntryId,
         kind: MemoryEntryKind,
         summary: impl Into<String>,
-        dimension: Option<MemoryDimension>,
         provenance: MemoryProvenance,
         detail: Attributes,
     ) -> Result<Self, DomainError> {
@@ -57,7 +55,6 @@ impl MemoryEntry {
             id,
             kind,
             summary: trimmed.to_owned(),
-            dimension,
             provenance,
             evidence: Vec::new(),
             detail,
@@ -84,11 +81,6 @@ impl MemoryEntry {
     #[must_use]
     pub fn summary(&self) -> &str {
         &self.summary
-    }
-
-    #[must_use]
-    pub fn dimension(&self) -> Option<&MemoryDimension> {
-        self.dimension.as_ref()
     }
 
     #[must_use]

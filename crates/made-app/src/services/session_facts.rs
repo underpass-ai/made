@@ -143,11 +143,15 @@ fn event_id(
 /// - An import is identified by the session, like the opening it
 ///   stands in for: a session is imported once, and a second import
 ///   of the same one derives the same id and is refused by the store.
+/// - A recollection is keyed on nothing else, because a session opens
+///   once and reads its memory once: deciding the opening again derives
+///   the same two ids, which is what makes a retried start land once.
 fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
     match event {
         CeremonyEvent::CeremonyInstanceStarted(_) | CeremonyEvent::InstanceImported(_) => {
             "session".to_owned()
         }
+        CeremonyEvent::MemoryRecalled(_) => "recollection".to_owned(),
         CeremonyEvent::ParticipantsBound(bound) => {
             let seated = bound
                 .bindings
