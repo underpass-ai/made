@@ -50,7 +50,7 @@ impl EmbeddedMade {
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        GetCeremonyTranscriptUseCase::new(self.transcript_store.clone())
+        GetCeremonyTranscriptUseCase::new(self.events.clone())
             .execute(id)
             .await
     }

@@ -27,10 +27,11 @@
 
 use std::sync::Arc;
 
-use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort,
+    AppendOutcome, CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonySnapshot,
+    CeremonySnapshotStorePort,
 };
 use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
 use time::OffsetDateTime;
@@ -41,6 +42,7 @@ use super::{session_facts, ConflictPolicy, LoadedSession};
 pub struct SessionStream {
     events: Arc<dyn CeremonyEventStorePort>,
     snapshots: Arc<dyn CeremonySnapshotStorePort>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -54,8 +56,23 @@ impl SessionStream {
     pub fn new(
         events: Arc<dyn CeremonyEventStorePort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
+        subscriber: Arc<dyn CeremonyEventSubscriberPort>,
     ) -> Self {
-        Self { events, snapshots }
+        Self {
+            events,
+            snapshots,
+            subscriber,
+        }
+    }
+
+    /// The sealed records of one stream, in order.
+    ///
+    /// The one read that hands back records rather than the session
+    /// they fold to. A projection computed on read — the transcript —
+    /// folds these; a caller that wants the session calls
+    /// [`Self::load`].
+    pub async fn records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
+        self.events.read(id, StreamVersion::EMPTY).await
     }
 
     /// Every stream the store holds, sorted by id.
@@ -145,8 +162,12 @@ impl SessionStream {
             .append(instance.id(), StreamVersion::EMPTY, vec![fact])
             .await?
         {
-            AppendOutcome::Appended { version, .. } => {
+            outcome @ AppendOutcome::Appended { .. } => {
+                let version = outcome
+                    .appended_version()
+                    .unwrap_or(StreamVersion::EMPTY.next());
                 self.snapshot(&instance, version).await;
+                self.observe(&outcome).await;
                 Ok(LoadedSession::new(instance, version, Some(head)))
             }
             AppendOutcome::Conflict { .. } => Err(DomainError::AlreadyExists {
@@ -184,8 +205,10 @@ impl SessionStream {
             .collect();
 
         match self.events.append(instance.id(), version, facts).await? {
-            AppendOutcome::Appended { version, .. } => {
+            outcome @ AppendOutcome::Appended { .. } => {
+                let version = outcome.appended_version().unwrap_or(version);
                 self.snapshot(&instance, version).await;
+                self.observe(&outcome).await;
                 Ok(LoadedSession::new(instance, version, causation))
             }
             AppendOutcome::Conflict { .. } => Err(DomainError::Conflict {
@@ -225,6 +248,18 @@ impl SessionStream {
                 outcome => return outcome,
             }
         }
+    }
+
+    /// Tell the subscriber what this append sealed.
+    ///
+    /// After the store confirmed and after the snapshot cache, before
+    /// the session goes back to the use case: a projection is told
+    /// about facts that are already durable, and a caller that reads
+    /// one straight after the call it made finds it there. Nothing
+    /// comes back — a projection cannot fail an append — and a
+    /// conflict reaches here never, because it sealed nothing.
+    async fn observe(&self, outcome: &AppendOutcome) {
+        self.subscriber.observe(&outcome.positioned()).await;
     }
 
     /// Cache the fold at this version. A failure is logged and

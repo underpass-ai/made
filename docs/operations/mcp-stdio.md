@@ -429,10 +429,10 @@ advertises 43 executable tools:
 | `made_unregister_agent`         | `UnregisterAgent`                     | Remove an agent. |
 | `made_process_trigger_event`    | `ProcessTriggerEvent`                 | Submit a domain event; fans out to deliberations. |
 | `made_run_council_decision`     | `RunCouncilDecision`                  | Run a council against a registered output contract; returns the validated winner plus per-candidate breakdown. |
-| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
 | `made_register_contract`        | `RegisterContract`                    | Register an `OutputContract` in the contract registry. |
 | `made_list_contracts`           | `ListContracts`                       | Enumerate registered contracts. |
 | `made_delete_contract`          | `DeleteContract`                      | Idempotent contract delete. |
+| `made_run_ceremony`             | `RunCeremony`                         | Execute a declarative ceremony YAML; returns final state, per-step winning contributions, and the Mermaid conversation diagram. |
 | `made_get_ceremony_instance`    | `GetCeremonyInstance`                 | Inspect one persistent ceremony instance. |
 | `made_list_ceremony_instances`  | `ListCeremonyInstances`               | Discover persistent ceremony instances. |
 | `made_start_ceremony`           | `StartCeremony`                       | Start supplied YAML without advancing. |
@@ -453,6 +453,10 @@ advertises 43 executable tools:
 | `made_bind_ceremony_participants` | `BindCeremonyParticipants`          | Seat participants in declared roles. |
 | `made_claim_ceremony_step`      | `ClaimCeremonyStep`                   | Lease one step the host will execute itself. |
 | `made_complete_ceremony_step`   | `CompleteCeremonyStep`                | Record the observable result of a claimed host-executed step. |
+| `made_design_ceremony`          | `DesignCeremony`                      | Turn an author's structured intent into an unpublished ceremony draft. |
+| `made_read_ceremony_events`     | `ReadCeremonyEvents`                  | Read the sealed event stream of one session by position, with its hash chain. |
+| `made_get_ceremony_transcript`  | `GetCeremonyTranscript`               | Read what the completed steps of one session contributed. |
+| `made_generate_ceremony_report` | `GenerateCeremonyReport`              | Render the Markdown report of one session from its persisted state. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
 | `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
 | `made_verify_ceremony_journal`  | `VerifyCeremonyJournal`               | Verify the hash chain of one ceremony's journal. |
@@ -485,10 +489,11 @@ stream is `not_found`.
 ```
 
 `made_get_ceremony_transcript` hands out the ordered contributions the session's
-steps produced — `step_id`, `role_id` and the structured output. On a cluster
-the transcript store is per-process and empties on restart; the sealed stream
-above is the durable record, so what a step contributed is recoverable from it
-either way.
+steps produced — `step_id`, `role_id` and the structured output. It is folded
+from the `step_completed` records of the stream above, so it is exactly as
+durable as the session and holds every step that completed, whether the engine
+ran it or a host claimed it and reported back. A ceremony with no stream is
+`not_found`, the way reading its events is.
 
 `made_verify_ceremony_journal` answers whether one ceremony's journal is
 sealed, positioned and linked as it was written. The answer names the head

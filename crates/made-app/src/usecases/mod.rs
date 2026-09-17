@@ -5,6 +5,8 @@
 //! responsibilities narrow (SRP) and dependencies explicit (DIP).
 
 #[cfg(test)]
+mod ceremony_event_subscriber_tests;
+#[cfg(test)]
 mod ceremony_test_support;
 
 mod apply_ceremony_transition_input;

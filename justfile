@@ -28,7 +28,7 @@ provider_features := "--features made-adapters/agent-anthropic --features made-a
 # script .github/workflows/dev-loop.yml runs, so the two cannot drift.
 #
 # Narrow or widen it for one run:
-#   DEV_PACKAGES="-p made-core" just dev
+#   DEV_PACKAGES="-p made-mcp" just dev
 #
 # Run a single stage:
 #   just dev lint | just dev test | just dev gates
@@ -43,6 +43,7 @@ dev STAGE='all':
 workflow-contract:
     python3 scripts/ci/dev-loop-workflow-contract.py --self-test
     python3 scripts/ci/quality-gate-plan.py --self-test
+    bash scripts/ci/tree-already-proved.sh --self-test
 
 # -----------------------------------------------------------------------------
 # fast per-PR gates — match quality-gate.yml
@@ -84,8 +85,9 @@ test:
 bench-compile:
     bash scripts/ci/bench-compile.sh
 
-# Unit coverage with its 80 % floor. Local only: CI does not run it, so
-# this recipe is the gate. `COVERAGE_MIN=n just coverage` moves the floor.
+# Unit coverage with its 80 % floor — the same script the `coverage` job of
+# quality-gate.yml runs on a ready pull request, when the impact planner
+# routes it. `COVERAGE_MIN=n just coverage` moves the floor locally.
 coverage:
     bash scripts/ci/rust-coverage.sh
 

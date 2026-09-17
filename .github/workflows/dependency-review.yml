@@ -6,9 +6,11 @@ on:
       - main
   workflow_dispatch:
 
+# The action needs `pull-requests: write` only to post its summary as a
+# pull-request comment, which this workflow does not ask it to do. Reading
+# the dependency graph is all it does here.
 permissions:
   contents: read
-  pull-requests: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true

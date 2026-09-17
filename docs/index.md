@@ -28,7 +28,7 @@ does not require KMP, PIR, or any downstream product to run:
 | [`architecture/hexagonal-target.md`](./architecture/hexagonal-target.md) | Enforced crate dependency direction, DDD/SOLID rules, structural debt ratchet and crate-by-crate migration order. |
 | [`architecture/parity.tsv`](./architecture/parity.tsv) | The checked-in parity exception list (ADR-014): one row per ceremony capability, one column per surface — proto, MCP on gRPC, MCP on embedded, the `EmbeddedMade` facade, `made-api` — and a mandatory reason per gap. A gate keeps it equal to the code in both directions. |
 | [`embedded-made.md`](./embedded-made.md) | Two-distribution architecture and the implemented in-process ceremony API, injectable ports, local defaults and current limits. |
-| [`made-observability-design.md`](./made-observability-design.md) | The observability design and the shipped metric catalogue served at `/metrics`: deliberation/judge/provider/ceremony Prometheus families, the differentiating signals (judge discrimination, winner-score distribution, vLLM serial saturation, token cost), and the alert/SLO + dashboard design. |
+| [`made-observability-design.md`](./made-observability-design.md) | The shipped metric catalogue served at `/metrics` — the 21 deliberation/judge/provider/ceremony Prometheus families and the five legacy series, each naming the file that records it — the differentiating signals (judge discrimination, winner-score distribution, serial saturation, token cost), the alerts and dashboard built only on series that exist, and one section for what is planned and not implemented. |
 | [`adr/`](./adr/README.md) | Architecture decision records: what was decided, and what it costs. Public vocabulary, definition analysis and authoring, and where the audit contract ends and host durability begins. |
 
 ## Operations — how to run, install, and configure
@@ -40,7 +40,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 | Doc | Purpose |
 |---|---|
 | [`operations/capability-verification.md`](./operations/capability-verification.md) | **Start here before making capability claims.** Separates executable tool discovery, execution ownership, external authority and restart durability for every edition. |
-| [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter with backend-filtered tool discovery, audience help, every gRPC RPC, and embedded extensions. |
+| [`operations/mcp-stdio.md`](./operations/mcp-stdio.md) | **MCP entry point.** Installable stdio adapter with backend-filtered tool discovery, audience help, and every gRPC RPC as a tool. Which surface serves which capability is the Editions table, from `architecture/parity.tsv`. |
 | [`operations/ceremony-authoring-runbook.md`](./operations/ceremony-authoring-runbook.md) | Authoring ceremonies: schema, rounds, sizing, output contracts, verification. |
 | [`operations/support-matrix.md`](./operations/support-matrix.md) | **Editions**: which capability group each of the four surfaces serves, with the reason for every gap and the gate that proves every cell, derived from `architecture/parity.tsv` by a test. Plus the supported Rust toolchain, image tags, chart versions, provider adapters and Kubernetes posture. |
 
@@ -59,7 +59,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 | Doc | Purpose |
 |---|---|
 | [`operations/deploy-kubernetes.md`](./operations/deploy-kubernetes.md) | Helm install guide, including minimal standalone install, embedded NATS, TLS/mTLS, Postgres secret, provider env secrets, Runtime executor, and the Underpass Runtime profile. |
-| [`operations/observability-runbook.md`](./operations/observability-runbook.md) | Wiring traces, metrics and logs in a deployment. |
+| [`operations/observability-runbook.md`](./operations/observability-runbook.md) | Wiring traces, metrics and logs in a deployment, what the embedded edition records with no exporter, and what is planned and not implemented. |
 | [`operations/compose-e2e.md`](./operations/compose-e2e.md) | Repo-owned compose E2E: stack shape, scenarios (incl. YAML ceremony execution), stubs, Report schema, and provider-shaped paths. |
 | [`operations/consumer-smoke.md`](./operations/consumer-smoke.md) | Standalone NATS consumer smoke check (incl. positive-path chain). |
 

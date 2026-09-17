@@ -32,11 +32,14 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-  # The crates the current phase iterates on — the parity workstream
-  # (WS-F) surface. Widen or narrow per phase; the default inside
+  # The crates the current phase iterates on — phase 2: projections,
+  # cursors, migration, observability and memory, which are written in
+  # made-core and made-app and proved through the adapters, the
+  # embedded edition and the MCP surfaces. Widen or narrow per phase;
+  # the default inside
   # scripts/ci/dev-loop.sh must stay identical, and
   # scripts/ci/dev-loop-workflow-contract.py fails if it drifts.
-  DEV_PACKAGES: -p made-mcp -p made-embedded -p made-adapters -p made-proto -p made-api
+  DEV_PACKAGES: -p made-core -p made-app -p made-adapters -p made-embedded -p made-mcp
 
 jobs:
   dev-lint:

@@ -167,10 +167,10 @@ about the session has to be traceable to the record that supports it: quote
 the record, not a summary of it.
 
 `made_get_ceremony_transcript` reads the ordered contributions the steps
-produced. On the bundled embedded process the transcript lives in memory and
-empties on restart, while the event stream does not; when the transcript is
-empty for a session that clearly ran, read the stream instead of telling the
-user nothing happened.
+produced. It is folded from the same sealed stream, so it survives a restart
+and holds every step that completed — the ones the engine ran and the ones the
+host claimed and reported back. A ceremony id with no stream is `not_found`
+rather than an empty transcript.
 
 `made_verify_ceremony_journal` says whether that stream is sealed, positioned
 and linked as it was written. Use it when the user asks whether the record can
