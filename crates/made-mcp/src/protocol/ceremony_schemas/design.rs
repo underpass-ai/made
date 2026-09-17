@@ -2,37 +2,12 @@ use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
 use made_app::usecases::CeremonyPatternPreset;
 
 pub(in crate::protocol) fn ceremony_design_schema() -> Value {
-    let patterns = CeremonyPatternPreset::ALL
-        .iter()
-        .copied()
-        .map(|pattern| {
-            json!({
-                "id": pattern.id(),
-                "description": pattern.description(),
-                "definition_fragment_yaml": pattern.fragment_source(),
-            })
-        })
-        .collect::<Vec<_>>();
-    let pattern_ids = CeremonyPatternPreset::ALL
-        .iter()
-        .copied()
-        .map(CeremonyPatternPreset::id)
-        .collect::<Vec<_>>();
     json!({
         "type": "object",
         "additionalProperties": false,
         "required": ["name", "objective", "outputs", "participants"],
-        "oneOf": [
-            {
-                "required": ["stages"],
-                "not": { "required": ["pattern"] }
-            },
-            {
-                "required": ["pattern"],
-                "not": { "required": ["stages"] }
-            }
-        ],
-        "x-made-pattern-catalog": patterns,
+        "oneOf": design_shape_schema(),
+        "x-made-pattern-catalog": pattern_catalog(),
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
             "version": string_schema("Immutable publication version. Defaults to 1.0."),
@@ -97,11 +72,7 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                     }
                 }
             },
-            "pattern": {
-                "type": "string",
-                "enum": pattern_ids,
-                "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
-            },
+            "pattern": pattern_schema(),
             "final_approval": {
                 "type": "object",
                 "additionalProperties": false,
@@ -129,6 +100,46 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                 "description": "Default retry backoff written into the draft. Defaults to one."
             }
         }
+    })
+}
+
+fn design_shape_schema() -> Value {
+    json!([
+        {
+            "required": ["stages"],
+            "not": { "required": ["pattern"] }
+        },
+        {
+            "required": ["pattern"],
+            "not": { "required": ["stages"] }
+        }
+    ])
+}
+
+fn pattern_catalog() -> Vec<Value> {
+    CeremonyPatternPreset::ALL
+        .iter()
+        .copied()
+        .map(|pattern| {
+            json!({
+                "id": pattern.id(),
+                "description": pattern.description(),
+                "definition_fragment_yaml": pattern.fragment_source(),
+            })
+        })
+        .collect()
+}
+
+fn pattern_schema() -> Value {
+    let ids = CeremonyPatternPreset::ALL
+        .iter()
+        .copied()
+        .map(CeremonyPatternPreset::id)
+        .collect::<Vec<_>>();
+    json!({
+        "type": "string",
+        "enum": ids,
+        "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
     })
 }
 
