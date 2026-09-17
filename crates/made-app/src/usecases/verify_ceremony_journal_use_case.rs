@@ -105,10 +105,16 @@ mod tests {
         async fn read(
             &self,
             _stream: &CeremonyId,
-            _after: StreamVersion,
-            _limit: made_core::value_objects::CeremonyEventPageLimit,
+            after: StreamVersion,
+            limit: made_core::value_objects::CeremonyEventPageLimit,
         ) -> Result<Vec<AuditRecord>, DomainError> {
-            Ok(self.records.clone())
+            Ok(self
+                .records
+                .iter()
+                .filter(|record| record.sequence().value() > after.value())
+                .take(limit.value())
+                .cloned()
+                .collect())
         }
 
         async fn read_all(
@@ -120,7 +126,9 @@ mod tests {
         }
 
         async fn head(&self, _stream: &CeremonyId) -> Result<StreamVersion, DomainError> {
-            unreachable!("verification reads the whole stream")
+            Ok(self.records.last().map_or(StreamVersion::EMPTY, |record| {
+                StreamVersion::from_sequence(record.sequence())
+            }))
         }
 
         async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {

@@ -38,6 +38,7 @@ impl ReadCeremonyEventsInput {
     /// A limit above [`Self::MAX_LIMIT`] is the caller's to fix, so it
     /// is refused where the request is built rather than applied
     /// differently further in.
+    #[must_use]
     pub fn new(
         ceremony_id: CeremonyId,
         from_version: StreamVersion,
