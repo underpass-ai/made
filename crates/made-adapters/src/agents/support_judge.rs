@@ -28,6 +28,7 @@ use reqwest::Client;
 use serde_json::Value;
 use tracing::warn;
 
+use super::instrument;
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 
 const SUPPORT_JUDGE_ERRORS: ErrorStrings = ErrorStrings {
@@ -52,6 +53,7 @@ rewrite the claim — you only judge it.";
 
 /// An LLM-backed implementation of [`EvidenceSupportJudgePort`].
 pub struct LlmEvidenceSupportJudge {
+    provider: &'static str,
     endpoint: String,
     model: String,
     max_tokens: u32,
@@ -86,6 +88,7 @@ impl LlmEvidenceSupportJudge {
         }
         let http = build_client(DEFAULT_TIMEOUT)?;
         Ok(Self {
+            provider: "openai_compatible",
             endpoint,
             model,
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -107,6 +110,13 @@ impl LlmEvidenceSupportJudge {
     pub fn with_timeout(mut self, timeout: Duration) -> Result<Self, DomainError> {
         self.http = build_client(timeout)?;
         Ok(self)
+    }
+
+    /// Label this OpenAI-compatible judge with its concrete vLLM deployment.
+    #[must_use]
+    pub fn with_vllm_identity(mut self) -> Self {
+        self.provider = "vllm";
+        self
     }
 
     async fn assess_inner(
@@ -163,7 +173,7 @@ impl LlmEvidenceSupportJudge {
                 } else {
                     LlmErrorKind::Transport
                 };
-                self.metrics.record_judge_error(&self.model, kind);
+                self.record_error(kind);
                 warn!(error = %err, "support-judge: request failed");
                 DomainError::InvariantViolated {
                     reason: "support-judge: request failed",
@@ -172,39 +182,57 @@ impl LlmEvidenceSupportJudge {
 
         let status = response.status();
         if !status.is_success() {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::from_status(status.as_u16()));
+            self.record_error(LlmErrorKind::from_status(status.as_u16()));
             return Err(wire::classify_error(status, &SUPPORT_JUDGE_ERRORS));
         }
 
         let parsed: ChatResponse = response.json().await.map_err(|err| {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
+            self.record_error(LlmErrorKind::MalformedBody);
             warn!(error = %err, "support-judge: malformed response body");
             DomainError::InvariantViolated {
                 reason: SUPPORT_JUDGE_ERRORS.malformed_body,
             }
         })?;
-        let usage = parsed.usage;
-        let text = wire::extract_text(parsed, &SUPPORT_JUDGE_ERRORS).inspect_err(|_| {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::EmptyContent);
-        })?;
-        if let Some(usage) = usage {
-            self.metrics.record_judge_tokens(
-                &self.model,
-                TokenUsage::new(usage.prompt_tokens, usage.completion_tokens),
-            );
+        if let Some(usage) = parsed.usage {
+            self.record_tokens(TokenUsage::new(
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            ));
         }
+        let text = wire::extract_text(parsed, &SUPPORT_JUDGE_ERRORS).inspect_err(|_| {
+            self.record_error(LlmErrorKind::EmptyContent);
+        })?;
         parse_verdict(&text).inspect_err(|_| {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
+            self.record_error(LlmErrorKind::MalformedBody);
         })
+    }
+
+    fn record_error(&self, kind: LlmErrorKind) {
+        self.metrics.record_judge_error(&self.model, kind);
+        instrument::record_error(kind);
+    }
+
+    fn record_tokens(&self, usage: TokenUsage) {
+        self.metrics.record_judge_tokens(&self.model, usage);
+        instrument::record_tokens(usage);
     }
 }
 
 #[async_trait]
 impl EvidenceSupportJudgePort for LlmEvidenceSupportJudge {
+    #[tracing::instrument(
+        name = "judge_call",
+        skip_all,
+        fields(
+            provider = self.provider,
+            model = %self.model,
+            judge_kind = "evidence_support",
+            outcome = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+            prompt_tokens = tracing::field::Empty,
+            completion_tokens = tracing::field::Empty,
+        )
+    )]
     async fn assess(
         &self,
         claim: &ClaimText,
@@ -214,6 +242,9 @@ impl EvidenceSupportJudgePort for LlmEvidenceSupportJudge {
         let outcome = self.assess_inner(claim, evidence).await;
         self.metrics
             .observe_judge_latency(&self.model, elapsed_ms(started));
+        if outcome.is_ok() {
+            instrument::record_success();
+        }
         outcome
     }
 }

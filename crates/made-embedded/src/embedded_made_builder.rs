@@ -17,7 +17,8 @@ use made_core::ports::{
     CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
     CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
     CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MemoryReaderPort,
-    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
+    MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
+    NoopMetricsSnapshot, StatisticsPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -44,6 +45,7 @@ pub struct EmbeddedMadeBuilder {
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
+    metrics_snapshot: Option<Arc<dyn MetricsSnapshotPort>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
     max_parallel_ceiling: Option<MaxParallel>,
 }
@@ -188,14 +190,36 @@ impl EmbeddedMadeBuilder {
 
     /// Where operational metrics go.
     ///
-    /// Left out, the engine wires its own in-process Prometheus
-    /// registry: no endpoint, no exporter, nothing to configure and
-    /// nothing leaving the process. A host that already has a registry
-    /// hands one in here and gets every observation this engine makes
-    /// (plan §3.7 G3).
+    /// Left out, the engine wires its own in-process Prometheus registry. A
+    /// host using a recorder that is also readable should prefer
+    /// [`Self::with_observability`] so `metrics()` reads this same instance;
+    /// this setter changes only the write side.
     #[must_use]
     pub fn with_metrics(mut self, adapter: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = Some(adapter);
+        self
+    }
+
+    /// Read operational metrics from a host-supplied registry.
+    ///
+    /// Prefer [`Self::with_observability`] when one adapter implements both
+    /// sides. This separate setter exists for hosts whose recorder and reader
+    /// are intentionally distinct; those hosts own keeping their identities
+    /// aligned.
+    #[must_use]
+    pub fn with_metrics_snapshot(mut self, adapter: Arc<dyn MetricsSnapshotPort>) -> Self {
+        self.metrics_snapshot = Some(adapter);
+        self
+    }
+
+    /// Record and read operational metrics through the same adapter instance.
+    #[must_use]
+    pub fn with_observability<M>(mut self, adapter: Arc<M>) -> Self
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        self.metrics = Some(adapter.clone());
+        self.metrics_snapshot = Some(adapter);
         self
     }
 
@@ -273,12 +297,25 @@ impl EmbeddedMadeBuilder {
         // call just created can only fail on a duplicate family, which
         // cannot happen here; if it ever did, the engine says `noop`
         // when asked what is recording rather than pretending.
-        let metrics = self.metrics.unwrap_or_else(|| {
-            PrometheusMetricsRecorder::new().map_or_else(
-                |_| Arc::new(NoopMetricsRecorder) as Arc<dyn MetricsRecorderPort>,
-                |recorder| Arc::new(recorder) as Arc<dyn MetricsRecorderPort>,
-            )
-        });
+        let (metrics, metrics_snapshot) = match (self.metrics, self.metrics_snapshot) {
+            (None, None) => PrometheusMetricsRecorder::new().map_or_else(
+                |_| {
+                    let noop = Arc::new(NoopMetricsRecorder);
+                    (
+                        noop as Arc<dyn MetricsRecorderPort>,
+                        Arc::new(NoopMetricsSnapshot) as Arc<dyn MetricsSnapshotPort>,
+                    )
+                },
+                |recorder| {
+                    let recorder = Arc::new(recorder);
+                    (recorder.clone(), recorder)
+                },
+            ),
+            (metrics, snapshot) => (
+                metrics.unwrap_or_else(|| Arc::new(NoopMetricsRecorder)),
+                snapshot.unwrap_or_else(|| Arc::new(NoopMetricsSnapshot)),
+            ),
+        };
         let statistics = self
             .statistics
             .unwrap_or_else(|| Arc::new(InMemoryStatistics::new()) as Arc<dyn StatisticsPort>);
@@ -298,6 +335,7 @@ impl EmbeddedMadeBuilder {
             clock,
             self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             metrics,
+            metrics_snapshot,
             statistics,
             memory_writer,
             memory_reader,
@@ -320,6 +358,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())
             .field("has_metrics", &self.metrics.is_some())
+            .field("has_metrics_snapshot", &self.metrics_snapshot.is_some())
             .field("has_statistics", &self.statistics.is_some())
             .field("has_memory", &self.memory.is_some())
             .finish()

@@ -150,7 +150,7 @@ Three planes, three repos:
 
 | Plane | Repo | Brand name | Role |
 |---|---|---|---|
-| Memory + context | [`kmp`](https://github.com/underpass-ai/kmp) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | One possible producer of LLM-ready context bundles from a typed knowledge graph, and one possible backend for MADE's memory port. Neither adapter ships in this repository. |
+| Memory + context | [`kmp`](https://github.com/underpass-ai/kmp) | **Underpass KMP** (Kernel Memory Plane / Kernel Memory Protocol) | One possible producer of LLM-ready context bundles and one possible out-of-tree backend for MADE's memory port. MADE owns that port and ships its SQLite reference adapter here; it ships neither a KMP context adapter nor a KMP memory adapter. |
 | Coordination | this repo | **MADE by Underpass** (Multi-Agent Deliberation Engine) | Composes councils, runs deliberations, validates outputs, hands winners to an executor. |
 | Execution + governed tools | [`underpass-runtime`](https://github.com/underpass-ai/underpass-runtime) | **Underpass Runtime** | Sessions, governed tool invocations, artifacts, policy decisions. |
 
@@ -158,8 +158,11 @@ MADE is agnostic and independently usable. It does not depend
 on KMP, PIR, or any downstream product. It accepts caller-supplied
 `ExternalContextBundle`s from any context source; KMP is one studied
 producer, not a required dependency. Session memory has the same shape:
-the memory port and its conformance suite live here, and a KMP memory
-adapter is an out-of-tree adapter that this repository does not ship.
+the memory value objects, recall use case, port and conformance suite live
+here, and the in-tree SQLite reference adapter shares the ceremony store in
+path-aware compositions. The generic builder remains forgetful unless its
+host supplies memory. A KMP memory adapter is an out-of-tree adapter that this
+repository does not ship.
 Runtime execution is optional via the `RuntimeExecutor` adapter. MADE
 does **not** embed any product vocabulary (no stories, plans, incidents,
 claims hardcoded) — all that is injected via configuration and proto

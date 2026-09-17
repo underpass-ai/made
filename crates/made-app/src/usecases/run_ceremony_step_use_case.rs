@@ -153,15 +153,35 @@ impl RunCeremonyStepUseCase {
         Ok(RunCeremonyStepOutput::new(refreshed, attempt, result))
     }
 
+    #[tracing::instrument(
+        name = "ceremony_step_handler",
+        skip_all,
+        fields(
+            ceremony_id = %request.instance_id(),
+            step_id = %request.step_id(),
+            handler_kind = %request.handler_kind(),
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
     async fn execute_handler(
         &self,
         request: CeremonyStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
+        super::step_span::record_attempt(request.attempt());
         match self.handler.execute(request).await {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                super::step_span::record_result(&result);
+                Ok(result)
+            }
             Err(error) => {
+                super::step_span::record_error(&error);
                 let message = StepErrorMessage::new(error.to_string())?;
-                StepResult::failed(message)
+                let result = StepResult::failed(message)?;
+                super::step_span::record_status(&result);
+                Ok(result)
             }
         }
     }

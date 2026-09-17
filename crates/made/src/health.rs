@@ -233,7 +233,18 @@ async fn metrics(State(state): State<HealthState>) -> Response {
 
     // Append the operational metrics registry (histograms, per-outcome
     // counters) rendered by the Prometheus recorder.
-    body.push_str(&state.metrics.render());
+    let registry = match state.metrics.render() {
+        Ok(registry) => registry,
+        Err(error) => {
+            tracing::error!(%error, "operational metrics snapshot failed");
+            return (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "operational metrics snapshot failed\n",
+            )
+                .into_response();
+        }
+    };
+    body.push_str(&registry);
 
     (
         StatusCode::OK,

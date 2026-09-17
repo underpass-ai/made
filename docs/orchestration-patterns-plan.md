@@ -1,9 +1,10 @@
 # Orchestration patterns, event sourcing, observability, parity and memory: the plan
 
-Status: plan and design direction, not an implementation claim. Findings were
-checked in the code at `main` = `c7dad9f` (after #37) on 2026-09-15. The
-owner took the decisions in §5 on 2026-09-16. Everything in §3 is a proposal
-until an ADR accepts it and a gate proves it.
+Status: implementation record for phases 0–2 and design direction for phases
+3–4. The original findings were checked at `main` = `c7dad9f` (after #37) on
+2026-09-15; dated notes below preserve that audit while recording the verified
+result. The owner took the decisions in §5 on 2026-09-16. A slice in §3 remains
+a proposal until its row records the PR and gate that proved it.
 
 What the owner asked for, in their words and in this order:
 
@@ -67,6 +68,14 @@ it; each is checkable at the cited path.
 
 ### 0.2 Events and persistence
 
+**Completion note (2026-09-18).** The bullets below are the historical audit.
+Ceremonies now append complete sealed events and fold them as their source of
+truth (#42–#45). Transcript and memory project those records (#83), the old
+snapshot/journal/outbox write paths were removed with copy-on-write migration
+(#86), and durable cursors drive pull, NATS publication and the JSONL sink
+(#108). Metrics, traces and logs project sealed records, while reports alone
+fold one bounded stream cut (#110). ADR-012 records the resulting architecture.
+
 ADR-003 chose "snapshot plus append-only journal plus outbox, **not** event
 sourcing", and the code matches that decision exactly:
 
@@ -110,6 +119,12 @@ sourcing", and the code matches that decision exactly:
 
 ### 0.3 Memory
 
+**Completion note (2026-09-18).** Recall and the trimmed MADE-owned memory
+contract landed in #84. Path-aware roots share durable SQLite memory with the
+ceremony store while the generic builder remains forgetful (#102). The unused
+in-tree KMP adapter and its feature left in #41; external adapters implement
+MADE's port and conformance suite. ADR-013 records that boundary.
+
 - The memory ports (`MemoryWriterPort`, `MemoryReaderPort`), their value
   objects and the conformance suite name no kernel, no tool and no JSON key.
   Two non-KMP implementations pass the suite today
@@ -142,6 +157,13 @@ sourcing", and the code matches that decision exactly:
   fire-and-forget after commit.
 
 ### 0.4 Editions and parity
+
+**Completion note (2026-09-18).** The four surfaces and their intentional
+gaps are derived from `parity.tsv`; whole/paged history and its typed page
+limit landed in #108, and reports fold one bounded stream cut in #110. The
+#120 supplies the final filled-optional and enum-rotation proof on memory
+and SQLite. Shared domain value objects for list bounds remain
+explicit follow-up debt in #100; phase completion does not claim that work.
 
 Four surfaces expose the engine: the gRPC contract
 (`crates/made-proto/proto/underpass/made/v1/made.proto`), the MCP server on the
@@ -204,6 +226,13 @@ the contract carries 41 RPCs.]*
   `crates/made-mcp/src/protocol/editions_matrix_tests.rs`.]*
 
 ### 0.5 Observability without event sourcing
+
+**Completion note (2026-09-18).** The bullets below preserve the original
+audit. The docs truth pass landed in #81; sealed events now drive metrics,
+traces and structured logs with trace/correlation/causation identities in both
+editions (#110). The verified #119 integration adds the shared metrics registry
+projection, embedded OTLP/mTLS wiring and event-plus-registry JSONL sink. G4 spans subsequently landed in #123;
+G6 remains a future slice.
 
 Observability rests on three legs, and **none of them is the journal**:
 
@@ -456,10 +485,10 @@ file, the way `share-store` did.
 | A2 | `decide` / `apply` / `rehydrate` on `CeremonyInstance`; every current mutator becomes a `decide` that yields events and an `apply` that folds them; unit tests fold every event type. | Aggregate tests: for each command, `apply(decide(cmd))` reproduces today's mutator result; property test: fold equality after random command sequences. *[Done: `decide` / `apply` / `rehydrate` on `CeremonyInstance`, with the existing mutators as wrappers over the pair; fold equality is tested per command and over random sequences.]* |
 | A3 | `CeremonyEventStorePort` + `CeremonySnapshotStorePort`, in-memory and SQLite adapters, conformance: append-only, contiguous sequence, stale expectation conflicts and writes nothing, duplicate `event_id` rejected, concurrent appends admit one winner, chain intact across commits, `read_all` order stable, fold equality with snapshots. | Both adapters pass; `two_writers_one_store` re-targeted. *[Done: `InMemoryCeremonyEventStore` and the SQLite tables `ceremony_events`, `ceremony_event_log`, `ceremony_snapshots` and `store_meta`, both behind the two ports with their conformance suites; the two-writers test covers the event store.]* |
 | A4 | Use cases move from `SessionJournal` (load snapshot, mutate, commit snapshot) to `load = fold`, `decide`, `append`, with bounded retry for commutative commands. `session_facts.rs` becomes the event constructors. Correlation, causation and trace ids filled (§3.7). | Every existing use-case test passes unchanged in behaviour; new tests for retry-on-conflict and fail-fast. *[Done: the ceremony use cases load the fold, decide and append with optimistic concurrency — three attempts for the commands that commute, fail-fast for transitions and start — and every record carries its correlation and causation ids. `trace_id` is still `None`: that is G2, not A4.]* |
-| A5 | Projections: transcript from the fold (port deleted), instance view unchanged, report from events + definition, memory recorder consuming events through the subscriber port. | Report test renders step outputs from the stream alone; memory tests unchanged. |
-| A6 | Cursor-based publication replaces the outbox table: `CeremonyEventSubscriberPort` with durable cursors; conformance re-targeted; the old outbox types and table removed. | Cursor conformance; delivery E2E in §3.3. |
-| A7 | Migration command and copy-on-write import; dead paths removed (`save`, `append`, `state_migrations`, `migrate_definition_binding`, split in-memory adapters); `made_verify_ceremony_journal` exposed on both surfaces. | Migration test on a fixture store from v0.3.0; architecture gate baseline shrinks. *[Done: `made-mcp migrate-store` imports every pre-stream session as one `InstanceImported` genesis event and proves fold equality before installing; the fixture is a store v0.3.1 wrote, under `crates/made-tests-integration/fixtures/stores/v0.3.1/`. `CeremonyUnitOfWorkPort`, `CeremonyInstanceRepositoryPort`, `AuditJournalPort`, `CeremonyCommit`, `CommitOutcome`, `ExpectedRevision` and the whole outbox went with the commit path that was their only writer; the legacy tables stay as read-only provenance behind `LegacyCeremonySnapshotSourcePort`. `VerifyCeremonyJournal` landed on all four surfaces.]* |
-| A8 | **ADR-012 (event sourcing)**: events are the source of truth; snapshots are a cache; the chain seals events; the outbox is a cursor; migration is copy-on-write; supersedes the named sentences of ADR-003 and ADR-009. | ADR review. |
+| A5 | Projections: transcript from the fold (port deleted), instance view unchanged, report from events + definition, memory recorder consuming events through the subscriber port. | Report test renders step outputs from the stream alone; memory tests unchanged. *[Done in #83: the subscriber seam consumes sealed records; transcript and memory are projections and the transcript port is gone.]* |
+| A6 | Cursor-based publication replaces the outbox table: `CeremonyEventSubscriberPort` with durable cursors; conformance re-targeted; the old outbox types and table removed. | Cursor conformance; delivery E2E in §3.3. *[Done in #108: memory and SQLite cursor adapters pass the lease/retry/quarantine suite; pull, NATS and JSONL deliveries share the cursor contract.]* |
+| A7 | Migration command and copy-on-write import; dead paths removed (`save`, `append`, `state_migrations`, `migrate_definition_binding`, split in-memory adapters); `made_verify_ceremony_journal` exposed on both surfaces. | Migration test on the pre-stream v0.3.1 fixture store; architecture gate baseline shrinks. *[Done: `made-mcp migrate-store` imports every pre-stream session as one `InstanceImported` genesis event and proves fold equality before installing; the fixture is a store v0.3.1 wrote, under `crates/made-tests-integration/fixtures/stores/v0.3.1/`. `CeremonyUnitOfWorkPort`, `CeremonyInstanceRepositoryPort`, `AuditJournalPort`, `CeremonyCommit`, `CommitOutcome`, `ExpectedRevision` and the whole outbox went with the commit path that was their only writer; the legacy tables stay as read-only provenance behind `LegacyCeremonySnapshotSourcePort`. `VerifyCeremonyJournal` landed on all four surfaces.]* |
+| A8 | **ADR-012 (event sourcing)**: events are the source of truth; snapshots are a cache; the chain seals events; the outbox is a cursor; migration is copy-on-write; supersedes the named sentences of ADR-003 and ADR-009. | ADR review. *[Done in #121: the ADR and phase documentation name the verified implementation and the exact superseded decisions.]* |
 
 ### 3.2 WS-B — Concurrent orchestration
 
@@ -651,8 +680,8 @@ run. Nothing observable depends on the edition.
 |---|---|---|
 | G1 | **One seam.** A `CeremonyEventSubscriberPort` consumer (sync, infallible for the metrics and tracing adapters, like `MetricsRecorderPort` today) receives every sealed event after append. Adapters: **metrics** (the five ceremony families plus the missing ones — step claimed, attempt, iteration, guard decided, intervention opened/answered, transition applied, lease acquired/expired), **tracing** (a span event per ceremony event with its payload fields, under the span that appended it), **structured logs** (one JSON line per event at `info`). The thirteen hand-placed metric calls in `run_ceremony_use_case.rs` are removed once the seam reproduces them. *[Done: metrics, tracing, and structured-log subscribers are wired in both editions; sealed events drive the existing ceremony families and nine new families, while outcomes that seal no record remain at the command boundary.]* | Same session through the one-shot and step-at-a-time drivers yields identical metric deltas; the registry test lists every family with its source event. |
 | G2 | **Fill the trace.** Events take `trace_id`, `correlation_id` and `causation_id` from the current span context (`tracing_opentelemetry` on the server; a per-tool-call trace id minted by `made-mcp` when the host sends no `traceparent`, which MCP allows through request metadata). `made_get_ceremony_instance`, `made_read_ceremony_events` and the report expose them. *[Done: server spans or MCP tool metadata supply one trace for each operation; the session stream fills all three identities, and instance, event, and report renderers expose them.]* | Chain conformance: "a record carries the trace that wrote it"; report test shows the id. |
-| G3 | **Embedded adapters.** `EmbeddedMade::open` wires `PrometheusMetricsRecorder` with an in-process registry; `made_get_metrics` and `made_get_status` join the embedded backend and return the rendered registry (text and a JSON projection) — the gRPC backend returns the same registry instead of the five legacy counters. `made-mcp` gains the `otel` feature and honours `MADE_OTLP_ENDPOINT` and the mTLS variables exactly as `made` does (the dead `opentelemetry` dependency either serves that or leaves); a **file sink** adapter writes events and metrics snapshots as JSON lines to a host-chosen path; the default log filter becomes `made_mcp=info,made_app=info,made_adapters::sqlite=info`. A Rust host injects the same adapters through the builder. | Embedded stdio test reads a ceremony counter after one step; `real_kernel` discovery shows `service_observability` on both backends; a test tails the file sink. |
-| G4 | **Spans where the runbook says they are.** A span per step in the one-shot driver (`run_step`), a span for the step handler, spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts. | Trace-shape test against an in-memory exporter. |
+| G3 | **Embedded adapters.** `EmbeddedMade::open` wires `PrometheusMetricsRecorder` with an in-process registry; `made_get_metrics` and `made_get_status` join the embedded backend and return the rendered registry (text and a JSON projection) — the gRPC backend returns the same registry instead of the five legacy counters. `made-mcp` gains the `otel` feature and honours `MADE_OTLP_ENDPOINT` and the mTLS variables exactly as `made` does (the dead `opentelemetry` dependency either serves that or leaves); a **file sink** adapter writes events and metrics snapshots as JSON lines to a host-chosen path; the default log filter becomes `made_mcp=info,made_app=info,made_adapters::sqlite=info`. A Rust host injects the same adapters through the builder. | Embedded stdio test reads a ceremony counter after one step; `real_kernel` discovery shows `service_observability` on both backends; a test tails the file sink. *[Done in #119: `ServiceMetrics` preserves statistics and adds registry text plus structured families; writer and reader share one recorder; OTLP and the JSONL metrics snapshot use that registry. The snapshot is the process registry at delivery time, not a promise of an exact stream prefix.]* |
+| G4 | **Spans where the runbook says they are.** A span per step in the one-shot driver (`run_step`), a span for the step handler, spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts. *[Done in #123: exported `SpanData` tests pin late fields, parentage, success/failure, provider identity and observed usage; a real `made-mcp` stdio process exports step/handler spans to a local OTLP receiver without writing logs to stdout.]* | Trace-shape test against an in-memory exporter. |
 | G5 | **Docs truth pass**, first. Every claim in `docs/made-observability-design.md` and `docs/operations/observability-runbook.md` without code behind it is either scheduled in G1–G4 by name or deleted, per PRINCIPLES §1. Alerts and dashboard rows that reference absent series go with them or move to a "planned" section. | Docs review with the §0.5 list as the checklist. *[Done: every family in the design doc's catalogue names the file that records it, the alerts and dashboard read only series the registry has, and each document carries one "Planned — not implemented" section naming G1–G4 and G6; what no slice owns was deleted rather than left pending.]* |
 | G6 | **Ceremony progress as a stream.** `StreamCeremony` RPC on the cluster fed by the subscriber port; the pull cursor of C2 on the embedded edition. Same events, two doors. | Parity test covers the stream on gRPC and the cursor on embedded against the same session. |
 
@@ -668,8 +697,8 @@ adapter and maps at the boundary with DTOs.
 | E1 | **Add the consumer.** At ceremony start, `MemoryReaderPort::recall(scope)` for the declared scope; the recollection is rendered into the first brief as "what earlier sessions decided" (bounded size, decisions and constraints first). Scope comes from a new definition input `memory_scope`; default stays `ceremony:{id}`, which means "no shared memory", stated as such. | A second ceremony in the same scope sees the first one's decision in its brief. *[Done: `memory_scope` is a reserved context key resolved by `services/memory_scope_resolver.rs`; the rendering is `SessionRecollection` (decisions and constraints first, 4096 bytes of summary, `truncated` when the bound bit); it is sealed as `MemoryRecalled` in the opening batch and exposed on the four surfaces. `crates/made-tests-integration/tests/mcp_parity_session.rs::a_session_in_a_shared_scope_is_told_what_the_last_one_decided` is the gate.]* |
 | E2 | **Trim the port to what MADE uses.** Remove `AnsweringQuestions` / `MemoryQuestion` and `MemoryDimension` (or give each a consumer in E1); delete the kernel-citing doc comment on `Authorizes` and add the variant to the MCP schema enum where it is missing; replace `"kmp: …"` error prefixes; rename `kmp_*` spans to `memory_*`. Keep the conformance suite as the contract. | Conformance green; grep gate for `kmp` / `kernel` in `made-core`. *[Done: `ask`, `MemoryQuestion`, `AnsweringQuestions` and `MemoryDimension` are gone and the suite states **nine** properties, not ten — the tenth asked whether a backend answered a question in words. `authorizes` joined the `made_assert_ceremony_reason` schema enum. The error prefixes and span names #41 removed stay out because `scripts/ci/domain-vocabulary-boundary.sh` is a gate.]* |
 | E3 | **Ship a durable default.** `SqliteSessionMemory` in the ceremonies store (new tables under the same seam), passing conformance, wired by `EmbeddedMade::open(path)` while the generic builder keeps `ForgetfulMemory`, and in the server behind `MADE_MEMORY=sqlite\|none`. The memory recorder is a subscriber of the event stream (A5). | Conformance on SQLite; restart test: a decision survives reopen. *[Done: `SqliteSessionMemory` stores idempotent writes beside ceremony tables through the same `Arc<dyn Engine>`; `with_ceremony_store_and_memory` is the typed Rust-host entry point; `EmbeddedMade::open(path)` and the server's path-aware default use it. A real second `made-mcp` process recalls the first process's decision.]* |
-| E4 | **Move the KMP adapter out of the tree** into its own crate (`made-memory-kmp`, depending on `made-core` only) or into the KMP repository as "MADE adapter", with the conformance suite as its gate. Fix its names there (`kmp-mcp`, `KMP_MCP_*`, `kmp_*` tools) and replace refusal-string matching with structured error codes once KMP exposes them. | `made-adapters` has no `kmp` module; CI matrix drops the `kmp` feature; the external crate's CI runs the suite. |
-| E5 | **ADR-013 (memory)**: memory is MADE's own bounded context; recall is a first-class use case; SQLite is the reference implementation; kernels are out-of-tree adapters. Update `docs/index.md`, `stack-gap-analysis.md`, the platform table in `README.md`. | ADR review. |
+| E4 | **Move the KMP adapter out of the tree** into its own crate (`made-memory-kmp`, depending on `made-core` only) or into the KMP repository as "MADE adapter", with the conformance suite as its gate. Fix its names there (`kmp-mcp`, `KMP_MCP_*`, `kmp_*` tools) and replace refusal-string matching with structured error codes once KMP exposes them. | `made-adapters` has no `kmp` module; CI matrix drops the `kmp` feature; the external crate's CI runs the suite. *[Done in #41: MADE no longer ships the adapter or feature; any external adapter owns its packaging and must pass the conformance suite.]* |
+| E5 | **ADR-013 (memory)**: memory is MADE's own bounded context; recall is a first-class use case; SQLite is the reference implementation; kernels are out-of-tree adapters. Update `docs/index.md`, `stack-gap-analysis.md`, the platform table in `README.md`. | ADR review. *[Done in #121: the ADR, index, stack analysis, Editions and README state the same boundary.]* |
 
 
 ### 3.9 WS-H — A fast CI mode for development
@@ -692,13 +721,13 @@ required check between a ready pull request and `main`.
 
 ## 4. Sequencing
 
-| Phase | Content | Exit criterion |
-|---|---|---|
-| 0 | ADR-012 (event sourcing), ADR-013 (memory), ADR-014 (parity) — written 2026-09-16 under `docs/adr/`; G5 docs truth pass; H1–H2 (the draft loop and the stand-down), because every later slice iterates on it. | ADRs merged; the observability docs claim only what runs; a draft PR gets feedback in minutes. |
-| 1 | F1, F2, F4 (the parity gate, cheap and prerequisite); H3–H5; A1–A4 (events, aggregate, store, use cases); E0–E3 in parallel. | Parity gate green with a non-empty exception file; impact routing and tree proof live; ceremonies are folds over SQLite-stored streams; conflict retry proven; SQLite memory default. |
-| 2 | A5–A8 (projections, cursors, migration, ADR); G1–G3 (seam, trace ids, embedded adapters); C2 (NATS publisher, pull tool, file sink); F3 (API catch-up: claim, complete, design, events, transcript). | Existing v0.3.0 stores migrate; metrics identical across drivers and editions; ceremony events reach NATS and the pull cursor; the exception file has no ceremony rows. |
-| 3 | B1–B6 and the §3.5 primitives, each on four surfaces; D1–D4 fragments; D5 composition in the design tool; C1; G4. | `concurrent-review` and `incident_review` run E2E in both editions; four fragments run E2E; diagrams show pattern regions. |
-| 4 | C3 spawn/join; G6 ceremony stream; E4, E5; F5 revisited with B3's numbers; F6. | Parent/children E2E over NATS and over the pull cursor; KMP adapter out of tree; support matrix has an editions section. |
+| Phase | Status | Content | Exit criterion |
+|---|---|---|---|
+| 0 | Done 2026-09-18 | ADR-012 (event sourcing), ADR-013 (memory), ADR-014 (parity); G5 docs truth pass; H1–H2 (the draft loop and the stand-down), because every later slice iterates on it. | ADRs merged; the observability docs claim only what runs; a draft PR gets feedback in minutes. |
+| 1 | Done 2026-09-18 | F1, F2, F4 (the parity gate, cheap and prerequisite); H3–H5; A1–A4 (events, aggregate, store, use cases); E0–E3 in parallel. | Parity gate green with a non-empty exception file; impact routing and tree proof live; ceremonies are folds over SQLite-stored streams; conflict retry proven; SQLite memory default. |
+| 2 | Done 2026-09-18 | A5–A8 (projections, cursors, migration, ADR); G1–G3 (seam, trace ids, embedded adapters); C2 (NATS publisher, pull tool, file sink); F3 (API catch-up: claim, complete, design, events, transcript). | Pre-stream stores migrate with fold equality against the v0.3.1 fixture; metrics identical across drivers and editions; ceremony events reach NATS and the pull cursor; the exception file has no ceremony rows. The optional/enum parity proof is #120; ADR and documentation closure is #121. |
+| 3 | Planned | B1–B6 and the §3.5 primitives, each on four surfaces; D1–D4 fragments; D5 composition in the design tool; C1; G4. | `concurrent-review` and `incident_review` run E2E in both editions; four fragments run E2E; diagrams show pattern regions. |
+| 4 | Planned; E4, E5 and F6 delivered early | C3 spawn/join; G6 ceremony stream; F5 revisited with B3's numbers. | Parent/children E2E over NATS and over the pull cursor. |
 
 Each slice lands as its own PR, iterated as a draft on the dev loop and
 merged on the full gate, with: the gate named in its table row, a CHANGELOG

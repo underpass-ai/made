@@ -52,6 +52,8 @@ pub mod noop;
 #[cfg(feature = "runtime-grpc")]
 pub mod runtime;
 pub mod scoring;
+#[cfg(feature = "otel")]
+pub mod telemetry;
 pub mod validators;
 pub mod yaml;
 
