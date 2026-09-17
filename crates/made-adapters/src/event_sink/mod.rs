@@ -1,3 +1,4 @@
 mod json_lines_ceremony_event_sink;
+mod metrics_snapshot_json;
 
 pub use json_lines_ceremony_event_sink::JsonLinesCeremonyEventSink;

@@ -2,7 +2,7 @@
 
 *Status: verified end-to-end on 2026-07-03 against a kube-prometheus-stack
 (Prometheus + Grafana), Grafana Tempo and Loki/promtail installation; claims
-re-checked against the code on 2026-09-17.*
+re-checked against the code on 2026-09-18.*
 
 This is the operational companion to
 [made-observability-design.md](../made-observability-design.md)
@@ -21,8 +21,9 @@ What the code does not do yet is in §5, not in the instructions.
 | Metrics | Prometheus `/metrics` on the HTTP port (8080) | ServiceMonitor (manifest below) | `made_*` series in Prometheus |
 | Logs | JSON to stdout | nothing (any log shipper: promtail, fluent-bit…) | `{namespace="<ns>", pod=~"MADE.*"}` in Loki |
 
-The table is the deployable edition. The embedded edition runs a registry and
-no exporter; §2.1 says exactly what an operator can read there.
+The table is the deployable edition. The embedded edition has no Prometheus
+scrape endpoint; §2.1 covers its MCP registry read, optional OTLP exporter and
+JSON-lines sink.
 
 ## 1. Traces (OTLP)
 
@@ -143,7 +144,7 @@ Two shapes of this endpoint are worth knowing before you alert on it:
 
 ### 2.1 The embedded edition
 
-There is nothing to scrape, and there is something to read.
+There is no scrape socket, and the same registry is available through MCP.
 
 `made-mcp` on the embedded backend, and any host holding `EmbeddedMade`, wires
 a `PrometheusMetricsRecorder` with its own registry **inside the process**
@@ -152,8 +153,8 @@ there today, exactly:
 
 - **An in-process registry.** It records the five ceremony families of a
   `RunCeremony` run, like the deployable edition does.
-- **No exporter and no endpoint.** No OTLP, no `/metrics`, no socket of any
-  kind. Nothing renders that registry outside the process.
+- **No Prometheus endpoint.** There is no `/metrics` socket. The registry is
+  rendered by `made_get_metrics` instead.
 - **The two MCP tools, on both backends:**
 
   ```json
@@ -163,23 +164,39 @@ there today, exactly:
 
   `made_get_status` answers with the version of the engine that answered, how
   long *that* engine has been up, its condition and — when asked — the
-  counters. Both tools are composed by `GetServiceStatusUseCase` and
-  `GetServiceMetricsUseCase`, so the two editions cannot answer differently
-  about what they are.
-- **Honest zeros.** The counters on those answers are `Statistics`:
+  counters. `made_get_metrics` keeps those counters in `stats` and adds
+  `registry_text` plus a typed `registry` array of families and samples. Both
+  tools are composed by `GetServiceStatusUseCase` and
+  `GetServiceMetricsUseCase`, so the two editions use the same boundary.
+- **Honest zeros and live ceremony metrics.** The `stats` counters are `Statistics`:
   deliberations and orchestrations. They are council work, which an embedded
   engine running no council never performs, so it reports them at zero however
-  many sessions it runs — every family present, every value true.
+  many sessions it runs. Ceremony counters and histograms move in the registry
+  on the same answer.
 - **The recorder's name off the wire.** `EmbeddedMade::status` names which
   recorder is running, which is how a Rust host can tell whether its own
   injection took; neither MCP arm renders it, because `GetStatusResponse`
   carries four fields and giving one arm a fifth is the divergence ADR-014
   exists to prevent.
 
-A host that wants the registry itself today injects its own recorder through
-`EmbeddedMadeBuilder::with_metrics` and renders it. Putting the registry on the
-`made_get_metrics` answer, and giving `made-mcp` an OTLP exporter and a file
-sink, is plan §3.7 **G3** (§5).
+A Rust host that supplies its own recorder should call
+`EmbeddedMadeBuilder::with_observability` so reads and writes share one `Arc`.
+The lower-level recorder and snapshot setters exist for specialized
+compositions; wiring different objects makes the read describe a different
+registry from the one being recorded.
+
+Build `made-mcp` with `--features otel` to enable the shared OTLP/gRPC
+initializer. It is dormant without `MADE_OTLP_ENDPOINT` and accepts the same
+`MADE_OTLP_TLS_CA_PATH`, `MADE_OTLP_TLS_CERT_PATH`,
+`MADE_OTLP_TLS_KEY_PATH`, and `MADE_OTLP_TLS_DOMAIN_NAME` variables as `made`.
+
+Set `MADE_MCP_EVENT_SINK_PATH` on the embedded backend to append JSON lines to
+a host-chosen file. Each delivered ceremony event is immediately followed by
+a `metrics_snapshot` line with `registry_text` and `registry`. The pair is
+written under one lock and flushed once. A failed append leaves the durable
+publisher cursor unacknowledged, so restart recovery retries the event. The
+snapshot is the current process registry after event fanout; it is not an
+exact-prefix promise for the event stream.
 
 ## 3. Logs
 
@@ -208,11 +225,10 @@ it is the only one you can filter a single step's work by. The rest are joined
 through the trace, not through a label: they are emitted under the
 `deliberate` span of the step that produced them.
 
-`made-mcp`'s own default filter is
-`made_mcp=info,made_adapters::sqlite=info`, so on the embedded backend — where
-those events are emitted in the same process — none of the messages above
-reach stdout. Set `RUST_LOG` yourself to see them, until G3 widens the
-default.
+`made-mcp`'s default filter is
+`made_mcp=info,made_app=info,made_adapters::sqlite=info`, so embedded
+application events are present without an operator override. Set `RUST_LOG`
+to replace that default when a different scope or level is required.
 
 ## 4. Order of operations for a new install
 
@@ -233,6 +249,5 @@ that owns it, so that nothing above has to be written in the future tense.
 
 | What an operator would get | Slice |
 |---|---|
-| OTLP export from `made-mcp` with the same `MADE_OTLP_*` variables the server uses; the in-process registry on the `made_get_metrics` answer; a JSON-lines file sink at a host-chosen path; `made_app=info` in the default filter | G3 |
 | A span per ceremony step and per step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a live stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |

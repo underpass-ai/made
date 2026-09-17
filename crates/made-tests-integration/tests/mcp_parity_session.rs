@@ -34,6 +34,9 @@ use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
+#[path = "mcp_parity_session/optionals.rs"]
+mod optionals;
+
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`
 /// is relative to its own.
@@ -85,10 +88,21 @@ const NORMALISED: &[(&str, &str, &str)] = &[
     ),
     (
         "made_get_status",
-        ".content[].text",
-        "the text block is the pretty-printed mirror of structuredContent, so it carries the \
-         version and the uptime verbatim; every other field of the status is still compared \
-         in structuredContent",
+        ".content[].text.version",
+        "the JSON text mirrors structuredContent; only the engine version differs, while \
+         uptime, health and statistics remain compared inside both representations",
+    ),
+    (
+        "made_get_metrics",
+        ".structuredContent.registry_text",
+        "Prometheus text exposition is a transport representation whose family and sample values \
+         are compared exactly through the structured registry projection",
+    ),
+    (
+        "made_get_metrics",
+        ".content[].text.registry_text",
+        "the metrics text block mirrors structuredContent as JSON, so only its nested Prometheus \
+         exposition is normalised while stats and the structured registry remain compared",
     ),
 ];
 
@@ -846,13 +860,18 @@ async fn drive_the_whole_session(arms: &ParityArms) {
     // became a fold of `StepCompleted` (A5) it was a store the two
     // drivers appended to, so the delegated-host protocol left nothing
     // in it and this said one.
-    let transcript = call_tool(
-        &arms.in_process,
-        101,
+    let (transcript_wire, transcript) = arms
+        .call(
+            101,
+            "made_get_ceremony_transcript",
+            &json!({ "ceremony_id": SESSION_ID }),
+        )
+        .await;
+    assert_same_answer(
         "made_get_ceremony_transcript",
-        &json!({ "ceremony_id": SESSION_ID }),
-    )
-    .await;
+        &transcript_wire,
+        &transcript,
+    );
     let transcript = structured(&transcript);
     assert_eq!(transcript["entry_count"], json!(2), "{transcript:#}");
     assert_eq!(
@@ -1335,6 +1354,15 @@ fn normalise(value: &Value, path: &str, tool: &str) -> Value {
         return json!("<normalised>");
     }
     match value {
+        Value::String(text)
+            if matches!(tool, "made_get_metrics" | "made_get_status")
+                && path == ".content[].text" =>
+        {
+            let Ok(parsed) = serde_json::from_str::<Value>(text) else {
+                return value.clone();
+            };
+            normalise(&parsed, path, tool)
+        }
         Value::Object(fields) => Value::Object(
             fields
                 .iter()

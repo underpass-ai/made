@@ -1980,10 +1980,6 @@ dependencies = [
  "made-app",
  "made-core",
  "made-proto",
- "opentelemetry",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "serde",
  "serde_json",
  "tempfile",
@@ -1994,7 +1990,6 @@ dependencies = [
  "tonic 0.12.3",
  "tower 0.4.13",
  "tracing",
- "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
 ]
@@ -2014,6 +2009,8 @@ dependencies = [
  "made-proto",
  "mockall",
  "opentelemetry",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
  "opentelemetry_sdk",
  "prometheus",
  "prost-types 0.13.5",
@@ -2154,6 +2151,7 @@ dependencies = [
 name = "made-mcp"
 version = "0.3.1"
 dependencies = [
+ "anyhow",
  "async-trait",
  "futures",
  "made-adapters",
@@ -2161,7 +2159,6 @@ dependencies = [
  "made-core",
  "made-embedded",
  "made-mcp-proto",
- "opentelemetry",
  "prost-types 0.13.5",
  "serde",
  "serde_json",

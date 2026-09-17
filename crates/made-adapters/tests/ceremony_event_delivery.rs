@@ -1,3 +1,4 @@
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -8,14 +9,17 @@ use made_app::usecases::{
     PublishCeremonyEventsUseCase, PullCeremonyEventsInput, PullCeremonyEventsUseCase,
 };
 use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{AuditFact, CeremonyEvent};
+use made_core::entities::{AuditFact, CeremonyEvent, MetricFamily, MetricSample, MetricsSnapshot};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventTransportPort, PositionedRecord,
+    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventTransportPort,
+    MetricsSnapshotPort, PositionedRecord,
 };
 use made_core::value_objects::{
     AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
-    CeremonyName, CeremonyVersion, EventId, GlobalPosition, StateId, StreamVersion,
+    CeremonyName, CeremonyVersion, EventId, GlobalPosition, MetricHelp, MetricKind,
+    MetricLabelName, MetricLabelValue, MetricName, MetricValue, PrometheusText, StateId,
+    StreamVersion,
 };
 use time::OffsetDateTime;
 
@@ -23,6 +27,32 @@ use time::OffsetDateTime;
 struct RecordingTransport {
     failures_remaining: Mutex<usize>,
     attempts: Mutex<Vec<(u64, String)>>,
+}
+
+struct SnapshotFake;
+
+impl MetricsSnapshotPort for SnapshotFake {
+    fn snapshot(&self) -> Result<MetricsSnapshot, DomainError> {
+        let labels = BTreeMap::from([(
+            MetricLabelName::new("ceremony").unwrap(),
+            MetricLabelValue::new("delivery"),
+        )]);
+        Ok(MetricsSnapshot::new(
+            PrometheusText::new(
+                "# HELP made_ceremony_step_total Completed steps\n# TYPE made_ceremony_step_total counter\nmade_ceremony_step_total{ceremony=\"delivery\"} 1\n",
+            ),
+            vec![MetricFamily::new(
+                MetricName::new("made_ceremony_step_total").unwrap(),
+                MetricHelp::new("Completed steps"),
+                MetricKind::Counter,
+                vec![MetricSample::new(
+                    MetricName::new("made_ceremony_step_total").unwrap(),
+                    labels,
+                    MetricValue::from_f64(1.0),
+                )],
+            )],
+        ))
+    }
 }
 
 impl RecordingTransport {
@@ -206,4 +236,38 @@ async fn json_lines_sink_appends_complete_positioned_records() {
     assert_eq!(json["event_id"], "event-1");
     assert_eq!(json["event_type"], "ceremony_completed");
     assert!(json["record_hash"].is_array());
+}
+
+#[tokio::test]
+async fn observable_json_lines_sink_appends_the_event_and_registry_snapshot_together() {
+    let store = store_with_two_events().await;
+    let record = store
+        .read_all(
+            GlobalPosition::FIRST,
+            CeremonyEventPageLimit::new(1).unwrap(),
+        )
+        .await
+        .unwrap()
+        .remove(0);
+    let directory = tempfile::tempdir().unwrap();
+    let path = directory.path().join("ceremony-events.jsonl");
+    let sink =
+        JsonLinesCeremonyEventSink::open_with_metrics(&path, Arc::new(SnapshotFake)).unwrap();
+
+    sink.deliver(&record).await.unwrap();
+
+    let contents = std::fs::read_to_string(path).unwrap();
+    let lines = contents.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 2);
+    let event: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(event["global_position"], 1);
+    assert_eq!(event["event_id"], "event-1");
+    let snapshot: serde_json::Value = serde_json::from_str(lines[1]).unwrap();
+    assert_eq!(snapshot["record_type"], "metrics_snapshot");
+    assert!(snapshot["registry_text"]
+        .as_str()
+        .unwrap()
+        .contains("made_ceremony_step_total"));
+    assert_eq!(snapshot["registry"][0]["name"], "made_ceremony_step_total");
+    assert_eq!(snapshot["registry"][0]["samples"][0]["value"], 1.0);
 }

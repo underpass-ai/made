@@ -4,7 +4,7 @@ use super::{
     bind_ceremony_participants_input_from_proto, ceremony_definition_source_from_proto,
     ceremony_design_document_from_proto, design_ceremony_response_from,
     diff_ceremony_definitions_response_from, domain_error_to_status,
-    explain_ceremony_draft_response_from, link_span_to_metadata, pb,
+    explain_ceremony_draft_response_from, link_span_to_metadata, metric_family_to_proto, pb,
     publish_ceremony_definition_response_from, service_status_to_proto, statistics_to_proto,
     unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
     CeremonyDefinitionYaml, CeremonyDraftView, CeremonyId, GrpcResult, MadeGrpcService, Request,
@@ -219,7 +219,14 @@ impl MadeGrpcService {
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::GetMetricsResponse {
-            stats: Some(statistics_to_proto(&snapshot)),
+            stats: Some(statistics_to_proto(snapshot.statistics())),
+            registry_text: snapshot.registry().text().as_str().to_owned(),
+            registry: snapshot
+                .registry()
+                .families()
+                .iter()
+                .map(metric_family_to_proto)
+                .collect(),
         }))
     }
 }

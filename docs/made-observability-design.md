@@ -358,7 +358,7 @@ statistics adapters.
 
 | Concern | Port method group | Adapter / call site |
 |---|---|---|
-| Registry and exposition | all | `made-adapters/src/metrics/prometheus_recorder.rs`; rendered by `made/src/health.rs::metrics` at `GET /metrics` |
+| Registry and exposition | all | `made-adapters/src/metrics/prometheus_recorder.rs`; rendered at `made`'s `GET /metrics` and returned as text plus structured families/samples by `made_get_metrics` in both editions |
 | Legacy counters | `StatisticsPort` | `made/src/health.rs::metrics` |
 | Deliberation quality | `observe_deliberation_duration`, `record_deliberation_outcome`, `observe_winner_score`, `record_discrimination` | `made-app/src/usecases/deliberate.rs` |
 | Judge | `observe_judge_latency`, `observe_judge_score`, `record_judge_error`, `record_judge_tokens` | `made-adapters/src/agents/judge.rs`, `support_judge.rs` |
@@ -375,7 +375,9 @@ edition and `made-embedded/src/embedded_made_builder.rs` for the embedded one.
 
 Tracing is separate: `#[tracing::instrument]` on the use cases and on the gRPC
 handlers (`rpc.*`), JSON logs always, and OTLP/gRPC export with optional mTLS
-behind the `otel` feature of the `made` binary (`crates/made/src/telemetry.rs`).
+behind the `otel` feature of the `made` and `made-mcp` binaries. Both call the
+shared initializer in `made-adapters/src/telemetry.rs` and accept the same
+`MADE_OTLP_*` variables.
 The operator-facing half of that is
 [`operations/observability-runbook.md`](operations/observability-runbook.md).
 
@@ -393,7 +395,6 @@ it.
 
 | What | Slice |
 |---|---|
-| The embedded edition's registry on the `made_get_metrics` answer (and the gRPC backend answering the same registry instead of the five legacy counters); OTLP export from `made-mcp`; a JSON-lines file sink; a default log filter that does not drop `made_app` | G3 |
 | A span per ceremony step in the one-shot driver, a span for the step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |
 
@@ -430,18 +431,23 @@ what has code behind it is listed here.
 | | Embedded edition | Deployable edition |
 |---|---|---|
 | `MetricsRecorderPort` | `PrometheusMetricsRecorder` with its own `Registry`, wired by `EmbeddedMadeBuilder` when the host wires none | `PrometheusMetricsRecorder`, wired in `compose.rs` |
-| Exposition | none — the registry is in process and nothing renders it over a socket | `GET /metrics` on the HTTP port |
+| Exposition | `made_get_metrics` returns Prometheus text and a structured family/sample projection; no scrape socket | the same `made_get_metrics` projection plus `GET /metrics` on the HTTP port |
 | Families that move | the fourteen ceremony families through both execution drivers (§2.5) | every family in §2 |
 | `made_get_status` / `made_get_metrics` | served, over `GetServiceStatusUseCase` / `GetServiceMetricsUseCase` | served, over the same two use cases |
-| Traces | none — no exporter is wired | OTLP over gRPC behind the `otel` feature |
+| Traces | OTLP over gRPC when `made-mcp` is built with `otel` and `MADE_OTLP_ENDPOINT` is set | OTLP over gRPC behind the `otel` feature |
 
-Two things follow, and each is a gap rather than a claim:
-- **`made_get_metrics` answers with the `Statistics` counters, not the
+Two things follow:
+- **`made_get_metrics` keeps the legacy `Statistics` counters and adds the
   registry.** Deliberations and orchestrations are council work, so an
-  embedded engine reports them at zero however many sessions it runs — every
-  family present, every value true. Putting the registry itself on that
-  answer is G3, and it needs a contract field the deployable edition can fill
-  too.
+  embedded engine reports those counters at zero however many sessions it
+  runs. Ceremony activity appears in `registry_text` and the typed `registry`
+  projection, sourced from the same recorder the host writes.
+- **The embedded JSON-lines sink is an operational export, not a stream
+  checkpoint.** When `MADE_MCP_EVENT_SINK_PATH` is set, every delivered event
+  line is followed by a snapshot of the process registry after fanout. Both
+  lines share one lock and flush; a write failure leaves the event cursor
+  unacknowledged for retry. The snapshot describes the current registry and
+  does not promise an exact event-stream prefix.
 - **`ServiceStatus::recorder` names what is recording and is not on the
   wire.** A Rust host reads it through the facade; neither MCP arm renders it,
   because `GetStatusResponse` has four fields and giving one arm a fifth is
