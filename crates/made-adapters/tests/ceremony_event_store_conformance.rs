@@ -11,9 +11,10 @@ async fn the_in_memory_store_satisfies_the_event_store_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 13, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 14, "properties run: {passed:?}");
     assert!(passed.contains(&"a_stale_expectation_conflicts_and_writes_nothing"));
     assert!(passed.contains(&"concurrent_appends_admit_exactly_one_winner"));
+    assert!(passed.contains(&"an_outcome_positions_what_read_all_returns"));
 }
 
 #[tokio::test]

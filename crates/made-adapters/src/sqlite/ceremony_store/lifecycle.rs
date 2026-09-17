@@ -98,6 +98,7 @@ mod tests {
     };
     use made_core::ports::{
         CeremonyEventStorePort, CeremonySnapshotStorePort, CeremonyUnitOfWorkPort,
+        NoopCeremonyEventSubscriber,
     };
     use made_core::value_objects::{
         AuditActor, AuditActorKind, CeremonyContext, CeremonyName, CeremonyState,
@@ -184,9 +185,13 @@ mod tests {
         assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 1);
         assert_eq!(store.head(&id).await.unwrap(), StreamVersion::EMPTY);
         assert_eq!(store.latest(&id).await.unwrap(), None);
-        let loaded = SessionStream::new(store.clone(), store.clone())
-            .load(&id)
-            .await;
+        let loaded = SessionStream::new(
+            store.clone(),
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
+        )
+        .load(&id)
+        .await;
         assert!(
             matches!(
                 loaded,
@@ -206,7 +211,11 @@ mod tests {
         let path = directory.path().join("ceremonies.sqlite3");
         let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
         let streamed = CeremonyId::new("streamed-1").unwrap();
-        let stream = SessionStream::new(store.clone(), store.clone());
+        let stream = SessionStream::new(
+            store.clone(),
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
+        );
         stream
             .open(
                 CeremonyInstance::decide_start(

@@ -99,8 +99,8 @@ let made = EmbeddedMade::builder()
 ```
 
 The builder also accepts `Arc<dyn …Port>` for the definition repository,
-instance repository, transcript store, step handler, clock, metrics recorder
-and statistics. A host that wires no metrics recorder gets an **in-process
+instance repository, step handler, clock, metrics recorder, statistics and an
+event subscriber. A host that wires no metrics recorder gets an **in-process
 Prometheus registry** rather than a sink that forgets: explicit, local to the
 process, no exporter and no endpoint. `EmbeddedMade::status` says which
 recorder is running, so "the host chose one" and "nothing is recording" are
@@ -123,8 +123,8 @@ These three are the reason this repo ships a
 
 1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
    ceremony store durable. It does **not** silently make every port durable:
-   mounted definition repositories and transcripts keep their in-memory
-   defaults, and step execution and evidence collection keep their no-op
+   mounted definition repositories keep their in-memory defaults, and step
+   execution and evidence collection keep their no-op
    defaults, unless the host injects real implementations. A terminal step from
    a `NoopCeremonyStepHandler` proves ceremony protocol and state-machine
    behaviour — not that an agent, tool, API, or human performed the requested
@@ -199,12 +199,6 @@ that refuses a manifest which drops any of it:
 
 ### Current limits, stated plainly
 
-- **The transcript store is in-memory, whichever store the state went to.**
-  `GetCeremonyTranscript` answers with what the process it reached holds, and a
-  restart empties it. The sealed event stream is durable — it is the ceremony
-  (ADR-012) — so what a step contributed is recoverable from
-  `ReadCeremonyEvents` either way; the transcript is a convenience read until a
-  durable transcript store lands.
 - `StreamDeliberation` emits phase transitions and a final `DeliberationResult`
   frame — **not** per-proposal, per-critique or per-revision events. That
   arrives in a later slice.

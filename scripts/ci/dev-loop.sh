@@ -21,7 +21,7 @@
 # narrow it per phase; the full gate on ready-for-review still proves the
 # whole workspace. Override it for one run:
 #
-#   DEV_PACKAGES="-p made-core" bash scripts/ci/dev-loop.sh
+#   DEV_PACKAGES="-p made-mcp" bash scripts/ci/dev-loop.sh
 #
 # The default below is the single source of truth: the workflow sets the
 # same value and scripts/ci/dev-loop-workflow-contract.py fails if the
@@ -31,7 +31,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "${ROOT_DIR}"
 
-DEV_PACKAGES="${DEV_PACKAGES:--p made-mcp -p made-embedded -p made-adapters -p made-proto -p made-api}"
+DEV_PACKAGES="${DEV_PACKAGES:--p made-core -p made-app -p made-adapters -p made-embedded -p made-mcp}"
 
 STAGE="${1:-all}"
 

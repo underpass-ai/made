@@ -2,18 +2,19 @@
 
 use std::sync::Arc;
 
-use crate::services::{session_facts, ConflictPolicy, LoadedSession, SessionStream};
+use crate::services::{
+    ceremony_transcript_projection, session_facts, ConflictPolicy, LoadedSession, SessionStream,
+};
 use made_core::entities::ceremony_commands::{ApplyStepResult, ApplyTransition, StartStep};
 use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
+    ClockPort, MetricsRecorderPort, NoopMetricsRecorder,
 };
 use made_core::value_objects::{
-    AuditActor, CeremonyOutcome, CeremonyStepContribution, CeremonyTranscript, DurationMs,
-    IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt, StepErrorMessage, StepId, StepLease,
-    StepResult,
+    AuditActor, CeremonyOutcome, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId,
+    RoleId, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
 use time::OffsetDateTime;
 
@@ -31,7 +32,6 @@ pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     stream: Arc<SessionStream>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
-    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
 }
@@ -48,14 +48,12 @@ impl RunCeremonyUseCase {
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         stream: Arc<SessionStream>,
         handler: Arc<dyn CeremonyStepHandlerPort>,
-        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         clock: Arc<dyn ClockPort>,
     ) -> Self {
         Self {
             definitions,
             stream,
             handler,
-            transcript_store,
             clock,
             metrics: Arc::new(NoopMetricsRecorder),
         }
@@ -152,7 +150,11 @@ impl RunCeremonyUseCase {
                     }
                     let role_id = definition.role_id_for_step(&step_id)?;
                     let actor = session_facts::seat(&role_id, actor_kind)?;
-                    let transcript = self.transcript_store.transcript(&id).await?;
+                    // What was said so far, folded from the stream the
+                    // steps before this one sealed.
+                    let transcript = ceremony_transcript_projection::transcript(
+                        &self.stream.records(&id).await?,
+                    );
                     let step_started = self.clock.now();
                     let (moved_on, iteration, attempt, step_result) = self
                         .run_step(
@@ -178,18 +180,6 @@ impl RunCeremonyUseCase {
                         step_id.as_str(),
                         step_result.status(),
                     );
-                    if step_result.is_success() {
-                        self.transcript_store
-                            .append(
-                                &id,
-                                CeremonyStepContribution::new(
-                                    step_id.clone(),
-                                    role_id.clone(),
-                                    step_result.output().clone(),
-                                ),
-                            )
-                            .await?;
-                    }
                     step_traces.push(CeremonyStepTrace::for_iteration(
                         state_id.clone(),
                         step_id.clone(),
@@ -403,8 +393,8 @@ mod tests {
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, lease_owner, lease_ttl, now,
         repeating_definition, started_instance, step_id, stream, stream_over, two_step_definition,
-        ContextStoreFake, DefinitionRepositoryFake, EventStoreFake, FixedClock,
-        SequenceStepHandlerFake, StepHandlerFake,
+        DefinitionRepositoryFake, EventStoreFake, FixedClock, SequenceStepHandlerFake,
+        StepHandlerFake,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -429,7 +419,6 @@ mod tests {
             definitions,
             stream(instances.clone()),
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -471,7 +460,6 @@ mod tests {
             definitions,
             stream,
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -533,7 +521,6 @@ mod tests {
             definitions,
             stream(instances.clone()),
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -575,7 +562,6 @@ mod tests {
             definitions,
             stream(instances.clone()),
             handler,
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -621,7 +607,6 @@ mod tests {
             definitions,
             stream(instances),
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -661,7 +646,6 @@ mod tests {
             definitions,
             stream(instances),
             handler,
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
         let input = || {
@@ -703,7 +687,6 @@ mod tests {
             definitions.clone(),
             stream(instances),
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -742,7 +725,6 @@ mod tests {
             definitions,
             stream(instances),
             handler.clone(),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -792,7 +774,6 @@ mod tests {
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::completed(StepOutput::empty()).unwrap(),
             )),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 
@@ -848,7 +829,6 @@ mod tests {
             Arc::new(StepHandlerFake::succeeding(
                 StepResult::completed(StepOutput::empty()).unwrap(),
             )),
-            Arc::new(ContextStoreFake::default()),
             Arc::new(FixedClock::new(now())),
         );
 

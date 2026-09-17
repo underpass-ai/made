@@ -488,10 +488,11 @@ stream is `not_found`.
 ```
 
 `made_get_ceremony_transcript` hands out the ordered contributions the session's
-steps produced — `step_id`, `role_id` and the structured output. On a cluster
-the transcript store is per-process and empties on restart; the sealed stream
-above is the durable record, so what a step contributed is recoverable from it
-either way.
+steps produced — `step_id`, `role_id` and the structured output. It is folded
+from the `step_completed` records of the stream above, so it is exactly as
+durable as the session and holds every step that completed, whether the engine
+ran it or a host claimed it and reported back. A ceremony with no stream is
+`not_found`, the way reading its events is.
 
 Both are served by both editions, over `ReadCeremonyEvents` and
 `GetCeremonyTranscript`.

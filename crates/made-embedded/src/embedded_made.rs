@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
-use made_app::services::{SessionMemoryRecorder, SessionStream};
+use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
@@ -32,8 +32,8 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
 use made_core::value_objects::{
     CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
@@ -53,7 +53,6 @@ pub struct EmbeddedMade {
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
     stream: Arc<SessionStream>,
-    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
@@ -68,12 +67,6 @@ pub struct EmbeddedMade {
     /// When this engine was built. Monotonic, so uptime does not
     /// move when the host's wall clock does.
     started_at: Instant,
-    /// What a session leaves behind.
-    ///
-    /// A host that configures no memory gets one that forgets and says
-    /// so, which is the honest shape of "not turned on". Handing it a
-    /// durable writer instead is the whole of turning it on.
-    session_memory: Arc<SessionMemoryRecorder>,
 }
 
 impl EmbeddedMade {
@@ -104,27 +97,33 @@ impl EmbeddedMade {
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         events: Arc<dyn CeremonyEventStorePort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
+        subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     ) -> Self {
+        // What a session leaves behind is a projection of its stream,
+        // so it is a subscriber rather than something a use case
+        // holds. A host that configures no memory gets one that
+        // forgets and says so; handing in a durable writer is the
+        // whole of turning it on. The host's own subscriber comes
+        // after the engine's.
+        let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
+        let subscribers = Arc::new(CeremonyEventFanout::of(session_memory, subscriber));
         Self {
             definitions,
             publications,
-            stream: Arc::new(SessionStream::new(events.clone(), snapshots)),
+            stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
-            transcript_store,
             step_handler,
             evidence_source,
             clock,
             metrics_recorder,
             statistics,
             started_at: Instant::now(),
-            session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
         }
     }
 
@@ -222,7 +221,7 @@ impl EmbeddedMade {
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        GetCeremonyTranscriptUseCase::new(self.transcript_store.clone())
+        GetCeremonyTranscriptUseCase::new(self.events.clone())
             .execute(id)
             .await
     }
@@ -276,7 +275,6 @@ impl EmbeddedMade {
             self.definitions.clone(),
             self.stream.clone(),
             self.step_handler.clone(),
-            self.transcript_store.clone(),
             self.clock.clone(),
         )
         .with_metrics(self.metrics_recorder.clone())
@@ -414,7 +412,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -428,7 +425,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -442,7 +438,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -469,7 +464,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -484,7 +478,6 @@ impl EmbeddedMade {
             self.stream.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -526,7 +519,6 @@ impl EmbeddedMade {
             self.step_handler.clone(),
             self.clock.clone(),
         )
-        .with_transcript_store(self.transcript_store.clone())
         .execute(input)
         .await
     }
@@ -552,7 +544,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
