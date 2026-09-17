@@ -1,5 +1,6 @@
 use crate::entities::ceremony_commands::ApplyTransition;
 use crate::entities::CeremonyCommand;
+use crate::value_objects::CeremonyTransition;
 
 use super::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, DomainError, OffsetDateTime, RoleId,
@@ -7,6 +8,37 @@ use super::{
 };
 
 impl CeremonyInstance {
+    /// A terminal move also requires every open intervention to be resolved.
+    #[must_use]
+    pub fn transition_is_enabled(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        definition.guards_are_satisfied(transition, &self.step_records, &self.context)
+            && self
+                .require_interventions_resolved_before_entering(definition, transition.to())
+                .is_ok()
+    }
+
+    pub(super) fn require_interventions_resolved_before_entering(
+        &self,
+        definition: &CeremonyDefinition,
+        state_id: &StateId,
+    ) -> Result<(), DomainError> {
+        if definition.is_terminal_state(state_id)
+            && self
+                .interventions
+                .iter()
+                .any(|item| item.status().is_open())
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony cannot enter a terminal state with open interventions",
+            });
+        }
+        Ok(())
+    }
+
     pub fn apply_transition_as(
         &mut self,
         definition: &CeremonyDefinition,
