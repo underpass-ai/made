@@ -147,6 +147,7 @@ async fn assert_group_optionals(arms: &ParityArms) {
     {
         let arguments = json!({
             "name": "parity_grouped", "objective": "Review the two perspectives.",
+            "outputs": ["review"],
             "participants": [{"role_id": "A"}, {"role_id": "B"}],
             "max_parallel": 2,
             "stages": [{"id": "review", "group": {
