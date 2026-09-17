@@ -128,6 +128,12 @@ durable composition.
 5. Continue with the returned next step, enabled transition, guard or open
    intervention.
 
+Completion currently carries no claim fencing identity. After reclaiming an
+expired lease, the host must prevent the previous worker from submitting a
+late result: the engine cannot distinguish it from the replacement attempt.
+This inherited limitation is tracked in [#127](https://github.com/underpass-ai/made/issues/127);
+parallel claim limits do not resolve it.
+
 A published instance reloads both its snapshot and immutable definition from
 SQLite. An ad-hoc supplied definition does not make that durability claim; use
 the publication path for autonomous machinery.
