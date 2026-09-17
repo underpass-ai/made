@@ -12,7 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyGuard, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationFinding, CeremonyValidationLocus, GuardName, RoleId, StateId, StepId,
+    CeremonyValidationFinding, CeremonyValidationLocus, GuardCondition, GuardName, RoleId, StateId,
+    StepId,
 };
 
 /// The assembled parts of a ceremony state machine, borrowed for
@@ -111,11 +112,26 @@ impl CeremonyDefinitionParts<'_> {
                 continue;
             }
             for guard_name in transition.required_guards() {
-                if !self.guards.contains_key(guard_name) {
+                let Some(guard) = self.guards.get(guard_name) else {
                     findings.push(CeremonyValidationFinding::error(
                         locus.clone(),
                         DomainError::NotFound {
                             what: "ceremony_transition.guard",
+                        },
+                    ));
+                    continue;
+                };
+                let GuardCondition::StepRepeatExhausted(condition) = guard.condition() else {
+                    continue;
+                };
+                let Some(step) = self.steps.get(condition.step_id()) else {
+                    continue;
+                };
+                if step.state_id() != transition.from() {
+                    findings.push(CeremonyValidationFinding::error(
+                        locus.clone(),
+                        DomainError::InvariantViolated {
+                            reason: "exhausted-repeat guard must reference a step in the transition source state",
                         },
                     ));
                 }
@@ -149,11 +165,22 @@ impl CeremonyDefinitionParts<'_> {
     fn collect_guard_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
         for (guard_name, guard) in self.guards {
             if let Some(step_id) = guard.condition().referenced_step_id() {
-                if !self.steps.contains_key(step_id) {
+                let Some(step) = self.steps.get(step_id) else {
                     findings.push(CeremonyValidationFinding::error(
                         CeremonyValidationLocus::guard(guard_name.clone()),
                         DomainError::NotFound {
                             what: "ceremony_guard.step",
+                        },
+                    ));
+                    continue;
+                };
+                if matches!(guard.condition(), GuardCondition::StepRepeatExhausted(_))
+                    && step.repeat_policy().is_none()
+                {
+                    findings.push(CeremonyValidationFinding::error(
+                        CeremonyValidationLocus::guard(guard_name.clone()),
+                        DomainError::InvariantViolated {
+                            reason: "exhausted-repeat guard must reference a repeating step",
                         },
                     ));
                 }

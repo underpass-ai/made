@@ -65,6 +65,12 @@ creates the immutable tagged sections.
 
 ### Changed
 
+- Ceremony definitions and `made_design_ceremony` can require exact JSON from
+  a declared step's current successful output and explicitly route a bounded
+  step-repeat exhaustion. An exhaustion route waives only that step's repeat
+  condition on that transition; all other guards and invariants remain in
+  force. (#116)
+
 - Automatic ceremony-event publication now retries a transient pending
   position with bounded backoff without waiting for another append. Core NATS
   drains its client buffer to the transport under a five-second deadline before

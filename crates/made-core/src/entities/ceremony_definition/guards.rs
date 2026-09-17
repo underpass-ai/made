@@ -1,8 +1,8 @@
 use std::collections::BTreeMap;
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyGuard, CeremonyStep, CeremonyTransition, StateId, StepExecutionRecord,
-    StepId,
+    CeremonyContext, CeremonyGuard, CeremonyStep, CeremonyTransition, GuardCondition, StateId,
+    StepExecutionRecord, StepId,
 };
 
 use super::CeremonyDefinition;
@@ -15,11 +15,11 @@ impl CeremonyDefinition {
         records: &BTreeMap<StepId, StepExecutionRecord>,
         context: &CeremonyContext,
     ) -> bool {
-        self.repeat_requirements_are_satisfied(transition.from(), records)
+        self.repeat_requirements_are_satisfied_for_transition(transition, records)
             && transition.required_guards().iter().all(|guard_name| {
-                self.guards
-                    .get(guard_name)
-                    .is_some_and(|guard| self.guard_is_satisfied(guard, records, context))
+                self.guards.get(guard_name).is_some_and(|guard| {
+                    self.guard_is_satisfied_for_transition(guard, transition, records, context)
+                })
             })
     }
 
@@ -30,26 +30,27 @@ impl CeremonyDefinition {
     /// transition selection, instance projections and aggregate enforcement
     /// agree on what completion means.
     #[must_use]
-    pub fn guard_is_satisfied(
+    pub fn guard_is_satisfied_for_transition(
         &self,
         guard: &CeremonyGuard,
+        transition: &CeremonyTransition,
         records: &BTreeMap<StepId, StepExecutionRecord>,
         context: &CeremonyContext,
     ) -> bool {
-        if !guard.is_satisfied(records, context) {
-            return false;
-        }
         match guard.condition() {
-            crate::value_objects::GuardCondition::StepStatus { step_id, status }
-                if status.is_success() =>
-            {
-                self.repeat_requirement_is_satisfied(step_id, records)
+            GuardCondition::StepRepeatExhausted(condition) => self
+                .step_repeat_is_exhausted_on_transition(transition, condition.step_id(), records),
+            GuardCondition::StepStatus { step_id, status } if status.is_success() => {
+                guard.is_satisfied(records, context)
+                    && self.repeat_requirement_is_satisfied_or_waived(transition, step_id, records)
             }
-            crate::value_objects::GuardCondition::AllStepsCompleted => self
-                .steps
-                .keys()
-                .all(|step_id| self.repeat_requirement_is_satisfied(step_id, records)),
-            _ => true,
+            GuardCondition::AllStepsCompleted => {
+                guard.is_satisfied(records, context)
+                    && self.steps.keys().all(|step_id| {
+                        self.repeat_requirement_is_satisfied_or_waived(transition, step_id, records)
+                    })
+            }
+            _ => guard.is_satisfied(records, context),
         }
     }
 
@@ -63,6 +64,73 @@ impl CeremonyDefinition {
     ) -> bool {
         self.steps_for_state(state_id)
             .all(|step| self.repeat_requirement_is_satisfied(step.id(), records))
+    }
+
+    /// Whether source-state repeats either reached their stop condition or
+    /// have an exact exhaustion guard on this transition.
+    #[must_use]
+    pub fn repeat_requirements_are_satisfied_for_transition(
+        &self,
+        transition: &CeremonyTransition,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+    ) -> bool {
+        self.steps_for_state(transition.from()).all(|step| {
+            self.repeat_requirement_is_satisfied_or_waived(transition, step.id(), records)
+        })
+    }
+
+    fn repeat_requirement_is_satisfied_or_waived(
+        &self,
+        transition: &CeremonyTransition,
+        step_id: &StepId,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+    ) -> bool {
+        self.repeat_requirement_is_satisfied(step_id, records)
+            || self.transition_waives_exhausted_repeat(transition, step_id, records)
+    }
+
+    fn transition_waives_exhausted_repeat(
+        &self,
+        transition: &CeremonyTransition,
+        step_id: &StepId,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+    ) -> bool {
+        transition.required_guards().iter().any(|guard_name| {
+            self.guards.get(guard_name).is_some_and(|guard| {
+                matches!(
+                    guard.condition(),
+                    GuardCondition::StepRepeatExhausted(condition)
+                        if condition.step_id() == step_id
+                            && self.step_repeat_is_exhausted_on_transition(
+                                transition,
+                                step_id,
+                                records,
+                            )
+                )
+            })
+        })
+    }
+
+    fn step_repeat_is_exhausted_on_transition(
+        &self,
+        transition: &CeremonyTransition,
+        step_id: &StepId,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+    ) -> bool {
+        let Some(step) = self.step(step_id) else {
+            return false;
+        };
+        if step.state_id() != transition.from() {
+            return false;
+        }
+        let Some(policy) = step.repeat_policy() else {
+            return false;
+        };
+        records.get(step_id).is_some_and(|record| {
+            record.status().is_success()
+                && !policy.is_satisfied(record.output())
+                && !policy.permits_another_iteration(record.iteration())
+        })
     }
 
     fn repeat_requirement_is_satisfied(

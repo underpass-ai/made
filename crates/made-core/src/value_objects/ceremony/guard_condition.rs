@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{StepId, StepStatus};
+use super::{OutputFieldGuardCondition, StepId, StepRepeatExhaustedGuardCondition, StepStatus};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -8,6 +8,8 @@ pub enum GuardCondition {
     Always,
     AllStepsCompleted,
     StepStatus { step_id: StepId, status: StepStatus },
+    OutputField(OutputFieldGuardCondition),
+    StepRepeatExhausted(StepRepeatExhaustedGuardCondition),
     HumanApproval,
 }
 
@@ -16,6 +18,8 @@ impl GuardCondition {
     pub fn referenced_step_id(&self) -> Option<&StepId> {
         match self {
             Self::StepStatus { step_id, .. } => Some(step_id),
+            Self::OutputField(condition) => Some(condition.step_id()),
+            Self::StepRepeatExhausted(condition) => Some(condition.step_id()),
             Self::Always | Self::AllStepsCompleted | Self::HumanApproval => None,
         }
     }

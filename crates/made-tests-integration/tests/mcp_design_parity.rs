@@ -55,7 +55,24 @@ fn intent() -> Value {
                 "instructions": "Weigh them against the brief.",
                 "num_agents": 2,
                 "review_rounds": 1,
-                "see_prior": true
+                "see_prior": true,
+                "repeat": {
+                    "max_iterations": 2,
+                    "output_field": "accepted",
+                    "equals": true
+                },
+                "exit_guards": [
+                    {
+                        "kind": "output_field",
+                        "step": "draft_options",
+                        "output_field": "decision=key",
+                        "equals": {"label": "left=right"}
+                    },
+                    {
+                        "kind": "step_repeat_exhausted",
+                        "step": "weigh_options"
+                    }
+                ]
             }
         ],
         "final_approval": { "role_id": "EDITOR" },
@@ -207,6 +224,14 @@ async fn what_the_caller_left_out_reaches_the_same_answer_on_both_backends() {
         assert!(
             rendered.contains("max_iterations: 3"),
             "the {backend} backend must carry the repeat cap: {rendered}"
+        );
+        assert!(
+            rendered.contains("output_field:draft_options:decision=key={\"label\":\"left=right\"}"),
+            "the {backend} backend must preserve the exact JSON guard: {rendered}"
+        );
+        assert!(
+            rendered.contains("step_repeat_exhausted:weigh_options"),
+            "the {backend} backend must preserve the exhausted-repeat guard: {rendered}"
         );
     }
 

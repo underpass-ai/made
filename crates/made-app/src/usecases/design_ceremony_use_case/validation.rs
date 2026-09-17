@@ -3,9 +3,10 @@ use std::collections::BTreeSet;
 use made_core::error::DomainError;
 
 use super::{
-    approval_guard_name, approval_trigger, completion_guard, num_agents, CeremonyDesignDocument,
-    COMPLETED_STATE, RESERVED_ACTIONS,
+    approval_guard_name, approval_trigger, completion_guard, exit_guard_name, num_agents,
+    CeremonyDesignDocument, COMPLETED_STATE, RESERVED_ACTIONS,
 };
+use crate::usecases::CeremonyDesignExitGuard;
 
 fn invalid(reason: impl Into<String>) -> DomainError {
     DomainError::InvalidDocument {
@@ -73,8 +74,48 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                 stage.id()
             )));
         }
+        for (index, guard) in stage.exit_guards().iter().enumerate() {
+            if stage.exit_guards()[..index].contains(guard) {
+                return Err(invalid(format!(
+                    "stage `{}` contains a duplicate exit guard",
+                    stage.id()
+                )));
+            }
+        }
     }
     reject_duplicates(stage_ids.iter().cloned(), "stages.id")?;
+    let declared_steps = stage_ids
+        .iter()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    for stage in document.stages() {
+        for guard in stage.exit_guards() {
+            let step_id = match guard {
+                CeremonyDesignExitGuard::OutputField(guard) => guard.step_id(),
+                CeremonyDesignExitGuard::StepRepeatExhausted(guard) => guard.step_id(),
+            };
+            if !declared_steps.contains(step_id.as_str()) {
+                return Err(invalid(format!(
+                    "stage `{}` exit guard names unknown step `{step_id}`",
+                    stage.id()
+                )));
+            }
+            if let CeremonyDesignExitGuard::StepRepeatExhausted(guard) = guard {
+                if guard.step_id() != stage.id() {
+                    return Err(invalid(format!(
+                        "stage `{}` exhausted-repeat guard must reference a step in that stage",
+                        stage.id()
+                    )));
+                }
+                if stage.repeat().is_none() {
+                    return Err(invalid(format!(
+                        "stage `{}` exhausted-repeat guard must reference a repeating step",
+                        stage.id()
+                    )));
+                }
+            }
+        }
+    }
     if stage_ids
         .iter()
         .any(|id| id.eq_ignore_ascii_case(COMPLETED_STATE))
@@ -85,6 +126,14 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     }
 
     let generated_triggers = completion_guards(&stage_ids);
+    let generated_exit_guards = document
+        .stages()
+        .iter()
+        .flat_map(|stage| {
+            (0..stage.exit_guards().len())
+                .map(move |index| exit_guard_name(stage.id().as_str(), index))
+        })
+        .collect::<BTreeSet<_>>();
     for stage_id in &stage_ids {
         if generated_triggers.contains(stage_id) || RESERVED_ACTIONS.contains(&stage_id.as_str()) {
             return Err(invalid(format!(
@@ -102,7 +151,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
         }
         let guard_name = approval_guard_name(document);
         let trigger = approval_trigger(document);
-        if generated_triggers.contains(&guard_name) {
+        if generated_triggers.contains(&guard_name) || generated_exit_guards.contains(&guard_name) {
             return Err(invalid(format!(
                 "final approval guard `{guard_name}` collides with a generated completion guard"
             )));

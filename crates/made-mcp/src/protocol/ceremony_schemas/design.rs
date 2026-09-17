@@ -44,32 +44,7 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
             },
             "stages": {
                 "type": "array",
-                "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["id", "owner_role_id", "instructions"],
-                    "properties": {
-                        "id": string_schema("Lower_snake_case step identity. Declaration order is execution order."),
-                        "owner_role_id": string_schema("Participant role allowed to run this stage."),
-                        "instructions": string_schema("Concrete instructions and success criteria for this stage."),
-                        "handler": string_schema("Host step-handler specialty. Defaults to host_callback."),
-                        "see_prior": {
-                            "type": "boolean",
-                            "description": "Whether earlier stage outputs enter this stage; defaults to false for the first stage and true afterwards."
-                        },
-                        "num_agents": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "description": "Council size. Defaults to one."
-                        },
-                        "review_rounds": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Adversarial peer-review rounds. A positive value requires at least two agents."
-                        },
-                        "repeat": repeat_stage_schema()
-                    }
-                }
+                "items": stage_schema()
             },
             "pattern": pattern_schema(),
             "final_approval": {
@@ -99,6 +74,70 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                 "description": "Default retry backoff written into the draft. Defaults to one."
             }
         }
+    })
+}
+
+fn stage_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "owner_role_id", "instructions"],
+        "properties": {
+            "id": string_schema("Lower_snake_case step identity. Declaration order is execution order."),
+            "owner_role_id": string_schema("Participant role allowed to run this stage."),
+            "instructions": string_schema("Concrete instructions and success criteria for this stage."),
+            "handler": string_schema("Host step-handler specialty. Defaults to host_callback."),
+            "see_prior": {
+                "type": "boolean",
+                "description": "Whether earlier stage outputs enter this stage; defaults to false for the first stage and true afterwards."
+            },
+            "num_agents": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Council size. Defaults to one."
+            },
+            "review_rounds": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Adversarial peer-review rounds. A positive value requires at least two agents."
+            },
+            "repeat": repeat_stage_schema(),
+            "exit_guards": {
+                "type": "array",
+                "uniqueItems": true,
+                "items": exit_guard_schema(),
+                "description": "Additional conditions conjoined with stage completion and any final human approval."
+            }
+        }
+    })
+}
+
+fn exit_guard_schema() -> Value {
+    json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step", "output_field", "equals"],
+                "properties": {
+                    "kind": { "const": "output_field" },
+                    "step": string_schema("Declared step whose current successful output is inspected."),
+                    "output_field": string_schema("Top-level structured output field."),
+                    "equals": {
+                        "description": format!("Exact JSON value required for this guard. {STRUCT_NUMBER_RULE}")
+                    }
+                }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step"],
+                "properties": {
+                    "kind": { "const": "step_repeat_exhausted" },
+                    "step": string_schema("Repeating step in this stage whose final iteration must be exhausted.")
+                }
+            }
+        ]
     })
 }
 

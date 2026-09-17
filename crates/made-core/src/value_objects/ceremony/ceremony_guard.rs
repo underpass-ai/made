@@ -40,6 +40,12 @@ impl CeremonyGuard {
             GuardCondition::StepStatus { step_id, status } => records
                 .get(step_id)
                 .is_some_and(|record| record.status() == *status),
+            GuardCondition::OutputField(condition) => records
+                .get(condition.step_id())
+                .is_some_and(|record| condition.is_satisfied(record)),
+            // Exhaustion needs the referenced step policy and the transition
+            // source. CeremonyDefinition evaluates it with both available.
+            GuardCondition::StepRepeatExhausted(_) => false,
             GuardCondition::HumanApproval => context.is_guard_approved(&self.name),
         }
     }

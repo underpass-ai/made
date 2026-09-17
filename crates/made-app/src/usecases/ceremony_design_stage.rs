@@ -3,6 +3,7 @@ use made_core::value_objects::{
 };
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
+use super::CeremonyDesignExitGuard;
 
 /// One stage of the working session, in the author's terms.
 ///
@@ -27,6 +28,7 @@ pub struct CeremonyDesignStage {
     num_agents: Option<NumAgents>,
     review_rounds: Rounds,
     repeat: Option<CeremonyDesignRepeat>,
+    exit_guards: Vec<CeremonyDesignExitGuard>,
 }
 
 impl CeremonyDesignStage {
@@ -50,7 +52,14 @@ impl CeremonyDesignStage {
             num_agents,
             review_rounds,
             repeat,
+            exit_guards: Vec::new(),
         }
+    }
+
+    #[must_use]
+    pub fn with_exit_guards(mut self, exit_guards: Vec<CeremonyDesignExitGuard>) -> Self {
+        self.exit_guards = exit_guards;
+        self
     }
 
     #[must_use]
@@ -91,5 +100,10 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn repeat(&self) -> Option<&CeremonyDesignRepeat> {
         self.repeat.as_ref()
+    }
+
+    #[must_use]
+    pub fn exit_guards(&self) -> &[CeremonyDesignExitGuard] {
+        &self.exit_guards
     }
 }
