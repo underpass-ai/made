@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use crate::entities::{AuditFact, AuditRecord};
 use crate::error::DomainError;
 use crate::ports::{AppendOutcome, PositionedRecord};
-use crate::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+use crate::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 
 #[async_trait]
 pub trait CeremonyEventStorePort: Send + Sync {
@@ -42,6 +42,7 @@ pub trait CeremonyEventStorePort: Send + Sync {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError>;
 
     /// At most `limit` records of every stream, in global order,
@@ -49,7 +50,7 @@ pub trait CeremonyEventStorePort: Send + Sync {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError>;
 
     /// The version of `stream`: `StreamVersion::EMPTY` when nothing was

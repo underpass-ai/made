@@ -11,7 +11,7 @@ use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
 
 use crate::services::session_facts;
 
-use super::PreStreamImport;
+use super::{PreStreamImport, ReadWholeCeremonyEventsUseCase};
 
 /// Opens a stream for every session a pre-stream store still holds
 /// (ADR-012).
@@ -116,7 +116,9 @@ impl ImportPreStreamInstancesUseCase {
         ceremony_id: &CeremonyId,
         expected: &CeremonyInstance,
     ) -> Result<(), DomainError> {
-        let records = self.events.read(ceremony_id, StreamVersion::EMPTY).await?;
+        let records = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(ceremony_id)
+            .await?;
         let events = records
             .iter()
             .map(|record| {
@@ -184,6 +186,7 @@ mod tests {
             CeremonyContext::empty(),
             now(),
         )
+        .expect("required ceremony inputs")
     }
 
     /// A session the old engine had already moved: the fold has to

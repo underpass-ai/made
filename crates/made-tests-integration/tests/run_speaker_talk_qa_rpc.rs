@@ -20,7 +20,18 @@ async fn run_speaker_talk_qa_executes_threaded_ceremony() {
             actor_kind: "service".to_owned(),
             ceremony_id: "integration-speaker-talk-qa".to_owned(),
             definition_yaml: SPEAKER_TALK_QA_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "talk_title".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "integration fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "integration-test".to_owned(),
             lease_ttl_ms: 60_000,
         })

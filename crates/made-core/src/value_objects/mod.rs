@@ -54,7 +54,10 @@ pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use audit::{
     AuditActor, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
-    AuditRecordHash, AuditSequence, EventSchemaVersion, GlobalPosition, StreamVersion,
+    AuditRecordHash, AuditSequence, CeremonyEventConsumer, CeremonyEventCursorAttempt,
+    CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
+    CeremonyEventQuarantineReason, EventSchemaVersion, GlobalPosition, QuarantinedCeremonyEvent,
+    StreamVersion,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,

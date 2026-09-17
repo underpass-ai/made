@@ -4,20 +4,22 @@ use made_adapters::ceremony::{
 };
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
-use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
+use made_app::services::{
+    CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
+};
 use made_app::usecases::{
     GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, ServiceStatus,
+    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ServiceStatus,
 };
 use made_core::entities::{CeremonyInstance, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
-    StatisticsPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
+    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
+    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
 use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
@@ -35,6 +37,7 @@ pub struct EmbeddedMade {
     /// The streams themselves, for the one read that wants records
     /// rather than the session they fold to.
     events: Arc<dyn CeremonyEventStorePort>,
+    cursors: Arc<dyn CeremonyEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
     stream: Arc<SessionStream>,
@@ -75,10 +78,28 @@ impl EmbeddedMade {
         Ok(Self::over(store))
     }
 
+    /// Open durable SQLite and publish its global feed after each append.
+    pub fn open_with_event_transport(
+        path: impl AsRef<std::path::Path>,
+        transport: Arc<dyn CeremonyEventTransportPort>,
+    ) -> Result<Self, ApiError> {
+        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        })?;
+        let store = Arc::new(store);
+        Ok(Self::builder()
+            .with_ceremony_store_and_memory(store.clone())
+            .with_event_cursor(store.clone())
+            .with_definition_publications(store)
+            .with_event_transport(transport)
+            .build())
+    }
+
     fn over(store: SqliteCeremonyStore) -> Self {
         let store = Arc::new(store);
         Self::builder()
             .with_ceremony_store_and_memory(store.clone())
+            .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .build()
     }
@@ -87,6 +108,7 @@ impl EmbeddedMade {
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         events: Arc<dyn CeremonyEventStorePort>,
+        cursors: Arc<dyn CeremonyEventCursorPort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
@@ -96,6 +118,7 @@ impl EmbeddedMade {
         memory: Arc<dyn MemoryWriterPort>,
         memory_reader: Arc<dyn MemoryReaderPort>,
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
+        event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -104,12 +127,26 @@ impl EmbeddedMade {
         // whole of turning it on. The host's own subscriber comes
         // after the engine's.
         let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
+        let publisher = event_transport.map(|transport| {
+            let use_case = Arc::new(PublishCeremonyEventsUseCase::new(
+                events.clone(),
+                cursors.clone(),
+                transport,
+                clock.clone(),
+            ));
+            Arc::new(CeremonyEventPublisherSubscriber::new(
+                use_case,
+                CeremonyEventConsumer::new("embedded-file-sink")
+                    .expect("the embedded sink consumer name is valid"),
+            )) as Arc<dyn CeremonyEventSubscriberPort>
+        });
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
             Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
             Arc::new(CeremonyTracingSubscriber::new()),
             Arc::new(CeremonyStructuredLogSubscriber::new()),
         ];
+        subscribers.extend(publisher);
         subscribers.extend(subscriber);
         let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
         Self {
@@ -117,6 +154,7 @@ impl EmbeddedMade {
             publications,
             stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
+            cursors,
             step_handler,
             evidence_source,
             clock,

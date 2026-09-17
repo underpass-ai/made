@@ -36,6 +36,8 @@ use made_core::ports::{
 use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
 use time::OffsetDateTime;
 
+use crate::usecases::ReadWholeCeremonyEventsUseCase;
+
 use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
 
 /// Loads the fold of a stream and appends what a decision produced.
@@ -72,7 +74,9 @@ impl SessionStream {
     /// folds these; a caller that wants the session calls
     /// [`Self::load`].
     pub async fn records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        self.events.read(id, StreamVersion::EMPTY).await
+        ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(id)
+            .await
     }
 
     /// Fold one complete, bounded stream read into the session at that cut.
@@ -136,7 +140,12 @@ impl SessionStream {
         };
         let from = StreamVersion::new(version.value().saturating_sub(1));
         let mut head = None;
-        for record in self.events.read(id, from).await? {
+        for record in ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(id)
+            .await?
+            .into_iter()
+            .filter(|record| StreamVersion::from_sequence(record.sequence()) > from)
+        {
             let sequence = StreamVersion::from_sequence(record.sequence());
             let event = record.event().ok_or(DomainError::UnreadableCeremonyEvent {
                 event_type: record.event_type().as_str(),

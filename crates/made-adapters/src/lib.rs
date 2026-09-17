@@ -41,8 +41,10 @@
 #![deny(missing_debug_implementations)]
 
 pub mod ceremony;
+mod ceremony_event_wire;
 pub mod clock;
 pub mod config;
+pub mod event_sink;
 pub mod memory;
 pub mod mermaid;
 pub mod metrics;

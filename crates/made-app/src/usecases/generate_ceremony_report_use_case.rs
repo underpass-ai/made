@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyId, StreamVersion};
+use made_core::value_objects::CeremonyId;
 
 use super::{
     CeremonyInstanceView, CeremonyReport, CeremonyReportBinding, GenerateCeremonyReportInput,
-    ResolveCeremonyDefinitionUseCase,
+    ReadWholeCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
 };
 use crate::services::SessionStream;
 
@@ -120,7 +120,9 @@ impl GenerateCeremonyReportUseCase {
         // One bounded stream read defines the report cut. Both the fold and
         // audit journal below use these exact records, so an append racing the
         // report can only fall wholly before or wholly after this projection.
-        let journal = self.events.read(ceremony_id, StreamVersion::EMPTY).await?;
+        let journal = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(ceremony_id)
+            .await?;
         let instance = SessionStream::fold_records(&journal)?.instance;
         let definition = self.definitions.execute(&instance).await?;
         let completed = CeremonyInstanceView::project(&instance, &definition)?.is_completed();
@@ -171,7 +173,8 @@ mod tests {
             &definition,
             CeremonyContext::empty(),
             now(),
-        );
+        )
+        .expect("required ceremony inputs");
         store.save(&other).await.unwrap();
 
         Fixture {

@@ -10,11 +10,11 @@ use std::time::Instant;
 
 use serde_json::Value;
 
-#[cfg(feature = "embedded")]
-use crate::backend::EMBEDDED_STORE_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext, MCP_BACKEND_ENV};
+#[cfg(feature = "embedded")]
+use crate::backend::{EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -87,7 +87,19 @@ impl MadeMcpServer {
     #[cfg(feature = "embedded")]
     pub fn embedded_sqlite(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         let path = path.as_ref();
-        let made = made_embedded::EmbeddedMade::open(path).map_err(|error| {
+        let sink = std::env::var(EVENT_SINK_PATH_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(made_adapters::event_sink::JsonLinesCeremonyEventSink::open)
+            .transpose()
+            .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
+        let made = match sink {
+            Some(sink) => {
+                made_embedded::EmbeddedMade::open_with_event_transport(path, Arc::new(sink))
+            }
+            None => made_embedded::EmbeddedMade::open(path),
+        }
+        .map_err(|error| {
             format!(
                 "failed to open the embedded SQLite ceremony store at `{}`: {error}",
                 path.display()
@@ -439,7 +451,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC plus backend-independent discovery and help.
-        assert_eq!(tools.len(), 44);
+        assert_eq!(tools.len(), 45);
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));

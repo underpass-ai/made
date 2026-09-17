@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use made_core::entities::{AuditFact, AuditRecord};
 use made_core::error::DomainError;
 use made_core::ports::{AppendOutcome, CeremonyEventStorePort, PositionedRecord};
-use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 use tokio::sync::Notify;
 
 use crate::usecases::ceremony_test_support::EventStoreFake;
@@ -59,9 +59,10 @@ impl CeremonyEventStorePort for ReportCutStore {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         self.reads.fetch_add(1, Ordering::SeqCst);
-        let cut = self.inner.read(stream, after).await?;
+        let cut = self.inner.read(stream, after, limit).await?;
         if self.block_next_read.swap(false, Ordering::SeqCst) {
             self.captured.notify_one();
             self.released.notified().await;
@@ -72,7 +73,7 @@ impl CeremonyEventStorePort for ReportCutStore {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         self.inner.read_all(from, limit).await
     }

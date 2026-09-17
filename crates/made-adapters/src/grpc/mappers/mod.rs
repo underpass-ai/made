@@ -44,7 +44,8 @@ pub use ceremony_delegation::{
 pub use ceremony_design::{ceremony_design_document_from_proto, design_ceremony_response_from};
 pub use ceremony_history::{
     generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
-    read_ceremony_events_response_from, verify_ceremony_journal_response_from,
+    pull_ceremony_events_response_from, read_ceremony_events_response_from,
+    verify_ceremony_journal_response_from,
 };
 pub use ceremony_human_verbs::{
     approve_ceremony_guard_input_from_proto, assert_ceremony_reason_input_from_proto,

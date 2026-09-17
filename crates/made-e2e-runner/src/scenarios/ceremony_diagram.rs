@@ -16,7 +16,18 @@ pub(crate) async fn verify_editorial_meeting_ceremony_diagram(
             actor_kind: "service".to_owned(),
             ceremony_id: "e2e-editorial-planning-meeting".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "meeting_brief".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "E2E ceremony fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "e2e-runner".to_owned(),
             lease_ttl_ms: 60_000,
         })

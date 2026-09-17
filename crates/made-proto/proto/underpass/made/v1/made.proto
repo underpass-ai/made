@@ -204,6 +204,8 @@ service MadeService {
   // thing and arrives as additive fields. The transcript is the other
   // half: what the seats actually contributed, in order.
   rpc ReadCeremonyEvents(ReadCeremonyEventsRequest) returns (ReadCeremonyEventsResponse);
+  // Named global feed. Reading does not commit; acknowledge_through does.
+  rpc PullCeremonyEvents(PullCeremonyEventsRequest) returns (PullCeremonyEventsResponse);
   rpc GetCeremonyTranscript(GetCeremonyTranscriptRequest) returns (GetCeremonyTranscriptResponse);
 
   // The report over one or more sessions: a projection of persisted
@@ -1640,6 +1642,24 @@ message ReadCeremonyEventsRequest {
   // anything above the cap, 1000, is refused above the cap rather than
   // answered with a smaller page than the one asked for.
   uint32 limit = 3;
+}
+
+message PullCeremonyEventsRequest {
+  string consumer = 1;
+  // Zero takes the server default, 200. Maximum 1000.
+  uint32 limit = 2;
+  // Durable progress advances only when this field is present.
+  optional uint64 acknowledge_through = 3;
+}
+
+message PositionedCeremonyEvent {
+  uint64 global_position = 1;
+  CeremonyEventRecord record = 2;
+}
+
+message PullCeremonyEventsResponse {
+  repeated PositionedCeremonyEvent records = 1;
+  optional uint64 acknowledged_through = 2;
 }
 
 message ReadCeremonyEventsResponse {

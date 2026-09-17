@@ -16,8 +16,8 @@ use made_app::usecases::{
     GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
     GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
@@ -43,8 +43,8 @@ use super::mappers::{
     diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
     generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
     orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
-    publish_ceremony_definition_response_from, read_ceremony_events_response_from,
-    request_ceremony_intervention_input_from_proto,
+    publish_ceremony_definition_response_from, pull_ceremony_events_response_from,
+    read_ceremony_events_response_from, request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
@@ -103,6 +103,7 @@ pub struct MadeGrpcService {
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
+    pub(super) pull_ceremony_events: Arc<PullCeremonyEventsUseCase>,
     pub(super) verify_ceremony_journal: Arc<VerifyCeremonyJournalUseCase>,
     pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
     pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
@@ -496,6 +497,13 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::ReadCeremonyEventsRequest>,
     ) -> GrpcResult<pb::ReadCeremonyEventsResponse> {
         self.handle_read_ceremony_events(request).await
+    }
+
+    async fn pull_ceremony_events(
+        &self,
+        request: Request<pb::PullCeremonyEventsRequest>,
+    ) -> GrpcResult<pb::PullCeremonyEventsResponse> {
+        self.handle_pull_ceremony_events(request).await
     }
 
     async fn verify_ceremony_journal(

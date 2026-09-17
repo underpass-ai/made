@@ -16,7 +16,18 @@ async fn run_ceremony_executes_yaml_and_returns_trace_diagram() {
             actor_kind: "service".to_owned(),
             ceremony_id: "integration-editorial-meeting".to_owned(),
             definition_yaml: EDITORIAL_MEETING_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "meeting_brief".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "integration fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "integration-test".to_owned(),
             lease_ttl_ms: 60_000,
         })

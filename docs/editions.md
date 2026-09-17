@@ -245,7 +245,7 @@ Two caveats that make this less symmetric than the KMP equivalent:
   call, so the same intent renders the same document whichever engine
   answered. So is everything a finished session leaves behind:
   `ReadCeremonyEvents`, `VerifyCeremonyJournal` and `GetCeremonyTranscript`
-  back `made_read_ceremony_events`, `made_verify_ceremony_journal` and
+  back `made_read_ceremony_events`, `made_pull_ceremony_events`, `made_verify_ceremony_journal` and
   `made_get_ceremony_transcript`, and
   `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
   is a `made-app` projection now (ADR-006), so the same sessions in the same

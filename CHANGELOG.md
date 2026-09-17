@@ -23,6 +23,11 @@ operator command.
   reports expose trace, correlation, and causation identifiers. Reports fold
   and render one bounded stream snapshot, so a concurrent append cannot mix
   two stream versions in one document. (#110)
+
+- Durable named ceremony-event cursors now drive explicit pull acknowledgements,
+  NATS publication on `made.ceremony.<event_type>`, and the embedded JSONL sink
+  selected with `MADE_MCP_EVENT_SINK_PATH` (#108).
+
 - MCP sealed records, instance listings, and statistics envelopes now use one
   JSON renderer across the embedded, gRPC, and fixture backends (#101).
 
@@ -45,6 +50,10 @@ operator command.
   implementation (#90).
 
 ### Fixed
+
+- Reject ceremony starts and runs with missing required context inputs before
+  opening an instance or event stream; report every missing name through all
+  execution surfaces and allow the same id to be retried with complete input (#113).
 
 - Refuse terminal ceremony transitions while an intervention remains open,
   preserve the journal on refusal, and report that move disabled (#109).

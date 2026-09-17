@@ -16,7 +16,18 @@ pub(crate) async fn verify_sprint_planning_ceremony(
             actor_kind: "service".to_owned(),
             ceremony_id: "e2e-sprint-planning".to_owned(),
             definition_yaml: SPRINT_PLANNING_CEREMONY.to_owned(),
-            context: None,
+            context: Some(prost_types::Struct {
+                fields: [(
+                    "sprint_goal".to_owned(),
+                    prost_types::Value {
+                        kind: Some(prost_types::value::Kind::StringValue(
+                            "E2E ceremony fixture".to_owned(),
+                        )),
+                    },
+                )]
+                .into_iter()
+                .collect(),
+            }),
             lease_owner_id: "e2e-runner".to_owned(),
             lease_ttl_ms: 60_000,
         })

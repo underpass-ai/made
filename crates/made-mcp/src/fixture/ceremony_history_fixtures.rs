@@ -12,6 +12,7 @@ use crate::renderers::{AuditRecordView, CeremonyEventPageView};
 /// The first record of the fixture session, sealed and whole.
 pub(super) fn read_ceremony_events_fixture() -> Value {
     let record = AuditRecordView {
+        global_position: None,
         event_id: "ceremony-fixture-1:started".to_owned(),
         event_type: "ceremony_instance_started".to_owned(),
         schema_version: 2,
@@ -44,6 +45,13 @@ pub(super) fn read_ceremony_events_fixture() -> Value {
         record_hash: FIXTURE_DIGEST.to_vec(),
     };
     CeremonyEventPageView::new(vec![record], 1, 1).to_json()
+}
+
+pub(super) fn pull_ceremony_events_fixture() -> Value {
+    let mut page = read_ceremony_events_fixture();
+    let mut record = page["records"][0].take();
+    record["global_position"] = json!(1);
+    json!({ "records": [record], "acknowledged_through": null })
 }
 
 /// The one-record fixture stream, whole: a fixture that answered

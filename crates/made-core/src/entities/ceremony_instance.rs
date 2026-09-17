@@ -10,8 +10,8 @@
 //! [`CeremonyEvent`]s it would produce, holding every rule and writing
 //! nothing; [`CeremonyInstance::apply`] writes one event and checks
 //! nothing. [`CeremonyInstance::rehydrate`] folds a whole stream. The
-//! mutators callers already use are thin wrappers over that pair, and
-//! keep their signatures.
+//! mutators callers already use are thin wrappers over that pair. Opening
+//! constructors also return domain refusals when required context is absent.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -134,14 +134,15 @@ impl CeremonyInstance {
     /// Nothing binds the instance to a definition that can be looked up
     /// later; that is what [`Self::start_bound`] is for. The instance
     /// is the fold of the opening event [`Self::decide_start`] yields.
-    #[must_use]
     pub fn start(
         id: CeremonyId,
         definition: &CeremonyDefinition,
         context: CeremonyContext,
         now: OffsetDateTime,
-    ) -> Self {
-        Self::from_started(&Self::opening(id, definition, context, now, None))
+    ) -> Result<Self, DomainError> {
+        Ok(Self::from_started(&Self::opening(
+            id, definition, context, now, None,
+        )?))
     }
 
     /// Start from a published definition, recording its digest.
@@ -149,20 +150,19 @@ impl CeremonyInstance {
     /// The digest travels with the instance so a later reader can
     /// verify which definition ran instead of taking the name and
     /// version on trust.
-    #[must_use]
     pub fn start_bound(
         id: CeremonyId,
         published: &PublishedCeremonyDefinition,
         context: CeremonyContext,
         now: OffsetDateTime,
-    ) -> Self {
-        Self::from_started(&Self::opening(
+    ) -> Result<Self, DomainError> {
+        Ok(Self::from_started(&Self::opening(
             id,
             published.definition(),
             context,
             now,
             Some(published.digest()),
-        ))
+        )?))
     }
 
     /// The digest of the published definition this instance runs, if it
@@ -515,6 +515,7 @@ mod tests {
             CeremonyContext::empty(),
             now(),
         )
+        .expect("required ceremony inputs")
     }
 
     #[test]

@@ -297,7 +297,8 @@ fn a_session_is_the_fold_of_the_events_its_mutations_decided() {
         CeremonyContext::empty(),
         None,
         OPENED_AT,
-    );
+    )
+    .expect("required ceremony inputs");
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 

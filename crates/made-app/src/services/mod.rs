@@ -3,6 +3,7 @@
 mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod ceremony_event_fanout;
+mod ceremony_event_publisher_subscriber;
 mod ceremony_trace_scope;
 pub(crate) mod ceremony_transcript_projection;
 mod conflict_policy;
@@ -18,6 +19,7 @@ mod session_stream;
 pub use auto_dispatch::AutoDispatchService;
 pub use auto_dispatch_outcome::AutoDispatchOutcome;
 pub use ceremony_event_fanout::CeremonyEventFanout;
+pub use ceremony_event_publisher_subscriber::CeremonyEventPublisherSubscriber;
 pub(crate) use ceremony_trace_scope::current_trace_context;
 pub use ceremony_trace_scope::CeremonyTraceScope;
 pub use conflict_policy::ConflictPolicy;

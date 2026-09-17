@@ -4,6 +4,7 @@ use crate::entities::ceremony_events::{CeremonyInstanceStarted, MemoryRecalled};
 use crate::entities::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, PublishedCeremonyDefinition,
 };
+use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyId, SessionRecollection,
 };
@@ -12,50 +13,48 @@ impl CeremonyInstance {
     /// The opening of a ceremony run from a definition supplied for it.
     ///
     /// A constructor rather than a command: there is no instance yet
-    /// to decide against, and nothing to refuse — the definition was
-    /// validated when it was built. The event carries everything
+    /// to decide against. Required inputs are checked against this run's
+    /// context before any opening event is built. The event carries everything
     /// [`Self::from_started`] needs to open the same instance without
     /// the definition in hand.
     ///
     /// A batch rather than one event, because an opening is sometimes
     /// two facts: what was started, and what it was told. See
     /// [`Self::opening_batch`].
-    #[must_use]
     pub fn decide_start(
         id: CeremonyId,
         definition: &CeremonyDefinition,
         context: CeremonyContext,
         recollection: Option<SessionRecollection>,
         now: OffsetDateTime,
-    ) -> Vec<CeremonyEvent> {
-        Self::opening_batch(
-            Self::opening(id, definition, context, now, None),
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        Ok(Self::opening_batch(
+            Self::opening(id, definition, context, now, None)?,
             recollection,
             now,
-        )
+        ))
     }
 
     /// The opening of a ceremony bound to a published definition, its
     /// digest recorded so a later reader can check which one ran.
-    #[must_use]
     pub fn decide_start_bound(
         id: CeremonyId,
         published: &PublishedCeremonyDefinition,
         context: CeremonyContext,
         recollection: Option<SessionRecollection>,
         now: OffsetDateTime,
-    ) -> Vec<CeremonyEvent> {
-        Self::opening_batch(
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        Ok(Self::opening_batch(
             Self::opening(
                 id,
                 published.definition(),
                 context,
                 now,
                 Some(published.digest()),
-            ),
+            )?,
             recollection,
             now,
-        )
+        ))
     }
 
     /// The opening, and the recollection when there was one.
@@ -89,8 +88,20 @@ impl CeremonyInstance {
         context: CeremonyContext,
         now: OffsetDateTime,
         bound_definition: Option<CeremonyDefinitionDigest>,
-    ) -> CeremonyInstanceStarted {
-        CeremonyInstanceStarted {
+    ) -> Result<CeremonyInstanceStarted, DomainError> {
+        let missing = definition
+            .inputs()
+            .values()
+            .filter(|input| input.requirement().is_required())
+            .filter(|input| context.attributes().get(input.name().as_str()).is_none())
+            .map(|input| input.name().as_str())
+            .collect::<Vec<_>>();
+        if !missing.is_empty() {
+            return Err(DomainError::InvalidDocument {
+                reason: format!("missing required ceremony inputs: {}", missing.join(", ")),
+            });
+        }
+        Ok(CeremonyInstanceStarted {
             ceremony_id: id,
             definition_name: definition.name().clone(),
             definition_version: definition.version().clone(),
@@ -99,6 +110,6 @@ impl CeremonyInstance {
             context,
             bound_definition,
             created_at: now,
-        }
+        })
     }
 }

@@ -17,6 +17,8 @@ pub const MCP_BACKEND_ENV: &str = "MADE_MCP_BACKEND";
 /// the embedded backend is selected: where ceremony state survives a
 /// restart is an operator decision, never a default this crate invents.
 pub const EMBEDDED_STORE_PATH_ENV: &str = "MADE_MCP_STORE_PATH";
+/// Optional JSON Lines destination for the embedded global ceremony-event feed.
+pub const EVENT_SINK_PATH_ENV: &str = "MADE_MCP_EVENT_SINK_PATH";
 /// TLS mode override for the gRPC client: `disabled`/`server`/`mutual`.
 pub const GRPC_TLS_MODE_ENV: &str = "MADE_MCP_GRPC_TLS_MODE";
 /// PEM bundle the client should trust as a CA when verifying the

@@ -38,6 +38,7 @@
 use std::collections::BTreeSet;
 use std::sync::Arc;
 
+use crate::usecases::ReadWholeCeremonyEventsUseCase;
 use async_trait::async_trait;
 use made_core::entities::{CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
@@ -46,7 +47,6 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     CeremonyId, CeremonyInterventionId, CeremonyRecordRef, MemoryProvenance, MemoryWrite,
-    StreamVersion,
 };
 
 use super::memory_scope_resolver;
@@ -82,7 +82,10 @@ impl CeremonyEventSubscriberPort for SessionMemoryRecorder {
             .iter()
             .map(|entry| entry.record.sequence().value())
             .collect();
-        let history = match self.events.read(&stream, StreamVersion::EMPTY).await {
+        let history = match ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(&stream)
+            .await
+        {
             Ok(history) => history,
             Err(error) => return Self::could_not_read(&stream, &error),
         };

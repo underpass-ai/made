@@ -8,6 +8,7 @@
 mod agent_registry;
 mod ceremony_definition_publications;
 mod ceremony_definition_repository;
+mod ceremony_event_cursor;
 mod ceremony_event_store;
 mod contract_registry;
 mod council_registry;
@@ -19,6 +20,7 @@ mod statistics;
 pub use agent_registry::InMemoryAgentRegistry;
 pub use ceremony_definition_publications::InMemoryCeremonyDefinitionPublications;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
+pub use ceremony_event_cursor::InMemoryCeremonyEventCursor;
 pub use ceremony_event_store::InMemoryCeremonyEventStore;
 pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
