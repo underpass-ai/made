@@ -1547,6 +1547,8 @@ message CeremonyDesignStage {
   reserved 11 to 13;
 }
 
+// A leaf inside a grouped state. It cannot recursively contain a group or
+// carry stage-exit guards.
 message CeremonyDesignGroupStep {
   string id = 1;
   string owner_role_id = 2;
@@ -1559,11 +1561,13 @@ message CeremonyDesignGroupStep {
 }
 
 message CeremonyDesignGroupJoin {
+  // all_steps_completed | any_step_completed | steps_completed
   string condition = 1;
   optional uint32 count = 2;
 }
 
 message CeremonyDesignGroup {
+  // sequential | concurrent; empty defaults to sequential.
   string execution = 1;
   repeated CeremonyDesignGroupStep steps = 2;
   CeremonyDesignGroupJoin join = 3;
@@ -1605,6 +1609,7 @@ message DesignCeremonyRequest {
   // Retry backoff. Absent takes one second; zero is a legitimate
   // choice, which is why absent has to be tellable from it.
   optional uint64 backoff_seconds = 12;
+  // Definition-level parallelism. Omitted takes 3; valid range is 1..=8.
   optional uint32 max_parallel = 13;
   // Shipped authoring preset. Mutually exclusive with explicit stages.
   // Empty preserves legacy explicit-stage design.
