@@ -81,10 +81,22 @@ impl CeremonyEvent {
     #[must_use]
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
-            Self::StepStarted(_)
-            | Self::StepCompleted(_)
-            | Self::StepFailed(_)
-            | Self::TransitionApplied(_) => EventSchemaVersion::V2,
+            Self::StepStarted(event) => event
+                .state_iteration
+                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::StepCompleted(event) => event
+                .state_iteration
+                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::StepFailed(event) => event
+                .state_iteration
+                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::TransitionApplied(event) => {
+                if event.transition.has_explicit_state_iteration() {
+                    EventSchemaVersion::V2
+                } else {
+                    EventSchemaVersion::V1
+                }
+            }
             Self::CeremonyInstanceStarted(_)
             | Self::ParticipantsBound(_)
             | Self::StateIterationStarted(_)

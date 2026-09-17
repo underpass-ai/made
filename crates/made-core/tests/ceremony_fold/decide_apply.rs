@@ -20,8 +20,8 @@ use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
     CeremonyInterventionTarget, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
-    CeremonyRecordRef, CeremonyTransitionRecord, MemoryConfidence, StepAttempt, StepErrorMessage,
-    StepIteration, StepResult,
+    CeremonyRecordRef, CeremonyTransitionRecord, MemoryConfidence, StateIteration, StepAttempt,
+    StepErrorMessage, StepIteration, StepResult,
 };
 
 use super::fixture::{
@@ -207,7 +207,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
         events,
         vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: step("plan"),
-            state_iteration: None,
+            state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             lease: lease("plan-1", at(1)),
@@ -289,7 +289,7 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
         events,
         vec![CeremonyEvent::StepCompleted(StepCompleted {
             step_id: step("plan"),
-            state_iteration: None,
+            state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             result,
@@ -344,7 +344,7 @@ fn a_failure_is_its_own_event() {
         events,
         vec![CeremonyEvent::StepFailed(StepFailed {
             step_id: step("plan"),
-            state_iteration: None,
+            state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             result,
@@ -388,9 +388,10 @@ fn a_move_into_an_intermediate_state_is_one_event() {
     assert_eq!(
         events,
         vec![CeremonyEvent::TransitionApplied(TransitionApplied {
-            transition: CeremonyTransitionRecord::record(
+            transition: CeremonyTransitionRecord::record_at(
                 trigger("submit"),
                 state("drafting"),
+                StateIteration::FIRST,
                 state("review"),
                 Some(role("facilitator")),
                 at(3),
@@ -439,9 +440,10 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
         events,
         vec![
             CeremonyEvent::TransitionApplied(TransitionApplied {
-                transition: CeremonyTransitionRecord::record(
+                transition: CeremonyTransitionRecord::record_at(
                     trigger("abandon"),
                     state("drafting"),
+                    StateIteration::FIRST,
                     state("done"),
                     None,
                     at(2),

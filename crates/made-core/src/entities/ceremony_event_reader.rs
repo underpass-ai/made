@@ -72,6 +72,13 @@ impl CeremonyEventReader {
                 "the payload's tag names a different event type",
             ));
         }
+        if event.schema_version() != version {
+            return Err(unreadable(
+                event_type,
+                version,
+                "the payload shape does not match its schema version",
+            ));
+        }
         Ok(event)
     }
 }
@@ -101,6 +108,23 @@ mod tests {
             "type": "ceremony_completed",
             "final_state": "DONE",
             "completed_at": "2026-07-29T09:00:00Z",
+        })
+    }
+
+    fn step_started_json() -> serde_json::Value {
+        json!({
+            "type": "step_started",
+            "step_id": "draft",
+            "iteration": 1,
+            "attempt": 1,
+            "lease": {
+                "owner_id": "host-1",
+                "idempotency_key": "ceremony-1:draft:1",
+                "acquired_at": "2026-07-29T09:00:00Z",
+                "expires_at": "2026-07-29T09:01:00Z"
+            },
+            "started_by": "writer",
+            "started_at": "2026-07-29T09:00:00Z"
         })
     }
 
@@ -175,6 +199,44 @@ mod tests {
             error,
             DomainError::UnreadableCeremonyEvent {
                 event_type: "ceremony_completed",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn version_one_refuses_a_version_two_coordinate() {
+        let mut raw = step_started_json();
+        raw["state_iteration"] = json!(1);
+
+        let error =
+            CeremonyEventReader::read(AuditEventType::StepStarted, EventSchemaVersion::V1, raw)
+                .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::UnreadableCeremonyEvent {
+                event_type: "step_started",
+                version: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn version_two_requires_an_explicit_coordinate() {
+        let error = CeremonyEventReader::read(
+            AuditEventType::StepStarted,
+            EventSchemaVersion::V2,
+            step_started_json(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::UnreadableCeremonyEvent {
+                event_type: "step_started",
+                version: 2,
                 ..
             }
         ));

@@ -19,8 +19,8 @@ use super::{StateId, StateIteration, TransitionTrigger};
 pub struct CeremonyTransitionRecord {
     trigger: TransitionTrigger,
     from_state: StateId,
-    #[serde(default, skip_serializing_if = "StateIteration::is_first")]
-    state_iteration: StateIteration,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_iteration: Option<StateIteration>,
     to_state: StateId,
     #[serde(default)]
     applied_by: Option<RoleId>,
@@ -37,14 +37,14 @@ impl CeremonyTransitionRecord {
         applied_by: Option<RoleId>,
         applied_at: OffsetDateTime,
     ) -> Self {
-        Self::record_at(
+        Self {
             trigger,
             from_state,
-            StateIteration::FIRST,
+            state_iteration: None,
             to_state,
             applied_by,
             applied_at,
-        )
+        }
     }
 
     #[must_use]
@@ -59,7 +59,7 @@ impl CeremonyTransitionRecord {
         Self {
             trigger,
             from_state,
-            state_iteration,
+            state_iteration: Some(state_iteration),
             to_state,
             applied_by,
             applied_at,
@@ -78,7 +78,11 @@ impl CeremonyTransitionRecord {
 
     #[must_use]
     pub fn state_iteration(&self) -> StateIteration {
-        self.state_iteration
+        self.state_iteration.unwrap_or(StateIteration::FIRST)
+    }
+
+    pub(crate) fn has_explicit_state_iteration(&self) -> bool {
+        self.state_iteration.is_some()
     }
 
     #[must_use]

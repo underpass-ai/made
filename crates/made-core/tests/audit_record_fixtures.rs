@@ -12,6 +12,8 @@ use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion};
 
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
+const PRE_P2_EVENT_CHAIN: &str =
+    include_str!("fixtures/audit_record_v2_event_schema_v1_chain.json");
 
 const EVERY_EVENT_TYPE: [AuditEventType; 20] = [
     AuditEventType::CeremonyDefinitionValidated,
@@ -151,7 +153,6 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
             .unwrap_or_else(|error| panic!("{event_type:?}: {error}"));
 
         assert_eq!(event.event_type(), event_type);
-        assert_eq!(event.schema_version(), EventSchemaVersion::V1);
         assert_eq!(
             serde_json::to_value(&event).unwrap(),
             stored,
@@ -160,4 +161,18 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         pinned += 1;
     }
     assert_eq!(pinned, 16);
+}
+
+#[test]
+fn pre_p2_sealed_event_chain_keeps_hashes_and_absent_coordinates() {
+    let records: Vec<AuditRecord> = serde_json::from_str(PRE_P2_EVENT_CHAIN).unwrap();
+
+    assert_eq!(records.len(), 4);
+    assert!(AuditChain::verify(&records).is_intact());
+    for record in &records {
+        assert_eq!(record.schema_version(), 2);
+        assert_eq!(record.event_schema_version(), Some(EventSchemaVersion::V1));
+        let event = serde_json::to_value(record.event().unwrap()).unwrap();
+        assert!(event.get("state_iteration").is_none());
+    }
 }
