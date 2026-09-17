@@ -51,6 +51,7 @@ use crate::protocol::{
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
+use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
@@ -126,25 +127,16 @@ impl EmbeddedMadeMcpBackend {
             // or not, so a caller tests one field rather than inferring
             // readability from a field that is not there.
             match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(mut value) => {
-                    if let Some(fields) = value.as_object_mut() {
-                        fields.insert("rehydratable".to_owned(), Value::Bool(true));
-                        fields.insert("reason".to_owned(), Value::Null);
-                    }
-                    values.push(value);
-                }
-                Err(reason) => values.push(serde_json::json!({
-                    "ceremony_id": instance.id().as_str(),
-                    "rehydratable": false,
-                    "reason": reason.message(),
-                })),
+                Ok(value) => values.push(CeremonyInstanceListingEntry::rehydratable(value)),
+                Err(reason) => values.push(CeremonyInstanceListingEntry::unrehydratable(
+                    instance.id().as_str(),
+                    reason.message(),
+                )),
             }
         }
-        let count = values.len();
-        Ok(tool_success_result(serde_json::json!({
-            "count": count,
-            "instances": values,
-        })))
+        Ok(tool_success_result(
+            CeremonyInstanceListing::new(values).to_json(),
+        ))
     }
 }
 

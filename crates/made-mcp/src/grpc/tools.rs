@@ -205,12 +205,9 @@ pub(crate) async fn dispatch(
             let pb::ListCeremonyInstancesResponse { instances } = response.into_inner();
             let entries = instances
                 .into_iter()
-                .map(p2j::ceremony_instance_listing_to_json)
+                .map(p2j::ceremony_instance_listing_entry)
                 .collect::<Vec<_>>();
-            Ok(json!({
-                "count": entries.len(),
-                "instances": entries,
-            }))
+            Ok(crate::renderers::CeremonyInstanceListing::new(entries).to_json())
         }
 
         // Every move answers with the session, so one converter serves
@@ -481,20 +478,22 @@ pub(crate) async fn dispatch(
                 health,
                 stats,
             } = response.into_inner();
+            let statistics = stats.map(p2j::statistics_view);
             Ok(json!({
                 "version": version,
                 "uptime_seconds": uptime_seconds,
                 "health": health,
-                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
+                "stats": statistics.as_ref().map_or(Value::Null, crate::renderers::StatisticsView::to_json),
             }))
         }
 
         "made_get_metrics" => {
             let response = client.get_metrics(pb::GetMetricsRequest {}).await?;
             let pb::GetMetricsResponse { stats } = response.into_inner();
-            Ok(json!({
-                "stats": stats.map_or(Value::Null, p2j::statistics_to_json),
-            }))
+            let statistics = stats.map(p2j::statistics_view);
+            Ok(crate::renderers::StatisticsView::envelope(
+                statistics.as_ref(),
+            ))
         }
 
         other => Err(ToolError::invalid_request(format!(
