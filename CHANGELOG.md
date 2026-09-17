@@ -16,6 +16,12 @@ operator command.
 
 ### Changed
 
+- `made_get_metrics` now returns the same in-process Prometheus registry as
+  text and structured families/samples in both editions while preserving the
+  legacy statistics. Embedded hosts can share one recorder/reader adapter,
+  export OTLP with the existing mTLS variables, and append registry snapshots
+  beside durable JSONL event deliveries. (#119)
+
 - Ceremony telemetry now projects sealed records through metrics, tracing, and
   structured-log subscribers in both editions. One-shot and step-at-a-time
   execution produce the same ceremony metric deltas, and MCP tool calls carry
