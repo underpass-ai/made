@@ -52,6 +52,12 @@ after the final tree is approved.
 
 ### Changed
 
+- Automatic ceremony-event publication now retries a transient pending
+  position with bounded backoff without waiting for another append. Core NATS
+  drains its client buffer to the transport under a five-second deadline before
+  advancing the durable cursor, without claiming broker, subscriber or
+  JetStream acknowledgement. (#126)
+
 - Align ADR-003, ADR-012, ADR-013, the phase plan, Editions, the platform
   boundary and stack analysis with the verified phase 2 implementation; keep
   future pattern work and the remaining list-bound value-object debt explicit

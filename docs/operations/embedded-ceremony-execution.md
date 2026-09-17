@@ -173,9 +173,13 @@ ceremony feed to a JSON Lines file. Each line carries `global_position` beside
 the sealed record. Delivery progress lives in the same SQLite store under a
 durable consumer cursor. Startup drains any records left pending by a stopped
 process before stdio begins, so recovery does not depend on another ceremony
-append. If the sink cannot accept a pending record, startup fails visibly and
-leaves that cursor position unacknowledged for the next attempt; after three
-failed attempts the normal publisher quarantine rule applies.
+append. A transient failure is retried in that awaited startup drain with
+100/200/400 ms bounded backoff. If the sink remains unavailable, the third
+failed delivery leaves the position pending and the following cursor round
+quarantines it according to the existing policy. Store or cursor failures fail
+startup visibly. During normal operation one append notification drains at
+most one bounded page; it does not chase an unbounded backlog while new events
+arrive.
 
 A consumer that needs a finalization notification should observe the terminal
 ceremony event in the sealed stream, not infer completion from a UI window

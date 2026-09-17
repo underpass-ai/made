@@ -76,6 +76,15 @@ table go away: the transcript is folded from `StepCompleted`, and
 publication is a cursor over the stream — at-least-once, ordered per
 ceremony, idempotent by event id.
 
+Automatic publishers retry a failed pending position in the awaited append or
+startup path, with bounded backoff, until the durable cursor acknowledges or
+quarantines it. One subscriber notification drains at most one bounded page;
+startup recovery drains finite pages before serving. Explicit pull keeps its
+caller-driven acknowledgement contract. For core NATS, adapter success means
+that `async-nats` accepted the publish command and drained its client buffer to
+the transport within the adapter deadline. It is not a broker, subscriber or
+JetStream acknowledgement and does not prove remote replay durability.
+
 **The engine still owns the contract; the host still owns durability.**
 `CeremonyEventStorePort` and `CeremonySnapshotStorePort` replace the unit of
 work and the instance repository's write path. The conformance suites are
@@ -108,6 +117,9 @@ consumer cursors drive pull, NATS publication and the embedded JSONL sink
 (#108). Metrics, traces, structured logs and bounded reports project the same
 records in both editions (#110), while embedded service metrics, OTLP wiring
 and JSONL registry snapshots are composed through host-owned adapters (#119).
+Automatic NATS and JSONL publishers now retry a transient pending position
+without waiting for a later stream append, and core NATS drains its client
+buffer before advancing the cursor (#124, #125).
 
 ## Consequences
 
