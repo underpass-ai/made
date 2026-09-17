@@ -4,6 +4,9 @@
 //! processes, one state file, and the question of what the second one can
 //! still see.
 
+use std::io::Write;
+use std::process::{Command, Stdio};
+
 use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
@@ -28,7 +31,91 @@ roles:
     allowed_actions:
       - work
       - finish
+      - request_intervention
+      - respond_to_intervention
 "#;
+
+#[test]
+fn a_decision_is_recalled_by_the_next_made_mcp_process() {
+    let state = tempfile::tempdir().unwrap();
+    let path = state.path().join("ceremonies.sqlite3");
+    let scope = "team:stdio-restart";
+
+    let first = run_made_mcp_process(
+        &path,
+        &[
+            tool_call(
+                1,
+                "made_start_ceremony",
+                &json!({
+                    "ceremony_id": "memory-first",
+                    "definition_yaml": CEREMONY_YAML,
+                    "actor_id": "restart-smoke",
+                    "actor_kind": "service",
+                    "context": { "memory_scope": scope },
+                }),
+            ),
+            tool_call(
+                2,
+                "made_request_ceremony_intervention",
+                &json!({
+                    "ceremony_id": "memory-first",
+                    "intervention_id": "restart-decision",
+                    "role_id": "FACILITATOR",
+                    "role_kind": "human",
+                    "kind": "opinion",
+                    "message": "Which recovery do we rehearse?",
+                }),
+            ),
+            tool_call(
+                3,
+                "made_respond_to_ceremony_intervention",
+                &json!({
+                    "ceremony_id": "memory-first",
+                    "intervention_id": "restart-decision",
+                    "role_id": "FACILITATOR",
+                    "role_kind": "human",
+                    "message": "Roll back rather than restart.",
+                }),
+            ),
+        ],
+    );
+    assert_eq!(first.len(), 3, "the first process must answer every call");
+    assert_ne!(
+        first[2]["result"]["isError"],
+        Value::Bool(true),
+        "{:#}",
+        first[2]
+    );
+
+    let second = run_made_mcp_process(
+        &path,
+        &[tool_call(
+            1,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": "memory-second",
+                "definition_yaml": CEREMONY_YAML,
+                "actor_id": "restart-smoke",
+                "actor_kind": "service",
+                "context": { "memory_scope": scope },
+            }),
+        )],
+    );
+    let recollection = &second[0]["result"]["structuredContent"]["recollection"];
+    assert_eq!(recollection["scope"], scope);
+    assert!(
+        recollection["entries"]
+            .as_array()
+            .is_some_and(|entries| entries.iter().any(|entry| {
+                entry["kind"] == "decision"
+                    && entry["summary"] == "Roll back rather than restart."
+                    && entry["from_ceremony_id"] == "memory-first"
+            })),
+        "the second process did not recall the first process's decision: {:#}",
+        second[0]
+    );
+}
 
 #[tokio::test]
 async fn a_started_ceremony_is_read_back_by_the_next_process() {
@@ -318,4 +405,33 @@ fn tool_call(id: u64, tool: &str, arguments: &Value) -> Value {
         "method": "tools/call",
         "params": { "name": tool, "arguments": arguments }
     })
+}
+
+fn run_made_mcp_process(path: &std::path::Path, requests: &[Value]) -> Vec<Value> {
+    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+        .env(MCP_BACKEND_ENV, "embedded")
+        .env(EMBEDDED_STORE_PATH_ENV, path)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .expect("made-mcp process starts");
+    {
+        let input = child.stdin.as_mut().expect("stdin is piped");
+        for request in requests {
+            writeln!(input, "{request}").expect("request writes");
+        }
+    }
+    drop(child.stdin.take());
+    let output = child.wait_with_output().expect("made-mcp process exits");
+    assert!(
+        output.status.success(),
+        "made-mcp failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    String::from_utf8(output.stdout)
+        .unwrap()
+        .lines()
+        .map(|line| serde_json::from_str(line).unwrap())
+        .collect()
 }

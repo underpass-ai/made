@@ -7,7 +7,7 @@
 //! convention: identifiers reject control characters, and `0x00` is
 //! one, so no identifier can contain the byte that ends it.
 
-use made_core::value_objects::{CeremonyId, CeremonyName, CeremonyVersion};
+use made_core::value_objects::{CeremonyId, CeremonyName, CeremonyVersion, MemoryScope};
 
 pub(super) const SEPARATOR: u8 = 0;
 const ORDINAL_BYTES: usize = 8;
@@ -42,6 +42,27 @@ pub(super) fn ceremony_of(key: &[u8]) -> Option<&[u8]> {
 /// range over `[from, from + limit)` walks the log in order.
 pub(super) fn position(value: u64) -> [u8; ORDINAL_BYTES] {
     value.to_be_bytes()
+}
+
+/// One idempotent write inside a memory scope.
+///
+/// The scope is length-prefixed so neither colons in the scope nor arbitrary
+/// bytes in a host-supplied idempotency key can move the boundary.
+pub(super) fn memory_write(scope: &MemoryScope, idempotency_key: &str) -> Vec<u8> {
+    let scope = scope.as_str().as_bytes();
+    let mut key = Vec::with_capacity(2 + scope.len() + idempotency_key.len());
+    key.extend_from_slice(&(scope.len() as u16).to_be_bytes());
+    key.extend_from_slice(scope);
+    key.extend_from_slice(idempotency_key.as_bytes());
+    key
+}
+
+/// Inclusive range containing every write in one memory scope.
+pub(super) fn memory_scope_range(scope: &MemoryScope) -> (Vec<u8>, Vec<u8>) {
+    let start = memory_write(scope, "");
+    let mut end = start.clone();
+    end.push(u8::MAX);
+    (start, end)
 }
 
 /// Key for a published definition: the name length-prefixed, then the
@@ -113,6 +134,17 @@ mod tests {
         assert!(position(1) < position(2));
         assert!(position(255) < position(256));
         assert!(position(u64::MAX - 1) < position(u64::MAX));
+    }
+
+    #[test]
+    fn a_memory_scope_range_excludes_prefix_neighbours() {
+        let scope = MemoryScope::new("team:alpha").unwrap();
+        let neighbour = MemoryScope::new("team:alphabet").unwrap();
+        let (start, end) = memory_scope_range(&scope);
+
+        assert!(memory_write(&scope, "first") >= start);
+        assert!(memory_write(&scope, "last") <= end);
+        assert!(memory_write(&neighbour, "first") > end);
     }
 
     #[test]

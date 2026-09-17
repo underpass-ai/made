@@ -1,0 +1,9 @@
+# Per-crate production line coverage. Floors may rise and cannot decrease.
+crate	minimum_percent
+made	80
+made-adapters	80
+made-api	80
+made-app	80
+made-core	80
+made-embedded	80
+made-mcp	80

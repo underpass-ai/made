@@ -19,6 +19,7 @@ inward; DTO mapping and infrastructure stay at the edge.
 
 - Domain APIs exchange validated value objects, not raw identity, content,
   quantity or status primitives.
+- Encodings and wire DTOs live in adapters; application use cases return domain models.
 - Aggregates are the only code allowed to change aggregate state.
 - Ports are role-specific and contain no transport or vendor vocabulary.
 - Incoming DTOs are converted by mappers before a use case is invoked; domain

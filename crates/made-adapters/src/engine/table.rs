@@ -21,6 +21,8 @@ pub(crate) enum Table {
     /// Store-wide counters the seam has no primitive for, such as the
     /// last global position.
     Meta,
+    /// Idempotent session-memory writes, grouped by memory scope.
+    MemoryWrites,
 }
 
 impl Table {
@@ -31,7 +33,8 @@ impl Table {
             | Table::Publications
             | Table::Events
             | Table::EventLog
-            | Table::Snapshots => KeyShape::Bytes,
+            | Table::Snapshots
+            | Table::MemoryWrites => KeyShape::Bytes,
         }
     }
 }
@@ -46,6 +49,7 @@ impl fmt::Display for Table {
             Table::EventLog => "ceremony_event_log",
             Table::Snapshots => "ceremony_snapshots",
             Table::Meta => "store_meta",
+            Table::MemoryWrites => "session_memory_writes",
         })
     }
 }
