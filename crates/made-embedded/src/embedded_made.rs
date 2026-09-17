@@ -19,6 +19,7 @@ use made_core::ports::{
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
     MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
 };
+use made_core::value_objects::CeremonyEventPageLimit;
 use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
 use std::fmt;
 use std::sync::Arc;
@@ -61,6 +62,11 @@ pub struct EmbeddedMade {
     /// recorder is not a field here; this is the read the start use
     /// cases make before a session opens.
     memory_reader: Arc<dyn MemoryReaderPort>,
+    /// Durable publication is woken after each append and once explicitly at
+    /// host startup, so records left pending by a stopped process do not need
+    /// another append to move again.
+    event_publisher: Option<Arc<PublishCeremonyEventsUseCase>>,
+    event_publisher_consumer: CeremonyEventConsumer,
 }
 
 impl EmbeddedMade {
@@ -127,17 +133,20 @@ impl EmbeddedMade {
         // whole of turning it on. The host's own subscriber comes
         // after the engine's.
         let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
-        let publisher = event_transport.map(|transport| {
-            let use_case = Arc::new(PublishCeremonyEventsUseCase::new(
+        let event_publisher_consumer = CeremonyEventConsumer::new("embedded-file-sink")
+            .expect("the embedded sink consumer name is valid");
+        let event_publisher = event_transport.map(|transport| {
+            Arc::new(PublishCeremonyEventsUseCase::new(
                 events.clone(),
                 cursors.clone(),
                 transport,
                 clock.clone(),
-            ));
+            ))
+        });
+        let publisher_subscriber = event_publisher.as_ref().map(|use_case| {
             Arc::new(CeremonyEventPublisherSubscriber::new(
-                use_case,
-                CeremonyEventConsumer::new("embedded-file-sink")
-                    .expect("the embedded sink consumer name is valid"),
+                use_case.clone(),
+                event_publisher_consumer.clone(),
             )) as Arc<dyn CeremonyEventSubscriberPort>
         });
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
@@ -146,7 +155,7 @@ impl EmbeddedMade {
             Arc::new(CeremonyTracingSubscriber::new()),
             Arc::new(CeremonyStructuredLogSubscriber::new()),
         ];
-        subscribers.extend(publisher);
+        subscribers.extend(publisher_subscriber);
         subscribers.extend(subscriber);
         let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
         Self {
@@ -162,6 +171,40 @@ impl EmbeddedMade {
             statistics,
             started_at: Instant::now(),
             memory_reader,
+            event_publisher,
+            event_publisher_consumer,
+        }
+    }
+
+    /// Resume durable event publication left pending by an earlier process.
+    ///
+    /// Constructors stay synchronous and side-effect free beyond opening
+    /// adapters. A host calls this once from its async startup path before it
+    /// accepts work. The cursor makes repeating recovery safe: acknowledged
+    /// records are skipped, failed delivery remains pending for the next
+    /// attempt, and exhausted delivery is quarantined by the publisher use
+    /// case before recovery advances.
+    pub async fn recover_event_publication(&self) -> Result<(), DomainError> {
+        let Some(publisher) = &self.event_publisher else {
+            return Ok(());
+        };
+        loop {
+            let round = publisher
+                .execute(
+                    &self.event_publisher_consumer,
+                    CeremonyEventPageLimit::DEFAULT,
+                )
+                .await?;
+            if round.failed > 0 {
+                return Err(DomainError::InvariantViolated {
+                    reason: "embedded ceremony event publication recovery failed",
+                });
+            }
+            if round.busy
+                || round.delivered + round.quarantined < CeremonyEventPageLimit::DEFAULT.value()
+            {
+                return Ok(());
+            }
         }
     }
 
