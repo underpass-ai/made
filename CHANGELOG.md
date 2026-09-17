@@ -127,6 +127,61 @@ operator command.
 
 ### Changed
 
+- The tree proof accepts far less. `scripts/ci/tree-already-proved.sh` took
+  any successful `quality-gate` run whose commit tree matched, with no filter
+  on the plan, the event, the head repository or the age. So a docs-only pull
+  request — whose run skipped every Rust job and went green — proved the tree
+  of the merge commit behind it, and the push to `main` that was meant to run
+  the full matrix skipped instead; and because that push was itself a
+  successful run, the hole laundered forward. A run now proves its tree only
+  when it ran in this repository (`head_repository.full_name` equals
+  `GITHUB_REPOSITORY`), is younger than fourteen days, and shows **every** job
+  of the full matrix concluded `success` — not skipped, not cancelled. That
+  last test is also the plan check, and it is read from the run's job
+  conclusions rather than from the plan the run recorded, because on
+  `pull_request` the planner runs from the pull request's own head and its
+  word for "full" is the pull request's word; the `impact` job records the
+  plan — `full`, the gates, the event — in the run summary all the same, for
+  the reader. `--self-test` drives the same decision the live path drives,
+  with fixtures for the API answers: a partial pull-request proof refused, a
+  full one accepted, a push accepted, a fork refused, a stale proof refused,
+  a skipped job refused, a cancelled one refused. It runs in the `tree-proof`
+  job on every event and in `just workflow-contract`. The skip branch itself
+  can only be observed on a push to `main`. (#76)
+- `scripts/ci/dev-loop-workflow-contract.py` derives the quality-gate job
+  list from the workflow instead of reading a hard-coded table on both sides
+  of its own comparison, which is why four drifts were invisible to it: a new
+  gate job with no `impact` guard and absent from `gate`'s `needs`, the
+  trigger types shrunk to `[ready_for_review]`, its own `--self-test`
+  invocation deleted, and `gate` no longer treating `cancelled` as a failure.
+  Every job that is not `tree-proof`, `impact` or `gate` must need `impact`
+  and be routed by an output the planner's `GATES` tuple actually declares;
+  `gate`'s `needs` must equal the workflow's job list exactly, both
+  directions; the tree proof's idea of the full matrix must equal it too; and
+  all four trigger types are checked on all three workflows that stand down
+  on drafts. `quality-gate-plan.py`, `tree-already-proved.sh` and the two
+  workflows it had never read joined its sources, and it now fails on any
+  `uses:` pinned to a tag rather than a commit. 34 mutation guards, up from
+  19. (#76)
+- `.github/workflows/plugin-package.yml`: the four-host `package` job runs
+  scripts the pull request wrote — the marketplace contract, the plugin
+  smoke, the two bootstraps, the packager — and no longer holds
+  `contents: write`. The tag-gated release upload is its own job now, waits
+  for all four hosts and is the only one that writes.
+  `actions/upload-artifact` was unpinned there and again in
+  `publish-distribution.yml`, and both are on the commit `dev-loop.yml`
+  already used; `dependency-review.yml` dropped its workflow-level
+  `pull-requests: write`, which the action needs only to post a summary
+  comment this workflow never asks for. The packaging matrix also stops
+  waking for prose: its `paths` filter excludes `crates/made-mcp/**/*.md`,
+  narrowly, because the markdown under `plugins/made/**` is bundle content
+  and still wakes it. (#76)
+- The planner no longer exports `cargo_packages`. It was computed from the
+  reverse dependency closure, exported, and never read — `clippy`, `test`,
+  `coverage` and `benches` are all `--workspace` — and wiring it would have
+  been strictly weaker than leaving it out, not equal and not stricter. The
+  contract pins `--workspace` on `clippy` and `test` instead, and the closure
+  keeps its one honest job: deciding which gates run. (#76)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
@@ -287,6 +342,32 @@ operator command.
   backends other than the in-tree ones are out-of-tree adapters gated by
   the memory conformance suite. The last in-tree revision is `c7dad9f`
   at `crates/made-adapters/src/kmp/` for anyone who needs it.
+
+### Fixed
+
+- Three routing holes let a change reach `main` with no job run at all.
+  `docs/architecture/parity.tsv` and `docs/operations/support-matrix.md` are
+  `include_str!`'d into `made-mcp` and `made-tests-integration` tests, and the
+  ceremony definitions under `tests/e2e/ceremonies/` into `made-e2e-runner`'s
+  own sources plus nine more test and unit targets; all of them routed to no
+  gate, so a pull request editing only the TSV ran nothing and `gate`
+  reported green. They route to `clippy` and `test` now — not `coverage`,
+  which would re-run the very tests `test` has already proved. And the rule
+  is non-regressable: the planner's self-test walks every `include_str!` /
+  `include_bytes!` under `crates/**`, resolves the target relative to the
+  source file (and the `concat!(env!("CARGO_MANIFEST_DIR"), …)` form relative
+  to the crate), and fails when a target outside its own crate directory
+  would route to no Rust job. Thirteen files qualify today. The `tests/e2e/`
+  prefix route is gone with it: the kubernetes manifests, the compose file
+  and the four Dockerfiles are named one by one, so a new directory there
+  fails closed to the full matrix instead of inheriting an empty route from
+  its parent. (#76)
+- The planner's change boundary dropped deletions and rename sources.
+  `git diff --name-only --diff-filter=ACMR` turned `40cb7e5`'s sixteen-file
+  diff into three, so a pull request that deleted a crate source and edited a
+  document routed to nothing. It reads `git diff -M --name-status` now and
+  plans the union of both sides of a rename or a copy, which is the only
+  answer that is right whichever side carried the gate. (#76)
 
 ## 0.3.0 - 2026-09-03
 

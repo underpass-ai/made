@@ -54,7 +54,7 @@ jobs:
 
       - name: Upload compose logs on failure
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: compose-smoke-logs
           path: tests/e2e/compose.log
