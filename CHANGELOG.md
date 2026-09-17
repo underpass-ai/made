@@ -16,6 +16,10 @@ operator command.
 
 ### Fixed
 
+- Require at least 80% line coverage per production crate, reject reduced
+  committed floors, and exercise binary HTTP/gRPC startup and SIGTERM shutdown
+  so the server also meets its floor (#103).
+
 - The divergences a read-only review of the parity chain (#55–#64) found
   between the two MCP arms, and the places the gate built to catch them could
   not see. Each is a live difference in what a client gets for the same call
