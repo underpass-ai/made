@@ -102,11 +102,30 @@ impl CeremonyEventCursorPort for InMemoryCeremonyEventCursor {
         let state = cursors.entry(consumer.clone()).or_default();
         if state
             .acknowledged_through
-            .is_none_or(|current| through > current)
+            .is_some_and(|current| through <= current)
         {
-            state.acknowledged_through = Some(through);
-            state.attempt = CeremonyEventCursorAttempt::NONE;
+            return Ok(());
         }
+        if state.lease.is_some() {
+            return Err(DomainError::Conflict {
+                what: "ceremony_event_cursor",
+            });
+        }
+        state.acknowledged_through = Some(through);
+        state.attempt = CeremonyEventCursorAttempt::NONE;
+        Ok(())
+    }
+
+    async fn acknowledge_lease(
+        &self,
+        lease: &CeremonyEventCursorLease,
+        through: GlobalPosition,
+    ) -> Result<(), DomainError> {
+        let mut cursors = self.inner.write().await;
+        let state = cursors.entry(lease.consumer().clone()).or_default();
+        let state = Self::require_lease(state, lease, through)?;
+        state.acknowledged_through = Some(through);
+        state.attempt = CeremonyEventCursorAttempt::NONE;
         state.lease = None;
         Ok(())
     }

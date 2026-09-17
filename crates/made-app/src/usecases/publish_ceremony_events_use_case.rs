@@ -86,7 +86,7 @@ impl PublishCeremonyEventsUseCase {
                 break;
             }
             self.cursors
-                .acknowledge(consumer, positioned.position)
+                .acknowledge_lease(&lease, positioned.position)
                 .await?;
             round.delivered += 1;
         }

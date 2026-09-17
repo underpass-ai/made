@@ -28,6 +28,10 @@ impl CeremonyEventCursorConformance {
         passed.push("a_live_lease_excludes_another_worker");
         Self::an_expired_lease_can_be_replaced(cursor).await?;
         passed.push("an_expired_lease_can_be_replaced");
+        Self::a_replaced_lease_cannot_commit_or_clear_its_replacement(cursor).await?;
+        passed.push("a_replaced_lease_cannot_commit_or_clear_its_replacement");
+        Self::pull_acknowledgements_respect_publisher_leases(cursor).await?;
+        passed.push("pull_acknowledgements_respect_publisher_leases");
         Self::failures_retry_and_quarantine_is_visible(cursor).await?;
         passed.push("failures_retry_and_quarantine_is_visible");
         Ok(passed)
@@ -148,6 +152,88 @@ impl CeremonyEventCursorConformance {
         }
         Ok(())
     }
+
+    async fn a_replaced_lease_cannot_commit_or_clear_its_replacement(
+        cursor: &dyn CeremonyEventCursorPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "a_replaced_lease_cannot_commit_or_clear_its_replacement";
+        let consumer = consumer(PROPERTY, "consumer")?;
+        let first = acquire(PROPERTY, cursor, &consumer, "first", now())
+            .await?
+            .ok_or_else(|| failure(PROPERTY, "the first worker could not lease"))?;
+        let after_expiry = now() + Duration::milliseconds(LEASE_MILLIS as i64 + 1);
+        let replacement = acquire(PROPERTY, cursor, &consumer, "replacement", after_expiry)
+            .await?
+            .ok_or_else(|| failure(PROPERTY, "the expired lease was not replaced"))?;
+
+        expect_conflict(
+            PROPERTY,
+            cursor
+                .acknowledge_lease(&first, GlobalPosition::FIRST)
+                .await,
+        )?;
+        if call(PROPERTY, cursor.position(&consumer).await)?.is_some() {
+            return Err(failure(PROPERTY, "the replaced worker advanced progress"));
+        }
+        if acquire(PROPERTY, cursor, &consumer, "intruder", after_expiry)
+            .await?
+            .is_some()
+        {
+            return Err(failure(
+                PROPERTY,
+                "the replaced worker cleared the replacement lease",
+            ));
+        }
+        call(
+            PROPERTY,
+            cursor
+                .acknowledge_lease(&replacement, GlobalPosition::FIRST)
+                .await,
+        )?;
+        if call(PROPERTY, cursor.position(&consumer).await)? != Some(GlobalPosition::FIRST) {
+            return Err(failure(
+                PROPERTY,
+                "the replacement worker could not commit its delivery",
+            ));
+        }
+        Ok(())
+    }
+
+    async fn pull_acknowledgements_respect_publisher_leases(
+        cursor: &dyn CeremonyEventCursorPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "pull_acknowledgements_respect_publisher_leases";
+        let consumer = consumer(PROPERTY, "consumer")?;
+        call(
+            PROPERTY,
+            cursor.acknowledge(&consumer, GlobalPosition::FIRST).await,
+        )?;
+        let lease = acquire(PROPERTY, cursor, &consumer, "publisher", now())
+            .await?
+            .ok_or_else(|| failure(PROPERTY, "the publisher could not lease"))?;
+
+        // A repeated acknowledgement is harmless and cannot clear the lease.
+        call(
+            PROPERTY,
+            cursor.acknowledge(&consumer, GlobalPosition::FIRST).await,
+        )?;
+        if acquire(PROPERTY, cursor, &consumer, "after-stale", now())
+            .await?
+            .is_some()
+        {
+            return Err(failure(PROPERTY, "a stale pull ack cleared a live lease"));
+        }
+
+        let next = GlobalPosition::FIRST.next();
+        expect_conflict(PROPERTY, cursor.acknowledge(&consumer, next).await)?;
+        if acquire(PROPERTY, cursor, &consumer, "after-new", now())
+            .await?
+            .is_some()
+        {
+            return Err(failure(PROPERTY, "a new pull ack cleared a live lease"));
+        }
+        call(PROPERTY, cursor.acknowledge_lease(&lease, next).await)
+    }
 }
 
 async fn acquire(
@@ -189,6 +275,22 @@ fn call<T>(
     outcome: Result<T, DomainError>,
 ) -> Result<T, ConformanceFailure> {
     outcome.map_err(|error| failure(property, format!("the adapter returned an error: {error}")))
+}
+
+fn expect_conflict(
+    property: &'static str,
+    outcome: Result<(), DomainError>,
+) -> Result<(), ConformanceFailure> {
+    match outcome {
+        Err(DomainError::Conflict {
+            what: "ceremony_event_cursor",
+        }) => Ok(()),
+        Err(error) => Err(failure(
+            property,
+            format!("expected a cursor conflict, got: {error}"),
+        )),
+        Ok(()) => Err(failure(property, "a fenced write was accepted")),
+    }
 }
 
 fn failure(property: &'static str, detail: impl Into<String>) -> ConformanceFailure {

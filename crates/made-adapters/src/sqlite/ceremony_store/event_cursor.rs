@@ -129,13 +129,37 @@ impl CeremonyEventCursorPort for SqliteCeremonyStore {
             let mut stored = read_cursor(tx.as_ref(), &consumer)?;
             if stored
                 .acknowledged_through
-                .is_none_or(|current| through > current)
+                .is_some_and(|current| through <= current)
             {
-                stored.acknowledged_through = Some(through);
-                stored.attempt = CeremonyEventCursorAttempt::NONE;
+                return Ok(());
             }
-            stored.lease = None;
+            if stored.lease.is_some() {
+                return Err(DomainError::Conflict {
+                    what: "ceremony_event_cursor",
+                });
+            }
+            stored.acknowledged_through = Some(through);
+            stored.attempt = CeremonyEventCursorAttempt::NONE;
             write_cursor(tx.as_mut(), &consumer, &stored)?;
+            tx.commit()
+        })
+        .await
+    }
+
+    async fn acknowledge_lease(
+        &self,
+        lease: &CeremonyEventCursorLease,
+        through: GlobalPosition,
+    ) -> Result<(), DomainError> {
+        let lease = lease.clone();
+        self.blocking("acknowledge leased ceremony event", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let mut stored = read_cursor(tx.as_ref(), lease.consumer())?;
+            require_lease(&stored, &lease, through)?;
+            stored.acknowledged_through = Some(through);
+            stored.attempt = CeremonyEventCursorAttempt::NONE;
+            stored.lease = None;
+            write_cursor(tx.as_mut(), lease.consumer(), &stored)?;
             tx.commit()
         })
         .await

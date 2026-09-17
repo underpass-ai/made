@@ -27,10 +27,24 @@ pub trait CeremonyEventCursorPort: Send + Sync {
         duration: DurationMs,
     ) -> Result<Option<CeremonyEventCursorLease>, DomainError>;
 
-    /// Advance monotonically after delivery or an explicit pull acknowledgement.
+    /// Advance monotonically after an explicit pull acknowledgement.
+    ///
+    /// A stale acknowledgement is a no-op. A new acknowledgement is refused
+    /// while a publisher holds a lease, so an out-of-band pull cannot clear or
+    /// advance work that is currently fenced to another worker.
     async fn acknowledge(
         &self,
         consumer: &CeremonyEventConsumer,
+        through: GlobalPosition,
+    ) -> Result<(), DomainError>;
+
+    /// Advance after delivery by the worker that owns the current lease.
+    ///
+    /// The lease id is the fencing token: a worker whose lease was replaced
+    /// cannot commit delivery or disturb the replacement lease.
+    async fn acknowledge_lease(
+        &self,
+        lease: &CeremonyEventCursorLease,
         through: GlobalPosition,
     ) -> Result<(), DomainError>;
 
