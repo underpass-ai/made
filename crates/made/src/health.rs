@@ -30,7 +30,14 @@ use axum::{
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::postgres::PostgresPool;
 use made_core::ports::{MetricsRecorderPort, StatisticsPort};
-use serde::Serialize;
+
+mod check_result;
+mod liveness_body;
+mod readiness_body;
+
+use check_result::CheckResult;
+use liveness_body::LivenessBody;
+use readiness_body::ReadinessBody;
 
 /// Read-only handles the health endpoints need. Cloning a
 /// `HealthState` is cheap — every inner handle is already an `Arc`
@@ -94,13 +101,6 @@ pub fn router(state: HealthState) -> Router {
 // Handlers
 // ---------------------------------------------------------------------------
 
-#[derive(Serialize)]
-struct LivenessBody {
-    status: &'static str,
-    service: &'static str,
-    version: String,
-}
-
 async fn healthz(State(state): State<HealthState>) -> impl IntoResponse {
     // Liveness must never consult external deps.
     Json(LivenessBody {
@@ -108,21 +108,6 @@ async fn healthz(State(state): State<HealthState>) -> impl IntoResponse {
         service: "made",
         version: state.service_version.as_ref().to_owned(),
     })
-}
-
-#[derive(Serialize)]
-struct ReadinessBody {
-    status: &'static str,
-    service: &'static str,
-    version: String,
-    checks: Vec<CheckResult>,
-}
-
-#[derive(Serialize)]
-struct CheckResult {
-    name: &'static str,
-    healthy: bool,
-    detail: &'static str,
 }
 
 async fn readyz(State(state): State<HealthState>) -> Response {

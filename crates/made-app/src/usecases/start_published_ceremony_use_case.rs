@@ -62,7 +62,7 @@ impl StartPublishedCeremonyUseCase {
         // Named before the opening is sealed so a caller who named
         // themselves badly is refused without a session being left
         // behind.
-        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
+        let actor = session_facts::party(input.actor_id.as_str(), input.actor_kind)?;
         let scope = memory_scope_resolver::of_context(&input.context, &input.id)?;
         let recalled = session_recall::recall(self.memory.as_ref(), &scope).await;
         let now = self.clock.now();

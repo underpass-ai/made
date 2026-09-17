@@ -1,5 +1,6 @@
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, CeremonyReasonKind, CeremonyRecordRef, MemoryConfidence, RoleId,
+    AuditActorKind, CeremonyId, CeremonyReasonKind, CeremonyReasonRationale, CeremonyRecordRef,
+    MemoryConfidence, RoleId,
 };
 
 /// Saying why one thing a session produced led to another.
@@ -15,7 +16,7 @@ pub struct AssertCeremonyReasonInput {
     pub(crate) from: CeremonyRecordRef,
     pub(crate) to: CeremonyRecordRef,
     pub(crate) kind: CeremonyReasonKind,
-    pub(crate) why: String,
+    pub(crate) why: CeremonyReasonRationale,
     pub(crate) confidence: MemoryConfidence,
 }
 
@@ -38,7 +39,7 @@ impl AssertCeremonyReasonInput {
             from,
             to,
             kind,
-            why: why.into(),
+            why: CeremonyReasonRationale::new(why),
             confidence,
         }
     }

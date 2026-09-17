@@ -85,12 +85,6 @@ const NORMALISED: &[(&str, &str, &str)] = &[
     ),
     (
         "made_get_status",
-        ".structuredContent.uptime_seconds",
-        "uptime is measured from when the engine that answered started — the server process \
-         over the wire, the facade's construction in process",
-    ),
-    (
-        "made_get_status",
         ".content[].text",
         "the text block is the pretty-printed mirror of structuredContent, so it carries the \
          version and the uptime verbatim; every other field of the status is still compared \

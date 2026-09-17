@@ -104,15 +104,6 @@ fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainError> {
     if document.stages().is_empty() {
         return Err(invalid("field `stages` must contain at least one stage"));
     }
-    if document.step_timeout_seconds() == Some(0) {
-        return Err(invalid(
-            "field `step_timeout_seconds` must be greater than zero",
-        ));
-    }
-    if document.max_attempts() == Some(0) {
-        return Err(invalid("field `max_attempts` must be greater than zero"));
-    }
-
     reject_duplicates(
         document
             .required_inputs()
@@ -145,7 +136,7 @@ fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainError> {
     let participant_set = participant_ids.into_iter().collect::<BTreeSet<_>>();
 
     let mut stage_ids = Vec::with_capacity(document.stages().len());
-    for (index, stage) in document.stages().iter().enumerate() {
+    for stage in document.stages() {
         stage_ids.push(stage.id().as_str().to_owned());
         if !participant_set.contains(stage.owner_role_id().as_str()) {
             return Err(invalid(format!(
@@ -154,18 +145,7 @@ fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainError> {
                 stage.owner_role_id()
             )));
         }
-        if stage.instructions().trim().is_empty() {
-            return Err(invalid(format!(
-                "field `stages[{index}].instructions` must not be blank"
-            )));
-        }
-        if stage.num_agents() == Some(0) {
-            return Err(invalid(format!(
-                "stage `{}` must request at least one agent",
-                stage.id()
-            )));
-        }
-        if stage.review_rounds() > 0 && num_agents(stage) < 2 {
+        if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
             return Err(invalid(format!(
                 "stage `{}` requests review rounds with fewer than two agents",
                 stage.id()
@@ -276,20 +256,18 @@ fn build_definition(
         .collect::<Vec<_>>();
     states.push(CeremonyState::terminal(terminal.clone()));
     let retry = RetryPolicy::new(
-        StepAttempt::new(document.max_attempts().unwrap_or(DEFAULT_MAX_ATTEMPTS))?,
-        DurationMs::from_millis(
-            document
-                .backoff_seconds()
-                .unwrap_or(DEFAULT_BACKOFF_SECONDS)
-                .saturating_mul(1000),
-        ),
-    );
-    let timeout = StepTimeout::new(DurationMs::from_millis(
         document
-            .step_timeout_seconds()
-            .unwrap_or(DEFAULT_STEP_TIMEOUT_SECONDS)
-            .saturating_mul(1000),
-    ))?;
+            .max_attempts()
+            .unwrap_or(StepAttempt::new(DEFAULT_MAX_ATTEMPTS)?),
+        document.retry_backoff().unwrap_or(DurationMs::from_millis(
+            DEFAULT_BACKOFF_SECONDS.saturating_mul(1_000),
+        )),
+    );
+    let timeout = document
+        .step_timeout()
+        .unwrap_or(StepTimeout::new(DurationMs::from_millis(
+            DEFAULT_STEP_TIMEOUT_SECONDS.saturating_mul(1_000),
+        ))?);
     let mut guards = Vec::new();
     let mut transitions = Vec::new();
     let mut steps = Vec::new();
@@ -411,17 +389,22 @@ fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, V
             // Earlier stages are context by default for everything
             // after the first, which has nothing to see.
             "see_prior".to_owned(),
-            json!(stage.see_prior().unwrap_or(index > 0)),
+            json!(stage.prior_context().map_or(
+                index > 0,
+                made_core::value_objects::PriorContext::is_visible
+            )),
         ),
     ]);
-    if stage.review_rounds() > 0 {
-        config.insert("rounds".to_owned(), json!(stage.review_rounds()));
+    if stage.review_rounds().get() > 0 {
+        config.insert("rounds".to_owned(), json!(stage.review_rounds().get()));
     }
     config
 }
 
 fn num_agents(stage: &CeremonyDesignStage) -> u64 {
-    stage.num_agents().unwrap_or(DEFAULT_NUM_AGENTS)
+    stage
+        .num_agents()
+        .map_or(DEFAULT_NUM_AGENTS, |agents| u64::from(agents.get()))
 }
 
 fn completion_guard(stage_id: &str) -> String {
@@ -504,23 +487,35 @@ mod tests {
     use crate::usecases::ceremony_design_repeat::CeremonyDesignRepeat;
     use crate::usecases::ceremony_participant_capability::CeremonyParticipantCapability;
     use made_core::value_objects::{
-        CeremonyDescription, CeremonyName, InputName, OutputName, RoleId, StepId, StepIteration,
-        StepOutputField,
+        CeremonyDescription, CeremonyName, InputName, NumAgents, OutputName, RoleId, Rounds,
+        StepId, StepInstructions, StepIteration, StepOutputField,
     };
 
     fn role(id: &str) -> RoleId {
         RoleId::new(id).expect("a role id")
     }
 
+    fn instructions(value: impl Into<String>) -> StepInstructions {
+        StepInstructions::new(value).expect("stage instructions")
+    }
+
+    fn agents(value: u32) -> NumAgents {
+        NumAgents::new(value).expect("an agent count")
+    }
+
+    fn rounds(value: u32) -> Rounds {
+        Rounds::new(value).expect("review rounds")
+    }
+
     fn stage(id: &str, owner: &str) -> CeremonyDesignStage {
         CeremonyDesignStage::new(
             StepId::new(id).expect("a step id"),
             role(owner),
-            format!("Do the {id} work."),
+            instructions(format!("Do the {id} work.")),
             None,
             None,
             None,
-            0,
+            rounds(0),
             None,
         )
     }
@@ -554,11 +549,11 @@ mod tests {
                 CeremonyDesignStage::new(
                     StepId::new("review").expect("a step id"),
                     role("ARTIST"),
-                    "Review the candidate.",
+                    instructions("Review the candidate."),
                     None,
                     None,
-                    Some(2),
-                    1,
+                    Some(agents(2)),
+                    rounds(1),
                     None,
                 ),
             ],
@@ -639,11 +634,11 @@ mod tests {
             CeremonyDesignStage::new(
                 StepId::new("compose").expect("a step id"),
                 role("WORKER"),
-                "Compose the candidate.",
+                instructions("Compose the candidate."),
                 None,
                 None,
                 None,
-                0,
+                rounds(0),
                 Some(CeremonyDesignRepeat::new(
                     StepIteration::new(5).expect("an iteration cap"),
                     StepOutputField::new("ready").expect("an output field"),
@@ -712,11 +707,11 @@ mod tests {
             CeremonyDesignStage::new(
                 StepId::new("review").expect("a step id"),
                 role("ARTIST"),
-                "Review the candidate.",
+                instructions("Review the candidate."),
                 None,
                 None,
-                Some(1),
-                1,
+                Some(agents(1)),
+                rounds(1),
                 None,
             ),
         ]));

@@ -23,12 +23,19 @@ use std::sync::Mutex;
 use std::time::Duration;
 
 use made_core::error::DomainError;
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::Connection;
 
-use super::{
-    key_shape_mismatch, scan_shape_mismatch, BytesRow, Engine, Key, KeyShape, ReadTx, StrRow,
-    Table, WriteTx,
-};
+use super::{key_shape_mismatch, Engine, Key, KeyShape, ReadTx, Table, WriteTx};
+
+mod ops;
+mod pooled;
+mod sqlite_read;
+mod sqlite_write;
+
+use ops::Ops;
+use pooled::Pooled;
+use sqlite_read::SqliteRead;
+use sqlite_write::SqliteWrite;
 
 /// How long a transaction waits for another process's commit before giving
 /// up. A ceremony step commits in milliseconds; ten seconds means the other
@@ -180,42 +187,6 @@ fn create_tables(connection: &Connection) -> Result<(), DomainError> {
         .map_err(|error| failure(&error, "create tables"))
 }
 
-// ------------------------------------------------------------- pooling --
-
-/// A connection borrowed from the engine's pool, returned on drop with any
-/// half-open transaction rolled back.
-struct Pooled<'e> {
-    connection: Option<Connection>,
-    pool: &'e Mutex<Vec<Connection>>,
-}
-
-impl std::ops::Deref for Pooled<'_> {
-    type Target = Connection;
-    fn deref(&self) -> &Connection {
-        self.connection
-            .as_ref()
-            .expect("pooled connection is present until drop")
-    }
-}
-
-impl Drop for Pooled<'_> {
-    fn drop(&mut self) {
-        if let Some(connection) = self.connection.take() {
-            // A transaction still open here means the owner never committed:
-            // roll it back so the connection is clean for the next borrower.
-            // Both steps are best effort — nothing sensible can be done about
-            // a failure inside drop, and a connection that will not roll back
-            // is simply not returned to the pool.
-            if !connection.is_autocommit() && connection.execute_batch("ROLLBACK").is_err() {
-                return;
-            }
-            if let Ok(mut pool) = self.pool.lock() {
-                pool.push(connection);
-            }
-        }
-    }
-}
-
 // ---------------------------------------------------------- statements --
 
 fn check_key(table: Table, key: Key<'_>) -> Result<(), DomainError> {
@@ -223,198 +194,6 @@ fn check_key(table: Table, key: Key<'_>) -> Result<(), DomainError> {
         Ok(())
     } else {
         Err(key_shape_mismatch(table, key.shape()))
-    }
-}
-
-/// Every seam operation on one connection. Both transaction types delegate
-/// here; the difference between them is only which `BEGIN` they issued.
-struct Ops<'c> {
-    connection: &'c Connection,
-}
-
-impl Ops<'_> {
-    fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError> {
-        check_key(table, key)?;
-        let sql = format!("SELECT v FROM \"{table}\" WHERE k = ?1");
-        let mut statement = self.prepare(&sql)?;
-        let found = match key {
-            Key::Str(k) => statement.query_row(params![k], |row| row.get::<_, Vec<u8>>(0)),
-            Key::Bytes(k) => statement.query_row(params![k], |row| row.get::<_, Vec<u8>>(0)),
-        };
-        found
-            .optional()
-            .map_err(|error| failure(&error, "read row"))
-    }
-
-    fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError> {
-        if table.key_shape() != KeyShape::Str {
-            return Err(scan_shape_mismatch(table, KeyShape::Str));
-        }
-        let sql = format!("SELECT k, v FROM \"{table}\" ORDER BY k");
-        let mut statement = self.prepare(&sql)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|error| failure(&error, "scan rows"))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|error| failure(&error, "scan rows"))
-    }
-
-    fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
-        if table.key_shape() != KeyShape::Bytes {
-            return Err(scan_shape_mismatch(table, KeyShape::Bytes));
-        }
-        let sql = format!("SELECT k, v FROM \"{table}\" ORDER BY k");
-        let mut statement = self.prepare(&sql)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|error| failure(&error, "scan rows"))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|error| failure(&error, "scan rows"))
-    }
-
-    fn scan_bytes_range(
-        &self,
-        table: Table,
-        start: &[u8],
-        end: &[u8],
-    ) -> Result<Vec<BytesRow>, DomainError> {
-        if table.key_shape() != KeyShape::Bytes {
-            return Err(scan_shape_mismatch(table, KeyShape::Bytes));
-        }
-        // BETWEEN is inclusive at both ends, which is the seam's contract.
-        let sql = format!("SELECT k, v FROM \"{table}\" WHERE k BETWEEN ?1 AND ?2 ORDER BY k");
-        let mut statement = self.prepare(&sql)?;
-        let rows = statement
-            .query_map(params![start, end], |row| {
-                Ok((row.get::<_, Vec<u8>>(0)?, row.get::<_, Vec<u8>>(1)?))
-            })
-            .map_err(|error| failure(&error, "scan range"))?;
-        rows.collect::<Result<Vec<_>, _>>()
-            .map_err(|error| failure(&error, "scan range"))
-    }
-
-    fn insert(&self, table: Table, key: Key<'_>, value: &[u8]) -> Result<(), DomainError> {
-        check_key(table, key)?;
-        let sql = format!(
-            "INSERT INTO \"{table}\" (k, v) VALUES (?1, ?2) \
-             ON CONFLICT (k) DO UPDATE SET v = excluded.v"
-        );
-        let mut statement = self.prepare(&sql)?;
-        let done = match key {
-            Key::Str(k) => statement.execute(params![k, value]),
-            Key::Bytes(k) => statement.execute(params![k, value]),
-        };
-        done.map(drop).map_err(|error| failure(&error, "write row"))
-    }
-
-    fn remove(&self, table: Table, key: Key<'_>) -> Result<(), DomainError> {
-        check_key(table, key)?;
-        let sql = format!("DELETE FROM \"{table}\" WHERE k = ?1");
-        let mut statement = self.prepare(&sql)?;
-        let done = match key {
-            Key::Str(k) => statement.execute(params![k]),
-            Key::Bytes(k) => statement.execute(params![k]),
-        };
-        done.map(drop)
-            .map_err(|error| failure(&error, "delete row"))
-    }
-
-    fn prepare(&self, sql: &str) -> Result<rusqlite::CachedStatement<'_>, DomainError> {
-        // The statement cache is per connection; with a fixed table set the
-        // handful of distinct SQL strings compile once per connection.
-        self.connection
-            .prepare_cached(sql)
-            .map_err(|error| failure(&error, "prepare statement"))
-    }
-}
-
-// ------------------------------------------------------------ read txn --
-
-struct SqliteRead<'e> {
-    connection: Pooled<'e>,
-}
-
-impl SqliteRead<'_> {
-    fn ops(&self) -> Ops<'_> {
-        Ops {
-            connection: &self.connection,
-        }
-    }
-}
-
-impl ReadTx for SqliteRead<'_> {
-    fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError> {
-        self.ops().get(table, key)
-    }
-    fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError> {
-        self.ops().scan_str(table)
-    }
-    fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
-        self.ops().scan_bytes(table)
-    }
-    fn scan_bytes_range(
-        &self,
-        table: Table,
-        start: &[u8],
-        end: &[u8],
-    ) -> Result<Vec<BytesRow>, DomainError> {
-        self.ops().scan_bytes_range(table, start, end)
-    }
-}
-
-// ----------------------------------------------------------- write txn --
-
-struct SqliteWrite<'e> {
-    connection: Pooled<'e>,
-}
-
-impl SqliteWrite<'_> {
-    fn ops(&self) -> Ops<'_> {
-        Ops {
-            connection: &self.connection,
-        }
-    }
-}
-
-impl ReadTx for SqliteWrite<'_> {
-    fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError> {
-        self.ops().get(table, key)
-    }
-    fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError> {
-        self.ops().scan_str(table)
-    }
-    fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
-        self.ops().scan_bytes(table)
-    }
-    fn scan_bytes_range(
-        &self,
-        table: Table,
-        start: &[u8],
-        end: &[u8],
-    ) -> Result<Vec<BytesRow>, DomainError> {
-        self.ops().scan_bytes_range(table, start, end)
-    }
-}
-
-impl WriteTx for SqliteWrite<'_> {
-    fn insert(&mut self, table: Table, key: Key<'_>, value: &[u8]) -> Result<(), DomainError> {
-        self.ops().insert(table, key, value)
-    }
-
-    fn remove(&mut self, table: Table, key: Key<'_>) -> Result<(), DomainError> {
-        self.ops().remove(table, key)
-    }
-
-    fn commit(self: Box<Self>) -> Result<(), DomainError> {
-        // After COMMIT the connection is back in autocommit, so the pooled
-        // drop that follows returns it clean instead of rolling anything back.
-        self.connection
-            .execute_batch("COMMIT")
-            .map_err(|error| failure(&error, "commit"))
     }
 }
 

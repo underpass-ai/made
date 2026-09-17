@@ -1,3 +1,4 @@
+use super::CeremonyEventReadLimit;
 use made_core::error::DomainError;
 use made_core::value_objects::{CeremonyId, StreamVersion};
 
@@ -13,7 +14,7 @@ use made_core::value_objects::{CeremonyId, StreamVersion};
 pub struct ReadCeremonyEventsInput {
     ceremony_id: CeremonyId,
     from_version: StreamVersion,
-    limit: Option<usize>,
+    limit: Option<CeremonyEventReadLimit>,
 }
 
 impl ReadCeremonyEventsInput {
@@ -58,7 +59,7 @@ impl ReadCeremonyEventsInput {
         Ok(Self {
             ceremony_id,
             from_version,
-            limit,
+            limit: limit.map(CeremonyEventReadLimit::new),
         })
     }
 
@@ -80,7 +81,7 @@ impl ReadCeremonyEventsInput {
     /// here — anything above the cap never became an input.
     #[must_use]
     pub fn limit(&self) -> usize {
-        match self.limit {
+        match self.limit.map(CeremonyEventReadLimit::get) {
             None | Some(0) => Self::DEFAULT_LIMIT,
             Some(asked) => asked,
         }

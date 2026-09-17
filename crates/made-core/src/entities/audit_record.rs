@@ -14,12 +14,16 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::entities::{AuditFact, CeremonyEvent, CeremonyEventReader};
+use crate::entities::{AuditFact, CeremonyEvent};
 use crate::error::DomainError;
 use crate::value_objects::{
     AuditActor, AuditEventType, AuditRecordHash, AuditSequence, CeremonyId, CeremonyName,
     CeremonyVersion, EventId, EventSchemaVersion,
 };
+
+mod audit_record_wire;
+
+use audit_record_wire::AuditRecordWire;
 
 /// Domain separator of the first record shape, which carried no
 /// payload. Records sealed under it keep verifying byte for byte.
@@ -321,75 +325,6 @@ impl AuditRecord {
 
         let digest = Sha256::digest(&canonical);
         Ok(AuditRecordHash::from_bytes(digest.into()))
-    }
-}
-
-/// The stored shape of a record, before its payload has been read.
-///
-/// The event arrives as raw JSON and goes through
-/// [`CeremonyEventReader`] with the record's own event type and payload
-/// version, so a payload is only ever read the way it was sealed.
-#[derive(Deserialize)]
-struct AuditRecordWire {
-    event_id: EventId,
-    event_type: AuditEventType,
-    schema_version: u32,
-    ceremony_id: CeremonyId,
-    definition_name: CeremonyName,
-    definition_version: CeremonyVersion,
-    sequence: AuditSequence,
-    #[serde(with = "time::serde::rfc3339")]
-    occurred_at: OffsetDateTime,
-    actor: AuditActor,
-    #[serde(default)]
-    correlation_id: Option<EventId>,
-    #[serde(default)]
-    causation_id: Option<EventId>,
-    #[serde(default)]
-    trace_id: Option<String>,
-    #[serde(default)]
-    event_schema_version: Option<EventSchemaVersion>,
-    #[serde(default)]
-    event: Option<serde_json::Value>,
-    #[serde(default)]
-    previous_record_hash: Option<AuditRecordHash>,
-    record_hash: AuditRecordHash,
-}
-
-impl TryFrom<AuditRecordWire> for AuditRecord {
-    type Error = DomainError;
-
-    fn try_from(wire: AuditRecordWire) -> Result<Self, Self::Error> {
-        let event = match (wire.event, wire.event_schema_version) {
-            (Some(raw), Some(version)) => {
-                Some(CeremonyEventReader::read(wire.event_type, version, raw)?)
-            }
-            (Some(_), None) => {
-                return Err(DomainError::InvariantViolated {
-                    reason:
-                        "an audit record carrying an event must name its payload schema version",
-                })
-            }
-            (None, _) => None,
-        };
-        Ok(Self {
-            event_id: wire.event_id,
-            event_type: wire.event_type,
-            schema_version: wire.schema_version,
-            ceremony_id: wire.ceremony_id,
-            definition_name: wire.definition_name,
-            definition_version: wire.definition_version,
-            sequence: wire.sequence,
-            occurred_at: wire.occurred_at,
-            actor: wire.actor,
-            correlation_id: wire.correlation_id,
-            causation_id: wire.causation_id,
-            trace_id: wire.trace_id,
-            event_schema_version: wire.event_schema_version,
-            event,
-            previous_record_hash: wire.previous_record_hash,
-            record_hash: wire.record_hash,
-        })
     }
 }
 

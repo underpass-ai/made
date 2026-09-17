@@ -8,9 +8,9 @@ use figment::{
     Figment,
 };
 use made_core::error::DomainError;
-use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+mod defaults;
 mod grpc_tls_config;
 mod memory_selection;
 mod service_config;
@@ -18,6 +18,8 @@ mod service_config;
 pub use grpc_tls_config::GrpcTlsConfig;
 pub use memory_selection::MemorySelection;
 pub use service_config::ServiceConfig;
+
+use defaults::Defaults;
 
 /// Read-only configuration adapter backed by process environment.
 ///
@@ -95,43 +97,6 @@ impl EnvConfiguration {
             memory,
             grpc_tls,
         })
-    }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-struct Defaults {
-    grpc_port: u16,
-    http_port: u16,
-    nats_enabled: bool,
-    nats_url: String,
-    trigger_subject: String,
-    publish_prefix: String,
-    postgres_url: String,
-    ceremony_store_path: String,
-    memory: String,
-    grpc_tls_mode: String,
-    grpc_tls_cert_path: String,
-    grpc_tls_key_path: String,
-    grpc_tls_client_ca_path: String,
-}
-
-impl Default for Defaults {
-    fn default() -> Self {
-        Self {
-            grpc_port: 50055,
-            http_port: 8080,
-            nats_enabled: true,
-            nats_url: "nats://nats:4222".to_owned(),
-            trigger_subject: "made.trigger.>".to_owned(),
-            publish_prefix: "made".to_owned(),
-            postgres_url: String::new(),
-            ceremony_store_path: String::new(),
-            memory: "automatic".to_owned(),
-            grpc_tls_mode: "none".to_owned(),
-            grpc_tls_cert_path: String::new(),
-            grpc_tls_key_path: String::new(),
-            grpc_tls_client_ca_path: String::new(),
-        }
     }
 }
 

@@ -1,7 +1,7 @@
 use crate::ports::MetricsRecorderPort;
 use crate::value_objects::{
-    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
-    ScoringMode, Specialty, StepStatus, TokenUsage,
+    CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, RecorderName,
+    Score, ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 
 /// Metrics sink that intentionally discards every observation.
@@ -9,8 +9,8 @@ use crate::value_objects::{
 pub struct NoopMetricsRecorder;
 
 impl MetricsRecorderPort for NoopMetricsRecorder {
-    fn recorder_name(&self) -> &'static str {
-        "noop"
+    fn recorder_name(&self) -> RecorderName {
+        RecorderName::NOOP
     }
 
     fn observe_deliberation_duration(&self, _: &Specialty, _: DurationMs) {}

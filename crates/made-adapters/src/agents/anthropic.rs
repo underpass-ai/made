@@ -31,7 +31,6 @@ use made_core::ports::{
 };
 use made_core::value_objects::{AgentId, LlmErrorKind, ProposalContent, Specialty, TokenUsage};
 use reqwest::{Client, StatusCode};
-use serde::{Deserialize, Serialize};
 use tracing::{debug, warn};
 
 use super::instrument::ProviderCallGuard;
@@ -39,9 +38,24 @@ use super::prompts;
 
 mod anthropic_api_key;
 mod anthropic_config;
+mod anthropic_usage;
+mod cache_control;
+mod content_block;
+mod message;
+mod messages_request;
+mod messages_response;
+mod system_block;
 
 pub use anthropic_api_key::AnthropicApiKey;
 pub use anthropic_config::AnthropicConfig;
+
+use anthropic_usage::AnthropicUsage;
+use cache_control::CacheControl;
+use content_block::ContentBlock;
+use message::Message;
+use messages_request::MessagesRequest;
+use messages_response::MessagesResponse;
+use system_block::SystemBlock;
 
 /// Provider label for this adapter's error metrics.
 const PROVIDER: &str = "anthropic";
@@ -248,66 +262,6 @@ impl AgentPort for AnthropicAgent {
             content: content.into(),
         })
     }
-}
-
-// ---------------------------------------------------------------------------
-// Wire types (matching the Anthropic Messages API)
-// ---------------------------------------------------------------------------
-
-#[derive(Serialize)]
-struct MessagesRequest<'a> {
-    model: &'a str,
-    max_tokens: u32,
-    system: Vec<SystemBlock>,
-    messages: Vec<Message<'a>>,
-}
-
-#[derive(Serialize)]
-struct SystemBlock {
-    #[serde(rename = "type")]
-    ty: &'static str,
-    text: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    cache_control: Option<CacheControl>,
-}
-
-#[derive(Serialize)]
-struct CacheControl {
-    #[serde(rename = "type")]
-    ty: &'static str,
-}
-
-#[derive(Serialize)]
-struct Message<'a> {
-    role: &'a str,
-    content: String,
-}
-
-#[derive(Deserialize)]
-struct MessagesResponse {
-    #[serde(default)]
-    content: Vec<ContentBlock>,
-    #[serde(default)]
-    usage: Option<AnthropicUsage>,
-}
-
-/// Token accounting block of a Messages API response. Anthropic names
-/// the two sides `input_tokens` / `output_tokens`; they map onto the
-/// shared prompt / completion token types.
-#[derive(Deserialize, Clone, Copy, Default)]
-struct AnthropicUsage {
-    #[serde(default)]
-    input_tokens: u32,
-    #[serde(default)]
-    output_tokens: u32,
-}
-
-#[derive(Deserialize)]
-struct ContentBlock {
-    #[serde(rename = "type", default)]
-    ty: String,
-    #[serde(default)]
-    text: Option<String>,
 }
 
 fn extract_text(resp: MessagesResponse) -> Result<String, DomainError> {

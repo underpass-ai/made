@@ -34,6 +34,7 @@ mod output_contract_validation;
 mod output_field_rule;
 mod output_format;
 mod proposal_content;
+mod recorder_name;
 mod rounds;
 mod rubric;
 mod score;
@@ -48,11 +49,12 @@ mod task_description;
 mod token_usage;
 mod trace_context;
 mod validation_mode;
+mod validation_passed;
 
 pub use agent_kind::AgentKind;
 pub use attributes::Attributes;
 pub use audit::{
-    AuditActor, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
+    AuditActor, AuditActorId, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
     AuditRecordHash, AuditSequence, EventSchemaVersion, GlobalPosition, StreamVersion,
 };
 pub use ceremony::{
@@ -63,15 +65,15 @@ pub use ceremony::{
     CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionProvenance,
     CeremonyInterventionResponse, CeremonyInterventionStatus, CeremonyInterventionTarget,
     CeremonyName, CeremonyOutputDefinition, CeremonyParticipantBinding, CeremonyReason,
-    CeremonyReasonKind, CeremonyRecordRef, CeremonyRevision, CeremonyRole, CeremonyState,
-    CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
+    CeremonyReasonKind, CeremonyReasonRationale, CeremonyRecordRef, CeremonyRevision, CeremonyRole,
+    CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
     CeremonyTransition, CeremonyTransitionRecord, CeremonyValidationFinding,
     CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
     GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement, LeaseOwnerId,
-    OutputName, ReasonAsserter, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId,
-    StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId,
-    StepIteration, StepLease, StepOutput, StepOutputField, StepRepeatPolicy, StepResult,
-    StepStatus, StepTimeout, TransitionTrigger,
+    OutputName, PriorContext, ReasonAsserter, RepeatUntilCondition, RetryPolicy, RoleAction,
+    RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
+    StepHandlerKind, StepId, StepInstructions, StepIteration, StepLease, StepOutput,
+    StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;
@@ -103,6 +105,7 @@ pub use output_contract_id::OutputContractId;
 pub use output_field_rule::OutputFieldRule;
 pub use output_format::OutputFormat;
 pub use proposal_content::ProposalContent;
+pub use recorder_name::RecorderName;
 pub use rounds::Rounds;
 pub use rubric::Rubric;
 pub use score::Score;
@@ -117,3 +120,4 @@ pub use task_description::TaskDescription;
 pub use token_usage::TokenUsage;
 pub use trace_context::TraceContext;
 pub use validation_mode::ValidationMode;
+pub use validation_passed::ValidationPassed;

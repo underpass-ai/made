@@ -275,8 +275,8 @@ impl std::fmt::Debug for PrometheusMetricsRecorder {
 }
 
 impl MetricsRecorderPort for PrometheusMetricsRecorder {
-    fn recorder_name(&self) -> &'static str {
-        "prometheus"
+    fn recorder_name(&self) -> made_core::value_objects::RecorderName {
+        made_core::value_objects::RecorderName::PROMETHEUS
     }
 
     fn observe_deliberation_duration(&self, specialty: &Specialty, duration: DurationMs) {

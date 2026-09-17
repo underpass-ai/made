@@ -1,15 +1,22 @@
-use made_app::usecases::{
-    CeremonyDesignDocument, CeremonyDesignFinalApproval, CeremonyDesignParticipant,
-    CeremonyDesignRepeat, CeremonyDesignStage, CeremonyParticipantCapability, DesignedCeremony,
-};
+use made_app::usecases::{CeremonyDesignDocument, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, GuardName, InputName, OutputName, RoleId,
-    StepHandlerKind, StepId, StepIteration, StepOutputField, TransitionTrigger,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
+    StepAttempt, StepTimeout,
 };
 use made_embedded::EmbeddedMade;
 use serde::Deserialize;
 use serde_json::Value;
+
+mod final_approval_intent;
+mod participant_intent;
+mod repeat_intent;
+mod stage_intent;
+
+use final_approval_intent::FinalApprovalIntent;
+use participant_intent::ParticipantIntent;
+use repeat_intent::RepeatIntent;
+use stage_intent::StageIntent;
 
 /// Structured intent accepted by `made_design_ceremony`.
 ///
@@ -42,52 +49,6 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     max_attempts: Option<u32>,
     #[serde(default)]
     backoff_seconds: Option<u64>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct ParticipantIntent {
-    role_id: String,
-    /// The words themselves, read by the use case rather than by
-    /// serde: one vocabulary, one refusal, on both backends.
-    #[serde(default)]
-    capabilities: Vec<String>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct StageIntent {
-    id: String,
-    owner_role_id: String,
-    instructions: String,
-    #[serde(default)]
-    handler: Option<String>,
-    #[serde(default)]
-    see_prior: Option<bool>,
-    #[serde(default)]
-    num_agents: Option<u64>,
-    #[serde(default)]
-    review_rounds: u64,
-    #[serde(default)]
-    repeat: Option<RepeatIntent>,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct RepeatIntent {
-    max_iterations: u32,
-    output_field: String,
-    equals: Value,
-}
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct FinalApprovalIntent {
-    role_id: String,
-    #[serde(default)]
-    guard_name: Option<String>,
-    #[serde(default)]
-    trigger: Option<String>,
 }
 
 impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
@@ -133,56 +94,14 @@ impl EmbeddedDesignCeremonyRequest {
             participants,
             stages,
             final_approval,
-            self.step_timeout_seconds,
-            self.max_attempts,
-            self.backoff_seconds,
-        ))
-    }
-}
-
-impl ParticipantIntent {
-    fn into_domain(self) -> Result<CeremonyDesignParticipant, DomainError> {
-        Ok(CeremonyDesignParticipant::new(
-            RoleId::new(self.role_id)?,
-            self.capabilities
-                .iter()
-                .map(|capability| CeremonyParticipantCapability::parse(capability))
-                .collect::<Result<Vec<_>, _>>()?,
-        ))
-    }
-}
-
-impl StageIntent {
-    fn into_domain(self) -> Result<CeremonyDesignStage, DomainError> {
-        Ok(CeremonyDesignStage::new(
-            StepId::new(self.id)?,
-            RoleId::new(self.owner_role_id)?,
-            self.instructions,
-            self.handler.map(StepHandlerKind::new).transpose()?,
-            self.see_prior,
-            self.num_agents,
-            self.review_rounds,
-            self.repeat.map(RepeatIntent::into_domain).transpose()?,
-        ))
-    }
-}
-
-impl RepeatIntent {
-    fn into_domain(self) -> Result<CeremonyDesignRepeat, DomainError> {
-        Ok(CeremonyDesignRepeat::new(
-            StepIteration::new(self.max_iterations)?,
-            StepOutputField::new(self.output_field)?,
-            self.equals,
-        ))
-    }
-}
-
-impl FinalApprovalIntent {
-    fn into_domain(self) -> Result<CeremonyDesignFinalApproval, DomainError> {
-        Ok(CeremonyDesignFinalApproval::new(
-            RoleId::new(self.role_id)?,
-            self.guard_name.map(GuardName::new).transpose()?,
-            self.trigger.map(TransitionTrigger::new).transpose()?,
+            self.step_timeout_seconds
+                .map(|seconds| {
+                    StepTimeout::new(DurationMs::from_millis(seconds.saturating_mul(1_000)))
+                })
+                .transpose()?,
+            self.max_attempts.map(StepAttempt::new).transpose()?,
+            self.backoff_seconds
+                .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
         ))
     }
 }
@@ -199,6 +118,7 @@ mod tests {
     use super::*;
     use made_adapters::yaml::CeremonyDefinitionYaml;
     use made_core::entities::CeremonyDefinitionDraft;
+    use made_core::value_objects::StepId;
     use serde_json::json;
 
     fn intent() -> Value {

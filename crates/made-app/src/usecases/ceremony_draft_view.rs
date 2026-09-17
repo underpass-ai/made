@@ -35,23 +35,23 @@ impl<'a> CeremonyDraftView<'a> {
         draft: &'a CeremonyDefinitionDraft,
         report: &'a CeremonyValidationReport,
     ) -> Self {
-        let summary = CeremonyDraftSummary {
-            states: draft.states().len(),
-            initial_states: draft
+        let summary = CeremonyDraftSummary::new(
+            draft.states().len(),
+            draft
                 .states()
                 .iter()
                 .filter(|state| state.is_initial())
                 .count(),
-            terminal_states: draft
+            draft
                 .states()
                 .iter()
                 .filter(|state| state.is_terminal())
                 .count(),
-            transitions: draft.transitions().len(),
-            steps: draft.steps().len(),
-            guards: draft.guards().len(),
-            roles: draft.roles().len(),
-        };
+            draft.transitions().len(),
+            draft.steps().len(),
+            draft.guards().len(),
+            draft.roles().len(),
+        );
         let narrative = narrate(draft, report, &summary);
         Self {
             draft,
@@ -114,11 +114,11 @@ fn narrate(
     let mut lines = vec![format!(
         "`{}` declares {} states, {} transitions, {} steps, {} guards and {} roles.",
         draft.name().as_str(),
-        summary.states,
-        summary.transitions,
-        summary.steps,
-        summary.guards,
-        summary.roles,
+        summary.states(),
+        summary.transitions(),
+        summary.steps(),
+        summary.guards(),
+        summary.roles(),
     )];
 
     let errors = report.errors().collect::<Vec<_>>();
@@ -192,9 +192,9 @@ mod tests {
             view.narrative()[0],
             "`broken_ceremony` declares 2 states, 1 transitions, 0 steps, 0 guards and 0 roles."
         );
-        assert_eq!(view.summary().states, 2);
-        assert_eq!(view.summary().initial_states, 1);
-        assert_eq!(view.summary().terminal_states, 1);
+        assert_eq!(view.summary().states(), 2);
+        assert_eq!(view.summary().initial_states(), 1);
+        assert_eq!(view.summary().terminal_states(), 1);
     }
 
     #[test]

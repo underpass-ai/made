@@ -273,7 +273,7 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         debug!(
             task_id = output.task_id.as_str(),
-            passed = output.passed,
+            passed = output.passed.get(),
             duration_ms = output.duration_ms.get(),
             "run_council_decision rpc ok"
         );
