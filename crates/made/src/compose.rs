@@ -6,10 +6,8 @@ use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::{EnvConfiguration, ServiceConfig};
-use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore, InMemoryContractRegistry,
+    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry,
     InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
@@ -20,7 +18,6 @@ use made_adapters::postgres::{
 };
 use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
-use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::validators::{
     AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -45,17 +42,19 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
     CeremonyStepHandlerPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
     ExecutorPort, MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
-use tracing::{info, warn};
+use tracing::info;
 
 use crate::{Application, ComposeError};
 
 use messaging::{wire_messaging, MessagingWiring};
 
+use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
+
+mod ceremony_persistence;
 mod messaging;
 
 /// Pick the scoring policy and wire the optional LLM judge.
@@ -157,53 +156,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryContractRegistry::new());
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    // Ceremony state is durable only when a store path is configured.
-    // Leaving it in memory is a valid choice for a throwaway
-    // deployment and a silent data-loss bug in any other, so an
-    // unconfigured server says what it is giving up rather than
-    // discovering it at the first restart.
-    // One store serves every ceremony port, durable or not. A stream
-    // and the published definition its ceremony is bound to have to
-    // survive together, or a restart leaves streams pointing at
-    // versions that are gone; and a snapshot is a cache of a stream's
-    // fold, which it cannot be if it lives somewhere the stream does
-    // not.
-    let (ceremony_events, ceremony_snapshots, ceremony_publications): (
-        Arc<dyn CeremonyEventStorePort>,
-        Arc<dyn CeremonySnapshotStorePort>,
-        Arc<dyn CeremonyDefinitionPublicationPort>,
-    ) = if let Some(path) = service_config.ceremony_store_path.as_deref() {
-        let store = Arc::new(
-            SqliteCeremonyStore::open(path)
-                .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
-        );
-        info!(path, "ceremony state is durable");
-        (store.clone(), store.clone(), store)
-    } else {
-        warn!(
-            "MADE_CEREMONY_STORE_PATH is unset: ceremony state is held in memory. Step \
-             leases, idempotency keys and pending human guards will not survive a restart."
-        );
-        let store = Arc::new(InMemoryCeremonyEventStore::new());
-        (
-            store.clone(),
-            store,
-            Arc::new(InMemoryCeremonyDefinitionPublications::new()),
-        )
-    };
-    // No memory configured, and said so rather than pretended: a
-    // session with nowhere to record what it decided still runs, it
-    // just forgets, and a session opening in a shared scope is told
-    // nothing because there is nothing there. One adapter serves both
-    // directions, so swapping this for a durable one is the whole of
-    // turning memory on.
-    //
-    // The writer is a subscriber of the stream, not something a use
-    // case holds: what a session leaves behind is a projection of what
-    // it sealed (ADR-012, ADR-013).
-    let memory = Arc::new(ForgetfulMemory::new());
+    let CeremonyPersistence {
+        events: ceremony_events,
+        snapshots: ceremony_snapshots,
+        publications: ceremony_publications,
+        memory_writer,
+        memory_reader,
+    } = wire_ceremony_persistence(&service_config)?;
+    // The writer is a subscriber of the stream: memory is a projection
+    // of sealed events, outside the ceremony transaction (ADR-012/013).
     let session_memory = Arc::new(SessionMemoryRecorder::new(
-        memory.clone(),
+        memory_writer,
         ceremony_events.clone(),
     ));
     let ceremony_stream = Arc::new(SessionStream::new(
@@ -272,13 +235,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_definitions.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        memory.clone(),
+        memory_reader.clone(),
     ));
     let start_published_ceremony = Arc::new(StartPublishedCeremonyUseCase::new(
         ceremony_publications.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        memory.clone(),
+        memory_reader,
     ));
     let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
         resolve_ceremony_definition.clone(),
