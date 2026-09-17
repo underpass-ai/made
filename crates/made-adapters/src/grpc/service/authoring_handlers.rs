@@ -222,6 +222,7 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::GetMetricsResponse {
             stats: Some(statistics_to_proto(&snapshot)),
+            ..Default::default()
         }))
     }
 }

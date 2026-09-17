@@ -14,17 +14,18 @@
 
 use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignExitGuard, CeremonyDesignFinalApproval,
-    CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
-    CeremonyDesignOutputFieldGuard, CeremonyDesignParticipant, CeremonyDesignRepeat,
-    CeremonyDesignStage, CeremonyDesignStageEntry, CeremonyDesignStepRepeatExhaustedGuard,
-    CeremonyDraftView, CeremonyParticipantCapability, CeremonyPatternPreset, DesignedCeremony,
+    CeremonyDesignGroup, CeremonyDesignGroupRepeat, CeremonyDesignGroupRepeatUntil,
+    CeremonyDesignGroupStep, CeremonyDesignJoin, CeremonyDesignOutputFieldGuard,
+    CeremonyDesignParticipant, CeremonyDesignRepeat, CeremonyDesignStage, CeremonyDesignStageEntry,
+    CeremonyDesignStepRepeatExhaustedGuard, CeremonyDraftView, CeremonyParticipantCapability,
+    CeremonyPatternPreset, DesignedCeremony,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, GuardName, InputName,
     JoinStepCount, MaxParallel, NumAgents, OutputName, PriorContext, RoleId, Rounds,
-    StateExecution, StepAttempt, StepHandlerKind, StepId, StepInstructions, StepIteration,
-    StepOutputField, StepTimeout, TransitionTrigger,
+    StateExecution, StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions,
+    StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -188,14 +189,34 @@ fn stage_entry_from_proto(
             .into_iter()
             .map(group_step_from_proto)
             .collect::<Result<Vec<_>, _>>()?;
-        return Ok(CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
-            StepId::new(stage.id)?,
-            execution,
-            steps,
-            join,
-        )));
+        let designed_group =
+            CeremonyDesignGroup::new(StepId::new(stage.id)?, execution, steps, join);
+        let designed_group = match group.repeat {
+            Some(repeat) => designed_group.with_repeat(group_repeat_from_proto(repeat)?),
+            None => designed_group,
+        };
+        return Ok(CeremonyDesignStageEntry::Group(designed_group));
     }
     stage_from_proto(stage).map(CeremonyDesignStageEntry::Leaf)
+}
+
+fn group_repeat_from_proto(
+    repeat: pb::CeremonyDesignGroupRepeat,
+) -> Result<CeremonyDesignGroupRepeat, DomainError> {
+    let until = repeat.until.ok_or_else(|| DomainError::InvalidDocument {
+        reason: "field `stages[].group.repeat.until` is required".to_owned(),
+    })?;
+    let equals = until.equals.ok_or_else(|| DomainError::InvalidDocument {
+        reason: "field `stages[].group.repeat.until.equals` is required".to_owned(),
+    })?;
+    Ok(CeremonyDesignGroupRepeat::new(
+        StateIteration::new(repeat.max_iterations)?,
+        CeremonyDesignGroupRepeatUntil::new(
+            StepId::new(until.step_id)?,
+            StepOutputField::new(until.output_field)?,
+            pb_value_to_json(equals)?,
+        ),
+    ))
 }
 
 fn group_step_from_proto(
@@ -376,6 +397,16 @@ mod tests {
                         condition: "steps_completed".to_owned(),
                         count: Some(1),
                     }),
+                    repeat: Some(pb::CeremonyDesignGroupRepeat {
+                        max_iterations: 3,
+                        until: Some(pb::CeremonyDesignGroupRepeatUntil {
+                            step_id: "review_2".to_owned(),
+                            output_field: "ready".to_owned(),
+                            equals: Some(prost_types::Value {
+                                kind: Some(Kind::BoolValue(true)),
+                            }),
+                        }),
+                    }),
                 }),
                 exit_guards: Vec::new(),
             }],
@@ -394,6 +425,11 @@ mod tests {
             CeremonyDesignStageEntry::Group(group)
                 if group.execution() == StateExecution::Concurrent
                     && matches!(group.join(), CeremonyDesignJoin::StepsCompleted(count) if count.get() == 1)
+                    && group.repeat().is_some_and(|repeat|
+                        repeat.max_iterations() == StateIteration::new(3).unwrap()
+                            && repeat.until().step_id() == &StepId::new("review_2").unwrap()
+                            && repeat.until().output_field().as_str() == "ready"
+                            && repeat.until().equals() == &serde_json::json!(true))
         ));
     }
 }

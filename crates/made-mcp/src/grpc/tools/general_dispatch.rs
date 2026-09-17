@@ -189,7 +189,7 @@ where
 
         "made_get_metrics" => {
             let response = client.get_metrics(pb::GetMetricsRequest {}).await?;
-            let pb::GetMetricsResponse { stats } = response.into_inner();
+            let pb::GetMetricsResponse { stats, .. } = response.into_inner();
             let statistics = stats.map(p2j::statistics_view);
             Ok(crate::renderers::StatisticsView::envelope(
                 statistics.as_ref(),

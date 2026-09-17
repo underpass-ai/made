@@ -109,6 +109,7 @@ impl CeremonyMetricsSubscriber {
                 );
             }
             CeremonyEvent::ParticipantsBound(_)
+            | CeremonyEvent::StateIterationStarted(_)
             | CeremonyEvent::InterventionClosed(_)
             | CeremonyEvent::EvidenceCollected(_)
             | CeremonyEvent::ReasonAsserted(_)

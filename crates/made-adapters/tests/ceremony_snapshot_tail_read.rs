@@ -122,6 +122,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
                 "snapshot-tail-step-started",
                 CeremonyEvent::StepStarted(StepStarted {
                     step_id: step_id.clone(),
+                    state_iteration: None,
                     iteration: StepIteration::FIRST,
                     attempt: StepAttempt::FIRST,
                     lease: StepLease::acquire(
@@ -151,6 +152,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
         tail_event_id.as_str(),
         CeremonyEvent::StepCompleted(StepCompleted {
             step_id: step_id.clone(),
+            state_iteration: None,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             result: StepResult::completed(StepOutput::empty()).unwrap(),

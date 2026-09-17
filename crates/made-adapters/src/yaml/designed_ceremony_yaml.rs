@@ -13,6 +13,8 @@ mod retry_policies_document;
 mod retry_policy_document;
 mod role_document;
 mod state_document;
+mod state_repeat_document;
+mod state_repeat_until_document;
 mod step_document;
 mod step_repeat_document;
 mod timeouts_document;
@@ -26,6 +28,8 @@ use retry_policies_document::RetryPoliciesDocument;
 use retry_policy_document::RetryPolicyDocument;
 use role_document::RoleDocument;
 use state_document::StateDocument;
+use state_repeat_document::StateRepeatDocument;
+use state_repeat_until_document::StateRepeatUntilDocument;
 use step_document::StepDocument;
 use step_repeat_document::StepRepeatDocument;
 use timeouts_document::TimeoutsDocument;
@@ -49,6 +53,14 @@ impl DesignedCeremonyYaml {
                 initial: state.is_initial(),
                 terminal: state.is_terminal(),
                 execution: state.execution(),
+                repeat: state.repeat_policy().map(|repeat| StateRepeatDocument {
+                    max_iterations: repeat.max_iterations().get(),
+                    until: StateRepeatUntilDocument {
+                        step: repeat.until().step_id().as_str().to_owned(),
+                        output_field: repeat.until().output_field().as_str().to_owned(),
+                        equals: repeat.until().equals().clone(),
+                    },
+                }),
             })
             .collect();
         let transitions = draft

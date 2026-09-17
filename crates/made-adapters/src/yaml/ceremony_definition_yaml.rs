@@ -230,6 +230,34 @@ retry_policies:
     }
 
     #[test]
+    fn parses_bounded_state_repeat_policy_separately_from_step_repeat() {
+        let yaml = MULTI_STEP.replace(
+            "    terminal: false",
+            "    terminal: false\n    repeat:\n      max_iterations: 4\n      until:\n        step: deliberate\n        output_field: ready\n        equals: true",
+        );
+
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let policy = definition
+            .state(&made_core::value_objects::StateId::new("DELIBERATING").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .unwrap();
+
+        assert_eq!(policy.max_iterations().get(), 4);
+        assert_eq!(
+            policy.until().step_id(),
+            &StepId::new("deliberate").unwrap()
+        );
+        assert_eq!(policy.until().output_field().as_str(), "ready");
+        assert_eq!(policy.until().equals(), &serde_json::json!(true));
+        assert!(definition
+            .step(&StepId::new("deliberate").unwrap())
+            .unwrap()
+            .repeat_policy()
+            .is_none());
+    }
+
+    #[test]
     fn rejects_zero_or_unbounded_repeat_policy() {
         let zero = MULTI_STEP.replace(
             "      prompt: \"Deliberate on inputs\"",

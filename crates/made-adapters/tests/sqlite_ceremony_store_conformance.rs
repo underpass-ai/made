@@ -193,6 +193,7 @@ mod support {
             event_id: EventId::new(format!("restart-{ordinal}")).unwrap(),
             event: CeremonyEvent::StepCompleted(StepCompleted {
                 step_id: StepId::new("conformance_step").unwrap(),
+                state_iteration: None,
                 iteration: StepIteration::FIRST,
                 attempt: StepAttempt::FIRST,
                 result: StepResult::completed(StepOutput::empty()).unwrap(),

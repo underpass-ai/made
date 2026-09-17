@@ -261,6 +261,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         attempt,
         output,
         iteration,
+        state_iteration,
     } = step;
     json!({
         "state_id": state_id,
@@ -275,6 +276,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         "status": status.to_ascii_lowercase(),
         "attempt": attempt,
         "iteration": iteration,
+        "state_iteration": state_iteration,
         "output": output,
     })
 }

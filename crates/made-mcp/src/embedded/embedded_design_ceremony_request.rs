@@ -325,7 +325,11 @@ mod tests {
                         "instructions": "Review independently."
                     }
                 ],
-                "join": {"condition": "steps_completed", "count": 1}
+                "join": {"condition": "steps_completed", "count": 1},
+                "repeat": {
+                    "max_iterations": 4,
+                    "until": {"step": "review", "output_field": "ready", "equals": true}
+                }
             }
         }]);
 
@@ -336,10 +340,19 @@ mod tests {
         assert!(yaml.contains("max_parallel: 2"), "{yaml}");
         assert!(yaml.contains("execution: concurrent"), "{yaml}");
         assert!(yaml.contains("steps_completed:1"), "{yaml}");
+        assert!(yaml.contains("max_iterations: 4"), "{yaml}");
+        assert!(yaml.contains("step: review"), "{yaml}");
+        assert!(yaml.contains("output_field: ready"), "{yaml}");
         assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
         assert!(draft.states().iter().any(|state| {
             state.id() == &StateId::new("PARALLEL_REVIEW").unwrap()
                 && state.execution() == StateExecution::Concurrent
+                && state.repeat_policy().is_some_and(|repeat| {
+                    repeat.max_iterations().get() == 4
+                        && repeat.until().step_id() == &StepId::new("review").unwrap()
+                        && repeat.until().output_field().as_str() == "ready"
+                        && repeat.until().equals() == &json!(true)
+                })
         }));
         assert!(draft.guards().iter().any(|guard| {
             matches!(guard.condition(), GuardCondition::StepsCompleted(count) if count.get() == 1)

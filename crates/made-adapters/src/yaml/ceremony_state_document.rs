@@ -1,3 +1,4 @@
+use super::state_repeat_policy_document::StateRepeatPolicyDocument;
 use made_core::error::DomainError;
 use made_core::value_objects::{CeremonyState, StateExecution, StateId};
 use serde::Deserialize;
@@ -11,6 +12,8 @@ pub(super) struct CeremonyStateDocument {
     terminal: bool,
     #[serde(default)]
     execution: StateExecution,
+    #[serde(default)]
+    repeat: Option<StateRepeatPolicyDocument>,
 }
 
 impl CeremonyStateDocument {
@@ -28,6 +31,10 @@ impl CeremonyStateDocument {
         } else {
             CeremonyState::intermediate(id)
         };
-        Ok(state.with_execution(self.execution))
+        let state = state.with_execution(self.execution);
+        Ok(match self.repeat {
+            Some(repeat) => state.with_repeat_policy(repeat.into_domain()?),
+            None => state,
+        })
     }
 }

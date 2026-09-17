@@ -126,7 +126,32 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
             .to_owned(),
         steps,
         join,
+        repeat: group_repeat(group)?,
     })
+}
+
+fn group_repeat(
+    group: &Map<String, Value>,
+) -> Result<Option<pb::CeremonyDesignGroupRepeat>, String> {
+    let Some(value) = group.get("repeat") else {
+        return Ok(None);
+    };
+    let repeat = j2p::require_object(value, "stages[].group.repeat")?;
+    let until_value = repeat
+        .get("until")
+        .ok_or_else(|| "field `stages[].group.repeat.until` is required".to_owned())?;
+    let until = j2p::require_object(until_value, "stages[].group.repeat.until")?;
+    let equals = until
+        .get("equals")
+        .ok_or_else(|| "field `stages[].group.repeat.until.equals` is required".to_owned())?;
+    Ok(Some(pb::CeremonyDesignGroupRepeat {
+        max_iterations: j2p::optional_u32(repeat, "max_iterations")?,
+        until: Some(pb::CeremonyDesignGroupRepeatUntil {
+            step_id: j2p::require_str(until, "step")?.to_owned(),
+            output_field: j2p::require_str(until, "output_field")?.to_owned(),
+            equals: Some(j2p::json_to_pb_value(equals)),
+        }),
+    }))
 }
 
 fn exit_guards(stage: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignExitGuard>, String> {
@@ -352,7 +377,11 @@ mod tests {
                     {"id": "a", "owner_role_id": "A", "instructions": "Review A"},
                     {"id": "b", "owner_role_id": "B", "instructions": "Review B"}
                 ],
-                "join": {"condition": "steps_completed", "count": 1}
+                "join": {"condition": "steps_completed", "count": 1},
+                "repeat": {
+                    "max_iterations": 4,
+                    "until": {"step": "b", "output_field": "ready", "equals": true}
+                }
             }
         }]);
 
@@ -363,5 +392,13 @@ mod tests {
         assert_eq!(group.steps.len(), 2);
         assert_eq!(group.join.as_ref().unwrap().condition, "steps_completed");
         assert_eq!(group.join.as_ref().unwrap().count, Some(1));
+        let repeat = group.repeat.as_ref().unwrap();
+        assert_eq!(repeat.max_iterations, 4);
+        assert_eq!(repeat.until.as_ref().unwrap().step_id, "b");
+        assert_eq!(repeat.until.as_ref().unwrap().output_field, "ready");
+        assert_eq!(
+            repeat.until.as_ref().unwrap().equals,
+            Some(j2p::json_to_pb_value(&json!(true)))
+        );
     }
 }
