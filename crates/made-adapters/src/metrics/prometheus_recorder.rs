@@ -11,15 +11,15 @@
 //! raw `[0.0, 1.0]` value. Conversion from the domain's millisecond
 //! durations happens here so the port stays domain-typed.
 
+use made_core::entities::MetricsSnapshot;
 use made_core::error::DomainError;
-use made_core::ports::MetricsRecorderPort;
+use made_core::ports::{MetricsRecorderPort, MetricsSnapshotPort};
 use made_core::value_objects::{
     CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
     ScoringMode, Specialty, StepStatus, TokenUsage,
 };
 use prometheus::{
-    Encoder, HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
-    TextEncoder,
+    HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
 };
 
 /// Latency buckets (seconds) sized for serialized vLLM deliberations,
@@ -321,18 +321,16 @@ impl PrometheusMetricsRecorder {
         })
     }
 
-    /// Render Prometheus text; an encoding failure logs and returns empty so
-    /// instrumentation cannot bring down the `/metrics` handler.
-    #[must_use]
-    pub fn render(&self) -> String {
-        let metric_families = self.registry.gather();
-        let mut buffer = Vec::new();
-        let encoder = TextEncoder::new();
-        if let Err(err) = encoder.encode(&metric_families, &mut buffer) {
-            tracing::error!(error = %err, "prometheus metrics encode failed");
-            return String::new();
-        }
-        String::from_utf8(buffer).unwrap_or_default()
+    /// Render Prometheus text from the same snapshot exposed through the
+    /// read port.
+    pub fn render(&self) -> Result<String, DomainError> {
+        Ok(self.snapshot()?.text().as_str().to_owned())
+    }
+}
+
+impl MetricsSnapshotPort for PrometheusMetricsRecorder {
+    fn snapshot(&self) -> Result<MetricsSnapshot, DomainError> {
+        super::prometheus_snapshot::snapshot(&self.registry)
     }
 }
 
@@ -688,7 +686,7 @@ mod tests {
         recorder.observe_nats_publish("deliberation_completed", DurationMs::from_millis(5));
         recorder.record_nats_publish_error("deliberation_completed", "publish");
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains("# TYPE made_deliberation_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_deliberation_winner_score histogram"));
         assert!(text.contains("# TYPE made_deliberation_completed_total counter"));
@@ -714,6 +712,7 @@ mod tests {
         recorder.record_scoring_mode(ScoringMode::JudgeVerdict);
         assert!(recorder
             .render()
+            .unwrap()
             .contains("# TYPE made_judge_scoring_mode_total counter"));
     }
 
@@ -724,7 +723,7 @@ mod tests {
         recorder.record_scoring_mode(ScoringMode::JudgeVerdict);
         recorder.record_scoring_mode(ScoringMode::UniformFallback);
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains("made_judge_scoring_mode_total{mode=\"judge_verdict\"} 2"));
         assert!(text.contains("made_judge_scoring_mode_total{mode=\"uniform_fallback\"} 1"));
     }
@@ -733,9 +732,15 @@ mod tests {
     fn postgres_pool_gauge_reflects_the_last_set_value() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
         recorder.set_postgres_pool_in_use(7);
-        assert!(recorder.render().contains("made_postgres_pool_in_use 7"));
+        assert!(recorder
+            .render()
+            .unwrap()
+            .contains("made_postgres_pool_in_use 7"));
         recorder.set_postgres_pool_in_use(3);
-        assert!(recorder.render().contains("made_postgres_pool_in_use 3"));
+        assert!(recorder
+            .render()
+            .unwrap()
+            .contains("made_postgres_pool_in_use 3"));
     }
 
     #[test]
@@ -745,7 +750,7 @@ mod tests {
         recorder.record_nats_publish_error("deliberation_completed", "publish");
         recorder.record_nats_publish_error("task_dispatched", "serialize");
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains(
             "made_nats_publish_errors_total{reason=\"publish\",subject_kind=\"deliberation_completed\"} 2"
         ));
@@ -761,7 +766,7 @@ mod tests {
         recorder.record_ceremony_step("engineering_planning", "design", StepStatus::Failed);
         recorder.record_ceremony_transition_blocked("engineering_planning", "review");
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains(
             "made_ceremony_completed_total{ceremony=\"engineering_planning\",outcome=\"step_failed\"} 1"
         ));
@@ -772,13 +777,48 @@ mod tests {
     }
 
     #[test]
+    fn snapshot_projects_the_same_counter_as_text_and_typed_samples() {
+        let recorder = PrometheusMetricsRecorder::new().unwrap();
+        recorder.record_ceremony_step("engineering_planning", "design", StepStatus::Completed);
+
+        let snapshot = recorder.snapshot().unwrap();
+        assert!(snapshot.text().as_str().contains(
+            "made_ceremony_step_total{ceremony=\"engineering_planning\",status=\"completed\",step=\"design\"} 1"
+        ));
+        let family = snapshot
+            .families()
+            .iter()
+            .find(|family| family.name().as_str() == "made_ceremony_step_total")
+            .unwrap();
+        assert_eq!(family.kind().as_str(), "counter");
+        let sample = family.samples().first().unwrap();
+        assert_eq!(sample.name().as_str(), "made_ceremony_step_total");
+        assert_eq!(
+            sample
+                .labels()
+                .iter()
+                .map(|(name, value)| (name.as_str(), value.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("ceremony", "engineering_planning"),
+                ("status", "completed"),
+                ("step", "design"),
+            ]
+        );
+        assert_eq!(
+            sample.value(),
+            made_core::value_objects::MetricValue::Finite(1.0)
+        );
+    }
+
+    #[test]
     fn records_discrimination_by_specialty_and_result() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
         recorder.record_discrimination(&specialty(), Discrimination::Reranked);
         recorder.record_discrimination(&specialty(), Discrimination::Reranked);
         recorder.record_discrimination(&specialty(), Discrimination::Agreed);
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains(
             "made_judge_discrimination_total{result=\"reranked\",specialty=\"reviewer\"} 2"
         ));
@@ -795,7 +835,7 @@ mod tests {
         recorder.dec_provider_in_flight("vllm");
         recorder.observe_provider_request("vllm", "generate", DurationMs::from_millis(2_000));
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         // Two starts, one finish -> depth 1.
         assert!(text.contains("made_provider_in_flight{provider=\"vllm\"} 1"));
         assert!(text.contains(
@@ -810,7 +850,7 @@ mod tests {
         recorder.record_provider_tokens("vllm", TokenUsage::new(50, 10));
         recorder.record_judge_tokens("gemma", TokenUsage::new(200, 8));
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         // Counters accumulate the token counts (100+50 prompt, 40+10 completion).
         assert!(text
             .contains("made_provider_tokens_total{provider=\"vllm\",token_type=\"prompt\"} 150"));
@@ -827,7 +867,7 @@ mod tests {
         recorder.record_provider_error("vllm", LlmErrorKind::Timeout);
         recorder.record_provider_error("openai", LlmErrorKind::Unauthorized);
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains(
             "made_provider_errors_total{error_kind=\"rate_limited\",provider=\"vllm\"} 1"
         ));
@@ -846,7 +886,7 @@ mod tests {
         recorder.record_judge_error("gemma", LlmErrorKind::Timeout);
         recorder.record_judge_error("gemma", LlmErrorKind::RateLimited);
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains("made_judge_errors_total{error_kind=\"timeout\",model=\"gemma\"} 2"));
         assert!(
             text.contains("made_judge_errors_total{error_kind=\"rate_limited\",model=\"gemma\"} 1")
@@ -859,7 +899,7 @@ mod tests {
         recorder.observe_judge_latency("gemma", DurationMs::from_millis(45_000));
         recorder.observe_judge_score("gemma", Score::new(0.9).unwrap());
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains("made_judge_latency_seconds_sum{model=\"gemma\"} 45"));
         assert!(text.contains("made_judge_score_sum{model=\"gemma\"} 0.9"));
         assert!(text.contains("made_judge_score_count{model=\"gemma\"} 1"));
@@ -872,7 +912,7 @@ mod tests {
         recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::Success);
         recorder.record_deliberation_outcome(&specialty(), DeliberationOutcome::NoValidProposal);
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         assert!(text.contains(
             "made_deliberation_completed_total{outcome=\"success\",specialty=\"reviewer\"} 2"
         ));
@@ -887,7 +927,7 @@ mod tests {
         recorder.observe_deliberation_duration(&specialty(), DurationMs::from_millis(2_500));
         recorder.observe_winner_score(&specialty(), Score::new(0.75).unwrap());
 
-        let text = recorder.render();
+        let text = recorder.render().unwrap();
         // 2500ms == 2.5s — lands in the histogram's running sum.
         assert!(text.contains("made_deliberation_duration_seconds_sum{specialty=\"reviewer\"} 2.5"));
         assert!(text.contains("made_deliberation_winner_score_sum{specialty=\"reviewer\"} 0.75"));

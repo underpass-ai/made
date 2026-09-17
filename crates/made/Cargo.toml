@@ -30,11 +30,6 @@ path = "src/main.rs"
 # default container image free of the OTel dependency surface for
 # deployments that do not need it.
 otel = [
-    "dep:opentelemetry",
-    "dep:opentelemetry_sdk",
-    "dep:opentelemetry-otlp",
-    "dep:opentelemetry-semantic-conventions",
-    "dep:tracing-opentelemetry",
     "made-adapters/otel",
 ]
 
@@ -49,12 +44,6 @@ made-adapters = { workspace = true, features = [
     "runtime-grpc",
 ] }
 made-proto = { workspace = true }
-
-opentelemetry = { workspace = true, optional = true }
-opentelemetry_sdk = { workspace = true, optional = true }
-opentelemetry-otlp = { workspace = true, optional = true }
-opentelemetry-semantic-conventions = { workspace = true, optional = true }
-tracing-opentelemetry = { workspace = true, optional = true }
 
 async-nats = { workspace = true }
 async-trait = { workspace = true }

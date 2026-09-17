@@ -1,8 +1,9 @@
-use made_app::usecases::ServiceStatus;
-use made_core::entities::Statistics;
+use made_app::usecases::{ServiceMetrics, ServiceStatus};
+use made_core::entities::{MetricFamily, MetricSample, Statistics};
+use made_core::value_objects::MetricValue;
 use serde_json::{json, Value};
 
-use crate::renderers::StatisticsView;
+use crate::renderers::{MetricFamilyView, MetricSampleView, ServiceMetricsView, StatisticsView};
 
 /// Render a status the way the contract renders it.
 ///
@@ -23,8 +24,46 @@ pub(super) fn present_service_status(status: &ServiceStatus) -> Value {
 }
 
 /// Render the counter snapshot the way the contract renders it.
-pub(super) fn present_service_metrics(statistics: &Statistics) -> Value {
-    StatisticsView::envelope(Some(&statistics_view(statistics)))
+pub(super) fn present_service_metrics(metrics: &ServiceMetrics) -> Value {
+    ServiceMetricsView {
+        statistics: Some(statistics_view(metrics.statistics())),
+        registry_text: metrics.registry().text().as_str().to_owned(),
+        registry: metrics
+            .registry()
+            .families()
+            .iter()
+            .map(metric_family_view)
+            .collect(),
+    }
+    .to_json()
+}
+
+fn metric_family_view(family: &MetricFamily) -> MetricFamilyView {
+    MetricFamilyView {
+        name: family.name().as_str().to_owned(),
+        help: family.help().as_str().to_owned(),
+        kind: family.kind().as_str().to_owned(),
+        samples: family.samples().iter().map(metric_sample_view).collect(),
+    }
+}
+
+fn metric_sample_view(sample: &MetricSample) -> MetricSampleView {
+    let labels = sample
+        .labels()
+        .iter()
+        .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
+        .collect();
+    let value = match sample.value() {
+        MetricValue::Finite(value) => MetricSampleView::finite_value(value),
+        MetricValue::Nan => Value::String("NaN".to_owned()),
+        MetricValue::PositiveInfinity => Value::String("+Inf".to_owned()),
+        MetricValue::NegativeInfinity => Value::String("-Inf".to_owned()),
+    };
+    MetricSampleView {
+        name: sample.name().as_str().to_owned(),
+        labels,
+        value,
+    }
 }
 
 /// The five counters `Statistics` carries on the wire.
@@ -51,6 +90,7 @@ mod tests {
     use std::time::Duration;
 
     use made_app::usecases::ServiceHealth;
+    use made_core::entities::MetricsSnapshot;
     use made_core::value_objects::{DurationMs, Specialty};
 
     use super::*;
@@ -110,8 +150,9 @@ mod tests {
     /// families whichever edition served it.
     #[test]
     fn metrics_answer_with_every_family_even_at_zero() {
+        let metrics = ServiceMetrics::new(Statistics::new(), MetricsSnapshot::empty());
         assert_eq!(
-            present_service_metrics(&Statistics::new()),
+            present_service_metrics(&metrics),
             json!({
                 "stats": {
                     "total_deliberations": 0,
@@ -119,7 +160,9 @@ mod tests {
                     "total_duration_ms": 0,
                     "average_duration_ms": 0.0,
                     "per_specialty_counts": {},
-                }
+                },
+                "registry_text": "",
+                "registry": [],
             })
         );
     }
@@ -131,8 +174,9 @@ mod tests {
     fn the_average_stays_a_fraction() {
         let mut counters = Statistics::new();
         counters.record_orchestration(DurationMs::from_millis(1_000));
+        let metrics = ServiceMetrics::new(counters, MetricsSnapshot::empty());
 
-        let rendered = present_service_metrics(&counters);
+        let rendered = present_service_metrics(&metrics);
 
         assert!(
             rendered["stats"]["average_duration_ms"].is_f64(),

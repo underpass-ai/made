@@ -90,6 +90,18 @@ const NORMALISED: &[(&str, &str, &str)] = &[
          version and the uptime verbatim; every other field of the status is still compared \
          in structuredContent",
     ),
+    (
+        "made_get_metrics",
+        ".structuredContent.registry_text",
+        "Prometheus text exposition is a transport representation whose family and sample values \
+         are compared exactly through the structured registry projection",
+    ),
+    (
+        "made_get_metrics",
+        ".content[].text.registry_text",
+        "the metrics text block mirrors structuredContent as JSON, so only its nested Prometheus \
+         exposition is normalised while stats and the structured registry remain compared",
+    ),
 ];
 
 /// The definition the session runs. Rich on purpose: a step the engine
@@ -1335,6 +1347,12 @@ fn normalise(value: &Value, path: &str, tool: &str) -> Value {
         return json!("<normalised>");
     }
     match value {
+        Value::String(text) if tool == "made_get_metrics" && path == ".content[].text" => {
+            let Ok(parsed) = serde_json::from_str::<Value>(text) else {
+                return value.clone();
+            };
+            normalise(&parsed, path, tool)
+        }
         Value::Object(fields) => Value::Object(
             fields
                 .iter()

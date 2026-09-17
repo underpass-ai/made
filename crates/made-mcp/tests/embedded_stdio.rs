@@ -164,7 +164,30 @@ async fn embedded_server_advertises_only_executable_tools() {
         ]
     );
 
-    let completed = send(&server, run_ceremony_call(3, "embedded-direct-smoke")).await;
+    let discovery = send(
+        &server,
+        jsonrpc(
+            3,
+            "tools/call",
+            Some(json!({
+                "name": "made_discover_capabilities",
+                "arguments": {},
+            })),
+        ),
+    )
+    .await;
+    let observability = structured(&discovery)["capabilities"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|group| group["id"] == "service_observability")
+        .unwrap();
+    assert_eq!(
+        observability["tools"],
+        json!(["made_get_status", "made_get_metrics"])
+    );
+
+    let completed = send(&server, run_ceremony_call(4, "embedded-direct-smoke")).await;
     assert_completed(&completed);
 }
 
@@ -1060,6 +1083,77 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
     let completed = send(&server, transition_call(8, ceremony_id, "finish")).await;
     assert_eq!(structured(&completed)["completed"], true);
     assert_eq!(structured(&completed)["current_state"], "COMPLETED");
+}
+
+#[tokio::test]
+async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
+    let state = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+        .env("MADE_MCP_BACKEND", "embedded")
+        .env(
+            "MADE_MCP_STORE_PATH",
+            state.path().join("ceremonies.sqlite3"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
+
+    write_request(
+        &mut stdin,
+        start_simple_ceremony_call(1, "embedded-stdio-metrics"),
+    )
+    .await;
+    write_request(
+        &mut stdin,
+        run_step_call(2, "embedded-stdio-metrics", "work"),
+    )
+    .await;
+    write_request(
+        &mut stdin,
+        jsonrpc(
+            3,
+            "tools/call",
+            Some(json!({ "name": "made_get_metrics", "arguments": {} })),
+        ),
+    )
+    .await;
+
+    assert!(!read_response(&mut lines).await["result"]["isError"]
+        .as_bool()
+        .unwrap_or(false));
+    assert!(!read_response(&mut lines).await["result"]["isError"]
+        .as_bool()
+        .unwrap_or(false));
+    let metrics = read_response(&mut lines).await;
+    let snapshot = structured(&metrics);
+    assert!(snapshot["registry_text"].as_str().unwrap().contains(
+        "made_ceremony_step_total{ceremony=\"codex_plugin_smoke\",status=\"completed\",step=\"work\"} 1"
+    ));
+    let family = snapshot["registry"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|family| family["name"] == "made_ceremony_step_total")
+        .unwrap();
+    assert_eq!(family["type"], "counter");
+    assert!(family["samples"].as_array().unwrap().iter().any(|sample| {
+        sample["labels"]["ceremony"] == "codex_plugin_smoke"
+            && sample["labels"]["step"] == "work"
+            && sample["labels"]["status"] == "completed"
+            && sample["value"] == 1.0
+    }));
+
+    drop(stdin);
+    let status = timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("embedded MCP process did not stop after stdin closed")
+        .unwrap();
+    assert!(status.success());
 }
 
 #[tokio::test]

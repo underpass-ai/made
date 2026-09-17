@@ -35,7 +35,7 @@ version and definition version solve different compatibility problems.
 | Messaging | none | optional NATS |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
-| Observability | an in-process Prometheus registry, wired by default; `made_get_status` / `made_get_metrics`; no exporter and no endpoint | Prometheus at `/metrics`, OTLP traces |
+| Observability | an in-process Prometheus registry returned by `made_get_metrics`; optional OTLP traces in `made-mcp`; optional event + metric-snapshot JSONL sink; no scrape endpoint | the same registry through `made_get_metrics` and Prometheus at `/metrics`; OTLP traces |
 | Requires | nothing | a cluster, or at least a running binary |
 | Select with | `MADE_MCP_BACKEND=embedded` | `MADE_MCP_GRPC_ENDPOINT=…` (backend defaults to `grpc`) |
 
@@ -99,13 +99,15 @@ let made = EmbeddedMade::builder()
 ```
 
 The builder also accepts `Arc<dyn …Port>` for the definition repository,
-instance repository, step handler, clock, metrics recorder, statistics and an
-event subscriber. A host that wires no metrics recorder gets an **in-process
-Prometheus registry** rather than a sink that forgets: explicit, local to the
-process, no exporter and no endpoint. `EmbeddedMade::status` says which
-recorder is running, so "the host chose one" and "nothing is recording" are
-distinguishable from outside. The host keeps ownership of its async runtime and the lifecycle of
-everything it injects. Details: [embedded-made.md](embedded-made.md).
+instance repository, step handler, clock, observability, statistics and an
+event subscriber. A host that wires no observability adapter gets an
+**in-process Prometheus registry** rather than a sink that forgets: explicit,
+local to the process, no scrape endpoint. Hosts supplying their own recorder
+use `with_observability` so recording and `made_get_metrics` read the same
+`Arc`. `EmbeddedMade::status` says which recorder is running, so "the host
+chose one" and "nothing is recording" are distinguishable from outside. The
+host keeps ownership of its async runtime and the lifecycle of everything it
+injects. Details: [embedded-made.md](embedded-made.md).
 
 ### What it guarantees
 

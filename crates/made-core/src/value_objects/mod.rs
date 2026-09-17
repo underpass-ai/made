@@ -27,12 +27,19 @@ mod execution_status;
 mod ids;
 mod llm_error_kind;
 mod memory;
+mod metric_help;
+mod metric_kind;
+mod metric_label_name;
+mod metric_label_value;
+mod metric_name;
+mod metric_value;
 mod num_agents;
 mod output_contract;
 mod output_contract_id;
 mod output_contract_validation;
 mod output_field_rule;
 mod output_format;
+mod prometheus_text;
 mod proposal_content;
 mod recorder_name;
 mod rounds;
@@ -103,11 +110,18 @@ pub use memory::{
     MemoryRelationKind, MemoryScope, MemoryWrite, RecalledEntry, RecollectionBudget,
     RecollectionCompleteness, SessionRecollection,
 };
+pub use metric_help::MetricHelp;
+pub use metric_kind::MetricKind;
+pub use metric_label_name::MetricLabelName;
+pub use metric_label_value::MetricLabelValue;
+pub use metric_name::MetricName;
+pub use metric_value::MetricValue;
 pub use num_agents::NumAgents;
 pub use output_contract::OutputContract;
 pub use output_contract_id::OutputContractId;
 pub use output_field_rule::OutputFieldRule;
 pub use output_format::OutputFormat;
+pub use prometheus_text::PrometheusText;
 pub use proposal_content::ProposalContent;
 pub use recorder_name::RecorderName;
 pub use rounds::Rounds;
