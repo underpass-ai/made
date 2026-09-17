@@ -21,6 +21,9 @@ operator command.
 
 ### Architecture
 
+- Split ceremony step configuration parsing into focused private modules,
+  preserving defaults and validation for phase 3a work (#105).
+
 - Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
   primitives; record their contracts and the deferred pattern work before
   implementation (#90).
