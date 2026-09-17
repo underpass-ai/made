@@ -21,6 +21,9 @@ operator command.
 
 ### Architecture
 
+- Split ceremony definition collection validation and guard evaluation into
+  private modules without changing behavior (#106).
+
 - Split ceremony step configuration parsing into focused private modules,
   preserving defaults and validation for phase 3a work (#105).
 

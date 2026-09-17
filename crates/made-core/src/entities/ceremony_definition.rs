@@ -19,6 +19,13 @@ use crate::value_objects::{
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
 
+mod collections;
+mod guards;
+
+use collections::{
+    collect_guards, collect_inputs, collect_outputs, collect_roles, collect_states, collect_steps,
+};
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyDefinition {
     name: CeremonyName,
@@ -199,76 +206,6 @@ impl CeremonyDefinition {
             .is_some_and(|role| role.allows(action))
     }
 
-    #[must_use]
-    pub fn guards_are_satisfied(
-        &self,
-        transition: &CeremonyTransition,
-        records: &BTreeMap<StepId, StepExecutionRecord>,
-        context: &CeremonyContext,
-    ) -> bool {
-        self.repeat_requirements_are_satisfied(transition.from(), records)
-            && transition.required_guards().iter().all(|guard_name| {
-                self.guards
-                    .get(guard_name)
-                    .is_some_and(|guard| self.guard_is_satisfied(guard, records, context))
-            })
-    }
-
-    /// Evaluate one guard with definition-owned step repetition semantics.
-    ///
-    /// A raw `COMPLETED` record is not enough for a repeating step: its
-    /// structured stop condition must also hold. Keeping that rule here makes
-    /// transition selection, instance projections and aggregate enforcement
-    /// agree on what completion means.
-    #[must_use]
-    pub fn guard_is_satisfied(
-        &self,
-        guard: &CeremonyGuard,
-        records: &BTreeMap<StepId, StepExecutionRecord>,
-        context: &CeremonyContext,
-    ) -> bool {
-        if !guard.is_satisfied(records, context) {
-            return false;
-        }
-        match guard.condition() {
-            crate::value_objects::GuardCondition::StepStatus { step_id, status }
-                if status.is_success() =>
-            {
-                self.repeat_requirement_is_satisfied(step_id, records)
-            }
-            crate::value_objects::GuardCondition::AllStepsCompleted => self
-                .steps
-                .keys()
-                .all(|step_id| self.repeat_requirement_is_satisfied(step_id, records)),
-            _ => true,
-        }
-    }
-
-    /// Whether every repeating step in `state_id` has reached its declared
-    /// structured stop condition.
-    #[must_use]
-    pub fn repeat_requirements_are_satisfied(
-        &self,
-        state_id: &StateId,
-        records: &BTreeMap<StepId, StepExecutionRecord>,
-    ) -> bool {
-        self.steps_for_state(state_id)
-            .all(|step| self.repeat_requirement_is_satisfied(step.id(), records))
-    }
-
-    fn repeat_requirement_is_satisfied(
-        &self,
-        step_id: &StepId,
-        records: &BTreeMap<StepId, StepExecutionRecord>,
-    ) -> bool {
-        let Some(policy) = self.step(step_id).and_then(CeremonyStep::repeat_policy) else {
-            return true;
-        };
-        records.get(step_id).is_some_and(|record| {
-            record.status().is_success() && policy.is_satisfied(record.output())
-        })
-    }
-
     /// Find the role authorised to perform `action`, if any.
     ///
     /// Roles are scanned in id order and the first whose action set
@@ -388,93 +325,6 @@ impl CeremonyDefinition {
             None => Ok(()),
         }
     }
-}
-
-fn collect_inputs(
-    inputs: impl IntoIterator<Item = CeremonyInputDefinition>,
-) -> Result<BTreeMap<InputName, CeremonyInputDefinition>, DomainError> {
-    let mut map = BTreeMap::new();
-    for input in inputs {
-        if map.insert(input.name().clone(), input).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_input",
-            });
-        }
-    }
-    Ok(map)
-}
-
-fn collect_outputs(
-    outputs: impl IntoIterator<Item = CeremonyOutputDefinition>,
-) -> Result<BTreeMap<OutputName, CeremonyOutputDefinition>, DomainError> {
-    let mut map = BTreeMap::new();
-    for output in outputs {
-        if map.insert(output.name().clone(), output).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_output",
-            });
-        }
-    }
-    Ok(map)
-}
-
-fn collect_states(
-    states: impl IntoIterator<Item = CeremonyState>,
-) -> Result<BTreeMap<StateId, CeremonyState>, DomainError> {
-    let mut map = BTreeMap::new();
-    for state in states {
-        if map.insert(state.id().clone(), state).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_state",
-            });
-        }
-    }
-    Ok(map)
-}
-
-fn collect_steps(
-    steps: impl IntoIterator<Item = CeremonyStep>,
-) -> Result<(BTreeMap<StepId, CeremonyStep>, Vec<StepId>), DomainError> {
-    let mut map = BTreeMap::new();
-    let mut order = Vec::new();
-    for step in steps {
-        let step_id = step.id().clone();
-        if map.insert(step_id.clone(), step).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_step",
-            });
-        }
-        order.push(step_id);
-    }
-    Ok((map, order))
-}
-
-fn collect_guards(
-    guards: impl IntoIterator<Item = CeremonyGuard>,
-) -> Result<BTreeMap<GuardName, CeremonyGuard>, DomainError> {
-    let mut map = BTreeMap::new();
-    for guard in guards {
-        if map.insert(guard.name().clone(), guard).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_guard",
-            });
-        }
-    }
-    Ok(map)
-}
-
-fn collect_roles(
-    roles: impl IntoIterator<Item = CeremonyRole>,
-) -> Result<BTreeMap<RoleId, CeremonyRole>, DomainError> {
-    let mut map = BTreeMap::new();
-    for role in roles {
-        if map.insert(role.id().clone(), role).is_some() {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_role",
-            });
-        }
-    }
-    Ok(map)
 }
 
 #[cfg(test)]
