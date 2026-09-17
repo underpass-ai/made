@@ -61,6 +61,8 @@ impl CeremonyEventStoreConformance {
         passed.push("read_all_follows_append_order_across_streams");
         Self::read_all_honours_from_and_limit_and_is_stable(store).await?;
         passed.push("read_all_honours_from_and_limit_and_is_stable");
+        Self::an_outcome_positions_what_read_all_returns(store).await?;
+        passed.push("an_outcome_positions_what_read_all_returns");
         Self::streams_lists_each_stream_once_sorted(store).await?;
         passed.push("streams_lists_each_stream_once_sorted");
         Ok(passed)
@@ -390,6 +392,48 @@ impl CeremonyEventStoreConformance {
         let empty = call(PROPERTY, store.read_all(GlobalPosition::FIRST, 0).await)?;
         if !empty.is_empty() {
             return Err(failure(PROPERTY, "a limit of 0 returned rows"));
+        }
+        Ok(())
+    }
+
+    /// What an append reports is what a reader will find.
+    ///
+    /// A projection is told what one append sealed and where each
+    /// record sits (`CeremonyEventSubscriberPort`), and it is told it
+    /// by the outcome rather than by a read. That is only sound if the
+    /// two agree: an adapter whose `first_position` is off by one, or
+    /// that files a batch non-contiguously, would hand every
+    /// projection a cursor that skips or repeats a record.
+    async fn an_outcome_positions_what_read_all_returns(
+        store: &dyn CeremonyEventStorePort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "an_outcome_positions_what_read_all_returns";
+        let stream = ceremony_id(PROPERTY, "positioned")?;
+        let other = ceremony_id(PROPERTY, "beside")?;
+
+        // Another stream first, so a store that always reports the
+        // first position of the store rather than of the batch is
+        // caught.
+        append(store, PROPERTY, &other, StreamVersion::EMPTY, 1..=1).await?;
+        let outcome = append(store, PROPERTY, &stream, StreamVersion::EMPTY, 1..=3).await?;
+        let AppendOutcome::Appended { first_position, .. } = &outcome else {
+            return Err(failure(PROPERTY, "a first append conflicted"));
+        };
+        let first_position = *first_position;
+
+        let positioned = outcome.positioned();
+        let read = call(
+            PROPERTY,
+            store.read_all(first_position, positioned.len()).await,
+        )?;
+        if positioned != read {
+            return Err(failure(
+                PROPERTY,
+                format!(
+                    "the outcome positions {positioned:?}, the store reads back {read:?} \
+                     from {first_position:?}"
+                ),
+            ));
         }
         Ok(())
     }

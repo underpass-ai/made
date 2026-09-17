@@ -145,8 +145,8 @@ step, perform the real work through authorized host capabilities, complete it
 with observable output/evidence, refresh the instance, and only then apply an
 enabled transition. These adapters invoke existing application use cases and
 add no external authority or approval policy.
-The MCP embedded composition stores ceremony instances, published definitions,
-the audit journal and outbox in the SQLite file named by
+The MCP embedded composition stores the ceremony event streams, their folded
+snapshots and published definitions in the SQLite file named by
 `MADE_MCP_STORE_PATH`. Mounted definitions and transcripts remain in memory;
 start from a published definition when an instance must rehydrate after a
 process restart.
@@ -242,8 +242,9 @@ A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/made:latest` image via
 testcontainers, spawns this crate's binary against its mapped gRPC
 port, and exercises `initialize`, verifies `tools/list` against machine-readable
-discovery (currently 35 gRPC-backed plus two server-owned tools), and calls the
-four simplest read-only RPCs.
+discovery (every backend-owned tool `docs/architecture/parity.tsv` names for
+this backend, plus the two server-owned ones), and calls the four simplest
+read-only RPCs.
 The test is gated by the `container-tests` Cargo feature so the
 default workspace `cargo test --workspace` stays fast + network-free.
 

@@ -371,6 +371,14 @@ pub(crate) async fn dispatch(
             Ok(p2j::read_ceremony_events_to_json(response.into_inner()))
         }
 
+        "made_verify_ceremony_journal" => {
+            let request =
+                ceremony_history_requests::build_verify_ceremony_journal_request(arguments)
+                    .map_err(bad_request)?;
+            let response = client.verify_ceremony_journal(request).await?;
+            Ok(p2j::verify_ceremony_journal_to_json(response.into_inner()))
+        }
+
         "made_get_ceremony_transcript" => {
             let request =
                 ceremony_history_requests::build_get_ceremony_transcript_request(arguments)

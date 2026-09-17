@@ -11,6 +11,7 @@ use crate::entities::{CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
 mod guard_decisions;
+mod import;
 mod interventions;
 mod participant_bindings;
 mod reasons;
@@ -57,26 +58,39 @@ impl CeremonyInstance {
                 self.apply_human_deferral_recorded(recorded);
             }
             CeremonyEvent::CeremonyCompleted(completed) => self.apply_ceremony_completed(completed),
+            CeremonyEvent::InstanceImported(imported) => self.apply_instance_imported(imported),
             CeremonyEvent::MemoryRecalled(recalled) => self.apply_memory_recalled(recalled),
         }
     }
 
     /// Fold a whole stream into the session it describes.
     ///
-    /// The first event must be the opening; everything after it is
-    /// applied in order. A stream that opens with anything else is
-    /// not a ceremony's stream and is refused.
+    /// The first event opens the session: either it was started here,
+    /// or it was imported from a store written before ceremonies were
+    /// streams (ADR-012). A stream that opens with anything else is not
+    /// a ceremony's stream and is refused, and so is one that carries
+    /// an import anywhere but at its first position — an import
+    /// replaces the whole session, so a second one would silently
+    /// discard everything between them.
     pub fn rehydrate<'a>(
         events: impl IntoIterator<Item = &'a CeremonyEvent>,
     ) -> Result<Self, DomainError> {
         let mut events = events.into_iter();
-        let Some(CeremonyEvent::CeremonyInstanceStarted(started)) = events.next() else {
-            return Err(DomainError::InvariantViolated {
-                reason: "a ceremony stream opens with its start",
-            });
+        let mut instance = match events.next() {
+            Some(CeremonyEvent::CeremonyInstanceStarted(started)) => Self::from_started(started),
+            Some(CeremonyEvent::InstanceImported(imported)) => Self::from_imported(imported),
+            _ => {
+                return Err(DomainError::InvariantViolated {
+                    reason: "a ceremony stream opens with its start or with its import",
+                })
+            }
         };
-        let mut instance = Self::from_started(started);
         for event in events {
+            if matches!(event, CeremonyEvent::InstanceImported(_)) {
+                return Err(DomainError::InvariantViolated {
+                    reason: "a ceremony stream carries an import only as its first event",
+                });
+            }
             instance.apply(event);
         }
         Ok(instance)

@@ -3,18 +3,15 @@
 //! A suite that fabricated its own ceremonies differently from the ones
 //! the engine produces would be testing a shape nothing else uses.
 
-use serde_json::json;
 use time::OffsetDateTime;
 
 use crate::entities::ceremony_events::StepCompleted;
-use crate::entities::{
-    AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
-};
+use crate::entities::{AuditFact, CeremonyDefinition, CeremonyEvent};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyState,
-    CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, OutboxMessage, OutboxSubject,
-    RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput, StepResult, TransitionTrigger,
+    AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyState, CeremonyTransition,
+    CeremonyVersion, EventId, RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput,
+    StepResult, TransitionTrigger,
 };
 
 pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
@@ -70,39 +67,4 @@ pub(super) fn audit_fact(
         causation_id: None,
         trace: None,
     })
-}
-
-pub(super) fn outbox_message(event: &str) -> Result<OutboxMessage, DomainError> {
-    OutboxMessage::new(
-        EventId::new(event)?,
-        OutboxSubject::new("conformance.message")?,
-        json!({ "event": event }),
-        OffsetDateTime::UNIX_EPOCH,
-    )
-}
-
-/// A commit carrying one audit fact and `events.len()` messages.
-pub(super) fn commit_with(
-    ceremony_id: &CeremonyId,
-    expected: ExpectedRevision,
-    fact_event: &str,
-    message_events: &[&str],
-) -> Result<CeremonyCommit, DomainError> {
-    let definition = definition()?;
-    let instance = CeremonyInstance::start(
-        ceremony_id.clone(),
-        &definition,
-        CeremonyContext::empty(),
-        OffsetDateTime::UNIX_EPOCH,
-    );
-    let messages = message_events
-        .iter()
-        .map(|event| outbox_message(event))
-        .collect::<Result<Vec<_>, _>>()?;
-    CeremonyCommit::new(
-        instance,
-        expected,
-        [audit_fact(fact_event, ceremony_id, &definition)?],
-        messages,
-    )
 }

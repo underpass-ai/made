@@ -589,6 +589,14 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
         ),
+        // The chain over the same records, asked of both arms: the
+        // verdict is the engine's own answer to a question the caller
+        // could settle from the page above, so the two must agree on
+        // the verdict as well as on the records.
+        (
+            "made_verify_ceremony_journal",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
         (
             "made_get_ceremony_transcript",
             json!({ "ceremony_id": SESSION_ID }),
@@ -716,6 +724,31 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
         .expect("a session carries its table")
         .iter()
         .any(|item| item["responses"][0]["evidence_pack"].is_object()));
+
+    // Both steps are in the transcript, and one of them is the step
+    // the host claimed and completed itself. Until the transcript
+    // became a fold of `StepCompleted` (A5) it was a store the two
+    // drivers appended to, so the delegated-host protocol left nothing
+    // in it and this said one.
+    let transcript = call_tool(
+        &arms.in_process,
+        101,
+        "made_get_ceremony_transcript",
+        &json!({ "ceremony_id": SESSION_ID }),
+    )
+    .await;
+    let transcript = structured(&transcript);
+    assert_eq!(transcript["entry_count"], json!(2), "{transcript:#}");
+    assert_eq!(
+        transcript["entries"]
+            .as_array()
+            .expect("a transcript carries its entries")
+            .iter()
+            .map(|entry| entry["step_id"].as_str().unwrap_or_default())
+            .collect::<Vec<_>>(),
+        ["work", "handoff"],
+        "{transcript:#}"
+    );
 
     let uncovered: Vec<&str> = shared
         .iter()
@@ -876,6 +909,12 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
         (
             "a session that is not there",
             "made_get_ceremony_instance",
+            json!({ "ceremony_id": "no-such-session" }),
+            "not_found",
+        ),
+        (
+            "a transcript of a session that is not there",
+            "made_get_ceremony_transcript",
             json!({ "ceremony_id": "no-such-session" }),
             "not_found",
         ),

@@ -5,7 +5,7 @@
 //! the primary key *is* the storage order and a range scan is an index walk.
 //!
 //! Ordering matches the seam contract with no collation work, and that is
-//! load-bearing rather than convenient: the journal and outbox keys end in a
+//! load-bearing rather than convenient: the event keys end in a
 //! big-endian ordinal so byte order is write order, and SQLite compares BLOBs
 //! with `memcmp` — byte by byte. Text keys use the default `BINARY`
 //! collation, which is also bytewise. An engine that sorted
@@ -35,12 +35,15 @@ use super::{
 /// side is stuck, not busy.
 const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 
-const ALL_TABLES: [Table; 9] = [
+/// The tables this engine creates when a store is opened. A store
+/// written by an earlier version may hold others — `outbox`,
+/// `state_migrations` — and they are left exactly where they are:
+/// nothing here writes them, and dropping a table an operator can
+/// still read is not this command's to do.
+const ALL_TABLES: [Table; 7] = [
     Table::Ceremonies,
     Table::Journal,
-    Table::Outbox,
     Table::Publications,
-    Table::LegacyStateMigrations,
     Table::Events,
     Table::EventLog,
     Table::Snapshots,

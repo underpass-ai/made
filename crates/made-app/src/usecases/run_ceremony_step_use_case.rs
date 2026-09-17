@@ -5,22 +5,20 @@ use std::sync::Arc;
 use made_core::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
-use made_core::ports::{
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
-    NoopCeremonyTranscriptStore,
-};
-use made_core::value_objects::{CeremonyStepContribution, StepErrorMessage, StepLease, StepResult};
+use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort};
+use made_core::value_objects::{StepErrorMessage, StepLease, StepResult};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
-use crate::services::{session_facts, ConflictPolicy, SessionStream};
+use crate::services::{
+    ceremony_transcript_projection, session_facts, ConflictPolicy, SessionStream,
+};
 
 pub struct RunCeremonyStepUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
-    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     clock: Arc<dyn ClockPort>,
 }
 
@@ -42,21 +40,8 @@ impl RunCeremonyStepUseCase {
             definitions,
             stream,
             handler,
-            transcript_store: Arc::new(NoopCeremonyTranscriptStore),
             clock,
         }
-    }
-
-    /// Attach transcript persistence for hosts that execute steps
-    /// incrementally. The default no-op preserves the original constructor
-    /// contract for callers that do not need cross-step context.
-    #[must_use]
-    pub fn with_transcript_store(
-        mut self,
-        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
-    ) -> Self {
-        self.transcript_store = transcript_store;
-        self
     }
 
     #[tracing::instrument(
@@ -117,7 +102,10 @@ impl RunCeremonyStepUseCase {
             })?;
         let attempt = record.attempt();
 
-        let transcript = self.transcript_store.transcript(instance.id()).await?;
+        // What was said so far, folded from the stream: every step
+        // that completed is in it, however it was driven.
+        let transcript =
+            ceremony_transcript_projection::transcript(&self.stream.records(instance.id()).await?);
         let request = CeremonyStepHandlerRequest::new(
             instance.id().clone(),
             instance.definition_name().clone(),
@@ -153,19 +141,6 @@ impl RunCeremonyStepUseCase {
             })
             .await?
             .instance;
-        if result.is_success() {
-            self.transcript_store
-                .append(
-                    refreshed.id(),
-                    CeremonyStepContribution::new(
-                        input.step_id.clone(),
-                        input.role_id,
-                        result.output().clone(),
-                    ),
-                )
-                .await?;
-        }
-
         Ok(RunCeremonyStepOutput::new(refreshed, attempt, result))
     }
 
@@ -198,9 +173,10 @@ mod tests {
     use crate::usecases::ceremony_test_support::{
         approval_definition, ceremony_id, definition, definition_resolver, idempotency_key,
         lease_owner, lease_ttl, now, repeating_approval_definition, resolver_with, role_id,
-        started_instance, step_id, stream, stream_over, ContextStoreFake, DefinitionRepositoryFake,
-        EventStoreFake, FixedClock, PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
+        started_instance, step_id, stream, stream_over, DefinitionRepositoryFake, EventStoreFake,
+        FixedClock, PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
     };
+    use crate::usecases::GetCeremonyTranscriptUseCase;
 
     fn readiness_output(ready: bool) -> StepOutput {
         StepOutput::new(
@@ -276,14 +252,12 @@ mod tests {
         let handler = Arc::new(StepHandlerFake::succeeding(
             StepResult::completed(StepOutput::empty()).unwrap(),
         ));
-        let transcript_store = Arc::new(ContextStoreFake::default());
         let usecase = RunCeremonyStepUseCase::new(
             definition_resolver(definitions),
             stream(instances.clone()),
             handler.clone(),
             Arc::new(FixedClock::new(now())),
-        )
-        .with_transcript_store(transcript_store.clone());
+        );
 
         let output = usecase
             .execute(RunCeremonyStepInput::new(
@@ -307,7 +281,10 @@ mod tests {
         assert_eq!(requests[0].role_id(), Some(&role_id()));
         assert!(requests[0].transcript().is_empty());
         assert!(requests[0].interventions().is_empty());
-        let transcript = transcript_store.transcript(&ceremony_id()).await.unwrap();
+        let transcript = GetCeremonyTranscriptUseCase::new(instances.clone())
+            .execute(&ceremony_id())
+            .await
+            .unwrap();
         assert_eq!(transcript.len(), 1);
         assert_eq!(transcript.contributions()[0].step_id(), &step_id());
         assert_eq!(
@@ -339,8 +316,7 @@ mod tests {
             stream(instances),
             handler,
             Arc::new(FixedClock::new(now())),
-        )
-        .with_transcript_store(Arc::new(ContextStoreFake::default()));
+        );
 
         let first = usecase
             .execute(RunCeremonyStepInput::new(

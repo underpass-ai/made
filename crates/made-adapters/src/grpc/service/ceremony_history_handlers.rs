@@ -1,6 +1,7 @@
-//! Reading what a session left behind, and reporting on it.
+//! Reading what a session left behind, reporting on it, and checking
+//! the chain that seals it.
 //!
-//! Three reads, no writes. They resolve nothing about the session
+//! Four reads, no writes. They resolve nothing about the session
 //! beyond what the use cases resolve, because a stream and a
 //! transcript are facts about a ceremony rather than views of its
 //! current state.
@@ -11,7 +12,8 @@ use made_core::value_objects::StreamVersion;
 use super::{
     domain_error_to_status, generate_ceremony_report_response_from,
     get_ceremony_transcript_response_from, link_span_to_metadata, pb,
-    read_ceremony_events_response_from, CeremonyId, GrpcResult, MadeGrpcService, Request, Response,
+    read_ceremony_events_response_from, verify_ceremony_journal_response_from, CeremonyId,
+    GrpcResult, MadeGrpcService, Request, Response,
 };
 
 impl MadeGrpcService {
@@ -40,6 +42,30 @@ impl MadeGrpcService {
         Ok(Response::new(
             read_ceremony_events_response_from(&page).map_err(domain_error_to_status)?,
         ))
+    }
+
+    /// The verdict on one journal's chain.
+    ///
+    /// A broken chain is an answer, not an error: the caller asked
+    /// whether the journal holds, and "it does not, from position
+    /// seven, because the digest no longer matches" is that question
+    /// answered. A `Status` would say the call failed.
+    #[tracing::instrument(name = "rpc.verify_ceremony_journal", skip_all)]
+    pub(super) async fn handle_verify_ceremony_journal(
+        &self,
+        request: Request<pb::VerifyCeremonyJournalRequest>,
+    ) -> GrpcResult<pb::VerifyCeremonyJournalResponse> {
+        link_span_to_metadata(&request);
+        let ceremony_id =
+            CeremonyId::new(request.into_inner().ceremony_id).map_err(domain_error_to_status)?;
+        let verdict = self
+            .verify_ceremony_journal
+            .execute(&ceremony_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(verify_ceremony_journal_response_from(
+            &verdict,
+        )))
     }
 
     #[tracing::instrument(name = "rpc.get_ceremony_transcript", skip_all)]

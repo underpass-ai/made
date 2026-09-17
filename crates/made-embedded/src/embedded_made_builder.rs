@@ -6,7 +6,7 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventStore, InMemoryCeremonyTranscriptStore, InMemoryStatistics,
+    InMemoryCeremonyEventStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
@@ -14,8 +14,8 @@ use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, CeremonyTranscriptStorePort, ClockPort,
+    CeremonyEventSubscriberPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
     MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
 };
 use made_core::value_objects::StepResult;
@@ -36,7 +36,7 @@ pub struct EmbeddedMadeBuilder {
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     events: Option<Arc<dyn CeremonyEventStorePort>>,
     snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
-    transcript_store: Option<Arc<dyn CeremonyTranscriptStorePort>>,
+    subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
@@ -91,9 +91,16 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    /// Project something of the host's own from every sealed event.
+    ///
+    /// The engine's own projections are wired whatever the host does;
+    /// this one is told after them, about the records of each append
+    /// that landed, in order. It cannot fail a session: the signature
+    /// returns nothing, and a subscriber that has something to report
+    /// logs it.
     #[must_use]
-    pub fn with_transcript_store(mut self, adapter: Arc<dyn CeremonyTranscriptStorePort>) -> Self {
-        self.transcript_store = Some(adapter);
+    pub fn with_event_subscriber(mut self, adapter: Arc<dyn CeremonyEventSubscriberPort>) -> Self {
+        self.subscriber = Some(adapter);
         self
     }
 
@@ -200,9 +207,6 @@ impl EmbeddedMadeBuilder {
             },
             |(events, snapshots)| (events, snapshots),
         );
-        let transcript_store = self.transcript_store.unwrap_or_else(|| {
-            Arc::new(InMemoryCeremonyTranscriptStore::new()) as Arc<dyn CeremonyTranscriptStorePort>
-        });
         let step_handler = self.step_handler.unwrap_or_else(|| {
             Arc::new(NoopCeremonyStepHandler::new()) as Arc<dyn CeremonyStepHandlerPort>
         });
@@ -239,7 +243,6 @@ impl EmbeddedMadeBuilder {
             publications,
             events,
             snapshots,
-            transcript_store,
             step_handler,
             evidence_source,
             clock,
@@ -247,6 +250,7 @@ impl EmbeddedMadeBuilder {
             statistics,
             memory_writer,
             memory_reader,
+            self.subscriber,
         )
     }
 }
@@ -257,7 +261,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .debug_struct("EmbeddedMadeBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
             .field("has_ceremony_store", &self.events.is_some())
-            .field("has_transcript_store", &self.transcript_store.is_some())
+            .field("has_event_subscriber", &self.subscriber.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())

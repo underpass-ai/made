@@ -28,7 +28,6 @@ mod ids;
 mod llm_error_kind;
 mod memory;
 mod num_agents;
-mod outbox;
 mod output_contract;
 mod output_contract_id;
 mod output_contract_validation;
@@ -58,21 +57,21 @@ pub use audit::{
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,
-    CeremonyDefinitionDiff, CeremonyDefinitionDigest, CeremonyDefinitionDigestMigration,
-    CeremonyDescription, CeremonyEvidenceSourceId, CeremonyGuard, CeremonyGuardApproval,
-    CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionResponse, CeremonyInterventionStatus,
-    CeremonyInterventionTarget, CeremonyName, CeremonyOutputDefinition, CeremonyParticipantBinding,
-    CeremonyReason, CeremonyReasonKind, CeremonyRecordRef, CeremonyRevision, CeremonyRole,
-    CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
+    CeremonyDefinitionDiff, CeremonyDefinitionDigest, CeremonyDescription,
+    CeremonyEvidenceSourceId, CeremonyGuard, CeremonyGuardApproval, CeremonyGuardDeferral,
+    CeremonyGuardDeferralContent, CeremonyId, CeremonyInputDefinition, CeremonyInterventionContent,
+    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionProvenance,
+    CeremonyInterventionResponse, CeremonyInterventionStatus, CeremonyInterventionTarget,
+    CeremonyName, CeremonyOutputDefinition, CeremonyParticipantBinding, CeremonyReason,
+    CeremonyReasonKind, CeremonyRecordRef, CeremonyRevision, CeremonyRole, CeremonyState,
+    CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
     CeremonyTransition, CeremonyTransitionRecord, CeremonyValidationFinding,
     CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
-    ExpectedRevision, GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement,
-    LeaseOwnerId, OutputName, ReasonAsserter, RepeatUntilCondition, RetryPolicy, RoleAction,
-    RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
-    StepHandlerKind, StepId, StepIteration, StepLease, StepOutput, StepOutputField,
-    StepRepeatPolicy, StepResult, StepStatus, StepTimeout, TransitionTrigger,
+    GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement, LeaseOwnerId,
+    OutputName, ReasonAsserter, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId,
+    StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId,
+    StepIteration, StepLease, StepOutput, StepOutputField, StepRepeatPolicy, StepResult,
+    StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;
@@ -99,9 +98,6 @@ pub use memory::{
     RecollectionCompleteness, SessionRecollection,
 };
 pub use num_agents::NumAgents;
-pub use outbox::{
-    ClaimedOutboxMessage, OutboxAttempt, OutboxMessage, OutboxQuarantineReason, OutboxSubject,
-};
 pub use output_contract::OutputContract;
 pub use output_contract_id::OutputContractId;
 pub use output_field_rule::OutputFieldRule;

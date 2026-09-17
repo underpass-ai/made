@@ -22,9 +22,11 @@ const PARITY_TSV: &str = include_str!("../../../../docs/architecture/parity.tsv"
 /// source.
 const MADE_PROTO: &str = include_str!("../../../made-proto/proto/underpass/made/v1/made.proto");
 
-/// The facade. Parsed rather than mirrored in a const list, so that adding a
-/// method is enough to break this test — a mirror has to be updated to break.
-const EMBEDDED_MADE_SOURCE: &str = include_str!("../../../made-embedded/src/embedded_made.rs");
+/// The facade's crate. Every source under it is read at test time rather
+/// than one file being pinned with `include_str!`: `EmbeddedMade` is written
+/// across more than one file now, and a check that read only the first would
+/// quietly stop counting the methods declared in the others.
+const EMBEDDED_MADE_SRC: &str = "../made-embedded/src";
 
 /// The versioned read-mostly subset (ADR-004).
 const CEREMONY_ENGINE_API_SOURCE: &str =
@@ -51,9 +53,11 @@ const FACADE_VARIANTS: [(&str, &str); 7] = [
     ("audit_records_from", "read_ceremony_events"),
 ];
 
-/// Constructors. They open or configure the facade; they are not capabilities
-/// on any surface.
-const FACADE_CONSTRUCTORS: [&str; 2] = ["open", "builder"];
+/// Methods that are not capabilities on any surface: two that open or
+/// configure the facade, and one that reports the build it came from —
+/// which every surface answers inside `get_status` rather than as a verb of
+/// its own.
+const FACADE_CONSTRUCTORS: [&str; 3] = ["open", "builder", "version"];
 
 /// The marker a cell uses for "this surface does not have it".
 pub(super) const GAP: &str = "-";
@@ -320,8 +324,91 @@ fn proto_rpc_names() -> BTreeSet<String> {
         .collect()
 }
 
+/// Every public method of `EmbeddedMade`, wherever its `impl` block is
+/// written.
+///
+/// Parsed rather than mirrored in a const list, so that adding a method is
+/// enough to break this test — a mirror has to be updated to break. Only
+/// `impl EmbeddedMade` blocks count: the crate also holds the builder, the
+/// callback adapters and the `made-api` implementation, and none of those is
+/// a capability of the engine.
 fn embedded_made_public_methods() -> BTreeSet<String> {
-    declared_fn_names(EMBEDDED_MADE_SOURCE, &["pub async fn ", "pub fn "])
+    let mut methods = BTreeSet::new();
+    let sources = facade_sources();
+    assert!(
+        !sources.is_empty(),
+        "no source found under {EMBEDDED_MADE_SRC}; the parity gate cannot read the facade"
+    );
+    for source in sources {
+        methods.extend(facade_methods(&source));
+    }
+    assert!(
+        methods.contains("run"),
+        "the facade parser found no `run`; it is no longer reading EmbeddedMade's methods"
+    );
+    methods
+}
+
+/// Every `.rs` file of the facade's crate, read from disk.
+fn facade_sources() -> Vec<String> {
+    let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join(EMBEDDED_MADE_SRC);
+    let mut sources = Vec::new();
+    let mut directories = vec![root];
+    while let Some(directory) = directories.pop() {
+        for entry in std::fs::read_dir(&directory)
+            .unwrap_or_else(|error| panic!("{}: {error}", directory.display()))
+        {
+            let path = entry.expect("a readable directory entry").path();
+            if path.is_dir() {
+                directories.push(path);
+            } else if path.extension().is_some_and(|kind| kind == "rs") {
+                sources.push(std::fs::read_to_string(&path).expect("a readable source"));
+            }
+        }
+    }
+    sources
+}
+
+/// The methods declared inside `impl EmbeddedMade` blocks of one source.
+///
+/// A top-level `impl` block closes with a brace in the first column, which
+/// `cargo fmt` guarantees and the format gate enforces; that is what ends a
+/// block here, so no brace counting is needed and a brace inside a string
+/// cannot confuse it. Every spelling of a public method counts, `const` and
+/// `async` included: a method the parser cannot see is a capability the
+/// parity gate cannot check.
+fn facade_methods(source: &str) -> BTreeSet<String> {
+    const PREFIXES: [&str; 4] = [
+        "pub async fn ",
+        "pub const fn ",
+        "pub unsafe fn ",
+        "pub fn ",
+    ];
+    let mut methods = BTreeSet::new();
+    let mut inside = false;
+    for line in source.lines() {
+        if line.starts_with("impl EmbeddedMade {") {
+            inside = true;
+            continue;
+        }
+        if line == "}" {
+            inside = false;
+            continue;
+        }
+        if !inside {
+            continue;
+        }
+        let trimmed = line.trim();
+        if let Some(rest) = PREFIXES
+            .iter()
+            .find_map(|prefix| trimmed.strip_prefix(prefix))
+        {
+            if let Some(name) = rest.split(['(', '<', ' ']).next() {
+                methods.insert(name.to_owned());
+            }
+        }
+    }
+    methods
 }
 
 fn ceremony_engine_api_capabilities() -> BTreeSet<String> {

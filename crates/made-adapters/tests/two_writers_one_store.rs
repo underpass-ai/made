@@ -7,18 +7,17 @@ use std::process::{Command, Stdio};
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::entities::AuditChain;
-use made_core::ports::{AuditJournalPort, CeremonyEventStorePort, CeremonyInstanceRepositoryPort};
+use made_core::ports::CeremonyEventStorePort;
 use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
 use tempfile::TempDir;
 
-const COMMITS_PER_WRITER: u64 = 40;
+const EVENTS_PER_WRITER: u64 = 40;
 
-fn spawn(path: &Path, ceremony: &str, mode: &str) -> std::process::Child {
+fn spawn(path: &Path, ceremony: &str) -> std::process::Child {
     Command::new(env!("CARGO_BIN_EXE_store_writer"))
         .arg(path)
         .arg(ceremony)
-        .arg(COMMITS_PER_WRITER.to_string())
-        .arg(mode)
+        .arg(EVENTS_PER_WRITER.to_string())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
@@ -31,9 +30,9 @@ fn spawn(path: &Path, ceremony: &str, mode: &str) -> std::process::Child {
 /// The stderr matters: "1 != 2" is not a diagnosis, and a concurrency test
 /// that fails without saying which call was refused sends the next reader to
 /// guess.
-fn run_two_writers(path: &Path, mode: &str) -> (usize, String) {
-    let first = spawn(path, "writer-a", mode);
-    let second = spawn(path, "writer-b", mode);
+fn run_two_writers(path: &Path) -> (usize, String) {
+    let first = spawn(path, "writer-a");
+    let second = spawn(path, "writer-b");
     let outputs: Vec<_> = [first, second]
         .into_iter()
         .map(|child| child.wait_with_output().expect("the writer exits"))
@@ -49,49 +48,9 @@ fn run_two_writers(path: &Path, mode: &str) -> (usize, String) {
     (finished, complaints)
 }
 
-#[tokio::test]
-async fn two_processes_write_one_sqlite_store_and_nothing_is_lost() {
-    let directory = TempDir::new().expect("a temporary directory");
-    let path = directory.path().join("ceremonies.sqlite3");
-
-    let (finished, complaints) = run_two_writers(&path, "commits");
-    assert_eq!(
-        finished, 2,
-        "both writers must finish on the SQLite store.\n{complaints}"
-    );
-
-    let store = SqliteCeremonyStore::open(&path).expect("the store reopens");
-    for name in ["writer-a", "writer-b"] {
-        let ceremony = CeremonyId::new(name).unwrap();
-
-        // Each writer advanced its own ceremony by exactly its own commits:
-        // interleaving two processes must not cost either of them a revision.
-        let instance = store.get(&ceremony).await.expect("the ceremony is stored");
-        assert_eq!(instance.id(), &ceremony);
-
-        let records = store.records(&ceremony).await.expect("the journal reads");
-        assert_eq!(
-            records.len() as u64,
-            COMMITS_PER_WRITER,
-            "{name} lost journal records to the other writer"
-        );
-
-        // The journal is a hash chain; a shuffled or gapped scan breaks it.
-        // This is what proves the seam's byte-order contract holds on SQLite,
-        // where the ordinal is a big-endian suffix inside a BLOB key.
-        for (index, record) in records.iter().enumerate() {
-            assert_eq!(
-                record.sequence().value(),
-                index as u64 + 1,
-                "{name} journal is out of order at {index}"
-            );
-        }
-    }
-}
-
-/// The same two processes, this time appending to their own event streams.
+/// Two processes appending to their own event streams.
 ///
-/// What the unit-of-work test cannot say: that the global order the store
+/// What a single-process test cannot say: that the global order the store
 /// hands out survives two writers bumping one counter, and that neither
 /// stream's chain is disturbed by the other's appends landing between its
 /// own.
@@ -100,7 +59,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("ceremonies.sqlite3");
 
-    let (finished, complaints) = run_two_writers(&path, "events");
+    let (finished, complaints) = run_two_writers(&path);
     assert_eq!(
         finished, 2,
         "both writers must finish on the SQLite event store.\n{complaints}"
@@ -125,7 +84,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
             .expect("the stream reads");
         assert_eq!(
             records.len() as u64,
-            COMMITS_PER_WRITER,
+            EVENTS_PER_WRITER,
             "{name} lost events to the other writer"
         );
         for (index, record) in records.iter().enumerate() {
@@ -143,7 +102,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
             CeremonyEventStorePort::head(&store, &ceremony)
                 .await
                 .expect("head reads"),
-            StreamVersion::new(COMMITS_PER_WRITER)
+            StreamVersion::new(EVENTS_PER_WRITER)
         );
     }
 
@@ -154,11 +113,11 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
         .read_all(GlobalPosition::FIRST, usize::MAX)
         .await
         .expect("the global order reads");
-    assert_eq!(rows.len() as u64, 2 * COMMITS_PER_WRITER);
+    assert_eq!(rows.len() as u64, 2 * EVENTS_PER_WRITER);
     let positions: Vec<u64> = rows.iter().map(|row| row.position.value()).collect();
     assert_eq!(
         positions,
-        (1..=2 * COMMITS_PER_WRITER).collect::<Vec<_>>(),
+        (1..=2 * EVENTS_PER_WRITER).collect::<Vec<_>>(),
         "global positions are not contiguous and strictly increasing"
     );
 }

@@ -209,6 +209,72 @@ async fn a_page_continues_where_the_last_one_ended() {
     assert_eq!(beyond["has_more"], json!(false));
 }
 
+/// The engine's verdict and the caller's own verdict on the same
+/// records, side by side.
+///
+/// That is the whole claim of a verifiable journal: a client does not
+/// have to take `intact: true` on trust, and this test does not either
+/// — it reads the records back, runs the verifier itself, and compares.
+#[tokio::test]
+async fn the_engine_and_the_client_reach_the_same_verdict_on_the_same_journal() {
+    let fixture = fixture().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    session(&remote).await;
+
+    let verdict = structured(
+        &remote
+            .call_tool(
+                "made_verify_ceremony_journal",
+                &json!({ "ceremony_id": SESSION_ID }),
+            )
+            .await
+            .expect("the journal should be verifiable"),
+    );
+    let page = structured(
+        &remote
+            .call_tool(
+                "made_read_ceremony_events",
+                &json!({ "ceremony_id": SESSION_ID }),
+            )
+            .await
+            .expect("the stream should be readable"),
+    );
+    let records = records_from(&page);
+
+    assert_eq!(verdict["ceremony_id"], SESSION_ID);
+    assert_eq!(verdict["intact"], json!(true));
+    assert!(verdict["first_broken_sequence"].is_null());
+    assert!(verdict["reason"].is_null());
+    assert_eq!(verdict["record_count"], json!(records.len()));
+    assert_eq!(verdict["head_version"], page["head_version"]);
+    assert!(
+        AuditChain::verify(&records).is_intact(),
+        "the client's own verdict must agree with the engine's"
+    );
+}
+
+#[tokio::test]
+async fn a_journal_that_was_never_written_is_not_found_over_the_wire() {
+    let fixture = fixture().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+
+    let error = remote
+        .call_tool(
+            "made_verify_ceremony_journal",
+            &json!({ "ceremony_id": "never-started" }),
+        )
+        .await
+        .expect_err("a session that does not exist cannot be verified");
+
+    assert_eq!(error.code(), ToolErrorCode::NotFound);
+}
+
 #[tokio::test]
 async fn a_ceremony_with_no_stream_is_not_found_over_the_wire() {
     let fixture = fixture().await;
@@ -255,17 +321,16 @@ async fn the_transcript_carries_what_the_steps_contributed() {
     assert_eq!(entries[0]["step_id"], json!("work"));
     assert!(entries[0]["output"].is_object(), "{answer:#}");
 
-    // A session nobody drove has an empty transcript rather than a
-    // failure: the transcript store on the server is per-process and
-    // says so by being empty.
-    let empty = structured(
-        &remote
-            .call_tool(
-                "made_get_ceremony_transcript",
-                &json!({ "ceremony_id": "never-started" }),
-            )
-            .await
-            .expect("an unknown session has an empty transcript, not an error"),
-    );
-    assert_eq!(empty["entry_count"], json!(0));
+    // A session that was never started is refused rather than
+    // answered with nothing, the same way reading its stream is: an
+    // empty transcript would say the id exists and has said nothing.
+    let error = remote
+        .call_tool(
+            "made_get_ceremony_transcript",
+            &json!({ "ceremony_id": "never-started" }),
+        )
+        .await
+        .expect_err("a session that was never opened has no transcript");
+
+    assert_eq!(error.code(), ToolErrorCode::NotFound);
 }
