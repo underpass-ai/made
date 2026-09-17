@@ -10,7 +10,7 @@ pub struct NoopMetricsRecorder;
 
 impl MetricsRecorderPort for NoopMetricsRecorder {
     fn recorder_name(&self) -> RecorderName {
-        RecorderName::NOOP
+        RecorderName::new("noop")
     }
 
     fn observe_deliberation_duration(&self, _: &Specialty, _: DurationMs) {}

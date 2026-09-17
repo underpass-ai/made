@@ -6,9 +6,6 @@
 pub struct RecorderName(&'static str);
 
 impl RecorderName {
-    pub const NOOP: Self = Self("noop");
-    pub const PROMETHEUS: Self = Self("prometheus");
-
     #[must_use]
     pub const fn new(value: &'static str) -> Self {
         Self(value)

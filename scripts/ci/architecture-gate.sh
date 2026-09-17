@@ -11,7 +11,7 @@ cd "${ROOT_DIR}"
 # Refresh after paying debt down:
 #   MADE_ARCHITECTURE_BASELINE=write bash scripts/ci/architecture-gate.sh
 
-python3 - <<'PY'
+python3 - "$@" <<'PY'
 from __future__ import annotations
 
 import json
@@ -27,9 +27,9 @@ monolith_lines = 600
 zero_type_lines = 400
 
 primary_type = re.compile(
-    r"^(?:(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union)\s+"
-    r"([A-Za-z_][A-Za-z0-9_]*)|pub(?:\([^)]*\))?\s+type\s+"
-    r"([A-Za-z_][A-Za-z0-9_]*)\s*=)"
+    r"^\s*(?:(?:(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union)\s+"
+    r"([A-Za-z_][A-Za-z0-9_]*))|(?:pub(?:\([^)]*\))?\s+type\s+"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*=))"
 )
 public_primitive_field = re.compile(
     r"^    pub\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*"
@@ -130,6 +130,40 @@ def relative(path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def test_only_module_sources(sources: list[Path]) -> set[Path]:
+    """Resolve external modules that their parent compiles only under test."""
+    test_only: set[Path] = set()
+    external_module = re.compile(
+        r"^(?:pub(?:\([^)]*\))?\s+)?mod\s+([A-Za-z_][A-Za-z0-9_]*)\s*;\s*$"
+    )
+    for source in sources:
+        lines = source.read_text(encoding="utf-8").splitlines()
+        for index, line in enumerate(lines):
+            if line.strip() != "#[cfg(test)]":
+                continue
+            following = (
+                candidate.strip()
+                for candidate in lines[index + 1 :]
+                if candidate.strip()
+                and not candidate.lstrip().startswith(("//", "#["))
+            )
+            declaration = next(following, "")
+            match = external_module.match(declaration)
+            if not match:
+                continue
+            module_root = (
+                source.parent
+                if source.stem in {"lib", "main", "mod"}
+                else source.parent / source.stem
+            )
+            candidates = (
+                module_root / f"{match.group(1)}.rs",
+                module_root / match.group(1) / "mod.rs",
+            )
+            test_only.update(candidate for candidate in candidates if candidate in sources)
+    return test_only
+
+
 def production_line_count(lines: list[str]) -> int:
     """Exclude a conventional trailing unit-test module from monolith size."""
     for index, line in enumerate(lines):
@@ -145,17 +179,58 @@ def production_line_count(lines: list[str]) -> int:
     return len(lines)
 
 
-debt: dict[str, str] = {}
-for source in tracked_sources():
-    lines = source.read_text(encoding="utf-8").splitlines()
+def module_primary_types(lines: list[str]) -> list[str]:
+    """Return primary types declared in file or inline-module item scope.
+
+    Rust permits module items to be indented inside ``mod name { ... }``. A
+    plain column-zero regex misses those, while an unrestricted whitespace
+    regex also counts function-local and test-only helper types. Rustfmt keeps
+    item-opening braces on the declaration line, so an indentation stack is
+    sufficient to distinguish those scopes without trying to parse Rust.
+    """
+    contexts: list[tuple[int, str]] = []
+    pending_test_at: int | None = None
+    types: list[str] = []
+    module_item = re.compile(
+        r"^(?:pub(?:\([^)]*\))?\s+)?(?:unsafe\s+)?mod\s+"
+        r"[A-Za-z_][A-Za-z0-9_]*\s*\{\s*$"
+    )
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped or stripped.startswith("//"):
+            continue
+        indent = len(line) - len(line.lstrip())
+        while contexts and indent <= contexts[-1][0]:
+            contexts.pop()
+
+        if stripped == "#[cfg(test)]":
+            pending_test_at = indent
+            continue
+        if stripped.startswith("#["):
+            continue
+
+        in_production_module = all(kind == "module" for _, kind in contexts)
+        if in_production_module and (match := primary_type.match(line)):
+            types.append(match.group(1) or match.group(2))
+
+        if module_item.match(stripped):
+            kind = "test" if pending_test_at == indent else "module"
+            contexts.append((indent, kind))
+        elif stripped.endswith("{"):
+            # Functions, impls, traits, macros and const blocks are not module
+            # item scope. One enclosing marker is enough to exclude any types
+            # nested inside them until indentation returns to this level.
+            contexts.append((indent, "other"))
+        pending_test_at = None
+    return types
+
+
+def source_debt(source: Path, lines: list[str]) -> str | None:
     source_name = relative(source)
     production_lines = production_line_count(lines)
     production = lines[:production_lines]
-    types = [
-        match.group(1) or match.group(2)
-        for line in production
-        if (match := primary_type.match(line))
-    ]
+    types = module_primary_types(production)
     reasons: list[str] = []
     if len(types) > 1:
         reasons.append(f"types={len(types)}")
@@ -182,8 +257,70 @@ for source in tracked_sources():
         primitives = sum(1 for line in production if boundary_primitive_field.match(line))
         if primitives:
             reasons.append(f"primitive_fields={primitives}")
-    if reasons:
-        debt[source_name] = ",".join(reasons)
+    return ",".join(reasons) or None
+
+
+def architecture_self_test() -> None:
+    inline_fixture = [
+        "mod fixture {",
+        "    struct First;",
+        "    enum Second {}",
+        "}",
+        "fn helper() {",
+        "    struct FunctionLocal;",
+        "}",
+        "#[cfg(test)]",
+        "mod tests {",
+        "    struct TestOnly;",
+        "}",
+    ]
+    inline_debt = source_debt(root / "crates/made-core/src/fixture.rs", inline_fixture)
+    if inline_debt != "types=2":
+        raise AssertionError(
+            f"indented private primary fixture: expected types=2, got {inline_debt!r}"
+        )
+
+    option_fixture = [
+        "struct FixtureInput {",
+        "    limit: Option<u64>,",
+        "}",
+    ]
+    option_debt = source_debt(
+        root / "crates/made-app/src/usecases/fixture_input.rs", option_fixture
+    )
+    if option_debt != "primitive_fields=1":
+        raise AssertionError(
+            "application Option primitive fixture: expected primitive_fields=1, "
+            f"got {option_debt!r}"
+        )
+
+    zero_type_fixture = ["// fixture line"] * (zero_type_lines + 1)
+    zero_type_debt = source_debt(
+        root / "crates/made-mcp/src/zero_type_fixture.rs", zero_type_fixture
+    )
+    expected = f"zero_type_lines={zero_type_lines + 1}"
+    if zero_type_debt != expected:
+        raise AssertionError(
+            f"zero-primary-type fixture: expected {expected}, got {zero_type_debt!r}"
+        )
+
+
+architecture_self_test()
+if "--self-test" in sys.argv[1:]:
+    print("architecture gate self-test passed: 3 regression fixtures")
+    sys.exit(0)
+if sys.argv[1:]:
+    sys.exit(f"unknown architecture gate argument: {' '.join(sys.argv[1:])}")
+
+
+sources = tracked_sources()
+production_sources = [source for source in sources if source not in test_only_module_sources(sources)]
+debt: dict[str, str] = {}
+for source in production_sources:
+    lines = source.read_text(encoding="utf-8").splitlines()
+    source_name = relative(source)
+    if measures := source_debt(source, lines):
+        debt[source_name] = measures
 
 if os.environ.get("MADE_ARCHITECTURE_BASELINE") == "write":
     baseline_path.parent.mkdir(parents=True, exist_ok=True)
@@ -231,7 +368,7 @@ for name, measures in sorted(debt.items()):
             )
 
 paid = sorted(set(baseline) - set(debt))
-print(f"architecture gate: {len(tracked_sources())} production sources")
+print(f"architecture gate: {len(production_sources)} production sources")
 print(f"  debt carried: {len(debt)} of {len(baseline)} baselined files")
 print(f"  debt paid:    {len(paid)}")
 if paid:

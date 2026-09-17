@@ -60,8 +60,11 @@ inventory, not an exemption: it can shrink but CI rejects growth or new debt.
 
 On `refactor/hexagonal-ddd`, the inward rings have been migrated first:
 
-- All Rust source files have at most one primary type. The gate also
-  rejects any regression in that rule for production and test code.
+- All production Rust source files have at most one primary type. The gate
+  counts private and public module items, including items indented inside an
+  inline module, while ignoring function-local and `#[cfg(test)]` types. Its
+  built-in `--self-test` pins those distinctions and the primitive and
+  zero-type-file rules.
 - `made-core` has typed agent, execution, evidence, support and contract
   boundaries, no public primitive fields, and no deployment configuration
   port. `CeremonyInstance` keeps its aggregate boundary while delegating step

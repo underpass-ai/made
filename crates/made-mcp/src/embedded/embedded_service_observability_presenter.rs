@@ -60,7 +60,7 @@ mod tests {
             "9.9.9",
             Duration::from_secs(61),
             ServiceHealth::Healthy,
-            made_core::value_objects::RecorderName::PROMETHEUS,
+            made_core::value_objects::RecorderName::new("prometheus"),
             statistics,
         )
     }
