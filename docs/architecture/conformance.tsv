@@ -1,4 +1,5 @@
 # MADE architecture debt. Values may shrink and must never grow silently.
 # Budget: one primary type per source file; at most 600 production lines (test drivers/support exempt from size only).
-# Public primitive fields are additionally counted in made-core.
+# Zero-primary-type production files have a lower 400-line budget.
+# Primitive fields are counted in made-core and made-app use-case boundary types.
 path	debt

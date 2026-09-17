@@ -24,12 +24,20 @@ from pathlib import Path
 root = Path.cwd().resolve()
 baseline_path = root / "docs/architecture/conformance.tsv"
 monolith_lines = 600
+zero_type_lines = 400
 
 primary_type = re.compile(
-    r"^\s*pub(?:\([^)]*\))?\s+(?:struct|enum|trait|union|type)\s+([A-Za-z_][A-Za-z0-9_]*)"
+    r"^(?:(?:pub(?:\([^)]*\))?\s+)?(?:struct|enum|trait|union)\s+"
+    r"([A-Za-z_][A-Za-z0-9_]*)|pub(?:\([^)]*\))?\s+type\s+"
+    r"([A-Za-z_][A-Za-z0-9_]*)\s*=)"
 )
-primitive_field = re.compile(
-    r"^\s*pub\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*(?:String|bool|[ui](?:8|16|32|64|128|size)|f(?:32|64))\b"
+public_primitive_field = re.compile(
+    r"^    pub\s+[A-Za-z_][A-Za-z0-9_]*\s*:\s*"
+    r"(?:Option\s*<\s*)?(?:String|bool|[ui](?:8|16|32|64|128|size)|f(?:32|64))\b"
+)
+boundary_primitive_field = re.compile(
+    r"^    (?:pub(?:\([^)]*\))?\s+)?[A-Za-z_][A-Za-z0-9_]*\s*:\s*"
+    r"(?:Option\s*<\s*)?(?:String|bool|[ui](?:8|16|32|64|128|size)|f(?:32|64))\b"
 )
 
 
@@ -141,11 +149,16 @@ debt: dict[str, str] = {}
 for source in tracked_sources():
     lines = source.read_text(encoding="utf-8").splitlines()
     source_name = relative(source)
-    types = [match.group(1) for line in lines if (match := primary_type.match(line))]
+    production_lines = production_line_count(lines)
+    production = lines[:production_lines]
+    types = [
+        match.group(1) or match.group(2)
+        for line in production
+        if (match := primary_type.match(line))
+    ]
     reasons: list[str] = []
     if len(types) > 1:
         reasons.append(f"types={len(types)}")
-    production_lines = production_line_count(lines)
     line_budget_exempt = source_name.startswith(
         (
             "crates/made-consumer-smoke/",
@@ -155,8 +168,18 @@ for source in tracked_sources():
     ) or source.name.endswith("_test_support.rs")
     if not line_budget_exempt and production_lines > monolith_lines:
         reasons.append(f"lines={production_lines}")
+    if not line_budget_exempt and not types and production_lines > zero_type_lines:
+        reasons.append(f"zero_type_lines={production_lines}")
+    app_boundary = (
+        source.parent == root / "crates/made-app/src/usecases"
+        and source.stem.endswith(("_input", "_output", "_document", "_stage", "_summary"))
+    )
     if source.is_relative_to(root / "crates/made-core/src"):
-        primitives = sum(1 for line in lines if primitive_field.match(line))
+        primitives = sum(1 for line in production if public_primitive_field.match(line))
+        if primitives:
+            reasons.append(f"primitive_fields={primitives}")
+    elif app_boundary:
+        primitives = sum(1 for line in production if boundary_primitive_field.match(line))
         if primitives:
             reasons.append(f"primitive_fields={primitives}")
     if reasons:
@@ -170,7 +193,12 @@ if os.environ.get("MADE_ARCHITECTURE_BASELINE") == "write":
             f"# Budget: one primary type per source file; at most {monolith_lines} "
             "production lines (test drivers/support exempt from size only).\n"
         )
-        baseline.write("# Public primitive fields are additionally counted in made-core.\n")
+        baseline.write(
+            f"# Zero-primary-type production files have a lower {zero_type_lines}-line budget.\n"
+        )
+        baseline.write(
+            "# Primitive fields are counted in made-core and made-app use-case boundary types.\n"
+        )
         baseline.write("path\tdebt\n")
         for name, measures in sorted(debt.items()):
             baseline.write(f"{name}\t{measures}\n")
