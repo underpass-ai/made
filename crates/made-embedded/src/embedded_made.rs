@@ -1,7 +1,4 @@
-use std::fmt;
-use std::sync::Arc;
-use std::time::Instant;
-
+use crate::{EmbeddedMadeBuilder, VERSION};
 use made_adapters::ceremony::{
     CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
 };
@@ -9,27 +6,10 @@ use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
-    ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
-    ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase, CeremonyDefinitionSource,
-    CeremonyDesignDocument, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
-    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
-    DesignCeremonyUseCase, DesignedCeremony, DiffCeremonyDefinitionsUseCase,
-    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase,
-    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
-    PublishCeremonyDefinitionUseCase, RequestCeremonyInterventionInput,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, ServiceStatus, StartCeremonyInput, StartCeremonyStepInput,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ServiceStatus,
 };
-use made_core::entities::{
-    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
-    Statistics,
-};
+use made_core::entities::{CeremonyInstance, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
@@ -37,13 +17,15 @@ use made_core::ports::{
     CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
     StatisticsPort,
 };
-use made_core::value_objects::{
-    CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyVersion, StepAttempt,
-};
+use made_core::value_objects::CeremonyId;
+use std::fmt;
+use std::sync::Arc;
+use std::time::Instant;
 
+mod definitions;
+mod execution;
 mod history;
-
-use crate::{EmbeddedMadeBuilder, InProcessCeremonyDefinitionSource, VERSION};
+mod participation;
 
 /// In-process facade over the MADE ceremony use cases.
 #[derive(Clone)]
@@ -155,49 +137,6 @@ impl EmbeddedMade {
         VERSION
     }
 
-    pub async fn mount_definition(
-        &self,
-        definition: CeremonyDefinition,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
-        self.mount_definitions([definition]).await
-    }
-
-    pub async fn mount_definitions(
-        &self,
-        definitions: impl IntoIterator<Item = CeremonyDefinition>,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
-        let source = Arc::new(InProcessCeremonyDefinitionSource::new(definitions));
-        MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
-            .execute()
-            .await
-    }
-
-    pub async fn mount_yaml(
-        &self,
-        raw: &str,
-    ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
-        let source = Arc::new(InProcessCeremonyDefinitionSource::from_yaml(raw)?);
-        MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
-            .execute()
-            .await
-    }
-
-    pub async fn definition(
-        &self,
-        name: &CeremonyName,
-        version: &CeremonyVersion,
-    ) -> Result<CeremonyDefinition, DomainError> {
-        GetCeremonyDefinitionUseCase::new(self.definitions.clone())
-            .execute(name, version)
-            .await
-    }
-
-    pub async fn definitions(&self) -> Result<Vec<CeremonyDefinition>, DomainError> {
-        ListCeremonyDefinitionsUseCase::new(self.definitions.clone())
-            .execute()
-            .await
-    }
-
     pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
         GetCeremonyInstanceUseCase::new(self.stream.clone())
             .execute(id)
@@ -233,287 +172,6 @@ impl EmbeddedMade {
         GetServiceMetricsUseCase::new(self.statistics.clone())
             .execute()
             .await
-    }
-
-    pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
-        RunCeremonyUseCase::new(
-            self.definitions.clone(),
-            self.stream.clone(),
-            self.step_handler.clone(),
-            self.clock.clone(),
-        )
-        .with_metrics(self.metrics_recorder.clone())
-        .execute(input)
-        .await
-    }
-
-    /// Fix a definition to an immutable version.
-    pub async fn publish_definition(
-        &self,
-        definition: CeremonyDefinition,
-    ) -> Result<PublicationOutcome, DomainError> {
-        PublishCeremonyDefinitionUseCase::new(self.publications.clone())
-            .execute(definition)
-            .await
-    }
-
-    /// The published definition under a name and version, if any.
-    pub async fn published_definition(
-        &self,
-        name: &CeremonyName,
-        version: &CeremonyVersion,
-    ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
-        self.publications.published(name, version).await
-    }
-
-    /// Every published definition.
-    pub async fn published_definitions(
-        &self,
-    ) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
-        self.publications.catalogue().await
-    }
-
-    /// The definition an instance actually runs, binding included.
-    ///
-    /// Delegates to the shared use case rather than holding the rule,
-    /// so the embedded and deployable distributions cannot drift apart
-    /// on what a bound instance means.
-    pub async fn definition_for(
-        &self,
-        instance: &CeremonyInstance,
-    ) -> Result<CeremonyDefinition, DomainError> {
-        self.resolve_definition().execute(instance).await
-    }
-
-    /// How every verb that advances a session finds what it is running.
-    /// A bound session resolves from the catalogue and is checked
-    /// against the digest it recorded; an unbound one has only the
-    /// repository. Handing this to the use cases is what lets a
-    /// published session be advanced at all.
-    fn resolve_definition(&self) -> Arc<ResolveCeremonyDefinitionUseCase> {
-        Arc::new(ResolveCeremonyDefinitionUseCase::new(
-            self.definitions.clone(),
-            self.publications.clone(),
-        ))
-    }
-
-    /// Seat this session's roles.
-    pub async fn bind_participants(
-        &self,
-        input: BindCeremonyParticipantsInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        BindCeremonyParticipantsUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    /// Turn authoring intent into a ceremony document.
-    ///
-    /// Touches nothing, like validating and explaining a draft: it
-    /// reads no store, writes no definition and starts no session.
-    /// What it answers with is the document an author can then put
-    /// through those three.
-    // A method rather than an associated function: a host asks the
-    // engine it holds, and designing is one of the things it asks.
-    // That it needs nothing from the engine today is a fact about
-    // designing, not about where the question belongs.
-    #[allow(clippy::unused_self)]
-    pub fn design(
-        &self,
-        document: &CeremonyDesignDocument,
-    ) -> Result<DesignedCeremony, DomainError> {
-        DesignCeremonyUseCase::new().execute(document)
-    }
-
-    /// Compare two definitions, either side published or supplied.
-    pub async fn diff_definitions(
-        &self,
-        before: CeremonyDefinitionSource,
-        after: CeremonyDefinitionSource,
-    ) -> Result<CeremonyDefinitionDiff, DomainError> {
-        DiffCeremonyDefinitionsUseCase::new(self.publications.clone())
-            .execute(before, after)
-            .await
-    }
-
-    /// Start an instance bound to a published definition's digest.
-    pub async fn start_published(
-        &self,
-        input: StartCeremonyInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        StartPublishedCeremonyUseCase::new(
-            self.publications.clone(),
-            self.stream.clone(),
-            self.clock.clone(),
-            self.memory_reader.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
-        StartCeremonyUseCase::new(
-            self.definitions.clone(),
-            self.stream.clone(),
-            self.clock.clone(),
-            self.memory_reader.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    /// Say why one thing this session produced led to another.
-    ///
-    /// In-process only for now, and deliberately: a host embedding the
-    /// engine can record its reasoning today without a wire format
-    /// being settled for it.
-    pub async fn assert_reason(
-        &self,
-        input: AssertCeremonyReasonInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        AssertCeremonyReasonUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn approve_guard(
-        &self,
-        input: ApproveCeremonyGuardInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        ApproveCeremonyGuardUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn defer_guard(
-        &self,
-        input: DeferCeremonyGuardInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        DeferCeremonyGuardUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn request_intervention(
-        &self,
-        input: RequestCeremonyInterventionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        RequestCeremonyInterventionUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn respond_to_intervention(
-        &self,
-        input: RespondToCeremonyInterventionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        RespondToCeremonyInterventionUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn collect_evidence(
-        &self,
-        input: CollectCeremonyEvidenceInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        CollectCeremonyEvidenceUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.evidence_source.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn close_intervention(
-        &self,
-        input: CloseCeremonyInterventionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        CloseCeremonyInterventionUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn start_step(
-        &self,
-        input: StartCeremonyStepInput,
-    ) -> Result<StepAttempt, DomainError> {
-        StartCeremonyStepUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn run_step(
-        &self,
-        input: RunCeremonyStepInput,
-    ) -> Result<RunCeremonyStepOutput, DomainError> {
-        RunCeremonyStepUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.step_handler.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn complete_step(
-        &self,
-        input: CompleteCeremonyStepInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        CompleteCeremonyStepUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
-    pub async fn apply_transition(
-        &self,
-        input: ApplyCeremonyTransitionInput,
-    ) -> Result<CeremonyInstance, DomainError> {
-        ApplyCeremonyTransitionUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.clock.clone(),
-        )
-        .execute(input)
-        .await
     }
 }
 

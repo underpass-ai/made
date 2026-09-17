@@ -28,11 +28,26 @@ operator command.
 
 ### Architecture
 
+- Split the embedded facade into definition, execution and participation
+  modules while preserving its public methods and behavior (#111).
+
+- Separate ceremony design validation and definition construction into private
+  modules while retaining the existing authoring behavior (#107).
+
+- Split ceremony definition collection validation and guard evaluation into
+  private modules without changing behavior (#106).
+
+- Split ceremony step configuration parsing into focused private modules,
+  preserving defaults and validation for phase 3a work (#105).
+
 - Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
   primitives; record their contracts and the deferred pattern work before
   implementation (#90).
 
 ### Fixed
+
+- Refuse terminal ceremony transitions while an intervention remains open,
+  preserve the journal on refusal, and report that move disabled (#109).
 
 - Ceremony design returns a domain draft; one adapter renders YAML for both
   MCP paths, with serialization DTOs and serde_yaml removed from made-app
