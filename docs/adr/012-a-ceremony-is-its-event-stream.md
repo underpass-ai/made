@@ -1,7 +1,7 @@
 # ADR-012: A ceremony is its event stream
 
-Status: Accepted (decided 2026-09-16); A1–A4 implemented on `main` (#42–#45),
-A5–A8 in progress under #65 — the slices are §3.1 of
+Status: Implemented (decided 2026-09-16; verified 2026-09-18). A1–A4 landed in
+#42–#45, A5 in #83, A6 in #108, A7 in #86, and A8 in #121. The slices are §3.1 of
 [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 Supersedes one sentence of ADR-003 ("Snapshot plus append-only journal plus
@@ -97,6 +97,17 @@ beside the new file.
 **Scope.** Ceremonies. The council `Deliberation` keeps its snapshot and its
 five bus events until ceremonies are done; it is the next candidate, not
 part of this decision.
+
+## Implementation result
+
+Ceremony commands now append sealed events and rebuild instances by folding
+their streams; optional snapshots only shorten the tail read. Transcript and
+memory projections consume the sealed records (#83), the legacy write paths
+and outbox were removed with copy-on-write migration (#86), and durable
+consumer cursors drive pull, NATS publication and the embedded JSONL sink
+(#108). Metrics, traces, structured logs and bounded reports project the same
+records in both editions (#110), while embedded service metrics, OTLP wiring
+and JSONL registry snapshots are composed through host-owned adapters (#119).
 
 ## Consequences
 
