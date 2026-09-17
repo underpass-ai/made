@@ -21,6 +21,9 @@ operator command.
 
 ### Architecture
 
+- Separate ceremony design validation and definition construction into private
+  modules while retaining the existing authoring behavior (#107).
+
 - Split ceremony definition collection validation and guard evaluation into
   private modules without changing behavior (#106).
 
