@@ -366,6 +366,10 @@ gate in this repository):
   into later steps' briefs; the response carries a Mermaid sequence diagram.
   Catalog ceremonies (daily standup, technical debate, sprint planning,
   speaker + Q&A) run end-to-end in CI.
+  Concurrent states allow distinct role-owned steps to be claimed in parallel;
+  `claimable_step_ids` lists every current alternative and `next_step_id`
+  remains its first item. Definitions use `max_parallel` (default 3, range
+  1–8), capped at runtime by `MADE_MAX_PARALLEL` (default 8).
 - Scoring: the winner of a deliberation is chosen by a pluggable
   `ScoringPort`. The default ranks by validator pass-fraction; an
   optional LLM-as-judge (`MADE_JUDGE_ENABLED`, with

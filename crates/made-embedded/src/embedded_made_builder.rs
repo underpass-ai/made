@@ -20,7 +20,7 @@ use made_core::ports::{
     MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
     NoopMetricsSnapshot, StatisticsPort,
 };
-use made_core::value_objects::StepResult;
+use made_core::value_objects::{MaxParallel, StepResult};
 
 use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
 
@@ -47,6 +47,7 @@ pub struct EmbeddedMadeBuilder {
     metrics: Option<Arc<dyn MetricsRecorderPort>>,
     metrics_snapshot: Option<Arc<dyn MetricsSnapshotPort>>,
     statistics: Option<Arc<dyn StatisticsPort>>,
+    max_parallel_ceiling: Option<MaxParallel>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -178,6 +179,12 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_clock(mut self, adapter: Arc<dyn ClockPort>) -> Self {
         self.clock = Some(adapter);
+        self
+    }
+
+    #[must_use]
+    pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
+        self.max_parallel_ceiling = Some(ceiling);
         self
     }
 
@@ -326,6 +333,7 @@ impl EmbeddedMadeBuilder {
             step_handler,
             evidence_source,
             clock,
+            self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             metrics,
             metrics_snapshot,
             statistics,

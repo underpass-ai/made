@@ -72,12 +72,20 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                 "type": "integer",
                 "minimum": 0,
                 "description": "Default retry backoff written into the draft. Defaults to one."
+            },
+            "max_parallel": {
+                "type": "integer", "minimum": 1, "maximum": 8,
+                "description": "Definition-level claim capacity. Defaults to three; the host may enforce a lower runtime ceiling."
             }
         }
     })
 }
 
 fn stage_schema() -> Value {
+    json!({ "oneOf": [leaf_stage_schema(), group_stage_schema()] })
+}
+
+fn leaf_stage_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
@@ -110,6 +118,41 @@ fn stage_schema() -> Value {
             }
         }
     })
+}
+
+fn group_stage_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "group"],
+        "properties": {
+            "id": string_schema("State identity generated for this group."),
+            "group": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["steps"],
+                "properties": {
+                    "execution": { "type": "string", "enum": ["sequential", "concurrent"], "default": "sequential" },
+                    "steps": { "type": "array", "minItems": 1, "items": group_step_schema() },
+                    "join": {
+                        "oneOf": [
+                            { "type": "object", "additionalProperties": false, "required": ["condition"], "properties": { "condition": { "enum": ["all_steps_completed", "any_step_completed"] } } },
+                            { "type": "object", "additionalProperties": false, "required": ["condition", "count"], "properties": { "condition": { "const": "steps_completed" }, "count": { "type": "integer", "minimum": 1 } } }
+                        ]
+                    }
+                }
+            }
+        }
+    })
+}
+
+fn group_step_schema() -> Value {
+    let mut schema = leaf_stage_schema();
+    schema["properties"]
+        .as_object_mut()
+        .expect("leaf properties")
+        .remove("exit_guards");
+    schema
 }
 
 fn exit_guard_schema() -> Value {

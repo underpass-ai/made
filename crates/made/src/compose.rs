@@ -289,20 +289,26 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         memory_reader,
     ));
-    let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        ceremony_step_handler,
-        clock.clone(),
-    ));
+    let run_ceremony_step = Arc::new(
+        RunCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            ceremony_step_handler,
+            clock.clone(),
+        )
+        .with_max_parallel_ceiling(service_config.max_parallel),
+    );
     // The delegated-host protocol. Claiming and completing are the
     // same two use cases the embedded edition has always called; only
     // the way in is new.
-    let claim_ceremony_step = Arc::new(StartCeremonyStepUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
+    let claim_ceremony_step = Arc::new(
+        StartCeremonyStepUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+        )
+        .with_max_parallel_ceiling(service_config.max_parallel),
+    );
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
@@ -470,6 +476,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .clock(clock.clone())
+        .max_parallel_ceiling(service_config.max_parallel)
         .build()?;
 
     let health_state = crate::health::HealthState::new(

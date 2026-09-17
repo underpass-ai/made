@@ -15,6 +15,7 @@ pub(super) struct Defaults {
     pub(super) grpc_tls_cert_path: String,
     pub(super) grpc_tls_key_path: String,
     pub(super) grpc_tls_client_ca_path: String,
+    pub(super) max_parallel: u8,
 }
 
 impl Default for Defaults {
@@ -33,6 +34,7 @@ impl Default for Defaults {
             grpc_tls_cert_path: String::new(),
             grpc_tls_key_path: String::new(),
             grpc_tls_client_ca_path: String::new(),
+            max_parallel: 8,
         }
     }
 }

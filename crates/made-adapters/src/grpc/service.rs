@@ -23,9 +23,9 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort};
+use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
-    AgentId, CeremonyId, OutputContractId, Specialty, TaskId, TraceContext,
+    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId, TraceContext,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -78,6 +78,8 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) clock: Arc<dyn ClockPort>,
+    pub(super) max_parallel_ceiling: MaxParallel,
     pub(super) deliberate: Arc<DeliberateUseCase>,
     pub(super) orchestrate: Arc<OrchestrateUseCase>,
     pub(super) create_council: Arc<CreateCouncilUseCase>,
@@ -168,14 +170,21 @@ impl MadeGrpcService {
             .execute_with_ids(instance.id())
             .await
             .map_err(domain_error_to_status)?;
-        Self::render_read(&head, definition).map_err(domain_error_to_status)
+        self.render_read(&head, definition)
+            .map_err(domain_error_to_status)
     }
 
     fn render_read(
+        &self,
         read: &made_app::usecases::CeremonyInstanceRead,
         definition: &made_core::entities::CeremonyDefinition,
     ) -> Result<pb::CeremonyInstanceState, made_core::error::DomainError> {
-        let view = CeremonyInstanceView::project(read.instance(), definition)?;
+        let view = CeremonyInstanceView::project_at(
+            read.instance(),
+            definition,
+            self.clock.now(),
+            self.max_parallel_ceiling,
+        )?;
         let mut state = ceremony_instance_state_from(&view);
         read.trace_id()
             .map_or_else(String::new, ToString::to_string)

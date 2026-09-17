@@ -93,6 +93,9 @@ config:
   # immediately exercisable end-to-end. Off by default — real
   # deployments register agents through other channels.
   seedSpecialties: ""
+  # Runtime ceiling for concurrent ceremony claims. Definitions declare their
+  # own max_parallel (default 3); the effective capacity is the lower value.
+  maxParallel: 8
 
 # Extra env wiring for provider adapters. These fields are intentionally
 # generic because provider enablement is feature-gated in the binary

@@ -7,7 +7,7 @@ use super::ceremony_guard_view::CeremonyGuardView;
 pub struct CeremonyTransitionView<'a> {
     transition: &'a CeremonyTransition,
     enabled: bool,
-    repeat_requirements_satisfied: bool,
+    automated_preconditions_satisfied: bool,
     guards: Vec<CeremonyGuardView<'a>>,
 }
 
@@ -15,13 +15,13 @@ impl<'a> CeremonyTransitionView<'a> {
     pub(super) fn new(
         transition: &'a CeremonyTransition,
         enabled: bool,
-        repeat_requirements_satisfied: bool,
+        automated_preconditions_satisfied: bool,
         guards: Vec<CeremonyGuardView<'a>>,
     ) -> Self {
         Self {
             transition,
             enabled,
-            repeat_requirements_satisfied,
+            automated_preconditions_satisfied,
             guards,
         }
     }
@@ -43,7 +43,7 @@ impl<'a> CeremonyTransitionView<'a> {
 
     #[must_use]
     pub(super) fn waits_only_on_people(&self) -> bool {
-        self.repeat_requirements_satisfied
+        self.automated_preconditions_satisfied
             && self
                 .guards
                 .iter()

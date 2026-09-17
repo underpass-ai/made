@@ -14,15 +14,17 @@
 
 use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignExitGuard, CeremonyDesignFinalApproval,
+    CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
     CeremonyDesignOutputFieldGuard, CeremonyDesignParticipant, CeremonyDesignRepeat,
-    CeremonyDesignStage, CeremonyDesignStepRepeatExhaustedGuard, CeremonyDraftView,
-    CeremonyParticipantCapability, CeremonyPatternPreset, DesignedCeremony,
+    CeremonyDesignStage, CeremonyDesignStageEntry, CeremonyDesignStepRepeatExhaustedGuard,
+    CeremonyDraftView, CeremonyParticipantCapability, CeremonyPatternPreset, DesignedCeremony,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, GuardName, InputName,
-    NumAgents, OutputName, PriorContext, RoleId, Rounds, StepAttempt, StepHandlerKind, StepId,
-    StepInstructions, StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
+    JoinStepCount, MaxParallel, NumAgents, OutputName, PriorContext, RoleId, Rounds,
+    StateExecution, StepAttempt, StepHandlerKind, StepId, StepInstructions, StepIteration,
+    StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -40,7 +42,7 @@ pub fn ceremony_design_document_from_proto(
     let stages = request
         .stages
         .into_iter()
-        .map(stage_from_proto)
+        .map(stage_entry_from_proto)
         .collect::<Result<Vec<_>, _>>()?;
     let final_approval = request
         .final_approval
@@ -55,7 +57,7 @@ pub fn ceremony_design_document_from_proto(
         each(request.optional_inputs, InputName::new)?,
         each(request.outputs, OutputName::new)?,
         participants,
-        stages,
+        Vec::new(),
         final_approval,
         request
             .step_timeout_seconds
@@ -65,7 +67,12 @@ pub fn ceremony_design_document_from_proto(
         request
             .backoff_seconds
             .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-    );
+    )
+    .with_stage_entries(stages)
+    .with_max_parallel(match request.max_parallel {
+        Some(value) => MaxParallel::new(u8::try_from(value).unwrap_or(u8::MAX))?,
+        None => MaxParallel::default(),
+    });
     let pattern = named(request.pattern, |value| {
         CeremonyPatternPreset::parse(&value)
     })?;
@@ -127,6 +134,85 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
         stage.repeat.map(repeat_from_proto).transpose()?,
     )
     .with_exit_guards(exit_guards))
+}
+
+fn stage_entry_from_proto(
+    stage: pb::CeremonyDesignStage,
+) -> Result<CeremonyDesignStageEntry, DomainError> {
+    if let Some(group) = stage.group {
+        if !stage.owner_role_id.is_empty()
+            || !stage.instructions.is_empty()
+            || !stage.handler.is_empty()
+            || stage.see_prior.is_some()
+            || stage.num_agents.is_some()
+            || stage.review_rounds != 0
+            || stage.repeat.is_some()
+            || !stage.exit_guards.is_empty()
+        {
+            return Err(DomainError::InvalidDocument {
+                reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
+            });
+        }
+        let execution = match group.execution.as_str() {
+            "" | "sequential" => StateExecution::Sequential,
+            "concurrent" => StateExecution::Concurrent,
+            _ => {
+                return Err(DomainError::InvalidDocument {
+                    reason: "group execution must be `sequential` or `concurrent`".to_owned(),
+                })
+            }
+        };
+        let join = match group.join {
+            None => CeremonyDesignJoin::AllStepsCompleted,
+            Some(join) => match join.condition.as_str() {
+                "" | "all_steps_completed" if join.count.is_none() => {
+                    CeremonyDesignJoin::AllStepsCompleted
+                }
+                "any_step_completed" if join.count.is_none() => {
+                    CeremonyDesignJoin::AnyStepCompleted
+                }
+                "steps_completed" => CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(
+                    join.count.ok_or_else(|| DomainError::InvalidDocument {
+                        reason: "steps_completed join requires count".to_owned(),
+                    })?,
+                )?),
+                _ => {
+                    return Err(DomainError::InvalidDocument {
+                        reason: "invalid group join condition or count".to_owned(),
+                    })
+                }
+            },
+        };
+        let steps = group
+            .steps
+            .into_iter()
+            .map(group_step_from_proto)
+            .collect::<Result<Vec<_>, _>>()?;
+        return Ok(CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
+            StepId::new(stage.id)?,
+            execution,
+            steps,
+            join,
+        )));
+    }
+    stage_from_proto(stage).map(CeremonyDesignStageEntry::Leaf)
+}
+
+fn group_step_from_proto(
+    step: pb::CeremonyDesignGroupStep,
+) -> Result<CeremonyDesignGroupStep, DomainError> {
+    Ok(CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+        StepId::new(step.id)?,
+        RoleId::new(step.owner_role_id)?,
+        StepInstructions::new(step.instructions)?,
+        named(step.handler, StepHandlerKind::new)?,
+        step.see_prior.map(PriorContext::from_visible),
+        step.num_agents
+            .map(|value| NumAgents::new(u32::try_from(value).unwrap_or(u32::MAX)))
+            .transpose()?,
+        Rounds::new(u32::try_from(step.review_rounds).unwrap_or(u32::MAX))?,
+        step.repeat.map(repeat_from_proto).transpose()?,
+    )))
 }
 
 fn exit_guard_from_proto(
@@ -239,6 +325,75 @@ mod tests {
             exit_guard_from_proto(explicit_null).unwrap(),
             CeremonyDesignExitGuard::OutputField(guard)
                 if guard.expected() == &serde_json::Value::Null
+        ));
+    }
+
+    #[test]
+    fn direct_grpc_maps_concurrent_group_join_and_definition_limit() {
+        let request = pb::DesignCeremonyRequest {
+            name: "parallel_review".to_owned(),
+            version: String::new(),
+            objective: "Review independently".to_owned(),
+            required_inputs: Vec::new(),
+            optional_inputs: Vec::new(),
+            outputs: vec!["decision".to_owned()],
+            participants: vec![
+                pb::CeremonyDesignParticipant {
+                    role_id: "A".to_owned(),
+                    capabilities: Vec::new(),
+                },
+                pb::CeremonyDesignParticipant {
+                    role_id: "B".to_owned(),
+                    capabilities: Vec::new(),
+                },
+            ],
+            stages: vec![pb::CeremonyDesignStage {
+                id: "review".to_owned(),
+                owner_role_id: String::new(),
+                instructions: String::new(),
+                handler: String::new(),
+                see_prior: None,
+                num_agents: None,
+                review_rounds: 0,
+                repeat: None,
+                group: Some(pb::CeremonyDesignGroup {
+                    execution: "concurrent".to_owned(),
+                    steps: ["A", "B"]
+                        .into_iter()
+                        .enumerate()
+                        .map(|(index, owner)| pb::CeremonyDesignGroupStep {
+                            id: format!("review_{}", index + 1),
+                            owner_role_id: owner.to_owned(),
+                            instructions: "Review".to_owned(),
+                            handler: String::new(),
+                            see_prior: None,
+                            num_agents: None,
+                            review_rounds: 0,
+                            repeat: None,
+                        })
+                        .collect(),
+                    join: Some(pb::CeremonyDesignGroupJoin {
+                        condition: "steps_completed".to_owned(),
+                        count: Some(1),
+                    }),
+                }),
+                exit_guards: Vec::new(),
+            }],
+            final_approval: None,
+            step_timeout_seconds: None,
+            max_attempts: None,
+            backoff_seconds: None,
+            max_parallel: Some(2),
+            pattern: String::new(),
+        };
+
+        let document = ceremony_design_document_from_proto(request).unwrap();
+        assert_eq!(document.max_parallel(), MaxParallel::new(2).unwrap());
+        assert!(matches!(
+            &document.stage_entries()[0],
+            CeremonyDesignStageEntry::Group(group)
+                if group.execution() == StateExecution::Concurrent
+                    && matches!(group.join(), CeremonyDesignJoin::StepsCompleted(count) if count.get() == 1)
         ));
     }
 }

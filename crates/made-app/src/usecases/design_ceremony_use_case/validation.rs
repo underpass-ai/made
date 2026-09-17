@@ -7,6 +7,7 @@ use super::{
     CeremonyDesignDocument, COMPLETED_STATE, RESERVED_ACTIONS,
 };
 use crate::usecases::CeremonyDesignExitGuard;
+use crate::usecases::CeremonyDesignStageEntry;
 
 fn invalid(reason: impl Into<String>) -> DomainError {
     DomainError::InvalidDocument {
@@ -24,7 +25,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
             "field `participants` must contain at least one participant",
         ));
     }
-    if document.stages().is_empty() {
+    if document.stage_entries().is_empty() {
         return Err(invalid("field `stages` must contain at least one stage"));
     }
     reject_duplicates(
@@ -83,6 +84,40 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
             }
         }
     }
+    for entry in document.stage_entries() {
+        let CeremonyDesignStageEntry::Group(group) = entry else {
+            continue;
+        };
+        if group.steps().is_empty() {
+            return Err(invalid(format!(
+                "group `{}` must contain at least one step",
+                group.id()
+            )));
+        }
+        for child in group.steps() {
+            let stage = child.step();
+            stage_ids.push(stage.id().as_str().to_owned());
+            if !stage.exit_guards().is_empty() {
+                return Err(invalid(format!(
+                    "group step `{}` cannot declare exit guards",
+                    stage.id()
+                )));
+            }
+            if !participant_set.contains(stage.owner_role_id().as_str()) {
+                return Err(invalid(format!(
+                    "group step `{}` names unknown owner role `{}`",
+                    stage.id(),
+                    stage.owner_role_id()
+                )));
+            }
+            if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
+                return Err(invalid(format!(
+                    "group step `{}` requests review rounds with fewer than two agents",
+                    stage.id()
+                )));
+            }
+        }
+    }
     reject_duplicates(stage_ids.iter().cloned(), "stages.id")?;
     let declared_steps = stage_ids
         .iter()
@@ -116,7 +151,20 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
             }
         }
     }
-    if stage_ids
+    let entry_ids = document
+        .stage_entries()
+        .iter()
+        .map(|entry| match entry {
+            CeremonyDesignStageEntry::Leaf(stage) => stage.id().as_str().to_owned(),
+            CeremonyDesignStageEntry::Group(group) => group.id().as_str().to_owned(),
+        })
+        .collect::<Vec<_>>();
+    reject_duplicates(entry_ids.iter().cloned(), "stages.id")?;
+    reject_duplicates(
+        entry_ids.iter().map(|id| id.to_ascii_uppercase()),
+        "stages.id after state normalization",
+    )?;
+    if entry_ids
         .iter()
         .any(|id| id.eq_ignore_ascii_case(COMPLETED_STATE))
     {
@@ -125,7 +173,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
         ));
     }
 
-    let generated_triggers = completion_guards(&stage_ids);
+    let generated_triggers = completion_guards(&entry_ids);
     let generated_exit_guards = document
         .stages()
         .iter()
@@ -157,7 +205,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
             )));
         }
         if generated_triggers.contains(&trigger)
-            || stage_ids.contains(&trigger)
+            || entry_ids.contains(&trigger)
             || RESERVED_ACTIONS.contains(&trigger.as_str())
         {
             return Err(invalid(format!(
@@ -168,10 +216,13 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
 
     for participant in document.participants() {
         let role_id = participant.role_id().as_str();
-        let owns_stage = document
-            .stages()
-            .iter()
-            .any(|stage| stage.owner_role_id().as_str() == role_id);
+        let owns_stage = document.stage_entries().iter().any(|entry| match entry {
+            CeremonyDesignStageEntry::Leaf(stage) => stage.owner_role_id().as_str() == role_id,
+            CeremonyDesignStageEntry::Group(group) => group
+                .steps()
+                .iter()
+                .any(|step| step.step().owner_role_id().as_str() == role_id),
+        });
         let owns_approval = document
             .final_approval()
             .is_some_and(|approval| approval.role_id().as_str() == role_id);

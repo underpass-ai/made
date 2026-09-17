@@ -1,5 +1,5 @@
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyState, StateId};
+use made_core::value_objects::{CeremonyState, StateExecution, StateId};
 use serde::Deserialize;
 
 #[derive(Debug, Clone, Deserialize)]
@@ -9,6 +9,8 @@ pub(super) struct CeremonyStateDocument {
     initial: bool,
     #[serde(default)]
     terminal: bool,
+    #[serde(default)]
+    execution: StateExecution,
 }
 
 impl CeremonyStateDocument {
@@ -19,12 +21,13 @@ impl CeremonyStateDocument {
             });
         }
         let id = StateId::new(self.id)?;
-        Ok(if self.initial {
+        let state = if self.initial {
             CeremonyState::initial(id)
         } else if self.terminal {
             CeremonyState::terminal(id)
         } else {
             CeremonyState::intermediate(id)
-        })
+        };
+        Ok(state.with_execution(self.execution))
     }
 }

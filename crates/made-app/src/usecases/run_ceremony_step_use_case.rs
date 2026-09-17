@@ -6,7 +6,7 @@ use made_core::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort};
-use made_core::value_objects::{StepErrorMessage, StepLease, StepResult};
+use made_core::value_objects::{MaxParallel, StepErrorMessage, StepLease, StepResult};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
@@ -20,6 +20,7 @@ pub struct RunCeremonyStepUseCase {
     stream: Arc<SessionStream>,
     handler: Arc<dyn CeremonyStepHandlerPort>,
     clock: Arc<dyn ClockPort>,
+    max_parallel_ceiling: MaxParallel,
 }
 
 impl std::fmt::Debug for RunCeremonyStepUseCase {
@@ -41,7 +42,14 @@ impl RunCeremonyStepUseCase {
             stream,
             handler,
             clock,
+            max_parallel_ceiling: MaxParallel::SERVER_MAX,
         }
+    }
+
+    #[must_use]
+    pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
+        self.max_parallel_ceiling = ceiling;
+        self
     }
 
     #[tracing::instrument(
@@ -84,6 +92,7 @@ impl RunCeremonyStepUseCase {
             step_id: input.step_id.clone(),
             lease,
             now,
+            max_parallel_ceiling: self.max_parallel_ceiling,
         });
         let claimed = self
             .stream

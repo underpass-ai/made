@@ -48,6 +48,7 @@ impl DesignedCeremonyYaml {
                 id: state.id().as_str().to_owned(),
                 initial: state.is_initial(),
                 terminal: state.is_terminal(),
+                execution: state.execution(),
             })
             .collect();
         let transitions = draft
@@ -105,6 +106,7 @@ impl DesignedCeremonyYaml {
                     backoff_seconds: first_step.retry_policy().backoff().get().div_ceil(1000),
                 },
             },
+            max_parallel: draft.max_parallel().get(),
         };
         serde_yaml::to_string(&document).map_err(|_| DomainError::InvalidDocument {
             reason: "ceremony draft could not be rendered as YAML".to_owned(),
@@ -121,6 +123,10 @@ fn guards(draft: &CeremonyDefinitionDraft) -> Result<BTreeMap<String, GuardDocum
                 GuardCondition::Always => ("automated", "always".to_owned()),
                 GuardCondition::AllStepsCompleted => {
                     ("automated", "all_steps_completed".to_owned())
+                }
+                GuardCondition::AnyStepCompleted => ("automated", "any_step_completed".to_owned()),
+                GuardCondition::StepsCompleted(count) => {
+                    ("automated", format!("steps_completed:{}", count.get()))
                 }
                 GuardCondition::StepStatus { step_id, status } => (
                     "automated",

@@ -5,7 +5,7 @@ use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RecalledEntry, RoleId,
     SessionRecollection, StepId,
 };
-use made_embedded::EmbeddedMade;
+use made_embedded::{EmbeddedCeremonyProjection, EmbeddedMade};
 use time::OffsetDateTime;
 
 use crate::protocol::ToolError;
@@ -29,7 +29,7 @@ impl EmbeddedCeremonyInstancePresenter {
         // gRPC adapter renders the same view, which is what keeps one
         // working session from looking like two depending on how a
         // client reached it.
-        let view = CeremonyInstanceView::project(instance, &definition)?;
+        let view = made.project_instance(instance, &definition)?;
         let steps = step_values(&view);
         let transitions = view
             .transitions()
@@ -57,6 +57,11 @@ impl EmbeddedCeremonyInstancePresenter {
             .map(|name| name.as_str())
             .collect::<Vec<_>>();
         let next_step_id = view.next_step_id().map(StepId::as_str);
+        let claimable_step_ids = view
+            .claimable_step_ids()
+            .iter()
+            .map(|id| id.as_str())
+            .collect::<Vec<_>>();
         let interventions = intervention_values(instance);
         let open_intervention_ids = open_intervention_ids(instance);
         let guard_deferrals = guard_deferral_values(instance);
@@ -82,6 +87,7 @@ impl EmbeddedCeremonyInstancePresenter {
             "current_state": instance.current_state().as_str(),
             "completed": view.is_completed(),
             "next_step_id": next_step_id,
+            "claimable_step_ids": claimable_step_ids,
             "waiting_for_human": waiting_for_human,
             "guard_deferrals": guard_deferrals,
             "transitions": transitions,

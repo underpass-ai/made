@@ -73,6 +73,7 @@ impl EmbeddedMade {
             self.stream.clone(),
             self.clock.clone(),
         )
+        .with_max_parallel_ceiling(self.max_parallel_ceiling)
         .execute(input)
         .await
     }
@@ -87,6 +88,7 @@ impl EmbeddedMade {
             self.step_handler.clone(),
             self.clock.clone(),
         )
+        .with_max_parallel_ceiling(self.max_parallel_ceiling)
         .execute(input)
         .await
     }

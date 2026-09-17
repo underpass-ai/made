@@ -15,6 +15,7 @@ use crate::value_objects::{
     CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
     CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
     CeremonyValidationFinding, CeremonyValidationLocus, CeremonyValidationReport, CeremonyVersion,
+    MaxParallel,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -32,6 +33,7 @@ pub struct CeremonyDefinitionDraft {
     steps: Vec<CeremonyStep>,
     guards: Vec<CeremonyGuard>,
     roles: Vec<CeremonyRole>,
+    max_parallel: MaxParallel,
 }
 
 impl CeremonyDefinitionDraft {
@@ -64,7 +66,19 @@ impl CeremonyDefinitionDraft {
             steps: steps.into_iter().collect(),
             guards: guards.into_iter().collect(),
             roles: roles.into_iter().collect(),
+            max_parallel: MaxParallel::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_max_parallel(mut self, max_parallel: MaxParallel) -> Self {
+        self.max_parallel = max_parallel;
+        self
+    }
+
+    #[must_use]
+    pub fn max_parallel(&self) -> MaxParallel {
+        self.max_parallel
     }
 
     #[must_use]
@@ -205,6 +219,7 @@ impl CeremonyDefinitionDraft {
             self.guards,
             self.roles,
         )
+        .map(|definition| definition.with_max_parallel(self.max_parallel))
     }
 }
 

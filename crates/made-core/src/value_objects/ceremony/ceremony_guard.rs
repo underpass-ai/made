@@ -37,6 +37,16 @@ impl CeremonyGuard {
             GuardCondition::AllStepsCompleted => {
                 !records.is_empty() && records.values().all(|record| record.status().is_success())
             }
+            GuardCondition::AnyStepCompleted => {
+                records.values().any(|record| record.status().is_success())
+            }
+            GuardCondition::StepsCompleted(count) => {
+                records
+                    .values()
+                    .filter(|record| record.status().is_success())
+                    .count()
+                    >= count.get() as usize
+            }
             GuardCondition::StepStatus { step_id, status } => records
                 .get(step_id)
                 .is_some_and(|record| record.status() == *status),

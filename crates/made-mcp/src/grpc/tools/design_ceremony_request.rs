@@ -33,6 +33,7 @@ pub(super) fn build_design_ceremony_request(
         step_timeout_seconds: j2p::optional_present_u64(obj, "step_timeout_seconds")?,
         max_attempts: j2p::optional_present_u32(obj, "max_attempts")?,
         backoff_seconds: j2p::optional_present_u64(obj, "backoff_seconds")?,
+        max_parallel: j2p::optional_present_u32(obj, "max_parallel")?,
         pattern: optional_pattern(obj)?,
     })
 }
@@ -64,6 +65,14 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
         .iter()
         .map(|value| {
             let stage = j2p::require_object(value, "stages[]")?;
+            if let Some(group_value) = stage.get("group") {
+                let group = j2p::require_object(group_value, "stages[].group")?;
+                return Ok(pb::CeremonyDesignStage {
+                    id: j2p::require_str(stage, "id")?.to_owned(),
+                    group: Some(group_from_json(group)?),
+                    ..pb::CeremonyDesignStage::default()
+                });
+            }
             Ok(pb::CeremonyDesignStage {
                 id: j2p::require_str(stage, "id")?.to_owned(),
                 owner_role_id: j2p::require_str(stage, "owner_role_id")?.to_owned(),
@@ -76,9 +85,48 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 review_rounds: j2p::optional_u64(stage, "review_rounds")?,
                 repeat: repeat(stage)?,
                 exit_guards: exit_guards(stage)?,
+                group: None,
             })
         })
         .collect()
+}
+
+fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup, String> {
+    let steps = array(group, "steps")?
+        .iter()
+        .map(|value| {
+            let step = j2p::require_object(value, "stages[].group.steps[]")?;
+            Ok(pb::CeremonyDesignGroupStep {
+                id: j2p::require_str(step, "id")?.to_owned(),
+                owner_role_id: j2p::require_str(step, "owner_role_id")?.to_owned(),
+                instructions: j2p::require_str(step, "instructions")?.to_owned(),
+                handler: j2p::optional_str(step, "handler")
+                    .unwrap_or_default()
+                    .to_owned(),
+                see_prior: step.get("see_prior").and_then(Value::as_bool),
+                num_agents: j2p::optional_present_u64(step, "num_agents")?,
+                review_rounds: j2p::optional_u64(step, "review_rounds")?,
+                repeat: repeat(step)?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    let join = match group.get("join") {
+        None => None,
+        Some(value) => {
+            let join = j2p::require_object(value, "stages[].group.join")?;
+            Some(pb::CeremonyDesignGroupJoin {
+                condition: j2p::require_str(join, "condition")?.to_owned(),
+                count: j2p::optional_present_u32(join, "count")?,
+            })
+        }
+    };
+    Ok(pb::CeremonyDesignGroup {
+        execution: j2p::optional_str(group, "execution")
+            .unwrap_or_default()
+            .to_owned(),
+        steps,
+        join,
+    })
 }
 
 fn exit_guards(stage: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignExitGuard>, String> {
@@ -290,5 +338,30 @@ mod tests {
 
         assert_eq!(request.pattern, "roundtable_fixed_order");
         assert!(request.stages.is_empty());
+    }
+
+    #[test]
+    fn grouped_concurrency_crosses_the_mcp_grpc_boundary_without_defaulting() {
+        let mut value = intent();
+        value["max_parallel"] = json!(2);
+        value["stages"] = json!([{
+            "id": "parallel_review",
+            "group": {
+                "execution": "concurrent",
+                "steps": [
+                    {"id": "a", "owner_role_id": "A", "instructions": "Review A"},
+                    {"id": "b", "owner_role_id": "B", "instructions": "Review B"}
+                ],
+                "join": {"condition": "steps_completed", "count": 1}
+            }
+        }]);
+
+        let request = build_design_ceremony_request(&value).unwrap();
+        let group = request.stages[0].group.as_ref().unwrap();
+        assert_eq!(request.max_parallel, Some(2));
+        assert_eq!(group.execution, "concurrent");
+        assert_eq!(group.steps.len(), 2);
+        assert_eq!(group.join.as_ref().unwrap().condition, "steps_completed");
+        assert_eq!(group.join.as_ref().unwrap().count, Some(1));
     }
 }

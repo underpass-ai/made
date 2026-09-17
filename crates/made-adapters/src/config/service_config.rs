@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{GrpcTlsConfig, MemorySelection};
+use made_core::value_objects::MaxParallel;
 
 /// Validated process configuration consumed by the deployable composition root.
 ///
@@ -20,4 +21,5 @@ pub struct ServiceConfig {
     pub ceremony_store_path: Option<String>,
     pub memory: MemorySelection,
     pub grpc_tls: GrpcTlsConfig,
+    pub max_parallel: MaxParallel,
 }

@@ -190,6 +190,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
             step_id: step("plan"),
             lease: lease("plan-1", at(1)),
             now: at(1),
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         }),
         |session| {
             session.start_step_as(
@@ -230,6 +231,7 @@ fn a_step_started_by_the_engine_names_the_definitions_seat() {
             step_id: step("plan"),
             lease: lease("plan-1", at(1)),
             now: at(1),
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         }),
         |session| session.start_step(&definition, &step("plan"), lease("plan-1", at(1)), at(1)),
     );
@@ -254,6 +256,7 @@ fn taking_over_an_expired_lease_is_the_next_attempt() {
             step_id: step("plan"),
             lease: lease("plan-2", at(7)),
             now: at(7),
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         }),
         |session| session.start_step(&definition, &step("plan"), lease("plan-2", at(7)), at(7)),
     );
@@ -829,6 +832,7 @@ fn deciding_leaves_the_session_untouched() {
             step_id: step("plan"),
             lease: lease("plan-1", at(2)),
             now: at(2),
+            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
         }),
         &definition,
     );

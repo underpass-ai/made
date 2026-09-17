@@ -50,6 +50,23 @@ impl CeremonyDefinition {
                         self.repeat_requirement_is_satisfied_or_waived(transition, step_id, records)
                     })
             }
+            GuardCondition::AnyStepCompleted => {
+                self.steps_for_state(transition.from()).any(|step| {
+                    records
+                        .get(step.id())
+                        .is_some_and(|record| record.status().is_success())
+                })
+            }
+            GuardCondition::StepsCompleted(required) => {
+                self.steps_for_state(transition.from())
+                    .filter(|step| {
+                        records
+                            .get(step.id())
+                            .is_some_and(|record| record.status().is_success())
+                    })
+                    .count()
+                    >= required.get() as usize
+            }
             _ => guard.is_satisfied(records, context),
         }
     }

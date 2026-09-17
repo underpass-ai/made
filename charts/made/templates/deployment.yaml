@@ -128,6 +128,8 @@ spec:
               value: {{ .Values.config.grpcPort | quote }}
             - name: MADE_HTTP_PORT
               value: {{ .Values.config.httpPort | quote }}
+            - name: MADE_MAX_PARALLEL
+              value: {{ .Values.config.maxParallel | quote }}
             - name: RUST_LOG
               value: {{ .Values.config.logLevel | quote }}
             {{- if .Values.messaging.nats.enabled }}

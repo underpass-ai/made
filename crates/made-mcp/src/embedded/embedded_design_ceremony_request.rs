@@ -1,8 +1,8 @@
 use made_app::usecases::{CeremonyDesignDocument, CeremonyPatternPreset, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
-    StepAttempt, StepTimeout,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxParallel,
+    OutputName, StepAttempt, StepTimeout,
 };
 use made_embedded::EmbeddedMade;
 use serde::Deserialize;
@@ -13,6 +13,7 @@ mod final_approval_intent;
 mod output_field_guard_intent;
 mod participant_intent;
 mod repeat_intent;
+mod stage_entry_intent;
 mod stage_intent;
 mod step_repeat_exhausted_guard_intent;
 
@@ -21,6 +22,7 @@ use final_approval_intent::FinalApprovalIntent;
 use output_field_guard_intent::OutputFieldGuardIntent;
 use participant_intent::ParticipantIntent;
 use repeat_intent::RepeatIntent;
+use stage_entry_intent::StageEntryIntent;
 use stage_intent::StageIntent;
 use step_repeat_exhausted_guard_intent::StepRepeatExhaustedGuardIntent;
 
@@ -47,7 +49,7 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     outputs: Vec<String>,
     participants: Vec<ParticipantIntent>,
     #[serde(default)]
-    stages: Vec<StageIntent>,
+    stages: Vec<StageEntryIntent>,
     #[serde(default)]
     pattern: Option<String>,
     #[serde(default)]
@@ -58,6 +60,8 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     max_attempts: Option<u32>,
     #[serde(default)]
     backoff_seconds: Option<u64>,
+    #[serde(default)]
+    max_parallel: Option<u8>,
 }
 
 impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
@@ -96,7 +100,7 @@ impl EmbeddedDesignCeremonyRequest {
         let stages = self
             .stages
             .into_iter()
-            .map(StageIntent::into_domain)
+            .map(StageEntryIntent::into_domain)
             .collect::<Result<Vec<_>, _>>()?;
         let final_approval = self
             .final_approval
@@ -111,7 +115,7 @@ impl EmbeddedDesignCeremonyRequest {
             names(self.optional_inputs, InputName::new)?,
             names(self.outputs, OutputName::new)?,
             participants,
-            stages,
+            Vec::new(),
             final_approval,
             self.step_timeout_seconds
                 .map(|seconds| {
@@ -121,7 +125,12 @@ impl EmbeddedDesignCeremonyRequest {
             self.max_attempts.map(StepAttempt::new).transpose()?,
             self.backoff_seconds
                 .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-        );
+        )
+        .with_stage_entries(stages)
+        .with_max_parallel(match self.max_parallel {
+            Some(value) => MaxParallel::new(value)?,
+            None => MaxParallel::default(),
+        });
         let pattern = self
             .pattern
             .map(|pattern| CeremonyPatternPreset::parse(&pattern))
@@ -144,7 +153,9 @@ mod tests {
     use super::*;
     use made_adapters::yaml::CeremonyDefinitionYaml;
     use made_core::entities::CeremonyDefinitionDraft;
-    use made_core::value_objects::{GuardCondition, GuardName, StateId, StepId};
+    use made_core::value_objects::{
+        GuardCondition, GuardName, MaxParallel, StateExecution, StateId, StepId,
+    };
     use serde_json::json;
 
     fn intent() -> Value {
@@ -292,6 +303,47 @@ mod tests {
             .into_iter()
             .collect::<BTreeSet<_>>()
         );
+    }
+
+    #[test]
+    fn embedded_designs_and_yaml_round_trips_a_concurrent_group() {
+        let mut value = intent();
+        value["max_parallel"] = json!(2);
+        value["stages"] = json!([{
+            "id": "parallel_review",
+            "group": {
+                "execution": "concurrent",
+                "steps": [
+                    {
+                        "id": "compose",
+                        "owner_role_id": "WORKER",
+                        "instructions": "Compose independently."
+                    },
+                    {
+                        "id": "review",
+                        "owner_role_id": "ARTIST",
+                        "instructions": "Review independently."
+                    }
+                ],
+                "join": {"condition": "steps_completed", "count": 1}
+            }
+        }]);
+
+        let designed = design(&value).unwrap();
+        let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed).unwrap();
+        let draft = CeremonyDefinitionYaml::parse_draft_str(&yaml).unwrap();
+
+        assert!(yaml.contains("max_parallel: 2"), "{yaml}");
+        assert!(yaml.contains("execution: concurrent"), "{yaml}");
+        assert!(yaml.contains("steps_completed:1"), "{yaml}");
+        assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
+        assert!(draft.states().iter().any(|state| {
+            state.id() == &StateId::new("PARALLEL_REVIEW").unwrap()
+                && state.execution() == StateExecution::Concurrent
+        }));
+        assert!(draft.guards().iter().any(|guard| {
+            matches!(guard.condition(), GuardCondition::StepsCompleted(count) if count.get() == 1)
+        }));
     }
 
     #[test]

@@ -108,6 +108,7 @@ mod tests {
             ceremony_store_path: path,
             memory,
             grpc_tls: GrpcTlsConfig::Disabled,
+            max_parallel: made_core::value_objects::MaxParallel::SERVER_MAX,
         }
     }
 

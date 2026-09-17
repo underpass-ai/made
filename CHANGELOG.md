@@ -56,6 +56,12 @@ creates the immutable tagged sections.
 
 ### Added
 
+- Ceremony definitions can declare concurrent states with `all`, `any`, or
+  counted joins and a definition-level `max_parallel` limit. Live reads expose
+  every currently claimable step while preserving `next_step_id`; aggregate
+  claims and transitions apply the same clock, retry, lease, and host-ceiling
+  rules across direct gRPC, both MCP backends, and the embedded facade. (#122)
+
 - `made_design_ceremony` accepts the typed `roundtable_fixed_order` preset on
   the proto, both MCP backends, and the embedded facade. It expands participants
   in declaration order into sequential speaking turns, gives prior context to

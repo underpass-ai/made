@@ -2,10 +2,10 @@ use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::value_objects::{
     Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
-    GuardName, IdempotencyKey, LeaseOwnerId, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId,
-    StateId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
-    StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus,
-    TransitionTrigger,
+    GuardName, IdempotencyKey, LeaseOwnerId, MaxParallel, RepeatUntilCondition, RetryPolicy,
+    RoleAction, RoleId, StateExecution, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepId, StepIteration, StepLease, StepOutput, StepOutputField,
+    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, TransitionTrigger,
 };
 use serde_json::json;
 use time::{Duration, OffsetDateTime};
@@ -47,6 +47,64 @@ fn exhausted_repeat_exposes_the_only_remaining_human_guard() {
         view.waiting_for_human(),
         &[&GuardName::new("human_approved").unwrap()]
     );
+}
+
+#[test]
+fn projection_and_decision_share_the_live_lease_barrier_and_expiry_clock() {
+    let definition = concurrent_definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = CeremonyInstance::start(
+        CeremonyId::new("projection-session").unwrap(),
+        &definition,
+        CeremonyContext::empty(),
+        now,
+    )
+    .unwrap();
+    instance
+        .start_step(&definition, &StepId::new("a").unwrap(), lease(10, now), now)
+        .unwrap();
+    instance
+        .start_step(&definition, &StepId::new("b").unwrap(), lease(11, now), now)
+        .unwrap();
+    instance
+        .apply_step_result(
+            &definition,
+            &StepId::new("a").unwrap(),
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            now,
+        )
+        .unwrap();
+
+    let live = CeremonyInstanceView::project_at(
+        &instance,
+        &definition,
+        now + Duration::seconds(30),
+        MaxParallel::SERVER_MAX,
+    )
+    .unwrap();
+    assert!(!live.transitions()[0].is_enabled());
+    assert!(live.waiting_for_human().is_empty());
+    assert!(instance
+        .apply_transition(
+            &definition,
+            &TransitionTrigger::new("finish").unwrap(),
+            now + Duration::seconds(30),
+        )
+        .is_err());
+
+    let expired = CeremonyInstanceView::project_at(
+        &instance,
+        &definition,
+        now + Duration::seconds(60),
+        MaxParallel::SERVER_MAX,
+    )
+    .unwrap();
+    assert!(!expired.transitions()[0].is_enabled());
+    assert_eq!(
+        expired.waiting_for_human(),
+        &[&GuardName::new("human_approved").unwrap()]
+    );
+    assert_eq!(expired.claimable_step_ids(), &[&StepId::new("b").unwrap()]);
 }
 
 fn definition() -> CeremonyDefinition {
@@ -118,6 +176,61 @@ fn definition() -> CeremonyDefinition {
         vec![role],
     )
     .unwrap()
+}
+
+fn concurrent_definition() -> CeremonyDefinition {
+    let work = StateId::new("WORK").unwrap();
+    let done = StateId::new("DONE").unwrap();
+    let trigger = TransitionTrigger::new("finish").unwrap();
+    let join = CeremonyGuard::new(
+        GuardName::new("one_done").unwrap(),
+        GuardCondition::AnyStepCompleted,
+    );
+    let human = CeremonyGuard::new(
+        GuardName::new("human_approved").unwrap(),
+        GuardCondition::HumanApproval,
+    );
+    let mut steps = Vec::new();
+    let mut roles = Vec::new();
+    for id in ["a", "b"] {
+        let step_id = StepId::new(id).unwrap();
+        steps.push(CeremonyStep::new(
+            step_id.clone(),
+            work.clone(),
+            StepHandlerKind::new("host_callback").unwrap(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+            None,
+        ));
+        let mut actions = vec![RoleAction::step(step_id)];
+        if id == "a" {
+            actions.push(RoleAction::transition(trigger.clone()));
+        }
+        roles.push(CeremonyRole::new(RoleId::new(format!("role_{id}")).unwrap(), actions).unwrap());
+    }
+    CeremonyDefinition::new(
+        CeremonyName::new("concurrent_projection").unwrap(),
+        CeremonyVersion::v1(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(work.clone()).with_execution(StateExecution::Concurrent),
+            CeremonyState::terminal(done.clone()),
+        ],
+        vec![CeremonyTransition::new(
+            work,
+            done,
+            trigger,
+            vec![join.name().clone(), human.name().clone()],
+        )
+        .unwrap()],
+        steps,
+        vec![join, human],
+        roles,
+    )
+    .unwrap()
+    .with_max_parallel(MaxParallel::new(2).unwrap())
 }
 
 fn lease(iteration: i64, now: OffsetDateTime) -> StepLease {

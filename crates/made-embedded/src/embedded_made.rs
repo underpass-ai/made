@@ -19,8 +19,8 @@ use made_core::ports::{
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
     MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, StatisticsPort,
 };
-use made_core::value_objects::CeremonyEventPageLimit;
 use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
@@ -43,7 +43,8 @@ pub struct EmbeddedMade {
     stream: Arc<SessionStream>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
-    clock: Arc<dyn ClockPort>,
+    pub(crate) clock: Arc<dyn ClockPort>,
+    pub(crate) max_parallel_ceiling: MaxParallel,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
     metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
     /// The operational counters this engine keeps.
@@ -160,6 +161,7 @@ impl EmbeddedMade {
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
+        max_parallel_ceiling: MaxParallel,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
         statistics: Arc<dyn StatisticsPort>,
@@ -209,6 +211,7 @@ impl EmbeddedMade {
             step_handler,
             evidence_source,
             clock,
+            max_parallel_ceiling,
             metrics_recorder,
             metrics_snapshot,
             statistics,

@@ -81,12 +81,13 @@ pub use ceremony::{
     CeremonyState, CeremonyStateKind, CeremonyStep, CeremonyStepContribution, CeremonyTranscript,
     CeremonyTransition, CeremonyTransitionRecord, CeremonyValidationFinding,
     CeremonyValidationLocus, CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion,
-    GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement, LeaseOwnerId,
-    OutputFieldGuardCondition, OutputName, PriorContext, ReasonAsserter, RepeatUntilCondition,
-    RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord,
-    StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration, StepLease,
-    StepOutput, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult,
-    StepStatus, StepTimeout, TransitionTrigger,
+    GuardCondition, GuardName, IdempotencyKey, InputName, InputRequirement, JoinStepCount,
+    LeaseOwnerId, MaxParallel, OutputFieldGuardCondition, OutputName, PriorContext, ReasonAsserter,
+    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateExecution, StateId, StepAttempt,
+    StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId,
+    StepInstructions, StepIteration, StepLease, StepOutput, StepOutputField,
+    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, StepTimeout,
+    TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;

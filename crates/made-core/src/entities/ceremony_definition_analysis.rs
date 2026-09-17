@@ -12,8 +12,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyGuard, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationFinding, CeremonyValidationLocus, GuardCondition, GuardName, RoleId, StateId,
-    StepId,
+    CeremonyValidationFinding, CeremonyValidationLocus, GuardCondition, GuardName, RoleAction,
+    RoleId, StateExecution, StateId, StepId,
 };
 
 /// The assembled parts of a ceremony state machine, borrowed for
@@ -37,6 +37,7 @@ impl CeremonyDefinitionParts<'_> {
         self.collect_step_findings(findings);
         self.collect_guard_findings(findings);
         self.collect_role_findings(findings);
+        self.collect_concurrent_state_findings(findings);
         self.collect_reachability_findings(findings);
     }
 
@@ -219,6 +220,114 @@ impl CeremonyDefinitionParts<'_> {
                 }
             }
         }
+    }
+
+    fn collect_concurrent_state_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
+        for state in self
+            .states
+            .values()
+            .filter(|state| state.execution() == StateExecution::Concurrent)
+        {
+            let steps = self
+                .steps
+                .values()
+                .filter(|step| step.state_id() == state.id())
+                .collect::<Vec<_>>();
+            let mut owners = BTreeSet::new();
+            let mut duplicate_owner = false;
+            for step in &steps {
+                let owner = self
+                    .roles
+                    .values()
+                    .find(|role| role.allows(&RoleAction::step(step.id().clone())));
+                if let Some(owner) = owner {
+                    duplicate_owner |= !owners.insert(owner.id().clone());
+                }
+            }
+            if duplicate_owner {
+                findings.push(CeremonyValidationFinding::error(
+                    CeremonyValidationLocus::state(state.id().clone()),
+                    DomainError::InvariantViolated {
+                        reason: "concurrent ceremony steps must have distinct role owners",
+                    },
+                ));
+            }
+            if owners.len() > 3 {
+                findings.push(CeremonyValidationFinding::warning(
+                    CeremonyValidationLocus::state(state.id().clone()),
+                    DomainError::InvariantViolated {
+                        reason: "concurrent ceremony state has more than three role owners",
+                    },
+                ));
+            }
+            let outgoing = self
+                .transitions
+                .iter()
+                .filter(|transition| transition.from() == state.id())
+                .collect::<Vec<_>>();
+            if !outgoing
+                .iter()
+                .any(|transition| self.transition_has_join(transition, &steps))
+            {
+                findings.push(CeremonyValidationFinding::error(
+                    CeremonyValidationLocus::state(state.id().clone()),
+                    DomainError::InvariantViolated {
+                        reason: "concurrent ceremony state requires an outgoing join guard",
+                    },
+                ));
+            }
+            for transition in outgoing {
+                for guard_name in transition.required_guards() {
+                    let Some(guard) = self.guards.get(guard_name) else {
+                        continue;
+                    };
+                    if let GuardCondition::StepsCompleted(count) = guard.condition() {
+                        if count.get() as usize > steps.len() {
+                            findings.push(CeremonyValidationFinding::error(
+                                CeremonyValidationLocus::guard(guard_name.clone()),
+                                DomainError::OutOfRange {
+                                    field: "join_step_count",
+                                    value: f64::from(count.get()),
+                                    min: 1.0,
+                                    max: steps.len() as f64,
+                                },
+                            ));
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn transition_has_join(
+        &self,
+        transition: &CeremonyTransition,
+        steps: &[&CeremonyStep],
+    ) -> bool {
+        let required = transition
+            .required_guards()
+            .iter()
+            .filter_map(|name| self.guards.get(name))
+            .collect::<Vec<_>>();
+        if required.iter().any(|guard| {
+            matches!(
+                guard.condition(),
+                GuardCondition::AllStepsCompleted
+                    | GuardCondition::AnyStepCompleted
+                    | GuardCondition::StepsCompleted(_)
+            )
+        }) {
+            return true;
+        }
+        steps.iter().all(|step| {
+            required.iter().any(|guard| {
+                matches!(
+                    guard.condition(),
+                    GuardCondition::StepStatus { step_id, status }
+                        if step_id == step.id() && status.is_success()
+                )
+            })
+        })
     }
 
     /// Reachability defects are reported as warnings.

@@ -1,17 +1,23 @@
 use serde::{Deserialize, Serialize};
 
-use super::{CeremonyStateKind, StateId};
+use super::{CeremonyStateKind, StateExecution, StateId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyState {
     id: StateId,
     kind: CeremonyStateKind,
+    #[serde(default, skip_serializing_if = "StateExecution::is_sequential")]
+    execution: StateExecution,
 }
 
 impl CeremonyState {
     #[must_use]
     pub fn new(id: StateId, kind: CeremonyStateKind) -> Self {
-        Self { id, kind }
+        Self {
+            id,
+            kind,
+            execution: StateExecution::Sequential,
+        }
     }
 
     #[must_use]
@@ -37,6 +43,17 @@ impl CeremonyState {
     #[must_use]
     pub fn kind(&self) -> CeremonyStateKind {
         self.kind
+    }
+
+    #[must_use]
+    pub fn with_execution(mut self, execution: StateExecution) -> Self {
+        self.execution = execution;
+        self
+    }
+
+    #[must_use]
+    pub fn execution(&self) -> StateExecution {
+        self.execution
     }
 
     #[must_use]

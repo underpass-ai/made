@@ -8,6 +8,7 @@ use figment::{
     Figment,
 };
 use made_core::error::DomainError;
+use made_core::value_objects::MaxParallel;
 use tracing::debug;
 
 mod defaults;
@@ -35,6 +36,7 @@ use defaults::Defaults;
 /// | `MADE_POSTGRES_URL`            | (unset)               |
 /// | `MADE_CEREMONY_STORE_PATH`     | (unset)               |
 /// | `MADE_MEMORY`                  | automatic             |
+/// | `MADE_MAX_PARALLEL`            | `8`                   |
 /// | `MADE_GRPC_TLS_MODE`           | `none`                |
 /// | `MADE_GRPC_TLS_CERT_PATH`      | (unset)               |
 /// | `MADE_GRPC_TLS_KEY_PATH`       | (unset)               |
@@ -96,6 +98,7 @@ impl EnvConfiguration {
             ceremony_store_path,
             memory,
             grpc_tls,
+            max_parallel: MaxParallel::new(loaded.max_parallel)?,
         })
     }
 }
@@ -194,6 +197,28 @@ mod tests {
         assert_eq!(cfg.trigger_subject, "made.trigger.>");
         assert_eq!(cfg.publish_prefix, "made");
         assert_eq!(cfg.memory, MemorySelection::Automatic);
+        assert_eq!(cfg.max_parallel, MaxParallel::SERVER_MAX);
+    }
+
+    #[tokio::test]
+    async fn max_parallel_accepts_one_through_eight_and_rejects_outside_range() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+        std::env::set_var("MADE_MAX_PARALLEL", "1");
+        assert_eq!(
+            EnvConfiguration::new().load().unwrap().max_parallel.get(),
+            1
+        );
+        std::env::set_var("MADE_MAX_PARALLEL", "8");
+        assert_eq!(
+            EnvConfiguration::new().load().unwrap().max_parallel.get(),
+            8
+        );
+        std::env::set_var("MADE_MAX_PARALLEL", "0");
+        assert!(EnvConfiguration::new().load().is_err());
+        std::env::set_var("MADE_MAX_PARALLEL", "9");
+        assert!(EnvConfiguration::new().load().is_err());
+        clear_env();
     }
 
     #[tokio::test]

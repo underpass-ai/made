@@ -1,0 +1,45 @@
+{
+  "name": "parallel_review",
+  "version": "1.0",
+  "description": null,
+  "inputs": {},
+  "outputs": {},
+  "states": {
+    "done": { "id": "done", "kind": "terminal" },
+    "work": { "id": "work", "kind": "initial" }
+  },
+  "transitions": [
+    {
+      "from": "work",
+      "to": "done",
+      "trigger": "finish",
+      "required_guards": ["all_done"]
+    }
+  ],
+  "steps": {
+    "a": {
+      "id": "a",
+      "state_id": "work",
+      "handler_kind": "host_callback",
+      "handler_config": {},
+      "retry_policy": { "max_attempts": 3, "backoff": 0 },
+      "timeout": null
+    }
+  },
+  "step_order": ["a"],
+  "guards": {
+    "all_done": {
+      "name": "all_done",
+      "condition": { "kind": "all_steps_completed" }
+    }
+  },
+  "roles": {
+    "role_a": {
+      "id": "role_a",
+      "allowed_actions": [
+        { "kind": "step", "value": "a" },
+        { "kind": "transition", "value": "finish" }
+      ]
+    }
+  }
+}
