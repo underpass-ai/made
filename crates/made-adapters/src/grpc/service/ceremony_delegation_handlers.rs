@@ -44,7 +44,7 @@ impl MadeGrpcService {
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::ClaimCeremonyStepResponse {
-            instance: Some(Self::render(&claimed, &definition).map_err(domain_error_to_status)?),
+            instance: Some(self.render(&claimed, &definition).await?),
         }))
     }
 

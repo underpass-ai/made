@@ -918,6 +918,10 @@ message CeremonyInstanceState {
   // rather than fields on this one, because message presence is what
   // lets "recalled nothing" differ from "recalled an empty scope".
   CeremonyRecollectionState recollection = 19;
+  // Audit identity of the exact stream head folded into this state.
+  string trace_id = 20;
+  string correlation_id = 21;
+  string causation_id = 22;
 }
 
 // What a session was told when it opened, bounded and in order:

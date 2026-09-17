@@ -227,14 +227,12 @@ default.
 
 ## 5. Planned — not implemented
 
-Not wired today, in any edition. Named here with the slice of
+The remaining items are not wired today in any edition. Named here with the slice of
 [`orchestration-patterns-plan.md`](../orchestration-patterns-plan.md) §3.7
 that owns it, so that nothing above has to be written in the future tense.
 
 | What an operator would get | Slice |
 |---|---|
-| Ceremony metrics and one JSON log line per ceremony event from a single subscriber seam, so the step-at-a-time path is observable too, plus the families it needs (step claimed, attempt, iteration, guard decided, intervention opened/answered, transition applied, lease acquired/expired) | G1 |
-| `trace_id`, `correlation_id` and `causation_id` on every sealed record, so a journal record links to the trace that wrote it | G2 |
 | OTLP export from `made-mcp` with the same `MADE_OTLP_*` variables the server uses; the in-process registry on the `made_get_metrics` answer; a JSON-lines file sink at a host-chosen path; `made_app=info` in the default filter | G3 |
 | A span per ceremony step and per step handler, and spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts | G4 |
 | Ceremony progress as a live stream — `StreamCeremony` on the cluster, a pull cursor on the embedded edition | G6 |

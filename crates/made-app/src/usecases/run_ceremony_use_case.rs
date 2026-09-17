@@ -16,18 +16,12 @@ use made_core::value_objects::{
     AuditActor, CeremonyOutcome, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId,
     RoleId, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
-use time::OffsetDateTime;
 
 use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
 
-/// Whole-millisecond duration between two clock readings, saturating at
-/// zero so a non-monotonic clock can never produce a negative latency.
-fn ms_since(start: OffsetDateTime, end: OffsetDateTime) -> DurationMs {
-    DurationMs::from_millis(u64::try_from((end - start).whole_milliseconds()).unwrap_or(0))
-}
-
+/// Drives a declarative ceremony through its steps and transitions.
 pub struct RunCeremonyUseCase {
     definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
     stream: Arc<SessionStream>,
@@ -59,9 +53,8 @@ impl RunCeremonyUseCase {
         }
     }
 
-    /// Attach a metrics recorder so ceremony outcomes, durations and step
-    /// status are counted. The composition root wires the real recorder;
-    /// the default no-op keeps tests and bespoke uses free of one.
+    /// Count driver refusals and blocked transitions that produce no event.
+    /// Event subscribers record committed outcomes, durations and step status.
     #[must_use]
     pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = metrics;
@@ -125,12 +118,6 @@ impl RunCeremonyUseCase {
         let mut step_traces = Vec::new();
         for _ in 0..max_iterations {
             if session.instance.is_completed(&definition) {
-                self.metrics.observe_ceremony_duration(
-                    &ceremony_name,
-                    ms_since(started_at, self.clock.now()),
-                );
-                self.metrics
-                    .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::Completed);
                 return Ok(RunCeremonyOutput::new(
                     definition,
                     session.instance,
@@ -159,7 +146,6 @@ impl RunCeremonyUseCase {
                     let transcript = ceremony_transcript_projection::transcript(
                         &self.stream.records(&id).await?,
                     );
-                    let step_started = self.clock.now();
                     let (moved_on, iteration, attempt, step_result) = self
                         .run_step(
                             &definition,
@@ -174,16 +160,6 @@ impl RunCeremonyUseCase {
                         )
                         .await?;
                     session = moved_on;
-                    self.metrics.observe_ceremony_step_duration(
-                        &ceremony_name,
-                        step_id.as_str(),
-                        ms_since(step_started, self.clock.now()),
-                    );
-                    self.metrics.record_ceremony_step(
-                        &ceremony_name,
-                        step_id.as_str(),
-                        step_result.status(),
-                    );
                     step_traces.push(CeremonyStepTrace::for_iteration(
                         state_id.clone(),
                         step_id.clone(),
@@ -194,8 +170,6 @@ impl RunCeremonyUseCase {
                         step_result.output().clone(),
                     ));
                     if !step_result.is_success() {
-                        self.metrics
-                            .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::StepFailed);
                         return Err(DomainError::InvariantViolated {
                             reason: "ceremony step did not complete successfully",
                         });
@@ -214,12 +188,6 @@ impl RunCeremonyUseCase {
             }
 
             if session.instance.is_completed(&definition) {
-                self.metrics.observe_ceremony_duration(
-                    &ceremony_name,
-                    ms_since(started_at, self.clock.now()),
-                );
-                self.metrics
-                    .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::Completed);
                 return Ok(RunCeremonyOutput::new(
                     definition,
                     session.instance,

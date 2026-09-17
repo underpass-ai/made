@@ -32,9 +32,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
-
     if server.backend_name() == "grpc" {
         eprintln!(
             "made-mcp: using live gRPC backend from {GRPC_ENDPOINT_ENV} with {GRPC_TLS_MODE_ENV}={}",
@@ -52,6 +49,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     } else {
         eprintln!("made-mcp: using explicit fixture backend");
     }
+
+    if let Err(message) = server.initialize_backend().await {
+        eprintln!("made-mcp: {message}");
+        std::process::exit(2);
+    }
+
+    let stdin = io::stdin();
+    let mut stdout = io::stdout();
 
     for line in stdin.lock().lines() {
         let line = line?;

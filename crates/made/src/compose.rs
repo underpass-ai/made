@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
+use made_adapters::ceremony::{
+    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+    DeliberatingCeremonyStepHandler,
+};
 use made_adapters::clock::SystemClock;
 use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::{
@@ -211,11 +214,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
             publisher_consumer,
         )) as Arc<dyn CeremonyEventSubscriberPort>
     });
-    let subscribers = Arc::new(CeremonyEventFanout::new(
-        core::iter::once(session_memory as Arc<dyn CeremonyEventSubscriberPort>)
-            .chain(event_publisher)
-            .collect(),
-    ));
+    let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+        session_memory,
+        Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+        Arc::new(CeremonyTracingSubscriber::new()),
+        Arc::new(CeremonyStructuredLogSubscriber::new()),
+    ];
+    subscribers.extend(event_publisher);
+    let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
@@ -416,7 +422,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let get_ceremony_transcript =
         Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_events.clone()));
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
-        get_ceremony_instance.clone(),
         resolve_ceremony_definition.clone(),
         ceremony_events,
     ));

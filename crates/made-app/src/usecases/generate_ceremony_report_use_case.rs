@@ -8,10 +8,13 @@ use made_core::value_objects::CeremonyId;
 
 use super::{
     CeremonyInstanceView, CeremonyReport, CeremonyReportBinding, GenerateCeremonyReportInput,
-    GetCeremonyInstanceUseCase, ReadWholeCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
+    ReadWholeCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
 };
+use crate::services::SessionStream;
 
 mod ceremony_report_markdown;
+#[cfg(test)]
+mod report_cut_store;
 
 use ceremony_report_markdown::{render_markdown, ReportedSession};
 
@@ -27,7 +30,6 @@ use ceremony_report_markdown::{render_markdown, ReportedSession};
 /// Composing them here rather than in an adapter is what lets both
 /// editions answer with the same document (parity slice F3c).
 pub struct GenerateCeremonyReportUseCase {
-    instances: Arc<GetCeremonyInstanceUseCase>,
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     events: Arc<dyn CeremonyEventStorePort>,
 }
@@ -43,12 +45,10 @@ impl fmt::Debug for GenerateCeremonyReportUseCase {
 impl GenerateCeremonyReportUseCase {
     #[must_use]
     pub fn new(
-        instances: Arc<GetCeremonyInstanceUseCase>,
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         events: Arc<dyn CeremonyEventStorePort>,
     ) -> Self {
         Self {
-            instances,
             definitions,
             events,
         }
@@ -117,15 +117,16 @@ impl GenerateCeremonyReportUseCase {
 
     /// One session, with everything the report quotes of it.
     async fn load(&self, ceremony_id: &CeremonyId) -> Result<ReportedSession, DomainError> {
-        let instance = self.instances.execute(ceremony_id).await?;
-        let definition = self.definitions.execute(&instance).await?;
-        let completed = CeremonyInstanceView::project(&instance, &definition)?.is_completed();
-        let digest = definition.digest()?;
-        // The whole stream, from the first record: a journal that
-        // starts in the middle is not one a reader can verify.
+        // One bounded stream read defines the report cut. Both the fold and
+        // audit journal below use these exact records, so an append racing the
+        // report can only fall wholly before or wholly after this projection.
         let journal = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
             .execute(ceremony_id)
             .await?;
+        let instance = SessionStream::fold_records(&journal)?.instance;
+        let definition = self.definitions.execute(&instance).await?;
+        let completed = CeremonyInstanceView::project(&instance, &definition)?.is_completed();
+        let digest = definition.digest()?;
         Ok(ReportedSession {
             definition,
             instance,
@@ -141,9 +142,10 @@ mod tests {
     use std::collections::BTreeMap;
 
     use made_core::entities::CeremonyInstance;
-    use made_core::ports::CeremonySnapshotStorePort;
+    use made_core::entities::{AuditFact, CeremonyEvent};
+    use made_core::ports::{CeremonyEventStorePort, CeremonySnapshotStorePort};
     use made_core::value_objects::{
-        Attributes, AuditActorKind, CeremonyContext, StepOutput, StepResult,
+        Attributes, AuditActorKind, CeremonyContext, EventId, StepOutput, StepResult, StreamVersion,
     };
 
     use super::*;
@@ -153,6 +155,7 @@ mod tests {
         StepHandlerFake,
     };
     use crate::usecases::{ReportTitle, RunCeremonyInput, RunCeremonyUseCase};
+    use report_cut_store::ReportCutStore;
 
     struct Fixture {
         usecase: GenerateCeremonyReportUseCase,
@@ -175,11 +178,7 @@ mod tests {
         store.save(&other).await.unwrap();
 
         Fixture {
-            usecase: GenerateCeremonyReportUseCase::new(
-                Arc::new(GetCeremonyInstanceUseCase::new(stream(store.clone()))),
-                definition_resolver(definitions),
-                store,
-            ),
+            usecase: GenerateCeremonyReportUseCase::new(definition_resolver(definitions), store),
         }
     }
 
@@ -250,6 +249,67 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn an_append_during_generation_is_wholly_after_the_report_cut() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let inner = Arc::new(EventStoreFake::default());
+        let instance = started_instance(&definition);
+        inner.save(&instance).await.unwrap();
+        let store = Arc::new(ReportCutStore::new(inner.clone()));
+        let usecase = Arc::new(GenerateCeremonyReportUseCase::new(
+            definition_resolver(definitions),
+            store.clone(),
+        ));
+
+        let report = tokio::spawn({
+            let usecase = usecase.clone();
+            async move {
+                usecase
+                    .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None))
+                    .await
+            }
+        });
+        store.wait_until_captured().await;
+
+        let head = inner.records(&ceremony_id()).await.pop().unwrap();
+        let completion = AuditFact {
+            event_id: EventId::new("concurrent-completion").unwrap(),
+            event: CeremonyEvent::CeremonyCompleted(
+                made_core::entities::ceremony_events::CeremonyCompleted {
+                    final_state: instance.current_state().clone(),
+                    completed_at: now(),
+                },
+            ),
+            ceremony_id: ceremony_id(),
+            definition_name: definition.name().clone(),
+            definition_version: definition.version().clone(),
+            occurred_at: now(),
+            actor: made_core::value_objects::AuditActor::new(
+                "concurrent-writer",
+                AuditActorKind::Service,
+                None,
+            )
+            .unwrap(),
+            correlation_id: head.correlation_id().cloned(),
+            causation_id: Some(head.event_id().clone()),
+            trace: None,
+        };
+        assert!(inner
+            .append(&ceremony_id(), StreamVersion::new(1), vec![completion])
+            .await
+            .unwrap()
+            .appended_version()
+            .is_some());
+        store.release();
+
+        let report = report.await.unwrap().unwrap();
+        assert_eq!(store.read_count(), 1);
+        assert_eq!(report.incomplete_count(), 1);
+        assert!(!report.markdown().contains("concurrent-completion"));
+        assert!(!report.markdown().contains("ceremony_completed"));
+    }
+
+    #[tokio::test]
     async fn the_report_keeps_the_order_the_caller_asked_for() {
         let fixture = fixture().await;
 
@@ -314,11 +374,7 @@ mod tests {
         // Every cached fold, gone. The stream is the whole of what is
         // left, and the report is asked the same question.
         store.forget(&ceremony_id()).await.unwrap();
-        let usecase = GenerateCeremonyReportUseCase::new(
-            Arc::new(GetCeremonyInstanceUseCase::new(stream(store.clone()))),
-            definition_resolver(definitions),
-            store,
-        );
+        let usecase = GenerateCeremonyReportUseCase::new(definition_resolver(definitions), store);
 
         let report = usecase
             .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None))

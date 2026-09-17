@@ -7,7 +7,7 @@
 use std::io::Write;
 use std::process::{Command, Stdio};
 
-use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, MCP_BACKEND_ENV};
+use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
 const CEREMONY_YAML: &str = r#"
@@ -34,6 +34,50 @@ roles:
       - request_intervention
       - respond_to_intervention
 "#;
+
+#[test]
+fn an_event_sink_recovers_pending_records_before_reading_stdio() {
+    let state = tempfile::tempdir().unwrap();
+    let store = state.path().join("ceremonies.sqlite3");
+    let sink = state.path().join("ceremony-events.jsonl");
+
+    let first = run_made_mcp_process(
+        &store,
+        &[tool_call(
+            1,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": "pending-publication",
+                "definition_yaml": CEREMONY_YAML,
+                "actor_id": "restart-smoke",
+                "actor_kind": "service"
+            }),
+        )],
+    );
+    assert_ne!(first[0]["result"]["isError"], Value::Bool(true));
+    assert!(
+        !sink.exists(),
+        "the first process had no transport and cannot have acknowledged delivery"
+    );
+
+    let recovered = run_made_mcp_process_with_event_sink(&store, &sink, &[]);
+    assert!(
+        recovered.is_empty(),
+        "the recovery process received no calls"
+    );
+    let lines = std::fs::read_to_string(&sink).unwrap();
+    let records = lines.lines().collect::<Vec<_>>();
+    assert_eq!(records.len(), 1, "startup must drain the pending event");
+    let record: Value = serde_json::from_str(records[0]).unwrap();
+    assert_eq!(record["global_position"], 1);
+    assert_eq!(record["ceremony_id"], "pending-publication");
+    assert_eq!(record["event_type"], "ceremony_instance_started");
+
+    // The cursor was acknowledged by recovery. Reopening again is a no-op,
+    // rather than duplicate delivery of the same at-least-once attempt.
+    run_made_mcp_process_with_event_sink(&store, &sink, &[]);
+    assert_eq!(std::fs::read_to_string(&sink).unwrap().lines().count(), 1);
+}
 
 #[test]
 fn a_decision_is_recalled_by_the_next_made_mcp_process() {
@@ -408,9 +452,31 @@ fn tool_call(id: u64, tool: &str, arguments: &Value) -> Value {
 }
 
 fn run_made_mcp_process(path: &std::path::Path, requests: &[Value]) -> Vec<Value> {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+    run_made_mcp_process_with_optional_event_sink(path, None, requests)
+}
+
+fn run_made_mcp_process_with_event_sink(
+    path: &std::path::Path,
+    sink: &std::path::Path,
+    requests: &[Value],
+) -> Vec<Value> {
+    run_made_mcp_process_with_optional_event_sink(path, Some(sink), requests)
+}
+
+fn run_made_mcp_process_with_optional_event_sink(
+    path: &std::path::Path,
+    sink: Option<&std::path::Path>,
+    requests: &[Value],
+) -> Vec<Value> {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_made-mcp"));
+    command
         .env(MCP_BACKEND_ENV, "embedded")
         .env(EMBEDDED_STORE_PATH_ENV, path)
+        .env_remove(EVENT_SINK_PATH_ENV);
+    if let Some(sink) = sink {
+        command.env(EVENT_SINK_PATH_ENV, sink);
+    }
+    let mut child = command
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())

@@ -67,6 +67,15 @@ pub struct PrometheusMetricsRecorder {
     ceremony_step_duration_seconds: HistogramVec,
     ceremony_step_total: IntCounterVec,
     ceremony_transition_blocked_total: IntCounterVec,
+    ceremony_step_claimed_total: IntCounterVec,
+    ceremony_step_attempt_total: IntCounterVec,
+    ceremony_step_iteration_total: IntCounterVec,
+    ceremony_guard_decided_total: IntCounterVec,
+    ceremony_intervention_opened_total: IntCounterVec,
+    ceremony_intervention_answered_total: IntCounterVec,
+    ceremony_transition_applied_total: IntCounterVec,
+    ceremony_lease_acquired_total: IntCounterVec,
+    ceremony_lease_expired_total: IntCounterVec,
     nats_publish_duration_seconds: HistogramVec,
     nats_publish_errors_total: IntCounterVec,
     postgres_pool_in_use: IntGauge,
@@ -195,6 +204,60 @@ impl PrometheusMetricsRecorder {
             "Ceremony states from which no transition was satisfiable — a deadlock or missing event.",
             &["ceremony", "from_state"],
         )?;
+        let ceremony_step_claimed_total = register_counter(
+            &registry,
+            "made_ceremony_step_claimed_total",
+            "Ceremony step claims sealed by the event stream.",
+            &["ceremony", "step"],
+        )?;
+        let ceremony_step_attempt_total = register_counter(
+            &registry,
+            "made_ceremony_step_attempt_total",
+            "Ceremony step claims partitioned by assigned attempt.",
+            &["ceremony", "step", "attempt"],
+        )?;
+        let ceremony_step_iteration_total = register_counter(
+            &registry,
+            "made_ceremony_step_iteration_total",
+            "Ceremony step claims partitioned by semantic iteration.",
+            &["ceremony", "step", "iteration"],
+        )?;
+        let ceremony_guard_decided_total = register_counter(
+            &registry,
+            "made_ceremony_guard_decided_total",
+            "Human ceremony guard decisions sealed by the event stream.",
+            &["ceremony", "guard", "decision"],
+        )?;
+        let ceremony_intervention_opened_total = register_counter(
+            &registry,
+            "made_ceremony_intervention_opened_total",
+            "Dynamic ceremony interventions opened, partitioned by kind.",
+            &["ceremony", "kind"],
+        )?;
+        let ceremony_intervention_answered_total = register_counter(
+            &registry,
+            "made_ceremony_intervention_answered_total",
+            "Dynamic ceremony intervention answers sealed by the event stream.",
+            &["ceremony"],
+        )?;
+        let ceremony_transition_applied_total = register_counter(
+            &registry,
+            "made_ceremony_transition_applied_total",
+            "Ceremony transitions sealed by the event stream.",
+            &["ceremony", "from_state", "to_state"],
+        )?;
+        let ceremony_lease_acquired_total = register_counter(
+            &registry,
+            "made_ceremony_lease_acquired_total",
+            "Ceremony step leases acquired.",
+            &["ceremony", "step"],
+        )?;
+        let ceremony_lease_expired_total = register_counter(
+            &registry,
+            "made_ceremony_lease_expired_total",
+            "Ceremony step leases replaced after expiry.",
+            &["ceremony", "step"],
+        )?;
         let nats_publish_duration_seconds = register_histogram(
             &registry,
             "made_nats_publish_duration_seconds",
@@ -242,6 +305,15 @@ impl PrometheusMetricsRecorder {
             ceremony_step_duration_seconds,
             ceremony_step_total,
             ceremony_transition_blocked_total,
+            ceremony_step_claimed_total,
+            ceremony_step_attempt_total,
+            ceremony_step_iteration_total,
+            ceremony_guard_decided_total,
+            ceremony_intervention_opened_total,
+            ceremony_intervention_answered_total,
+            ceremony_transition_applied_total,
+            ceremony_lease_acquired_total,
+            ceremony_lease_expired_total,
             nats_publish_duration_seconds,
             nats_publish_errors_total,
             postgres_pool_in_use,
@@ -249,10 +321,8 @@ impl PrometheusMetricsRecorder {
         })
     }
 
-    /// Render every registered metric in the Prometheus text exposition
-    /// format. Returns an empty string (and logs) on the practically
-    /// impossible event that text encoding fails, so the `/metrics`
-    /// handler can never be brought down by instrumentation.
+    /// Render Prometheus text; an encoding failure logs and returns empty so
+    /// instrumentation cannot bring down the `/metrics` handler.
     #[must_use]
     pub fn render(&self) -> String {
         let metric_families = self.registry.gather();
@@ -389,6 +459,60 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
             .inc();
     }
 
+    fn record_ceremony_step_claimed(&self, ceremony: &str, step: &str) {
+        self.ceremony_step_claimed_total
+            .with_label_values(&[ceremony, step])
+            .inc();
+    }
+
+    fn record_ceremony_step_attempt(&self, ceremony: &str, step: &str, attempt: u32) {
+        self.ceremony_step_attempt_total
+            .with_label_values(&[ceremony, step, &attempt.to_string()])
+            .inc();
+    }
+
+    fn record_ceremony_step_iteration(&self, ceremony: &str, step: &str, iteration: u32) {
+        self.ceremony_step_iteration_total
+            .with_label_values(&[ceremony, step, &iteration.to_string()])
+            .inc();
+    }
+
+    fn record_ceremony_guard_decided(&self, ceremony: &str, guard: &str, decision: &str) {
+        self.ceremony_guard_decided_total
+            .with_label_values(&[ceremony, guard, decision])
+            .inc();
+    }
+
+    fn record_ceremony_intervention_opened(&self, ceremony: &str, kind: &str) {
+        self.ceremony_intervention_opened_total
+            .with_label_values(&[ceremony, kind])
+            .inc();
+    }
+
+    fn record_ceremony_intervention_answered(&self, ceremony: &str) {
+        self.ceremony_intervention_answered_total
+            .with_label_values(&[ceremony])
+            .inc();
+    }
+
+    fn record_ceremony_transition_applied(&self, ceremony: &str, from_state: &str, to_state: &str) {
+        self.ceremony_transition_applied_total
+            .with_label_values(&[ceremony, from_state, to_state])
+            .inc();
+    }
+
+    fn record_ceremony_lease_acquired(&self, ceremony: &str, step: &str) {
+        self.ceremony_lease_acquired_total
+            .with_label_values(&[ceremony, step])
+            .inc();
+    }
+
+    fn record_ceremony_lease_expired(&self, ceremony: &str, step: &str) {
+        self.ceremony_lease_expired_total
+            .with_label_values(&[ceremony, step])
+            .inc();
+    }
+
     fn observe_nats_publish(&self, subject_kind: &str, duration: DurationMs) {
         self.nats_publish_duration_seconds
             .with_label_values(&[subject_kind])
@@ -434,8 +558,7 @@ fn register_histogram(
     Ok(metric)
 }
 
-/// Define a labelled counter, register it on `registry`, and return the
-/// handle. See [`register_histogram`] for the pairing rationale.
+/// Define and register a labelled counter; see [`register_histogram`].
 fn register_counter(
     registry: &Registry,
     name: &str,
@@ -450,8 +573,7 @@ fn register_counter(
     Ok(metric)
 }
 
-/// Define a labelled gauge, register it on `registry`, and return the
-/// handle. See [`register_histogram`] for the pairing rationale.
+/// Define and register a labelled gauge; see [`register_histogram`].
 fn register_gauge(
     registry: &Registry,
     name: &str,
@@ -482,6 +604,56 @@ mod tests {
         Specialty::new("reviewer").unwrap()
     }
 
+    fn assert_ceremony_families_name_their_source_event(text: &str) {
+        for (family, source_event) in [
+            (
+                "made_ceremony_completed_total",
+                "ceremony_completed | step_failed",
+            ),
+            (
+                "made_ceremony_duration_seconds",
+                "ceremony_instance_started + ceremony_completed",
+            ),
+            (
+                "made_ceremony_step_duration_seconds",
+                "step_started + step_completed | step_failed",
+            ),
+            ("made_ceremony_step_total", "step_completed | step_failed"),
+            ("made_ceremony_step_claimed_total", "step_started"),
+            ("made_ceremony_step_attempt_total", "step_started.attempt"),
+            (
+                "made_ceremony_step_iteration_total",
+                "step_started.iteration",
+            ),
+            (
+                "made_ceremony_guard_decided_total",
+                "human_approval_recorded | human_deferral_recorded",
+            ),
+            (
+                "made_ceremony_intervention_opened_total",
+                "intervention_requested",
+            ),
+            (
+                "made_ceremony_intervention_answered_total",
+                "intervention_responded",
+            ),
+            (
+                "made_ceremony_transition_applied_total",
+                "transition_applied",
+            ),
+            ("made_ceremony_lease_acquired_total", "step_started.lease"),
+            (
+                "made_ceremony_lease_expired_total",
+                "step_started replaces an unfinished lease",
+            ),
+        ] {
+            assert!(
+                text.contains(&format!("# TYPE {family} ")),
+                "metric family {family} sourced by {source_event} was not registered"
+            );
+        }
+    }
+
     #[test]
     fn registered_families_render_their_type_metadata_once_observed() {
         let recorder = PrometheusMetricsRecorder::new().unwrap();
@@ -504,6 +676,15 @@ mod tests {
         recorder.observe_ceremony_step_duration("plan", "frame", DurationMs::from_millis(1_000));
         recorder.record_ceremony_step("plan", "frame", StepStatus::Completed);
         recorder.record_ceremony_transition_blocked("plan", "drafting");
+        recorder.record_ceremony_step_claimed("plan", "frame");
+        recorder.record_ceremony_step_attempt("plan", "frame", 1);
+        recorder.record_ceremony_step_iteration("plan", "frame", 1);
+        recorder.record_ceremony_guard_decided("plan", "reviewed", "approved");
+        recorder.record_ceremony_intervention_opened("plan", "investigation");
+        recorder.record_ceremony_intervention_answered("plan");
+        recorder.record_ceremony_transition_applied("plan", "drafting", "done");
+        recorder.record_ceremony_lease_acquired("plan", "frame");
+        recorder.record_ceremony_lease_expired("plan", "frame");
         recorder.observe_nats_publish("deliberation_completed", DurationMs::from_millis(5));
         recorder.record_nats_publish_error("deliberation_completed", "publish");
 
@@ -525,6 +706,7 @@ mod tests {
         assert!(text.contains("# TYPE made_ceremony_step_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_ceremony_step_total counter"));
         assert!(text.contains("# TYPE made_ceremony_transition_blocked_total counter"));
+        assert_ceremony_families_name_their_source_event(&text);
         assert!(text.contains("# TYPE made_nats_publish_duration_seconds histogram"));
         assert!(text.contains("# TYPE made_nats_publish_errors_total counter"));
         // The single label-less pool gauge renders even unset.

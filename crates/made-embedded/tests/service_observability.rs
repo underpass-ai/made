@@ -12,10 +12,14 @@ use std::sync::Arc;
 
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::yaml::CeremonyDefinitionYaml;
-use made_app::usecases::{RunCeremonyInput, ServiceHealth};
+use made_app::usecases::{
+    ApplyCeremonyTransitionInput, RunCeremonyInput, RunCeremonyStepInput, ServiceHealth,
+    StartCeremonyInput,
+};
 use made_core::ports::{MetricsRecorderPort, NoopMetricsRecorder};
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, LeaseOwnerId,
+    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    StepId, TransitionTrigger,
 };
 use made_embedded::{EmbeddedMade, VERSION};
 
@@ -118,6 +122,69 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
         "the step did not reach the recorder the host wired:\n{rendered}"
     );
     assert_eq!(engine.status(false).await.unwrap().recorder(), "prometheus");
+}
+
+#[tokio::test]
+async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
+    let one_shot_metrics = Arc::new(PrometheusMetricsRecorder::new().unwrap());
+    let one_shot = EmbeddedMade::builder()
+        .with_metrics(one_shot_metrics.clone())
+        .build();
+    one_shot.run(one_run("one-shot-metrics")).await.unwrap();
+
+    let step_metrics = Arc::new(PrometheusMetricsRecorder::new().unwrap());
+    let step = EmbeddedMade::builder()
+        .with_metrics(step_metrics.clone())
+        .build();
+    let definition = step
+        .mount_yaml(LINEAR_CEREMONY)
+        .await
+        .unwrap()
+        .definitions()[0]
+        .clone();
+    let ceremony_id = CeremonyId::new("step-metrics").unwrap();
+    step.start(StartCeremonyInput::new(
+        ceremony_id.clone(),
+        definition.name().clone(),
+        definition.version().clone(),
+        CeremonyContext::empty(),
+        "operator-1",
+        AuditActorKind::Service,
+    ))
+    .await
+    .unwrap();
+    step.run_step(RunCeremonyStepInput::new(
+        ceremony_id.clone(),
+        RoleId::new("SYSTEM").unwrap(),
+        AuditActorKind::Service,
+        StepId::new("work").unwrap(),
+        LeaseOwnerId::new("observability-host").unwrap(),
+        IdempotencyKey::new("step-metrics:work:1").unwrap(),
+        DurationMs::from_millis(30_000),
+    ))
+    .await
+    .unwrap();
+    step.apply_transition(ApplyCeremonyTransitionInput::new(
+        ceremony_id,
+        RoleId::new("SYSTEM").unwrap(),
+        AuditActorKind::Service,
+        TransitionTrigger::new("finish").unwrap(),
+    ))
+    .await
+    .unwrap();
+
+    assert_eq!(
+        comparable_ceremony_metrics(&one_shot_metrics.render()),
+        comparable_ceremony_metrics(&step_metrics.render())
+    );
+}
+
+fn comparable_ceremony_metrics(rendered: &str) -> Vec<&str> {
+    rendered
+        .lines()
+        .filter(|line| line.starts_with("made_ceremony_"))
+        .filter(|line| !line.contains("_bucket{") && !line.contains("_sum{"))
+        .collect()
 }
 
 /// Every family the deployable edition reports, present and zero.

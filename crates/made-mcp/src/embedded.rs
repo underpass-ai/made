@@ -33,12 +33,15 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
+use made_app::services::CeremonyTraceScope;
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::CeremonyId;
+use made_core::value_objects::{CeremonyId, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
+use crate::backend::{
+    MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
+};
 use crate::protocol::{
     tool_success_result, ToolError, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
     ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
@@ -144,6 +147,15 @@ impl EmbeddedMadeMcpBackend {
 impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     fn backend_name(&self) -> &'static str {
         EMBEDDED_BACKEND_NAME
+    }
+
+    fn initialize(&self) -> MadeMcpBackendInitializationFuture<'_> {
+        Box::pin(async {
+            self.made
+                .recover_event_publication()
+                .await
+                .map_err(|error| format!("embedded event publication recovery failed: {error}"))
+        })
     }
 
     fn supports_tool(&self, name: &str) -> bool {
@@ -407,6 +419,19 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     "embedded backend: unsupported tool `{name}`"
                 ))),
             }
+        })
+    }
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        Box::pin(async move {
+            let trace = TraceContext::parse(trace.traceparent())
+                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+            CeremonyTraceScope::run(trace, self.call_tool(name, arguments)).await
         })
     }
 }

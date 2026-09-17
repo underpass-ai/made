@@ -16,6 +16,14 @@ operator command.
 
 ### Changed
 
+- Ceremony telemetry now projects sealed records through metrics, tracing, and
+  structured-log subscribers in both editions. One-shot and step-at-a-time
+  execution produce the same ceremony metric deltas, and MCP tool calls carry
+  one trace through every record they seal. Instance reads, event reads, and
+  reports expose trace, correlation, and causation identifiers. Reports fold
+  and render one bounded stream snapshot, so a concurrent append cannot mix
+  two stream versions in one document. (#110)
+
 - Durable named ceremony-event cursors now drive explicit pull acknowledgements,
   NATS publication on `made.ceremony.<event_type>`, and the embedded JSONL sink
   selected with `MADE_MCP_EVENT_SINK_PATH` (#108).

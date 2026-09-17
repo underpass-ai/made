@@ -1,10 +1,12 @@
 //! gRPC service handler — thin translation from proto RPCs onto
 //! use cases in [`made_app`].
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_app::services::AutoDispatchService;
+use made_app::services::{AutoDispatchService, CeremonyTraceScope};
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CeremonyDraftView, CeremonyInstanceView,
@@ -22,7 +24,9 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort};
-use made_core::value_objects::{AgentId, CeremonyId, OutputContractId, Specialty, TaskId};
+use made_core::value_objects::{
+    AgentId, CeremonyId, OutputContractId, Specialty, TaskId, TraceContext,
+};
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
 use tonic::{Request, Response, Status};
@@ -50,7 +54,7 @@ use super::mappers::{
     StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
-use super::tracecontext::link_span_to_metadata;
+use super::tracecontext::{link_span_to_metadata, trace_context_from_metadata};
 use super::MadeGrpcServiceBuilder;
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
@@ -146,18 +150,41 @@ impl MadeGrpcService {
             .execute(instance)
             .await
             .map_err(domain_error_to_status)?;
-        Self::render(instance, &definition).map_err(domain_error_to_status)
+        self.render(instance, &definition).await
     }
 
     /// Rendering a session whose definition is already in hand. A move
     /// changes the instance and never the definition, so the mutating
     /// RPCs resolve once and render with what they resolved.
-    fn render(
+    async fn render(
+        &self,
         instance: &made_core::entities::CeremonyInstance,
         definition: &made_core::entities::CeremonyDefinition,
-    ) -> Result<pb::CeremonyInstanceState, DomainError> {
-        let view = CeremonyInstanceView::project(instance, definition)?;
-        Ok(ceremony_instance_state_from(&view))
+    ) -> Result<pb::CeremonyInstanceState, Status> {
+        let head = self
+            .get_ceremony_instance
+            .execute_with_ids(instance.id())
+            .await
+            .map_err(domain_error_to_status)?;
+        Self::render_read(&head, definition).map_err(domain_error_to_status)
+    }
+
+    fn render_read(
+        read: &made_app::usecases::CeremonyInstanceRead,
+        definition: &made_core::entities::CeremonyDefinition,
+    ) -> Result<pb::CeremonyInstanceState, made_core::error::DomainError> {
+        let view = CeremonyInstanceView::project(read.instance(), definition)?;
+        let mut state = ceremony_instance_state_from(&view);
+        read.trace_id()
+            .map_or_else(String::new, ToString::to_string)
+            .clone_into(&mut state.trace_id);
+        state.correlation_id = read
+            .correlation_id()
+            .map_or_else(String::new, ToString::to_string);
+        state.causation_id = read
+            .causation_id()
+            .map_or_else(String::new, ToString::to_string);
+        Ok(state)
     }
 
     /// Give the session the participants its steps will deliberate
@@ -211,6 +238,22 @@ impl MadeGrpcService {
 }
 
 type GrpcResult<T> = std::result::Result<Response<T>, Status>;
+
+fn run_with_ceremony_trace<'a, F>(
+    trace: Option<TraceContext>,
+    future: F,
+) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'a>>
+where
+    F: Future + Send + 'a,
+    F::Output: 'a,
+{
+    Box::pin(async move {
+        match trace {
+            Some(trace) => CeremonyTraceScope::run(trace, future).await,
+            None => future.await,
+        }
+    })
+}
 
 #[async_trait]
 impl MadeService for MadeGrpcService {
@@ -320,98 +363,112 @@ impl MadeService for MadeGrpcService {
         &self,
         request: Request<pb::RunCeremonyRequest>,
     ) -> GrpcResult<pb::RunCeremonyResponse> {
-        self.handle_run_ceremony(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_run_ceremony(request)).await
     }
 
     async fn start_ceremony(
         &self,
         request: Request<pb::StartCeremonyRequest>,
     ) -> GrpcResult<pb::StartCeremonyResponse> {
-        self.handle_start_ceremony(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_start_ceremony(request)).await
     }
 
     async fn start_published_ceremony(
         &self,
         request: Request<pb::StartPublishedCeremonyRequest>,
     ) -> GrpcResult<pb::StartPublishedCeremonyResponse> {
-        self.handle_start_published_ceremony(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_start_published_ceremony(request)).await
     }
 
     async fn run_ceremony_step(
         &self,
         request: Request<pb::RunCeremonyStepRequest>,
     ) -> GrpcResult<pb::RunCeremonyStepResponse> {
-        self.handle_run_ceremony_step(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_run_ceremony_step(request)).await
     }
 
     async fn claim_ceremony_step(
         &self,
         request: Request<pb::ClaimCeremonyStepRequest>,
     ) -> GrpcResult<pb::ClaimCeremonyStepResponse> {
-        self.handle_claim_ceremony_step(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_claim_ceremony_step(request)).await
     }
 
     async fn complete_ceremony_step(
         &self,
         request: Request<pb::CompleteCeremonyStepRequest>,
     ) -> GrpcResult<pb::CompleteCeremonyStepResponse> {
-        self.handle_complete_ceremony_step(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_complete_ceremony_step(request)).await
     }
 
     async fn apply_ceremony_transition(
         &self,
         request: Request<pb::ApplyCeremonyTransitionRequest>,
     ) -> GrpcResult<pb::ApplyCeremonyTransitionResponse> {
-        self.handle_apply_ceremony_transition(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_apply_ceremony_transition(request)).await
     }
 
     async fn approve_ceremony_guard(
         &self,
         request: Request<pb::ApproveCeremonyGuardRequest>,
     ) -> GrpcResult<pb::ApproveCeremonyGuardResponse> {
-        self.handle_approve_ceremony_guard(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_approve_ceremony_guard(request)).await
     }
 
     async fn defer_ceremony_guard(
         &self,
         request: Request<pb::DeferCeremonyGuardRequest>,
     ) -> GrpcResult<pb::DeferCeremonyGuardResponse> {
-        self.handle_defer_ceremony_guard(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_defer_ceremony_guard(request)).await
     }
 
     async fn assert_ceremony_reason(
         &self,
         request: Request<pb::AssertCeremonyReasonRequest>,
     ) -> GrpcResult<pb::AssertCeremonyReasonResponse> {
-        self.handle_assert_ceremony_reason(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_assert_ceremony_reason(request)).await
     }
 
     async fn request_ceremony_intervention(
         &self,
         request: Request<pb::RequestCeremonyInterventionRequest>,
     ) -> GrpcResult<pb::RequestCeremonyInterventionResponse> {
-        self.handle_request_ceremony_intervention(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_request_ceremony_intervention(request)).await
     }
 
     async fn respond_to_ceremony_intervention(
         &self,
         request: Request<pb::RespondToCeremonyInterventionRequest>,
     ) -> GrpcResult<pb::RespondToCeremonyInterventionResponse> {
-        self.handle_respond_to_ceremony_intervention(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_respond_to_ceremony_intervention(request)).await
     }
 
     async fn close_ceremony_intervention(
         &self,
         request: Request<pb::CloseCeremonyInterventionRequest>,
     ) -> GrpcResult<pb::CloseCeremonyInterventionResponse> {
-        self.handle_close_ceremony_intervention(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_close_ceremony_intervention(request)).await
     }
 
     async fn collect_ceremony_evidence(
         &self,
         request: Request<pb::CollectCeremonyEvidenceRequest>,
     ) -> GrpcResult<pb::CollectCeremonyEvidenceResponse> {
-        self.handle_collect_ceremony_evidence(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_collect_ceremony_evidence(request)).await
     }
 
     async fn validate_ceremony_draft(
@@ -481,7 +538,8 @@ impl MadeService for MadeGrpcService {
         &self,
         request: Request<pb::BindCeremonyParticipantsRequest>,
     ) -> GrpcResult<pb::BindCeremonyParticipantsResponse> {
-        self.handle_bind_ceremony_participants(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_bind_ceremony_participants(request)).await
     }
 
     async fn diff_ceremony_definitions(

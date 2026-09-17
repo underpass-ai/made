@@ -361,6 +361,42 @@ async fn ceremony_reports_reject_empty_duplicate_and_unknown_ids() {
 }
 
 #[tokio::test]
+async fn one_tool_call_supplies_one_trace_to_every_record_it_seals() {
+    let server = MadeMcpServer::embedded();
+    let traceparent = "00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01";
+    let call = run_ceremony_call(1, "traced-one-shot");
+    let mut params = call["params"].clone();
+    params["_meta"] = json!({ "traceparent": traceparent });
+    let response = send(&server, jsonrpc(1, "tools/call", Some(params))).await;
+    assert!(!response["result"]["isError"].as_bool().unwrap_or(false));
+
+    let page = send(
+        &server,
+        tool_call(
+            2,
+            "made_read_ceremony_events",
+            &json!({"ceremony_id": "traced-one-shot"}),
+        ),
+    )
+    .await;
+    let records = structured(&page)["records"].as_array().unwrap();
+    assert!(records.len() >= 4, "{page:#}");
+    assert!(
+        records
+            .iter()
+            .all(|record| { record["trace_id"] == json!("0af7651916cd43dd8448eb211c80319c") }),
+        "{page:#}"
+    );
+    let opening = records[0]["event_id"].clone();
+    assert!(records
+        .iter()
+        .all(|record| record["correlation_id"] == opening));
+    for pair in records.windows(2) {
+        assert_eq!(pair[1]["causation_id"], pair[0]["event_id"]);
+    }
+}
+
+#[tokio::test]
 async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
     let server = MadeMcpServer::embedded();
     let response = send(

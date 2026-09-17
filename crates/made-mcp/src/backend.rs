@@ -32,15 +32,19 @@ pub const GRPC_TLS_KEY_PATH_ENV: &str = "MADE_MCP_GRPC_TLS_KEY_PATH";
 /// cert CN/SAN, e.g. behind a kube Service).
 pub const GRPC_TLS_DOMAIN_NAME_ENV: &str = "MADE_MCP_GRPC_TLS_DOMAIN_NAME";
 
+mod made_mcp_backend_initialization_future;
 mod made_mcp_grpc_tls_config;
 mod made_mcp_grpc_tls_mode;
 mod made_mcp_tool_backend;
 mod made_mcp_tool_future;
+mod tool_trace_context;
 
+pub use made_mcp_backend_initialization_future::MadeMcpBackendInitializationFuture;
 pub use made_mcp_grpc_tls_config::MadeMcpGrpcTlsConfig;
 pub use made_mcp_grpc_tls_mode::MadeMcpGrpcTlsMode;
 pub use made_mcp_tool_backend::MadeMcpToolBackend;
 pub use made_mcp_tool_future::MadeMcpToolFuture;
+pub use tool_trace_context::ToolTraceContext;
 
 /// When TLS is enabled, automatically rewrite an `http://` endpoint to
 /// `https://` so callers can flip a single env var (the TLS knob)

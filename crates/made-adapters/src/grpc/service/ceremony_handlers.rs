@@ -61,7 +61,7 @@ impl MadeGrpcService {
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::StartCeremonyResponse {
-            instance: Some(Self::render(&instance, &definition).map_err(domain_error_to_status)?),
+            instance: Some(self.render(&instance, &definition).await?),
         }))
     }
 
@@ -89,7 +89,7 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         self.prepare_participants(&definition).await?;
         Ok(Response::new(pb::StartPublishedCeremonyResponse {
-            instance: Some(Self::render(&instance, &definition).map_err(domain_error_to_status)?),
+            instance: Some(self.render(&instance, &definition).await?),
         }))
     }
 
@@ -111,9 +111,7 @@ impl MadeGrpcService {
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::RunCeremonyStepResponse {
-            instance: Some(
-                Self::render(output.instance(), &definition).map_err(domain_error_to_status)?,
-            ),
+            instance: Some(self.render(output.instance(), &definition).await?),
         }))
     }
 
@@ -135,7 +133,7 @@ impl MadeGrpcService {
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::ApplyCeremonyTransitionResponse {
-            instance: Some(Self::render(&moved, &definition).map_err(domain_error_to_status)?),
+            instance: Some(self.render(&moved, &definition).await?),
         }))
     }
 
