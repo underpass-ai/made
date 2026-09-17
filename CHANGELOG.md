@@ -14,6 +14,12 @@ operator command.
 
 ## Unreleased
 
+### Architecture
+
+- Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
+  primitives; record their contracts and the deferred pattern work before
+  implementation (#90).
+
 ### Fixed
 
 - Require at least 80% line coverage per production crate, reject reduced
