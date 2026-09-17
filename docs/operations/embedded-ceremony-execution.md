@@ -119,9 +119,9 @@ guard.
 
 ## Observability and completion events
 
-The durable audit journal is the source for semantic ceremony history. Claim
-and completion produce the engine's step lifecycle records in the same SQLite
-unit of work as the instance snapshot. `RUST_LOG=made_mcp=debug` adds MCP
+The durable event stream is the source for semantic ceremony history. Claim
+and completion append the engine's step lifecycle records to it in one SQLite
+write transaction. `RUST_LOG=made_mcp=debug` adds MCP
 tool-call diagnostics on stderr; stdout is reserved for JSON-RPC.
 
 Use both layers deliberately:
@@ -138,8 +138,8 @@ Use both layers deliberately:
 - referenced artifacts: the actual external evidence produced by a stage.
 
 A consumer that needs a finalization notification should observe the terminal
-ceremony event from the audit/outbox contract, not infer completion from a UI
-window closing. Exporting that event to an external observer is a separate host
+ceremony event in the sealed stream, not infer completion from a UI window
+closing. Exporting that event to an external observer is a separate host
 integration; embedded SQLite remains the authoritative local record.
 
 ## Troubleshooting

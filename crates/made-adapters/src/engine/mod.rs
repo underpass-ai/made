@@ -2,9 +2,9 @@
 //!
 //! Everything the ceremony store needs from storage, and nothing SQLite
 //! needs to know about ceremonies: a handful of key-to-bytes maps, two
-//! key shapes, transactions over them. The store's logic — revision guards,
-//! outbox claiming, journal ordering — is written once against this and never
-//! names an engine type.
+//! key shapes, transactions over them. The store's logic — stream
+//! expectations, global ordering, chain sealing — is written once against
+//! this and never names an engine type.
 //!
 //! The seam is deliberately narrow. Every method corresponds to an operation
 //! the store performs: point get, insert, remove, a full ordered scan, and a
@@ -17,8 +17,8 @@
 //! Two contracts the store relies on:
 //!
 //!   * **Rows come back in ascending key order, compared byte by byte.** The
-//!     journal and the outbox key on a ceremony id, a `0x00` separator and a
-//!     big-endian ordinal precisely so byte order is write order
+//!     streams and the legacy journal key on a ceremony id, a `0x00` separator
+//!     and a big-endian ordinal precisely so byte order is write order
 //!     ([`super::sqlite::keys`]). An engine that ordered text keys by locale, or
 //!     blobs by anything but memcmp, would return a ceremony's history
 //!     shuffled.

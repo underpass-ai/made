@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyDefinitionDigestMigration,
-    CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
-    CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationReport, CeremonyVersion, GuardName, InputName, OutputName, RoleAction,
-    RoleId, StateId, StepExecutionRecord, StepId, TransitionTrigger,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
+    CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
+    CeremonyStep, CeremonyTransition, CeremonyValidationReport, CeremonyVersion, GuardName,
+    InputName, OutputName, RoleAction, RoleId, StateId, StepExecutionRecord, StepId,
+    TransitionTrigger,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -348,20 +348,6 @@ impl CeremonyDefinition {
     pub fn digest(&self) -> Result<CeremonyDefinitionDigest, DomainError> {
         let canonical = self.canonical_form()?;
         Ok(CeremonyDefinitionDigest::of_canonical_form(&canonical))
-    }
-
-    /// The verified identity transition used by the pre-rename state
-    /// importer. Both identities are derived from this exact aggregate.
-    pub fn choreographer_v1_digest_migration(
-        &self,
-    ) -> Result<CeremonyDefinitionDigestMigration, DomainError> {
-        let canonical = self.canonical_form()?;
-        Ok(CeremonyDefinitionDigestMigration::verified(
-            self.name.clone(),
-            self.version.clone(),
-            CeremonyDefinitionDigest::of_legacy_choreographer_canonical_form(&canonical),
-            CeremonyDefinitionDigest::of_canonical_form(&canonical),
-        ))
     }
 
     fn canonical_form(&self) -> Result<Vec<u8>, DomainError> {
@@ -1058,17 +1044,6 @@ mod tests {
             valid_definition().digest().unwrap(),
             valid_definition().digest().unwrap()
         );
-    }
-
-    #[test]
-    fn rename_migration_keeps_content_but_changes_the_digest_scheme() {
-        let definition = valid_definition();
-        let migration = definition.choreographer_v1_digest_migration().unwrap();
-
-        assert_eq!(migration.definition_name(), definition.name());
-        assert_eq!(migration.definition_version(), definition.version());
-        assert_eq!(migration.destination(), definition.digest().unwrap());
-        assert_ne!(migration.source(), migration.destination());
     }
 
     #[test]

@@ -32,7 +32,9 @@ impl SqliteCeremonyStore {
                 path = %path.display(),
                 count = stranded,
                 "ceremony instances from an earlier store have no event stream and are not \
-                 visible to the event-sourced engine until `made-mcp migrate-store` exists (A7)"
+                 visible to the event-sourced engine; run `made-mcp migrate-store <path>` to \
+                 import them, which copies the store, verifies every session and keeps the \
+                 original beside the new file"
             );
         }
         Ok(store)
@@ -44,9 +46,9 @@ impl SqliteCeremonyStore {
     /// Stores written before ceremonies became event streams (v0.3.0
     /// and earlier) kept an instance and a journal, not a stream. The
     /// event-sourced engine reads streams only, so those instances are
-    /// there but unreachable until the migration command imports them.
-    /// Counted at open so an operator is told, rather than finding an
-    /// empty list and a full file.
+    /// there but unreachable until `made-mcp migrate-store` imports
+    /// them. Counted at open so an operator is told, rather than
+    /// finding an empty list and a full file.
     pub fn legacy_instances_without_a_stream(&self) -> Result<usize, DomainError> {
         let tx = self.engine.begin_read()?;
         let mut stranded = 0;
@@ -92,80 +94,15 @@ fn legacy_store_error(path: &Path) -> Result<(), DomainError> {
 #[cfg(test)]
 mod tests {
     use made_app::services::SessionStream;
-    use made_core::entities::ceremony_events::CeremonyCompleted;
-    use made_core::entities::{
-        AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
-    };
     use made_core::ports::{
-        CeremonyEventStorePort, CeremonySnapshotStorePort, CeremonyUnitOfWorkPort,
-        NoopCeremonyEventSubscriber,
+        CeremonyEventStorePort, CeremonySnapshotStorePort, NoopCeremonyEventSubscriber,
     };
-    use made_core::value_objects::{
-        AuditActor, AuditActorKind, CeremonyContext, CeremonyName, CeremonyState,
-        CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId, StreamVersion,
-        TransitionTrigger,
-    };
+    use made_core::value_objects::{AuditActor, AuditActorKind, CeremonyContext, StreamVersion};
     use time::OffsetDateTime;
 
+    use super::super::legacy_store_fixture::{definition, write_legacy_instance};
     use super::*;
-
-    fn definition() -> CeremonyDefinition {
-        CeremonyDefinition::new(
-            CeremonyName::new("legacy_ceremony").unwrap(),
-            CeremonyVersion::v1(),
-            None,
-            Vec::new(),
-            Vec::new(),
-            vec![
-                CeremonyState::initial(StateId::new("OPEN").unwrap()),
-                CeremonyState::terminal(StateId::new("DONE").unwrap()),
-            ],
-            vec![CeremonyTransition::new(
-                StateId::new("OPEN").unwrap(),
-                StateId::new("DONE").unwrap(),
-                TransitionTrigger::new("finish").unwrap(),
-                Vec::new(),
-            )
-            .unwrap()],
-            Vec::new(),
-            Vec::new(),
-            Vec::new(),
-        )
-        .unwrap()
-    }
-
-    /// An instance and a journal fact, written the way v0.3.0 wrote
-    /// them: through the unit of work, into `ceremony_instances` and
-    /// `audit_journal`, with no stream.
-    async fn write_legacy_instance(store: &SqliteCeremonyStore, id: &CeremonyId) {
-        let definition = definition();
-        let instance = CeremonyInstance::start(
-            id.clone(),
-            &definition,
-            CeremonyContext::empty(),
-            OffsetDateTime::UNIX_EPOCH,
-        );
-        let fact = AuditFact {
-            event_id: EventId::new(format!("{}:legacy", id.as_str())).unwrap(),
-            event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
-                final_state: StateId::new("DONE").unwrap(),
-                completed_at: OffsetDateTime::UNIX_EPOCH,
-            }),
-            ceremony_id: id.clone(),
-            definition_name: definition.name().clone(),
-            definition_version: definition.version().clone(),
-            occurred_at: OffsetDateTime::UNIX_EPOCH,
-            actor: AuditActor::new("legacy", AuditActorKind::Engine, None).unwrap(),
-            correlation_id: None,
-            causation_id: None,
-            trace: None,
-        };
-        let commit = CeremonyCommit::new(instance, ExpectedRevision::New, [fact], []).unwrap();
-        store
-            .commit(commit)
-            .await
-            .expect("the legacy path still writes");
-    }
+    use made_core::entities::CeremonyInstance;
 
     /// An instance the old path stored is counted at open and is not a
     /// session the event-sourced path can load: no stream, no
@@ -178,7 +115,7 @@ mod tests {
         {
             let store = SqliteCeremonyStore::open(&path).unwrap();
             assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 0);
-            write_legacy_instance(&store, &id).await;
+            write_legacy_instance(&store, &id);
         }
 
         let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
@@ -229,7 +166,7 @@ mod tests {
             )
             .await
             .unwrap();
-        write_legacy_instance(&store, &CeremonyId::new("stranded-2").unwrap()).await;
+        write_legacy_instance(&store, &CeremonyId::new("stranded-2").unwrap());
 
         assert_eq!(store.legacy_instances_without_a_stream().unwrap(), 1);
         assert!(stream.load(&streamed).await.is_ok());

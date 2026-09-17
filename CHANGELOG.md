@@ -16,6 +16,47 @@ operator command.
 
 ### Added
 
+- **`made-mcp migrate-store <path>`**: the one way back into a store written
+  before a ceremony was its event stream (ADR-012). Since A4 such a store
+  opens, counts its sessions and warns about them, and those sessions are
+  invisible and refuse commands; this imports them. Copy-on-write, as ADR-008
+  did for redb: the operator's file is never opened for writing, the command
+  works on a copy — write-ahead log included — and installs it with two
+  renames only after **every** session has been read back out of it and folded
+  to exactly the snapshot that went in. A run that did not hold leaves the
+  file byte for byte; a run that did keeps the original beside the new store
+  as `<path>.pre-stream.backup`, which a later run never overwrites. Running
+  it again is a no-op that says so. The legacy `ceremony_instances` and
+  `audit_journal` tables stay as read-only provenance behind the new
+  `LegacyCeremonySnapshotSourcePort`, and the report of an imported session
+  says that what happened before the import was recorded without payloads and
+  cannot be recovered. Proved on a store `made-mcp` **v0.3.1** really wrote,
+  committed under `crates/made-tests-integration/fixtures/stores/v0.3.1/`
+  with the script that produced it: both of its sessions import, each stream
+  verifies as a chain, the definition binding and the open intervention
+  survive, and the mid-flight session takes its next claim. (#67)
+- `CeremonyEvent::InstanceImported`, the genesis event, at schema version 1
+  with its golden fixture. It carries the aggregate's own serde shape rather
+  than a copy of its fields, because the claim an import makes is fold
+  equality with the snapshot and a hand-written field list would make that
+  claim only as complete as the list. `apply` replaces the session with it;
+  `decide` never emits it; `rehydrate` opens on it and refuses it anywhere
+  else, since an import in the middle of a stream would discard everything
+  before it. `AuditEventType` gains the matching entry. (#67)
+- **`VerifyCeremonyJournal`** on all four surfaces in one change (ADR-014):
+  the RPC, `made_verify_ceremony_journal` on both MCP backends,
+  `EmbeddedMade::verify_journal`, a `parity.tsv` row with no reason, the
+  `ceremony_history` capability group, a step in the F4 session script and
+  tool docs. `AuditChain::verify` had existed since ADR-003 with no caller — a
+  chain nobody checks is a claim, not evidence — and now has one. The answer
+  names the head version, how many records were verified, whether the chain
+  holds and, when it does not, the first position that cannot be trusted and
+  why, in words written once on `AuditChainDefect`. A broken chain is an
+  answer, not an error; a session with no stream is not found. Both MCP arms
+  render through one view, so the in-process answer and the one that came back
+  over gRPC are the same keys by construction, and an integration test runs
+  the verifier itself over the records the wire handed it and compares.
+  Additive; `buf breaking` against `origin/main` is green. (#67)
 - `CeremonyEventSubscriberPort` in `made-core`: the one seam a projection hangs
   off. It is told the sealed records of one successful append, in order, each
   with its place in the global order, after the store confirmed and before the
@@ -148,6 +189,14 @@ operator command.
   `made-embedded` and `made-adapters` sources, per ADR-013.
 
 ### Changed
+
+- `SessionStream::load` folds a stream that opens with an import as well as one
+  that opens with a start, so a migrated session loads like any other.
+  `docs/embedded-made.md`, `docs/editions.md`, `docs/operations/capability-verification.md`,
+  `docs/operations/embedded-ceremony-execution.md`, `charts/made/values.yaml`,
+  ADR-006 and three crate READMEs named ports, tables and an in-memory adapter
+  that no longer exist; they name the event streams, their global order and the
+  folded snapshots instead. (#67)
 
 - **The transcript is a fold of the event stream, not a store.** Every
   `step_completed` record is one contribution — the event already carries the
@@ -430,6 +479,31 @@ operator command.
 
 ### Removed
 
+- The write paths the event stream replaced, none of which had a production
+  caller since A4: `CeremonyUnitOfWorkPort`, `CeremonyInstanceRepositoryPort`
+  and `AuditJournalPort` whole rather than method by method — what remained of
+  them was reading, and reading a pre-stream store is what
+  `LegacyCeremonySnapshotSourcePort` does — together with `CeremonyCommit`,
+  `CommitOutcome`, `ExpectedRevision`, their SQLite and in-memory adapters and
+  their three conformance suites. **This is a breaking change of the embedding
+  surface**: a host that compiled against those ports moves to
+  `CeremonyEventStorePort` and `CeremonySnapshotStorePort`, as ADR-012 said it
+  would, and it ships with a minor version bump. (#67)
+- The outbox: `OutboxPort`, `OutboxTransportPort`, the outbox value objects,
+  `PublishOutboxUseCase`, the SQLite adapter, the `outbox` table and the
+  seven-property conformance suite. Its only writer was the commit above, so
+  without it the port, the table, the use case and the suite would all have
+  described a capability nothing could exercise. ADR-012 already decided the
+  table goes away; §3.1 of the plan re-targets those seven properties at
+  cursors, which A6 adds. A store written by an earlier version keeps its
+  `outbox` rows on disk — this engine creates the table no longer and never
+  drops one. (#67)
+- The `state_migrations` table, created since ADR-003 and never written, and
+  `CeremonyInstance::migrate_definition_binding` with the pre-rename digest
+  scheme and `CeremonyDefinitionDigestMigration` it existed for, superseded by
+  ADR-011. The `commits` mode of the `store_writer` test binary goes with them;
+  `two_writers_one_store` keeps its `events` test, which proves the same claim
+  about the path that is actually taken. (#67)
 - **Breaking, embedding surface.** `CeremonyTranscriptStorePort` and its
   deprecated alias `CeremonyContextStorePort`, `NoopCeremonyTranscriptStore`,
   `InMemoryCeremonyTranscriptStore`, `EmbeddedMadeBuilder::with_transcript_store`

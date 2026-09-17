@@ -61,3 +61,7 @@ async-trait = { workspace = true }
 futures = { workspace = true }
 prost-types = { workspace = true }
 testcontainers = "0.28"
+# The migration test drives `made-mcp migrate-store` over a copy of the
+# committed v0.3.1 store: the fixture is evidence, so every run works
+# on its own copy in a directory that goes away with the test.
+tempfile = "3"

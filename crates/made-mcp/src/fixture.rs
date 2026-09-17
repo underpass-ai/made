@@ -17,6 +17,7 @@ mod ceremony_history_fixtures;
 
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, read_ceremony_events_fixture,
+    verify_ceremony_journal_fixture,
 };
 
 /// Backend that returns canned JSON for every tool. The shapes are
@@ -73,6 +74,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
                 "made_design_ceremony" => design_ceremony_fixture(),
                 "made_read_ceremony_events" => read_ceremony_events_fixture(),
+                "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
                 "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
                 "made_generate_ceremony_report" => ceremony_report_fixture(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),

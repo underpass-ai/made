@@ -1,4 +1,4 @@
-//! Request mappers for the three reads of what a session left behind.
+//! Request mappers for the four reads of what a session left behind.
 
 use made_mcp_proto::v1 as pb;
 use serde_json::Value;
@@ -23,6 +23,15 @@ pub(super) fn build_get_ceremony_transcript_request(
 ) -> Result<pb::GetCeremonyTranscriptRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::GetCeremonyTranscriptRequest {
+        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+    })
+}
+
+pub(super) fn build_verify_ceremony_journal_request(
+    args: &Value,
+) -> Result<pb::VerifyCeremonyJournalRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::VerifyCeremonyJournalRequest {
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
     })
 }
@@ -69,6 +78,19 @@ mod tests {
 
         assert_eq!(request.from_version, 7);
         assert_eq!(request.limit, 3);
+    }
+
+    #[test]
+    fn a_verification_asks_about_one_session() {
+        let request =
+            build_verify_ceremony_journal_request(&json!({ "ceremony_id": "session-1" })).unwrap();
+
+        assert_eq!(request.ceremony_id, "session-1");
+    }
+
+    #[test]
+    fn a_verification_without_an_id_is_refused() {
+        assert!(build_verify_ceremony_journal_request(&json!({})).is_err());
     }
 
     #[test]

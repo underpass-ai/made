@@ -140,9 +140,14 @@ fn event_id(
 ///   the edge: two seats can reach the same conclusion, and one seat
 ///   can say it again with a different why.
 /// - A guard decision is keyed on the guard.
+/// - An import is identified by the session, like the opening it
+///   stands in for: a session is imported once, and a second import
+///   of the same one derives the same id and is refused by the store.
 fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
     match event {
-        CeremonyEvent::CeremonyInstanceStarted(_) => "session".to_owned(),
+        CeremonyEvent::CeremonyInstanceStarted(_) | CeremonyEvent::InstanceImported(_) => {
+            "session".to_owned()
+        }
         CeremonyEvent::ParticipantsBound(bound) => {
             let seated = bound
                 .bindings

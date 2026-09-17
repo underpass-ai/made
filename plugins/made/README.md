@@ -120,6 +120,9 @@ Executable scope:
 - `made_read_ceremony_events` and `made_get_ceremony_transcript` to read what
   a session left behind: the sealed records of its event stream, digests and
   hash chain included, and the ordered contributions its steps produced;
+- `made_verify_ceremony_journal` to check that chain: whether every record is
+  sealed, positioned and linked as written, and where it stopped being
+  trustworthy if it is not;
 - `made_generate_ceremony_report` to project selected ceremony snapshots
   and their ordered audit journals into deterministic Markdown. It returns
   `persisted: false`; the host chooses whether and where to save that text;
@@ -129,10 +132,10 @@ Executable scope:
   `made_close_ceremony_intervention` for participant-created live agenda
   items controlled by the requesting role.
 
-The bundled zero-infrastructure process persists ceremony instances, published
-definitions, the audit journal and outbox in SQLite. Mounted definitions remain
-in memory. `made_get_ceremony_transcript` is folded from the same sealed stream
-`made_read_ceremony_events` hands out, so both survive a restart.
+The bundled zero-infrastructure process persists the ceremony event streams,
+their folded snapshots and published definitions in SQLite. Mounted definitions
+remain in memory. `made_get_ceremony_transcript` is folded from the same sealed
+stream `made_read_ceremony_events` hands out, so both survive a restart.
 `made_list_ceremony_instances` therefore recovers
 published-definition sessions after a process restart and marks ad-hoc sessions
 as unrehydratable instead of hiding their persisted snapshots.

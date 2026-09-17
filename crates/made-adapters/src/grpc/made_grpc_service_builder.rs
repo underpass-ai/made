@@ -13,7 +13,7 @@ use made_app::usecases::{
     ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ContractRegistryPort, MetricsRecorderPort,
@@ -51,6 +51,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
+    pub(super) verify_ceremony_journal: Option<Arc<VerifyCeremonyJournalUseCase>>,
     pub(super) get_ceremony_transcript: Option<Arc<GetCeremonyTranscriptUseCase>>,
     pub(super) generate_ceremony_report: Option<Arc<GenerateCeremonyReportUseCase>>,
     pub(super) diff_ceremony_definitions: Option<Arc<DiffCeremonyDefinitionsUseCase>>,
@@ -194,6 +195,11 @@ impl MadeGrpcServiceBuilder {
         read_ceremony_events
     );
     setter!(
+        verify_ceremony_journal,
+        VerifyCeremonyJournalUseCase,
+        verify_ceremony_journal
+    );
+    setter!(
         get_ceremony_transcript,
         GetCeremonyTranscriptUseCase,
         get_ceremony_transcript
@@ -304,6 +310,7 @@ impl MadeGrpcServiceBuilder {
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
             read_ceremony_events: required!(self, read_ceremony_events),
+            verify_ceremony_journal: required!(self, verify_ceremony_journal),
             get_ceremony_transcript: required!(self, get_ceremony_transcript),
             generate_ceremony_report: required!(self, generate_ceremony_report),
             publish_ceremony_definition: required!(self, publish_ceremony_definition),

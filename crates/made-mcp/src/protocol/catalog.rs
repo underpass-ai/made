@@ -9,7 +9,7 @@ use super::ceremony_schemas::{
     get_ceremony_transcript_schema, read_ceremony_events_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
     run_ceremony_schema, run_ceremony_step_schema, start_ceremony_schema,
-    start_published_ceremony_schema,
+    start_published_ceremony_schema, verify_ceremony_journal_schema,
 };
 use super::general_schemas::{
     agent_summary_schema, empty_object_schema, help_schema, output_contract_schema,
@@ -27,6 +27,7 @@ use super::tool_names::{
     READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
     START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 /// `tools/list` result filtered to capabilities honored by the active
@@ -416,6 +417,14 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                 "additionalProperties": false,
                 "properties": {}
             }),
+        ),
+        // Last, because the catalog is the contract's own order and
+        // this is the contract's newest RPC. Its capability group puts
+        // it beside the reads, where a reader looks for it.
+        tool_def(
+            VERIFY_CEREMONY_JOURNAL_TOOL,
+            "Verify the hash chain of a ceremony's journal: whether every record is sealed, positioned and linked as written, and where it stopped being trustworthy if it is not. Read-only. A broken chain is an answer, not an error.",
+            verify_ceremony_journal_schema(),
         ),
     ]
 }

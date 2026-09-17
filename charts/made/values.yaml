@@ -196,8 +196,9 @@ executor:
 # Postgres adapter goes through it atomically; migrations apply on
 # startup.
 persistence:
-  # Durable ceremony state: instances, their audit journal and their
-  # outbox. Off by default, and an unconfigured server says at startup
+  # Durable ceremony state: the sealed event stream of every ceremony
+  # and its folded snapshots. Off by default, and an unconfigured
+  # server says at startup
   # that step leases, idempotency keys and pending human guards will
   # not survive a restart.
   #
