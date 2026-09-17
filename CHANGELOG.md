@@ -41,8 +41,8 @@ after the final tree is approved.
   snapshot describes the process at delivery time, not an exact historical
   stream prefix (#119).
 - The final parity session fills optional fields and rotates enum variants in
-  #120. That tests-only PR is composed before these notes merge; it is not
-  described here as an already merged implementation change.
+  #120 on memory and SQLite, including sealed leases, intact journals and
+  all four result labels. The original report golden remains unchanged.
 
 ### Remaining 0.4.0 debt
 
@@ -56,6 +56,10 @@ after the final tree is approved.
   boundary and stack analysis with the verified phase 2 implementation; keep
   future pattern work and the remaining list-bound value-object debt explicit
   (#121).
+
+- Run the complete MCP parity session with filled optionals and all public
+  actor, result, reason, reference and confidence variants on memory and SQLite;
+  compare status text without hiding non-version differences. (#120)
 
 - `made_get_metrics` now returns the same in-process Prometheus registry as
   text and structured families/samples in both editions while preserving the
