@@ -62,7 +62,7 @@ impl EmbeddedMade {
     }
 
     /// Read a named global feed, optionally acknowledging prior delivery first.
-    pub async fn pull_ceremony_events(
+    pub async fn pull_events(
         &self,
         consumer: CeremonyEventConsumer,
         limit: CeremonyEventPageLimit,

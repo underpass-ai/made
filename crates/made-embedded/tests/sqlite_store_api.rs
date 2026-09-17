@@ -241,5 +241,10 @@ async fn a_session_from_an_earlier_store_without_a_stream_is_not_visible() {
         })
     ));
     assert!(engine.instances().await.unwrap().is_empty());
-    assert!(engine.audit_records(&ceremony_id).await.unwrap().is_empty());
+    assert!(matches!(
+        engine.audit_records(&ceremony_id).await,
+        Err(DomainError::NotFound {
+            what: "ceremony_instance"
+        })
+    ));
 }

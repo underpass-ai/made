@@ -72,6 +72,35 @@ channels:
       phaseChanged:
         $ref: '#/components/messages/PhaseChanged'
 
+  ceremonyEvent:
+    address: made.ceremony.{eventType}
+    parameters:
+      eventType:
+        description: The snake_case ceremony event type carried by the record.
+        enum:
+          - ceremony_definition_validated
+          - ceremony_definition_published
+          - ceremony_instance_started
+          - step_started
+          - step_completed
+          - step_failed
+          - transition_applied
+          - intervention_requested
+          - intervention_responded
+          - intervention_closed
+          - evidence_collected
+          - participants_bound
+          - reason_asserted
+          - human_approval_recorded
+          - human_deferral_recorded
+          - ceremony_completed
+          - ceremony_failed
+          - instance_imported
+          - memory_recalled
+    messages:
+      ceremonyEvent:
+        $ref: '#/components/messages/CeremonyEvent'
+
 operations:
   onTrigger:
     action: receive
@@ -103,6 +132,11 @@ operations:
     action: send
     channel:
       $ref: '#/channels/phaseChanged'
+
+  publishCeremonyEvent:
+    action: send
+    channel:
+      $ref: '#/channels/ceremonyEvent'
 
 components:
   messages:
@@ -142,7 +176,60 @@ components:
       payload:
         $ref: '#/components/schemas/PhaseChanged'
 
+    CeremonyEvent:
+      name: CeremonyEvent
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CeremonyEvent'
+
   schemas:
+    CeremonyEvent:
+      type: object
+      required:
+        - global_position
+        - event_id
+        - event_type
+        - schema_version
+        - ceremony_id
+        - definition_name
+        - definition_version
+        - sequence
+        - occurred_at
+        - actor
+        - event_schema_version
+        - event
+        - record_hash
+      properties:
+        global_position: { type: integer, minimum: 1 }
+        event_id: { type: string }
+        event_type: { type: string }
+        schema_version: { type: integer, minimum: 1 }
+        ceremony_id: { type: string }
+        definition_name: { type: string }
+        definition_version: { type: string }
+        sequence: { type: integer, minimum: 1 }
+        occurred_at: { type: string, format: date-time }
+        actor:
+          type: object
+          required: [actor_id, kind]
+          properties:
+            actor_id: { type: string }
+            kind: { type: string, enum: [human, agent, service, engine] }
+            role_id: { type: [string, 'null'] }
+        correlation_id: { type: [string, 'null'] }
+        causation_id: { type: [string, 'null'] }
+        trace_id: { type: [string, 'null'] }
+        event_schema_version: { type: integer, minimum: 1 }
+        event: { type: object, additionalProperties: true }
+        previous_record_hash:
+          type: [array, 'null']
+          items: { type: integer, minimum: 0, maximum: 255 }
+        record_hash:
+          type: array
+          minItems: 32
+          maxItems: 32
+          items: { type: integer, minimum: 0, maximum: 255 }
+
     EventEnvelope:
       type: object
       required: [event_id, emitted_at, source]

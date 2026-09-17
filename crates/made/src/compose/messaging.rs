@@ -10,10 +10,12 @@
 use std::sync::Arc;
 
 use made_adapters::config::ServiceConfig;
-use made_adapters::nats::{NatsConfig, NatsMessaging, NatsTriggerSubscriber};
+use made_adapters::nats::{
+    NatsCeremonyEventTransport, NatsConfig, NatsMessaging, NatsTriggerSubscriber,
+};
 use made_adapters::noop::NoopMessaging;
 use made_app::services::AutoDispatchService;
-use made_core::ports::{MessagingPort, MetricsRecorderPort};
+use made_core::ports::{CeremonyEventTransportPort, MessagingPort, MetricsRecorderPort};
 use tracing::info;
 
 use crate::ComposeError;
@@ -60,6 +62,7 @@ pub(super) struct MessagingWiring {
     pub(super) port: Arc<dyn MessagingPort>,
     pub(super) subscriber_factory: Option<SubscriberFactory>,
     pub(super) nats_client: Option<async_nats::Client>,
+    pub(super) ceremony_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
 }
 
 pub(super) async fn wire_messaging(
@@ -73,6 +76,7 @@ pub(super) async fn wire_messaging(
             port,
             subscriber_factory: None,
             nats_client: None,
+            ceremony_transport: None,
         });
     }
 
@@ -85,6 +89,10 @@ pub(super) async fn wire_messaging(
     );
 
     let subjects = nats_cfg.subjects.clone();
+    let ceremony_transport = Arc::new(NatsCeremonyEventTransport::new(
+        client.clone(),
+        subjects.clone(),
+    ));
     let factory_client = client.clone();
     let subscriber_factory: SubscriberFactory =
         Box::new(move |dispatch| NatsTriggerSubscriber::new(factory_client, subjects, dispatch));
@@ -93,5 +101,6 @@ pub(super) async fn wire_messaging(
         port,
         subscriber_factory: Some(subscriber_factory),
         nats_client: Some(client),
+        ceremony_transport: Some(ceremony_transport),
     })
 }

@@ -85,6 +85,28 @@ pub(crate) fn read_ceremony_events_schema() -> Value {
     })
 }
 
+pub(crate) fn pull_ceremony_events_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["consumer"],
+        "properties": {
+            "consumer": string_schema("Stable name of this independent global-feed consumer."),
+            "limit": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": EVENT_PAGE_LIMIT_CAP,
+                "description": format!("How many positioned records at most. Omitted or 0 takes {DEFAULT_EVENT_PAGE_LIMIT}.")
+            },
+            "acknowledge_through": {
+                "type": "integer",
+                "minimum": 1,
+                "description": "Optional global position to commit before reading the next page. Reading without this field never advances the cursor."
+            }
+        }
+    })
+}
+
 pub(crate) fn verify_ceremony_journal_schema() -> Value {
     json!({
         "type": "object",

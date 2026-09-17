@@ -425,7 +425,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC plus backend-independent discovery and help.
-        assert_eq!(tools.len(), 44);
+        assert_eq!(tools.len(), 45);
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));

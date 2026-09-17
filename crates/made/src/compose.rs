@@ -27,9 +27,10 @@ use made_adapters::validators::{
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
-use made_app::services::AutoDispatchService;
-use made_app::services::SessionMemoryRecorder;
-use made_app::services::SessionStream;
+use made_app::services::{
+    AutoDispatchService, CeremonyEventFanout, CeremonyEventPublisherSubscriber,
+    SessionMemoryRecorder, SessionStream,
+};
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
@@ -38,19 +39,19 @@ use made_app::usecases::{
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    PublishCeremonyDefinitionUseCase, PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase,
+    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ContractRegistryPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutorPort, MetricsRecorderPort, ScoringPort, StatisticsPort,
-    ValidatorPort,
+    CeremonyEventSubscriberPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
+    ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort,
+    MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use tracing::{info, warn};
 
@@ -159,11 +160,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryContractRegistry::new());
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    // Ceremony state is durable only when a store path is configured.
-    // Leaving it in memory is a valid choice for a throwaway
-    // deployment and a silent data-loss bug in any other, so an
-    // unconfigured server says what it is giving up rather than
-    // discovering it at the first restart.
     // One store serves every ceremony port, durable or not. A stream
     // and the published definition its ceremony is bound to have to
     // survive together, or a restart leaves streams pointing at
@@ -195,13 +191,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
     };
-    // No memory configured, and said so rather than pretended: a
-    // session with nowhere to record what it decided still runs, it
-    // just forgets, and a session opening in a shared scope is told
-    // nothing because there is nothing there. One adapter serves both
-    // directions, so swapping this for a durable one is the whole of
-    // turning memory on.
-    //
     // The writer is a subscriber of the stream, not something a use
     // case holds: what a session leaves behind is a projection of what
     // it sealed (ADR-012, ADR-013).
@@ -210,17 +199,55 @@ pub async fn compose() -> Result<Application, ComposeError> {
         memory.clone(),
         ceremony_events.clone(),
     ));
-    let ceremony_stream = Arc::new(SessionStream::new(
-        ceremony_events.clone(),
-        ceremony_snapshots,
-        session_memory,
-    ));
-
     let MessagingWiring {
         port: messaging,
         subscriber_factory: nats_subscriber_factory,
         nats_client,
+        ceremony_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
+    let publisher_consumer = made_core::value_objects::CeremonyEventConsumer::new("nats-publisher")
+        .expect("the NATS publisher consumer name is valid");
+    let publisher_use_case = ceremony_transport.map(|transport| {
+        Arc::new(PublishCeremonyEventsUseCase::new(
+            ceremony_events.clone(),
+            ceremony_cursors.clone(),
+            transport,
+            clock.clone(),
+        ))
+    });
+    if let Some(publisher) = &publisher_use_case {
+        loop {
+            let round = publisher
+                .execute(
+                    &publisher_consumer,
+                    made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
+                )
+                .await?;
+            if round.busy
+                || round.failed > 0
+                || round.delivered + round.quarantined
+                    < made_core::value_objects::CeremonyEventPageLimit::DEFAULT.value()
+            {
+                break;
+            }
+        }
+    }
+    let event_publisher = publisher_use_case.map(|publisher| {
+        Arc::new(CeremonyEventPublisherSubscriber::new(
+            publisher,
+            publisher_consumer,
+        )) as Arc<dyn CeremonyEventSubscriberPort>
+    });
+    let subscribers = Arc::new(CeremonyEventFanout::new(
+        core::iter::once(session_memory as Arc<dyn CeremonyEventSubscriberPort>)
+            .chain(event_publisher)
+            .collect(),
+    ));
+    let ceremony_stream = Arc::new(SessionStream::new(
+        ceremony_events.clone(),
+        ceremony_snapshots,
+        subscribers,
+    ));
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),

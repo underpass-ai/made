@@ -646,6 +646,17 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
         ),
+        // The named global feed is the same durable contract on both
+        // surfaces: a read replays, and only the next call's explicit
+        // acknowledgement advances it.
+        (
+            "made_pull_ceremony_events",
+            json!({ "consumer": "parity-global-feed", "limit": 2 }),
+        ),
+        (
+            "made_pull_ceremony_events",
+            json!({ "consumer": "parity-global-feed", "limit": 2, "acknowledge_through": 1 }),
+        ),
         // The chain over the same records, asked of both arms: the
         // verdict is the engine's own answer to a question the caller
         // could settle from the page above, so the two must agree on
