@@ -15,6 +15,7 @@ use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod ceremony_history_fixtures;
 
+use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry, StatisticsView};
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, read_ceremony_events_fixture,
     verify_ceremony_journal_fixture,
@@ -218,15 +219,7 @@ fn get_status_fixture() -> Value {
 }
 
 fn get_metrics_fixture() -> Value {
-    json!({
-        "stats": {
-            "total_deliberations": 0,
-            "total_orchestrations": 0,
-            "total_duration_ms": 0,
-            "average_duration_ms": 0.0,
-            "per_specialty_counts": {}
-        }
-    })
+    StatisticsView::envelope(Some(&StatisticsView::default()))
 }
 
 fn run_council_decision_fixture() -> Value {
@@ -303,22 +296,14 @@ fn run_ceremony_fixture() -> Value {
 /// not hold. Both carry `rehydratable` and `reason`, so a client wiring
 /// against the fixture meets the shape either backend renders.
 fn ceremony_listing_fixture() -> Value {
-    let mut readable = ceremony_instance_fixture();
-    if let Some(fields) = readable.as_object_mut() {
-        fields.insert("rehydratable".to_owned(), Value::Bool(true));
-        fields.insert("reason".to_owned(), Value::Null);
-    }
-    json!({
-        "count": 2,
-        "instances": [
-            readable,
-            {
-                "ceremony_id": "ceremony-fixture-2",
-                "rehydratable": false,
-                "reason": "not found: ceremony_definition",
-            }
-        ],
-    })
+    CeremonyInstanceListing::new(vec![
+        CeremonyInstanceListingEntry::rehydratable(ceremony_instance_fixture()),
+        CeremonyInstanceListingEntry::unrehydratable(
+            "ceremony-fixture-2",
+            "not found: ceremony_definition",
+        ),
+    ])
+    .to_json()
 }
 
 /// A working session with something in every collection, so a client

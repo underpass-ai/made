@@ -12,9 +12,11 @@ use serde::{Deserialize, Serialize};
 use tracing::debug;
 
 mod grpc_tls_config;
+mod memory_selection;
 mod service_config;
 
 pub use grpc_tls_config::GrpcTlsConfig;
+pub use memory_selection::MemorySelection;
 pub use service_config::ServiceConfig;
 
 /// Read-only configuration adapter backed by process environment.
@@ -30,6 +32,7 @@ pub use service_config::ServiceConfig;
 /// | `MADE_PUBLISH_PREFIX`          | `made`              |
 /// | `MADE_POSTGRES_URL`            | (unset)               |
 /// | `MADE_CEREMONY_STORE_PATH`     | (unset)               |
+/// | `MADE_MEMORY`                  | automatic             |
 /// | `MADE_GRPC_TLS_MODE`           | `none`                |
 /// | `MADE_GRPC_TLS_CERT_PATH`      | (unset)               |
 /// | `MADE_GRPC_TLS_KEY_PATH`       | (unset)               |
@@ -71,6 +74,7 @@ impl EnvConfiguration {
         };
 
         let ceremony_store_path = nonempty(&loaded.ceremony_store_path);
+        let memory = parse_memory(&loaded.memory)?;
 
         let grpc_tls = build_grpc_tls(
             &loaded.grpc_tls_mode,
@@ -88,6 +92,7 @@ impl EnvConfiguration {
             publish_prefix: loaded.publish_prefix,
             postgres_url,
             ceremony_store_path,
+            memory,
             grpc_tls,
         })
     }
@@ -103,6 +108,7 @@ struct Defaults {
     publish_prefix: String,
     postgres_url: String,
     ceremony_store_path: String,
+    memory: String,
     grpc_tls_mode: String,
     grpc_tls_cert_path: String,
     grpc_tls_key_path: String,
@@ -120,11 +126,23 @@ impl Default for Defaults {
             publish_prefix: "made".to_owned(),
             postgres_url: String::new(),
             ceremony_store_path: String::new(),
+            memory: "automatic".to_owned(),
             grpc_tls_mode: "none".to_owned(),
             grpc_tls_cert_path: String::new(),
             grpc_tls_key_path: String::new(),
             grpc_tls_client_ca_path: String::new(),
         }
+    }
+}
+
+fn parse_memory(value: &str) -> Result<MemorySelection, DomainError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "" | "automatic" | "auto" => Ok(MemorySelection::Automatic),
+        "sqlite" => Ok(MemorySelection::Sqlite),
+        "none" => Ok(MemorySelection::None),
+        _ => Err(DomainError::InvariantViolated {
+            reason: "memory must be one of: automatic, sqlite, none",
+        }),
     }
 }
 
@@ -210,6 +228,30 @@ mod tests {
         assert_eq!(cfg.nats_url, "nats://nats:4222");
         assert_eq!(cfg.trigger_subject, "made.trigger.>");
         assert_eq!(cfg.publish_prefix, "made");
+        assert_eq!(cfg.memory, MemorySelection::Automatic);
+    }
+
+    #[tokio::test]
+    async fn memory_selection_accepts_sqlite_and_none_and_rejects_other_values() {
+        let _guard = ENV_LOCK.lock().await;
+        clear_env();
+
+        std::env::set_var("MADE_MEMORY", "sqlite");
+        assert_eq!(
+            EnvConfiguration::new().load().unwrap().memory,
+            MemorySelection::Sqlite
+        );
+
+        std::env::set_var("MADE_MEMORY", "none");
+        assert_eq!(
+            EnvConfiguration::new().load().unwrap().memory,
+            MemorySelection::None
+        );
+
+        std::env::set_var("MADE_MEMORY", "somewhere");
+        assert!(EnvConfiguration::new().load().is_err());
+
+        clear_env();
     }
 
     #[tokio::test]

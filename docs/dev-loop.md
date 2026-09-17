@@ -215,6 +215,17 @@ Edit both, then run `just workflow-contract`. Widening it costs draft
 minutes; narrowing it costs nothing in safety, because the full gate on
 ready-for-review still proves the whole workspace.
 
+### Per-crate coverage floors
+
+`rust-coverage.sh` enforces the production total and every production crate at
+80% or its higher committed floor in `docs/architecture/coverage-floors.tsv`.
+Missing crate data fails. Generated transport and test-driver crates remain
+excluded. Threshold comparisons use counts before rounding. The gate compares
+floors with the PR base (`origin/main` locally, first parent on main pushes),
+so deleting or lowering a floor fails; raise floors after measuring coverage.
+The coverage job fetches history for this comparison. Use
+`python3 scripts/ci/coverage-floors.py --self-test` for policy regression cases.
+
 ## Container-backed checks
 
 ```bash
@@ -460,7 +471,7 @@ See [`docs/release.md`](release.md).
 | `helm-chart` | `helm lint` + hardened-render assertions | every ready PR |
 | `container-image` | image builds from `Dockerfile` | every ready PR |
 | `dependency-review` | GitHub dependency-review-action | every ready PR |
-| `coverage` | `bash scripts/ci/rust-coverage.sh` (80 % workspace) | every ready PR |
+| `coverage` | `bash scripts/ci/rust-coverage.sh` (≥80 % per production crate, committed floor ratchet) | every ready PR |
 | `tree-proof` | `bash scripts/ci/tree-already-proved.sh --self-test`, then the proof itself | self-test every run; the proof on pushes to `main` |
 | `impact` | `python3 scripts/ci/quality-gate-plan.py` | every ready PR |
 | `gate` | every required job passed and this is not a draft | every ready PR |
