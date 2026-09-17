@@ -141,10 +141,8 @@ impl SessionStream {
         let from = StreamVersion::new(version.value().saturating_sub(1));
         let mut head = None;
         for record in ReadWholeCeremonyEventsUseCase::new(self.events.clone())
-            .execute(id)
+            .execute_from(id, from)
             .await?
-            .into_iter()
-            .filter(|record| StreamVersion::from_sequence(record.sequence()) > from)
         {
             let sequence = StreamVersion::from_sequence(record.sequence());
             let event = record.event().ok_or(DomainError::UnreadableCeremonyEvent {
