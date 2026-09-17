@@ -22,6 +22,12 @@ operator command.
   export OTLP with the existing mTLS variables, and append registry snapshots
   beside durable JSONL event deliveries. (#119)
 
+- Preserve waiting-for-human and cancelled step-result labels in ceremony
+  metrics instead of counting both as failed results. (#118)
+
+- Move ceremony step execution into a child module of the application driver,
+  preserving method bodies and all execution behavior. (#115)
+
 - Ceremony telemetry now projects sealed records through metrics, tracing, and
   structured-log subscribers in both editions. One-shot and step-at-a-time
   execution produce the same ceremony metric deltas, and MCP tool calls carry
