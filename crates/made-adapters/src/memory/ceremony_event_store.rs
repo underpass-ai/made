@@ -18,7 +18,9 @@ use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonySnapshot,
     CeremonySnapshotStorePort, PositionedRecord,
 };
-use made_core::value_objects::{AuditSequence, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{
+    AuditSequence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+};
 use tokio::sync::RwLock;
 
 /// Where in which stream the record at a global position lives. The
@@ -115,16 +117,23 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         let state = self.inner.read().await;
         let skipped = usize::try_from(after.value()).unwrap_or(usize::MAX);
-        Ok(state.stream(stream).iter().skip(skipped).cloned().collect())
+        Ok(state
+            .stream(stream)
+            .iter()
+            .skip(skipped)
+            .take(limit.value())
+            .cloned()
+            .collect())
     }
 
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         let state = self.inner.read().await;
         // Positions are contiguous from 1, so the entry at index `i`
@@ -134,7 +143,7 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
             .log
             .iter()
             .skip(skipped)
-            .take(limit)
+            .take(limit.value())
             .map(|entry| state.record_at(entry))
             .collect()
     }

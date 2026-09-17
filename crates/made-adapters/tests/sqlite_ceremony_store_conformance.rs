@@ -8,8 +8,8 @@
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::conformance::{
-    CeremonyDefinitionPublicationConformance, CeremonyEventStoreConformance,
-    CeremonySnapshotStoreConformance,
+    CeremonyDefinitionPublicationConformance, CeremonyEventCursorConformance,
+    CeremonyEventStoreConformance, CeremonySnapshotStoreConformance,
 };
 use tempfile::TempDir;
 
@@ -45,6 +45,40 @@ async fn sqlite_satisfies_the_event_store_contract() {
 }
 
 #[tokio::test]
+async fn sqlite_satisfies_the_event_cursor_contract() {
+    let (_directory, store) = store();
+
+    let passed = CeremonyEventCursorConformance::run(&store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
+
+    assert_eq!(passed.len(), 7, "properties run: {passed:?}");
+}
+
+#[tokio::test]
+async fn a_reopened_store_resumes_a_named_cursor() {
+    use made_core::ports::CeremonyEventCursorPort;
+    use made_core::value_objects::{CeremonyEventConsumer, GlobalPosition};
+
+    let directory = TempDir::new().expect("a temporary directory");
+    let path = directory.path().join("cursor.sqlite3");
+    let consumer = CeremonyEventConsumer::new("durable-consumer").unwrap();
+    {
+        let store = SqliteCeremonyStore::open(&path).expect("the store opens");
+        store
+            .acknowledge(&consumer, GlobalPosition::new(17).unwrap())
+            .await
+            .unwrap();
+    }
+
+    let reopened = SqliteCeremonyStore::open(&path).expect("the store reopens");
+    assert_eq!(
+        reopened.position(&consumer).await.unwrap(),
+        Some(GlobalPosition::new(17).unwrap())
+    );
+}
+
+#[tokio::test]
 async fn sqlite_satisfies_the_snapshot_store_contract() {
     let (_directory, store) = store();
 
@@ -62,7 +96,9 @@ async fn sqlite_satisfies_the_snapshot_store_contract() {
 async fn a_reopened_store_still_holds_its_streams_positions_and_snapshots() {
     use made_core::entities::AuditChain;
     use made_core::ports::{CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort};
-    use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+    use made_core::value_objects::{
+        CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+    };
 
     let directory = TempDir::new().expect("a temporary directory");
     let path = directory.path().join("ceremonies.sqlite3");
@@ -96,7 +132,11 @@ async fn a_reopened_store_still_holds_its_streams_positions_and_snapshots() {
         "the head did not survive reopening"
     );
     let records = reopened
-        .read(&ceremony, StreamVersion::EMPTY)
+        .read(
+            &ceremony,
+            StreamVersion::EMPTY,
+            CeremonyEventPageLimit::DEFAULT,
+        )
         .await
         .unwrap();
     assert_eq!(records.len(), 3);
@@ -105,7 +145,7 @@ async fn a_reopened_store_still_holds_its_streams_positions_and_snapshots() {
         "the stream did not survive reopening"
     );
     let positions: Vec<u64> = reopened
-        .read_all(GlobalPosition::FIRST, usize::MAX)
+        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
         .await
         .unwrap()
         .iter()

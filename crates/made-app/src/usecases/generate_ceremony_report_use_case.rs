@@ -4,11 +4,11 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyId, StreamVersion};
+use made_core::value_objects::CeremonyId;
 
 use super::{
     CeremonyInstanceView, CeremonyReport, CeremonyReportBinding, GenerateCeremonyReportInput,
-    GetCeremonyInstanceUseCase, ResolveCeremonyDefinitionUseCase,
+    GetCeremonyInstanceUseCase, ReadWholeCeremonyEventsUseCase, ResolveCeremonyDefinitionUseCase,
 };
 
 mod ceremony_report_markdown;
@@ -123,7 +123,9 @@ impl GenerateCeremonyReportUseCase {
         let digest = definition.digest()?;
         // The whole stream, from the first record: a journal that
         // starts in the middle is not one a reader can verify.
-        let journal = self.events.read(ceremony_id, StreamVersion::EMPTY).await?;
+        let journal = ReadWholeCeremonyEventsUseCase::new(self.events.clone())
+            .execute(ceremony_id)
+            .await?;
         Ok(ReportedSession {
             definition,
             instance,

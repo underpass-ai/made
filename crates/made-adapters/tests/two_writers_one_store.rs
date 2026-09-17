@@ -8,7 +8,7 @@ use std::process::{Command, Stdio};
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::entities::AuditChain;
 use made_core::ports::CeremonyEventStorePort;
-use made_core::value_objects::{CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
 use tempfile::TempDir;
 
 const EVENTS_PER_WRITER: u64 = 40;
@@ -79,7 +79,11 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
         let ceremony = CeremonyId::new(name).unwrap();
 
         let records = store
-            .read(&ceremony, StreamVersion::EMPTY)
+            .read(
+                &ceremony,
+                StreamVersion::EMPTY,
+                CeremonyEventPageLimit::DEFAULT,
+            )
             .await
             .expect("the stream reads");
         assert_eq!(
@@ -110,7 +114,7 @@ async fn two_processes_append_to_one_event_store_and_nothing_is_lost() {
     // stream sits at its own position, and nothing was skipped or
     // handed out twice while the two counters raced.
     let rows = store
-        .read_all(GlobalPosition::FIRST, usize::MAX)
+        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
         .await
         .expect("the global order reads");
     assert_eq!(rows.len() as u64, 2 * EVENTS_PER_WRITER);

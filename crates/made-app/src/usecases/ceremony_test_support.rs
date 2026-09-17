@@ -15,13 +15,14 @@ use made_core::ports::{
     MemoryWriteOutcome, MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName,
-    CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs,
-    GlobalPosition, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities,
-    MemoryCapability, MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryMoment, MemoryProvenance,
-    MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction,
-    RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
-    StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion, TransitionTrigger,
+    Attributes, AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyGuard, CeremonyId,
+    CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion,
+    DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
+    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryEntryKind,
+    MemoryMoment, MemoryProvenance, MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition,
+    RetryPolicy, RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus,
+    StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -819,6 +820,7 @@ impl CeremonyEventStorePort for EventStoreFake {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
         Ok(self
             .streams
@@ -829,6 +831,7 @@ impl CeremonyEventStorePort for EventStoreFake {
                 records
                     .iter()
                     .filter(|record| record.sequence().value() > after.value())
+                    .take(limit.value())
                     .cloned()
                     .collect()
             })
@@ -838,7 +841,7 @@ impl CeremonyEventStorePort for EventStoreFake {
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         let streams = self.streams.read().await;
         let log = self.log.read().await;
@@ -847,7 +850,7 @@ impl CeremonyEventStorePort for EventStoreFake {
             .enumerate()
             .map(|(index, entry)| (GlobalPosition::new(index as u64 + 1).unwrap(), entry))
             .filter(|(position, _)| *position >= from)
-            .take(limit)
+            .take(limit.value())
             .map(|(position, (stream, sequence))| PositionedRecord {
                 position,
                 record: streams[stream][usize::try_from(sequence.value()).unwrap() - 1].clone(),
@@ -1026,14 +1029,15 @@ impl CeremonyEventStorePort for StoreThatConflictsOnce {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
-        self.inner.read(stream, after).await
+        self.inner.read(stream, after, limit).await
     }
 
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         self.inner.read_all(from, limit).await
     }
@@ -1064,14 +1068,15 @@ impl CeremonyEventStorePort for StoreThatLosesEveryRace {
         &self,
         stream: &CeremonyId,
         after: StreamVersion,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<AuditRecord>, DomainError> {
-        self.inner.read(stream, after).await
+        self.inner.read(stream, after, limit).await
     }
 
     async fn read_all(
         &self,
         from: GlobalPosition,
-        limit: usize,
+        limit: CeremonyEventPageLimit,
     ) -> Result<Vec<PositionedRecord>, DomainError> {
         self.inner.read_all(from, limit).await
     }

@@ -7,7 +7,9 @@
 //! record and verify the chain on what it received; a rendering of a
 //! record verifies nothing.
 
-use made_app::usecases::{CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport};
+use made_app::usecases::{
+    CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, PullCeremonyEventsOutput,
+};
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
 use made_core::value_objects::{AuditSequence, CeremonyTranscript};
@@ -28,6 +30,27 @@ pub fn read_ceremony_events_response_from(
             .collect::<Result<Vec<_>, _>>()?,
         next_version: page.next_version().value(),
         head_version: page.head_version().value(),
+    })
+}
+
+/// One page of a named global feed.
+pub fn pull_ceremony_events_response_from(
+    output: &PullCeremonyEventsOutput,
+) -> Result<pb::PullCeremonyEventsResponse, DomainError> {
+    Ok(pb::PullCeremonyEventsResponse {
+        records: output
+            .records()
+            .iter()
+            .map(|positioned| {
+                Ok(pb::PositionedCeremonyEvent {
+                    global_position: positioned.position.value(),
+                    record: Some(ceremony_event_record_from(&positioned.record)?),
+                })
+            })
+            .collect::<Result<Vec<_>, DomainError>>()?,
+        acknowledged_through: output
+            .acknowledged_through()
+            .map(made_core::value_objects::GlobalPosition::value),
     })
 }
 

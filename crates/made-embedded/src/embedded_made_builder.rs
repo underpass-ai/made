@@ -6,17 +6,18 @@ use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventStore, InMemoryStatistics,
+    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
+    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, MemoryReaderPort,
+    MemoryWriterPort, MetricsRecorderPort, NoopMetricsRecorder, StatisticsPort,
 };
 use made_core::value_objects::StepResult;
 
@@ -35,8 +36,10 @@ pub struct EmbeddedMadeBuilder {
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     events: Option<Arc<dyn CeremonyEventStorePort>>,
+    cursors: Option<Arc<dyn CeremonyEventCursorPort>>,
     snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
     subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
+    event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
@@ -91,6 +94,13 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    /// Durable named progress for global ceremony-event consumers.
+    #[must_use]
+    pub fn with_event_cursor(mut self, adapter: Arc<dyn CeremonyEventCursorPort>) -> Self {
+        self.cursors = Some(adapter);
+        self
+    }
+
     /// Keep ceremony state and session memory in one typed adapter.
     ///
     /// This is the durable Rust-host entry point. Its bounds make a split
@@ -123,6 +133,13 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_event_subscriber(mut self, adapter: Arc<dyn CeremonyEventSubscriberPort>) -> Self {
         self.subscriber = Some(adapter);
+        self
+    }
+
+    /// Deliver the durable global event feed after each successful append.
+    #[must_use]
+    pub fn with_event_transport(mut self, adapter: Arc<dyn CeremonyEventTransportPort>) -> Self {
+        self.event_transport = Some(adapter);
         self
     }
 
@@ -229,6 +246,9 @@ impl EmbeddedMadeBuilder {
             },
             |(events, snapshots)| (events, snapshots),
         );
+        let cursors = self.cursors.unwrap_or_else(|| {
+            Arc::new(InMemoryCeremonyEventCursor::new()) as Arc<dyn CeremonyEventCursorPort>
+        });
         let step_handler = self.step_handler.unwrap_or_else(|| {
             Arc::new(NoopCeremonyStepHandler::new()) as Arc<dyn CeremonyStepHandlerPort>
         });
@@ -264,6 +284,7 @@ impl EmbeddedMadeBuilder {
             definitions,
             publications,
             events,
+            cursors,
             snapshots,
             step_handler,
             evidence_source,
@@ -273,6 +294,7 @@ impl EmbeddedMadeBuilder {
             memory_writer,
             memory_reader,
             self.subscriber,
+            self.event_transport,
         )
     }
 }
@@ -283,7 +305,9 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .debug_struct("EmbeddedMadeBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
             .field("has_ceremony_store", &self.events.is_some())
+            .field("has_event_cursor", &self.cursors.is_some())
             .field("has_event_subscriber", &self.subscriber.is_some())
+            .field("has_event_transport", &self.event_transport.is_some())
             .field("has_step_handler", &self.step_handler.is_some())
             .field("has_evidence_source", &self.evidence_source.is_some())
             .field("has_clock", &self.clock.is_some())

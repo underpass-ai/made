@@ -23,9 +23,20 @@ pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsRespo
     } = response;
     let records = records
         .into_iter()
-        .map(ceremony_event_record_view)
+        .map(|record| ceremony_event_record_view(record, None))
         .collect();
     CeremonyEventPageView::new(records, next_version, head_version).to_json()
+}
+
+pub(crate) fn pull_ceremony_events_to_json(response: pb::PullCeremonyEventsResponse) -> Value {
+    json!({
+        "records": response.records.into_iter().filter_map(|positioned| {
+            positioned.record.map(|record| {
+                ceremony_event_record_view(record, Some(positioned.global_position)).to_json()
+            })
+        }).collect::<Vec<_>>(),
+        "acknowledged_through": response.acknowledged_through,
+    })
 }
 
 /// The verdict on one journal's chain.
@@ -56,7 +67,10 @@ pub(crate) fn verify_ceremony_journal_to_json(
     .to_json()
 }
 
-fn ceremony_event_record_view(record: pb::CeremonyEventRecord) -> AuditRecordView {
+pub(crate) fn ceremony_event_record_view(
+    record: pb::CeremonyEventRecord,
+    global_position: Option<u64>,
+) -> AuditRecordView {
     let pb::CeremonyEventRecord {
         event_id,
         event_type,
@@ -76,6 +90,7 @@ fn ceremony_event_record_view(record: pb::CeremonyEventRecord) -> AuditRecordVie
         record_hash,
     } = record;
     AuditRecordView {
+        global_position,
         event_id,
         event_type,
         schema_version,
@@ -185,7 +200,7 @@ mod tests {
 
     #[test]
     fn an_absent_optional_comes_back_null_and_not_as_an_empty_string() {
-        let json = ceremony_event_record_view(record()).to_json();
+        let json = ceremony_event_record_view(record(), None).to_json();
 
         assert_eq!(json["correlation_id"], json!("e1"));
         assert_eq!(json["causation_id"], Value::Null);
@@ -197,7 +212,7 @@ mod tests {
 
     #[test]
     fn a_digest_travels_as_the_bytes_the_record_holds() {
-        let json = ceremony_event_record_view(record()).to_json();
+        let json = ceremony_event_record_view(record(), None).to_json();
 
         let bytes = json["record_hash"].as_array().expect("a digest is bytes");
         assert_eq!(bytes.len(), 32);

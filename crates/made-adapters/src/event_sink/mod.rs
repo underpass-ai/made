@@ -1,0 +1,3 @@
+mod json_lines_ceremony_event_sink;
+
+pub use json_lines_ceremony_event_sink::JsonLinesCeremonyEventSink;

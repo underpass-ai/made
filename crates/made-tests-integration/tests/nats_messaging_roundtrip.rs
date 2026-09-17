@@ -12,14 +12,17 @@
 use std::time::Duration;
 
 use futures::StreamExt;
-use made_adapters::nats::{NatsMessaging, NatsSubjects};
+use made_adapters::nats::{NatsCeremonyEventTransport, NatsMessaging, NatsSubjects};
+use made_core::entities::ceremony_events::CeremonyCompleted;
+use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
 use made_core::events::{
     DeliberationCompletedEvent, EventEnvelope, PhaseChangedEvent, TaskCompletedEvent,
     TaskDispatchedEvent, TaskFailedEvent,
 };
-use made_core::ports::MessagingPort;
+use made_core::ports::{CeremonyEventTransportPort, MessagingPort, PositionedRecord};
 use made_core::value_objects::{
-    AgentId, DurationMs, EventId, ProposalId, Score, Specialty, TaskId, TraceContext,
+    AgentId, AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
+    EventId, GlobalPosition, ProposalId, Score, Specialty, StateId, TaskId, TraceContext,
 };
 use testcontainers::{
     core::{IntoContainerPort, WaitFor},
@@ -63,6 +66,53 @@ async fn start_nats() -> (
         }
     }
     panic!("could not connect to nats after warmup: {last_err:?}");
+}
+
+#[tokio::test]
+async fn ceremony_record_lands_on_its_typed_subject_with_global_position() {
+    let (client, _container, _url) = start_nats().await;
+    let subjects = NatsSubjects::new("made", "made.trigger.>").unwrap();
+    let transport = NatsCeremonyEventTransport::new(client.clone(), subjects);
+    let mut subscriber = client
+        .subscribe("made.ceremony.ceremony_completed")
+        .await
+        .unwrap();
+    client.flush().await.unwrap();
+    let ceremony_id = CeremonyId::new("nats-ceremony").unwrap();
+    let record = AuditRecord::first(AuditFact {
+        event_id: EventId::new("nats-ceremony-event").unwrap(),
+        event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
+            final_state: StateId::new("DONE").unwrap(),
+            completed_at: OffsetDateTime::UNIX_EPOCH,
+        }),
+        ceremony_id,
+        definition_name: CeremonyName::new("nats_roundtrip").unwrap(),
+        definition_version: CeremonyVersion::v1(),
+        occurred_at: OffsetDateTime::UNIX_EPOCH,
+        actor: AuditActor::new("nats-test", AuditActorKind::Engine, None).unwrap(),
+        correlation_id: None,
+        causation_id: None,
+        trace: None,
+    })
+    .unwrap();
+
+    transport
+        .deliver(&PositionedRecord {
+            position: GlobalPosition::new(7).unwrap(),
+            record,
+        })
+        .await
+        .unwrap();
+    client.flush().await.unwrap();
+
+    let message = tokio::time::timeout(Duration::from_secs(5), subscriber.next())
+        .await
+        .expect("ceremony event arrives")
+        .expect("subscription remains open");
+    let payload: serde_json::Value = serde_json::from_slice(&message.payload).unwrap();
+    assert_eq!(payload["global_position"], 7);
+    assert_eq!(payload["event_id"], "nats-ceremony-event");
+    assert_eq!(payload["event_type"], "ceremony_completed");
 }
 
 fn envelope() -> EventEnvelope {

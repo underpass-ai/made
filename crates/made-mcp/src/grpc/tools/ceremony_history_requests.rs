@@ -18,6 +18,22 @@ pub(super) fn build_read_ceremony_events_request(
     })
 }
 
+pub(super) fn build_pull_ceremony_events_request(
+    args: &Value,
+) -> Result<pb::PullCeremonyEventsRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    let acknowledge_through = if obj.contains_key("acknowledge_through") {
+        Some(j2p::optional_u64(obj, "acknowledge_through")?)
+    } else {
+        None
+    };
+    Ok(pb::PullCeremonyEventsRequest {
+        consumer: j2p::require_str(obj, "consumer")?.to_owned(),
+        limit: j2p::optional_u32(obj, "limit")?,
+        acknowledge_through,
+    })
+}
+
 pub(super) fn build_get_ceremony_transcript_request(
     args: &Value,
 ) -> Result<pb::GetCeremonyTranscriptRequest, String> {

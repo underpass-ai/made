@@ -12,6 +12,7 @@ pub struct NatsSubjects {
     pub task_failed: String,
     pub deliberation_completed: String,
     pub phase_changed: String,
+    pub ceremony_prefix: String,
 }
 
 impl NatsSubjects {
@@ -30,6 +31,7 @@ impl NatsSubjects {
             task_failed: format!("{prefix}.task.failed"),
             deliberation_completed: format!("{prefix}.deliberation.completed"),
             phase_changed: format!("{prefix}.phase.changed"),
+            ceremony_prefix: format!("{prefix}.ceremony"),
         })
     }
 
