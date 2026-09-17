@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::GrpcTlsConfig;
+use super::{GrpcTlsConfig, MemorySelection};
 
 /// Validated process configuration consumed by the deployable composition root.
 ///
@@ -18,5 +18,6 @@ pub struct ServiceConfig {
     pub publish_prefix: String,
     pub postgres_url: Option<String>,
     pub ceremony_store_path: Option<String>,
+    pub memory: MemorySelection,
     pub grpc_tls: GrpcTlsConfig,
 }

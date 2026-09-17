@@ -25,11 +25,6 @@ serde = { workspace = true }
 # for opaque payloads and it is a map of JSON values, so any crate that
 # builds one needs this.
 serde_json = { workspace = true }
-# The ceremony definition's published form. Designing one answers with
-# the document an author publishes, so rendering it is part of the
-# answer rather than a transport's encoding of it; parsing YAML back
-# stays in the adapter that owns the parser.
-serde_yaml = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
