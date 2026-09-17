@@ -27,6 +27,10 @@ operator command.
 
 ### Fixed
 
+- Require at least 80% line coverage per production crate, reject reduced
+  committed floors, and exercise binary HTTP/gRPC startup and SIGTERM shutdown
+  so the server also meets its floor (#103).
+
 - Development marketplace checks accept fetched tags from earlier releases;
   tag builds and publication still require the annotated version tag at HEAD
   (#89).
