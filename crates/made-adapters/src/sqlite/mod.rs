@@ -1,7 +1,8 @@
 //! Canonical embedded persistence on SQLite.
 //!
 //! WAL mode lets several agent hosts share one durable store while a single
-//! transaction spans ceremony state, the audit journal and the outbox.
+//! transaction spans a stream, its place in the global order and its
+//! snapshots.
 
 pub(crate) mod error;
 mod keys;

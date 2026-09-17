@@ -9,14 +9,13 @@ use made_core::ports::{CeremonyEvidenceSourcePort, ClockPort};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::CollectCeremonyEvidenceInput;
-use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct CollectCeremonyEvidenceUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
-    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for CollectCeremonyEvidenceUseCase {
@@ -32,14 +31,12 @@ impl CollectCeremonyEvidenceUseCase {
         stream: Arc<SessionStream>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
-        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             stream,
             evidence_source,
             clock,
-            memory,
         }
     }
 
@@ -95,12 +92,6 @@ impl CollectCeremonyEvidenceUseCase {
             })
             .await?
             .instance;
-        // The contribution and what backs it are remembered together,
-        // because an observation whose evidence arrived separately
-        // would read as a claim nobody checked.
-        self.memory
-            .remember_contribution(&instance, request.intervention_id())
-            .await;
         Ok(instance)
     }
 }
@@ -121,7 +112,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
         started_instance, stream, stream_over, DefinitionRepositoryFake, EventStoreFake,
         FixedClock,
     };
@@ -195,7 +186,6 @@ mod tests {
                 pack: evidence_pack(),
             }),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let instance = usecase
@@ -267,7 +257,6 @@ mod tests {
                 pack: evidence_pack(),
             }),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         usecase

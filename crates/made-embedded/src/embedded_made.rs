@@ -2,43 +2,44 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
-use made_app::services::{SessionMemoryRecorder, SessionStream};
+use made_app::services::{CeremonyEventFanout, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardInput,
     ApproveCeremonyGuardUseCase, AssertCeremonyReasonInput, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsInput, BindCeremonyParticipantsUseCase, CeremonyDefinitionSource,
-    CeremonyDesignDocument, CeremonyEventPage, CeremonyReport, CloseCeremonyInterventionInput,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase,
-    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, DeferCeremonyGuardInput,
-    DeferCeremonyGuardUseCase, DesignCeremonyUseCase, DesignedCeremony,
-    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportInput, GenerateCeremonyReportUseCase,
-    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyDefinitionsUseCase,
-    ListCeremonyInstancesUseCase, MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
-    PublishCeremonyDefinitionUseCase, ReadCeremonyEventsInput, ReadCeremonyEventsUseCase,
-    RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionInput,
-    RespondToCeremonyInterventionUseCase, RunCeremonyInput, RunCeremonyOutput,
-    RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    ServiceStatus, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    CeremonyDesignDocument, CloseCeremonyInterventionInput, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceInput, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepInput,
+    CompleteCeremonyStepUseCase, DeferCeremonyGuardInput, DeferCeremonyGuardUseCase,
+    DesignCeremonyUseCase, DesignedCeremony, DiffCeremonyDefinitionsUseCase,
+    GetCeremonyDefinitionUseCase, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyDefinitionsUseCase, ListCeremonyInstancesUseCase,
+    MountCeremonyDefinitionsOutput, MountCeremonyDefinitionsUseCase,
+    PublishCeremonyDefinitionUseCase, RequestCeremonyInterventionInput,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase, RunCeremonyInput,
+    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, ServiceStatus, StartCeremonyInput, StartCeremonyStepInput,
+    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
 };
 use made_core::entities::{
-    AuditRecord, CeremonyDefinition, CeremonyInstance, PublicationOutcome,
-    PublishedCeremonyDefinition, Statistics,
+    CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
+    Statistics,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventStorePort,
-    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    CeremonyEventSubscriberPort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
+    StatisticsPort,
 };
 use made_core::value_objects::{
-    CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
-    StepAttempt, StreamVersion,
+    CeremonyDefinitionDiff, CeremonyId, CeremonyName, CeremonyVersion, StepAttempt,
 };
+
+mod history;
 
 use crate::{EmbeddedMadeBuilder, InProcessCeremonyDefinitionSource, VERSION};
 
@@ -53,7 +54,6 @@ pub struct EmbeddedMade {
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
     stream: Arc<SessionStream>,
-    transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
@@ -68,12 +68,12 @@ pub struct EmbeddedMade {
     /// When this engine was built. Monotonic, so uptime does not
     /// move when the host's wall clock does.
     started_at: Instant,
-    /// What a session leaves behind.
+    /// The same adapter the recorder writes through, read back.
     ///
-    /// A host that configures no memory gets one that forgets and says
-    /// so, which is the honest shape of "not turned on". Handing it a
-    /// durable writer instead is the whole of turning it on.
-    session_memory: Arc<SessionMemoryRecorder>,
+    /// The writer side is a subscriber of the stream (ADR-012), so the
+    /// recorder is not a field here; this is the read the start use
+    /// cases make before a session opens.
+    memory_reader: Arc<dyn MemoryReaderPort>,
 }
 
 impl EmbeddedMade {
@@ -96,6 +96,10 @@ impl EmbeddedMade {
         Self::builder()
             .with_ceremony_store(store.clone())
             .with_definition_publications(store)
+            // Memory that lives as long as this process: not durable,
+            // and not pretending to be (E3 puts it in the store). It
+            // is what makes a declared scope usable at all.
+            .with_memory(Arc::new(InProcessSessionMemory::new()))
             .build()
     }
 
@@ -104,27 +108,35 @@ impl EmbeddedMade {
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         events: Arc<dyn CeremonyEventStorePort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
-        transcript_store: Arc<dyn CeremonyTranscriptStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
+        memory_reader: Arc<dyn MemoryReaderPort>,
+        subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
     ) -> Self {
+        // What a session leaves behind is a projection of its stream,
+        // so it is a subscriber rather than something a use case
+        // holds. A host that configures no memory gets one that
+        // forgets and says so; handing in a durable writer is the
+        // whole of turning it on. The host's own subscriber comes
+        // after the engine's.
+        let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
+        let subscribers = Arc::new(CeremonyEventFanout::of(session_memory, subscriber));
         Self {
             definitions,
             publications,
-            stream: Arc::new(SessionStream::new(events.clone(), snapshots)),
+            stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
-            transcript_store,
             step_handler,
             evidence_source,
             clock,
             metrics_recorder,
             statistics,
             started_at: Instant::now(),
-            session_memory: Arc::new(SessionMemoryRecorder::new(memory)),
+            memory_reader,
         }
     }
 
@@ -193,59 +205,6 @@ impl EmbeddedMade {
             .await
     }
 
-    /// Every sealed record of one session's stream, in stream order.
-    ///
-    /// Kept beside the paged read below because a chain is verified
-    /// from its first record: a caller that wants to check what it was
-    /// given asks for the whole stream, and a caller that is following
-    /// one asks for a page.
-    pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
-        self.events.read(id, StreamVersion::EMPTY).await
-    }
-
-    /// One page of a session's stream: the records after `from`, at
-    /// most `limit` of them, and where the reader now stands.
-    ///
-    /// `limit` absent takes [`ReadCeremonyEventsInput::DEFAULT_LIMIT`]
-    /// and anything above `MAX_LIMIT` is refused rather than cut down
-    /// to it; a ceremony with no stream is `NotFound`, where the
-    /// whole-stream read above answers with nothing.
-    pub async fn audit_records_from(
-        &self,
-        id: &CeremonyId,
-        from: StreamVersion,
-        limit: Option<usize>,
-    ) -> Result<CeremonyEventPage, DomainError> {
-        ReadCeremonyEventsUseCase::new(self.events.clone())
-            .execute(ReadCeremonyEventsInput::new(id.clone(), from, limit)?)
-            .await
-    }
-
-    pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
-        GetCeremonyTranscriptUseCase::new(self.transcript_store.clone())
-            .execute(id)
-            .await
-    }
-
-    /// The Markdown report over one or more sessions (ADR-006).
-    ///
-    /// A projection, not a document: nothing is written, and the same
-    /// state reports the same bytes. The deployable edition renders it
-    /// through the same use case, which is what makes the two answers
-    /// identical.
-    pub async fn report(
-        &self,
-        input: GenerateCeremonyReportInput,
-    ) -> Result<CeremonyReport, DomainError> {
-        GenerateCeremonyReportUseCase::new(
-            Arc::new(GetCeremonyInstanceUseCase::new(self.stream.clone())),
-            self.resolve_definition(),
-            self.events.clone(),
-        )
-        .execute(input)
-        .await
-    }
-
     /// How this engine is doing: the version it was built from, how
     /// long it has been up, its condition, what is recording, and the
     /// counters when they are asked for.
@@ -276,7 +235,6 @@ impl EmbeddedMade {
             self.definitions.clone(),
             self.stream.clone(),
             self.step_handler.clone(),
-            self.transcript_store.clone(),
             self.clock.clone(),
         )
         .with_metrics(self.metrics_recorder.clone())
@@ -386,6 +344,7 @@ impl EmbeddedMade {
             self.publications.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await
@@ -396,6 +355,7 @@ impl EmbeddedMade {
             self.definitions.clone(),
             self.stream.clone(),
             self.clock.clone(),
+            self.memory_reader.clone(),
         )
         .execute(input)
         .await
@@ -414,7 +374,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -428,7 +387,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -442,7 +400,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -469,7 +426,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -484,7 +440,6 @@ impl EmbeddedMade {
             self.stream.clone(),
             self.evidence_source.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await
@@ -526,7 +481,6 @@ impl EmbeddedMade {
             self.step_handler.clone(),
             self.clock.clone(),
         )
-        .with_transcript_store(self.transcript_store.clone())
         .execute(input)
         .await
     }
@@ -552,7 +506,6 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
-            self.session_memory.clone(),
         )
         .execute(input)
         .await

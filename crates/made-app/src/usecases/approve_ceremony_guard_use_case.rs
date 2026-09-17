@@ -6,17 +6,15 @@ use made_core::entities::ceremony_commands::ApproveGuard;
 use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
-use made_core::value_objects::CeremonyRecordRef;
 
 use super::approve_ceremony_guard_input::ApproveCeremonyGuardInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct ApproveCeremonyGuardUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
-    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for ApproveCeremonyGuardUseCase {
@@ -31,13 +29,11 @@ impl ApproveCeremonyGuardUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
-        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             stream,
             clock,
-            memory,
         }
     }
 
@@ -59,7 +55,7 @@ impl ApproveCeremonyGuardUseCase {
         let actor = session_facts::seat(&input.role_id, input.role_kind)?;
         let now = self.clock.now();
         let command = CeremonyCommand::ApproveGuard(ApproveGuard {
-            guard_name: input.guard_name.clone(),
+            guard_name: input.guard_name,
             approved_by: input.role_id,
             approved_by_kind: input.role_kind,
             now,
@@ -75,14 +71,6 @@ impl ApproveCeremonyGuardUseCase {
             })
             .await?
             .instance;
-        // A human decision is the kind a later session weighs hardest,
-        // and now it can say who made it.
-        self.memory
-            .remember_guard_decision(
-                &instance,
-                &CeremonyRecordRef::guard_decision(input.guard_name),
-            )
-            .await;
         Ok(instance)
     }
 }
@@ -99,9 +87,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, approval_definition, ceremony_id, definition_resolver, now, role_id,
-        started_instance, stream, stream_losing_every_race_over, stream_over,
-        DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        approval_definition, ceremony_id, definition_resolver, now, role_id, started_instance,
+        stream, stream_losing_every_race_over, stream_over, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock,
     };
 
     #[tokio::test]
@@ -117,7 +105,6 @@ mod tests {
             definition_resolver(definitions),
             stream(instances.clone()),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
         let guard_name = GuardName::new("human_approved").unwrap();
 
@@ -164,7 +151,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let refused = usecase
@@ -215,7 +201,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         usecase

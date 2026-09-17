@@ -157,6 +157,7 @@ async fn embedded_server_advertises_only_executable_tools() {
             "made_generate_ceremony_report",
             "made_get_status",
             "made_get_metrics",
+            "made_verify_ceremony_journal",
             "made_discover_capabilities",
             "made_get_help",
         ]
@@ -1072,7 +1073,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 29);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 30);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

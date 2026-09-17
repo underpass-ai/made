@@ -286,13 +286,13 @@ fn review() -> Vec<CeremonyCommand> {
 #[test]
 fn a_session_is_the_fold_of_the_events_its_mutations_decided() {
     let definition = definition();
-    let opening = CeremonyInstance::decide_start(
+    let mut stream = CeremonyInstance::decide_start(
         CeremonyId::new("ceremony-fold").unwrap(),
         &definition,
         CeremonyContext::empty(),
+        None,
         OPENED_AT,
     );
-    let mut stream = vec![opening];
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 

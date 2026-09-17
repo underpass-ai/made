@@ -1,6 +1,7 @@
 # ADR-013: Memory is MADE's own bounded context
 
-Status: Accepted (decided 2026-09-16); not yet implemented — the slices are
+Status: Accepted (decided 2026-09-16); E4 implemented on `main` — the KMP
+adapter is out of tree (#41) — E1–E3 in progress under #65; the slices are
 §3.8 of [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 ## Context

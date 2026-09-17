@@ -136,15 +136,21 @@ impl GenerateCeremonyReportUseCase {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use made_core::entities::CeremonyInstance;
-    use made_core::value_objects::CeremonyContext;
+    use made_core::ports::CeremonySnapshotStorePort;
+    use made_core::value_objects::{
+        Attributes, AuditActorKind, CeremonyContext, StepOutput, StepResult,
+    };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, started_instance, stream,
-        DefinitionRepositoryFake, EventStoreFake,
+        ceremony_id, definition, definition_resolver, lease_owner, lease_ttl, now,
+        started_instance, stream, DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        StepHandlerFake,
     };
-    use crate::usecases::ReportTitle;
+    use crate::usecases::{ReportTitle, RunCeremonyInput, RunCeremonyUseCase};
 
     struct Fixture {
         usecase: GenerateCeremonyReportUseCase,
@@ -261,6 +267,68 @@ mod tests {
                 .collect::<Vec<_>>(),
             ["session-2", "ceremony-1"]
         );
+    }
+
+    /// The claim slice A5 makes: the report renders from the stream
+    /// and the definition, and from nothing else.
+    ///
+    /// Snapshots are a cache (ADR-012), so every one of them is thrown
+    /// away before the report is asked for. What is left is the
+    /// records, and the step output a reader finds in the document is
+    /// the one the `StepCompleted` record carries.
+    #[tokio::test]
+    async fn a_report_renders_step_outputs_from_the_records_alone() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let store = Arc::new(EventStoreFake::default());
+        let output = StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "winner_content".to_owned(),
+                serde_json::json!("ship the smaller scope first"),
+            )]))
+            .unwrap(),
+        );
+        RunCeremonyUseCase::new(
+            definitions.clone(),
+            stream(store.clone()),
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(output).unwrap(),
+            )),
+            Arc::new(FixedClock::new(now())),
+        )
+        .execute(RunCeremonyInput::new(
+            ceremony_id(),
+            definition,
+            CeremonyContext::empty(),
+            lease_owner(),
+            lease_ttl(),
+            "operator-1",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+
+        // Every cached fold, gone. The stream is the whole of what is
+        // left, and the report is asked the same question.
+        store.forget(&ceremony_id()).await.unwrap();
+        let usecase = GenerateCeremonyReportUseCase::new(
+            Arc::new(GetCeremonyInstanceUseCase::new(stream(store.clone()))),
+            definition_resolver(definitions),
+            store,
+        );
+
+        let report = usecase
+            .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None))
+            .await
+            .unwrap();
+
+        assert_eq!(report.completed_count(), 1);
+        assert!(
+            report.markdown().contains("ship the smaller scope first"),
+            "the step output is not in the report: {}",
+            report.markdown()
+        );
+        assert!(report.markdown().contains("step_completed"));
     }
 
     #[tokio::test]

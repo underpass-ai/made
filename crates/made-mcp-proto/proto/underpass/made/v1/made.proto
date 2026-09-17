@@ -216,6 +216,17 @@ service MadeService {
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
   rpc GetMetrics(GetMetricsRequest) returns (GetMetricsResponse);
+
+  // ---- Tamper evidence ------------------------------------------------
+
+  // Verify the hash chain of one session's journal: whether every
+  // record is sealed, positioned and linked as it was written, and
+  // where it stopped being trustworthy if it is not. The engine
+  // answers with the same verdict a caller would reach by reading the
+  // records through ReadCeremonyEvents and running the verifier
+  // itself, which is the point: the answer is checkable, not
+  // authoritative.
+  rpc VerifyCeremonyJournal(VerifyCeremonyJournalRequest) returns (VerifyCeremonyJournalResponse);
 }
 
 // ============================================================================
@@ -896,6 +907,39 @@ message CeremonyInstanceState {
   // Why it could not be, when it could not. Empty otherwise, and only
   // ever set together with `rehydratable = false`.
   string unrehydratable_reason = 18;
+  // What earlier sessions in this session's memory scope decided, as
+  // this session was told when it opened.
+  //
+  // Unset when it was told nothing, which is every session that
+  // declares no `memory_scope` in its context: the default scope is
+  // the session's own id and nobody else writes there. A message
+  // rather than fields on this one, because message presence is what
+  // lets "recalled nothing" differ from "recalled an empty scope".
+  CeremonyRecollectionState recollection = 19;
+}
+
+// What a session was told when it opened, bounded and in order:
+// decisions and constraints first, then the rest.
+message CeremonyRecollectionState {
+  // The memory this session reads and writes, as `kind:name`.
+  string scope = 1;
+  repeated CeremonyRecalledEntryState entries = 2;
+  // Whether the budget stopped the rendering before the scope ran out.
+  // A reader weighing what earlier sessions decided has to know
+  // whether it is looking at the whole record or at the front of it.
+  bool truncated = 3;
+}
+
+// One thing an earlier session left behind.
+message CeremonyRecalledEntryState {
+  string entry_id = 1;
+  // `decision`, `observation`, `constraint` or `outcome`.
+  string kind = 2;
+  string summary = 3;
+  // The session that said it, so a decision can be attributed and
+  // walked back to where it was taken.
+  string from_ceremony_id = 4;
+  string observed_at = 5;
 }
 
 message CeremonyParticipantBindingState {
@@ -1654,4 +1698,25 @@ message GenerateCeremonyReportResponse {
   uint32 completed_count = 4;
   uint32 incomplete_count = 5;
   repeated CeremonyReportBinding definition_bindings = 6;
+}
+
+message VerifyCeremonyJournalRequest {
+  string ceremony_id = 1;
+}
+
+message VerifyCeremonyJournalResponse {
+  string ceremony_id = 1;
+  // How far the stream goes: the position of its last record.
+  uint64 head_version = 2;
+  // How many records were verified. It equals `head_version` on a
+  // whole journal and is smaller on one that lost records, which is
+  // the case worth telling apart.
+  uint32 record_count = 3;
+  // Every record sealed, positioned and linked as written.
+  bool intact = 4;
+  // The first position that cannot be trusted. Zero when the journal
+  // is intact; positions count from one, so zero is unambiguous.
+  uint64 first_broken_sequence = 5;
+  // Why, in words. Empty when the journal is intact.
+  string reason = 6;
 }

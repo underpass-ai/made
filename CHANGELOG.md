@@ -83,6 +83,107 @@ operator command.
 
 ### Added
 
+- `CeremonyEventSubscriberPort` in `made-core`: the one seam a projection hangs
+  off. It is told the sealed records of one successful append, in order, each
+  with its place in the global order, after the store confirmed and before the
+  session goes back to the use case — so a caller that reads a projection
+  straight after the call it made finds it there. Infallible by signature
+  rather than by a swallowed `Result`: a projection cannot fail the session it
+  projects, and a subscriber with something to report logs it at warning level
+  with the ceremony id and the sequence. `NoopCeremonyEventSubscriber` is the
+  default, `CeremonyEventFanout` in `made-app` composes several in a fixed
+  order, and `EmbeddedMadeBuilder::with_event_subscriber` adds the host's own
+  behind the engine's. Durable consumers are not this port; publication keeps
+  a cursor over the global order (A6). Three colocated tests: every record of
+  every append observed once and in order across a multi-command session, a
+  conflicted-then-retried append observed once with the records that landed,
+  and an append that never lands observed not at all (ADR-012). (#66)
+- `AppendOutcome::positioned`, and the conformance property
+  `an_outcome_positions_what_read_all_returns` that both event-store adapters
+  now pass: what an append reports is what a reader finds from that position.
+  Telling a subscriber off the outcome is only as good as a read if the two
+  agree, and an adapter whose `first_position` was off by one would hand every
+  projection a cursor that skips or repeats a record. (#66)
+- **`made-mcp migrate-store <path>`**: the one way back into a store written
+  before a ceremony was its event stream (ADR-012). Since A4 such a store
+  opens, counts its sessions and warns about them, and those sessions are
+  invisible and refuse commands; this imports them. Copy-on-write, as ADR-008
+  did for redb: the operator's file is never opened for writing, the command
+  works on a copy — write-ahead log included — and installs it with two
+  renames only after **every** session has been read back out of it and folded
+  to exactly the snapshot that went in. A run that did not hold leaves the
+  file byte for byte; a run that did keeps the original beside the new store
+  as `<path>.pre-stream.backup`, which a later run never overwrites. Running
+  it again is a no-op that says so. The legacy `ceremony_instances` and
+  `audit_journal` tables stay as read-only provenance behind the new
+  `LegacyCeremonySnapshotSourcePort`, and the report of an imported session
+  says that what happened before the import was recorded without payloads and
+  cannot be recovered. Proved on a store `made-mcp` **v0.3.1** really wrote,
+  committed under `crates/made-tests-integration/fixtures/stores/v0.3.1/`
+  with the script that produced it: both of its sessions import, each stream
+  verifies as a chain, the definition binding and the open intervention
+  survive, and the mid-flight session takes its next claim. (#67)
+- `CeremonyEvent::InstanceImported`, the genesis event, at schema version 1
+  with its golden fixture. It carries the aggregate's own serde shape rather
+  than a copy of its fields, because the claim an import makes is fold
+  equality with the snapshot and a hand-written field list would make that
+  claim only as complete as the list. `apply` replaces the session with it;
+  `decide` never emits it; `rehydrate` opens on it and refuses it anywhere
+  else, since an import in the middle of a stream would discard everything
+  before it. `AuditEventType` gains the matching entry. (#67)
+- **`VerifyCeremonyJournal`** on all four surfaces in one change (ADR-014):
+  the RPC, `made_verify_ceremony_journal` on both MCP backends,
+  `EmbeddedMade::verify_journal`, a `parity.tsv` row with no reason, the
+  `ceremony_history` capability group, a step in the F4 session script and
+  tool docs. `AuditChain::verify` had existed since ADR-003 with no caller — a
+  chain nobody checks is a claim, not evidence — and now has one. The answer
+  names the head version, how many records were verified, whether the chain
+  holds and, when it does not, the first position that cannot be trusted and
+  why, in words written once on `AuditChainDefect`. A broken chain is an
+  answer, not an error; a session with no stream is not found. Both MCP arms
+  render through one view, so the in-process answer and the one that came back
+  over gRPC are the same keys by construction, and an integration test runs
+  the verifier itself over the records the wire handed it and compares.
+  Additive; `buf breaking` against `origin/main` is green. (#67)
+- **Recall at start.** A working session can declare a `memory_scope` in the
+  context it is started with, and the engine reads that scope through
+  `MemoryReaderPort` before the session opens. What comes back is rendered —
+  decisions and constraints first, then observations and outcomes, each group
+  in the order memory returned them, bounded at **4096 bytes of summary** with
+  a `truncated` flag when the bound bit — and sealed into the stream as a new
+  `MemoryRecalled` event, in the same append as `CeremonyInstanceStarted`, so
+  a session cannot exist without what it was told. The engine wrote memory and
+  never read it: `MemoryReaderPort` had no consumer at all, and the scope was
+  always the instance's own id, so no ceremony could ever recall another.
+  A scope is now `kind:name` (`ceremony:{id}` is the same grammar), and a
+  session that declares none keeps the default, which means **no shared
+  memory** and says so in the docs. An entry larger than the whole budget is
+  dropped rather than cut. A memory that cannot be read costs a session its
+  recollection and never the session: it is logged at `warn` and the start
+  succeeds. A `memory_scope` that is present and is not a usable scope refuses
+  the start, because falling back to the private default would hand an
+  operator a session that remembers alone while they believe it is sharing.
+  Gated by `crates/made-tests-integration/tests/mcp_parity_session.rs`, whose
+  session now drives two ceremonies in one scope on **both** MCP backends and
+  asserts the second carries the first one's decision and shows
+  `memory_recalled` at sequence 2 — and asserts that a session declaring no
+  scope seals nothing beside its opening, which is why every stream, golden
+  and fixture written until now is unchanged (ADR-013, plan §3.8 E1). (#68)
+- `recollection` on all four surfaces: `CeremonyRecollectionState` and
+  `CeremonyRecalledEntryState` in `underpass.made.v1` with
+  `CeremonyInstanceState.recollection` at field 19, the gRPC mapper, both MCP
+  presenters, the fixture backend a client wires against, and
+  `CeremonySummary.recollection` in `made-api`. A message rather than fields
+  on the state, because proto message presence is the one way this contract
+  can say "told nothing" without it reading as "told an empty scope"; the MCP
+  arms render `null`. `GenerateCeremonyReport` renders a **What earlier
+  sessions decided** section ahead of what the session did. Additive;
+  `buf breaking` against `origin/main` is green. (#68)
+- `authorizes` in the `made_assert_ceremony_reason` schema's `kind` enum. Both
+  request mappers accepted it and the schema refused it first, so the one
+  relation a reviewer looks for — what made an action allowed — could not be
+  asserted through either MCP backend. (#68)
+
 - An **Editions** section in `docs/operations/support-matrix.md`: one row per
   capability group — the groups `made_discover_capabilities` answers with —
   against the four surfaces (the proto contract, MCP on the gRPC backend, MCP
@@ -194,6 +295,155 @@ operator command.
 
 ### Changed
 
+- The tree proof accepts far less. `scripts/ci/tree-already-proved.sh` took
+  any successful `quality-gate` run whose commit tree matched, with no filter
+  on the plan, the event, the head repository or the age. So a docs-only pull
+  request — whose run skipped every Rust job and went green — proved the tree
+  of the merge commit behind it, and the push to `main` that was meant to run
+  the full matrix skipped instead; and because that push was itself a
+  successful run, the hole laundered forward. A run now proves its tree only
+  when it ran in this repository (`head_repository.full_name` equals
+  `GITHUB_REPOSITORY`), is younger than fourteen days, and shows **every** job
+  of the full matrix concluded `success` — not skipped, not cancelled. That
+  last test is also the plan check, and it is read from the run's job
+  conclusions rather than from the plan the run recorded, because on
+  `pull_request` the planner runs from the pull request's own head and its
+  word for "full" is the pull request's word; the `impact` job records the
+  plan — `full`, the gates, the event — in the run summary all the same, for
+  the reader. `--self-test` drives the same decision the live path drives,
+  with fixtures for the API answers: a partial pull-request proof refused, a
+  full one accepted, a push accepted, a fork refused, a stale proof refused,
+  a skipped job refused, a cancelled one refused. It runs in the `tree-proof`
+  job on every event and in `just workflow-contract`. The skip branch itself
+  can only be observed on a push to `main`. (#76)
+- `scripts/ci/dev-loop-workflow-contract.py` derives the quality-gate job
+  list from the workflow instead of reading a hard-coded table on both sides
+  of its own comparison, which is why four drifts were invisible to it: a new
+  gate job with no `impact` guard and absent from `gate`'s `needs`, the
+  trigger types shrunk to `[ready_for_review]`, its own `--self-test`
+  invocation deleted, and `gate` no longer treating `cancelled` as a failure.
+  Every job that is not `tree-proof`, `impact` or `gate` must need `impact`
+  and be routed by an output the planner's `GATES` tuple actually declares;
+  `gate`'s `needs` must equal the workflow's job list exactly, both
+  directions; the tree proof's idea of the full matrix must equal it too; and
+  all four trigger types are checked on all three workflows that stand down
+  on drafts. `quality-gate-plan.py`, `tree-already-proved.sh` and the two
+  workflows it had never read joined its sources, and it now fails on any
+  `uses:` pinned to a tag rather than a commit. 34 mutation guards, up from
+  19. (#76)
+- `.github/workflows/plugin-package.yml`: the four-host `package` job runs
+  scripts the pull request wrote — the marketplace contract, the plugin
+  smoke, the two bootstraps, the packager — and no longer holds
+  `contents: write`. The tag-gated release upload is its own job now, waits
+  for all four hosts and is the only one that writes.
+  `actions/upload-artifact` was unpinned there and again in
+  `publish-distribution.yml`, and both are on the commit `dev-loop.yml`
+  already used; `dependency-review.yml` dropped its workflow-level
+  `pull-requests: write`, which the action needs only to post a summary
+  comment this workflow never asks for. The packaging matrix also stops
+  waking for prose: its `paths` filter excludes `crates/made-mcp/**/*.md`,
+  narrowly, because the markdown under `plugins/made/**` is bundle content
+  and still wakes it. (#76)
+- The planner no longer exports `cargo_packages`. It was computed from the
+  reverse dependency closure, exported, and never read — `clippy`, `test`,
+  `coverage` and `benches` are all `--workspace` — and wiring it would have
+  been strictly weaker than leaving it out, not equal and not stricter. The
+  contract pins `--workspace` on `clippy` and `test` instead, and the closure
+  keeps its one honest job: deciding which gates run. (#76)
+- The two observability documents now claim only what the code records.
+  `docs/made-observability-design.md` lists the twenty-one Prometheus families
+  the registry holds and the five legacy series `/metrics` hand-rolls, each row
+  naming the file that records it; the alerts and the dashboard read only
+  series that exist; the span tree drawn in
+  `docs/operations/observability-runbook.md` puts
+  `prepare_ceremony_participants` where the code puts it, beside `run_ceremony`
+  rather than under it, and the log-message table says which fields each
+  message actually carries instead of promising `ceremony_id`, `step_id` and
+  `specialty` on all six. What had no code behind it is gone from both:
+  gRPC front-door RED, Postgres query latency, deliberation phase durations,
+  proposals and revisions histograms, the three validator families, step
+  attempts, trace exemplars, provider and judge span attributes, and the
+  alerts and panels built on them. What a named slice will land — ceremony
+  metrics from the event seam, trace ids, the embedded exporter and registry,
+  spans on steps and adapters, the ceremony stream — is in one "Planned — not
+  implemented" section per document, each item carrying its slice id, because
+  a claim in the present tense about a future capability is the thing
+  PRINCIPLES §1 forbids. The runbook also says what the embedded edition has
+  had since #53 — an in-process registry, the two tools on both backends, no
+  exporter, no endpoint, and honest zeros for the council counters — where it
+  used to say there was nothing. `README.md`, `docs/index.md`,
+  `docs/editions.md` and `docs/embedded-made.md` follow: the embedded metrics
+  default is the Prometheus registry it has been since #53, not
+  `NoopMetricsRecorder`, and no surface is described as having embedded-only
+  ceremony controls. `docs/orchestration-patterns-plan.md` §0.4 names
+  `docs/architecture/parity.tsv` as the count rather than carrying four
+  numbers that moved with every slice of WS-F, and the slices that have landed
+  — A1–A4, F1–F4, G5, H1–H4, and H5 except its per-crate coverage floors —
+  say so in their rows, as ADR-012, ADR-013 and ADR-014 now do in their status
+  lines. Four counts that had drifted the other way go with them: the tool
+  table in `docs/operations/mcp-stdio.md` had 37 rows under a sentence
+  promising 41, and now carries every backend-owned tool in the order
+  `GRPC_TOOL_NAMES` lists them; `crates/made-mcp/README.md` said the container
+  test checks 35 tools and now names `parity.tsv`; the `justfile` said CI does
+  not run coverage, which it has since the impact planner landed; and
+  `docs/dev-loop.md` said a green `just check` means a green pull request,
+  when `just check` leaves out coverage, the chart and the container image.
+  (#69)
+- **The transcript is a fold of the event stream, not a store.** Every
+  `step_completed` record is one contribution — the event already carries the
+  step, the seat the definition gives it and the output the step produced — so
+  `GetCeremonyTranscript` projects it on read from
+  `CeremonyEventStorePort::read` and nothing is appended beside the append.
+  Two consequences, both of them the point: the deployable server kept its
+  transcript in process whatever store the state went to and emptied it on
+  restart, and it is now exactly as durable as the session; and a step a host
+  claimed, performed where the engine cannot see it and reported back never
+  reached the transcript at all, because only the two drivers wrote to the
+  store. The parity session reads both of its steps where it used to read one.
+  A ceremony with no stream is now `NotFound` rather than an empty transcript,
+  the way reading its events already was, on both MCP arms. The answer for a
+  session the store did serve is byte-identical to the golden captured before
+  the store was removed (ADR-012). (#66)
+- **What a session leaves behind in memory is a projection of its stream.**
+  `SessionMemoryRecorder` implements `CeremonyEventSubscriberPort`; the six use
+  cases that held an `Arc<SessionMemoryRecorder>` and called it by hand no
+  longer take one, and both composition roots wire it as a subscriber instead.
+  The recorder folds the stream up to and including each sealed record, so what
+  a projection needs and one record does not carry — the ordinal of a response
+  among its item's answers, the ordinal of a reason, whether a move was an
+  ending — is derived rather than handed in by a call site. Which writes, which
+  keys and which scopes are unchanged, and the scope stays `ceremony:{id}`
+  (ADR-012, ADR-013). (#66)
+- The development loop iterates on the phase-2 crates — `made-core`,
+  `made-app`, `made-adapters`, `made-embedded`, `made-mcp` — in
+  `.github/workflows/dev-loop.yml` and `scripts/ci/dev-loop.sh` together;
+  `python3 scripts/ci/dev-loop-workflow-contract.py --self-test` is what says
+  they did not drift. The parity workstream's set no longer covered where the
+  work is, so a draft touching the aggregate got no feedback until it was
+  marked ready. (#66)
+- `SessionStream::load` folds a stream that opens with an import as well as one
+  that opens with a start, so a migrated session loads like any other.
+  `docs/embedded-made.md`, `docs/editions.md`, `docs/operations/capability-verification.md`,
+  `docs/operations/embedded-ceremony-execution.md`, `charts/made/values.yaml`,
+  ADR-006 and three crate READMEs named ports, tables and an in-memory adapter
+  that no longer exist; they name the event streams, their global order and the
+  folded snapshots instead. (#67)
+
+- `EmbeddedMade::open` wires `InProcessSessionMemory` where it wired a memory
+  that forgets, so a declared scope is one an operator can actually use: two
+  sessions in one process, in the same scope, and the second is told what the
+  first decided. It lives as long as the process and does not pretend
+  otherwise — a durable memory in the ceremonies store is plan §3.8 E3. A host
+  that hands its own in through `EmbeddedMadeBuilder::with_memory` is
+  unaffected, and that method now takes one adapter implementing both memory
+  ports: a host that wrote to one backend and read from another would have a
+  memory that never recalls what it wrote. (#68)
+- `StartCeremonyUseCase` and `StartPublishedCeremonyUseCase` take a
+  `MemoryReaderPort`; `CeremonyInstance::decide_start` and `decide_start_bound`
+  take the recollection and return the batch of events an opening produces;
+  `SessionStream::open` appends that batch. `decide` stays pure — the read
+  happens in the use case — and a session with nothing to recall produces the
+  single event it always produced. (#68)
 - `docs/editions.md` points at the Editions table instead of describing the
   surfaces in prose: the "Surface today" row links it, the sentence that said
   native embedded facades for the council and deliberation APIs are "not
@@ -348,12 +598,91 @@ operator command.
 
 ### Removed
 
+- **Breaking, embedding surface.** `CeremonyTranscriptStorePort` and its
+  deprecated alias `CeremonyContextStorePort`, `NoopCeremonyTranscriptStore`,
+  `InMemoryCeremonyTranscriptStore`, `EmbeddedMadeBuilder::with_transcript_store`
+  and `RunCeremonyStepUseCase::with_transcript_store`; the `transcript_store`
+  parameter of `RunCeremonyUseCase::new`; the `memory` parameter of
+  `ApplyCeremonyTransitionUseCase::new`, `AssertCeremonyReasonUseCase::new`,
+  `ApproveCeremonyGuardUseCase::new`, `DeferCeremonyGuardUseCase::new`,
+  `CollectCeremonyEvidenceUseCase::new` and
+  `RespondToCeremonyInterventionUseCase::new`. A host that supplied a
+  transcript store supplies nothing: the transcript is folded from the stream
+  it already keeps, and `EmbeddedMade::transcript` and
+  `made_get_ceremony_transcript` answer as before. A host that wants a
+  projection of its own registers it with
+  `EmbeddedMadeBuilder::with_event_subscriber`. `SessionStream::new` takes a
+  subscriber as its third argument and `SessionMemoryRecorder::new` takes the
+  event store as its second (ADR-012 consequences). The proto contract is
+  untouched. (#66)
+- The write paths the event stream replaced, none of which had a production
+  caller since A4: `CeremonyUnitOfWorkPort`, `CeremonyInstanceRepositoryPort`
+  and `AuditJournalPort` whole rather than method by method — what remained of
+  them was reading, and reading a pre-stream store is what
+  `LegacyCeremonySnapshotSourcePort` does — together with `CeremonyCommit`,
+  `CommitOutcome`, `ExpectedRevision`, their SQLite and in-memory adapters and
+  their three conformance suites. **This is a breaking change of the embedding
+  surface**: a host that compiled against those ports moves to
+  `CeremonyEventStorePort` and `CeremonySnapshotStorePort`, as ADR-012 said it
+  would, and it ships with a minor version bump. (#67)
+- The outbox: `OutboxPort`, `OutboxTransportPort`, the outbox value objects,
+  `PublishOutboxUseCase`, the SQLite adapter, the `outbox` table and the
+  seven-property conformance suite. Its only writer was the commit above, so
+  without it the port, the table, the use case and the suite would all have
+  described a capability nothing could exercise. ADR-012 already decided the
+  table goes away; §3.1 of the plan re-targets those seven properties at
+  cursors, which A6 adds. A store written by an earlier version keeps its
+  `outbox` rows on disk — this engine creates the table no longer and never
+  drops one. (#67)
+- The `state_migrations` table, created since ADR-003 and never written, and
+  `CeremonyInstance::migrate_definition_binding` with the pre-rename digest
+  scheme and `CeremonyDefinitionDigestMigration` it existed for, superseded by
+  ADR-011. The `commits` mode of the `store_writer` test binary goes with them;
+  `two_writers_one_store` keeps its `events` test, which proves the same claim
+  about the path that is actually taken. (#67)
+
+- `MemoryReaderPort::ask`, `MemoryQuestion`, the `AnsweringQuestions`
+  capability and `MemoryDimension`. `ask` had no consumer outside the
+  conformance suite, no adapter declared the capability, and the dimension was
+  written by the memory projection and read by nobody; the suite now states
+  **nine** properties instead of ten, and every method left on the port has a
+  production consumer or a property behind it. Nothing is lost by the
+  dimension: a contribution is already named after the agenda item it answers
+  (`agenda:{item}:contribution:{n}`). A host implementing the port drops its
+  `ask` and the `dimension` argument to `MemoryEntry::new` (ADR-013, plan §3.8
+  E2). (#68)
 - The in-tree KMP memory adapter: the `made-adapters` feature `kmp`, its
   `kmp` module, the CI matrix arm that built it and its live-kernel test.
   Nothing wired it; both composition roots use `ForgetfulMemory`. Memory
   backends other than the in-tree ones are out-of-tree adapters gated by
   the memory conformance suite. The last in-tree revision is `c7dad9f`
   at `crates/made-adapters/src/kmp/` for anyone who needs it.
+
+### Fixed
+
+- Three routing holes let a change reach `main` with no job run at all.
+  `docs/architecture/parity.tsv` and `docs/operations/support-matrix.md` are
+  `include_str!`'d into `made-mcp` and `made-tests-integration` tests, and the
+  ceremony definitions under `tests/e2e/ceremonies/` into `made-e2e-runner`'s
+  own sources plus nine more test and unit targets; all of them routed to no
+  gate, so a pull request editing only the TSV ran nothing and `gate`
+  reported green. They route to `clippy` and `test` now — not `coverage`,
+  which would re-run the very tests `test` has already proved. And the rule
+  is non-regressable: the planner's self-test walks every `include_str!` /
+  `include_bytes!` under `crates/**`, resolves the target relative to the
+  source file (and the `concat!(env!("CARGO_MANIFEST_DIR"), …)` form relative
+  to the crate), and fails when a target outside its own crate directory
+  would route to no Rust job. Thirteen files qualify today. The `tests/e2e/`
+  prefix route is gone with it: the kubernetes manifests, the compose file
+  and the four Dockerfiles are named one by one, so a new directory there
+  fails closed to the full matrix instead of inheriting an empty route from
+  its parent. (#76)
+- The planner's change boundary dropped deletions and rename sources.
+  `git diff --name-only --diff-filter=ACMR` turned `40cb7e5`'s sixteen-file
+  diff into three, so a pull request that deleted a crate source and edited a
+  document routed to nothing. It reads `git diff -M --name-status` now and
+  plans the union of both sides of a rename or a copy, which is the only
+  answer that is right whichever side carried the gate. (#76)
 
 ## 0.3.0 - 2026-09-03
 

@@ -1,0 +1,65 @@
+version: "1.0"
+name: "pre_stream_session"
+description: "Two moves and a terminal state: the smallest session a copy-on-write import can be proved on"
+inputs:
+  required:
+    - subject
+outputs:
+  summary:
+    type: object
+states:
+  - id: OPEN
+    initial: true
+  - id: SETTLING
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: OPEN
+    to: SETTLING
+    trigger: gathered
+    guards:
+      - gather_completed
+  - from: SETTLING
+    to: CLOSED
+    trigger: settled
+    guards:
+      - settle_completed
+steps:
+  - id: gather
+    state: OPEN
+    handler: facilitation_prompt
+    config:
+      see_prior: false
+      num_agents: 1
+      prompt: "Open the session on the announced subject: state what is being decided and the one question the table has to answer."
+  - id: settle
+    state: SETTLING
+    handler: synthesis_prompt
+    config:
+      see_prior: true
+      num_agents: 1
+      prompt: "Close the session: state what was decided, what was left open, and who carries each one."
+guards:
+  gather_completed:
+    type: automated
+    check: "step_status:gather:COMPLETED"
+  settle_completed:
+    type: automated
+    check: "step_status:settle:COMPLETED"
+roles:
+  - id: FACILITATOR
+    allowed_actions:
+      - gather
+      - gathered
+      - request_intervention
+      - respond_to_intervention
+  - id: RECORDER
+    allowed_actions:
+      - settle
+      - settled
+timeouts:
+  step_default: 120
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

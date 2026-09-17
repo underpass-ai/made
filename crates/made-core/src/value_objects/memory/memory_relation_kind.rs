@@ -21,18 +21,19 @@ pub enum MemoryRelationKind {
     /// which is not a judgement.
     Answers,
 
-    /// This was decided because of that.
-    ///
-    /// Asserted by whoever decided. The engine cannot infer it —
-    /// something being written down before a decision is not what made
-    /// the decision, and recording it as though it were is how a
-    /// coincidence becomes a precedent.
     /// That decision is what permitted this action.
     ///
     /// Causal rather than motivational: a decision that permits an
     /// action is part of why the action was possible, not part of why
     /// anybody wanted it.
     Authorizes,
+
+    /// This was decided because of that.
+    ///
+    /// Asserted by whoever decided. The engine cannot infer it —
+    /// something being written down before a decision is not what made
+    /// the decision, and recording it as though it were is how a
+    /// coincidence becomes a precedent.
     ChosenBecause,
 
     /// This was brought about by doing that — **the how**.

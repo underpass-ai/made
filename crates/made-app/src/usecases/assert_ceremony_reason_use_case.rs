@@ -10,13 +10,12 @@ use made_core::value_objects::CeremonyReason;
 
 use super::assert_ceremony_reason_input::AssertCeremonyReasonInput;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
-use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct AssertCeremonyReasonUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
-    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for AssertCeremonyReasonUseCase {
@@ -31,13 +30,11 @@ impl AssertCeremonyReasonUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
-        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             stream,
             clock,
-            memory,
         }
     }
 
@@ -80,11 +77,6 @@ impl AssertCeremonyReasonUseCase {
             })
             .await?
             .instance;
-        // The reason a later session will follow, sent on once the
-        // session that holds it is safely stored.
-        self.memory
-            .remember_reason(&instance, instance.reasons().len().saturating_sub(1))
-            .await;
         Ok(instance)
     }
 }
@@ -99,13 +91,47 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, now, recorder, recording_memory,
-        respondent_role_id, role_id, started_instance, stream, stream_over,
-        DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        ceremony_id, definition, definition_resolver, now, recording_memory, remembering_stream,
+        respondent_role_id, role_id, started_instance, DefinitionRepositoryFake, EventStoreFake,
+        FixedClock,
     };
     use crate::usecases::{
+        RequestCeremonyInterventionInput, RequestCeremonyInterventionUseCase,
         RespondToCeremonyInterventionInput, RespondToCeremonyInterventionUseCase,
     };
+
+    /// Put these items on the session's table, through the use case
+    /// that does it.
+    ///
+    /// Asked rather than seeded, because memory is a projection of the
+    /// stream: an item a test wrote straight into a snapshot is state
+    /// no record accounts for, and the real store would only hold it
+    /// after the events that produced it.
+    async fn ask_about<'a>(
+        stream: &Arc<SessionStream>,
+        definitions: Arc<DefinitionRepositoryFake>,
+        items: impl IntoIterator<Item = &'a CeremonyInterventionId>,
+    ) {
+        let usecase = RequestCeremonyInterventionUseCase::new(
+            definition_resolver(definitions),
+            stream.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+        for item in items {
+            usecase
+                .execute(RequestCeremonyInterventionInput::new(
+                    ceremony_id(),
+                    item.clone(),
+                    role_id(),
+                    AuditActorKind::Human,
+                    CeremonyInterventionKind::Investigation,
+                    CeremonyInterventionTarget::roles([respondent_role_id()]).unwrap(),
+                    CeremonyInterventionContent::new("Look.", Attributes::empty()).unwrap(),
+                ))
+                .await
+                .unwrap();
+        }
+    }
 
     /// The whole point, end to end: a session contributes, explains
     /// itself, and memory receives the entry **and the edge**.
@@ -121,32 +147,22 @@ mod tests {
         let memory = recording_memory();
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
 
-        let mut instance = started_instance(&definition);
-        for id in [
-            &agenda_item,
-            &CeremonyInterventionId::new("what-next").unwrap(),
-        ] {
-            instance
-                .request_intervention_as(
-                    &definition,
-                    id.clone(),
-                    role_id(),
-                    CeremonyInterventionKind::Investigation,
-                    CeremonyInterventionTarget::roles([respondent_role_id()]).unwrap(),
-                    CeremonyInterventionContent::new("Look.", Attributes::empty()).unwrap(),
-                    now(),
-                )
-                .unwrap();
-        }
-        instances.save(&instance).await.unwrap();
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let stream = remembering_stream(instances.clone(), memory.clone());
+        let later = CeremonyInterventionId::new("what-next").unwrap();
+        // Asked through the use case, so the items are events of the
+        // stream rather than state only a seeded snapshot holds: what
+        // memory is a projection of is the stream.
+        ask_about(&stream, definitions.clone(), [&agenda_item, &later]).await;
 
         let respond = RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            stream(instances.clone()),
+            stream.clone(),
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         );
-        let later = CeremonyInterventionId::new("what-next").unwrap();
         for (id, said) in [
             (&agenda_item, "the queue was backing up"),
             (&later, "roll back rather than restart"),
@@ -165,9 +181,8 @@ mod tests {
 
         AssertCeremonyReasonUseCase::new(
             definition_resolver(definitions),
-            stream(instances),
+            stream,
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         )
         .execute(AssertCeremonyReasonInput::new(
             ceremony_id(),
@@ -211,25 +226,17 @@ mod tests {
         let memory = recording_memory();
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
 
-        let mut instance = started_instance(&definition);
-        instance
-            .request_intervention_as(
-                &definition,
-                agenda_item.clone(),
-                role_id(),
-                CeremonyInterventionKind::Investigation,
-                CeremonyInterventionTarget::roles([respondent_role_id()]).unwrap(),
-                CeremonyInterventionContent::new("Look.", Attributes::empty()).unwrap(),
-                now(),
-            )
+        instances
+            .save(&started_instance(&definition))
+            .await
             .unwrap();
-        instances.save(&instance).await.unwrap();
+        let stream = remembering_stream(instances.clone(), memory.clone());
+        ask_about(&stream, definitions.clone(), [&agenda_item]).await;
 
         RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
-            stream(instances.clone()),
+            stream.clone(),
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         )
         .execute(RespondToCeremonyInterventionInput::new(
             ceremony_id(),
@@ -244,9 +251,8 @@ mod tests {
 
         AssertCeremonyReasonUseCase::new(
             definition_resolver(definitions),
-            stream(instances),
+            stream,
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         )
         .execute(AssertCeremonyReasonInput::new(
             ceremony_id(),
@@ -287,28 +293,18 @@ mod tests {
         let agenda_item = CeremonyInterventionId::new("inspect-queue").unwrap();
         let later = CeremonyInterventionId::new("what-next").unwrap();
 
-        let mut instance = started_instance(&definition);
-        for id in [&agenda_item, &later] {
-            instance
-                .request_intervention_as(
-                    &definition,
-                    id.clone(),
-                    role_id(),
-                    CeremonyInterventionKind::Investigation,
-                    CeremonyInterventionTarget::roles([respondent_role_id()]).unwrap(),
-                    CeremonyInterventionContent::new("Look.", Attributes::empty()).unwrap(),
-                    now(),
-                )
-                .unwrap();
-        }
-        instances.save(&instance).await.unwrap();
-        let (stream, store) = stream_over(instances);
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let store = instances.clone();
+        let stream = remembering_stream(instances, memory.clone());
+        ask_about(&stream, definitions.clone(), [&agenda_item, &later]).await;
 
         let respond = RespondToCeremonyInterventionUseCase::new(
             definition_resolver(definitions.clone()),
             stream.clone(),
             Arc::new(FixedClock::new(now())),
-            recorder(memory.clone()),
         );
         for (id, said) in [
             (&agenda_item, "the queue was backing up"),
@@ -330,7 +326,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            recorder(memory),
         );
         for why in [
             "the queue growth made it necessary",

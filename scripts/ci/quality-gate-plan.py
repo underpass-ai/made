@@ -6,7 +6,11 @@ else. Two rules decide that:
 
 * Rust gates follow the **reverse workspace dependency closure**. A change
   inside a crate affects that crate and everything that depends on it,
-  transitively, read from the manifests rather than guessed.
+  transitively, read from the manifests rather than guessed. The closure
+  decides *which gates run*, never which crates they build: every Rust job
+  is `--workspace`, because a gate that compiles a subset is a proof about
+  a subset. `affected_packages` is the reason the plan gives for its
+  booleans, not a cargo argument.
 * The independent contracts — proto/AsyncAPI, the embedded boundaries, the
   plugin bundle, the chart, the container image, coverage, the publication
   dry run — follow **path routing**.
@@ -26,7 +30,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import pathlib
+import re
 import subprocess
 import sys
 import tomllib
@@ -64,6 +70,16 @@ EMBEDDED_SQLITE_CRATES = {"made-adapters", "made-embedded", "made-mcp"}
 CONTAINER_CRATES = {"made"}
 PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
 
+# Files that are documentation or fixtures to a reader and source code to
+# rustc, because some crate bakes them in with `include_str!` /
+# `include_bytes!`. Editing one changes what the workspace compiles and
+# what its tests assert, so it pays for the two jobs that compile the
+# crates' test targets and run them: `test` runs the assertion,
+# `clippy --all-targets` compiles it. Not `coverage`: it re-runs the very
+# tests `test` has already proved, and the line-coverage floor is a
+# property of Rust sources, which these files are not.
+EMBEDDED_DATA_GATES = ("clippy", "test")
+
 # Changing any of these changes what "proved" means, so the answer is the
 # whole matrix rather than a cleverer plan.
 FULL_MATRIX_PATHS = {
@@ -94,7 +110,13 @@ PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("scripts/ci/e2e-", ()),
     ("scripts/ci/integration-", ()),
     ("scripts/mcp/", ()),
-    ("tests/e2e/", ()),
+    # The ceremony definitions are not test data on the side. They are
+    # `include_str!`'d into made-e2e-runner's own sources, into seven
+    # made-tests-integration tests and into two made-adapters unit tests,
+    # and read from disk by two more made-adapters tests. Editing one
+    # changes what the workspace compiles and what it asserts.
+    ("tests/e2e/ceremonies/", EMBEDDED_DATA_GATES),
+    ("tests/e2e/kubernetes/", ()),
     ("tests/cluster/", ()),
     (".kmp/", ()),
     (".github/", ()),
@@ -114,6 +136,27 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "scripts/ci/install-helm.sh": ("helm",),
     "scripts/ci/architecture-gate.sh": ("architecture",),
     "docs/architecture/conformance.tsv": ("architecture",),
+    # Documents the workspace compiles. `parity.tsv` is `include_str!`'d
+    # by crates/made-mcp/src/protocol/parity_tests.rs and by
+    # crates/made-tests-integration/tests/mcp_parity_session.rs;
+    # `struct-numbers.tsv` by made-mcp and made-adapters tests; and
+    # `support-matrix.md` by
+    # crates/made-mcp/src/protocol/editions_matrix_tests.rs. All are
+    # documentation to a reader and source to rustc, and
+    # `check_embedded_data_routing` below fails if any stops being routed.
+    "docs/architecture/parity.tsv": EMBEDDED_DATA_GATES,
+    "docs/architecture/struct-numbers.tsv": EMBEDDED_DATA_GATES,
+    "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
+    # The rest of the manual E2E surface, named one by one rather than by a
+    # `tests/e2e/` prefix: nothing in the workspace compiles or reads these
+    # and no CI job builds them, but a new directory or Dockerfile there
+    # must fail closed to the full matrix rather than inherit an empty
+    # route from its parent.
+    "tests/e2e/docker-compose.e2e.yaml": (),
+    "tests/e2e/provider-runner.Dockerfile": (),
+    "tests/e2e/runner.Dockerfile": (),
+    "tests/e2e/stub-llm.Dockerfile": (),
+    "tests/e2e/stub-runtime.Dockerfile": (),
     "scripts/ci/domain-vocabulary-boundary.sh": ("rustfmt",),
     "scripts/ci/embedded-dependency-boundary.sh": ("embedded_boundary",),
     "scripts/ci/embedded-sqlite-gates.sh": ("embedded_sqlite",),
@@ -216,7 +259,6 @@ def empty_plan() -> dict[str, object]:
         "reason": "path-specific",
         "changed_packages": [],
         "affected_packages": [],
-        "cargo_packages": "",
         **{gate: False for gate in GATES},
     }
 
@@ -228,7 +270,6 @@ def full_plan(packages: dict[str, pathlib.Path], reason: str) -> dict[str, objec
         "reason": reason,
         "changed_packages": names,
         "affected_packages": names,
-        "cargo_packages": " ".join(f"-p {name}" for name in names),
         **{gate: True for gate in GATES},
     }
 
@@ -281,7 +322,6 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
         affected = reverse_closure(changed_packages, dependencies)
         plan["changed_packages"] = sorted(changed_packages)
         plan["affected_packages"] = sorted(affected)
-        plan["cargo_packages"] = " ".join(f"-p {name}" for name in sorted(affected))
         for gate in WORKSPACE_WIDE:
             plan[gate] = True
         plan["embedded_boundary"] = bool(EMBEDDED_BOUNDARY_CRATES & affected)
@@ -309,15 +349,110 @@ def plan_for(paths: list[str], force_full: bool = False) -> dict[str, object]:
     return plan
 
 
+# --- the non-regressable rule -------------------------------------------
+#
+# A file a crate bakes in with `include_str!` / `include_bytes!` is source
+# code, wherever it lives. While it lives inside the crate that includes
+# it the crate prefix routes it; once it escapes, the tables above are the
+# only thing between an edit and a gate that runs nothing. That is exactly
+# how `docs/architecture/parity.tsv`, `docs/operations/support-matrix.md`
+# and `tests/e2e/ceremonies/*.yaml` reached `main` unrouted.
+#
+# So the self-test walks every include in `crates/**`, resolves its target,
+# and fails when an escaping target would run no Rust job. The table can
+# fall behind the code once; it cannot fall behind it twice.
+
+INCLUDE_LITERAL = re.compile(
+    r'include_(?:str|bytes)!\s*\(\s*"((?:[^"\\]|\\.)*)"', re.S
+)
+INCLUDE_MANIFEST_DIR = re.compile(
+    r'include_(?:str|bytes)!\s*\(\s*concat!\s*\(\s*env!\s*\(\s*'
+    r'"CARGO_MANIFEST_DIR"\s*\)\s*,\s*"((?:[^"\\]|\\.)*)"',
+    re.S,
+)
+
+
+def embedded_data_targets() -> dict[str, set[str]]:
+    """Escaping include target -> the sources that compile it in.
+
+    A target inside the including crate's own directory is left out: the
+    crate prefix already routes it through the dependency closure.
+    """
+    escaping: dict[str, set[str]] = defaultdict(set)
+    for manifest in sorted((ROOT / "crates").glob("*/Cargo.toml")):
+        crate = manifest.parent
+        for source in sorted(crate.rglob("*.rs")):
+            if "target" in source.relative_to(crate).parts:
+                continue
+            body = source.read_text(encoding="utf-8")
+            targets = [
+                (source.parent / literal) for literal in INCLUDE_LITERAL.findall(body)
+            ]
+            targets += [
+                (crate / literal.lstrip("/"))
+                for literal in INCLUDE_MANIFEST_DIR.findall(body)
+            ]
+            for target in targets:
+                resolved = pathlib.Path(os.path.normpath(target))
+                if resolved.is_relative_to(crate):
+                    continue
+                if not resolved.is_relative_to(ROOT):
+                    raise SystemExit(
+                        f"{source.relative_to(ROOT)} includes {target}, which "
+                        "leaves the repository; nothing can route it"
+                    )
+                key = resolved.relative_to(ROOT).as_posix()
+                escaping[key].add(source.relative_to(ROOT).as_posix())
+    return escaping
+
+
+def check_embedded_data_routing() -> int:
+    """Every file a crate compiles in from elsewhere must reach `test`."""
+    escaping = embedded_data_targets()
+    unrouted = [
+        f"{target} (compiled into {', '.join(sorted(sources))}) routes to no "
+        "Rust job"
+        for target, sources in sorted(escaping.items())
+        if not plan_for([target])["test"]
+    ]
+    if unrouted:
+        raise SystemExit(
+            "quality gate plan self-test: a crate compiles in a file the "
+            "router does not route:\n  - " + "\n  - ".join(unrouted)
+        )
+    return len(escaping)
+
+
+# `--diff-filter=ACMR` used to ask this question, and it dropped the two
+# statuses that matter most. A deletion is a change to the workspace —
+# removing a crate source changes what compiles, and removing a routed file
+# changes what a gate proves — and a rename's *source* path is where the
+# routed file used to live. On 40cb7e5 the filter turned a sixteen-file diff
+# into three, so a pull request that deletes a crate source and edits a .md
+# routed to nothing at all.
+#
+# `-M --name-status` keeps every status and names both sides of a rename or
+# a copy. The plan is the union of the two sides, which is the only answer
+# that is right whichever side carried the gate.
+def parse_name_status(output: str) -> list[str]:
+    """Every path a `git diff -M --name-status` answer names, both sides."""
+    paths: list[str] = []
+    for line in output.splitlines():
+        fields = [field for field in line.split("\t") if field]
+        # `M\tpath`, `D\tpath`, `R100\told\tnew`, `C075\tsource\tcopy`.
+        paths.extend(fields[1:])
+    return paths
+
+
 def changed_paths(base: str, head: str) -> list[str]:
     result = subprocess.run(
-        ["git", "diff", "--name-only", "--diff-filter=ACMR", base, head, "--"],
+        ["git", "diff", "-M", "--name-status", base, head, "--"],
         cwd=ROOT,
         check=True,
         text=True,
         stdout=subprocess.PIPE,
     )
-    return [line for line in result.stdout.splitlines() if line]
+    return parse_name_status(result.stdout)
 
 
 def write_outputs(plan: dict[str, object], destination: pathlib.Path) -> None:
@@ -330,6 +465,30 @@ def write_outputs(plan: dict[str, object], destination: pathlib.Path) -> None:
             else:
                 rendered = str(value)
             print(f"{key}={rendered}", file=handle)
+
+
+def write_step_summary(
+    plan: dict[str, object], paths: list[str], event: str, destination: pathlib.Path
+) -> None:
+    """Record the plan in the run, where the tree proof's reader can find it.
+
+    `scripts/ci/tree-already-proved.sh` decides whether an earlier run proved
+    a tree from the run's *job conclusions*, which the run's own scripts
+    cannot forge. This is the same statement in the form a person reads: what
+    was planned, on which event, and why.
+    """
+    gates = ",".join(gate for gate in GATES if plan[gate]) or "none"
+    with destination.open("a", encoding="utf-8") as handle:
+        print("### quality gate plan", file=handle)
+        print("", file=handle)
+        print("```", file=handle)
+        print(
+            f"full={str(plan['full']).lower()} event={event} gates={gates}",
+            file=handle,
+        )
+        print(f"reason={plan['reason']}", file=handle)
+        print(f"changed paths={len(paths)}", file=handle)
+        print("```", file=handle)
 
 
 SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
@@ -358,6 +517,50 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         "changelog",
         ["CHANGELOG.md"],
         {"clippy": False, "coverage": False, "full": False},
+    ),
+    # Documentation that rustc compiles. These files are `include_str!`'d
+    # into tests, so "docs-only" stops being the same thing as "no Rust
+    # job" — and `check_embedded_data_routing` keeps that true.
+    (
+        "the parity file two crates compile in",
+        ["docs/architecture/parity.tsv"],
+        {"test": True, "clippy": True, "coverage": False, "helm": False, "full": False},
+    ),
+    (
+        "the struct-number table two crates compile in",
+        ["docs/architecture/struct-numbers.tsv"],
+        {"test": True, "clippy": True, "coverage": False, "helm": False, "full": False},
+    ),
+    (
+        "the support matrix made-mcp compiles in",
+        ["docs/operations/support-matrix.md"],
+        {"test": True, "clippy": True, "coverage": False, "full": False},
+    ),
+    (
+        "a ceremony definition three crates compile in",
+        ["tests/e2e/ceremonies/daily-standup.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "architecture": False,
+            "coverage": False,
+            "container": False,
+            "full": False,
+        },
+    ),
+    (
+        "the manual E2E surface still gates nothing",
+        [
+            "tests/e2e/kubernetes/runner-job.yaml",
+            "tests/e2e/docker-compose.e2e.yaml",
+            "tests/e2e/runner.Dockerfile",
+        ],
+        {gate: False for gate in GATES} | {"full": False},
+    ),
+    (
+        "a new directory under tests/e2e fails closed",
+        ["tests/e2e/contracts/surface.yaml"],
+        {"full": True},
     ),
     (
         "chart",
@@ -435,8 +638,41 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         ["scripts/ci/tree-already-proved.sh"],
         {"full": True},
     ),
+    # A change boundary that drops deletions is how a pull request that
+    # removes a crate source and edits a document routes to nothing.
+    (
+        "a deleted crate source still runs the Rust gates",
+        ["crates/made-e2e-runner/src/scenarios/daily_standup.rs", "docs/dev-loop.md"],
+        {"clippy": True, "test": True, "rustfmt": True, "full": False},
+    ),
     ("unknown path", ["new-top-level.bin"], {"full": True}),
     ("no paths at all", [], {"full": True}),
+)
+
+
+# The change boundary itself, which is where the two statuses were lost.
+NAME_STATUS_CASES: tuple[tuple[str, str, list[str]], ...] = (
+    (
+        "a deletion is a change",
+        "D\tcrates/made-e2e-runner/src/scenarios/daily_standup.rs\n"
+        "M\tdocs/dev-loop.md\n",
+        ["crates/made-e2e-runner/src/scenarios/daily_standup.rs", "docs/dev-loop.md"],
+    ),
+    (
+        "a rename routes the path it left as well as the one it reached",
+        "R100\tcrates/made-core/src/old.rs\tcrates/made-app/src/new.rs\n",
+        ["crates/made-core/src/old.rs", "crates/made-app/src/new.rs"],
+    ),
+    (
+        "so does a copy",
+        "C075\tdocs/architecture/parity.tsv\tdocs/architecture/spare.tsv\n",
+        ["docs/architecture/parity.tsv", "docs/architecture/spare.tsv"],
+    ),
+    (
+        "additions and modifications survive unchanged",
+        "A\tcharts/made/values.yaml\nM\tCargo.lock\n",
+        ["charts/made/values.yaml", "Cargo.lock"],
+    ),
 )
 
 
@@ -449,7 +685,19 @@ def self_test() -> None:
                     f"quality gate plan self-test: {name}: expected "
                     f"{key}={value!r}, got {actual[key]!r}"
                 )
-    print(f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing cases")
+    for name, output, expected in NAME_STATUS_CASES:
+        actual = parse_name_status(output)
+        if actual != expected:
+            raise SystemExit(
+                f"quality gate plan self-test: {name}: expected "
+                f"{expected!r}, got {actual!r}"
+            )
+    embedded = check_embedded_data_routing()
+    print(
+        f"quality gate plan self-test passed: {len(SELF_TEST_CASES)} routing "
+        f"cases, {len(NAME_STATUS_CASES)} change-boundary cases, {embedded} "
+        "files compiled into a crate from outside it"
+    )
 
 
 def main() -> int:
@@ -459,6 +707,8 @@ def main() -> int:
     parser.add_argument("--path", action="append", default=[])
     parser.add_argument("--full", action="store_true")
     parser.add_argument("--github-output", type=pathlib.Path)
+    parser.add_argument("--step-summary", type=pathlib.Path)
+    parser.add_argument("--event", default=os.environ.get("GITHUB_EVENT_NAME", "local"))
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -478,6 +728,8 @@ def main() -> int:
     plan = plan_for(paths, force_full=args.full)
     if args.github_output:
         write_outputs(plan, args.github_output)
+    if args.step_summary:
+        write_step_summary(plan, paths, args.event, args.step_summary)
     print(json.dumps({"paths": sorted(paths), "plan": plan}, indent=2), file=sys.stdout)
     return 0
 

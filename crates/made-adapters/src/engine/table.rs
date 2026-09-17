@@ -5,11 +5,13 @@ use super::KeyShape;
 /// The tables an embedded ceremony store consists of.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub(crate) enum Table {
+    /// Sessions as a pre-stream store held them, read-only since the
+    /// migration command exists: provenance, not state.
     Ceremonies,
+    /// Payload-less receipts a pre-stream store wrote beside them,
+    /// read-only for the same reason.
     Journal,
-    Outbox,
     Publications,
-    LegacyStateMigrations,
     /// Sealed records, one row per `(ceremony_id, sequence)`.
     Events,
     /// The order every stream shares: global position to events-table key.
@@ -24,9 +26,8 @@ pub(crate) enum Table {
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies | Table::LegacyStateMigrations | Table::Meta => KeyShape::Str,
+            Table::Ceremonies | Table::Meta => KeyShape::Str,
             Table::Journal
-            | Table::Outbox
             | Table::Publications
             | Table::Events
             | Table::EventLog
@@ -40,9 +41,7 @@ impl fmt::Display for Table {
         f.write_str(match self {
             Table::Ceremonies => "ceremony_instances",
             Table::Journal => "audit_journal",
-            Table::Outbox => "outbox",
             Table::Publications => "published_definitions",
-            Table::LegacyStateMigrations => "state_migrations",
             Table::Events => "ceremony_events",
             Table::EventLog => "ceremony_event_log",
             Table::Snapshots => "ceremony_snapshots",

@@ -16,6 +16,8 @@ pub mod fixture;
 pub mod grpc;
 mod guidance;
 pub mod mcp_server_identity;
+#[cfg(feature = "embedded")]
+pub mod migrate_store;
 pub mod observability;
 pub mod protocol;
 pub mod server;
@@ -31,4 +33,6 @@ pub use fixture::FixtureMadeMcpBackend;
 #[cfg(feature = "grpc")]
 pub use grpc::GrpcMadeMcpBackend;
 pub use mcp_server_identity::McpServerIdentity;
+#[cfg(feature = "embedded")]
+pub use migrate_store::{migrate_store, migrate_store_report, MigrateStoreOutcome};
 pub use server::MadeMcpServer;

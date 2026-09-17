@@ -49,7 +49,7 @@ use crate::protocol::{
     PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -61,7 +61,8 @@ use self::embedded_ceremony_draft_presenter::{
 };
 use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
 use self::embedded_ceremony_history_presenter::{
-    present_ceremony_events, present_ceremony_report, present_ceremony_transcript,
+    present_ceremony_events, present_ceremony_journal_verdict, present_ceremony_report,
+    present_ceremony_transcript,
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
@@ -178,6 +179,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | DIFF_CEREMONY_DEFINITIONS_TOOL
                 | BIND_CEREMONY_PARTICIPANTS_TOOL
                 | READ_CEREMONY_EVENTS_TOOL
+                | VERIFY_CEREMONY_JOURNAL_TOOL
                 | GET_CEREMONY_TRANSCRIPT_TOOL
                 | GENERATE_CEREMONY_REPORT_TOOL
                 | GET_STATUS_TOOL
@@ -333,6 +335,17 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         )
                         .await?;
                     present_ceremony_events(&page).map(tool_success_result)
+                }
+                VERIFY_CEREMONY_JOURNAL_TOOL => {
+                    let request = EmbeddedCeremonyIdRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let verdict = self
+                        .made
+                        .verify_journal(&request.into_ceremony_id())
+                        .await?;
+                    Ok(tool_success_result(present_ceremony_journal_verdict(
+                        &verdict,
+                    )))
                 }
                 GET_CEREMONY_TRANSCRIPT_TOOL => {
                     let request = EmbeddedCeremonyIdRequest::try_from(arguments)

@@ -1,7 +1,8 @@
 # ADR-012: A ceremony is its event stream
 
-Status: Accepted (decided 2026-09-16); not yet implemented — the slices are
-§3.1 of [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
+Status: Accepted (decided 2026-09-16); A1–A4 implemented on `main` (#42–#45),
+A5–A8 in progress under #65 — the slices are §3.1 of
+[`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 Supersedes one sentence of ADR-003 ("Snapshot plus append-only journal plus
 outbox, not event sourcing") and the description in ADR-009 of a store as

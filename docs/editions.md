@@ -99,8 +99,8 @@ let made = EmbeddedMade::builder()
 ```
 
 The builder also accepts `Arc<dyn …Port>` for the definition repository,
-instance repository, transcript store, step handler, clock, metrics recorder
-and statistics. A host that wires no metrics recorder gets an **in-process
+instance repository, step handler, clock, metrics recorder, statistics and an
+event subscriber. A host that wires no metrics recorder gets an **in-process
 Prometheus registry** rather than a sink that forgets: explicit, local to the
 process, no exporter and no endpoint. `EmbeddedMade::status` says which
 recorder is running, so "the host chose one" and "nothing is recording" are
@@ -111,9 +111,9 @@ everything it injects. Details: [embedded-made.md](embedded-made.md).
 
 - **The real engine.** Same use cases, same domain invariants, same FSM as the
   deployable binary.
-- **Durable ceremony state** in SQLite: ceremony snapshots,
-  unit-of-work state, the audit journal, outbox rows and published definitions
-  survive process restarts. Crash/reopen behaviour is exercised by
+- **Durable ceremony state** in SQLite: the sealed event streams, their global
+  order, the folded snapshots and published definitions survive process
+  restarts. Crash/reopen behaviour is exercised by
   `crates/made-embedded/tests/sqlite_store_api.rs`.
 
 ### What it explicitly does not prove
@@ -123,8 +123,8 @@ These three are the reason this repo ships a
 
 1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
    ceremony store durable. It does **not** silently make every port durable:
-   mounted definition repositories and transcripts keep their in-memory
-   defaults, and step execution and evidence collection keep their no-op
+   mounted definition repositories keep their in-memory defaults, and step
+   execution and evidence collection keep their no-op
    defaults, unless the host injects real implementations. A terminal step from
    a `NoopCeremonyStepHandler` proves ceremony protocol and state-machine
    behaviour — not that an agent, tool, API, or human performed the requested
@@ -199,19 +199,15 @@ that refuses a manifest which drops any of it:
 
 ### Current limits, stated plainly
 
-- **The transcript store is in-memory, whichever store the state went to.**
-  `GetCeremonyTranscript` answers with what the process it reached holds, and a
-  restart empties it. The sealed event stream is durable — it is the ceremony
-  (ADR-012) — so what a step contributed is recoverable from
-  `ReadCeremonyEvents` either way; the transcript is a convenience read until a
-  durable transcript store lands.
 - `StreamDeliberation` emits phase transitions and a final `DeliberationResult`
   frame — **not** per-proposal, per-critique or per-revision events. That
   arrives in a later slice.
 - Provider-backed `RegisterAgent` kinds require the matching Cargo feature and
   boot-time credentials; `noop` is always available.
-- Deferred observability: gRPC front-door RED (already covered by request
-  traces) and per-query Postgres latency.
+- Observability is what the registry holds and nothing else: the families the
+  code records, what is planned with the slice that lands it, and what was
+  dropped are the three lists in
+  [`made-observability-design.md`](./made-observability-design.md) §2 and §7.
 
 ## Moving between them
 
@@ -235,8 +231,9 @@ Two caveats that make this less symmetric than the KMP equivalent:
   `made_design_ceremony`, and the designer itself is a use case both editions
   call, so the same intent renders the same document whichever engine
   answered. So is everything a finished session leaves behind:
-  `ReadCeremonyEvents` and `GetCeremonyTranscript` back
-  `made_read_ceremony_events` and `made_get_ceremony_transcript`, and
+  `ReadCeremonyEvents`, `VerifyCeremonyJournal` and `GetCeremonyTranscript`
+  back `made_read_ceremony_events`, `made_verify_ceremony_journal` and
+  `made_get_ceremony_transcript`, and
   `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
   is a `made-app` projection now (ADR-006), so the same sessions in the same
   state render one document whichever engine served the call, down to the

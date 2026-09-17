@@ -88,7 +88,6 @@ mod tests {
             MemoryEntryId::new(id).expect("a valid id"),
             MemoryEntryKind::Decision,
             "something was settled",
-            None,
             MemoryProvenance::new(
                 CeremonyId::new("write-test").expect("a valid ceremony id"),
                 None,

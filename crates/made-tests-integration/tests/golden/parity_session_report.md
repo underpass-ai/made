@@ -199,8 +199,6 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
   }
 ]
 ```
-
-
 ### Guard approvals
 
 ```json
@@ -2527,5 +2525,3 @@ Ceremonies: 2 · completed: 1 · incomplete: 1
   }
 ]
 ```
-
-

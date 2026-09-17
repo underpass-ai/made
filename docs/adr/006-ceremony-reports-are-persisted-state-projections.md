@@ -14,13 +14,13 @@ happened.
 
 `made_generate_ceremony_report` is an embedded MCP read capability. It reads
 each `CeremonyInstance`, resolves the exact definition it runs, and reads the
-same store's `AuditJournalPort`. The embedded builder therefore accepts one
-ceremony store implementing repository, unit-of-work and audit-journal ports;
-the three views cannot be configured from different sources.
+same store's sealed event stream. The embedded builder therefore accepts one
+ceremony store serving the event and snapshot ports; the views cannot be
+configured from different sources.
 
-The MCP adapter owns Markdown rendering. The engine facade exposes ordered
-audit-record reads, while domain and application types remain independent of a
-presentation format. Reports preserve caller id order and contain no generated
+Markdown rendering is a `made-app` projection both editions call (parity slice
+F3c). The engine facade exposes ordered sealed-record reads, while domain types
+remain independent of a presentation format. Reports preserve caller id order and contain no generated
 time, random identifier or inferred prose. Empty lists, duplicate ids and any
 unknown id fail the whole request explicitly.
 

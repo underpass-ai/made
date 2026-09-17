@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{CeremonyParticipant, InterventionView};
+use crate::{CeremonyParticipant, InterventionView, RecollectionView};
 
 /// One ceremony instance, as a consumer sees it.
 ///
@@ -28,6 +28,11 @@ pub struct CeremonySummary {
     /// product keeps its own reference to its own aggregate — the engine
     /// carries the keys without knowing what they mean.
     pub context: BTreeMap<String, serde_json::Value>,
+    /// What earlier sessions in this ceremony's memory scope decided,
+    /// as this one was told when it opened. Absent when it was told
+    /// nothing.
+    #[serde(default)]
+    pub recollection: Option<RecollectionView>,
     pub created_at_millis: i64,
     pub updated_at_millis: i64,
     pub completed_at_millis: Option<i64>,
@@ -51,6 +56,7 @@ mod tests {
                 bound_at_millis: 1_700_000_000_000,
             }],
             interventions: Vec::new(),
+            recollection: None,
             context: BTreeMap::from([(
                 "requested_by".to_owned(),
                 serde_json::Value::String("consumer-1".to_owned()),
@@ -76,6 +82,7 @@ mod tests {
             current_state: "STARTED".to_owned(),
             participants: Vec::new(),
             interventions: Vec::new(),
+            recollection: None,
             context: BTreeMap::new(),
             created_at_millis: 1,
             updated_at_millis: 1,

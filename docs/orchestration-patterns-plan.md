@@ -111,13 +111,15 @@ sourcing", and the code matches that decision exactly:
 ### 0.3 Memory
 
 - The memory ports (`MemoryWriterPort`, `MemoryReaderPort`), their value
-  objects and the ten-property conformance suite name no kernel, no tool and
-  no JSON key. Two non-KMP implementations pass the suite today
-  (`InProcessSessionMemory`, `ForgetfulMemory`).
+  objects and the conformance suite name no kernel, no tool and no JSON key.
+  Two non-KMP implementations pass the suite today
+  (`InProcessSessionMemory`, `ForgetfulMemory`). *[E1/E2: the suite states
+  nine properties; the tenth went with `ask`.]*
 - **The engine writes memory and never reads it.** `MemoryReaderPort` has no
   consumer outside the conformance suite; `AnsweringQuestions`,
   `MemoryQuestion` and `MemoryDimension` are declared by no implementation and
-  read by nobody.
+  read by nobody. *[Done in E1/E2: `recall` is called at every start, and the
+  three unread declarations are gone.]*
 - The KMP adapter (`crates/made-adapters/src/kmp/`) sits behind an empty Cargo
   feature, is selectable by no configuration, and is wired into no binary.
   Both composition roots ship `ForgetfulMemory`. The adapter launches
@@ -126,22 +128,33 @@ sourcing", and the code matches that decision exactly:
   English refusals. KMP still aliases `kernel_*` tool names, but the binary
   name and the environment are stale.
 - Memory scope is `ceremony:{id}`, so even a working adapter would never let
-  one ceremony recall another.
+  one ceremony recall another. *[Done in E1: a ceremony declares
+  `memory_scope` in its context; the default still means no shared memory and
+  says so.]*
 - Residue of KMP inside the domain: a doc comment on
   `MemoryRelationKind::Authorizes` citing a KMP issue number, `"kmp: …"`
-  prefixes in `DomainError` reasons, `kmp_*` span names.
+  prefixes in `DomainError` reasons, `kmp_*` span names. *[Done: the
+  vocabulary gate is what keeps it out now.]*
 - Memory writes are already shaped as a projection
   (`services/session_memory_projection.rs` + `session_memory_recorder.rs`),
   fire-and-forget after commit.
 
 ### 0.4 Editions and parity
 
-Four surfaces expose the engine: the gRPC contract (35 RPCs in
-`crates/made-proto/proto/underpass/made/v1/made.proto`), the MCP server on the
-gRPC backend (35 tools, a 1:1 bijection with the RPCs pinned by
+Four surfaces expose the engine: the gRPC contract
+(`crates/made-proto/proto/underpass/made/v1/made.proto`), the MCP server on the
+gRPC backend (a 1:1 bijection with the RPCs, pinned by
 `crates/made-mcp/src/protocol/tests.rs`), the MCP server on the embedded
-backend (23 tools), and the Rust facade (`EmbeddedMade`, 31 methods, of which
-`made-api`'s `CeremonyEngineApi` publishes 8, read-only plus `start`).
+backend, and the Rust facade (`EmbeddedMade`, of which `made-api`'s
+`CeremonyEngineApi` publishes a read-only subset plus `start`).
+
+**How many of each, and which:** `docs/architecture/parity.tsv` is the source
+of truth — one row per capability, one column per surface — and F1's gate
+fails in both directions if it and the code disagree. The counts this section
+carried (35 RPCs, 35 tools, 23 tools, 31 methods) were true on 2026-09-16 and
+moved with every slice of WS-F; the file does not go stale, so it is named
+here instead of a number. *[Recounted 2026-09-17, after F1–F4 and F6:
+the contract carries 41 RPCs.]*
 
 - **Shared by both MCP backends: the 19 ceremony verbs.** Every human-driven
   verb (guards, interventions, evidence, reasons, participant binding) exists
@@ -160,7 +173,12 @@ backend (23 tools), and the Rust facade (`EmbeddedMade`, 31 methods, of which
   deliberation (`Deliberate`, `StreamDeliberation`, `GetDeliberationResult`,
   `Orchestrate`, `ProcessTriggerEvent`, `RunCouncilDecision`), configuration
   (councils, agents, contracts) and observability (`GetStatus`,
-  `GetMetrics`). `docs/editions.md` says so ("not claimed").
+  `GetMetrics`). `docs/editions.md` says so ("not claimed"). *[As of #53:
+  `GetStatus` and `GetMetrics` are served on all four surfaces, so the
+  observability cluster is gone from this list and `parity.tsv` carries no
+  `G3` reason on those two rows; and as of F6 `docs/editions.md` no longer
+  says "not claimed" — it points at the Editions table. Fourteen tools remain
+  gRPC-only: the council surface, until B3.]*
 - **Three live divergences inside the shared verbs**: `made_run_ceremony`
   omits `steps[].iteration` in the embedded presenter
   (`embedded_run_ceremony_presenter.rs`) while the gRPC mapper emits it — the
@@ -190,6 +208,8 @@ Observability rests on three legs, and **none of them is the journal**:
 - **Metrics at the edges.** A 22-method `MetricsRecorderPort`
   (`crates/made-core/src/ports/metrics_recorder.rs`) with 21 Prometheus
   families (`crates/made-adapters/src/metrics/prometheus_recorder.rs`).
+  *[As of #53 the port has 23 methods: `recorder_name` says what is
+  recording.]*
   Cost, latency, saturation and error class are recorded in the provider and
   judge adapters (an RAII guard in `agents/instrument.rs`). Deliberation
   quality is recorded at four points of `deliberate.rs`. The five ceremony
@@ -222,7 +242,15 @@ What follows:
   `made_get_status` are gRPC-only, and the default log filter
   `made_mcp=info,made_adapters::sqlite=info` drops every `made_app` span and
   event. What ships is a `made_mcp_tool` debug/warn pair per tool call and
-  the payload-free journal chain.
+  the payload-free journal chain. *[As of #53 the first and third clauses are
+  wrong and the rest still holds: `EmbeddedMadeBuilder` wires a
+  `PrometheusMetricsRecorder` with its own in-process registry when the host
+  wires none, so the five ceremony families of a `RunCeremony` run are
+  recorded in either edition, and `made_get_status` / `made_get_metrics` are
+  served on all four surfaces over one pair of use cases. There is still no
+  exporter, no endpoint and no registry on the `made_get_metrics` answer —
+  that answer is the `Statistics` counters, which an edition running no
+  council reports at zero. G3 is the rest.]*
 - **The docs promise more than the code does.** Twelve claims in
   `docs/made-observability-design.md` and
   `docs/operations/observability-runbook.md` have no code behind them: gRPC
@@ -234,7 +262,11 @@ What follows:
   "each event carries `ceremony_id`, `step_id`, `specialty`" which is true for
   one of six messages. Alerts and dashboard rows reference series that do not
   exist. `made_get_metrics` on the gRPC backend returns the five legacy
-  counters, never the registry.
+  counters, never the registry. *[Closed by G5 (#69) on 2026-09-17: the twelve
+  are each kept with their source, scheduled in a "Planned — not implemented"
+  section that names its slice, or deleted; the alerts and dashboard rows now
+  only read series the registry has. This paragraph is the checklist that pass
+  worked from, kept as the dated snapshot it was.]*
 
 ### 0.6 Engineering gates and the developer loop
 
@@ -418,13 +450,13 @@ file, the way `share-store` did.
 
 | Slice | Change | Gate |
 |---|---|---|
-| A1 | `CeremonyEvent` and versioned payloads; the sealed envelope carries the event; the digest covers it; readers for `schema_version != 1` (upcasters) with a test fixture per old version. | Chain conformance gains "a record carries its event"; verifier rejects a payload edit. |
-| A2 | `decide` / `apply` / `rehydrate` on `CeremonyInstance`; every current mutator becomes a `decide` that yields events and an `apply` that folds them; unit tests fold every event type. | Aggregate tests: for each command, `apply(decide(cmd))` reproduces today's mutator result; property test: fold equality after random command sequences. |
-| A3 | `CeremonyEventStorePort` + `CeremonySnapshotStorePort`, in-memory and SQLite adapters, conformance: append-only, contiguous sequence, stale expectation conflicts and writes nothing, duplicate `event_id` rejected, concurrent appends admit one winner, chain intact across commits, `read_all` order stable, fold equality with snapshots. | Both adapters pass; `two_writers_one_store` re-targeted. |
-| A4 | Use cases move from `SessionJournal` (load snapshot, mutate, commit snapshot) to `load = fold`, `decide`, `append`, with bounded retry for commutative commands. `session_facts.rs` becomes the event constructors. Correlation, causation and trace ids filled (§3.7). | Every existing use-case test passes unchanged in behaviour; new tests for retry-on-conflict and fail-fast. |
+| A1 | `CeremonyEvent` and versioned payloads; the sealed envelope carries the event; the digest covers it; readers for `schema_version != 1` (upcasters) with a test fixture per old version. | Chain conformance gains "a record carries its event"; verifier rejects a payload edit. *[Done: audit records are schema version 2 and carry the ceremony event, its payload and its own schema version inside the sealed envelope; the digest covers the payload, so `AuditChain::verify` detects an edited event, and version-1 records from earlier stores still read.]* |
+| A2 | `decide` / `apply` / `rehydrate` on `CeremonyInstance`; every current mutator becomes a `decide` that yields events and an `apply` that folds them; unit tests fold every event type. | Aggregate tests: for each command, `apply(decide(cmd))` reproduces today's mutator result; property test: fold equality after random command sequences. *[Done: `decide` / `apply` / `rehydrate` on `CeremonyInstance`, with the existing mutators as wrappers over the pair; fold equality is tested per command and over random sequences.]* |
+| A3 | `CeremonyEventStorePort` + `CeremonySnapshotStorePort`, in-memory and SQLite adapters, conformance: append-only, contiguous sequence, stale expectation conflicts and writes nothing, duplicate `event_id` rejected, concurrent appends admit one winner, chain intact across commits, `read_all` order stable, fold equality with snapshots. | Both adapters pass; `two_writers_one_store` re-targeted. *[Done: `InMemoryCeremonyEventStore` and the SQLite tables `ceremony_events`, `ceremony_event_log`, `ceremony_snapshots` and `store_meta`, both behind the two ports with their conformance suites; the two-writers test covers the event store.]* |
+| A4 | Use cases move from `SessionJournal` (load snapshot, mutate, commit snapshot) to `load = fold`, `decide`, `append`, with bounded retry for commutative commands. `session_facts.rs` becomes the event constructors. Correlation, causation and trace ids filled (§3.7). | Every existing use-case test passes unchanged in behaviour; new tests for retry-on-conflict and fail-fast. *[Done: the ceremony use cases load the fold, decide and append with optimistic concurrency — three attempts for the commands that commute, fail-fast for transitions and start — and every record carries its correlation and causation ids. `trace_id` is still `None`: that is G2, not A4.]* |
 | A5 | Projections: transcript from the fold (port deleted), instance view unchanged, report from events + definition, memory recorder consuming events through the subscriber port. | Report test renders step outputs from the stream alone; memory tests unchanged. |
 | A6 | Cursor-based publication replaces the outbox table: `CeremonyEventSubscriberPort` with durable cursors; conformance re-targeted; the old outbox types and table removed. | Cursor conformance; delivery E2E in §3.3. |
-| A7 | Migration command and copy-on-write import; dead paths removed (`save`, `append`, `state_migrations`, `migrate_definition_binding`, split in-memory adapters); `made_verify_ceremony_journal` exposed on both surfaces. | Migration test on a fixture store from v0.3.0; architecture gate baseline shrinks. |
+| A7 | Migration command and copy-on-write import; dead paths removed (`save`, `append`, `state_migrations`, `migrate_definition_binding`, split in-memory adapters); `made_verify_ceremony_journal` exposed on both surfaces. | Migration test on a fixture store from v0.3.0; architecture gate baseline shrinks. *[Done: `made-mcp migrate-store` imports every pre-stream session as one `InstanceImported` genesis event and proves fold equality before installing; the fixture is a store v0.3.1 wrote, under `crates/made-tests-integration/fixtures/stores/v0.3.1/`. `CeremonyUnitOfWorkPort`, `CeremonyInstanceRepositoryPort`, `AuditJournalPort`, `CeremonyCommit`, `CommitOutcome`, `ExpectedRevision` and the whole outbox went with the commit path that was their only writer; the legacy tables stay as read-only provenance behind `LegacyCeremonySnapshotSourcePort`. `VerifyCeremonyJournal` landed on all four surfaces.]* |
 | A8 | **ADR-012 (event sourcing)**: events are the source of truth; snapshots are a cache; the chain seals events; the outbox is a cursor; migration is copy-on-write; supersedes the named sentences of ADR-003 and ADR-009. | ADR review. |
 
 ### 3.2 WS-B — Concurrent orchestration
@@ -592,10 +624,10 @@ the embedded edition leads, the API follows in the same change.
 
 | Slice | Change | Gate |
 |---|---|---|
-| F1 | **ADR-014 (parity)** states the definition and the one-PR rule. The exception list is data: `docs/architecture/parity.tsv`, one row per capability, a column per surface, as `conformance.tsv` already does for adapters. | A test asserts set equality between the catalog per backend, the proto RPC list, `EmbeddedMade`'s method list and the TSV. Adding a tool to one side fails CI until the row says so. |
-| F2 | **Close the three live divergences**: `steps[].iteration` in the embedded run presenter; `{count, instances[]}` plus `rehydratable` / `reason` on both backends and in the proto; one error envelope (`{code, message, retryable}`, reusing `made-api`'s `ApiError` vocabulary); one default lease owner naming rule. | Shape parity test over every shared tool. |
-| F3 | **Bring the embedded-only tools to the API.** `ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs over the existing use cases (the delegated-host protocol then works against a cluster too); `DesignCeremony` as an RPC over the same intent document; `ReadCeremonyEvents` (the stream, with cursor) and `GetCeremonyTranscript` read RPCs, which give `GenerateCeremonyReport` a remote path or let the MCP server render the report on the gRPC backend from those reads. Add the tools to the gRPC backend catalog. | Catalog↔proto bijection test extended; the exception file has no ceremony rows. |
-| F4 | **Make the parity test a real gate.** Drive the same session on both backends with the same handler wiring, compare shape **and** values for every shared tool, compare request acceptance through the schema gate with an embedded arm, compare error envelopes. Replace the allowlist with the TSV comparison from F1. | The three F2 divergences, reintroduced on a branch, fail the test. |
+| F1 | **ADR-014 (parity)** states the definition and the one-PR rule. The exception list is data: `docs/architecture/parity.tsv`, one row per capability, a column per surface, as `conformance.tsv` already does for adapters. | A test asserts set equality between the catalog per backend, the proto RPC list, `EmbeddedMade`'s method list and the TSV. Adding a tool to one side fails CI until the row says so. *[Done: `docs/architecture/parity.tsv` and the gate in `crates/made-mcp/src/protocol/parity_tests.rs`, which compares it with the RPC list, both catalogs, `EmbeddedMade`'s public methods and `CeremonyEngineApi`, and fails in both directions and on a gap with no reason.]* |
+| F2 | **Close the three live divergences**: `steps[].iteration` in the embedded run presenter; `{count, instances[]}` plus `rehydratable` / `reason` on both backends and in the proto; one error envelope (`{code, message, retryable}`, reusing `made-api`'s `ApiError` vocabulary); one default lease owner naming rule. | Shape parity test over every shared tool. *[Done: `steps[].iteration` on the embedded run presenter, `{count, instances[]}` with `rehydratable` and `reason` on both backends and in the proto, one `{code, message, retryable}` envelope on every tool failure, and `made-mcp:<backend>` as the one default lease owner.]* |
+| F3 | **Bring the embedded-only tools to the API.** `ClaimCeremonyStep` and `CompleteCeremonyStep` RPCs over the existing use cases (the delegated-host protocol then works against a cluster too); `DesignCeremony` as an RPC over the same intent document; `ReadCeremonyEvents` (the stream, with cursor) and `GetCeremonyTranscript` read RPCs, which give `GenerateCeremonyReport` a remote path or let the MCP server render the report on the gRPC backend from those reads. Add the tools to the gRPC backend catalog. | Catalog↔proto bijection test extended; the exception file has no ceremony rows. *[Done: `ClaimCeremonyStep`, `CompleteCeremonyStep`, `DesignCeremony`, `ReadCeremonyEvents`, `GetCeremonyTranscript` and `GenerateCeremonyReport` on the contract, with the matching gRPC-backend tools and facade methods; designing and reporting moved into use cases on the way. `parity.tsv` carries no ceremony gap.]* |
+| F4 | **Make the parity test a real gate.** Drive the same session on both backends with the same handler wiring, compare shape **and** values for every shared tool, compare request acceptance through the schema gate with an embedded arm, compare error envelopes. Replace the allowlist with the TSV comparison from F1. | The three F2 divergences, reintroduced on a branch, fail the test. *[Done: one session drives every shared tool on both backends with the same wiring and a frozen clock, compared field for field with `output`, `details`, `context` and `evidence_pack` included; the tool list comes from `parity.tsv` and the allowlist of seventeen names is gone. `tools/call` is validated against the published schema in the server layer, before any backend.]* |
 | F5 | **The council surface in the local edition.** The sixteen gRPC-only tools are absent from embedded by design today. `GetStatus` / `GetMetrics` come to embedded in §3.7. Deliberation and councils stay cluster-only, listed with their reason in the exception file, until B3's parallel proposing lands — the first feature the local edition would otherwise never see — at which point they come into `EmbeddedMade` behind the provider features (`made-embedded` already excludes only `tonic`, `async-nats` and `sqlx`, not the HTTP provider clients). | The exception file names each with its reason; a later slice empties it. |
 | F6 | **Support matrix gains an "Editions" section**: one row per capability group with the surfaces it is supported on and the gate that proves it. `docs/editions.md` "tool surfaces differ by design" becomes a pointer to that table. | The table is checked against `parity.tsv`. *[Done: `docs/operations/support-matrix.md` § Editions, derived from `parity.tsv` and `CAPABILITY_GROUPS` and compared cell by cell by `crates/made-mcp/src/protocol/editions_matrix_tests.rs`; a group whose capabilities disagree about a surface is split per capability.]* |
 
@@ -615,7 +647,7 @@ run. Nothing observable depends on the edition.
 | G2 | **Fill the trace.** Events take `trace_id`, `correlation_id` and `causation_id` from the current span context (`tracing_opentelemetry` on the server; a per-tool-call trace id minted by `made-mcp` when the host sends no `traceparent`, which MCP allows through request metadata). `made_get_ceremony_instance`, `made_read_ceremony_events` and the report expose them. | Chain conformance: "a record carries the trace that wrote it"; report test shows the id. |
 | G3 | **Embedded adapters.** `EmbeddedMade::open` wires `PrometheusMetricsRecorder` with an in-process registry; `made_get_metrics` and `made_get_status` join the embedded backend and return the rendered registry (text and a JSON projection) — the gRPC backend returns the same registry instead of the five legacy counters. `made-mcp` gains the `otel` feature and honours `MADE_OTLP_ENDPOINT` and the mTLS variables exactly as `made` does (the dead `opentelemetry` dependency either serves that or leaves); a **file sink** adapter writes events and metrics snapshots as JSON lines to a host-chosen path; the default log filter becomes `made_mcp=info,made_app=info,made_adapters::sqlite=info`. A Rust host injects the same adapters through the builder. | Embedded stdio test reads a ceremony counter after one step; `real_kernel` discovery shows `service_observability` on both backends; a test tails the file sink. |
 | G4 | **Spans where the runbook says they are.** A span per step in the one-shot driver (`run_step`), a span for the step handler, spans on the provider and judge adapters carrying `provider`, `model`, `error_kind` and token counts. | Trace-shape test against an in-memory exporter. |
-| G5 | **Docs truth pass**, first. Every claim in `docs/made-observability-design.md` and `docs/operations/observability-runbook.md` without code behind it is either scheduled in G1–G4 by name or deleted, per PRINCIPLES §1. Alerts and dashboard rows that reference absent series go with them or move to a "planned" section. | Docs review with the §0.5 list as the checklist. |
+| G5 | **Docs truth pass**, first. Every claim in `docs/made-observability-design.md` and `docs/operations/observability-runbook.md` without code behind it is either scheduled in G1–G4 by name or deleted, per PRINCIPLES §1. Alerts and dashboard rows that reference absent series go with them or move to a "planned" section. | Docs review with the §0.5 list as the checklist. *[Done: every family in the design doc's catalogue names the file that records it, the alerts and dashboard read only series the registry has, and each document carries one "Planned — not implemented" section naming G1–G4 and G6; what no slice owns was deleted rather than left pending.]* |
 | G6 | **Ceremony progress as a stream.** `StreamCeremony` RPC on the cluster fed by the subscriber port; the pull cursor of C2 on the embedded edition. Same events, two doors. | Parity test covers the stream on gRPC and the cursor on embedded against the same session. |
 
 ### 3.8 WS-E — Memory that is MADE's own
@@ -627,8 +659,8 @@ adapter and maps at the boundary with DTOs.
 | Slice | Change | Gate |
 |---|---|---|
 | E0 | Measure the current adapter against `kmp-mcp` 0.18 with the binary name and environment it expects, and record the result under `docs/experiments/`. | A recorded run. |
-| E1 | **Add the consumer.** At ceremony start, `MemoryReaderPort::recall(scope)` for the declared scope; the recollection is rendered into the first brief as "what earlier sessions decided" (bounded size, decisions and constraints first). Scope comes from a new definition input `memory_scope`; default stays `ceremony:{id}`, which means "no shared memory", stated as such. | A second ceremony in the same scope sees the first one's decision in its brief. |
-| E2 | **Trim the port to what MADE uses.** Remove `AnsweringQuestions` / `MemoryQuestion` and `MemoryDimension` (or give each a consumer in E1); delete the kernel-citing doc comment on `Authorizes` and add the variant to the MCP schema enum where it is missing; replace `"kmp: …"` error prefixes; rename `kmp_*` spans to `memory_*`. Keep the ten-property conformance suite as the contract. | Conformance green; grep gate for `kmp` / `kernel` in `made-core`. |
+| E1 | **Add the consumer.** At ceremony start, `MemoryReaderPort::recall(scope)` for the declared scope; the recollection is rendered into the first brief as "what earlier sessions decided" (bounded size, decisions and constraints first). Scope comes from a new definition input `memory_scope`; default stays `ceremony:{id}`, which means "no shared memory", stated as such. | A second ceremony in the same scope sees the first one's decision in its brief. *[Done: `memory_scope` is a reserved context key resolved by `services/memory_scope_resolver.rs`; the rendering is `SessionRecollection` (decisions and constraints first, 4096 bytes of summary, `truncated` when the bound bit); it is sealed as `MemoryRecalled` in the opening batch and exposed on the four surfaces. `crates/made-tests-integration/tests/mcp_parity_session.rs::a_session_in_a_shared_scope_is_told_what_the_last_one_decided` is the gate.]* |
+| E2 | **Trim the port to what MADE uses.** Remove `AnsweringQuestions` / `MemoryQuestion` and `MemoryDimension` (or give each a consumer in E1); delete the kernel-citing doc comment on `Authorizes` and add the variant to the MCP schema enum where it is missing; replace `"kmp: …"` error prefixes; rename `kmp_*` spans to `memory_*`. Keep the conformance suite as the contract. | Conformance green; grep gate for `kmp` / `kernel` in `made-core`. *[Done: `ask`, `MemoryQuestion`, `AnsweringQuestions` and `MemoryDimension` are gone and the suite states **nine** properties, not ten — the tenth asked whether a backend answered a question in words. `authorizes` joined the `made_assert_ceremony_reason` schema enum. The error prefixes and span names #41 removed stay out because `scripts/ci/domain-vocabulary-boundary.sh` is a gate.]* |
 | E3 | **Ship a durable default.** `SqliteSessionMemory` in the ceremonies store (new tables under the same seam), passing conformance, wired by default in the embedded builder (replacing `ForgetfulMemory`) and in the server behind `MADE_MEMORY=sqlite\|none`. The memory recorder becomes a subscriber of the event stream (A5). | Conformance on SQLite; restart test: a decision survives reopen. |
 | E4 | **Move the KMP adapter out of the tree** into its own crate (`made-memory-kmp`, depending on `made-core` only) or into the KMP repository as "MADE adapter", with the conformance suite as its gate. Fix its names there (`kmp-mcp`, `KMP_MCP_*`, `kmp_*` tools) and replace refusal-string matching with structured error codes once KMP exposes them. | `made-adapters` has no `kmp` module; CI matrix drops the `kmp` feature; the external crate's CI runs the suite. |
 | E5 | **ADR-013 (memory)**: memory is MADE's own bounded context; recall is a first-class use case; SQLite is the reference implementation; kernels are out-of-tree adapters. Update `docs/index.md`, `stack-gap-analysis.md`, the platform table in `README.md`. | ADR review. |
@@ -643,11 +675,11 @@ required check between a ready pull request and `main`.
 
 | Slice | Change | Gate |
 |---|---|---|
-| H1 | **Draft-PR dev loop.** `dev-loop.yml` triggers on `pull_request` (draft only) and `workflow_dispatch`, replacing the `develop`-branch trigger. `DEV_PACKAGES` names the crates under work for the current phase (phase 1: `-p made-core -p made-app -p made-adapters`). Jobs: `fmt`, `clippy` on `DEV_PACKAGES`, tests of `DEV_PACKAGES`, the architecture ratchet, the parity gate (F1, it is seconds), and a `made-mcp` embedded binary built for the maintainer's machine and uploaded as an artifact. One `rust-cache` key per lane, `cancel-in-progress` per ref. | The loop answers a draft in under ten minutes on a warm cache; a workflow-contract test pins the trigger and the stand-down condition. |
-| H2 | **The full gate stands down on drafts and wakes on ready.** `quality-gate.yml` adds `ready_for_review` to its `types` and guards its planner job with `draft == false`; every downstream job needs the planner's outputs, so they all stand down with it. | A draft PR runs only the dev loop; marking it ready runs everything; the required checks list is unchanged. |
-| H3 | **Impact planner.** `scripts/ci/quality-gate-plan.py`, ported: reverse workspace dependency closure from `cargo metadata`, path routing for the independent contracts (proto/AsyncAPI, embedded boundary, plugin bundle, chart, container image, coverage, publication dry-run), `--self-test`, unknown paths and edits to the planner itself fail closed to the full matrix; `workflow_dispatch` stays full. | The planner's self-test runs first in the gate; a docs-only PR runs no Rust job; a `made-core` change runs everything. |
-| H4 | **Tree proof.** `scripts/ci/tree-already-proved.sh`: a push to `main` whose tree hash was proved green by the merged pull request's gate skips the gate; a merge from an out-of-date branch, a conflict resolved in the UI or a direct push still runs it. | Two consecutive merges: the second, byte-identical tree does not rebuild. |
-| H5 | **Local mirror.** `just dev` runs exactly the dev loop for `DEV_PACKAGES`; `just check` stays the full gate; `docs/dev-loop.md` documents both and the draft/ready handover. Per-crate coverage floors with a ratchet join `just coverage`. | `just dev` and the workflow run the same script. |
+| H1 | **Draft-PR dev loop.** `dev-loop.yml` triggers on `pull_request` (draft only) and `workflow_dispatch`, replacing the `develop`-branch trigger. `DEV_PACKAGES` names the crates under work for the current phase (phase 1: `-p made-core -p made-app -p made-adapters`). Jobs: `fmt`, `clippy` on `DEV_PACKAGES`, tests of `DEV_PACKAGES`, the architecture ratchet, the parity gate (F1, it is seconds), and a `made-mcp` embedded binary built for the maintainer's machine and uploaded as an artifact. One `rust-cache` key per lane, `cancel-in-progress` per ref. | The loop answers a draft in under ten minutes on a warm cache; a workflow-contract test pins the trigger and the stand-down condition. *[Done: `dev-loop.yml` on draft pull requests and `workflow_dispatch`, `DEV_PACKAGES` in `scripts/ci/dev-loop.sh`, `scripts/ci/dev-loop-workflow-contract.py` failing the build if the script and the workflow name different crates, and an embedded `made-mcp` binary as an artifact. The `develop` trigger is gone; the ten-minute target is not measured in this repo.]* |
+| H2 | **The full gate stands down on drafts and wakes on ready.** `quality-gate.yml` adds `ready_for_review` to its `types` and guards its planner job with `draft == false`; every downstream job needs the planner's outputs, so they all stand down with it. | A draft PR runs only the dev loop; marking it ready runs everything; the required checks list is unchanged. *[Done: the quality, integration and packaging workflows stand down on a draft and wake on `ready_for_review`, and a `gate` job fails on purpose while the pull request is a draft so a stand-down can never satisfy a required check.]* |
+| H3 | **Impact planner.** `scripts/ci/quality-gate-plan.py`, ported: reverse workspace dependency closure from `cargo metadata`, path routing for the independent contracts (proto/AsyncAPI, embedded boundary, plugin bundle, chart, container image, coverage, publication dry-run), `--self-test`, unknown paths and edits to the planner itself fail closed to the full matrix; `workflow_dispatch` stays full. | The planner's self-test runs first in the gate; a docs-only PR runs no Rust job; a `made-core` change runs everything. *[Done: `scripts/ci/quality-gate-plan.py` with the reverse workspace closure and path routing for the independent contracts; unknown paths, the manifest, the lockfile, the toolchain, the workflow, the planner itself and every `workflow_dispatch` fail closed to the full matrix.]* |
+| H4 | **Tree proof.** `scripts/ci/tree-already-proved.sh`: a push to `main` whose tree hash was proved green by the merged pull request's gate skips the gate; a merge from an out-of-date branch, a conflict resolved in the UI or a direct push still runs it. | Two consecutive merges: the second, byte-identical tree does not rebuild. *[Done: `scripts/ci/tree-already-proved.sh`; a merge from an out-of-date branch, a conflict resolved in the UI and a direct push still run the gate.]* |
+| H5 | **Local mirror.** `just dev` runs exactly the dev loop for `DEV_PACKAGES`; `just check` stays the full gate; `docs/dev-loop.md` documents both and the draft/ready handover. Per-crate coverage floors with a ratchet join `just coverage`. | `just dev` and the workflow run the same script. *[Partly done: `just dev` runs `scripts/ci/dev-loop.sh`, the script the workflow runs, `just check` is the full gate and `docs/dev-loop.md` documents both and the draft/ready handover. The per-crate coverage floors and their ratchet are not built: `scripts/ci/rust-coverage.sh` still enforces one workspace-wide 80 %.]* |
 
 
 ---

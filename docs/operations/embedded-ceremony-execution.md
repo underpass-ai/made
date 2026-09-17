@@ -86,6 +86,31 @@ system and reference it:
 Do not put credentials, cookies or private session material in ceremony
 context, outputs or the audit journal.
 
+## Sharing memory between sessions
+
+By default a session remembers alone: its memory scope is
+`ceremony:{its own id}`, nobody else looks there, and starting a second
+ceremony tells it nothing. To have one session open knowing what earlier ones
+decided, start both with the same `memory_scope` in their context:
+
+```json
+{ "ceremony_id": "…", "definition_yaml": "…", "actor_id": "…",
+  "actor_kind": "service", "context": { "memory_scope": "team:editorial" } }
+```
+
+The engine reads that scope when the session opens and seals what it was told
+into the stream (`memory_recalled`, right after the opening), so
+`made_get_ceremony_instance` carries it under `recollection` and the report
+renders it as *What earlier sessions decided*. The scope's grammar, what is
+rendered and the size bound are in
+[the authoring runbook](ceremony-authoring-runbook.md#8-memory_scope--what-earlier-sessions-decided).
+
+The embedded plugin ships a memory that keeps nothing (`MADE_MEMORY` selects
+nothing else yet), so within one stdio process a later session recalls what an
+earlier one in the same scope decided only when the host wires a memory through
+`EmbeddedMadeBuilder::with_memory`. A durable memory in the ceremonies store is
+slice E3 of the orchestration plan and is not shipped.
+
 ## Recovery after restart
 
 1. Start the plugin against the same `MADE_MCP_STORE_PATH`.
@@ -119,9 +144,9 @@ guard.
 
 ## Observability and completion events
 
-The durable audit journal is the source for semantic ceremony history. Claim
-and completion produce the engine's step lifecycle records in the same SQLite
-unit of work as the instance snapshot. `RUST_LOG=made_mcp=debug` adds MCP
+The durable event stream is the source for semantic ceremony history. Claim
+and completion append the engine's step lifecycle records to it in one SQLite
+write transaction. `RUST_LOG=made_mcp=debug` adds MCP
 tool-call diagnostics on stderr; stdout is reserved for JSON-RPC.
 
 Use both layers deliberately:
@@ -138,8 +163,8 @@ Use both layers deliberately:
 - referenced artifacts: the actual external evidence produced by a stage.
 
 A consumer that needs a finalization notification should observe the terminal
-ceremony event from the audit/outbox contract, not infer completion from a UI
-window closing. Exporting that event to an external observer is a separate host
+ceremony event in the sealed stream, not infer completion from a UI window
+closing. Exporting that event to an external observer is a separate host
 integration; embedded SQLite remains the authoritative local record.
 
 ## Troubleshooting

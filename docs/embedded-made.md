@@ -56,28 +56,33 @@ and definition version solve different compatibility problems.
 | Port | Default adapter |
 |---|---|
 | ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
-| ceremony instances | `InMemoryCeremonyInstanceRepository` |
-| ceremony transcript | `InMemoryCeremonyTranscriptStore` |
+| ceremony event stream and snapshots | `InMemoryCeremonyEventStore` |
 | step execution | `NoopCeremonyStepHandler` |
 | clock | `SystemClock` |
-| metrics | `NoopMetricsRecorder` |
+| metrics | `PrometheusMetricsRecorder` with its own in-process registry |
+
+The metrics default is a real registry rather than a sink that forgets: it is
+local to the engine, has no exporter and no endpoint, and nothing renders it
+over a socket. `EmbeddedMade::status` names which recorder is running, so a
+host can tell whether its own `with_metrics` injection took.
 
 These defaults start no service and perform no remote IO. They are suitable for
 single-process workflows, tests and hosts that begin with ephemeral state.
 They are not a durability claim: a host that must resume after process loss
-injects persistent implementations of the same repositories and context port.
+injects persistent implementations of the same repositories and the ceremony
+store.
 
 ## Durable SQLite composition
 
 `EmbeddedMade::open(path)` supplies a
 `SqliteCeremonyStore` to the ceremony-store and definition-publication ports.
-That composition persists ceremony snapshots, unit-of-work state, the audit
-journal, outbox rows and published definitions across process restarts. Its
+That composition persists the ceremony event streams, their global order, the
+folded snapshots and published definitions across process restarts. Its
 crash/reopen behavior is exercised by
 `crates/made-embedded/tests/sqlite_store_api.rs`.
 
 The constructor does not silently make every port durable. Mounted definition
-repositories and ceremony transcripts still use their default in-memory
+repositories still use their default in-memory
 adapters unless the host injects replacements. Step execution and evidence
 collection also keep their default no-op adapters unless the host supplies real
 implementations. SQLite persistence therefore proves durable ceremony state; it
@@ -113,10 +118,11 @@ For richer integrations the builder accepts `Arc<dyn ...Port>` for:
 
 - definition repository;
 - instance repository;
-- transcript store;
 - step handler;
 - clock;
-- metrics recorder.
+- metrics recorder;
+- event subscriber — a projection of the host's own, told the sealed records of
+  every append that landed.
 
 The host keeps the concrete adapter handle when it needs adapter-specific
 administration. The embedded facade does not expose a service locator.
@@ -162,7 +168,7 @@ explicitly, preserving its existing deployment capabilities.
 - The embedded facade currently covers ceremonies, not every public gRPC RPC.
 - `EmbeddedMade::default()` is process-local and ephemeral.
   `EmbeddedMade::open(path)` persists the ceremony store and definition publications,
-  but mounted definitions and transcripts remain host-configured boundaries.
+  but mounted definitions remain a host-configured boundary.
 - Callbacks execute on the caller's async runtime; MADE does not create
   or hide a runtime.
 - Packaging to crates.io and a stable compatibility commitment wait for the

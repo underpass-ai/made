@@ -1,4 +1,4 @@
-//! What a session left behind: the schemas of the three reads.
+//! What a session left behind: the schemas of the four reads.
 //!
 //! Grouped as the capability group `ceremony_history` and the handler
 //! file behind it are, because they answer one question — what
@@ -81,6 +81,17 @@ pub(crate) fn read_ceremony_events_schema() -> Value {
                      `next_version`."
                 )
             }
+        }
+    })
+}
+
+pub(crate) fn verify_ceremony_journal_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id. A ceremony with no stream is not found.")
         }
     })
 }

@@ -432,12 +432,14 @@ pub(super) fn parity_rows() -> Vec<ParityRow> {
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
         }
-        let cells: Vec<&str> = line.split('\t').collect();
+        let mut cells: Vec<&str> = line.split('\t').collect();
+        if cells.len() == 6 {
+            cells.push("");
+        }
         assert_eq!(
             cells.len(),
             7,
-            "parity.tsv line {number} has {} tab-separated columns, expected 7 \
-             (a row with no reason still ends in a tab): {line:?}",
+            "parity.tsv line {number} has {} tab-separated columns, expected 6 or 7: {line:?}",
             cells.len()
         );
         if cells[0] == "capability" {

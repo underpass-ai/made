@@ -1,4 +1,4 @@
-//! Canned answers for the three reads of what a session left behind.
+//! Canned answers for the four reads of what a session left behind.
 //!
 //! The record's shape is the one thing worth getting exactly right
 //! here: it is the serde form of a stored `AuditRecord`, digest bytes
@@ -48,6 +48,19 @@ pub(super) fn read_ceremony_events_fixture() -> Value {
         "next_version": 1,
         "head_version": 1,
         "has_more": false
+    })
+}
+
+/// The one-record fixture stream, whole: a fixture that answered
+/// "broken" would teach a client to expect a store that is.
+pub(super) fn verify_ceremony_journal_fixture() -> Value {
+    json!({
+        "ceremony_id": "ceremony-fixture-1",
+        "head_version": 1,
+        "record_count": 1,
+        "intact": true,
+        "first_broken_sequence": null,
+        "reason": null,
     })
 }
 

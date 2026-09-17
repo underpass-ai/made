@@ -8,7 +8,7 @@ use crate::protocol::{
     LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 pub(crate) struct CapabilityGroup {
@@ -109,8 +109,13 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
     // other.
     CapabilityGroup {
         id: "ceremony_history",
-        description: "Read the sealed event stream and the transcript a ceremony produced.",
-        tools: &[READ_CEREMONY_EVENTS_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL],
+        description:
+            "Read the sealed event stream and the transcript a ceremony produced, and verify the chain that seals them.",
+        tools: &[
+            READ_CEREMONY_EVENTS_TOOL,
+            VERIFY_CEREMONY_JOURNAL_TOOL,
+            GET_CEREMONY_TRANSCRIPT_TOOL,
+        ],
     },
     CapabilityGroup {
         id: "ceremony_reporting",
