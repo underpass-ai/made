@@ -9,18 +9,19 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshot,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
-    CeremonyTranscriptStorePort, ClockPort, MemoryWriteOutcome, MemoryWriterPort, PositionedRecord,
+    CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
+    CeremonySnapshot, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, ClockPort, MemoryWriteOutcome, MemoryWriterPort,
+    NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
-    CeremonyVersion, DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey,
-    LeaseOwnerId, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryRelation, MemoryScope,
-    MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy,
-    StepResult, StepStatus, StreamVersion, TransitionTrigger,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GlobalPosition,
+    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability,
+    MemoryEntry, MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy,
+    RoleAction, RoleId, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+    StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion,
+    TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -30,7 +31,6 @@ use tokio::sync::RwLock;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use crate::services::{session_facts, SessionMemoryRecorder, SessionStream};
 
-mod context_store_fake;
 mod definition_repository_fake;
 mod event_store_fake;
 mod fixed_clock;
@@ -41,7 +41,6 @@ mod step_handler_fake;
 mod store_that_conflicts_once;
 mod store_that_loses_every_race;
 
-pub(super) use context_store_fake::ContextStoreFake;
 pub(super) use definition_repository_fake::DefinitionRepositoryFake;
 pub(super) use event_store_fake::EventStoreFake;
 pub(super) use fixed_clock::FixedClock;
@@ -165,37 +164,6 @@ impl CeremonyStepHandlerPort for SequenceStepHandlerFake {
             .ok_or(DomainError::InvariantViolated {
                 reason: "sequence step handler exhausted",
             })
-    }
-}
-
-#[async_trait]
-impl CeremonyTranscriptStorePort for ContextStoreFake {
-    async fn append(
-        &self,
-        instance_id: &CeremonyId,
-        contribution: CeremonyStepContribution,
-    ) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
-            .entry(instance_id.clone())
-            .or_default()
-            .push(contribution);
-        Ok(())
-    }
-
-    async fn transcript(
-        &self,
-        instance_id: &CeremonyId,
-    ) -> Result<CeremonyTranscript, DomainError> {
-        Ok(CeremonyTranscript::new(
-            self.inner
-                .read()
-                .await
-                .get(instance_id)
-                .cloned()
-                .unwrap_or_default(),
-        ))
     }
 }
 
@@ -623,13 +591,20 @@ pub(super) fn recording_memory() -> Arc<RecordingMemory> {
     Arc::new(RecordingMemory::default())
 }
 
-pub(super) fn recorder(memory: Arc<RecordingMemory>) -> Arc<SessionMemoryRecorder> {
-    Arc::new(SessionMemoryRecorder::new(memory))
-}
-
-/// The recorder for the many tests that do not care about memory.
-pub(super) fn a_recorder() -> Arc<SessionMemoryRecorder> {
-    recorder(recording_memory())
+/// A stream whose sessions are recorded into `memory`, the way a
+/// composition root wires one.
+///
+/// The recorder is a subscriber of the stream, not something a use
+/// case holds, so this is the whole of turning memory on in a test:
+/// the use cases under it are built exactly as they are in production.
+pub(super) fn remembering_stream(
+    store: Arc<EventStoreFake>,
+    memory: Arc<RecordingMemory>,
+) -> Arc<SessionStream> {
+    stream_watched_by(
+        store.clone(),
+        Arc::new(SessionMemoryRecorder::new(memory, store)),
+    )
 }
 
 /// The store every session test reads from and appends to.
@@ -842,7 +817,19 @@ impl CeremonySnapshotStorePort for EventStoreFake {
 
 /// The stream every session use case is built over.
 pub(super) fn stream(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
-    Arc::new(SessionStream::new(store.clone(), store))
+    Arc::new(SessionStream::new(
+        store.clone(),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
+    ))
+}
+
+/// The same stream, with something projecting from it.
+pub(super) fn stream_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(store.clone(), store, subscriber))
 }
 
 /// A stream a test can look inside.
@@ -853,18 +840,41 @@ pub(super) fn stream_over(store: Arc<EventStoreFake>) -> (Arc<SessionStream>, Ar
 /// A stream whose first append is overtaken by another writer, and
 /// whose later ones land.
 pub(super) fn stream_conflicting_once(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
+    stream_conflicting_once_watched_by(store, Arc::new(NoopCeremonyEventSubscriber))
+}
+
+/// The same, with something projecting from it: what a subscriber is
+/// told when an append is refused once and lands on the retry.
+pub(super) fn stream_conflicting_once_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
     Arc::new(SessionStream::new(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
         }),
         store,
+        subscriber,
     ))
 }
 
 /// A stream whose every append is overtaken by another writer.
 pub(super) fn stream_losing_every_race(store: Arc<EventStoreFake>) -> Arc<SessionStream> {
     stream_losing_every_race_over(store).0
+}
+
+/// The same, with something projecting from it: an append that never
+/// lands has nothing to tell it.
+pub(super) fn stream_losing_every_race_watched_by(
+    store: Arc<EventStoreFake>,
+    subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+) -> Arc<SessionStream> {
+    let losing = Arc::new(StoreThatLosesEveryRace {
+        inner: store.clone(),
+        appends: std::sync::atomic::AtomicUsize::new(0),
+    });
+    Arc::new(SessionStream::new(losing, store, subscriber))
 }
 
 /// The same, with the losing store in hand so a test can count how
@@ -876,7 +886,14 @@ pub(super) fn stream_losing_every_race_over(
         inner: store.clone(),
         appends: std::sync::atomic::AtomicUsize::new(0),
     });
-    (Arc::new(SessionStream::new(losing.clone(), store)), losing)
+    (
+        Arc::new(SessionStream::new(
+            losing.clone(),
+            store,
+            Arc::new(NoopCeremonyEventSubscriber),
+        )),
+        losing,
+    )
 }
 
 impl StoreThatLosesEveryRace {

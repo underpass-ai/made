@@ -9,9 +9,8 @@ use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore,
-    InMemoryCeremonyTranscriptStore, InMemoryContractRegistry, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventStore, InMemoryContractRegistry,
+    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
@@ -48,9 +47,8 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventStorePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, CeremonyTranscriptStorePort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MetricsRecorderPort,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    CeremonyStepHandlerPort, ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
+    ExecutorPort, MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use tracing::{info, warn};
 
@@ -193,18 +191,23 @@ pub async fn compose() -> Result<Application, ComposeError> {
             Arc::new(InMemoryCeremonyDefinitionPublications::new()),
         )
     };
+    // No memory configured, and said so rather than pretended: a
+    // session with nowhere to record what it decided still runs, it
+    // just forgets. Swapping this for a durable writer is the whole of
+    // turning it on.
+    //
+    // It is a subscriber of the stream, not something a use case
+    // holds: what a session leaves behind is a projection of what it
+    // sealed (ADR-012, ADR-013).
+    let session_memory = Arc::new(SessionMemoryRecorder::new(
+        Arc::new(ForgetfulMemory::new()),
+        ceremony_events.clone(),
+    ));
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
+        session_memory,
     ));
-
-    // In memory whichever store the state went to, and known to be: a
-    // transcript read over gRPC answers with what this process holds,
-    // and a restart empties it. The read RPC is still the right
-    // surface — F3c gives it one — and a durable transcript store is
-    // its own change.
-    let ceremony_transcript_store: Arc<dyn CeremonyTranscriptStorePort> =
-        Arc::new(InMemoryCeremonyTranscriptStore::new());
 
     let MessagingWiring {
         port: messaging,
@@ -248,7 +251,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_definitions.clone(),
             ceremony_stream.clone(),
             ceremony_step_handler.clone(),
-            ceremony_transcript_store.clone(),
             clock.clone(),
         )
         .with_metrics(metrics_recorder.clone()),
@@ -260,9 +262,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
     ));
-    // Advancing a session one move at a time. The transcript store is
-    // shared with the whole-run use case above: what a step said has
-    // to be there for the next step whichever way the run was driven.
+    // Advancing a session one move at a time. What a step said reaches
+    // the next step through the stream both drivers append to, so it
+    // is there whichever way the run was driven.
     let start_ceremony = Arc::new(StartCeremonyUseCase::new(
         ceremony_definitions.clone(),
         ceremony_stream.clone(),
@@ -273,15 +275,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
-    let run_ceremony_step = Arc::new(
-        RunCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            ceremony_step_handler,
-            clock.clone(),
-        )
-        .with_transcript_store(ceremony_transcript_store.clone()),
-    );
+    let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        ceremony_step_handler,
+        clock.clone(),
+    ));
     // The delegated-host protocol. Claiming and completing are the
     // same two use cases the embedded edition has always called; only
     // the way in is new.
@@ -295,34 +294,25 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
-    // No memory configured, and said so rather than pretended: a
-    // session with nowhere to record what it decided still runs, it
-    // just forgets. Swapping this for a durable writer is the
-    // whole of turning it on.
-    let session_memory = Arc::new(SessionMemoryRecorder::new(Arc::new(ForgetfulMemory::new())));
     let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        session_memory.clone(),
     ));
     let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        session_memory.clone(),
     ));
     let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        session_memory.clone(),
     ));
     let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        session_memory.clone(),
     ));
     let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
@@ -333,7 +323,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
-        session_memory.clone(),
     ));
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         resolve_ceremony_definition.clone(),
@@ -348,7 +337,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         Arc::new(NoopCeremonyEvidenceSource::new()),
         clock.clone(),
-        session_memory.clone(),
     ));
     let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
         ceremony_publications.clone(),
@@ -404,13 +392,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
     let list_ceremony_instances =
         Arc::new(ListCeremonyInstancesUseCase::new(ceremony_stream.clone()));
-    // What a session left behind. The stream read goes to the event
-    // store directly — records, not the session they fold to — and the
-    // report composes the session, its definition and its stream into
-    // the one projection both editions render (ADR-006).
+    // What a session left behind. All three read the stream: the page
+    // hands back records, the transcript folds what the steps said out
+    // of them, and the report composes the session, its definition and
+    // its stream into the one projection both editions render
+    // (ADR-006, ADR-012).
     let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
     let get_ceremony_transcript =
-        Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_transcript_store));
+        Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_events.clone()));
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
         get_ceremony_instance.clone(),
         resolve_ceremony_definition.clone(),

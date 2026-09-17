@@ -9,13 +9,12 @@ use made_core::ports::ClockPort;
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::respond_to_ceremony_intervention_input::RespondToCeremonyInterventionInput;
-use crate::services::{session_facts, ConflictPolicy, SessionMemoryRecorder, SessionStream};
+use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct RespondToCeremonyInterventionUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     stream: Arc<SessionStream>,
     clock: Arc<dyn ClockPort>,
-    memory: Arc<SessionMemoryRecorder>,
 }
 
 impl std::fmt::Debug for RespondToCeremonyInterventionUseCase {
@@ -31,13 +30,11 @@ impl RespondToCeremonyInterventionUseCase {
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         stream: Arc<SessionStream>,
         clock: Arc<dyn ClockPort>,
-        memory: Arc<SessionMemoryRecorder>,
     ) -> Self {
         Self {
             definitions,
             stream,
             clock,
-            memory,
         }
     }
 
@@ -79,12 +76,6 @@ impl RespondToCeremonyInterventionUseCase {
             })
             .await?
             .instance;
-        // After the session is safely stored, never before: a memory
-        // of something that failed to persist would outlive the thing
-        // it describes.
-        self.memory
-            .remember_contribution(&instance, &input.intervention_id)
-            .await;
         Ok(instance)
     }
 }
@@ -98,7 +89,7 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        a_recorder, ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
+        ceremony_id, definition, definition_resolver, now, respondent_role_id, role_id,
         started_instance, stream, stream_over, DefinitionRepositoryFake, EventStoreFake,
         FixedClock,
     };
@@ -128,7 +119,6 @@ mod tests {
             definition_resolver(definitions),
             stream(instances),
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         );
 
         let instance = usecase
@@ -191,7 +181,6 @@ mod tests {
             definition_resolver(definitions),
             stream,
             Arc::new(FixedClock::new(now())),
-            a_recorder(),
         )
         .execute(RespondToCeremonyInterventionInput::new(
             ceremony_id(),

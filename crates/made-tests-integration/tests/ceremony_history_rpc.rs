@@ -255,17 +255,16 @@ async fn the_transcript_carries_what_the_steps_contributed() {
     assert_eq!(entries[0]["step_id"], json!("work"));
     assert!(entries[0]["output"].is_object(), "{answer:#}");
 
-    // A session nobody drove has an empty transcript rather than a
-    // failure: the transcript store on the server is per-process and
-    // says so by being empty.
-    let empty = structured(
-        &remote
-            .call_tool(
-                "made_get_ceremony_transcript",
-                &json!({ "ceremony_id": "never-started" }),
-            )
-            .await
-            .expect("an unknown session has an empty transcript, not an error"),
-    );
-    assert_eq!(empty["entry_count"], json!(0));
+    // A session that was never started is refused rather than
+    // answered with nothing, the same way reading its stream is: an
+    // empty transcript would say the id exists and has said nothing.
+    let error = remote
+        .call_tool(
+            "made_get_ceremony_transcript",
+            &json!({ "ceremony_id": "never-started" }),
+        )
+        .await
+        .expect_err("a session that was never opened has no transcript");
+
+    assert_eq!(error.code(), ToolErrorCode::NotFound);
 }

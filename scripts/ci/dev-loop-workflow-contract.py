@@ -525,8 +525,8 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
     ),
     "just dev drifts from the workflow": (
         DEV_SCRIPT,
-        'DEV_PACKAGES="${DEV_PACKAGES:--p made-mcp',
         'DEV_PACKAGES="${DEV_PACKAGES:--p made-core',
+        'DEV_PACKAGES="${DEV_PACKAGES:--p made-mcp',
     ),
     "full gate never hears about ready for review": (
         QUALITY_GATE,
