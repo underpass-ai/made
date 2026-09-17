@@ -909,7 +909,7 @@ fn assert_the_report_is_the_committed_document(report: &Value) {
     if std::env::var_os(UPDATE_GOLDEN).is_some() {
         let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
             .join("tests/golden/parity_session_report.md");
-        std::fs::write(&path, &rendered).expect("the golden document should be writable");
+        std::fs::write(&path, rendered).expect("the golden document should be writable");
         return;
     }
 
