@@ -10,9 +10,12 @@ use std::time::Instant;
 
 use serde_json::Value;
 
+use crate::backend::{
+    MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
+    MCP_BACKEND_ENV,
+};
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext, MCP_BACKEND_ENV};
 #[cfg(feature = "embedded")]
 use crate::backend::{EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV};
 #[cfg(feature = "embedded")]
@@ -179,6 +182,11 @@ impl MadeMcpServer {
     #[must_use]
     pub fn grpc_tls_mode_name(&self) -> &'static str {
         self.backend.grpc_tls_mode_name()
+    }
+
+    /// Complete recovery required by the selected backend before serving.
+    pub async fn initialize_backend(&self) -> Result<(), String> {
+        self.backend.initialize().await
     }
 
     /// Handle one JSON-RPC line. Returns `None` when the message was
@@ -350,6 +358,10 @@ where
 {
     fn backend_name(&self) -> &'static str {
         self.as_ref().backend_name()
+    }
+
+    fn initialize(&self) -> MadeMcpBackendInitializationFuture<'_> {
+        self.as_ref().initialize()
     }
 
     fn grpc_tls_mode_name(&self) -> &'static str {

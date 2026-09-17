@@ -24,13 +24,21 @@ impl ReadWholeCeremonyEventsUseCase {
     }
 
     pub async fn execute(&self, ceremony_id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
+        self.execute_from(ceremony_id, StreamVersion::EMPTY).await
+    }
+
+    /// Read only the suffix after `from`, up to the head captured by this call.
+    pub async fn execute_from(
+        &self,
+        ceremony_id: &CeremonyId,
+        mut from: StreamVersion,
+    ) -> Result<Vec<AuditRecord>, DomainError> {
         let through = self.events.head(ceremony_id).await?;
         if through.is_empty() {
             return Err(DomainError::NotFound {
                 what: "ceremony_instance",
             });
         }
-        let mut from = StreamVersion::EMPTY;
         let mut records = Vec::new();
         while from < through {
             let remaining = usize::try_from(through.value() - from.value()).unwrap_or(usize::MAX);
