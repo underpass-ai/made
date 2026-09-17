@@ -7,17 +7,16 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
-use made_app::usecases::CeremonyPatternPreset;
 use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
-    available_tool_catalog, APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    available_tool_catalog, design_pattern_catalog, APPLY_CEREMONY_TRANSITION_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL,
+    DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
@@ -76,17 +75,7 @@ pub(crate) fn discovery_result(
         Vec::new()
     };
     let design_patterns = if names.contains(DESIGN_CEREMONY_TOOL) {
-        CeremonyPatternPreset::ALL
-            .iter()
-            .copied()
-            .map(|pattern| {
-                json!({
-                    "id": pattern.id(),
-                    "description": pattern.description(),
-                    "definition_fragment_yaml": pattern.fragment_source(),
-                })
-            })
-            .collect::<Vec<_>>()
+        design_pattern_catalog()
     } else {
         Vec::new()
     };

@@ -208,14 +208,18 @@ jobs:
           components: clippy
       - name: Check embedded dependency boundary
         run: bash scripts/ci/embedded-dependency-boundary.sh
+      - name: Install protoc for the gRPC-only MCP build
+        run: bash scripts/ci/install-protoc.sh
       - name: Lint embedded feature boundary
         run: cargo clippy -p made-embedded --all-targets --locked -- -D warnings
       # The binary forks on `embedded`, so a build without it is a distinct
       # compilation. Nothing else in CI compiled that arm, and it broke. No
-      # features at all rather than `grpc`: it exercises the same fork and
-      # keeps this job free of protoc, which the grpc arm would drag in.
+      # features exercises the smallest binary; the following gRPC-only build
+      # proves the published client stays independent from the embedded engine.
       - name: Lint the binary without the embedded backend
         run: cargo clippy -p made-mcp --all-targets --locked --no-default-features -- -D warnings
+      - name: Lint the gRPC-only MCP client
+        run: cargo clippy -p made-mcp --all-targets --locked --no-default-features --features grpc -- -D warnings
 
   embedded-sqlite-gates:
     needs: [impact]

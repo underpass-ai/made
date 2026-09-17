@@ -1,5 +1,5 @@
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
-use made_app::usecases::CeremonyPatternPreset;
+use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
 
 pub(in crate::protocol) fn ceremony_design_schema() -> Value {
     json!({
@@ -7,7 +7,7 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
         "additionalProperties": false,
         "required": ["name", "objective", "outputs", "participants"],
         "oneOf": design_shape_schema(),
-        "x-made-pattern-catalog": pattern_catalog(),
+        "x-made-pattern-catalog": design_pattern_catalog(),
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
             "version": string_schema("Immutable publication version. Defaults to 1.0."),
@@ -44,7 +44,6 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
             },
             "stages": {
                 "type": "array",
-                "minItems": 1,
                 "items": {
                     "type": "object",
                     "additionalProperties": false,
@@ -107,38 +106,20 @@ fn design_shape_schema() -> Value {
     json!([
         {
             "required": ["stages"],
-            "not": { "required": ["pattern"] }
+            "not": { "required": ["pattern"] },
+            "properties": { "stages": { "minItems": 1 } }
         },
         {
             "required": ["pattern"],
-            "not": { "required": ["stages"] }
+            "properties": { "stages": { "maxItems": 0 } }
         }
     ])
 }
 
-fn pattern_catalog() -> Vec<Value> {
-    CeremonyPatternPreset::ALL
-        .iter()
-        .copied()
-        .map(|pattern| {
-            json!({
-                "id": pattern.id(),
-                "description": pattern.description(),
-                "definition_fragment_yaml": pattern.fragment_source(),
-            })
-        })
-        .collect()
-}
-
 fn pattern_schema() -> Value {
-    let ids = CeremonyPatternPreset::ALL
-        .iter()
-        .copied()
-        .map(CeremonyPatternPreset::id)
-        .collect::<Vec<_>>();
     json!({
         "type": "string",
-        "enum": ids,
+        "enum": [ROUNDTABLE_FIXED_ORDER_ID],
         "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
     })
 }

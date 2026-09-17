@@ -77,6 +77,7 @@ fn pattern_intent() -> Value {
             { "role_id": "REVIEWER" },
             { "role_id": "RECORDER" }
         ],
+        "stages": [],
         "pattern": "roundtable_fixed_order"
     })
 }
@@ -298,4 +299,35 @@ async fn the_pattern_design_is_identical_on_proto_both_mcp_arms_and_the_facade()
     assert!(yaml.contains("id: roundtable_turn_1"));
     assert!(yaml.contains("id: roundtable_turn_3"));
     assert_eq!(yaml.matches("see_prior: true").count(), 2);
+}
+
+#[tokio::test]
+async fn invalid_pattern_values_are_refused_identically_by_both_mcp_arms() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    for invalid in [Value::Null, json!(7), json!("")] {
+        let mut arguments = pattern_intent();
+        arguments["pattern"] = invalid.clone();
+        let remote_error = remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the gRPC-backed MCP tool must refuse an invalid pattern");
+        let embedded_error = embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the embedded MCP tool must refuse an invalid pattern");
+
+        assert_eq!(remote_error.code(), ToolErrorCode::InvalidRequest);
+        assert_eq!(remote_error.code(), embedded_error.code());
+        assert_eq!(
+            remote_error.message(),
+            embedded_error.message(),
+            "{invalid}"
+        );
+    }
 }

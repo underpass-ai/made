@@ -1,0 +1,83 @@
+version: "1.0"
+name: "roundtable_fixed_order"
+description: "A fixed-order roundtable in which each declared role contributes once and later turns receive the prior transcript"
+inputs:
+  required:
+    - topic
+outputs:
+  discussion:
+    type: object
+states:
+  - id: ROUNDTABLE_TURN_1
+    initial: true
+  - id: ROUNDTABLE_TURN_2
+  - id: ROUNDTABLE_TURN_3
+  - id: COMPLETED
+    terminal: true
+transitions:
+  - from: ROUNDTABLE_TURN_1
+    to: ROUNDTABLE_TURN_2
+    trigger: roundtable_turn_1_completed
+    guards:
+      - roundtable_turn_1_completed
+  - from: ROUNDTABLE_TURN_2
+    to: ROUNDTABLE_TURN_3
+    trigger: roundtable_turn_2_completed
+    guards:
+      - roundtable_turn_2_completed
+  - from: ROUNDTABLE_TURN_3
+    to: COMPLETED
+    trigger: roundtable_turn_3_completed
+    guards:
+      - roundtable_turn_3_completed
+steps:
+  - id: roundtable_turn_1
+    state: ROUNDTABLE_TURN_1
+    handler: host_callback
+    config:
+      see_prior: false
+      num_agents: 1
+      prompt: "Open the fixed-order roundtable from the first declared role's perspective. Address the objective directly and make one concrete contribution."
+  - id: roundtable_turn_2
+    state: ROUNDTABLE_TURN_2
+    handler: host_callback
+    config:
+      see_prior: true
+      num_agents: 1
+      prompt: "Continue the fixed-order roundtable from the second declared role's perspective. Read the prior contribution, add a distinct point, and avoid repetition."
+  - id: roundtable_turn_3
+    state: ROUNDTABLE_TURN_3
+    handler: host_callback
+    config:
+      see_prior: true
+      num_agents: 1
+      prompt: "Continue the fixed-order roundtable from the third declared role's perspective. Read all prior contributions, add a distinct point, and avoid repetition."
+guards:
+  roundtable_turn_1_completed:
+    type: automated
+    check: "step_status:roundtable_turn_1:COMPLETED"
+  roundtable_turn_2_completed:
+    type: automated
+    check: "step_status:roundtable_turn_2:COMPLETED"
+  roundtable_turn_3_completed:
+    type: automated
+    check: "step_status:roundtable_turn_3:COMPLETED"
+roles:
+  - id: FIRST_SPEAKER
+    allowed_actions:
+      - roundtable_turn_1
+      - roundtable_turn_1_completed
+  - id: SECOND_SPEAKER
+    allowed_actions:
+      - roundtable_turn_2
+      - roundtable_turn_2_completed
+  - id: THIRD_SPEAKER
+    allowed_actions:
+      - roundtable_turn_3
+      - roundtable_turn_3_completed
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1

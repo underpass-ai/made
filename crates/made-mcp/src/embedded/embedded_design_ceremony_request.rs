@@ -58,11 +58,21 @@ impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
     type Error = String;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        if !value.is_object() {
-            return Err("tools/call.arguments must be an object".to_owned());
-        }
+        let object = value
+            .as_object()
+            .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
+        validate_pattern(object)?;
         serde_json::from_value(value.clone())
             .map_err(|error| format!("invalid ceremony design intent: {error}"))
+    }
+}
+
+fn validate_pattern(object: &serde_json::Map<String, Value>) -> Result<(), String> {
+    match object.get("pattern") {
+        None => Ok(()),
+        Some(Value::String(pattern)) if !pattern.is_empty() => Ok(()),
+        Some(Value::String(_)) => Err("`pattern` must not be empty".to_owned()),
+        Some(_) => Err("`pattern` must be a string".to_owned()),
     }
 }
 

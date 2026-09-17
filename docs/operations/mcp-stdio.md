@@ -49,7 +49,9 @@ The embedded backend can design and run the shipped
 `roundtable_fixed_order` preset without a separate MADE service. Discover the
 active pattern catalog through `made_discover_capabilities`; its
 `design_patterns` array includes the preset description and the embedded YAML
-fragment. Design requests select either `pattern` or explicit `stages`.
+fragment. Design requests select either `pattern` or non-empty explicit
+`stages`. With a pattern, `stages` may be omitted or empty; repeated proto
+fields represent both forms as the same empty list.
 
 ```json
 {

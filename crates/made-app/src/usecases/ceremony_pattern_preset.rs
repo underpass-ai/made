@@ -1,9 +1,6 @@
 use made_core::error::DomainError;
 
-const ROUNDTABLE_FIXED_ORDER_FRAGMENT: &str = include_str!(concat!(
-    env!("CARGO_MANIFEST_DIR"),
-    "/../../api/examples/ceremonies/fragments/roundtable_fixed_order.yaml"
-));
+const ROUNDTABLE_FIXED_ORDER_FRAGMENT: &str = include_str!("fragments/roundtable_fixed_order.yaml");
 
 /// A shipped authoring preset backed by a discoverable definition fragment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
