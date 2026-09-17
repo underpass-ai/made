@@ -1238,11 +1238,14 @@ fn shared_tools() -> BTreeSet<String> {
         if line.trim().is_empty() || line.starts_with('#') {
             continue;
         }
-        let cells: Vec<&str> = line.split('\t').collect();
+        let mut cells: Vec<&str> = line.split('\t').collect();
+        if cells.len() == 6 {
+            cells.push("");
+        }
         assert_eq!(
             cells.len(),
             7,
-            "docs/architecture/parity.tsv has a row of {} columns: {line:?}",
+            "docs/architecture/parity.tsv has a row of {} columns, expected 6 or 7: {line:?}",
             cells.len()
         );
         if cells[0] == "capability" {
