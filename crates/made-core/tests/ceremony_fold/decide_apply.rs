@@ -207,6 +207,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
         events,
         vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: step("plan"),
+            state_iteration: None,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             lease: lease("plan-1", at(1)),
@@ -288,6 +289,7 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
         events,
         vec![CeremonyEvent::StepCompleted(StepCompleted {
             step_id: step("plan"),
+            state_iteration: None,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             result,
@@ -342,6 +344,7 @@ fn a_failure_is_its_own_event() {
         events,
         vec![CeremonyEvent::StepFailed(StepFailed {
             step_id: step("plan"),
+            state_iteration: None,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             result,

@@ -35,10 +35,37 @@ impl CeremonyDefinitionParts<'_> {
         self.collect_initial_state_findings(findings);
         self.collect_transition_graph_findings(findings);
         self.collect_step_findings(findings);
+        self.collect_state_repeat_findings(findings);
         self.collect_guard_findings(findings);
         self.collect_role_findings(findings);
         self.collect_concurrent_state_findings(findings);
         self.collect_reachability_findings(findings);
+    }
+
+    fn collect_state_repeat_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
+        for state in self.states.values() {
+            let Some(policy) = state.repeat_policy() else {
+                continue;
+            };
+            let step_id = policy.until().step_id();
+            match self.steps.get(step_id) {
+                None => findings.push(CeremonyValidationFinding::error(
+                    CeremonyValidationLocus::state(state.id().clone()),
+                    DomainError::NotFound {
+                        what: "ceremony_state.repeat.until.step",
+                    },
+                )),
+                Some(step) if step.state_id() != state.id() => {
+                    findings.push(CeremonyValidationFinding::error(
+                        CeremonyValidationLocus::state(state.id().clone()),
+                        DomainError::InvariantViolated {
+                            reason: "state repeat condition must reference a step in that state",
+                        },
+                    ))
+                }
+                Some(_) => {}
+            }
+        }
     }
 
     fn collect_initial_state_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {

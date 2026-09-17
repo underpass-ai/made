@@ -163,18 +163,26 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         }
         CeremonyEvent::StepStarted(started) => step_about(
             &started.step_id,
+            started.state_iteration().get(),
             started.iteration.get(),
             started.attempt.get(),
         ),
         CeremonyEvent::StepCompleted(completed) => step_about(
             &completed.step_id,
+            completed.state_iteration().get(),
             completed.iteration.get(),
             completed.attempt.get(),
         ),
         CeremonyEvent::StepFailed(failed) => step_about(
             &failed.step_id,
+            failed.state_iteration().get(),
             failed.iteration.get(),
             failed.attempt.get(),
+        ),
+        CeremonyEvent::StateIterationStarted(started) => format!(
+            "state:{}:iteration:{}",
+            started.state_id,
+            started.state_iteration.get()
         ),
         CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
@@ -204,6 +212,13 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
     }
 }
 
-fn step_about(step_id: &made_core::value_objects::StepId, iteration: u32, attempt: u32) -> String {
-    format!("step:{step_id}:iteration:{iteration}:attempt:{attempt}")
+fn step_about(
+    step_id: &made_core::value_objects::StepId,
+    state_iteration: u32,
+    iteration: u32,
+    attempt: u32,
+) -> String {
+    format!(
+        "step:{step_id}:state_iteration:{state_iteration}:iteration:{iteration}:attempt:{attempt}"
+    )
 }

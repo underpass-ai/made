@@ -4,8 +4,8 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActor, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt,
-    StepErrorMessage, StepId, StepLease, StepResult,
+    AuditActor, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    StateIteration, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
 
 use super::RunCeremonyUseCase;
@@ -25,6 +25,7 @@ impl RunCeremonyUseCase {
     ) -> Result<
         (
             LoadedSession,
+            StateIteration,
             made_core::value_objects::StepIteration,
             StepAttempt,
             StepResult,
@@ -74,7 +75,11 @@ impl RunCeremonyUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
-        let (iteration, attempt) = (record.iteration(), record.attempt());
+        let (state_iteration, iteration, attempt) = (
+            record.state_iteration(),
+            record.iteration(),
+            record.attempt(),
+        );
 
         let request = CeremonyStepHandlerRequest::new(
             session.instance.id().clone(),
@@ -110,7 +115,7 @@ impl RunCeremonyUseCase {
             })
             .await?;
 
-        Ok((session, iteration, attempt, step_result))
+        Ok((session, state_iteration, iteration, attempt, step_result))
     }
 
     async fn execute_handler(

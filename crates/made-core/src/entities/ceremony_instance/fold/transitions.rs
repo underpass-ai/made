@@ -1,5 +1,6 @@
 use crate::entities::ceremony_events::{CeremonyCompleted, TransitionApplied};
 use crate::entities::CeremonyInstance;
+use crate::value_objects::StateIteration;
 
 impl CeremonyInstance {
     /// The record is pushed as it is and the current state read off
@@ -7,6 +8,7 @@ impl CeremonyInstance {
     /// the completion event sealed with the move says so.
     pub(super) fn apply_transition_applied(&mut self, applied: &TransitionApplied) {
         self.current_state = applied.transition.to_state().clone();
+        self.current_state_iteration = StateIteration::FIRST;
         self.transitions.push(applied.transition.clone());
         self.updated_at = applied.transition.applied_at();
     }

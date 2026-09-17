@@ -6,9 +6,9 @@ use made_core::value_objects::{
     Attributes, CeremonyGuard, CeremonyInputDefinition, CeremonyOutputDefinition, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
     GuardName, OutputFieldGuardCondition, RepeatUntilCondition, RetryPolicy, RoleAction,
-    StateExecution, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind,
-    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepStatus, StepTimeout,
-    TransitionTrigger,
+    StateExecution, StateId, StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt,
+    StepHandlerConfig, StepHandlerKind, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
+    StepStatus, StepTimeout, TransitionTrigger,
 };
 use serde_json::{json, Value};
 
@@ -59,7 +59,22 @@ pub(super) fn build_definition(
             } else {
                 CeremonyState::intermediate(id.clone())
             };
-            state.with_execution(entry_execution(&document.stage_entries()[index]))
+            let state = state.with_execution(entry_execution(&document.stage_entries()[index]));
+            match &document.stage_entries()[index] {
+                CeremonyDesignStageEntry::Group(group) => {
+                    group.repeat().map_or(state.clone(), |repeat| {
+                        state.with_repeat_policy(StateRepeatPolicy::new(
+                            repeat.max_iterations(),
+                            StateRepeatUntilCondition::new(
+                                repeat.until().step_id().clone(),
+                                repeat.until().output_field().clone(),
+                                repeat.until().equals().clone(),
+                            ),
+                        ))
+                    })
+                }
+                CeremonyDesignStageEntry::Leaf(_) => state,
+            }
         })
         .collect::<Vec<_>>();
     states.push(CeremonyState::terminal(terminal.clone()));

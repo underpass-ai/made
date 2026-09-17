@@ -385,6 +385,7 @@ mod tests {
             }
             AuditEventType::StepStarted => CeremonyEvent::StepStarted(StepStarted {
                 step_id,
+                state_iteration: None,
                 iteration: StepIteration::FIRST,
                 attempt: StepAttempt::FIRST,
                 lease: StepLease::new(
@@ -399,6 +400,7 @@ mod tests {
             }),
             AuditEventType::StepCompleted => CeremonyEvent::StepCompleted(StepCompleted {
                 step_id,
+                state_iteration: None,
                 iteration: StepIteration::FIRST,
                 attempt: StepAttempt::FIRST,
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
@@ -408,6 +410,7 @@ mod tests {
             }),
             AuditEventType::StepFailed => CeremonyEvent::StepFailed(StepFailed {
                 step_id,
+                state_iteration: None,
                 iteration: StepIteration::FIRST,
                 attempt: StepAttempt::FIRST,
                 result: StepResult::failed(StepErrorMessage::new("boom").unwrap()).unwrap(),
@@ -475,7 +478,7 @@ mod tests {
 
         assert_eq!(record.event(), Some(&sealed.event));
         assert_eq!(record.event_type(), AuditEventType::StepFailed);
-        assert_eq!(record.event_schema_version(), Some(EventSchemaVersion::V1));
+        assert_eq!(record.event_schema_version(), Some(EventSchemaVersion::V2));
     }
 
     #[test]

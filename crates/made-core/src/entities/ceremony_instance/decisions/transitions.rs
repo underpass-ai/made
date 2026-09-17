@@ -40,6 +40,11 @@ impl CeremonyInstance {
                 reason: "ceremony cannot transition while a step lease is active",
             });
         }
+        if !self.state_repeat_permits_transition(definition) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony state repeat condition is not satisfied",
+            });
+        }
         if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony transition guards are not satisfied",
@@ -49,9 +54,10 @@ impl CeremonyInstance {
         let to_state = transition.to().clone();
         self.require_interventions_resolved_before_entering(definition, &to_state)?;
         let mut events = vec![CeremonyEvent::TransitionApplied(TransitionApplied {
-            transition: CeremonyTransitionRecord::record(
+            transition: CeremonyTransitionRecord::record_at(
                 command.trigger.clone(),
                 self.current_state.clone(),
+                self.current_state_iteration,
                 to_state.clone(),
                 command.role_id.clone(),
                 command.now,

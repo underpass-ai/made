@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use super::{CeremonyStateKind, StateExecution, StateId};
+use super::{CeremonyStateKind, StateExecution, StateId, StateRepeatPolicy};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyState {
@@ -8,6 +8,8 @@ pub struct CeremonyState {
     kind: CeremonyStateKind,
     #[serde(default, skip_serializing_if = "StateExecution::is_sequential")]
     execution: StateExecution,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    repeat: Option<StateRepeatPolicy>,
 }
 
 impl CeremonyState {
@@ -17,6 +19,7 @@ impl CeremonyState {
             id,
             kind,
             execution: StateExecution::Sequential,
+            repeat: None,
         }
     }
 
@@ -54,6 +57,17 @@ impl CeremonyState {
     #[must_use]
     pub fn execution(&self) -> StateExecution {
         self.execution
+    }
+
+    #[must_use]
+    pub fn with_repeat_policy(mut self, repeat: StateRepeatPolicy) -> Self {
+        self.repeat = Some(repeat);
+        self
+    }
+
+    #[must_use]
+    pub fn repeat_policy(&self) -> Option<&StateRepeatPolicy> {
+        self.repeat.as_ref()
     }
 
     #[must_use]

@@ -13,13 +13,14 @@ use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion};
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
 
-const EVERY_EVENT_TYPE: [AuditEventType; 19] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 20] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
     AuditEventType::StepStarted,
     AuditEventType::StepCompleted,
     AuditEventType::StepFailed,
+    AuditEventType::StateIterationStarted,
     AuditEventType::TransitionApplied,
     AuditEventType::InterventionRequested,
     AuditEventType::InterventionResponded,
@@ -43,7 +44,8 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
     match event_type {
         AuditEventType::CeremonyDefinitionValidated
         | AuditEventType::CeremonyDefinitionPublished
-        | AuditEventType::CeremonyFailed => None,
+        | AuditEventType::CeremonyFailed
+        | AuditEventType::StateIterationStarted => None,
         AuditEventType::CeremonyInstanceStarted => Some(include_str!(
             "fixtures/ceremony_events/v1/ceremony_instance_started.json"
         )),

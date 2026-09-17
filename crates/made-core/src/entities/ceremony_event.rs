@@ -12,8 +12,8 @@ use crate::value_objects::{AuditEventType, EventSchemaVersion};
 use super::ceremony_events::{
     CeremonyCompleted, CeremonyInstanceStarted, EvidenceCollected, HumanApprovalRecorded,
     HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
-    InterventionResponded, MemoryRecalled, ParticipantsBound, ReasonAsserted, StepCompleted,
-    StepFailed, StepStarted, TransitionApplied,
+    InterventionResponded, MemoryRecalled, ParticipantsBound, ReasonAsserted,
+    StateIterationStarted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -35,6 +35,7 @@ pub enum CeremonyEvent {
     StepStarted(StepStarted),
     StepCompleted(StepCompleted),
     StepFailed(StepFailed),
+    StateIterationStarted(StateIterationStarted),
     TransitionApplied(TransitionApplied),
     InterventionRequested(InterventionRequested),
     InterventionResponded(InterventionResponded),
@@ -58,6 +59,7 @@ impl CeremonyEvent {
             Self::StepStarted(_) => AuditEventType::StepStarted,
             Self::StepCompleted(_) => AuditEventType::StepCompleted,
             Self::StepFailed(_) => AuditEventType::StepFailed,
+            Self::StateIterationStarted(_) => AuditEventType::StateIterationStarted,
             Self::TransitionApplied(_) => AuditEventType::TransitionApplied,
             Self::InterventionRequested(_) => AuditEventType::InterventionRequested,
             Self::InterventionResponded(_) => AuditEventType::InterventionResponded,
@@ -79,12 +81,13 @@ impl CeremonyEvent {
     #[must_use]
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
-            Self::CeremonyInstanceStarted(_)
-            | Self::ParticipantsBound(_)
-            | Self::StepStarted(_)
+            Self::StepStarted(_)
             | Self::StepCompleted(_)
             | Self::StepFailed(_)
-            | Self::TransitionApplied(_)
+            | Self::TransitionApplied(_) => EventSchemaVersion::V2,
+            Self::CeremonyInstanceStarted(_)
+            | Self::ParticipantsBound(_)
+            | Self::StateIterationStarted(_)
             | Self::InterventionRequested(_)
             | Self::InterventionResponded(_)
             | Self::InterventionClosed(_)

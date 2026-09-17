@@ -3,12 +3,15 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    StepAttempt, StepErrorMessage, StepIteration, StepLease, StepOutput, StepResult, StepStatus,
+    StateIteration, StepAttempt, StepErrorMessage, StepIteration, StepLease, StepOutput,
+    StepResult, StepStatus,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepExecutionRecord {
     status: StepStatus,
+    #[serde(default, skip_serializing_if = "StateIteration::is_first")]
+    state_iteration: StateIteration,
     #[serde(default)]
     iteration: StepIteration,
     attempt: StepAttempt,
@@ -22,6 +25,7 @@ impl StepExecutionRecord {
     pub fn pending() -> Self {
         Self {
             status: StepStatus::Pending,
+            state_iteration: StateIteration::FIRST,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             lease: None,
@@ -36,6 +40,19 @@ impl StepExecutionRecord {
             iteration,
             ..Self::pending()
         }
+    }
+
+    #[must_use]
+    pub fn pending_state_iteration(state_iteration: StateIteration) -> Self {
+        Self {
+            state_iteration,
+            ..Self::pending()
+        }
+    }
+
+    #[must_use]
+    pub fn state_iteration(&self) -> StateIteration {
+        self.state_iteration
     }
 
     #[must_use]
@@ -93,6 +110,7 @@ impl StepExecutionRecord {
     pub fn with_started(self, lease: StepLease, attempt: StepAttempt) -> Self {
         Self {
             status: StepStatus::InProgress,
+            state_iteration: self.state_iteration,
             iteration: self.iteration,
             attempt,
             lease: Some(lease),
@@ -106,6 +124,7 @@ impl StepExecutionRecord {
         let (status, output, error_message) = result.into_parts();
         Self {
             status,
+            state_iteration: self.state_iteration,
             iteration: self.iteration,
             attempt: self.attempt,
             lease: None,

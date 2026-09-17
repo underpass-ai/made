@@ -31,8 +31,8 @@ use crate::value_objects::{
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName,
     CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
     CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey, MemoryConfidence,
-    RoleAction, RoleId, SessionRecollection, Specialty, StateId, StepAttempt, StepExecutionRecord,
-    StepId, StepLease, StepResult, TransitionTrigger,
+    RoleAction, RoleId, SessionRecollection, Specialty, StateId, StateIteration, StepAttempt,
+    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
 };
 
 mod decisions;
@@ -51,6 +51,8 @@ pub struct CeremonyInstance {
     definition_name: CeremonyName,
     definition_version: CeremonyVersion,
     current_state: StateId,
+    #[serde(default, skip_serializing_if = "StateIteration::is_first")]
+    current_state_iteration: StateIteration,
     step_records: BTreeMap<StepId, StepExecutionRecord>,
     /// Finished semantic iterations preceding each step's current record.
     ///
@@ -205,6 +207,56 @@ impl CeremonyInstance {
     #[must_use]
     pub fn current_state(&self) -> &StateId {
         &self.current_state
+    }
+
+    #[must_use]
+    pub fn current_state_iteration(&self) -> StateIteration {
+        self.current_state_iteration
+    }
+
+    #[must_use]
+    pub fn state_work_is_complete(&self, definition: &CeremonyDefinition) -> bool {
+        definition.steps_for_state(&self.current_state).all(|step| {
+            self.step_records
+                .get(step.id())
+                .is_some_and(|record| record.status().is_success())
+        })
+    }
+
+    #[must_use]
+    pub fn state_repeat_condition_is_satisfied(&self, definition: &CeremonyDefinition) -> bool {
+        let Some(policy) = definition
+            .state(&self.current_state)
+            .and_then(|state| state.repeat_policy())
+        else {
+            return true;
+        };
+        self.step_records
+            .get(policy.until().step_id())
+            .is_some_and(|record| policy.is_satisfied(record))
+    }
+
+    #[must_use]
+    pub fn state_repeat_permits_transition(&self, definition: &CeremonyDefinition) -> bool {
+        definition
+            .state(&self.current_state)
+            .and_then(|state| state.repeat_policy())
+            .is_none()
+            || (self.state_work_is_complete(definition)
+                && self.state_repeat_condition_is_satisfied(definition))
+    }
+
+    #[must_use]
+    pub fn state_repeat_limit_reached(&self, definition: &CeremonyDefinition) -> bool {
+        let Some(policy) = definition
+            .state(&self.current_state)
+            .and_then(|state| state.repeat_policy())
+        else {
+            return false;
+        };
+        self.state_work_is_complete(definition)
+            && !self.state_repeat_condition_is_satisfied(definition)
+            && !policy.permits_another_iteration(self.current_state_iteration)
     }
 
     #[must_use]

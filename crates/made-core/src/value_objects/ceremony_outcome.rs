@@ -24,6 +24,8 @@ pub enum CeremonyOutcome {
     /// A bounded semantic step repeat used every permitted iteration without
     /// satisfying its declared stop condition.
     RepeatLimit,
+    /// A repeated state consumed every permitted complete pass.
+    StateRepeatLimit,
     /// An instance with the same id already existed; the run was rejected.
     AlreadyExists,
 }
@@ -39,6 +41,7 @@ impl CeremonyOutcome {
             Self::NoTransition => "no_transition",
             Self::IterationLimit => "iteration_limit",
             Self::RepeatLimit => "repeat_limit",
+            Self::StateRepeatLimit => "state_repeat_limit",
             Self::AlreadyExists => "already_exists",
         }
     }
@@ -56,6 +59,7 @@ mod tests {
             CeremonyOutcome::NoTransition,
             CeremonyOutcome::IterationLimit,
             CeremonyOutcome::RepeatLimit,
+            CeremonyOutcome::StateRepeatLimit,
             CeremonyOutcome::AlreadyExists,
         ];
         let labels: std::collections::BTreeSet<&str> =

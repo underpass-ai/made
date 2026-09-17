@@ -1,4 +1,6 @@
-use crate::entities::ceremony_events::{StepCompleted, StepFailed, StepStarted};
+use crate::entities::ceremony_events::{
+    StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+};
 use crate::entities::CeremonyInstance;
 use crate::value_objects::{StepExecutionRecord, StepId};
 
@@ -48,6 +50,22 @@ impl CeremonyInstance {
             .with_result(failed.result.clone());
         self.step_records.insert(failed.step_id.clone(), finished);
         self.updated_at = failed.finished_at;
+    }
+
+    pub(super) fn apply_state_iteration_started(&mut self, started: &StateIterationStarted) {
+        self.current_state_iteration = started.state_iteration;
+        for step_id in &started.step_ids {
+            let finished = self.take_step_record(step_id);
+            self.step_record_history
+                .entry(step_id.clone())
+                .or_default()
+                .push(finished);
+            self.step_records.insert(
+                step_id.clone(),
+                StepExecutionRecord::pending_state_iteration(started.state_iteration),
+            );
+        }
+        self.updated_at = started.started_at;
     }
 
     /// The record a step event is applied to. Every step the opening

@@ -40,6 +40,23 @@ impl CeremonyEventReader {
                     )
                 })?
             }
+            EventSchemaVersion::V2
+                if matches!(
+                    event_type,
+                    AuditEventType::StepStarted
+                        | AuditEventType::StepCompleted
+                        | AuditEventType::StepFailed
+                        | AuditEventType::TransitionApplied
+                ) =>
+            {
+                serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
+                    unreadable(
+                        event_type,
+                        version,
+                        "the payload does not deserialize as a ceremony event",
+                    )
+                })?
+            }
             other => {
                 return Err(unreadable(
                     event_type,

@@ -112,6 +112,7 @@ mod tests {
             event_id: EventId::new(event_id).unwrap(),
             event: CeremonyEvent::StepCompleted(StepCompleted {
                 step_id: StepId::new("draft").unwrap(),
+                state_iteration: None,
                 iteration: StepIteration::FIRST,
                 attempt: StepAttempt::FIRST,
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
