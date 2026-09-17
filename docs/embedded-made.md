@@ -19,6 +19,13 @@ The embedded crate is not a second ceremony engine and does not duplicate
 domain behavior. It calls the same application use cases used by the
 deployable composition.
 
+`EmbeddedMade::design_ceremony` returns a `DesignedCeremony` whose `definition()`
+is the domain draft. A Rust host can analyze that model directly. Encode it with
+`made_adapters::yaml::DesignedCeremonyYaml::render` when YAML is needed; the gRPC
+and embedded MCP paths use this same adapter. `made-app` does not depend on
+`serde_yaml` or return encoded YAML. The proto/MCP response retains
+`definition_yaml` and the design outline.
+
 ```text
                   made-core
             domain + ports + invariants

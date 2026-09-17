@@ -63,12 +63,13 @@ pub fn ceremony_design_document_from_proto(
 
 pub fn design_ceremony_response_from(
     designed: &DesignedCeremony,
+    definition_yaml: String,
     view: &CeremonyDraftView<'_>,
 ) -> pb::DesignCeremonyResponse {
     pb::DesignCeremonyResponse {
         ceremony: view.name().as_str().to_owned(),
         version: view.version().as_str().to_owned(),
-        definition_yaml: designed.definition_yaml().to_owned(),
+        definition_yaml,
         publishable: view.is_publishable(),
         design: Some(pb::CeremonyDesignOutline {
             topology: designed.topology().to_owned(),

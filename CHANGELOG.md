@@ -27,6 +27,10 @@ operator command.
 
 ### Fixed
 
+- Ceremony design returns a domain draft; one adapter renders YAML for both
+  MCP paths, with serialization DTOs and serde_yaml removed from made-app
+  (#104). Rust hosts read DesignedCeremony::definition() and render explicitly.
+
 - Require at least 80% line coverage per production crate, reject reduced
   committed floors, and exercise binary HTTP/gRPC startup and SIGTERM shutdown
   so the server also meets its floor (#103).

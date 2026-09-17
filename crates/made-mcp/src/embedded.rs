@@ -32,7 +32,6 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 
-use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_app::usecases::CeremonyDraftView;
 use made_core::value_objects::CeremonyId;
 use made_embedded::EmbeddedMade;
@@ -189,17 +188,13 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?
                         .execute(&self.made)?;
-                    // Through the same parser and the same analysis a
-                    // hand-authored draft goes through, at the same
-                    // boundary: "designed" means written quickly, not
-                    // trusted more.
-                    let draft =
-                        CeremonyDefinitionYaml::parse_draft_str(designed.definition_yaml())?;
+                    let draft = designed.definition();
+                    let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed)?;
                     let report = draft.analyze();
                     Ok(tool_success_result(
                         EmbeddedCeremonyDraftPresenter::present_design(
-                            designed.definition_yaml(),
-                            &CeremonyDraftView::project(&draft, &report),
+                            &yaml,
+                            &CeremonyDraftView::project(draft, &report),
                             &designed,
                         ),
                     ))
