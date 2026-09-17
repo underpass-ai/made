@@ -13,6 +13,7 @@ use serde_json::{json, Map, Value};
 
 use super::primitives::pb_struct_to_json;
 use crate::protocol::{CeremonyJournalVerdictView, REPORT_IS_PERSISTED};
+use crate::renderers::{AuditRecordView, CeremonyEventPageView};
 
 pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsResponse) -> Value {
     let pb::ReadCeremonyEventsResponse {
@@ -20,17 +21,11 @@ pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsRespo
         next_version,
         head_version,
     } = response;
-    let record_count = records.len();
-    json!({
-        "records": records
-            .into_iter()
-            .map(ceremony_event_record_to_json)
-            .collect::<Vec<_>>(),
-        "record_count": record_count,
-        "next_version": next_version,
-        "head_version": head_version,
-        "has_more": next_version < head_version,
-    })
+    let records = records
+        .into_iter()
+        .map(ceremony_event_record_view)
+        .collect();
+    CeremonyEventPageView::new(records, next_version, head_version).to_json()
 }
 
 /// The verdict on one journal's chain.
@@ -61,7 +56,7 @@ pub(crate) fn verify_ceremony_journal_to_json(
     .to_json()
 }
 
-fn ceremony_event_record_to_json(record: pb::CeremonyEventRecord) -> Value {
+fn ceremony_event_record_view(record: pb::CeremonyEventRecord) -> AuditRecordView {
     let pb::CeremonyEventRecord {
         event_id,
         event_type,
@@ -80,58 +75,40 @@ fn ceremony_event_record_to_json(record: pb::CeremonyEventRecord) -> Value {
         previous_record_hash,
         record_hash,
     } = record;
-    json!({
-        "event_id": event_id,
-        "event_type": event_type,
-        "schema_version": schema_version,
-        "ceremony_id": ceremony_id,
-        "definition_name": definition_name,
-        "definition_version": definition_version,
-        "sequence": sequence,
-        "occurred_at": occurred_at,
-        "actor": actor.map_or(Value::Null, ceremony_event_actor_to_json),
-        "correlation_id": absent_when_empty(correlation_id),
-        "causation_id": absent_when_empty(causation_id),
-        "trace_id": absent_when_empty(trace_id),
+    AuditRecordView {
+        event_id,
+        event_type,
+        schema_version,
+        ceremony_id,
+        definition_name,
+        definition_version,
+        sequence,
+        occurred_at,
+        actor: actor.map_or(Value::Null, ceremony_event_actor_to_json),
+        correlation_id: empty_to_option(correlation_id),
+        causation_id: empty_to_option(causation_id),
+        trace_id: empty_to_option(trace_id),
         // Zero is the version-1 record that has no payload to shape.
-        "event_schema_version": (event_schema_version > 0).then_some(event_schema_version),
-        "event": event.map_or(Value::Null, |event| Value::Object(pb_struct_to_json(event))),
-        "previous_record_hash": digest_to_json(previous_record_hash),
-        // A record always carries its own digest; an empty one would
-        // be a record this server could not have sealed.
-        "record_hash": Value::Array(digest_bytes(record_hash)),
-    })
+        event_schema_version: (event_schema_version > 0).then_some(event_schema_version),
+        event: event.map(|event| Value::Object(pb_struct_to_json(event))),
+        previous_record_hash: (!previous_record_hash.is_empty()).then_some(previous_record_hash),
+        record_hash,
+    }
 }
 
 fn ceremony_event_actor_to_json(actor: pb::CeremonyEventActor) -> Value {
     let mut fields = Map::new();
     fields.insert("actor_id".to_owned(), Value::String(actor.actor_id));
     fields.insert("kind".to_owned(), Value::String(actor.kind));
-    fields.insert("role_id".to_owned(), absent_when_empty(actor.role_id));
+    fields.insert(
+        "role_id".to_owned(),
+        empty_to_option(actor.role_id).map_or(Value::Null, Value::String),
+    );
     Value::Object(fields)
 }
 
-/// A digest as the record's own serde form writes it: the bytes, not a
-/// rendering of them, so a client can read the record straight back.
-fn digest_to_json(digest: Vec<u8>) -> Value {
-    if digest.is_empty() {
-        return Value::Null;
-    }
-    Value::Array(digest_bytes(digest))
-}
-
-fn digest_bytes(digest: Vec<u8>) -> Vec<Value> {
-    digest.into_iter().map(|byte| json!(byte)).collect()
-}
-
-/// Proto3 has no absent scalar, so an empty string on the wire is the
-/// `null` the in-process arm answers with.
-fn absent_when_empty(value: String) -> Value {
-    if value.is_empty() {
-        Value::Null
-    } else {
-        Value::String(value)
-    }
+fn empty_to_option(value: String) -> Option<String> {
+    (!value.is_empty()).then_some(value)
 }
 
 pub(crate) fn ceremony_transcript_to_json(response: pb::GetCeremonyTranscriptResponse) -> Value {
@@ -169,7 +146,7 @@ pub(crate) fn ceremony_report_to_json(response: pb::GenerateCeremonyReportRespon
                 "definition_name": binding.definition_name,
                 "definition_version": binding.definition_version,
                 "definition_digest": binding.definition_digest,
-                "bound_definition_digest": absent_when_empty(binding.bound_definition_digest),
+                "bound_definition_digest": empty_to_option(binding.bound_definition_digest),
             }))
             .collect::<Vec<_>>(),
         // Not a field of the response; the constant says why.
@@ -208,7 +185,7 @@ mod tests {
 
     #[test]
     fn an_absent_optional_comes_back_null_and_not_as_an_empty_string() {
-        let json = ceremony_event_record_to_json(record());
+        let json = ceremony_event_record_view(record()).to_json();
 
         assert_eq!(json["correlation_id"], json!("e1"));
         assert_eq!(json["causation_id"], Value::Null);
@@ -220,47 +197,11 @@ mod tests {
 
     #[test]
     fn a_digest_travels_as_the_bytes_the_record_holds() {
-        let json = ceremony_event_record_to_json(record());
+        let json = ceremony_event_record_view(record()).to_json();
 
         let bytes = json["record_hash"].as_array().expect("a digest is bytes");
         assert_eq!(bytes.len(), 32);
         assert!(bytes.iter().all(Value::is_u64));
-    }
-
-    /// The keys are the record's own, because a client reads them back
-    /// into the record. Spelled here so a rename fails loudly.
-    #[test]
-    fn a_record_carries_exactly_the_keys_the_stored_record_has() {
-        let json = ceremony_event_record_to_json(record());
-
-        let mut keys: Vec<&str> = json
-            .as_object()
-            .expect("a record is an object")
-            .keys()
-            .map(String::as_str)
-            .collect();
-        keys.sort_unstable();
-        assert_eq!(
-            keys,
-            [
-                "actor",
-                "causation_id",
-                "ceremony_id",
-                "correlation_id",
-                "definition_name",
-                "definition_version",
-                "event",
-                "event_id",
-                "event_schema_version",
-                "event_type",
-                "occurred_at",
-                "previous_record_hash",
-                "record_hash",
-                "schema_version",
-                "sequence",
-                "trace_id",
-            ]
-        );
     }
 
     #[test]

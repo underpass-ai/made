@@ -5,7 +5,9 @@
 //! reviewers can spot accidental drops at PR time.
 
 use made_mcp_proto::v1 as pb;
-use serde_json::{json, Map, Number as JsonNumber, Value};
+use serde_json::{json, Map, Value};
+
+use crate::renderers::StatisticsView;
 
 mod ceremony_history;
 mod ceremony_instance;
@@ -16,7 +18,7 @@ pub(crate) use ceremony_history::{
     verify_ceremony_journal_to_json,
 };
 pub(crate) use ceremony_instance::{
-    ceremony_instance_listing_to_json, ceremony_instance_state_to_json,
+    ceremony_instance_listing_entry, ceremony_instance_state_to_json,
 };
 use primitives::phase_name;
 pub(crate) use primitives::{optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339};
@@ -293,19 +295,14 @@ pub(crate) fn run_ceremony_response_to_json(r: pb::RunCeremonyResponse) -> Value
     })
 }
 
-pub(crate) fn statistics_to_json(s: pb::Statistics) -> Value {
-    let per_specialty: Map<String, Value> = s
-        .per_specialty_counts
-        .into_iter()
-        .map(|(k, v)| (k, Value::Number(JsonNumber::from(v))))
-        .collect();
-    json!({
-        "total_deliberations": s.total_deliberations,
-        "total_orchestrations": s.total_orchestrations,
-        "total_duration_ms": s.total_duration_ms,
-        "average_duration_ms": s.average_duration_ms,
-        "per_specialty_counts": Value::Object(per_specialty),
-    })
+pub(crate) fn statistics_view(s: pb::Statistics) -> StatisticsView {
+    StatisticsView {
+        total_deliberations: s.total_deliberations,
+        total_orchestrations: s.total_orchestrations,
+        total_duration_ms: s.total_duration_ms,
+        average_duration_ms: s.average_duration_ms,
+        per_specialty_counts: s.per_specialty_counts.into_iter().collect(),
+    }
 }
 
 // ---------------------------------------------------------------------------
