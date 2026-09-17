@@ -67,16 +67,24 @@ fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     );
     let lines = std::fs::read_to_string(&sink).unwrap();
     let records = lines.lines().collect::<Vec<_>>();
-    assert_eq!(records.len(), 1, "startup must drain the pending event");
+    assert_eq!(
+        records.len(),
+        2,
+        "startup must drain the pending event and append its registry snapshot"
+    );
     let record: Value = serde_json::from_str(records[0]).unwrap();
     assert_eq!(record["global_position"], 1);
     assert_eq!(record["ceremony_id"], "pending-publication");
     assert_eq!(record["event_type"], "ceremony_instance_started");
+    let metrics: Value = serde_json::from_str(records[1]).unwrap();
+    assert_eq!(metrics["record_type"], "metrics_snapshot");
+    assert!(metrics["registry_text"].is_string());
+    assert!(metrics["registry"].is_array());
 
     // The cursor was acknowledged by recovery. Reopening again is a no-op,
     // rather than duplicate delivery of the same at-least-once attempt.
     run_made_mcp_process_with_event_sink(&store, &sink, &[]);
-    assert_eq!(std::fs::read_to_string(&sink).unwrap().lines().count(), 1);
+    assert_eq!(std::fs::read_to_string(&sink).unwrap().lines().count(), 2);
 }
 
 #[test]

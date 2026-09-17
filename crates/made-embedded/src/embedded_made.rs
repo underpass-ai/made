@@ -9,15 +9,15 @@ use made_app::services::{
 };
 use made_app::usecases::{
     GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ServiceStatus,
+    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ServiceMetrics, ServiceStatus,
 };
-use made_core::entities::{CeremonyInstance, Statistics};
+use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
     CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
     CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, StatisticsPort,
+    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, StatisticsPort,
 };
 use made_core::value_objects::CeremonyEventPageLimit;
 use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
@@ -45,6 +45,7 @@ pub struct EmbeddedMade {
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     clock: Arc<dyn ClockPort>,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
+    metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
     /// The operational counters this engine keeps.
     ///
     /// Wired like every other port so a host can replace it; the
@@ -97,6 +98,50 @@ impl EmbeddedMade {
             .build())
     }
 
+    /// Open durable SQLite with one operational metrics adapter shared by
+    /// event instrumentation and registry reads.
+    pub fn open_with_metrics<M>(
+        path: impl AsRef<std::path::Path>,
+        metrics: Arc<M>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        })?;
+        let store = Arc::new(store);
+        Ok(Self::builder()
+            .with_ceremony_store_and_memory(store.clone())
+            .with_event_cursor(store.clone())
+            .with_definition_publications(store)
+            .with_observability(metrics)
+            .build())
+    }
+
+    /// Open durable SQLite with one operational metrics adapter shared by
+    /// event instrumentation, registry reads, and an event transport.
+    pub fn open_with_observability<M>(
+        path: impl AsRef<std::path::Path>,
+        metrics: Arc<M>,
+        transport: Arc<dyn CeremonyEventTransportPort>,
+    ) -> Result<Self, ApiError>
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
+            reason: format!("the durable SQLite ceremony store did not open: {error}"),
+        })?;
+        let store = Arc::new(store);
+        Ok(Self::builder()
+            .with_ceremony_store_and_memory(store.clone())
+            .with_event_cursor(store.clone())
+            .with_definition_publications(store)
+            .with_observability(metrics)
+            .with_event_transport(transport)
+            .build())
+    }
+
     fn over(store: SqliteCeremonyStore) -> Self {
         let store = Arc::new(store);
         Self::builder()
@@ -116,6 +161,7 @@ impl EmbeddedMade {
         evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
         clock: Arc<dyn ClockPort>,
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
+        metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
         statistics: Arc<dyn StatisticsPort>,
         memory: Arc<dyn MemoryWriterPort>,
         memory_reader: Arc<dyn MemoryReaderPort>,
@@ -164,6 +210,7 @@ impl EmbeddedMade {
             evidence_source,
             clock,
             metrics_recorder,
+            metrics_snapshot,
             statistics,
             memory_reader,
             event_publisher,
@@ -244,8 +291,8 @@ impl EmbeddedMade {
     }
 
     /// The operational counters on their own.
-    pub async fn metrics(&self) -> Result<Statistics, DomainError> {
-        GetServiceMetricsUseCase::new(self.statistics.clone())
+    pub async fn metrics(&self) -> Result<ServiceMetrics, DomainError> {
+        GetServiceMetricsUseCase::new(self.statistics.clone(), self.metrics_snapshot.clone())
             .execute()
             .await
     }

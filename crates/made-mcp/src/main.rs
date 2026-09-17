@@ -10,11 +10,12 @@ use made_mcp::{
     GRPC_TLS_CERT_PATH_ENV, GRPC_TLS_DOMAIN_NAME_ENV, GRPC_TLS_KEY_PATH_ENV, GRPC_TLS_MODE_ENV,
     MCP_BACKEND_ENV,
 };
+#[cfg(not(feature = "otel"))]
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
+    let _telemetry = init_tracing()?;
 
     let args: Vec<String> = std::env::args().skip(1).collect();
     if let Some(command) = args.first() {
@@ -72,14 +73,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env()
-        .unwrap_or_else(|_| EnvFilter::new("made_mcp=info,made_adapters::sqlite=info"));
+#[cfg(not(feature = "otel"))]
+#[derive(Debug)]
+struct McpTelemetryGuard;
+
+#[cfg(feature = "otel")]
+type McpTelemetryGuard = made_adapters::telemetry::TelemetryGuard;
+
+#[cfg(not(feature = "otel"))]
+#[allow(clippy::unnecessary_wraps)] // keeps the call site identical to the fallible otel build
+fn init_tracing() -> anyhow::Result<McpTelemetryGuard> {
+    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        EnvFilter::new("made_mcp=info,made_app=info,made_adapters::sqlite=info")
+    });
     tracing_subscriber::fmt()
         .json()
         .with_writer(io::stderr)
         .with_env_filter(filter)
         .init();
+    Ok(McpTelemetryGuard)
+}
+
+#[cfg(feature = "otel")]
+fn init_tracing() -> anyhow::Result<McpTelemetryGuard> {
+    made_adapters::telemetry::init_otlp_tracing(
+        "made-mcp",
+        env!("CARGO_PKG_VERSION"),
+        "made_mcp=info,made_app=info,made_adapters::sqlite=info",
+        io::stderr,
+    )
 }
 
 async fn run_cli_command(command: &str, args: &[String]) -> i32 {

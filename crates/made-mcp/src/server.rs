@@ -90,17 +90,26 @@ impl MadeMcpServer {
     #[cfg(feature = "embedded")]
     pub fn embedded_sqlite(path: impl AsRef<std::path::Path>) -> Result<Self, String> {
         let path = path.as_ref();
+        let metrics = Arc::new(
+            made_adapters::metrics::PrometheusMetricsRecorder::new()
+                .map_err(|error| format!("failed to initialize embedded metrics: {error}"))?,
+        );
         let sink = std::env::var(EVENT_SINK_PATH_ENV)
             .ok()
             .filter(|value| !value.trim().is_empty())
-            .map(made_adapters::event_sink::JsonLinesCeremonyEventSink::open)
+            .map(|sink_path| {
+                made_adapters::event_sink::JsonLinesCeremonyEventSink::open_with_metrics(
+                    sink_path,
+                    metrics.clone(),
+                )
+            })
             .transpose()
             .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
         let made = match sink {
             Some(sink) => {
-                made_embedded::EmbeddedMade::open_with_event_transport(path, Arc::new(sink))
+                made_embedded::EmbeddedMade::open_with_observability(path, metrics, Arc::new(sink))
             }
-            None => made_embedded::EmbeddedMade::open(path),
+            None => made_embedded::EmbeddedMade::open_with_metrics(path, metrics),
         }
         .map_err(|error| {
             format!(

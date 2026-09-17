@@ -16,6 +16,12 @@ operator command.
 
 ### Changed
 
+- `made_get_metrics` now returns the same in-process Prometheus registry as
+  text and structured families/samples in both editions while preserving the
+  legacy statistics. Embedded hosts can share one recorder/reader adapter,
+  export OTLP with the existing mTLS variables, and append registry snapshots
+  beside durable JSONL event deliveries. (#119)
+
 - Preserve waiting-for-human and cancelled step-result labels in ceremony
   metrics instead of counting both as failed results. (#118)
 
