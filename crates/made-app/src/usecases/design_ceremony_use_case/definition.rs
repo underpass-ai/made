@@ -17,7 +17,9 @@ use super::{
     CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS,
     DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
 };
-use crate::usecases::{CeremonyDesignExitGuard, CeremonyDesignJoin, CeremonyDesignStageEntry};
+use crate::usecases::{
+    CeremonyDesignExitGuard, CeremonyDesignGroupStep, CeremonyDesignJoin, CeremonyDesignStageEntry,
+};
 
 /// The linear topology, assembled atomically from one intent: one state
 /// per stage plus the terminal one, one automated completion guard per
@@ -78,7 +80,7 @@ pub(super) fn build_definition(
     let mut transitions = Vec::new();
     let mut steps = Vec::new();
     for (index, entry) in document.stage_entries().iter().enumerate() {
-        let stages = entry_steps(entry);
+        let entry_stages = entry_steps(entry);
         let entry_name = entry_id(entry).as_str();
         let completion = GuardName::new(completion_guard(entry_name))?;
         let mut required_guards = Vec::new();
@@ -95,7 +97,7 @@ pub(super) fn build_definition(
             }
             CeremonyDesignStageEntry::Group(group) => match group.join() {
                 CeremonyDesignJoin::AllStepsCompleted => {
-                    for stage in &stages {
+                    for stage in &entry_stages {
                         let name =
                             GuardName::new(format!("{}_{}_completed", entry_name, stage.id()))?;
                         guards.push(CeremonyGuard::new(
@@ -145,7 +147,7 @@ pub(super) fn build_definition(
                 required_guards.push(name);
             }
         }
-        let first_owner = stages
+        let first_owner = entry_stages
             .first()
             .expect("validated non-empty group")
             .owner_role_id();
@@ -161,13 +163,13 @@ pub(super) fn build_definition(
                     TransitionTrigger::new(approval_trigger(document))?,
                     match entry {
                         CeremonyDesignStageEntry::Group(_) => first_owner,
-                        _ => approval.role_id(),
+                        CeremonyDesignStageEntry::Leaf(_) => approval.role_id(),
                     },
                 )
             }
             _ => (TransitionTrigger::new(completion.as_str())?, first_owner),
         };
-        for stage in &stages {
+        for stage in &entry_stages {
             actions
                 .get_mut(stage.owner_role_id())
                 .expect("validated owner")
@@ -183,7 +185,7 @@ pub(super) fn build_definition(
             trigger,
             required_guards,
         )?);
-        for stage in stages {
+        for stage in entry_stages {
             let handler = stage
                 .handler()
                 .cloned()
@@ -271,9 +273,11 @@ fn entry_execution(entry: &CeremonyDesignStageEntry) -> StateExecution {
 fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
     match entry {
         CeremonyDesignStageEntry::Leaf(stage) => vec![stage],
-        CeremonyDesignStageEntry::Group(group) => {
-            group.steps().iter().map(|step| step.step()).collect()
-        }
+        CeremonyDesignStageEntry::Group(group) => group
+            .steps()
+            .iter()
+            .map(CeremonyDesignGroupStep::step)
+            .collect(),
     }
 }
 

@@ -26,6 +26,7 @@ pub(super) struct CeremonyDocument {
     pub(super) max_parallel: u8,
 }
 
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip predicate receives `&T`.
 const fn is_default_max_parallel(value: &u8) -> bool {
     *value == 3
 }
