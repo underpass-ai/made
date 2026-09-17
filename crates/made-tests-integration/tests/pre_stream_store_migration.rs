@@ -11,7 +11,7 @@
 use std::path::{Path, PathBuf};
 
 use made_adapters::sqlite::SqliteCeremonyStore;
-use made_app::usecases::StartCeremonyStepInput;
+use made_app::usecases::{GenerateCeremonyReportInput, StartCeremonyStepInput};
 use made_core::entities::{AuditChain, CeremonyEvent};
 use made_core::ports::CeremonyEventStorePort;
 use made_core::value_objects::{
@@ -185,4 +185,40 @@ async fn a_second_run_changes_nothing_and_says_so() {
         2,
         "only the store and the original it kept"
     );
+}
+
+/// The report of an imported session says what it cannot show.
+///
+/// Rendering the legacy journal's timeline beside the stream was left
+/// out: those records carry no payloads, so a timeline of them would
+/// add rows and no evidence. The report names the import instead, and
+/// the legacy table stays readable in the file for anyone who wants
+/// the receipts.
+#[tokio::test]
+async fn the_report_of_an_imported_session_says_it_was_imported() {
+    let directory = tempfile::tempdir().unwrap();
+    let path = a_copy_of_the_fixture(directory.path());
+    made_mcp::migrate_store(&path).await.expect("the migration");
+    let made = EmbeddedMade::open(&path).expect("the migrated store opens as an engine");
+
+    let report = made
+        .report(GenerateCeremonyReportInput::new(
+            vec![ceremony(COMPLETE)],
+            None,
+        ))
+        .await
+        .expect("an imported session can be reported");
+
+    let markdown = report.markdown();
+    assert!(
+        markdown.contains("Imported from a store written before ceremonies were event streams"),
+        "the report must say the session was imported:\n{markdown}"
+    );
+    assert!(
+        markdown.contains("cannot be recovered"),
+        "the report must say what the import could not bring with it:\n{markdown}"
+    );
+    // The state the old store held is still reported in full.
+    assert!(markdown.contains("CLOSED"), "{markdown}");
+    assert!(markdown.contains("instance_imported"), "{markdown}");
 }
