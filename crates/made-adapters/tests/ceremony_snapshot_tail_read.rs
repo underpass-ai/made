@@ -99,17 +99,11 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
 
     let opened = writer
         .open(
-            vec![CeremonyEvent::CeremonyInstanceStarted(
-                CeremonyInstanceStarted {
-                    ceremony_id: ceremony_id.clone(),
-                    definition_name: definition_name.clone(),
-                    definition_version: CeremonyVersion::v1(),
-                    initial_state: StateId::new("WORKING").unwrap(),
-                    step_ids: BTreeSet::from([step_id.clone()]),
-                    context: CeremonyContext::empty(),
-                    bound_definition: None,
-                    created_at: opened_at,
-                },
+            vec![opening_event(
+                &ceremony_id,
+                &definition_name,
+                &step_id,
+                opened_at,
             )],
             actor.clone(),
             opened_at,
@@ -191,6 +185,24 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
         loaded.instance.step_record(&step_id).unwrap().status(),
         StepStatus::Completed
     );
+}
+
+fn opening_event(
+    ceremony_id: &CeremonyId,
+    definition_name: &CeremonyName,
+    step_id: &StepId,
+    created_at: OffsetDateTime,
+) -> CeremonyEvent {
+    CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
+        ceremony_id: ceremony_id.clone(),
+        definition_name: definition_name.clone(),
+        definition_version: CeremonyVersion::v1(),
+        initial_state: StateId::new("WORKING").unwrap(),
+        step_ids: BTreeSet::from([step_id.clone()]),
+        context: CeremonyContext::empty(),
+        bound_definition: None,
+        created_at,
+    })
 }
 
 fn fact(
