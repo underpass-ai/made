@@ -7,12 +7,10 @@
 //! all answer "what happened" from state the engine already holds, and
 //! none of them writes.
 
-use std::sync::Arc;
-
 use made_app::usecases::{
     CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, GenerateCeremonyReportInput,
-    GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
-    ReadCeremonyEventsInput, ReadCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
+    GenerateCeremonyReportUseCase, GetCeremonyTranscriptUseCase, ReadCeremonyEventsInput,
+    ReadCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
@@ -66,13 +64,9 @@ impl EmbeddedMade {
         &self,
         input: GenerateCeremonyReportInput,
     ) -> Result<CeremonyReport, DomainError> {
-        GenerateCeremonyReportUseCase::new(
-            Arc::new(GetCeremonyInstanceUseCase::new(self.stream.clone())),
-            self.resolve_definition(),
-            self.events.clone(),
-        )
-        .execute(input)
-        .await
+        GenerateCeremonyReportUseCase::new(self.resolve_definition(), self.events.clone())
+            .execute(input)
+            .await
     }
 
     /// Whether one session's journal is sealed, positioned and linked

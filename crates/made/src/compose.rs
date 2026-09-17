@@ -3,7 +3,10 @@
 use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
+use made_adapters::ceremony::{
+    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+    DeliberatingCeremonyStepHandler,
+};
 use made_adapters::clock::SystemClock;
 use made_adapters::config::{EnvConfiguration, ServiceConfig};
 use made_adapters::memory::ForgetfulMemory;
@@ -26,9 +29,9 @@ use made_adapters::validators::{
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
-use made_app::services::AutoDispatchService;
-use made_app::services::SessionMemoryRecorder;
-use made_app::services::SessionStream;
+use made_app::services::{
+    AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
+};
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
@@ -206,10 +209,16 @@ pub async fn compose() -> Result<Application, ComposeError> {
         memory.clone(),
         ceremony_events.clone(),
     ));
+    let ceremony_subscribers = Arc::new(CeremonyEventFanout::new(vec![
+        session_memory,
+        Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+        Arc::new(CeremonyTracingSubscriber::new()),
+        Arc::new(CeremonyStructuredLogSubscriber::new()),
+    ]));
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
-        session_memory,
+        ceremony_subscribers,
     ));
 
     let MessagingWiring {
@@ -408,7 +417,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let get_ceremony_transcript =
         Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_events.clone()));
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
-        get_ceremony_instance.clone(),
         resolve_ceremony_definition.clone(),
         ceremony_events,
     ));

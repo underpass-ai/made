@@ -36,7 +36,7 @@ use made_core::ports::{
 use made_core::value_objects::{AuditActor, CeremonyId, StreamVersion};
 use time::OffsetDateTime;
 
-use super::{session_facts, ConflictPolicy, LoadedSession};
+use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
 
 /// Loads the fold of a stream and appends what a decision produced.
 pub struct SessionStream {
@@ -73,6 +73,45 @@ impl SessionStream {
     /// [`Self::load`].
     pub async fn records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
         self.events.read(id, StreamVersion::EMPTY).await
+    }
+
+    /// Fold one complete, bounded stream read into the session at that cut.
+    ///
+    /// Read-side projections that need both the aggregate and its journal use
+    /// this function so both answers come from the same records. The slice must
+    /// start at the opening record.
+    pub fn fold_records(records: &[AuditRecord]) -> Result<LoadedSession, DomainError> {
+        let mut instance = None;
+        let mut version = StreamVersion::EMPTY;
+        let mut head = None;
+        for record in records {
+            let event = record.event().ok_or(DomainError::UnreadableCeremonyEvent {
+                event_type: record.event_type().as_str(),
+                version: record.schema_version(),
+                reason: "the record carries no event to fold; \
+                         a schema version 1 journal needs the migration command",
+            })?;
+            match (&mut instance, event) {
+                (None, CeremonyEvent::CeremonyInstanceStarted(started)) => {
+                    instance = Some(CeremonyInstance::from_started(started));
+                }
+                (None, CeremonyEvent::InstanceImported(imported)) => {
+                    instance = Some(CeremonyInstance::from_imported(imported));
+                }
+                (None, _) => {
+                    return Err(DomainError::InvariantViolated {
+                        reason: "a ceremony stream opens with its start or with its import",
+                    });
+                }
+                (Some(instance), event) => instance.apply(event),
+            }
+            version = StreamVersion::from_sequence(record.sequence());
+            head = Some(record.event_id().clone());
+        }
+        let instance = instance.ok_or(DomainError::NotFound {
+            what: "ceremony_instance",
+        })?;
+        Ok(LoadedSession::new(instance, version, head))
     }
 
     /// Every stream the store holds, sorted by id.
@@ -163,9 +202,11 @@ impl SessionStream {
         let mut facts = session_facts::facts(&instance, opening, &actor, occurred_at)?;
         let mut correlation = None;
         let mut causation = None;
+        let trace = current_trace_context();
         for fact in &mut facts {
             fact.correlation_id = Some(correlation.get_or_insert(fact.event_id.clone()).clone());
             fact.causation_id = causation.take();
+            fact.trace = Some(trace.clone());
             causation = Some(fact.event_id.clone());
             instance.apply(&fact.event);
         }
@@ -207,11 +248,13 @@ impl SessionStream {
         let (mut instance, version, head) = session.into_parts();
         let correlation = session_facts::opening_event_id(instance.id())?;
         let mut causation = head;
+        let trace = current_trace_context();
         let facts = facts
             .into_iter()
             .map(|mut fact| {
                 fact.correlation_id = Some(correlation.clone());
                 fact.causation_id = causation.take();
+                fact.trace = Some(trace.clone());
                 causation = Some(fact.event_id.clone());
                 instance.apply(&fact.event);
                 fact

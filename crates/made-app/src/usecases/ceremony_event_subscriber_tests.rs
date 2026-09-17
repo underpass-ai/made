@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::ports::{CeremonyEventSubscriberPort, PositionedRecord};
-use made_core::value_objects::{AuditActorKind, StepOutput, StepResult};
+use made_core::value_objects::{AuditActorKind, StepOutput, StepResult, TraceContext};
 use tokio::sync::RwLock;
 
 use super::ceremony_test_support::{
@@ -23,7 +23,7 @@ use super::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, CompleteCeremonyStepInput,
     CompleteCeremonyStepUseCase, StartCeremonyStepInput, StartCeremonyStepUseCase,
 };
-use crate::services::SessionStream;
+use crate::services::{CeremonyTraceScope, SessionStream};
 
 /// Every notification, flattened, in the order it arrived.
 #[derive(Debug, Default)]
@@ -178,6 +178,24 @@ async fn an_append_that_never_lands_is_not_observed() {
     assert!(refused.is_err(), "the append was expected to be refused");
     assert!(watcher.notifications().await.is_empty());
     assert!(watcher.seen().await.is_empty());
+}
+
+#[tokio::test]
+async fn a_sealed_record_carries_the_trace_that_wrote_it() {
+    let (store, watcher) = watched().await;
+    let stream = stream_watched_by(store.clone(), watcher);
+    let trace =
+        TraceContext::parse("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01").unwrap();
+
+    CeremonyTraceScope::run(trace.clone(), claim(stream).execute(claim_input()))
+        .await
+        .unwrap();
+
+    let records = store.records(&ceremony_id()).await;
+    assert_eq!(records[1].trace_id(), Some(trace.trace_id()));
+    assert_eq!(records[1].correlation_id(), records[0].correlation_id());
+    assert_eq!(records[1].causation_id(), Some(records[0].event_id()));
+    assert!(records[1].digest_is_intact().unwrap());
 }
 
 /// Memory is not the transaction (ADR-013, and the module doc of the

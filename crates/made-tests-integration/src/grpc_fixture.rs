@@ -352,7 +352,6 @@ impl GrpcFixture {
                 ceremony_store.clone(),
             )))
             .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
-                get_ceremony_instance,
                 resolve_ceremony_definition.clone(),
                 ceremony_store,
             )))
@@ -660,7 +659,6 @@ impl GrpcFixture {
                 ceremony_store.clone(),
             )))
             .generate_ceremony_report(Arc::new(GenerateCeremonyReportUseCase::new(
-                get_ceremony_instance,
                 resolve_ceremony_definition.clone(),
                 ceremony_store,
             )))

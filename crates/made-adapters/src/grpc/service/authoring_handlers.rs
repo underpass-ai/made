@@ -138,12 +138,17 @@ impl MadeGrpcService {
         link_span_to_metadata(&request);
         let ceremony_id =
             CeremonyId::new(request.into_inner().ceremony_id).map_err(domain_error_to_status)?;
-        let instance = self
+        let read = self
             .get_ceremony_instance
-            .execute(&ceremony_id)
+            .execute_with_ids(&ceremony_id)
             .await
             .map_err(domain_error_to_status)?;
-        let state = self.project(&instance).await?;
+        let definition = self
+            .resolve_ceremony_definition
+            .execute(read.instance())
+            .await
+            .map_err(domain_error_to_status)?;
+        let state = Self::render_read(&read, &definition)?;
         Ok(Response::new(pb::GetCeremonyInstanceResponse {
             instance: Some(state),
         }))

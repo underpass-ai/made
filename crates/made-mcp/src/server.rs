@@ -14,7 +14,7 @@ use serde_json::Value;
 use crate::backend::EMBEDDED_STORE_PATH_ENV;
 #[cfg(feature = "grpc")]
 use crate::backend::{MadeMcpGrpcTlsConfig, GRPC_ENDPOINT_ENV};
-use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, MCP_BACKEND_ENV};
+use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext, MCP_BACKEND_ENV};
 #[cfg(feature = "embedded")]
 use crate::embedded::EmbeddedMadeMcpBackend;
 use crate::fixture::FixtureMadeMcpBackend;
@@ -234,6 +234,19 @@ impl MadeMcpServer {
             return jsonrpc_error(id, -32602, "tools/call requires params.name");
         };
         let received = params.get("arguments").unwrap_or(&Value::Null);
+        let supplied_traceparent = params
+            .get("_meta")
+            .and_then(Value::as_object)
+            .and_then(|meta| meta.get("traceparent"))
+            .and_then(Value::as_str)
+            .or_else(|| {
+                received
+                    .get("_meta")
+                    .and_then(Value::as_object)
+                    .and_then(|meta| meta.get("traceparent"))
+                    .and_then(Value::as_str)
+            });
+        let trace = ToolTraceContext::from_metadata(supplied_traceparent);
         let start = Instant::now();
 
         // Two things happen to a call before a backend sees it, and
@@ -278,7 +291,11 @@ impl MadeMcpServer {
                 GET_HELP_TOOL => help_result(arguments, |tool| self.backend.supports_tool(tool))
                     .map(tool_success_result)
                     .map_err(ToolError::invalid_request),
-                _ => self.backend.call_tool(name, arguments).await,
+                _ => {
+                    self.backend
+                        .call_tool_with_trace(name, arguments, &trace)
+                        .await
+                }
             },
         };
 
@@ -333,6 +350,15 @@ where
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         self.as_ref().call_tool(name, arguments)
+    }
+
+    fn call_tool_with_trace<'a>(
+        &'a self,
+        name: &'a str,
+        arguments: &'a Value,
+        trace: &'a ToolTraceContext,
+    ) -> MadeMcpToolFuture<'a> {
+        self.as_ref().call_tool_with_trace(name, arguments, trace)
     }
 }
 

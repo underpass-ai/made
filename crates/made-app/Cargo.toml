@@ -18,6 +18,8 @@ async-trait = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+opentelemetry = { workspace = true }
+tracing-opentelemetry = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
 serde = { workspace = true }

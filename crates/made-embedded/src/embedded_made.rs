@@ -2,6 +2,9 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
+use made_adapters::ceremony::{
+    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+};
 use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
@@ -124,7 +127,14 @@ impl EmbeddedMade {
         // whole of turning it on. The host's own subscriber comes
         // after the engine's.
         let session_memory = Arc::new(SessionMemoryRecorder::new(memory, events.clone()));
-        let subscribers = Arc::new(CeremonyEventFanout::of(session_memory, subscriber));
+        let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+            session_memory,
+            Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+            Arc::new(CeremonyTracingSubscriber::new()),
+            Arc::new(CeremonyStructuredLogSubscriber::new()),
+        ];
+        subscribers.extend(subscriber);
+        let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
         Self {
             definitions,
             publications,

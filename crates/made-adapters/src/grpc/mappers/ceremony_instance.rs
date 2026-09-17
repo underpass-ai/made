@@ -84,6 +84,9 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
         rehydratable: true,
         unrehydratable_reason: String::new(),
         recollection: instance.recollection().map(recollection_state_from),
+        trace_id: String::new(),
+        correlation_id: String::new(),
+        causation_id: String::new(),
     }
 }
 

@@ -145,18 +145,40 @@ impl MadeGrpcService {
             .execute(instance)
             .await
             .map_err(domain_error_to_status)?;
-        Self::render(instance, &definition).map_err(domain_error_to_status)
+        self.render(instance, &definition).await
     }
 
     /// Rendering a session whose definition is already in hand. A move
     /// changes the instance and never the definition, so the mutating
     /// RPCs resolve once and render with what they resolved.
-    fn render(
+    async fn render(
+        &self,
         instance: &made_core::entities::CeremonyInstance,
         definition: &made_core::entities::CeremonyDefinition,
-    ) -> Result<pb::CeremonyInstanceState, DomainError> {
-        let view = CeremonyInstanceView::project(instance, definition)?;
-        Ok(ceremony_instance_state_from(&view))
+    ) -> Result<pb::CeremonyInstanceState, Status> {
+        let head = self
+            .get_ceremony_instance
+            .execute_with_ids(instance.id())
+            .await
+            .map_err(domain_error_to_status)?;
+        Self::render_read(&head, definition)
+    }
+
+    fn render_read(
+        read: &made_app::usecases::CeremonyInstanceRead,
+        definition: &made_core::entities::CeremonyDefinition,
+    ) -> Result<pb::CeremonyInstanceState, Status> {
+        let view = CeremonyInstanceView::project(read.instance(), definition)
+            .map_err(domain_error_to_status)?;
+        let mut state = ceremony_instance_state_from(&view);
+        state.trace_id = read.trace_id().unwrap_or_default().to_owned();
+        state.correlation_id = read
+            .correlation_id()
+            .map_or_else(String::new, ToString::to_string);
+        state.causation_id = read
+            .causation_id()
+            .map_or_else(String::new, ToString::to_string);
+        Ok(state)
     }
 
     /// Give the session the participants its steps will deliberate

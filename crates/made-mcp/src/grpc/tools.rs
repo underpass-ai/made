@@ -6,6 +6,7 @@
 use made_mcp_proto::v1 as pb;
 use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
+use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
@@ -43,8 +44,17 @@ pub(crate) async fn dispatch(
     channel: Channel,
     name: &str,
     arguments: &Value,
+    traceparent: &str,
 ) -> Result<Value, ToolError> {
-    let mut client = MadeServiceClient::new(channel);
+    let traceparent = MetadataValue::try_from(traceparent)
+        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let mut client =
+        MadeServiceClient::with_interceptor(channel, move |mut request: tonic::Request<()>| {
+            request
+                .metadata_mut()
+                .insert("traceparent", traceparent.clone());
+            Ok(request)
+        });
 
     match name {
         "made_deliberate" => {

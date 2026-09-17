@@ -1,3 +1,4 @@
+use made_app::services::SessionStream;
 use made_app::usecases::CeremonyInstanceView;
 use made_core::entities::CeremonyInstance;
 use made_core::value_objects::{
@@ -10,8 +11,6 @@ use time::OffsetDateTime;
 use crate::protocol::ToolError;
 use serde_json::{json, Value};
 
-use super::embedded_request_fields::load_instance_definition;
-
 /// Projects the current persistent ceremony state onto the MCP wire contract.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct EmbeddedCeremonyInstancePresenter;
@@ -21,7 +20,11 @@ impl EmbeddedCeremonyInstancePresenter {
         made: &EmbeddedMade,
         ceremony_id: &CeremonyId,
     ) -> Result<Value, ToolError> {
-        let (definition, instance) = load_instance_definition(made, ceremony_id).await?;
+        let records = made.audit_records(ceremony_id).await?;
+        let read = SessionStream::fold_records(&records)?;
+        let instance = &read.instance;
+        let head = records.last();
+        let definition = made.definition_for(instance).await?;
         // Derived once in the application layer and rendered here. The
         // gRPC adapter renders the same view, which is what keeps one
         // working session from looking like two depending on how a
@@ -81,6 +84,13 @@ impl EmbeddedCeremonyInstancePresenter {
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
+            "trace_id": head.and_then(|record| record.trace_id()),
+            "correlation_id": head
+                .and_then(|record| record.correlation_id())
+                .map(ToString::to_string),
+            "causation_id": head
+                .and_then(|record| record.causation_id())
+                .map(ToString::to_string),
             "definition_name": definition.name().as_str(),
             "definition_version": definition.version().as_str(),
             // Present whether this instance runs a definition that can

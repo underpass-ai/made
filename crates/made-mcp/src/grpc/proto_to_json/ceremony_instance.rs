@@ -38,6 +38,9 @@ pub(crate) fn ceremony_instance_listing_entry(
 pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {
     json!({
         "ceremony_id": state.ceremony_id,
+        "trace_id": empty_as_null(state.trace_id),
+        "correlation_id": empty_as_null(state.correlation_id),
+        "causation_id": empty_as_null(state.causation_id),
         "definition_name": state.definition_name,
         "definition_version": state.definition_version,
         "bound_definition_digest": empty_as_null(state.bound_definition_digest),

@@ -2055,6 +2055,7 @@ dependencies = [
  "criterion",
  "made-core",
  "mockall",
+ "opentelemetry",
  "serde",
  "serde_json",
  "serde_yaml",
@@ -2063,6 +2064,7 @@ dependencies = [
  "tokio",
  "tokio-test",
  "tracing",
+ "tracing-opentelemetry",
  "tracing-subscriber",
  "uuid",
 ]
