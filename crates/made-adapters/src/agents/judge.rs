@@ -24,6 +24,7 @@ use reqwest::Client;
 use serde_json::{json, Value};
 use tracing::warn;
 
+use super::instrument;
 use super::openai_compat::{self as wire, ChatMessage, ChatRequest, ChatResponse, ErrorStrings};
 use crate::scoring::JUDGE_SCORE_DETAIL_KEY;
 
@@ -52,6 +53,7 @@ self-contradiction. You never rewrite the proposal — you only rate it.";
 /// An LLM-backed quality judge, plugged into the deliberation as a
 /// validator.
 pub struct LlmJudgeValidator {
+    provider: &'static str,
     endpoint: String,
     model: String,
     max_tokens: u32,
@@ -99,6 +101,7 @@ impl LlmJudgeValidator {
         }
         let http = build_client(DEFAULT_TIMEOUT)?;
         Ok(Self {
+            provider: "openai_compatible",
             endpoint,
             model,
             max_tokens: DEFAULT_MAX_TOKENS,
@@ -123,14 +126,37 @@ impl LlmJudgeValidator {
         Ok(self)
     }
 
+    /// Label this OpenAI-compatible judge with its concrete vLLM deployment.
+    #[must_use]
+    pub fn with_vllm_identity(mut self) -> Self {
+        self.provider = "vllm";
+        self
+    }
+
     /// Time one rating call and record its latency, success or failure,
     /// before propagating the result. Latency is the leading signal of
     /// the judge approaching its timeout, so it is recorded on every path.
+    #[tracing::instrument(
+        name = "judge_call",
+        skip_all,
+        fields(
+            provider = self.provider,
+            model = %self.model,
+            judge_kind = "quality",
+            outcome = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+            prompt_tokens = tracing::field::Empty,
+            completion_tokens = tracing::field::Empty,
+        )
+    )]
     async fn rate(&self, content: &str) -> Result<f64, DomainError> {
         let started = Instant::now();
         let outcome = self.rate_inner(content).await;
         self.metrics
             .observe_judge_latency(&self.model, elapsed_ms(started));
+        if outcome.is_ok() {
+            instrument::record_success();
+        }
         outcome
     }
 
@@ -174,7 +200,7 @@ impl LlmJudgeValidator {
                 } else {
                     LlmErrorKind::Transport
                 };
-                self.metrics.record_judge_error(&self.model, kind);
+                self.record_error(kind);
                 warn!(error = %err, "judge: request failed");
                 DomainError::InvariantViolated {
                     reason: "judge: request failed",
@@ -183,36 +209,41 @@ impl LlmJudgeValidator {
 
         let status = response.status();
         if !status.is_success() {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::from_status(status.as_u16()));
+            self.record_error(LlmErrorKind::from_status(status.as_u16()));
             return Err(wire::classify_error(status, &JUDGE_ERRORS));
         }
 
         let parsed: ChatResponse = response.json().await.map_err(|err| {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
+            self.record_error(LlmErrorKind::MalformedBody);
             warn!(error = %err, "judge: malformed response body");
             DomainError::InvariantViolated {
                 reason: JUDGE_ERRORS.malformed_body,
             }
         })?;
-        let usage = parsed.usage;
-        let text = wire::extract_text(parsed, &JUDGE_ERRORS).inspect_err(|_| {
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::EmptyContent);
-        })?;
-        if let Some(usage) = usage {
-            self.metrics.record_judge_tokens(
-                &self.model,
-                TokenUsage::new(usage.prompt_tokens, usage.completion_tokens),
-            );
+        if let Some(usage) = parsed.usage {
+            self.record_tokens(TokenUsage::new(
+                usage.prompt_tokens,
+                usage.completion_tokens,
+            ));
         }
+        let text = wire::extract_text(parsed, &JUDGE_ERRORS).inspect_err(|_| {
+            self.record_error(LlmErrorKind::EmptyContent);
+        })?;
         parse_score(&text).inspect_err(|_| {
             // The call succeeded but the judge's reply was not a usable
             // score object — a malformed body at the contract level.
-            self.metrics
-                .record_judge_error(&self.model, LlmErrorKind::MalformedBody);
+            self.record_error(LlmErrorKind::MalformedBody);
         })
+    }
+
+    fn record_error(&self, kind: LlmErrorKind) {
+        self.metrics.record_judge_error(&self.model, kind);
+        instrument::record_error(kind);
+    }
+
+    fn record_tokens(&self, usage: TokenUsage) {
+        self.metrics.record_judge_tokens(&self.model, usage);
+        instrument::record_tokens(usage);
     }
 }
 

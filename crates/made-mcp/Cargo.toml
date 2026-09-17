@@ -76,3 +76,6 @@ container-tests = ["dep:testcontainers"]
 [dev-dependencies]
 tempfile = "3"
 tokio = { workspace = true, features = ["full", "test-util"] }
+tokio-stream = { workspace = true, features = ["net"] }
+opentelemetry-proto = { version = "0.32", default-features = false, features = ["gen-tonic", "trace"] }
+tonic-otel = { package = "tonic", version = "0.14", features = ["transport"] }
