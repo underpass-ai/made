@@ -12,8 +12,10 @@ use super::CeremonyEvent;
 /// payload is read under the schema version its record was sealed
 /// with; when a payload shape changes, its new version deserializes
 /// directly and the old one gets an upcaster here, so records written
-/// under earlier shapes keep reading. Today every shape is version 1
-/// and reads directly.
+/// under earlier shapes keep reading. State-repeat coordinates are the
+/// first versioned evolution: affected payloads use version 2 when the
+/// coordinate is explicitly present, while their version-1 shape remains
+/// readable without it.
 #[derive(Debug)]
 pub struct CeremonyEventReader;
 

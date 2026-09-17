@@ -282,6 +282,58 @@ These guards are added to the generated completion guard, group join guard
 when present, and final human approval. `equals` is required; explicit `null`
 means JSON null rather than omission.
 
+### Repeat a whole state
+
+Put `repeat` on a state when every step must run again as one bounded unit:
+
+```yaml
+states:
+  - id: REVIEW
+    initial: true
+    terminal: false
+    execution: concurrent
+    repeat:
+      max_iterations: 4
+      until:
+        step: check
+        output_field: approved
+        equals: true
+```
+
+MADE waits for every state step and each step's own repeat policy before it
+tests the state condition. A false result resets every step to pending under
+the next `state_iteration`; `iteration` and `attempt` restart at one. Prior
+records and transcript contributions remain available with both coordinates.
+An early concurrent join does not skip the rest of a repeated state's work.
+If the final permitted state iteration is still false, the instance reports
+`state_repeat_limit_reached` and one-shot execution records the distinct
+`state_repeat_limit` outcome.
+
+The design tool expresses the same policy on a grouped stage. The `step` named
+by `until` must be one of that group's children:
+
+```json
+{
+  "id": "review",
+  "group": {
+    "execution": "concurrent",
+    "steps": [
+      {"id":"draft","owner_role_id":"AUTHOR","instructions":"Draft."},
+      {"id":"check","owner_role_id":"REVIEWER","instructions":"Return approved."}
+    ],
+    "join": {"condition":"all_steps_completed"},
+    "repeat": {
+      "max_iterations": 4,
+      "until": {"step":"check","output_field":"approved","equals":true}
+    }
+  }
+}
+```
+
+State repeat is separate from leaf `repeat`, which still repeats one step.
+All direct gRPC, MCP-over-gRPC, embedded MCP, and Rust facade reads expose the
+same current state coordinate, per-step coordinate, run trace and transcript.
+
 ## 7. Dynamic participant interventions
 
 An embedded incremental ceremony can accept new agenda items after it starts;

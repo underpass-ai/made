@@ -366,7 +366,10 @@ gate in this repository):
   Concurrent states allow distinct role-owned steps to be claimed in parallel;
   `claimable_step_ids` lists every current alternative and `next_step_id`
   remains its first item. Definitions use `max_parallel` (default 3, range
-  1–8), capped at runtime by `MADE_MAX_PARALLEL` (default 8).
+  1–8), capped at runtime by `MADE_MAX_PARALLEL` (default 8). A state may also
+  declare a bounded repeat-until policy that reruns all of its steps with a
+  durable `state_iteration`; step repetition and retry attempts remain separate
+  coordinates.
 - Scoring: the winner of a deliberation is chosen by a pluggable
   `ScoringPort`. The default ranks by validator pass-fraction; an
   optional LLM-as-judge (`MADE_JUDGE_ENABLED`, with
