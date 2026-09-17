@@ -114,15 +114,19 @@ Deploy guide:
 - **Optional LLM-as-judge** — judge-aware scoring with fail-fast
   configuration, plus a judge *discrimination* metric that tells you whether
   the judge actually re-ranks proposals or just burns tokens.
-- **Deliberation-native observability** — every deliberation is a replayable
-  OpenTelemetry trace (the debate itself, span by span, exported over mTLS)
-  and Prometheus metrics designed for this domain: winner-score
-  distribution, `NoValidProposal` rate, per-step ceremony outcomes. See
+- **Deliberation-native observability** — each deliberation is one
+  OpenTelemetry span whose events carry the debate (each proposal, each peer
+  critique, each validator verdict, each score), exported over OTLP with
+  optional mTLS, plus Prometheus metrics designed for this domain:
+  winner-score distribution, `NoValidProposal` rate, judge discrimination,
+  ceremony step outcomes. What is instrumented, and what is not, is in
   [`docs/made-observability-design.md`](docs/made-observability-design.md).
 - **Two surfaces** — a contract-first gRPC API, and a stdio MCP server
-  exposing the same RPCs 1:1 to coding agents (Codex CLI, Claude Desktop),
-  with embedded-only ceremony controls and read-only Markdown reports where no
-  remote RPC exists.
+  exposing the same RPCs 1:1 to coding agents (Codex CLI, Claude Desktop).
+  The ceremony surface is the same on both: which capability each surface
+  serves is the Editions table in
+  [`docs/operations/support-matrix.md`](docs/operations/support-matrix.md),
+  derived from `docs/architecture/parity.tsv`.
 
 ## Verify capabilities before making claims
 

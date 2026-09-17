@@ -71,9 +71,12 @@ Before opening a PR:
 just check && just helm-lint
 ```
 
-This is exactly what the per-PR CI gates run. If `just check`
-passes, the PR will pass (excluding the container-backed gates,
-which need Docker/podman).
+Every recipe in the cascade runs the script its CI job runs, so a failure
+here is the failure CI would report. It is not the whole gate: `just check`
+leaves out coverage (`just coverage`), the chart (`just helm-lint`) and the
+container image, and a ready pull request runs all three when the impact
+planner routes them. `just check && just coverage && just helm-lint` is the
+closest a machine without Docker or podman gets.
 
 ## Draft and ready
 

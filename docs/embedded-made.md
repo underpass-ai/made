@@ -60,7 +60,12 @@ and definition version solve different compatibility problems.
 | ceremony transcript | `InMemoryCeremonyTranscriptStore` |
 | step execution | `NoopCeremonyStepHandler` |
 | clock | `SystemClock` |
-| metrics | `NoopMetricsRecorder` |
+| metrics | `PrometheusMetricsRecorder` with its own in-process registry |
+
+The metrics default is a real registry rather than a sink that forgets: it is
+local to the engine, has no exporter and no endpoint, and nothing renders it
+over a socket. `EmbeddedMade::status` names which recorder is running, so a
+host can tell whether its own `with_metrics` injection took.
 
 These defaults start no service and perform no remote IO. They are suitable for
 single-process workflows, tests and hosts that begin with ephemeral state.

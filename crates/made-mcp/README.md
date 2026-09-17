@@ -242,8 +242,9 @@ A separate `tests/real_kernel.rs` boots the published
 `ghcr.io/underpass-ai/made:latest` image via
 testcontainers, spawns this crate's binary against its mapped gRPC
 port, and exercises `initialize`, verifies `tools/list` against machine-readable
-discovery (currently 35 gRPC-backed plus two server-owned tools), and calls the
-four simplest read-only RPCs.
+discovery (every backend-owned tool `docs/architecture/parity.tsv` names for
+this backend, plus the two server-owned ones), and calls the four simplest
+read-only RPCs.
 The test is gated by the `container-tests` Cargo feature so the
 default workspace `cargo test --workspace` stays fast + network-free.
 
