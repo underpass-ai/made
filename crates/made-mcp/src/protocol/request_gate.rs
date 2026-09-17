@@ -623,7 +623,7 @@ mod tests {
 
     #[test]
     fn a_list_of_ids_longer_than_the_bound_is_refused() {
-        let many: Vec<String> = (0..MAX_ID_LIST_ITEMS + 1)
+        let many: Vec<String> = (0..=MAX_ID_LIST_ITEMS)
             .map(|index| format!("session-{index}"))
             .collect();
         let message = complaint(

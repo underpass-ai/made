@@ -22,6 +22,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
+use made_adapters::sqlite::SqliteCeremonyStore;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
@@ -30,6 +31,7 @@ use made_tests_integration::parity_clock::ParityClock;
 use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
+use std::sync::Arc;
 
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`
@@ -275,12 +277,52 @@ fn design_intent() -> Value {
 struct ParityArms {
     /// Dropping it stops the in-process server.
     _fixture: GrpcFixture,
+    /// Dropping it removes the durable store's directory, on the pass
+    /// that has one.
+    _store_dir: Option<tempfile::TempDir>,
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
 }
 
 impl ParityArms {
+    /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
+        Self::over(EmbeddedMade::builder(), None).await
+    }
+
+    /// The in-process arm over **the store the local edition ships
+    /// with**: WAL-mode SQLite in a directory of its own.
+    ///
+    /// The session was only ever driven over `InMemoryCeremonyEventStore`
+    /// on both arms, and that is not what `made-mcp` opens when somebody
+    /// runs it: `EmbeddedMade::open` builds over `SqliteCeremonyStore`.
+    /// A gate that compares two in-memory engines proves parity of
+    /// something nobody ships (ADR-014).
+    ///
+    /// Built through the builder rather than through
+    /// `EmbeddedMade::open`, and with the same store type `open` uses,
+    /// because the session needs the parity handler, evidence source and
+    /// clock on both arms — the whole reason its values can be compared
+    /// at all — and `open` composes an engine that takes none of them.
+    async fn start_on_the_shipped_store() -> Self {
+        let directory = tempfile::tempdir().expect("a directory for the durable store");
+        let store = Arc::new(
+            SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
+                .expect("the durable SQLite ceremony store should open"),
+        );
+        Self::over(
+            EmbeddedMade::builder()
+                .with_ceremony_store(store.clone())
+                .with_definition_publications(store),
+            Some(directory),
+        )
+        .await
+    }
+
+    async fn over(
+        builder: made_embedded::EmbeddedMadeBuilder,
+        store_dir: Option<tempfile::TempDir>,
+    ) -> Self {
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
@@ -293,7 +335,7 @@ impl ParityArms {
             MadeMcpGrpcTlsConfig::disabled(),
         ));
         let in_process = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(
-            EmbeddedMade::builder()
+            builder
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
@@ -301,6 +343,7 @@ impl ParityArms {
         ));
         Self {
             _fixture: fixture,
+            _store_dir: store_dir,
             over_the_wire,
             in_process,
         }
@@ -628,7 +671,22 @@ fn session_script() -> Vec<(&'static str, Value)> {
 
 #[tokio::test]
 async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends() {
-    let arms = ParityArms::start().await;
+    drive_the_whole_session(&ParityArms::start().await).await;
+}
+
+/// And again over the store the local edition actually ships with.
+///
+/// The same script, the same comparison, the same golden document — with
+/// the in-process engine writing to WAL-mode SQLite instead of to a map
+/// in memory. ADR-014 says the local edition leads and the API keeps
+/// parity with it; a gate that only ever compared two in-memory engines
+/// was comparing something nobody runs.
+#[tokio::test]
+async fn the_same_session_answers_the_same_over_the_store_the_edition_ships_with() {
+    drive_the_whole_session(&ParityArms::start_on_the_shipped_store().await).await;
+}
+
+async fn drive_the_whole_session(arms: &ParityArms) {
     let shared = shared_tools();
     let mut called: BTreeSet<String> = BTreeSet::new();
 
@@ -645,6 +703,9 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
         assert_same_answer(tool, &over_the_wire, &in_process);
+        if tool == "made_generate_ceremony_report" {
+            assert_the_report_is_the_committed_document(structured(&in_process));
+        }
         called.insert((*tool).to_owned());
     }
 
@@ -691,6 +752,54 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
 }
 
 // ---------------------------------------------------------------------------
+// The rendered document
+// ---------------------------------------------------------------------------
+
+/// The report this session renders, committed.
+const PARITY_SESSION_REPORT: &str = include_str!("golden/parity_session_report.md");
+
+/// Set it to rewrite the file from what the session renders. Read the
+/// diff before committing it: that is the whole point of the file.
+const UPDATE_GOLDEN: &str = "MADE_UPDATE_GOLDEN";
+
+/// Where the golden lives, for the message that tells you how to refresh
+/// it.
+const GOLDEN_PATH: &str = "crates/made-tests-integration/tests/golden/parity_session_report.md";
+
+/// The report is the serde form of `made-core`'s own entities, fenced as
+/// JSON (ADR-006). That makes a `#[serde(rename)]` anywhere in the
+/// domain a change to a document operators read — and nothing said so.
+/// Both arms render the same bytes, which the comparison above already
+/// proves; what it cannot prove is that those bytes are still the ones
+/// anybody decided on.
+///
+/// Committed, so such a change shows up as a diff in review rather than
+/// as nothing at all. The session is deterministic — named ids, a frozen
+/// clock, a handler whose output is derived from the step — so the
+/// document is too.
+fn assert_the_report_is_the_committed_document(report: &Value) {
+    let rendered = report["report_markdown"]
+        .as_str()
+        .expect("a report answers with its markdown");
+
+    if std::env::var_os(UPDATE_GOLDEN).is_some() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("tests/golden/parity_session_report.md");
+        std::fs::write(&path, rendered).expect("the golden document should be writable");
+        return;
+    }
+
+    assert_eq!(
+        rendered, PARITY_SESSION_REPORT,
+        "the rendered report is not the committed document ({GOLDEN_PATH}).\n\n\
+         A report is the serde form of the entities it quotes, so a rename in \
+         `made-core` lands here. If the change is intended, refresh the file with \
+         `{UPDATE_GOLDEN}=1 cargo test -p made-tests-integration --test \
+         mcp_parity_session` and read the diff."
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Request acceptance
 // ---------------------------------------------------------------------------
 
@@ -702,7 +811,45 @@ async fn one_session_through_every_shared_tool_answers_the_same_on_both_backends
 async fn both_backends_accept_and_refuse_the_same_requests() {
     let arms = ParityArms::start().await;
 
-    let refused: Vec<(&str, &str, Value)> = vec![
+    for (index, (what, tool, arguments)) in requests_the_gate_refuses().into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 1, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                failed(answer),
+                "{what} was accepted by the {backend} backend: {answer:#}"
+            );
+            assert_eq!(
+                structured(answer)["code"],
+                json!("invalid_request"),
+                "{what} on the {backend} backend: {answer:#}"
+            );
+            assert_eq!(structured(answer)["retryable"], json!(false));
+        }
+        assert_eq!(
+            over_the_wire, in_process,
+            "{what} was refused two different ways"
+        );
+    }
+
+    // And the other direction: a call that leaves out everything it is
+    // allowed to leave out, or spells an omission the way a typed host
+    // does, is accepted by both.
+    for (index, (what, tool, arguments)) in requests_the_gate_accepts().into_iter().enumerate() {
+        let (over_the_wire, in_process) = arms.call(index as u64 + 50, tool, &arguments).await;
+        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
+            assert!(
+                !failed(answer),
+                "{what} was refused by the {backend} backend: {answer:#}"
+            );
+        }
+    }
+}
+
+/// Every call the published schemas do not admit, with what is wrong
+/// with it.
+#[allow(clippy::too_many_lines)] // one entry per case; splitting fragments the table
+fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
+    vec![
         (
             "a required field left out",
             "made_get_ceremony_instance",
@@ -791,31 +938,13 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
                 "context": { "ticket": 1e17 },
             }),
         ),
-    ];
+    ]
+}
 
-    for (index, (what, tool, arguments)) in refused.into_iter().enumerate() {
-        let (over_the_wire, in_process) = arms.call(index as u64 + 1, tool, &arguments).await;
-        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
-            assert!(
-                failed(answer),
-                "{what} was accepted by the {backend} backend: {answer:#}"
-            );
-            assert_eq!(
-                structured(answer)["code"],
-                json!("invalid_request"),
-                "{what} on the {backend} backend: {answer:#}"
-            );
-            assert_eq!(structured(answer)["retryable"], json!(false));
-        }
-        assert_eq!(
-            over_the_wire, in_process,
-            "{what} was refused two different ways"
-        );
-    }
-
-    // And the other direction: a call that leaves out everything it is
-    // allowed to leave out is accepted by both.
-    let accepted: Vec<(&str, &str, Value)> = vec![
+/// Every call that leaves out what it may leave out, or spells an
+/// omission the way a host generated from a typed SDK does.
+fn requests_the_gate_accepts() -> Vec<(&'static str, &'static str, Value)> {
+    vec![
         (
             "a session opened without a context",
             "made_start_ceremony",
@@ -888,17 +1017,7 @@ async fn both_backends_accept_and_refuse_the_same_requests() {
                 "lease_ttl_ms": 60000.0,
             }),
         ),
-    ];
-
-    for (index, (what, tool, arguments)) in accepted.into_iter().enumerate() {
-        let (over_the_wire, in_process) = arms.call(index as u64 + 50, tool, &arguments).await;
-        for (backend, answer) in [("gRPC", &over_the_wire), ("in-process", &in_process)] {
-            assert!(
-                !failed(answer),
-                "{what} was refused by the {backend} backend: {answer:#}"
-            );
-        }
-    }
+    ]
 }
 
 // ---------------------------------------------------------------------------
