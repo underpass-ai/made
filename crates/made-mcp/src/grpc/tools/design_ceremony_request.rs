@@ -33,6 +33,9 @@ pub(super) fn build_design_ceremony_request(
         step_timeout_seconds: j2p::optional_present_u64(obj, "step_timeout_seconds")?,
         max_attempts: j2p::optional_present_u32(obj, "max_attempts")?,
         backoff_seconds: j2p::optional_present_u64(obj, "backoff_seconds")?,
+        pattern: j2p::optional_str(obj, "pattern")
+            .unwrap_or_default()
+            .to_owned(),
     })
 }
 
@@ -187,5 +190,17 @@ mod tests {
             Some(j2p::json_to_pb_value(&json!(true))),
             "the value that ends the repetition is carried, not described"
         );
+    }
+
+    #[test]
+    fn a_pattern_crosses_on_reserved_field_fourteen_without_stages() {
+        let mut value = intent();
+        value.as_object_mut().unwrap().remove("stages");
+        value["pattern"] = json!("roundtable_fixed_order");
+
+        let request = build_design_ceremony_request(&value).expect("the preset is accepted");
+
+        assert_eq!(request.pattern, "roundtable_fixed_order");
+        assert!(request.stages.is_empty());
     }
 }

@@ -15,7 +15,7 @@
 use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignFinalApproval, CeremonyDesignParticipant,
     CeremonyDesignRepeat, CeremonyDesignStage, CeremonyDraftView, CeremonyParticipantCapability,
-    DesignedCeremony,
+    CeremonyPatternPreset, DesignedCeremony,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
@@ -46,7 +46,7 @@ pub fn ceremony_design_document_from_proto(
         .map(final_approval_from_proto)
         .transpose()?;
 
-    Ok(CeremonyDesignDocument::new(
+    let document = CeremonyDesignDocument::new(
         CeremonyName::new(request.name)?,
         named(request.version, CeremonyVersion::new)?,
         CeremonyDescription::new(request.objective)?,
@@ -64,7 +64,11 @@ pub fn ceremony_design_document_from_proto(
         request
             .backoff_seconds
             .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-    ))
+    );
+    let pattern = named(request.pattern, |value| {
+        CeremonyPatternPreset::parse(&value)
+    })?;
+    Ok(pattern.map_or(document.clone(), |pattern| document.with_pattern(pattern)))
 }
 
 pub fn design_ceremony_response_from(

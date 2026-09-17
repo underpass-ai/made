@@ -7,6 +7,7 @@
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+use made_app::usecases::CeremonyPatternPreset;
 use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
@@ -74,6 +75,21 @@ pub(crate) fn discovery_result(
     } else {
         Vec::new()
     };
+    let design_patterns = if names.contains(DESIGN_CEREMONY_TOOL) {
+        CeremonyPatternPreset::ALL
+            .iter()
+            .copied()
+            .map(|pattern| {
+                json!({
+                    "id": pattern.id(),
+                    "description": pattern.description(),
+                    "definition_fragment_yaml": pattern.fragment_source(),
+                })
+            })
+            .collect::<Vec<_>>()
+    } else {
+        Vec::new()
+    };
 
     Ok(json!({
         "schema_version": SCHEMA_VERSION,
@@ -89,6 +105,7 @@ pub(crate) fn discovery_result(
         "tool_count": tools.len(),
         "capabilities": capability_groups(&names),
         "artifact_generators": artifact_generators,
+        "design_patterns": design_patterns,
         "help": {
             "tool": GET_HELP_TOOL,
             "audiences": ["user", "agent"],
@@ -590,6 +607,10 @@ mod tests {
             result["artifact_generators"][0]["response_field"],
             "structuredContent.report_markdown"
         );
+        assert_eq!(result["design_patterns"][0]["id"], "roundtable_fixed_order");
+        assert!(result["design_patterns"][0]["definition_fragment_yaml"]
+            .as_str()
+            .is_some_and(|yaml| yaml.contains("name: \"roundtable_fixed_order\"")));
     }
 
     /// Discovery advertises what the active backend can run, and
@@ -642,6 +663,7 @@ mod tests {
             BTreeSet::from([DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL])
         );
         assert!(bare["artifact_generators"].as_array().unwrap().is_empty());
+        assert!(bare["design_patterns"].as_array().unwrap().is_empty());
     }
 
     #[test]

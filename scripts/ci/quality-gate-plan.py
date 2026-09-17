@@ -98,6 +98,10 @@ FULL_MATRIX_PATHS = {
 PREFIX_ROUTES: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("charts/", ("helm",)),
     ("specs/asyncapi/", ("contract",)),
+    # Shipped fragment definitions are compiled into made-app. Keep this
+    # before the broader api/ contract route so a fragment edit compiles and
+    # tests the consumer that embeds it.
+    ("api/examples/ceremonies/fragments/", EMBEDDED_DATA_GATES),
     ("api/", ("contract",)),
     ("plugins/", ("embedded_sqlite",)),
     ("tests/plugin/", ("embedded_sqlite",)),
@@ -545,6 +549,17 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
             "architecture": False,
             "coverage": False,
             "container": False,
+            "full": False,
+        },
+    ),
+    (
+        "a ceremony fragment made-app compiles in",
+        ["api/examples/ceremonies/fragments/roundtable_fixed_order.yaml"],
+        {
+            "test": True,
+            "clippy": True,
+            "contract": False,
+            "coverage": False,
             "full": False,
         },
     ),

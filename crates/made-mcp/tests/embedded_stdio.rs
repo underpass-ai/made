@@ -464,6 +464,89 @@ async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
 }
 
 #[tokio::test]
+async fn roundtable_fixed_order_design_executes_in_declared_participant_order() {
+    let state = tempfile::tempdir().unwrap();
+    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+        .env("MADE_MCP_BACKEND", "embedded")
+        .env(
+            "MADE_MCP_STORE_PATH",
+            state.path().join("ceremonies.sqlite3"),
+        )
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let mut stdin = child.stdin.take().unwrap();
+    let stdout = child.stdout.take().unwrap();
+    let mut lines = BufReader::new(stdout).lines();
+
+    write_request(
+        &mut stdin,
+        jsonrpc(
+            1,
+            "tools/call",
+            Some(json!({
+                "name": "made_design_ceremony",
+                "arguments": {
+                    "name": "incident_roundtable",
+                    "objective": "Review the incident from each declared perspective.",
+                    "required_inputs": ["incident"],
+                    "outputs": ["roundtable_notes"],
+                    "participants": [
+                        { "role_id": "OBSERVER", "capabilities": [] },
+                        { "role_id": "DATABASE_SPECIALIST", "capabilities": [] },
+                        { "role_id": "QUEUE_SPECIALIST", "capabilities": [] }
+                    ],
+                    "pattern": "roundtable_fixed_order"
+                }
+            })),
+        ),
+    )
+    .await;
+    let designed_response = read_response(&mut lines).await;
+    let designed = structured(&designed_response);
+    assert_eq!(designed["publishable"], true, "{designed:?}");
+    assert_eq!(designed["design"]["stages"], 3);
+
+    let definition_yaml = designed["definition_yaml"].as_str().unwrap();
+    write_request(
+        &mut stdin,
+        jsonrpc(
+            2,
+            "tools/call",
+            Some(json!({
+                "name": "made_run_ceremony",
+                "arguments": {
+                    "ceremony_id": "incident-roundtable-run",
+                    "definition_yaml": definition_yaml,
+                    "actor_id": "stdio-preset-test",
+                    "actor_kind": "agent",
+                    "context": { "incident": "database failover lag" }
+                }
+            })),
+        ),
+    )
+    .await;
+    let completed_response = read_response(&mut lines).await;
+    let completed = structured(&completed_response);
+    assert_eq!(completed["completed"], true, "{completed:?}");
+    let steps = completed["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 3);
+    assert_eq!(steps[0]["step_id"], "roundtable_turn_1");
+    assert_eq!(steps[1]["step_id"], "roundtable_turn_2");
+    assert_eq!(steps[2]["step_id"], "roundtable_turn_3");
+
+    drop(stdin);
+    let status = timeout(Duration::from_secs(5), child.wait())
+        .await
+        .expect("embedded MCP process did not stop after stdin closed")
+        .unwrap();
+    assert!(status.success());
+}
+
+#[tokio::test]
 async fn validating_a_draft_reports_every_defect_without_publishing_it() {
     let server = MadeMcpServer::embedded();
 

@@ -14,6 +14,15 @@ operator command.
 
 ## Unreleased
 
+### Added
+
+- `made_design_ceremony` accepts the typed `roundtable_fixed_order` preset on
+  the proto, both MCP backends, and the embedded facade. It expands participants
+  in declaration order into sequential speaking turns, gives prior context to
+  every turn after the first, and ships its discoverable YAML fragment under
+  `api/examples/ceremonies/fragments/`. Explicit-stage design remains unchanged.
+  (#PR)
+
 ### Changed
 
 - Ceremony telemetry now projects sealed records through metrics, tracing, and

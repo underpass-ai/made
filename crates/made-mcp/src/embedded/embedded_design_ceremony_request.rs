@@ -1,4 +1,4 @@
-use made_app::usecases::{CeremonyDesignDocument, DesignedCeremony};
+use made_app::usecases::{CeremonyDesignDocument, CeremonyPatternPreset, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
@@ -40,7 +40,10 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     optional_inputs: Vec<String>,
     outputs: Vec<String>,
     participants: Vec<ParticipantIntent>,
+    #[serde(default)]
     stages: Vec<StageIntent>,
+    #[serde(default)]
+    pattern: Option<String>,
     #[serde(default)]
     final_approval: Option<FinalApprovalIntent>,
     #[serde(default)]
@@ -84,7 +87,7 @@ impl EmbeddedDesignCeremonyRequest {
             .map(FinalApprovalIntent::into_domain)
             .transpose()?;
 
-        Ok(CeremonyDesignDocument::new(
+        let document = CeremonyDesignDocument::new(
             CeremonyName::new(self.name)?,
             self.version.map(CeremonyVersion::new).transpose()?,
             CeremonyDescription::new(self.objective)?,
@@ -102,7 +105,12 @@ impl EmbeddedDesignCeremonyRequest {
             self.max_attempts.map(StepAttempt::new).transpose()?,
             self.backoff_seconds
                 .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-        ))
+        );
+        let pattern = self
+            .pattern
+            .map(|pattern| CeremonyPatternPreset::parse(&pattern))
+            .transpose()?;
+        Ok(pattern.map_or(document.clone(), |pattern| document.with_pattern(pattern)))
     }
 }
 

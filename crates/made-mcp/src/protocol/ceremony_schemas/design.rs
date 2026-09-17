@@ -1,10 +1,38 @@
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
+use made_app::usecases::CeremonyPatternPreset;
 
 pub(in crate::protocol) fn ceremony_design_schema() -> Value {
+    let patterns = CeremonyPatternPreset::ALL
+        .iter()
+        .copied()
+        .map(|pattern| {
+            json!({
+                "id": pattern.id(),
+                "description": pattern.description(),
+                "definition_fragment_yaml": pattern.fragment_source(),
+            })
+        })
+        .collect::<Vec<_>>();
+    let pattern_ids = CeremonyPatternPreset::ALL
+        .iter()
+        .copied()
+        .map(CeremonyPatternPreset::id)
+        .collect::<Vec<_>>();
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["name", "objective", "outputs", "participants", "stages"],
+        "required": ["name", "objective", "outputs", "participants"],
+        "oneOf": [
+            {
+                "required": ["stages"],
+                "not": { "required": ["pattern"] }
+            },
+            {
+                "required": ["pattern"],
+                "not": { "required": ["stages"] }
+            }
+        ],
+        "x-made-pattern-catalog": patterns,
         "properties": {
             "name": string_schema("Stable lower_snake_case identity for the designed ceremony."),
             "version": string_schema("Immutable publication version. Defaults to 1.0."),
@@ -68,6 +96,11 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
                         "repeat": repeat_stage_schema()
                     }
                 }
+            },
+            "pattern": {
+                "type": "string",
+                "enum": pattern_ids,
+                "description": "Shipped authoring preset. Mutually exclusive with explicit stages; roundtable_fixed_order gives each participant one turn in declaration order, and every turn after the first receives prior contributions."
             },
             "final_approval": {
                 "type": "object",
