@@ -18,7 +18,7 @@ use made_app::usecases::{
 };
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
-    NoopMetricsRecorder, StatisticsPort,
+    MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot, StatisticsPort,
 };
 use made_core::value_objects::MaxParallel;
 
@@ -71,6 +71,7 @@ pub struct MadeGrpcServiceBuilder {
     /// running service; it then answers `noop` when asked what is
     /// recording, which is the true answer rather than silence.
     pub(super) metrics: Option<Arc<dyn MetricsRecorderPort>>,
+    pub(super) metrics_snapshot: Option<Arc<dyn MetricsSnapshotPort>>,
     pub(super) service_version: Option<&'static str>,
     pub(super) clock: Option<Arc<dyn ClockPort>>,
     pub(super) max_parallel_ceiling: Option<MaxParallel>,
@@ -262,9 +263,30 @@ impl MadeGrpcServiceBuilder {
         self
     }
 
+    /// Configure only the operational-metrics write side. Prefer
+    /// [`Self::observability`] when the adapter also serves registry reads.
     #[must_use]
     pub fn metrics(mut self, value: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = Some(value);
+        self
+    }
+
+    /// Read operational metrics from a separately supplied registry.
+    /// Prefer [`Self::observability`] when one adapter serves both sides.
+    #[must_use]
+    pub fn metrics_snapshot(mut self, value: Arc<dyn MetricsSnapshotPort>) -> Self {
+        self.metrics_snapshot = Some(value);
+        self
+    }
+
+    /// Record and read operational metrics through the same adapter instance.
+    #[must_use]
+    pub fn observability<M>(mut self, value: Arc<M>) -> Self
+    where
+        M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
+    {
+        self.metrics = Some(value.clone());
+        self.metrics_snapshot = Some(value);
         self
     }
 
@@ -300,13 +322,17 @@ impl MadeGrpcServiceBuilder {
         let clock = self
             .clock
             .unwrap_or_else(|| Arc::new(crate::clock::SystemClock::new()) as Arc<dyn ClockPort>);
+        let metrics_snapshot = self
+            .metrics_snapshot
+            .unwrap_or_else(|| Arc::new(NoopMetricsSnapshot) as Arc<dyn MetricsSnapshotPort>);
         let get_service_status = Arc::new(GetServiceStatusUseCase::new(
             statistics.clone(),
             metrics,
             self.service_version.unwrap_or(""),
             clock.clone(),
         ));
-        let get_service_metrics = Arc::new(GetServiceMetricsUseCase::new(statistics));
+        let get_service_metrics =
+            Arc::new(GetServiceMetricsUseCase::new(statistics, metrics_snapshot));
         Ok(MadeGrpcService {
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),

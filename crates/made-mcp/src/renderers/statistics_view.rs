@@ -23,14 +23,6 @@ impl StatisticsView {
             "per_specialty_counts": self.per_specialty_counts,
         })
     }
-
-    /// Render the envelope shared by status, metrics, and their fixtures.
-    #[must_use]
-    pub(crate) fn envelope(statistics: Option<&Self>) -> Value {
-        json!({
-            "stats": statistics.map_or(Value::Null, Self::to_json),
-        })
-    }
 }
 
 #[cfg(test)]
@@ -51,6 +43,5 @@ mod tests {
         assert_eq!(rendered["total_deliberations"], 2);
         assert!(rendered["average_duration_ms"].is_f64());
         assert_eq!(rendered["per_specialty_counts"]["review"], 2);
-        assert_eq!(StatisticsView::envelope(None), json!({"stats": null}));
     }
 }

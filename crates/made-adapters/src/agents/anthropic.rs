@@ -33,7 +33,7 @@ use made_core::value_objects::{AgentId, LlmErrorKind, ProposalContent, Specialty
 use reqwest::{Client, StatusCode};
 use tracing::{debug, warn};
 
-use super::instrument::ProviderCallGuard;
+use super::instrument::{record_success, ProviderCallGuard};
 use super::prompts;
 
 mod anthropic_api_key;
@@ -119,6 +119,19 @@ impl AnthropicAgent {
         self
     }
 
+    #[tracing::instrument(
+        name = "provider_call",
+        skip_all,
+        fields(
+            provider = PROVIDER,
+            model = %self.config.model,
+            operation = op,
+            outcome = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+            prompt_tokens = tracing::field::Empty,
+            completion_tokens = tracing::field::Empty,
+        )
+    )]
     async fn complete(
         &self,
         system: String,
@@ -127,7 +140,7 @@ impl AnthropicAgent {
     ) -> Result<String, DomainError> {
         // Records latency + in-flight on every return path (incl. the `?`
         // error sites) when dropped at the end of the call.
-        let _guard = ProviderCallGuard::enter(self.metrics.as_ref(), PROVIDER, op);
+        let guard = ProviderCallGuard::enter(self.metrics.as_ref(), PROVIDER, op);
         let body = MessagesRequest {
             model: &self.config.model,
             max_tokens: self.config.max_tokens,
@@ -157,7 +170,7 @@ impl AnthropicAgent {
                 } else {
                     LlmErrorKind::Transport
                 };
-                self.metrics.record_provider_error(PROVIDER, kind);
+                guard.record_error(kind);
                 warn!(
                     op,
                     agent_id = self.id.as_str(),
@@ -171,8 +184,7 @@ impl AnthropicAgent {
 
         let status = response.status();
         if !status.is_success() {
-            self.metrics
-                .record_provider_error(PROVIDER, LlmErrorKind::from_status(status.as_u16()));
+            guard.record_error(LlmErrorKind::from_status(status.as_u16()));
             let body_text = response.text().await.unwrap_or_default();
             warn!(
                 op,
@@ -185,8 +197,7 @@ impl AnthropicAgent {
         }
 
         let parsed: MessagesResponse = response.json().await.map_err(|err| {
-            self.metrics
-                .record_provider_error(PROVIDER, LlmErrorKind::MalformedBody);
+            guard.record_error(LlmErrorKind::MalformedBody);
             warn!(
                 op,
                 agent_id = self.id.as_str(),
@@ -198,22 +209,18 @@ impl AnthropicAgent {
             }
         })?;
 
-        let usage = parsed.usage;
+        if let Some(usage) = parsed.usage {
+            guard.record_tokens(TokenUsage::new(usage.input_tokens, usage.output_tokens));
+        }
         let text = extract_text(parsed).inspect_err(|_| {
-            self.metrics
-                .record_provider_error(PROVIDER, LlmErrorKind::EmptyContent);
+            guard.record_error(LlmErrorKind::EmptyContent);
             warn!(
                 op,
                 agent_id = self.id.as_str(),
                 "anthropic: empty text content"
             );
         })?;
-        if let Some(usage) = usage {
-            self.metrics.record_provider_tokens(
-                PROVIDER,
-                TokenUsage::new(usage.input_tokens, usage.output_tokens),
-            );
-        }
+        record_success();
         Ok(text)
     }
 }

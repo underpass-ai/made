@@ -16,7 +16,7 @@ use made_app::usecases::{
     ApplyCeremonyTransitionInput, RunCeremonyInput, RunCeremonyStepInput, ServiceHealth,
     StartCeremonyInput,
 };
-use made_core::ports::{MetricsRecorderPort, NoopMetricsRecorder};
+use made_core::ports::NoopMetricsRecorder;
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
     StepId, TransitionTrigger,
@@ -97,18 +97,21 @@ async fn a_host_that_wires_its_own_recorder_is_what_the_status_names() {
 async fn a_session_that_runs_moves_the_ceremony_families() {
     let recorder = Arc::new(PrometheusMetricsRecorder::new().unwrap());
     let engine = EmbeddedMade::builder()
-        .with_metrics(recorder.clone() as Arc<dyn MetricsRecorderPort>)
+        .with_observability(recorder.clone())
         .build();
 
     assert!(
-        !recorder.render().contains("made_ceremony_completed_total{"),
+        !recorder
+            .render()
+            .unwrap()
+            .contains("made_ceremony_completed_total{"),
         "nothing has run yet, so no ceremony family has a sample"
     );
 
     let output = engine.run(one_run("observability-run")).await.unwrap();
     assert!(output.instance().is_completed(output.definition()));
 
-    let rendered = recorder.render();
+    let rendered = recorder.render().unwrap();
     assert!(
         rendered.contains(
             "made_ceremony_completed_total{ceremony=\"observability_linear\",outcome=\"completed\"} 1"
@@ -122,6 +125,13 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
         "the step did not reach the recorder the host wired:\n{rendered}"
     );
     assert_eq!(engine.status(false).await.unwrap().recorder(), "prometheus");
+    let observed = engine.metrics().await.unwrap();
+    assert_eq!(observed.registry().text().as_str(), rendered);
+    assert!(observed
+        .registry()
+        .families()
+        .iter()
+        .any(|family| family.name().as_str() == "made_ceremony_step_total"));
 }
 
 #[tokio::test]
@@ -174,8 +184,8 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
     .unwrap();
 
     assert_eq!(
-        comparable_ceremony_metrics(&one_shot_metrics.render()),
-        comparable_ceremony_metrics(&step_metrics.render())
+        comparable_ceremony_metrics(&one_shot_metrics.render().unwrap()),
+        comparable_ceremony_metrics(&step_metrics.render().unwrap())
     );
 }
 
@@ -200,18 +210,24 @@ async fn the_counters_answer_with_every_family_at_zero_before_and_after_a_sessio
     let engine = EmbeddedMade::default();
 
     let before = engine.metrics().await.unwrap();
-    assert_eq!(before.total_deliberations(), 0);
-    assert_eq!(before.total_orchestrations(), 0);
-    assert_eq!(before.total_duration(), DurationMs::ZERO);
-    assert_eq!(before.average_duration_ms(), 0.0);
-    assert!(before.per_specialty().is_empty());
+    assert_eq!(before.statistics().total_deliberations(), 0);
+    assert_eq!(before.statistics().total_orchestrations(), 0);
+    assert_eq!(before.statistics().total_duration(), DurationMs::ZERO);
+    assert_eq!(before.statistics().average_duration_ms(), 0.0);
+    assert!(before.statistics().per_specialty().is_empty());
 
     engine.run(one_run("observability-counters")).await.unwrap();
 
-    assert_eq!(engine.metrics().await.unwrap(), before);
+    let after = engine.metrics().await.unwrap();
+    assert_eq!(after.statistics(), before.statistics());
+    assert!(after
+        .registry()
+        .text()
+        .as_str()
+        .contains("made_ceremony_completed_total"));
     assert_eq!(
         engine.status(true).await.unwrap().statistics(),
-        Some(&before),
+        Some(before.statistics()),
         "asking for the counters inside a status must answer with the same snapshot"
     );
 }

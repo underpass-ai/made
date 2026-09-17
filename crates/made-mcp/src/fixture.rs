@@ -15,7 +15,9 @@ use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod ceremony_history_fixtures;
 
-use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry, StatisticsView};
+use crate::renderers::{
+    CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
+};
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
     read_ceremony_events_fixture, verify_ceremony_journal_fixture,
@@ -220,7 +222,12 @@ fn get_status_fixture() -> Value {
 }
 
 fn get_metrics_fixture() -> Value {
-    StatisticsView::envelope(Some(&StatisticsView::default()))
+    ServiceMetricsView {
+        statistics: Some(StatisticsView::default()),
+        registry_text: String::new(),
+        registry: Vec::new(),
+    }
+    .to_json()
 }
 
 fn run_council_decision_fixture() -> Value {

@@ -55,7 +55,9 @@ impl RunCeremonyStepUseCase {
     #[tracing::instrument(
         name = "run_ceremony_step",
         skip_all,
-        fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
+        fields(ceremony_id = %input.instance_id, step_id = %input.step_id,
+               state_iteration = tracing::field::Empty, iteration = tracing::field::Empty,
+               attempt = tracing::field::Empty)
     )]
     pub async fn execute(
         &self,
@@ -110,6 +112,7 @@ impl RunCeremonyStepUseCase {
                 what: "ceremony_step",
             })?;
         let attempt = record.attempt();
+        super::step_span::record_coordinates(record.state_iteration(), record.iteration(), attempt);
 
         // What was said so far, folded from the stream: every step
         // that completed is in it, however it was driven.
@@ -153,15 +156,35 @@ impl RunCeremonyStepUseCase {
         Ok(RunCeremonyStepOutput::new(refreshed, attempt, result))
     }
 
+    #[tracing::instrument(
+        name = "ceremony_step_handler",
+        skip_all,
+        fields(
+            ceremony_id = %request.instance_id(),
+            step_id = %request.step_id(),
+            handler_kind = %request.handler_kind(),
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
     async fn execute_handler(
         &self,
         request: CeremonyStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
+        super::step_span::record_attempt(request.attempt());
         match self.handler.execute(request).await {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                super::step_span::record_result(&result);
+                Ok(result)
+            }
             Err(error) => {
+                super::step_span::record_error(&error);
                 let message = StepErrorMessage::new(error.to_string())?;
-                StepResult::failed(message)
+                let result = StepResult::failed(message)?;
+                super::step_span::record_status(&result);
+                Ok(result)
             }
         }
     }

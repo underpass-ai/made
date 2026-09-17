@@ -9,7 +9,7 @@
 use std::time::Instant;
 
 use made_core::ports::MetricsRecorderPort;
-use made_core::value_objects::DurationMs;
+use made_core::value_objects::{DurationMs, LlmErrorKind, TokenUsage};
 
 pub(super) struct ProviderCallGuard<'a> {
     metrics: &'a dyn MetricsRecorderPort,
@@ -33,6 +33,51 @@ impl<'a> ProviderCallGuard<'a> {
             operation,
             started: Instant::now(),
         }
+    }
+
+    pub(super) fn record_error(&self, kind: LlmErrorKind) {
+        self.metrics.record_provider_error(self.provider, kind);
+        record_error(kind);
+    }
+
+    pub(super) fn record_tokens(&self, usage: TokenUsage) {
+        self.metrics.record_provider_tokens(self.provider, usage);
+        record_tokens(usage);
+    }
+}
+
+pub(super) fn record_success() {
+    tracing::Span::current().record("outcome", "success");
+}
+
+pub(super) fn record_error(kind: LlmErrorKind) {
+    let span = tracing::Span::current();
+    span.record("outcome", "error");
+    span.record("error_kind", kind.as_label());
+}
+
+pub(super) fn record_tokens(usage: TokenUsage) {
+    #[cfg(not(feature = "otel"))]
+    {
+        let span = tracing::Span::current();
+        span.record("prompt_tokens", u64::from(usage.prompt()));
+        span.record("completion_tokens", u64::from(usage.completion()));
+    }
+    #[cfg(feature = "otel")]
+    {
+        use opentelemetry::trace::TraceContextExt as _;
+        use tracing_opentelemetry::OpenTelemetrySpanExt as _;
+
+        let context = tracing::Span::current().context();
+        let span = context.span();
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "prompt_tokens",
+            i64::from(usage.prompt()),
+        ));
+        span.set_attribute(opentelemetry::KeyValue::new(
+            "completion_tokens",
+            i64::from(usage.completion()),
+        ));
     }
 }
 

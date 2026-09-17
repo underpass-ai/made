@@ -1,7 +1,7 @@
 # ADR-012: A ceremony is its event stream
 
-Status: Accepted (decided 2026-09-16); A1–A4 implemented on `main` (#42–#45),
-A5–A8 in progress under #65 — the slices are §3.1 of
+Status: Implemented (decided 2026-09-16; verified 2026-09-18). A1–A4 landed in
+#42–#45, A5 in #83, A6 in #108, A7 in #86, and A8 in #121. The slices are §3.1 of
 [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 Supersedes one sentence of ADR-003 ("Snapshot plus append-only journal plus
@@ -76,6 +76,15 @@ table go away: the transcript is folded from `StepCompleted`, and
 publication is a cursor over the stream — at-least-once, ordered per
 ceremony, idempotent by event id.
 
+Automatic publishers retry a failed pending position in the awaited append or
+startup path, with bounded backoff, until the durable cursor acknowledges or
+quarantines it. One subscriber notification drains at most one bounded page;
+startup recovery drains finite pages before serving. Explicit pull keeps its
+caller-driven acknowledgement contract. For core NATS, adapter success means
+that `async-nats` accepted the publish command and drained its client buffer to
+the transport within the adapter deadline. It is not a broker, subscriber or
+JetStream acknowledgement and does not prove remote replay durability.
+
 **The engine still owns the contract; the host still owns durability.**
 `CeremonyEventStorePort` and `CeremonySnapshotStorePort` replace the unit of
 work and the instance repository's write path. The conformance suites are
@@ -97,6 +106,20 @@ beside the new file.
 **Scope.** Ceremonies. The council `Deliberation` keeps its snapshot and its
 five bus events until ceremonies are done; it is the next candidate, not
 part of this decision.
+
+## Implementation result
+
+Ceremony commands now append sealed events and rebuild instances by folding
+their streams; optional snapshots only shorten the tail read. Transcript and
+memory projections consume the sealed records (#83), the legacy write paths
+and outbox were removed with copy-on-write migration (#86), and durable
+consumer cursors drive pull, NATS publication and the embedded JSONL sink
+(#108). Metrics, traces, structured logs and bounded reports project the same
+records in both editions (#110), while embedded service metrics, OTLP wiring
+and JSONL registry snapshots are composed through host-owned adapters (#119).
+Automatic NATS and JSONL publishers now retry a transient pending position
+without waiting for a later stream append, and core NATS drains its client
+buffer before advancing the cursor (#124, #125).
 
 ## Consequences
 

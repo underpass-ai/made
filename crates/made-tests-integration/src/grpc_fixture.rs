@@ -20,7 +20,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
+use made_adapters::ceremony::{CeremonyMetricsSubscriber, DeliberatingCeremonyStepHandler};
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
@@ -29,15 +29,16 @@ use made_adapters::memory::{
     InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
     InMemoryStatistics,
 };
+use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
 use made_adapters::scoring::UniformScoring;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
-use made_app::services::AutoDispatchService;
-use made_app::services::SessionMemoryRecorder;
-use made_app::services::SessionStream;
+use made_app::services::{
+    AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
+};
 use made_app::usecases::{
     ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
     BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
@@ -135,13 +136,19 @@ impl GrpcFixture {
         // root's own wiring: memory is a subscriber of the stream, and
         // the one the fixture wires by default forgets.
         let (memory_writer, memory_reader) = memory;
+        let metrics = Arc::new(
+            PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
+        );
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
-            Arc::new(SessionMemoryRecorder::new(
-                memory_writer,
-                ceremony_store.clone(),
-            )),
+            Arc::new(CeremonyEventFanout::new(vec![
+                Arc::new(SessionMemoryRecorder::new(
+                    memory_writer,
+                    ceremony_store.clone(),
+                )),
+                Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
+            ])),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -164,7 +171,7 @@ impl GrpcFixture {
             repository.clone(),
             messaging.clone(),
             statistics.clone(),
-            Arc::new(made_core::ports::NoopMetricsRecorder),
+            metrics.clone(),
             "made-tests",
         ));
         let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> = wiring.step_handler(|| {
@@ -365,6 +372,7 @@ impl GrpcFixture {
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
+            .observability(metrics)
             .service_version("made-tests")
             .clock(wiring.clock())
             .build()
@@ -450,13 +458,19 @@ impl GrpcFixture {
         // root's own wiring: memory is a subscriber of the stream, and
         // the one the fixture wires by default forgets.
         let (memory_writer, memory_reader) = memory;
+        let metrics = Arc::new(
+            PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
+        );
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
-            Arc::new(SessionMemoryRecorder::new(
-                memory_writer,
-                ceremony_store.clone(),
-            )),
+            Arc::new(CeremonyEventFanout::new(vec![
+                Arc::new(SessionMemoryRecorder::new(
+                    memory_writer,
+                    ceremony_store.clone(),
+                )),
+                Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
+            ])),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -477,7 +491,7 @@ impl GrpcFixture {
             repository.clone(),
             messaging.clone(),
             statistics.clone(),
-            Arc::new(made_core::ports::NoopMetricsRecorder),
+            metrics.clone(),
             "made-tests",
         ));
         let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
@@ -676,6 +690,7 @@ impl GrpcFixture {
             .contract_registry(contract_registry.clone())
             .auto_dispatch(auto_dispatch)
             .statistics(statistics.clone())
+            .observability(metrics)
             .service_version("made-tests")
             .build()
             .expect("grpc service wiring should succeed");

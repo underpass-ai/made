@@ -11,6 +11,7 @@ use crate::renderers::StatisticsView;
 
 mod ceremony_history;
 mod ceremony_instance;
+mod metrics;
 mod primitives;
 
 pub(crate) use ceremony_history::{
@@ -20,6 +21,7 @@ pub(crate) use ceremony_history::{
 pub(crate) use ceremony_instance::{
     ceremony_instance_listing_entry, ceremony_instance_state_to_json,
 };
+pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;
 pub(crate) use primitives::{optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339};
 

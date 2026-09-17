@@ -503,7 +503,7 @@ advertises 43 executable tools:
 | `made_get_ceremony_transcript`  | `GetCeremonyTranscript`               | Read what the completed steps of one session contributed. |
 | `made_generate_ceremony_report` | `GenerateCeremonyReport`              | Render the Markdown report of one session from its persisted state. |
 | `made_get_status`               | `GetStatus`                           | Service health, version, uptime, optional stats. |
-| `made_get_metrics`              | `GetMetrics`                          | Statistics snapshot. |
+| `made_get_metrics`              | `GetMetrics`                          | Statistics plus Prometheus registry text and structured families/samples. |
 | `made_verify_ceremony_journal`  | `VerifyCeremonyJournal`               | Verify the hash chain of one ceremony's journal. |
 
 The MADE API is **respected at 100%** — every proto field has

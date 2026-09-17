@@ -224,6 +224,19 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
     );
     assert!(listed_names.contains(&json!("made_discover_capabilities")));
     assert!(listed_names.contains(&json!("made_get_help")));
+    let observability = discovery
+        .pointer("/result/structuredContent/capabilities")
+        .and_then(Value::as_array)
+        .and_then(|groups| {
+            groups
+                .iter()
+                .find(|group| group["id"] == "service_observability")
+        })
+        .unwrap_or_else(|| panic!("discovery missing service_observability: {discovery:?}"));
+    assert_eq!(
+        observability["tools"],
+        json!(["made_get_status", "made_get_metrics"])
+    );
 
     // Sanity-check that every tool name starts with `made_`.
     for tool in tools {

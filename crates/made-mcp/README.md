@@ -50,7 +50,20 @@ MADE_MCP_GRPC_TLS_KEY_PATH=/var/run/made-tls/tls.key \
 The binary reads one JSON-RPC line at a time from stdin and writes
 one response per non-notification message to stdout. Stderr is
 structured JSON tracing (level controlled by `RUST_LOG`,
-default `made_mcp=info`).
+default `made_mcp=info,made_app=info,made_adapters::sqlite=info`). Build with
+`--features otel` to export the same spans over OTLP/gRPC as `made`; the
+exporter stays dormant until `MADE_OTLP_ENDPOINT` is set and accepts the same
+`MADE_OTLP_TLS_{CA,CERT,KEY}_PATH` and `MADE_OTLP_TLS_DOMAIN_NAME` variables.
+Ceremony execution exports `ceremony_step_handler` below
+`run_ceremony_step`; one-shot runs also include `ceremony_step` below
+`run_ceremony`. Provider-backed compositions add `provider_call` and
+`judge_call` with provider/model, stable error kind and observed token usage.
+
+On the embedded backend, `MADE_MCP_EVENT_SINK_PATH` enables an append-only
+JSON-lines sink. Every delivered ceremony-event line is followed by a
+`metrics_snapshot` line containing the current registry as Prometheus text and
+as structured families and samples. The two lines are written and flushed
+together; failed appends remain pending behind the durable publisher cursor.
 
 ## Manual JSON-RPC walkthrough
 
@@ -117,7 +130,7 @@ authority boundaries, delegated-host sequencing and explicit error handling.
 | `made_get_ceremony_transcript`  | `GetCeremonyTranscript`           | read the ordered contributions the steps produced |
 | `made_generate_ceremony_report` | `GenerateCeremonyReport`          | render one or more persisted instances and their audit journals as deterministic Markdown |
 | `made_get_status`               | `GetStatus`                       | observability |
-| `made_get_metrics`              | `GetMetrics`                      | observability |
+| `made_get_metrics`              | `GetMetrics`                      | legacy statistics plus registry text and structured families/samples |
 
 These 41 backend-owned tools map 1:1 to the 41 RPCs in the MADE gRPC
 service. Every server composition additionally advertises the two server-owned
@@ -125,7 +138,7 @@ discovery/help tools described below.
 
 No ceremony tool is embedded-only: every one of them has an RPC behind it, so
 a client pointed at a cluster finds the whole ceremony surface. What the
-embedded backend does not serve is the council surface and status/metrics.
+embedded backend does not serve is the council surface.
 
 Which gaps are left, and why, is data rather than prose:
 [`docs/architecture/parity.tsv`](../../docs/architecture/parity.tsv) has one

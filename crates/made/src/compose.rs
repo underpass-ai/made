@@ -194,14 +194,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
     if let Some(publisher) = &publisher_use_case {
         loop {
             let round = publisher
-                .execute(
+                .execute_automatically(
                     &publisher_consumer,
                     made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
                 )
                 .await?;
             if round.busy
-                || round.failed > 0
-                || round.delivered + round.quarantined
+                || round.confirmed()
                     < made_core::value_objects::CeremonyEventPageLimit::DEFAULT.value()
             {
                 break;
@@ -474,7 +473,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .statistics(statistics.clone())
         // The same registry the use cases record into and `/metrics`
         // renders, so `GetStatus` names what is actually recording.
-        .metrics(metrics_recorder.clone())
+        .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel)

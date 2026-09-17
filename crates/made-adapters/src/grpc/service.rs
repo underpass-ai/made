@@ -60,6 +60,7 @@ use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
 
 use descriptor_error::DescriptorError;
+use metrics_snapshot_mapper::metric_family_to_proto;
 use register_agent_descriptor::descriptor_from_register_request;
 use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
@@ -69,6 +70,7 @@ mod ceremony_handlers;
 mod ceremony_history_handlers;
 mod council_handlers;
 mod descriptor_error;
+mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod statistics_mapper;
 

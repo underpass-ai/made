@@ -177,7 +177,8 @@ fn build_env_support_judge(
     let model = std::env::var("MADE_VLLM_MODEL").map_err(|_| DomainError::EmptyField {
         field: "support_judge.model",
     })?;
-    let judge = support_judge::LlmEvidenceSupportJudge::new(endpoint, model, metrics)?;
+    let judge =
+        support_judge::LlmEvidenceSupportJudge::new(endpoint, model, metrics)?.with_vllm_identity();
     Ok(Arc::new(judge))
 }
 
@@ -203,6 +204,7 @@ fn build_env_judge(
                     field: "judge.threshold",
                 })
         })?;
-    let judge = judge::LlmJudgeValidator::new(endpoint, model, threshold, metrics)?;
+    let judge =
+        judge::LlmJudgeValidator::new(endpoint, model, threshold, metrics)?.with_vllm_identity();
     Ok(Arc::new(judge))
 }

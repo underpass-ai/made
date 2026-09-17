@@ -11,7 +11,73 @@ use made_core::value_objects::{
 use super::RunCeremonyUseCase;
 
 impl RunCeremonyUseCase {
+    #[tracing::instrument(
+        name = "ceremony_step",
+        skip_all,
+        fields(
+            ceremony_id = %session.instance.id(),
+            ceremony_name = %session.instance.definition_name(),
+            state_id = %session.instance.current_state(),
+            step_id = %step_id,
+            role_id = %role_id,
+            state_iteration = tracing::field::Empty,
+            iteration = tracing::field::Empty,
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
     pub(super) async fn run_step(
+        &self,
+        definition: &CeremonyDefinition,
+        session: LoadedSession,
+        role_id: &RoleId,
+        actor: &AuditActor,
+        step_id: &StepId,
+        lease_owner_id: &LeaseOwnerId,
+        lease_ttl: DurationMs,
+        trace_index: usize,
+        transcript: CeremonyTranscript,
+    ) -> Result<
+        (
+            LoadedSession,
+            StateIteration,
+            made_core::value_objects::StepIteration,
+            StepAttempt,
+            StepResult,
+        ),
+        DomainError,
+    > {
+        let result = self
+            .run_step_inner(
+                definition,
+                session,
+                role_id,
+                actor,
+                step_id,
+                lease_owner_id,
+                lease_ttl,
+                trace_index,
+                transcript,
+            )
+            .await;
+        match &result {
+            Ok((_, state_iteration, iteration, attempt, step_result)) => {
+                crate::usecases::step_span::record_coordinates(
+                    *state_iteration,
+                    *iteration,
+                    *attempt,
+                );
+                crate::usecases::step_span::record_result(step_result);
+            }
+            Err(error) => crate::usecases::step_span::record_error(error),
+        }
+        result
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn run_step_inner(
         &self,
         definition: &CeremonyDefinition,
         session: LoadedSession,
@@ -118,15 +184,35 @@ impl RunCeremonyUseCase {
         Ok((session, state_iteration, iteration, attempt, step_result))
     }
 
+    #[tracing::instrument(
+        name = "ceremony_step_handler",
+        skip_all,
+        fields(
+            ceremony_id = %request.instance_id(),
+            step_id = %request.step_id(),
+            handler_kind = %request.handler_kind(),
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
     async fn execute_handler(
         &self,
         request: CeremonyStepHandlerRequest,
     ) -> Result<StepResult, DomainError> {
+        crate::usecases::step_span::record_attempt(request.attempt());
         match self.handler.execute(request).await {
-            Ok(result) => Ok(result),
+            Ok(result) => {
+                crate::usecases::step_span::record_result(&result);
+                Ok(result)
+            }
             Err(error) => {
+                crate::usecases::step_span::record_error(&error);
                 let message = StepErrorMessage::new(error.to_string())?;
-                StepResult::failed(message)
+                let result = StepResult::failed(message)?;
+                crate::usecases::step_span::record_status(&result);
+                Ok(result)
             }
         }
     }
