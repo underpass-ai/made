@@ -75,7 +75,7 @@ Grouped by edition — see [`editions.md`](./editions.md) for the comparison.
 | Doc | Purpose |
 |---|---|
 | [`PRINCIPLES.md`](./PRINCIPLES.md) | Honest documentation, demonstrable claims, scientific iteration. |
-| [`../CHANGELOG.md`](../CHANGELOG.md) | Unreleased changes and release-note discipline before the first public tag. |
+| [`../CHANGELOG.md`](../CHANGELOG.md) | Unreleased changes and immutable tagged release notes. |
 | [`../CONTRIBUTING.md`](../CONTRIBUTING.md) | Contribution workflow, required gates, contract rules, and PR expectations. |
 | [`../SECURITY.md`](../SECURITY.md) | Supported security scope, private vulnerability reporting, and deployment hardening baseline. |
 

@@ -47,7 +47,7 @@ Phase 2 established this matrix through the SQLite memory composition (#102),
 cursor/pull/NATS/JSONL delivery (#108), stream-derived telemetry and bounded
 reports (#110), and the shared metrics registry plus embedded exporters
 (verified #119 integration). The final filled-optional and enum parity cases
-are supplied by #120 before the closure PR merges.
+are supplied by #120 on both memory and SQLite.
 
 ## Embedded edition
 
