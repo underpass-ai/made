@@ -1,7 +1,7 @@
 # ADR-012: A ceremony is its event stream
 
 Status: Implemented (decided 2026-09-16; verified 2026-09-18). A1–A4 landed in
-#42–#45, A5 in #83, A6 in #108, A7 in #86, and A8 in #74. The slices are §3.1 of
+#42–#45, A5 in #83, A6 in #108, A7 in #86, and A8 in #121. The slices are §3.1 of
 [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 Supersedes one sentence of ADR-003 ("Snapshot plus append-only journal plus

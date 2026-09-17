@@ -3,7 +3,7 @@
 Status: Implemented (decided 2026-09-16; verified 2026-09-18). The KMP adapter
 left the tree in #41, recall and the trimmed port landed in E1/E2 (#84), the
 SQLite reference adapter and durable composition landed in E3 (#102), and E5
-closed the documentation in #74. The slices are
+closed the documentation in #121. The slices are
 §3.8 of [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 ## Context

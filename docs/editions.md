@@ -131,7 +131,8 @@ injects. Details: [embedded-made.md](embedded-made.md).
 - **Durable event delivery** through named pull cursors. When a JSONL sink is
   configured, the event line and current registry snapshot are written under
   one lock and flush; a write failure leaves the cursor unacknowledged for
-  at-least-once retry.
+  at-least-once retry. The registry snapshot describes the process at delivery
+  time; it is not an exact historical prefix of the event stream.
 
 ### What it explicitly does not prove
 

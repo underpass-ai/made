@@ -11,8 +11,9 @@ Implementation status last verified: 2026-09-18
 
 The engine still owns the sealed audit envelope, hash chain, verification and
 storage conformance contracts, while each host chooses its durability. The
-current ceremony source of truth is the SQLite-backed event stream from
-ADR-012; snapshots are optional fold caches. Publication uses durable consumer
+current ceremony source of truth is the event stream from ADR-012, with SQLite
+as its durable reference adapter; snapshots are optional fold caches.
+Publication uses durable consumer
 cursors rather than an outbox. The former `CeremonyUnitOfWorkPort`, whole-state
 write path, transcript store and outbox were removed during the stream
 migration (#42–#45, #83, #86, #108 and #110).

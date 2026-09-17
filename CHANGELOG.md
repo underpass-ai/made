@@ -33,11 +33,13 @@ after the final tree is approved.
 - Durable named cursors now drive explicit pull acknowledgement, NATS
   publication and the embedded JSONL sink; whole and paged event history share
   a typed page limit (#108).
-- Metrics, traces, structured logs and reports consume the same bounded stream
-  cut in both editions (#110). The shared service-metrics projection preserves
-  legacy statistics and adds registry text and structured samples, while
-  embedded hosts can wire OTLP/mTLS and paired event/registry JSONL snapshots
-  through the same recorder (#119).
+- Metrics, traces and structured logs consume the same sealed records in both
+  editions, while reports alone capture one bounded stream cut (#110). The
+  shared service-metrics projection preserves legacy statistics and adds
+  registry text and structured samples. Embedded hosts can wire OTLP/mTLS and
+  paired event/registry JSONL lines through the same recorder; that registry
+  snapshot describes the process at delivery time, not an exact historical
+  stream prefix (#119).
 - The final parity session fills optional fields and rotates enum variants in
   #120. That tests-only PR is composed before these notes merge; it is not
   described here as an already merged implementation change.
