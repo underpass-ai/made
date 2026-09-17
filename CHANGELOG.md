@@ -20,6 +20,10 @@ operator command.
   committed floors, and exercise binary HTTP/gRPC startup and SIGTERM shutdown
   so the server also meets its floor (#103).
 
+- Development marketplace checks accept fetched tags from earlier releases;
+  tag builds and publication still require the annotated version tag at HEAD
+  (#89).
+
 - The divergences a read-only review of the parity chain (#55–#64) found
   between the two MCP arms, and the places the gate built to catch them could
   not see. Each is a live difference in what a client gets for the same call
