@@ -39,7 +39,7 @@ impl CeremonyEventSubscriberPort for CeremonyEventPublisherSubscriber {
     async fn observe(&self, _records: &[PositionedRecord]) {
         if let Err(error) = self
             .publisher
-            .execute(&self.consumer, CeremonyEventPageLimit::DEFAULT)
+            .execute_automatically(&self.consumer, CeremonyEventPageLimit::DEFAULT)
             .await
         {
             tracing::warn!(%error, consumer = self.consumer.as_str(), "ceremony event publisher drain failed");

@@ -14,9 +14,10 @@ operator command.
 
 ## Unreleased
 
-Phase 3a changes below target **0.5.0**. The phase 2 **0.4.0** candidate
-was completed in #121; its baseline highlights remain recorded separately
-here until the release procedure creates the immutable tagged sections.
+Phase 3a additions target **0.5.0**. The phase 2 **0.4.0** baseline includes
+the documentation closure in #121 and publication review repairs in #126.
+Its highlights remain recorded separately here until the release procedure
+creates the immutable tagged sections.
 
 ### 0.4.0 highlights
 
@@ -33,6 +34,9 @@ here until the release procedure creates the immutable tagged sections.
 - Durable named cursors now drive explicit pull acknowledgement, NATS
   publication and the embedded JSONL sink; whole and paged event history share
   a typed page limit (#108).
+- Automatic publication retries a transient failure without another append.
+  Core NATS drains the client buffer under a five-second deadline before
+  advancing the cursor; this does not promise remote acknowledgement (#126).
 - Metrics, traces and structured logs consume the same sealed records in both
   editions, while reports alone capture one bounded stream cut (#110). The
   shared service-metrics projection preserves legacy statistics and adds
@@ -66,6 +70,12 @@ here until the release procedure creates the immutable tagged sections.
   step-repeat exhaustion. An exhaustion route waives only that step's repeat
   condition on that transition; all other guards and invariants remain in
   force. (#116)
+
+- Automatic ceremony-event publication now retries a transient pending
+  position with bounded backoff without waiting for another append. Core NATS
+  drains its client buffer to the transport under a five-second deadline before
+  advancing the durable cursor, without claiming broker, subscriber or
+  JetStream acknowledgement. (#126)
 
 - Align ADR-003, ADR-012, ADR-013, the phase plan, Editions, the platform
   boundary and stack analysis with the verified phase 2 implementation; keep

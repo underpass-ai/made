@@ -49,8 +49,11 @@ current implementation state of sibling repositories.
   provider configuration.
 - Broker transport is plain core NATS pub/sub. Durable named cursors in the
   ceremony store give the publisher at-least-once retry, lease fencing and
-  quarantine before a record reaches NATS; the adapter still makes no claim
-  of JetStream-side acknowledgement or replay.
+  quarantine. Automatic publication retries in the awaited subscriber or
+  startup path without requiring another append. The adapter advances only
+  after `async-nats` drains its client buffer to the transport within a bounded
+  deadline; this is not a remote broker, subscriber or JetStream
+  acknowledgement and makes no claim of remote replay.
 - Server TLS/mTLS and Runtime client TLS are wired and covered by
   handshake-level integration tests.
 - The compose E2E runner covers the core scenarios: seeded council,
