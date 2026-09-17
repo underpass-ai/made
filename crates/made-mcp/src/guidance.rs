@@ -17,6 +17,7 @@ use crate::protocol::{
     GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
     PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, RUN_CEREMONY_STEP_TOOL,
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 pub(crate) mod capability_group;
@@ -189,9 +190,10 @@ fn available_workflows(names: &BTreeSet<String>) -> Vec<Value> {
         workflow(
             "inspect_ceremony_history",
             "Read what a ceremony recorded",
-            "Read the sealed records the session produced and the contributions its steps made, without changing anything.",
+            "Read the sealed records the session produced and the contributions its steps made, and check that the chain sealing them holds. Nothing here changes anything.",
             &[
                 (READ_CEREMONY_EVENTS_TOOL, "Read the stream from the version you have already seen; the answer says where to continue."),
+                (VERIFY_CEREMONY_JOURNAL_TOOL, "Check the chain before quoting the stream as evidence; a break names the first position that cannot be trusted."),
                 (GET_CEREMONY_TRANSCRIPT_TOOL, "Read the ordered contributions the steps produced."),
             ],
         ),

@@ -56,7 +56,7 @@ and definition version solve different compatibility problems.
 | Port | Default adapter |
 |---|---|
 | ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
-| ceremony instances | `InMemoryCeremonyInstanceRepository` |
+| ceremony event stream and snapshots | `InMemoryCeremonyEventStore` |
 | step execution | `NoopCeremonyStepHandler` |
 | clock | `SystemClock` |
 | metrics | `PrometheusMetricsRecorder` with its own in-process registry |
@@ -76,8 +76,8 @@ store.
 
 `EmbeddedMade::open(path)` supplies a
 `SqliteCeremonyStore` to the ceremony-store and definition-publication ports.
-That composition persists ceremony snapshots, unit-of-work state, the audit
-journal, outbox rows and published definitions across process restarts. Its
+That composition persists the ceremony event streams, their global order, the
+folded snapshots and published definitions across process restarts. Its
 crash/reopen behavior is exercised by
 `crates/made-embedded/tests/sqlite_store_api.rs`.
 

@@ -88,7 +88,7 @@ impl SessionStream {
     /// snapshot was taken comes back too — its id is what the next
     /// fact names as its cause, and this is the one read that learns
     /// it. A record with no event in it was sealed under schema
-    /// version 1 and cannot be folded; the migration command (A7) is
+    /// version 1 and cannot be folded; `made-mcp migrate-store` is
     /// what turns such a journal into a stream.
     pub async fn load(&self, id: &CeremonyId) -> Result<LoadedSession, DomainError> {
         let (mut instance, mut version) = match self.snapshots.latest(id).await? {
@@ -110,9 +110,15 @@ impl SessionStream {
                     (None, CeremonyEvent::CeremonyInstanceStarted(started)) => {
                         instance = Some(CeremonyInstance::from_started(started));
                     }
+                    // A session the migration command brought forward
+                    // opens with the snapshot it was imported with
+                    // rather than with a start it never had (ADR-012).
+                    (None, CeremonyEvent::InstanceImported(imported)) => {
+                        instance = Some(CeremonyInstance::from_imported(imported));
+                    }
                     (None, _) => {
                         return Err(DomainError::InvariantViolated {
-                            reason: "a ceremony stream opens with its start",
+                            reason: "a ceremony stream opens with its start or with its import",
                         })
                     }
                     (Some(instance), event) => instance.apply(event),

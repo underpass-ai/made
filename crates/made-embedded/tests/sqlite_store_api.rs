@@ -205,59 +205,31 @@ async fn a_snapshot_is_a_cache_of_the_fold_and_the_stream_survives_reopening() {
     );
 }
 
-/// An instance a v0.3.0 store kept in `ceremony_instances` has no
-/// stream, and the event-sourced engine does not see it: not found on
-/// its id, absent from the list, until the migration command (A7).
+/// A session a v0.3.x store kept in `ceremony_instances` has no stream,
+/// and the event-sourced engine does not see it: not found on its id,
+/// absent from the list, until `made-mcp migrate-store` imports it.
+///
+/// The store is the committed one `made-tests-integration` holds — a
+/// file v0.3.1 really wrote. Nothing in this repository can produce
+/// such a file any more, which is the point: the rows exist, no code
+/// writes them, and the engine reads streams.
 #[tokio::test]
-async fn an_instance_from_an_earlier_store_without_a_stream_is_not_visible() {
+async fn a_session_from_an_earlier_store_without_a_stream_is_not_visible() {
     use made_adapters::sqlite::SqliteCeremonyStore;
-    use made_adapters::yaml::CeremonyDefinitionYaml;
-    use made_core::entities::ceremony_events::CeremonyCompleted;
-    use made_core::entities::{AuditFact, CeremonyCommit, CeremonyEvent, CeremonyInstance};
-    use made_core::ports::CeremonyUnitOfWorkPort;
-    use made_core::value_objects::{
-        AuditActor, AuditActorKind, CeremonyContext, EventId, ExpectedRevision, StateId,
-    };
     use made_core::DomainError;
-    use time::OffsetDateTime;
 
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../made-tests-integration/fixtures/stores/v0.3.1/ceremonies.sqlite3");
     let directory = tempfile::tempdir().expect("temporary state directory");
     let path = directory.path().join("made.sqlite3");
-    let ceremony_id = CeremonyId::new("stranded-1").unwrap();
-    let definition = CeremonyDefinitionYaml::parse_str(DEFINITION).unwrap();
+    std::fs::copy(&fixture, &path).expect("the v0.3.1 fixture copies");
+    let ceremony_id = CeremonyId::new("pre-stream-midflight").unwrap();
 
-    // Written the way the earlier store wrote it: an instance and a
-    // journal record through the unit of work, no stream.
     let legacy = SqliteCeremonyStore::open(&path).expect("the store opens");
-    let instance = CeremonyInstance::start(
-        ceremony_id.clone(),
-        &definition,
-        CeremonyContext::empty(),
-        OffsetDateTime::UNIX_EPOCH,
-    );
-    let fact = AuditFact {
-        event_id: EventId::new("stranded-1:legacy").unwrap(),
-        event: CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
-            final_state: StateId::new("CLOSED").unwrap(),
-            completed_at: OffsetDateTime::UNIX_EPOCH,
-        }),
-        ceremony_id: ceremony_id.clone(),
-        definition_name: definition.name().clone(),
-        definition_version: definition.version().clone(),
-        occurred_at: OffsetDateTime::UNIX_EPOCH,
-        actor: AuditActor::new("legacy", AuditActorKind::Engine, None).unwrap(),
-        correlation_id: None,
-        causation_id: None,
-        trace: None,
-    };
-    legacy
-        .commit(CeremonyCommit::new(instance, ExpectedRevision::New, [fact], []).unwrap())
-        .await
-        .unwrap();
-    assert_eq!(legacy.legacy_instances_without_a_stream().unwrap(), 1);
+    assert_eq!(legacy.legacy_instances_without_a_stream().unwrap(), 2);
     drop(legacy);
 
-    let engine = EmbeddedMade::open(&path).expect("durable engine opens beside a legacy row");
+    let engine = EmbeddedMade::open(&path).expect("durable engine opens beside legacy rows");
     assert!(matches!(
         engine.instance(&ceremony_id).await,
         Err(DomainError::NotFound {

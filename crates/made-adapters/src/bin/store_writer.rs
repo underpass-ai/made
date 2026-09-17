@@ -1,29 +1,25 @@
 //! A second process for the two-hosts test.
 //!
-//! Commits `count` ceremony revisions to the store at `path` — or, in
-//! `events` mode, appends `count` events to the ceremony's stream — printing
-//! each acknowledged revision or version so the parent can tell what was
-//! acknowledged before it decides what must survive.
+//! Appends `count` events to the ceremony's stream at `path`, printing each
+//! acknowledged version so the parent can tell what was acknowledged before
+//! it decides what must survive.
 //!
 //! Its own binary because the property under test is *processes*, not tasks:
 //! two threads sharing one handle would prove nothing about a store that two
 //! agent hosts open independently.
 //!
-//! Usage: store_writer <path> <ceremony-id> <count> [commits|events]
-//!
-//! The `commits` mode drives the legacy unit of work: unused since A4;
-//! removed by A7.
+//! Usage: store_writer <path> <ceremony-id> <count>
 
 use std::io::Write;
 
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_core::entities::ceremony_events::StepCompleted;
 use made_core::entities::CeremonyEvent;
-use made_core::entities::{AuditFact, CeremonyCommit, CeremonyDefinition, CeremonyInstance};
-use made_core::ports::{AppendOutcome, CeremonyEventStorePort, CeremonyUnitOfWorkPort};
+use made_core::entities::{AuditFact, CeremonyDefinition};
+use made_core::ports::{AppendOutcome, CeremonyEventStorePort};
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyState,
-    CeremonyTransition, CeremonyVersion, EventId, ExpectedRevision, StateId, TransitionTrigger,
+    AuditActor, AuditActorKind, CeremonyId, CeremonyName, CeremonyState, CeremonyTransition,
+    CeremonyVersion, EventId, StateId, TransitionTrigger,
 };
 use made_core::value_objects::{
     RoleId, StepAttempt, StepId, StepIteration, StepOutput, StepResult,
@@ -61,21 +57,6 @@ fn definition() -> CeremonyDefinition {
 /// test instead of hanging it.
 const APPEND_ATTEMPTS: u32 = 16;
 
-fn commit_for(
-    ceremony_id: &CeremonyId,
-    expected: ExpectedRevision,
-    ordinal: u64,
-) -> CeremonyCommit {
-    let definition = definition();
-    let instance = CeremonyInstance::start(
-        ceremony_id.clone(),
-        &definition,
-        CeremonyContext::empty(),
-        OffsetDateTime::UNIX_EPOCH,
-    );
-    CeremonyCommit::new(instance, expected, [fact_for(ceremony_id, ordinal)], []).unwrap()
-}
-
 fn fact_for(ceremony_id: &CeremonyId, ordinal: u64) -> AuditFact {
     let definition = definition();
     AuditFact {
@@ -105,10 +86,9 @@ async fn main() {
     let mut args = std::env::args().skip(1);
     let path = args
         .next()
-        .expect("usage: store_writer <path> <ceremony-id> <count> [commits|events]");
+        .expect("usage: store_writer <path> <ceremony-id> <count>");
     let ceremony_id = CeremonyId::new(args.next().expect("ceremony id")).expect("valid id");
     let count: u64 = args.next().expect("count").parse().expect("count");
-    let mode = args.next().unwrap_or_else(|| "commits".to_owned());
 
     let store = match SqliteCeremonyStore::open(&path) {
         Ok(store) => store,
@@ -118,35 +98,10 @@ async fn main() {
         }
     };
 
-    match mode.as_str() {
-        "commits" => write_commits(&store, &ceremony_id, count).await,
-        "events" => write_events(&store, &ceremony_id, count).await,
-        other => {
-            eprintln!("store_writer: unknown mode `{other}`; expected `commits` or `events`");
-            std::process::exit(2);
-        }
-    }
+    write_events(&store, &ceremony_id, count).await;
 }
 
-async fn write_commits(store: &SqliteCeremonyStore, ceremony_id: &CeremonyId, count: u64) {
-    let stdout = std::io::stdout();
-    let mut expected = ExpectedRevision::New;
-    for ordinal in 1..=count {
-        let outcome = store
-            .commit(commit_for(ceremony_id, expected, ordinal))
-            .await
-            .expect("commit should succeed");
-        let revision = outcome
-            .committed_revision()
-            .expect("a commit with a fresh expectation is not a conflict");
-        expected = ExpectedRevision::Exactly(revision);
-        let mut lock = stdout.lock();
-        writeln!(lock, "{}", revision.value()).expect("stdout write");
-        lock.flush().expect("stdout flush");
-    }
-}
-
-/// Reload-on-conflict, the way a use case will: read the head, decide
+/// Reload-on-conflict, the way a use case does: read the head, decide
 /// against it, append with it as the expectation, and start over when
 /// somebody else moved the stream first.
 async fn write_events(store: &SqliteCeremonyStore, ceremony_id: &CeremonyId, count: u64) {

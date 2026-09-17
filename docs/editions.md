@@ -111,9 +111,9 @@ everything it injects. Details: [embedded-made.md](embedded-made.md).
 
 - **The real engine.** Same use cases, same domain invariants, same FSM as the
   deployable binary.
-- **Durable ceremony state** in SQLite: ceremony snapshots,
-  unit-of-work state, the audit journal, outbox rows and published definitions
-  survive process restarts. Crash/reopen behaviour is exercised by
+- **Durable ceremony state** in SQLite: the sealed event streams, their global
+  order, the folded snapshots and published definitions survive process
+  restarts. Crash/reopen behaviour is exercised by
   `crates/made-embedded/tests/sqlite_store_api.rs`.
 
 ### What it explicitly does not prove
@@ -229,8 +229,9 @@ Two caveats that make this less symmetric than the KMP equivalent:
   `made_design_ceremony`, and the designer itself is a use case both editions
   call, so the same intent renders the same document whichever engine
   answered. So is everything a finished session leaves behind:
-  `ReadCeremonyEvents` and `GetCeremonyTranscript` back
-  `made_read_ceremony_events` and `made_get_ceremony_transcript`, and
+  `ReadCeremonyEvents`, `VerifyCeremonyJournal` and `GetCeremonyTranscript`
+  back `made_read_ceremony_events`, `made_verify_ceremony_journal` and
+  `made_get_ceremony_transcript`, and
   `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
   is a `made-app` projection now (ADR-006), so the same sessions in the same
   state report the same bytes whichever engine rendered them. A read of the

@@ -28,6 +28,7 @@ complete_ceremony_step	CompleteCeremonyStep	made_complete_ceremony_step	made_com
 design_ceremony	DesignCeremony	made_design_ceremony	made_design_ceremony	design	-	
 generate_ceremony_report	GenerateCeremonyReport	made_generate_ceremony_report	made_generate_ceremony_report	report	-	
 read_ceremony_events	ReadCeremonyEvents	made_read_ceremony_events	made_read_ceremony_events	audit_records	-	
+verify_ceremony_journal	VerifyCeremonyJournal	made_verify_ceremony_journal	made_verify_ceremony_journal	verify_journal	-	
 get_ceremony_transcript	GetCeremonyTranscript	made_get_ceremony_transcript	made_get_ceremony_transcript	transcript	-	
 list_ceremony_definitions	-	-	-	definitions	-	decided in F1: host affordance, not a capability; the catalog a host mounts and publishes into is local to its process, and publish_ceremony_definition is how a definition crosses surfaces
 mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host

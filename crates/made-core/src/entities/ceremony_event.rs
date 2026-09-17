@@ -11,8 +11,9 @@ use crate::value_objects::{AuditEventType, EventSchemaVersion};
 
 use super::ceremony_events::{
     CeremonyCompleted, CeremonyInstanceStarted, EvidenceCollected, HumanApprovalRecorded,
-    HumanDeferralRecorded, InterventionClosed, InterventionRequested, InterventionResponded,
-    ParticipantsBound, ReasonAsserted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
+    HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
+    InterventionResponded, ParticipantsBound, ReasonAsserted, StepCompleted, StepFailed,
+    StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -43,6 +44,7 @@ pub enum CeremonyEvent {
     HumanApprovalRecorded(HumanApprovalRecorded),
     HumanDeferralRecorded(HumanDeferralRecorded),
     CeremonyCompleted(CeremonyCompleted),
+    InstanceImported(InstanceImported),
 }
 
 impl CeremonyEvent {
@@ -64,6 +66,7 @@ impl CeremonyEvent {
             Self::HumanApprovalRecorded(_) => AuditEventType::HumanApprovalRecorded,
             Self::HumanDeferralRecorded(_) => AuditEventType::HumanDeferralRecorded,
             Self::CeremonyCompleted(_) => AuditEventType::CeremonyCompleted,
+            Self::InstanceImported(_) => AuditEventType::InstanceImported,
         }
     }
 
@@ -87,7 +90,8 @@ impl CeremonyEvent {
             | Self::ReasonAsserted(_)
             | Self::HumanApprovalRecorded(_)
             | Self::HumanDeferralRecorded(_)
-            | Self::CeremonyCompleted(_) => EventSchemaVersion::V1,
+            | Self::CeremonyCompleted(_)
+            | Self::InstanceImported(_) => EventSchemaVersion::V1,
         }
     }
 }

@@ -574,6 +574,14 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
         ),
+        // The chain over the same records, asked of both arms: the
+        // verdict is the engine's own answer to a question the caller
+        // could settle from the page above, so the two must agree on
+        // the verdict as well as on the records.
+        (
+            "made_verify_ceremony_journal",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
         (
             "made_get_ceremony_transcript",
             json!({ "ceremony_id": SESSION_ID }),

@@ -12,7 +12,7 @@ use made_mcp_proto::v1 as pb;
 use serde_json::{json, Map, Value};
 
 use super::primitives::pb_struct_to_json;
-use crate::protocol::REPORT_IS_PERSISTED;
+use crate::protocol::{CeremonyJournalVerdictView, REPORT_IS_PERSISTED};
 
 pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsResponse) -> Value {
     let pb::ReadCeremonyEventsResponse {
@@ -31,6 +31,34 @@ pub(crate) fn read_ceremony_events_to_json(response: pb::ReadCeremonyEventsRespo
         "head_version": head_version,
         "has_more": next_version < head_version,
     })
+}
+
+/// The verdict on one journal's chain.
+///
+/// Through the same view the in-process arm fills, so the two answers
+/// are one shape by construction. Zero and empty are how the contract
+/// says "absent"; they become `null` here, which is how this server
+/// says it everywhere else.
+pub(crate) fn verify_ceremony_journal_to_json(
+    response: pb::VerifyCeremonyJournalResponse,
+) -> Value {
+    let pb::VerifyCeremonyJournalResponse {
+        ceremony_id,
+        head_version,
+        record_count,
+        intact,
+        first_broken_sequence,
+        reason,
+    } = response;
+    CeremonyJournalVerdictView {
+        ceremony_id,
+        head_version,
+        record_count: u64::from(record_count),
+        intact,
+        first_broken_sequence: (first_broken_sequence > 0).then_some(first_broken_sequence),
+        reason: (!reason.is_empty()).then_some(reason),
+    }
+    .to_json()
 }
 
 fn ceremony_event_record_to_json(record: pb::CeremonyEventRecord) -> Value {

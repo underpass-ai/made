@@ -12,10 +12,6 @@
 //! nothing. [`CeremonyInstance::rehydrate`] folds a whole stream. The
 //! mutators callers already use are thin wrappers over that pair, and
 //! keep their signatures.
-//!
-//! One mutation stays outside the command set on purpose:
-//! [`CeremonyInstance::migrate_definition_binding`] is a storage
-//! migration with no audit fact today, and it is slated for removal.
 
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -29,14 +25,14 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyDefinitionDigestMigration,
-    CeremonyEvidenceSourceId, CeremonyGuardApproval, CeremonyGuardDeferral,
-    CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
-    CeremonyName, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
-    CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey,
-    MemoryConfidence, RoleAction, RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord,
-    StepId, StepLease, StepResult, TransitionTrigger,
+    AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId,
+    CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName,
+    CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
+    CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey, MemoryConfidence,
+    RoleAction, RoleId, Specialty, StateId, StepAttempt, StepExecutionRecord, StepId, StepLease,
+    StepResult, TransitionTrigger,
 };
 
 mod decisions;
@@ -170,41 +166,6 @@ impl CeremonyInstance {
     #[must_use]
     pub fn is_bound_to_a_published_definition(&self) -> bool {
         self.bound_definition.is_some()
-    }
-
-    /// Replace a legacy publication identity after the same definition has
-    /// been verified under a successor digest scheme.
-    ///
-    /// Not a command and decides no event: it has no audit fact today
-    /// and is deleted once stores are migrated to event streams. It is
-    /// left exactly as it was until then.
-    ///
-    /// This is deliberately narrower than a general rebind operation. A
-    /// running ceremony cannot be moved to different content, name or
-    /// version. Storage migrations may only replace the expected legacy
-    /// identity with the identity of the already verified publication.
-    pub fn migrate_definition_binding(
-        &mut self,
-        migration: &CeremonyDefinitionDigestMigration,
-    ) -> Result<bool, DomainError> {
-        if self.definition_name != *migration.definition_name()
-            || self.definition_version != *migration.definition_version()
-        {
-            return Err(DomainError::InvariantViolated {
-                reason: "a definition binding migration cannot change name or version",
-            });
-        }
-
-        match self.bound_definition {
-            Some(current) if current == migration.destination() => Ok(false),
-            Some(current) if current == migration.source() => {
-                self.bound_definition = Some(migration.destination());
-                Ok(true)
-            }
-            _ => Err(DomainError::InvariantViolated {
-                reason: "a definition binding migration did not match the stored identity",
-            }),
-        }
     }
 
     #[must_use]
@@ -499,56 +460,6 @@ mod tests {
             retrying_step("plan", "drafting"),
             single_attempt_step("review_step", "review"),
         ])
-    }
-
-    #[test]
-    fn a_verified_digest_migration_rebinds_only_its_exact_definition() {
-        let definition = definition();
-        let published = PublishedCeremonyDefinition::seal(definition.clone()).unwrap();
-        let migration = definition.choreographer_v1_digest_migration().unwrap();
-        let mut value = serde_json::to_value(CeremonyInstance::start_bound(
-            CeremonyId::new("legacy-bound").unwrap(),
-            &published,
-            CeremonyContext::empty(),
-            now(),
-        ))
-        .unwrap();
-        value["bound_definition"] = serde_json::to_value(migration.source()).unwrap();
-        let mut instance: CeremonyInstance = serde_json::from_value(value).unwrap();
-
-        assert!(instance.migrate_definition_binding(&migration).unwrap());
-        assert_eq!(instance.bound_definition(), Some(migration.destination()));
-        assert!(!instance.migrate_definition_binding(&migration).unwrap());
-    }
-
-    #[test]
-    fn a_digest_migration_for_another_definition_is_rejected() {
-        let definition = definition();
-        let published = PublishedCeremonyDefinition::seal(definition.clone()).unwrap();
-        let mut instance = CeremonyInstance::start_bound(
-            CeremonyId::new("still-bound").unwrap(),
-            &published,
-            CeremonyContext::empty(),
-            now(),
-        );
-        let other = CeremonyDefinition::new(
-            CeremonyName::new("another_ceremony").unwrap(),
-            CeremonyVersion::v1(),
-            None,
-            [],
-            [],
-            [CeremonyState::initial(state_id("OPEN"))],
-            [],
-            [],
-            [],
-            [],
-        )
-        .unwrap()
-        .choreographer_v1_digest_migration()
-        .unwrap();
-
-        assert!(instance.migrate_definition_binding(&other).is_err());
-        assert_eq!(instance.bound_definition(), Some(published.digest()));
     }
 
     /// The smallest ceremony that waits on a person: one guard, one

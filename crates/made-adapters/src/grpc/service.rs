@@ -18,7 +18,7 @@ use made_app::usecases::{
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ContractRegistryPort};
@@ -46,7 +46,8 @@ use super::mappers::{
     run_council_decision_input_from_proto, run_council_decision_response_from,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, task_from_proto,
     trigger_event_from_proto, unrehydratable_ceremony_instance_state_from,
-    validate_ceremony_draft_response_from, StartCeremonyFromYaml,
+    validate_ceremony_draft_response_from, verify_ceremony_journal_response_from,
+    StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
 use super::tracecontext::link_span_to_metadata;
@@ -98,6 +99,7 @@ pub struct MadeGrpcService {
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
+    pub(super) verify_ceremony_journal: Arc<VerifyCeremonyJournalUseCase>,
     pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
     pub(super) generate_ceremony_report: Arc<GenerateCeremonyReportUseCase>,
     pub(super) diff_ceremony_definitions: Arc<DiffCeremonyDefinitionsUseCase>,
@@ -437,6 +439,13 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::ReadCeremonyEventsRequest>,
     ) -> GrpcResult<pb::ReadCeremonyEventsResponse> {
         self.handle_read_ceremony_events(request).await
+    }
+
+    async fn verify_ceremony_journal(
+        &self,
+        request: Request<pb::VerifyCeremonyJournalRequest>,
+    ) -> GrpcResult<pb::VerifyCeremonyJournalResponse> {
+        self.handle_verify_ceremony_journal(request).await
     }
 
     async fn get_ceremony_transcript(

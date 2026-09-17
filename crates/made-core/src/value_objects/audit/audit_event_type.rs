@@ -27,6 +27,10 @@ pub enum AuditEventType {
     HumanDeferralRecorded,
     CeremonyCompleted,
     CeremonyFailed,
+    /// A session written before ceremonies were streams was brought
+    /// into one. It is the only fact the engine seals that did not
+    /// happen inside the ceremony it belongs to.
+    InstanceImported,
 }
 
 impl AuditEventType {
@@ -50,6 +54,7 @@ impl AuditEventType {
             Self::HumanDeferralRecorded => "human_deferral_recorded",
             Self::CeremonyCompleted => "ceremony_completed",
             Self::CeremonyFailed => "ceremony_failed",
+            Self::InstanceImported => "instance_imported",
         }
     }
 

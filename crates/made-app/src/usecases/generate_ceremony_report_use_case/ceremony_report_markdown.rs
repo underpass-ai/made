@@ -12,7 +12,7 @@
 
 use std::fmt::Write as _;
 
-use made_core::entities::{AuditRecord, CeremonyDefinition, CeremonyInstance};
+use made_core::entities::{AuditRecord, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::CeremonyDefinitionDigest;
 
@@ -67,6 +67,17 @@ pub(super) fn render_markdown(
         )
         .expect("writing to a String cannot fail");
 
+        if let Some(imported_at) = imported_at(&session.journal) {
+            write!(
+                markdown,
+                "> Imported from a store written before ceremonies were event streams, at \
+                 `{imported_at}`. What happened before the import was recorded without \
+                 payloads and cannot be recovered, so the journal below opens with the \
+                 import and the state above is what the earlier store held.\n\n"
+            )
+            .expect("writing to a String cannot fail");
+        }
+
         section(&mut markdown, "Definition", &session.definition)?;
         section(&mut markdown, "Steps and outputs", instance.step_records())?;
         section(&mut markdown, "Transitions", instance.transitions())?;
@@ -81,6 +92,20 @@ pub(super) fn render_markdown(
         section(&mut markdown, "Audit journal", &session.journal)?;
     }
     Ok(markdown)
+}
+
+/// When the session's stream opens with an import rather than a start.
+///
+/// The report says so because the sections above it are true and the
+/// ones below it are short: an imported session's state is whatever
+/// the old store held, and its journal begins the day it was imported.
+/// A report that did not say so would read as though nothing had ever
+/// happened before that record.
+fn imported_at(journal: &[AuditRecord]) -> Option<&time::OffsetDateTime> {
+    match journal.first()?.event()? {
+        CeremonyEvent::InstanceImported(imported) => Some(&imported.imported_at),
+        _ => None,
+    }
 }
 
 fn section<T: serde::Serialize + ?Sized>(

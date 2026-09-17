@@ -4,6 +4,8 @@
 //! byte that crosses stdio and projects one catalog over its active backend.
 
 mod catalog;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+mod ceremony_journal_verdict_view;
 mod ceremony_schemas;
 mod default_lease_owner;
 #[cfg(test)]
@@ -27,6 +29,8 @@ mod tool_names;
 pub(crate) use catalog::{available_tool_catalog, tools_list_result};
 // Only a backend applies the rule; a build with neither would carry a
 // function nothing calls.
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use ceremony_journal_verdict_view::CeremonyJournalVerdictView;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use ceremony_schemas::REPORT_IS_PERSISTED;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
@@ -53,6 +57,7 @@ pub(crate) use tool_names::{
     READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
     START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 #[cfg(test)]
