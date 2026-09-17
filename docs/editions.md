@@ -223,8 +223,10 @@ MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
 
 Two caveats that make this less symmetric than the KMP equivalent:
 
-- The **ceremony tool surfaces no longer differ at all.** They did, and each
-  gap closed in its own slice. The delegated-host protocol — claim the step,
+- **Every ceremony capability is served by both editions**, and what the
+  gates below prove about them is: the same request shapes, the same answers
+  for the same state, and one error envelope. They did differ, and each gap
+  closed in its own slice. The delegated-host protocol — claim the step,
   run it with your own agents and tools, report what happened — is served by
   both editions: `ClaimCeremonyStep` and `CompleteCeremonyStep` back
   `made_claim_ceremony_step` and `made_complete_ceremony_step`, so a host that
@@ -237,7 +239,9 @@ Two caveats that make this less symmetric than the KMP equivalent:
   `made_read_ceremony_events` and `made_get_ceremony_transcript`, and
   `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
   is a `made-app` projection now (ADR-006), so the same sessions in the same
-  state report the same bytes whichever engine rendered them. A read of the
+  state render one document whichever engine served the call, down to the
+  heading, and the document the parity session renders is committed and
+  compared. A read of the
   stream hands out the **sealed records**, digests and hash chain included, so
   a client verifies the chain on what it received rather than trusting the
   server that sent it. The one gap left is the council surface, cluster-only
@@ -252,14 +256,32 @@ Two caveats that make this less symmetric than the KMP equivalent:
   through **every shared tool** on both MCP backends — the same step handler,
   the same evidence source and the same frozen clock on each — and compares
   the two answers field for field, so a tool that answers differently
-  depending on which engine served it fails by name. A shared tool that
-  session never calls fails it too. The third reads the file as the support
+  depending on which engine served it fails by name. It compares the
+  **argument shapes** too, through the schema gate both arms run before any
+  engine: a table of calls that must be refused identically and a table that
+  must be accepted, compared whole. And it runs twice, the second time with
+  the in-process arm over WAL-mode SQLite — the store the local edition ships
+  with — so what the gate compares is the edition somebody runs and not an
+  in-memory stand-in for it. A shared tool that session never calls fails it
+  too. The third reads the file as the support
   claim it is: the [Editions section of the support
   matrix](operations/support-matrix.md#editions) says, per capability group
   and per surface, supported or not supported with the reason, and a test
   derives that table from this file and the capability groups and compares it
   cell by cell — a table that promises what the file denies fails by name, and
   so does a group the table forgets.
+- **One thing a caller writes is read at ingress rather than carried
+  verbatim: a number in an open payload.** The contract carries `context`,
+  `output`, `details` and the other open objects as `google.protobuf.Struct`,
+  whose numbers are doubles, so `1` and `1.0` are the same bytes on the wire
+  and cannot be told apart again. Both editions therefore settle it before
+  the engine: a whole-valued number is read whole, and a number outside ±2^53
+  is refused as `invalid_request`. Two clients that write the same session
+  seal the same records whichever edition they used; a client that wanted
+  `1.0` back as `1.0` does not get it from either. Carrying the exact bytes
+  is a contract change and is not in this phase.
+  [`architecture/struct-numbers.tsv`](./architecture/struct-numbers.tsv) is
+  the table both implementations are pinned against.
 - **Ceremony state does not migrate itself.** A local SQLite store is not a
   Postgres deployment. Republish the definitions you need and start fresh
   instances; treat it as a migration, not a config flip.

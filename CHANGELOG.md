@@ -14,6 +14,73 @@ operator command.
 
 ## Unreleased
 
+### Fixed
+
+- The divergences a read-only review of the parity chain (#55–#64) found
+  between the two MCP arms, and the places the gate built to catch them could
+  not see. Each is a live difference in what a client gets for the same call
+  depending on which engine served it, which is what ADR-014 says is a defect.
+
+  **Inside the shared tools.** An omitted `lease_ttl_ms` meant thirty seconds
+  in process and sixty over the wire on `made_run_ceremony`; the three
+  defaults now belong to the `made-app` inputs that carry them, both arms send
+  the number rather than a zero for the server to choose with, and the schemas
+  state it. An omitted `idempotency_key` left four different spellings in the
+  journal — `made-mcp-`, `made-mcp-external-`, `grpc-`, `grpc-claim-` — where
+  the key is sealed as evidence; one rule, `made-mcp:<uuid>`, applied by the
+  MCP layer on both arms. A report title was trimmed on one arm and not the
+  other, so `" Session review "` rendered two documents; `ReportTitle` carries
+  the trim rule and the emptiness rule, and both arms build it.
+  `DomainError::Conflict` reached every surface as `refused` with
+  `retryable: false`, against what `domain_error_to_status` and
+  `AppendOutcome` both say about it; `conflict` is a fifth tool error code and
+  a fourth `ApiError`, retryable on both, and the in-process mapper is
+  exhaustive where it had a `_` arm. `ReadCeremonyEvents` sampled the head
+  before reading the page, so a concurrent append answered `next_version >
+  head_version` with `has_more() == false`; the head is read after. A `limit`
+  above 1000 was refused by the gate and clamped by the engine — one rule now,
+  refused, said the same way in the schema, the engine and the proto comment.
+  An explicit `null` on an optional field and a `_meta` inside `arguments`
+  were both refused, so a host generated from a typed SDK looked broken; the
+  gate reads the first as absent and skips the second. `uniqueItems` uses a
+  set and every caller-supplied list of ids declares `maxItems`. The three
+  constraints the schema descriptions promised in prose — "exactly one of",
+  "at least one seat", "`failed` requires `error`" — are `oneOf`,
+  `minProperties` and `if`/`then`/`else`, so a caller's own validator refuses
+  what this server refuses.
+
+  **Whole numbers, decided at ingress.** `google.protobuf.Struct` carries
+  every number as a double, so `{"score": 1}` and `{"score": 1.0}` are the
+  same bytes on the wire and cannot be told apart again — and the sealed
+  record of one session depended on which engine wrote it, badly enough that a
+  client running `AuditChain::verify` on what it was handed could fail on an
+  intact chain. Both arms now read a whole-valued number whole and refuse a
+  number outside ±2^53 as `invalid_request`, at the request gate; the gRPC
+  server keeps its own ingress for direct clients with the same rule, and
+  `docs/architecture/struct-numbers.tsv` is the table a test in each crate is
+  pinned against. Carrying the exact bytes on the wire is the alternative and
+  is **deferred**: it means a field beside every `Struct` saying which of its
+  numbers were written whole, on seven messages, and that is a contract change
+  for phase 2.
+
+  **The gate.** The facade scan was a line grep over one file for two
+  spellings of `pub fn`, so `pub const fn version` and any second `impl` block
+  were invisible; it reads every file under `crates/made-embedded/src` and
+  every `pub` form, and every excused method is asserted to be one the scan
+  really finds. The surface columns were compared as sets, so two rows with
+  swapped cells stayed green; each row's cells are derived from its capability
+  key through the transform `protocol/tests.rs` owns, with the genuine
+  exceptions listed and reasoned. The parity session ran over
+  `InMemoryCeremonyEventStore` on both arms, which is not what the local
+  edition ships; it runs a second pass with the in-process arm over WAL-mode
+  SQLite. It read one stream's digests, so it reads all three, and its two
+  intervention payloads carry a whole number and a `1.0`. The rendered report
+  is the serde form of `made-core`'s entities and nothing pinned it, so the
+  document the session renders is committed and compared — a rename in the
+  domain changes a file in review rather than a document silently.
+  `docs/editions.md` says what the gate proves after all of this, including
+  the one honest sentence about numbers. (#75)
+
 ### Added
 
 - An **Editions** section in `docs/operations/support-matrix.md`: one row per

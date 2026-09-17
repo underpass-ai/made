@@ -364,12 +364,13 @@ result's `structuredContent`:
 }
 ```
 
-`code` is one of four words, and each names a different remedy:
+`code` is one of five words, and each names a different remedy:
 
 | `code` | What happened | `retryable` |
 |---|---|---|
 | `unavailable` | The engine was not reached. | `true` |
 | `not_found` | What the call named is not there. | `false` |
+| `conflict` | Somebody else wrote to what this call was writing to. | `true` |
 | `refused` | The engine looked at the call and said no. | `false` |
 | `invalid_request` | The arguments do not fit the tool's schema. | `false` |
 
@@ -377,8 +378,11 @@ Branch on `code`, never on the message: the message is the engine's own
 words and may change. The same failure carries the same code whichever
 backend served it, which is what lets a client point at an in-process
 engine or a cluster without a second error table. `retryable` is `true`
-for `unavailable` and nothing else — the other three answer the same way
-however many times they are asked.
+for the two failures that can change without the caller changing
+anything — an engine that was not reached, and a race that was lost —
+and the remedy for `conflict` in particular is to read the session again
+and repeat the call. The other three answer the same way however many
+times they are asked.
 
 The text content carries `code: message` for hosts that render nothing
 else. The transport never appears in either: `unavailable` says the same
@@ -606,6 +610,58 @@ server, is the thing that will come back to finish the step. A blank
 `lease_owner_id` is refused rather than defaulted, on both backends: the
 field's schema says `minLength: 1`, and a caller who wrote it meant to
 name something.
+
+`idempotency_key` and `lease_ttl_ms` are filled in by the same layer,
+for the same reason. An omitted key becomes `made-mcp:<uuid>` — the same
+prefix on every backend, because the key is **sealed into the journal**
+and the evidence of a session must not record which kind of process
+happened to answer. An omitted or zero `lease_ttl_ms` becomes 60 000 ms
+for `made_run_ceremony`, 30 000 ms for `made_run_ceremony_step` and
+300 000 ms for `made_claim_ceremony_step` — the last is longer by an
+order of magnitude on purpose, because it covers work a host does where
+the engine cannot see progress. Every tool's schema states the number it
+applies.
+
+### Numbers in an open payload
+
+`context`, `output`, `details`, `payload`, `attributes` and the
+designer's `equals` are objects MADE does not look inside — with one
+exception a caller has to know about. The gRPC contract carries them as
+`google.protobuf.Struct`, whose numbers are doubles: `{"score": 1}` and
+`{"score": 1.0}` are the same eight bytes on the wire and cannot be told
+apart again.
+
+So the reading is decided at ingress, identically on every backend:
+
+- A **whole-valued number is read whole.** `1.0` is stored and sealed as
+  `1`, so two clients that write the same session leave the same records
+  whichever backend they used — and a client that reads the stream back
+  and runs its own chain verification gets an intact chain.
+- A **number outside ±2^53 is refused** as `invalid_request`. Past that
+  range a double no longer counts one at a time, so no surface could
+  hand the value back as it was written, and answering with a different
+  number would be worse than saying so.
+- Everything else — every fraction — is carried exactly as written.
+
+A client that needs `1.0` back as `1.0` should send it as a string.
+Carrying the exact bytes on the wire is a contract change and is not in
+this phase.
+
+### What the schema decides about your arguments
+
+Every call is checked against the schema the tool publishes, in the
+server, before any backend is reached — so the same call is accepted or
+refused the same way whichever engine is behind it. Two of those
+decisions are worth knowing:
+
+- An **explicit `null` on a field the schema does not require is
+  absent.** A host generated from a typed SDK serialises an unset
+  optional that way, and it means the same thing as leaving the field
+  out.
+- A **top-level key starting with `_` is not an argument.** MCP reserves
+  `_meta` on the objects it defines, and it is skipped at
+  `tools/call.arguments` rather than refused as undeclared. Only there:
+  inside an open payload your keys are your own, underscore or not.
 
 ### Embedded step execution ownership
 
