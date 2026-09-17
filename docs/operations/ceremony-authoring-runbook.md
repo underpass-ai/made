@@ -212,8 +212,8 @@ guards:
 
 Required guards are a conjunction. Here exhaustion waives only
 `refresh_and_validate`'s unmet repeat condition on this transition; it does not
-waive `facilitator_approved`, another repeating step, an active lease or an
-open intervention.
+waive `facilitator_approved`, another repeating step, a required completion or
+join guard that is blocked by an active lease, or an open intervention.
 
 Use `output_field:<step>:<field>=<json>` to guard a transition with an exact
 top-level output value:

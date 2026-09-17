@@ -80,8 +80,8 @@ impl<'a> CeremonyInstanceView<'a> {
                 Ok(CeremonyTransitionView::new(
                     transition,
                     instance.transition_is_enabled(definition, transition),
-                    definition.repeat_requirements_are_satisfied(
-                        transition.from(),
+                    definition.repeat_requirements_are_satisfied_for_transition(
+                        transition,
                         instance.step_records(),
                     ),
                     guards,
@@ -180,3 +180,6 @@ impl<'a> CeremonyInstanceView<'a> {
         self.completed
     }
 }
+
+#[cfg(test)]
+mod tests;

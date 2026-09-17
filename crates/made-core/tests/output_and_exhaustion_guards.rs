@@ -3,12 +3,14 @@ use std::collections::BTreeMap;
 use made_core::entities::CeremonyDefinition;
 use made_core::value_objects::{
     Attributes, CeremonyContext, CeremonyGuard, CeremonyName, CeremonyState, CeremonyStep,
-    CeremonyTransition, CeremonyVersion, GuardCondition, GuardName, OutputFieldGuardCondition,
-    RepeatUntilCondition, RetryPolicy, StateId, StepExecutionRecord, StepHandlerConfig,
-    StepHandlerKind, StepId, StepIteration, StepOutput, StepOutputField,
-    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, TransitionTrigger,
+    CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition, GuardName, IdempotencyKey,
+    LeaseOwnerId, OutputFieldGuardCondition, RepeatUntilCondition, RetryPolicy, StateId,
+    StepAttempt, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
+    StepLease, StepOutput, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
+    StepResult, StepStatus, TransitionTrigger,
 };
 use serde_json::{json, Value};
+use time::OffsetDateTime;
 
 fn step_id(raw: &str) -> StepId {
     StepId::new(raw).unwrap()
@@ -59,6 +61,17 @@ fn completed(
     );
     StepExecutionRecord::pending_iteration(StepIteration::new(iteration).unwrap())
         .with_result(StepResult::completed(output).unwrap())
+}
+
+fn in_progress() -> StepExecutionRecord {
+    let lease = StepLease::acquire(
+        LeaseOwnerId::new("worker").unwrap(),
+        IdempotencyKey::new("active-lease").unwrap(),
+        OffsetDateTime::UNIX_EPOCH,
+        DurationMs::from_millis(60_000),
+    )
+    .unwrap();
+    StepExecutionRecord::pending().with_started(lease, StepAttempt::FIRST)
 }
 
 fn transition(from: &str, to: &str, guards: &[&str]) -> CeremonyTransition {
@@ -220,6 +233,91 @@ fn exhausted_guard_waives_only_its_own_repeat_on_that_transition() {
         (step_id("repeat_b"), completed(2, [("ready", json!(true))])),
     ]);
     assert!(definition.guards_are_satisfied(&leave, &only_a_exhausted, &CeremonyContext::empty()));
+}
+
+#[test]
+fn exhausted_guard_does_not_waive_a_required_in_progress_step() {
+    let a_done = CeremonyGuard::new(
+        guard_name("a_done"),
+        GuardCondition::StepStatus {
+            step_id: step_id("repeat_a"),
+            status: StepStatus::Completed,
+        },
+    );
+    let b_done = CeremonyGuard::new(
+        guard_name("b_done"),
+        GuardCondition::StepStatus {
+            step_id: step_id("plain_b"),
+            status: StepStatus::Completed,
+        },
+    );
+    let a_exhausted = CeremonyGuard::new(
+        guard_name("a_exhausted"),
+        GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(step_id(
+            "repeat_a",
+        ))),
+    );
+    let leave = transition("working", "done", &["a_done", "b_done", "a_exhausted"]);
+    let definition = definition(
+        vec![
+            CeremonyState::initial(state_id("working")),
+            CeremonyState::terminal(state_id("done")),
+        ],
+        vec![leave.clone()],
+        vec![
+            step("repeat_a", "working", true),
+            step("plain_b", "working", false),
+        ],
+        vec![a_done, b_done, a_exhausted],
+    );
+    let records = BTreeMap::from([
+        (step_id("repeat_a"), completed(3, [("ready", json!(false))])),
+        (step_id("plain_b"), in_progress()),
+    ]);
+
+    assert!(!definition.guards_are_satisfied(&leave, &records, &CeremonyContext::empty()));
+}
+
+#[test]
+fn legacy_completion_guards_keep_repeat_semantics_for_prior_steps() {
+    let prior_done = CeremonyGuard::new(
+        guard_name("prior_done"),
+        GuardCondition::StepStatus {
+            step_id: step_id("prior_repeat"),
+            status: StepStatus::Completed,
+        },
+    );
+    let all_done = CeremonyGuard::new(guard_name("all_done"), GuardCondition::AllStepsCompleted);
+    let leave = transition("current", "done", &["prior_done", "all_done"]);
+    let definition = definition(
+        vec![
+            CeremonyState::initial(state_id("prior")),
+            CeremonyState::intermediate(state_id("current")),
+            CeremonyState::terminal(state_id("done")),
+        ],
+        vec![transition("prior", "current", &[]), leave.clone()],
+        vec![
+            step("prior_repeat", "prior", true),
+            step("current_step", "current", false),
+        ],
+        vec![prior_done.clone(), all_done.clone()],
+    );
+    let records = BTreeMap::from([
+        (
+            step_id("prior_repeat"),
+            completed(3, [("ready", json!(false))]),
+        ),
+        (step_id("current_step"), completed(1, [])),
+    ]);
+
+    for guard in [&prior_done, &all_done] {
+        assert!(!definition.guard_is_satisfied_for_transition(
+            guard,
+            &leave,
+            &records,
+            &CeremonyContext::empty(),
+        ));
+    }
 }
 
 #[test]

@@ -40,6 +40,16 @@ impl CeremonyDefinition {
         match guard.condition() {
             GuardCondition::StepRepeatExhausted(condition) => self
                 .step_repeat_is_exhausted_on_transition(transition, condition.step_id(), records),
+            GuardCondition::StepStatus { step_id, status } if status.is_success() => {
+                guard.is_satisfied(records, context)
+                    && self.repeat_requirement_is_satisfied_or_waived(transition, step_id, records)
+            }
+            GuardCondition::AllStepsCompleted => {
+                guard.is_satisfied(records, context)
+                    && self.steps.keys().all(|step_id| {
+                        self.repeat_requirement_is_satisfied_or_waived(transition, step_id, records)
+                    })
+            }
             _ => guard.is_satisfied(records, context),
         }
     }
@@ -56,15 +66,27 @@ impl CeremonyDefinition {
             .all(|step| self.repeat_requirement_is_satisfied(step.id(), records))
     }
 
-    fn repeat_requirements_are_satisfied_for_transition(
+    /// Whether source-state repeats either reached their stop condition or
+    /// have an exact exhaustion guard on this transition.
+    #[must_use]
+    pub fn repeat_requirements_are_satisfied_for_transition(
         &self,
         transition: &CeremonyTransition,
         records: &BTreeMap<StepId, StepExecutionRecord>,
     ) -> bool {
         self.steps_for_state(transition.from()).all(|step| {
-            self.repeat_requirement_is_satisfied(step.id(), records)
-                || self.transition_waives_exhausted_repeat(transition, step.id(), records)
+            self.repeat_requirement_is_satisfied_or_waived(transition, step.id(), records)
         })
+    }
+
+    fn repeat_requirement_is_satisfied_or_waived(
+        &self,
+        transition: &CeremonyTransition,
+        step_id: &StepId,
+        records: &BTreeMap<StepId, StepExecutionRecord>,
+    ) -> bool {
+        self.repeat_requirement_is_satisfied(step_id, records)
+            || self.transition_waives_exhausted_repeat(transition, step_id, records)
     }
 
     fn transition_waives_exhausted_repeat(
