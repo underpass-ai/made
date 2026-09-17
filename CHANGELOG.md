@@ -14,6 +14,12 @@ operator command.
 
 ## Unreleased
 
+### Architecture
+
+- Accept ADR-015 and ADR-016 for phase 3a concurrency and bounded definition
+  primitives; record their contracts and the deferred pattern work before
+  implementation (#90).
+
 ### Fixed
 
 - The divergences a read-only review of the parity chain (#55–#64) found
