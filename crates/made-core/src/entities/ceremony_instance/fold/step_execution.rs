@@ -27,13 +27,14 @@ impl CeremonyInstance {
             .with_result(completed.result.clone());
         match completed.next_iteration {
             Some(next_iteration) => {
+                let state_iteration = finished.state_iteration();
                 self.step_record_history
                     .entry(completed.step_id.clone())
                     .or_default()
                     .push(finished);
                 self.step_records.insert(
                     completed.step_id.clone(),
-                    StepExecutionRecord::pending_iteration(next_iteration),
+                    StepExecutionRecord::pending_coordinates(state_iteration, next_iteration),
                 );
             }
             None => {

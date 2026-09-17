@@ -51,6 +51,15 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
+    pub fn pending_coordinates(state_iteration: StateIteration, iteration: StepIteration) -> Self {
+        Self {
+            state_iteration,
+            iteration,
+            ..Self::pending()
+        }
+    }
+
+    #[must_use]
     pub fn state_iteration(&self) -> StateIteration {
         self.state_iteration
     }

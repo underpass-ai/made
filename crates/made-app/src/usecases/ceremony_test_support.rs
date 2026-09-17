@@ -313,6 +313,134 @@ pub(super) fn state_repeating_definition(max_iterations: u32) -> CeremonyDefinit
     .unwrap()
 }
 
+pub(super) fn nested_repeating_definition() -> CeremonyDefinition {
+    let state_id = StateId::new("REVIEWING").unwrap();
+    let check = CeremonyStep::new(
+        step_id(),
+        state_id.clone(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::single_attempt(),
+        None,
+    )
+    .with_repeat_policy(StepRepeatPolicy::new(
+        RepeatUntilCondition::output_field_equals(
+            StepOutputField::new("ready").unwrap(),
+            json!(true),
+        ),
+        StepIteration::FIRST,
+    ));
+    let guard = CeremonyGuard::new(
+        GuardName::new("review_done").unwrap(),
+        GuardCondition::StepStatus {
+            step_id: check.id().clone(),
+            status: StepStatus::Completed,
+        },
+    );
+    let transition = CeremonyTransition::new(
+        state_id.clone(),
+        StateId::new("COMPLETED").unwrap(),
+        trigger(),
+        vec![guard.name().clone()],
+    )
+    .unwrap();
+    let role = CeremonyRole::new(
+        role_id(),
+        vec![
+            RoleAction::step(check.id().clone()),
+            RoleAction::transition(transition.trigger().clone()),
+        ],
+    )
+    .unwrap();
+    CeremonyDefinition::new(
+        CeremonyName::new("nested_repeating_meeting").unwrap(),
+        version(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(state_id).with_repeat_policy(StateRepeatPolicy::new(
+                StateIteration::new(3).unwrap(),
+                StateRepeatUntilCondition::new(
+                    check.id().clone(),
+                    StepOutputField::new("state_ready").unwrap(),
+                    json!(true),
+                ),
+            )),
+            CeremonyState::terminal(StateId::new("COMPLETED").unwrap()),
+        ],
+        vec![transition],
+        vec![check],
+        vec![guard],
+        vec![role],
+    )
+    .unwrap()
+}
+
+pub(super) fn nested_multi_iteration_definition() -> CeremonyDefinition {
+    let state_id = StateId::new("REVIEWING").unwrap();
+    let check = CeremonyStep::new(
+        step_id(),
+        state_id.clone(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::single_attempt(),
+        None,
+    )
+    .with_repeat_policy(StepRepeatPolicy::new(
+        RepeatUntilCondition::output_field_equals(
+            StepOutputField::new("ready").unwrap(),
+            json!(true),
+        ),
+        StepIteration::new(2).unwrap(),
+    ));
+    let guard = CeremonyGuard::new(
+        GuardName::new("review_done").unwrap(),
+        GuardCondition::StepStatus {
+            step_id: check.id().clone(),
+            status: StepStatus::Completed,
+        },
+    );
+    let transition = CeremonyTransition::new(
+        state_id.clone(),
+        StateId::new("COMPLETED").unwrap(),
+        trigger(),
+        vec![guard.name().clone()],
+    )
+    .unwrap();
+    let role = CeremonyRole::new(
+        role_id(),
+        vec![
+            RoleAction::step(check.id().clone()),
+            RoleAction::transition(transition.trigger().clone()),
+        ],
+    )
+    .unwrap();
+    CeremonyDefinition::new(
+        CeremonyName::new("nested_multi_iteration_meeting").unwrap(),
+        version(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(state_id).with_repeat_policy(StateRepeatPolicy::new(
+                StateIteration::new(2).unwrap(),
+                StateRepeatUntilCondition::new(
+                    check.id().clone(),
+                    StepOutputField::new("accepted").unwrap(),
+                    json!(true),
+                ),
+            )),
+            CeremonyState::terminal(StateId::new("COMPLETED").unwrap()),
+        ],
+        vec![transition],
+        vec![check],
+        vec![guard],
+        vec![role],
+    )
+    .unwrap()
+}
+
 pub(super) fn repeating_approval_definition(max_iterations: u32) -> CeremonyDefinition {
     let step = CeremonyStep::new(
         step_id(),

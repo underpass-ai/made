@@ -266,12 +266,14 @@ mod tests {
         Attributes, AuditActorKind, AuditEventType, CeremonyContext, StepId, StepOutput,
         StepResult, StepStatus,
     };
+    use serde_json::json;
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition, lease_owner, lease_ttl, now,
-        repeating_definition, started_instance, state_repeating_definition, step_id, stream,
-        stream_over, two_step_definition, DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        approval_definition, ceremony_id, definition, lease_owner, lease_ttl,
+        nested_multi_iteration_definition, nested_repeating_definition, now, repeating_definition,
+        started_instance, state_repeating_definition, step_id, stream, stream_over,
+        two_step_definition, DefinitionRepositoryFake, EventStoreFake, FixedClock,
         SequenceStepHandlerFake, StepHandlerFake,
     };
 
@@ -398,6 +400,127 @@ mod tests {
         assert!(saved.state_repeat_limit_reached(&definition));
         assert!(!saved.state_repeat_permits_transition(&definition));
         assert_eq!(saved.current_state_iteration().get(), 2);
+    }
+
+    #[tokio::test]
+    async fn exhausted_step_repeat_cannot_be_reset_by_state_repeat() {
+        let definition = nested_repeating_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
+        let (stream, store) = stream_over(instances.clone());
+        let output = StepOutput::new(
+            Attributes::new(BTreeMap::from([
+                ("ready".to_owned(), json!(false)),
+                ("state_ready".to_owned(), json!(true)),
+            ]))
+            .unwrap(),
+        );
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(output).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            stream,
+            handler,
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let error = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony step repeat limit exhausted"
+            }
+        ));
+        let saved = instances.saved(&ceremony_id()).await;
+        assert_eq!(saved.current_state_iteration().get(), 1);
+        assert!(!saved.state_work_is_complete(&definition));
+        assert!(
+            !saved.state_repeat_permits_transition(&definition),
+            "a true state predicate cannot waive an unmet nested step repeat"
+        );
+        assert!(!store
+            .facts()
+            .await
+            .iter()
+            .any(|fact| fact.event.event_type() == AuditEventType::StateIterationStarted));
+    }
+
+    #[tokio::test]
+    async fn state_step_and_attempt_coordinates_advance_and_reset_independently() {
+        let definition = nested_multi_iteration_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let instances = Arc::new(EventStoreFake::default());
+        let results = [(false, false), (true, false), (false, false), (true, true)].map(
+            |(ready, accepted)| {
+                StepResult::completed(StepOutput::new(
+                    Attributes::new(BTreeMap::from([
+                        ("ready".to_owned(), json!(ready)),
+                        ("accepted".to_owned(), json!(accepted)),
+                    ]))
+                    .unwrap(),
+                ))
+                .unwrap()
+            },
+        );
+        let handler = Arc::new(SequenceStepHandlerFake::new(results));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            stream(instances),
+            handler,
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let output = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            output
+                .step_traces()
+                .iter()
+                .map(|trace| (
+                    trace.state_iteration().get(),
+                    trace.iteration().get(),
+                    trace.attempt().get()
+                ))
+                .collect::<Vec<_>>(),
+            vec![(1, 1, 1), (1, 2, 1), (2, 1, 1), (2, 2, 1)]
+        );
+        let history = output.instance().step_record_history(&step_id());
+        assert_eq!(
+            history
+                .iter()
+                .map(|record| (record.state_iteration().get(), record.iteration().get()))
+                .collect::<Vec<_>>(),
+            vec![(1, 1), (1, 2), (2, 1)]
+        );
+        let current = output.instance().step_record(&step_id()).unwrap();
+        assert_eq!(
+            (current.state_iteration().get(), current.iteration().get()),
+            (2, 2)
+        );
     }
 
     #[tokio::test]

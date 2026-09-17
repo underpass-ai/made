@@ -220,7 +220,7 @@ impl CeremonyInstance {
             self.step_records
                 .get(step.id())
                 .is_some_and(|record| record.status().is_success())
-        })
+        }) && definition.repeat_requirements_are_satisfied(&self.current_state, &self.step_records)
     }
 
     #[must_use]
