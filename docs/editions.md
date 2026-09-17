@@ -31,7 +31,7 @@ version and definition version solve different compatibility problems.
 | Who it is for | one developer running a working session | a team whose deliberations must outlive a process |
 | Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
 | Surface today ([table](operations/support-matrix.md#editions)) | the **ceremony engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
-| Persistence | one local SQLite state file | SQLite for ceremonies; Postgres or memory for other aggregates |
+| Persistence | one local SQLite file for ceremony state and session memory | SQLite for ceremonies and session memory when a ceremony-store path is configured; Postgres or memory for other aggregates |
 | Messaging | none | optional NATS |
 | Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
 | Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
@@ -115,6 +115,10 @@ everything it injects. Details: [embedded-made.md](embedded-made.md).
   order, the folded snapshots and published definitions survive process
   restarts. Crash/reopen behaviour is exercised by
   `crates/made-embedded/tests/sqlite_store_api.rs`.
+- **Durable session memory** in the same SQLite engine: a later MCP process
+  opening the same file recalls decisions recorded by an earlier process.
+  `crates/made-mcp/tests/embedded_sqlite_stdio.rs` drives that restart through
+  the shipped `made-mcp` binary.
 
 ### What it explicitly does not prove
 
@@ -122,7 +126,8 @@ These three are the reason this repo ships a
 [capability-verification runbook](operations/capability-verification.md).
 
 1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
-   ceremony store durable. It does **not** silently make every port durable:
+   ceremony store and session memory durable. It does **not** silently make
+   every port durable:
    mounted definition repositories keep their in-memory defaults, and step
    execution and evidence collection keep their no-op
    defaults, unless the host injects real implementations. A terminal step from
@@ -148,6 +153,14 @@ work, and what survives a restart.
 The `made` binary reads `MADE_*` configuration from the environment and serves
 the full `underpass.made.v1` contract. Every RPC is backed by a use case; none
 returns `UNIMPLEMENTED`.
+
+When `MADE_CEREMONY_STORE_PATH` is set, ceremony state and session memory use
+the same SQLite engine by default. `MADE_MEMORY=none` deliberately disables
+memory while leaving ceremony state durable. `MADE_MEMORY=sqlite` makes the
+choice explicit and is a startup error without `MADE_CEREMONY_STORE_PATH`; the
+server never falls back to process memory after an operator requested SQLite.
+With no path and no explicit selection, ceremony state is in process and the
+server uses `ForgetfulMemory`, logging both facts.
 
 ### Run it locally first
 

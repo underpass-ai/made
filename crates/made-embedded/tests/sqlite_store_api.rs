@@ -78,6 +78,113 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
     );
 }
 
+#[tokio::test]
+async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
+    use std::sync::Arc;
+
+    use made_adapters::sqlite::SqliteCeremonyStore;
+    use made_app::usecases::StartCeremonyInput;
+    use made_core::ports::MemoryWriterPort;
+    use made_core::value_objects::{
+        Attributes, AuditActorKind, CeremonyContext, MemoryEntry, MemoryEntryId, MemoryEntryKind,
+        MemoryProvenance, MemoryScope, MemoryWrite,
+    };
+    use serde_json::json;
+    use time::OffsetDateTime;
+
+    let directory = tempfile::tempdir().expect("temporary state directory");
+    let path = directory.path().join("made.sqlite3");
+    let store = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let scope = MemoryScope::new("team:typed-builder").unwrap();
+    let remembered = MemoryEntry::new(
+        MemoryEntryId::new("typed-builder:decision").unwrap(),
+        MemoryEntryKind::Decision,
+        "keep ceremony state and memory together",
+        MemoryProvenance::new(
+            CeremonyId::new("earlier-session").unwrap(),
+            None,
+            OffsetDateTime::UNIX_EPOCH,
+        ),
+        Attributes::empty(),
+    )
+    .unwrap();
+    store
+        .remember(
+            &scope,
+            MemoryWrite::unexplained(vec![remembered]).unwrap(),
+            "typed-builder:write",
+        )
+        .await
+        .unwrap();
+
+    let engine = EmbeddedMade::builder()
+        .with_ceremony_store_and_memory(store.clone())
+        .with_definition_publications(store)
+        .build();
+    let mounted = engine.mount_yaml(DEFINITION).await.unwrap();
+    let definition = &mounted.definitions()[0];
+    let context = CeremonyContext::new(
+        Attributes::new(BTreeMap::from([(
+            "memory_scope".to_owned(),
+            json!(scope.as_str()),
+        )]))
+        .unwrap(),
+    );
+
+    let opened = engine
+        .start(StartCeremonyInput::new(
+            CeremonyId::new("typed-builder-session").unwrap(),
+            definition.name().clone(),
+            definition.version().clone(),
+            context,
+            "host",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+
+    let recollection = opened
+        .recollection()
+        .expect("the typed adapter must supply the memory it stores");
+    assert_eq!(recollection.scope(), &scope);
+    assert_eq!(
+        recollection.entries()[0].summary(),
+        "keep ceremony state and memory together"
+    );
+}
+
+#[tokio::test]
+async fn generic_builder_remains_forgetful_until_a_host_supplies_memory() {
+    use made_app::usecases::StartCeremonyInput;
+    use made_core::value_objects::{Attributes, AuditActorKind, CeremonyContext};
+    use serde_json::json;
+
+    let engine = EmbeddedMade::builder().build();
+    let mounted = engine.mount_yaml(DEFINITION).await.unwrap();
+    let definition = &mounted.definitions()[0];
+    let context = CeremonyContext::new(
+        Attributes::new(BTreeMap::from([(
+            "memory_scope".to_owned(),
+            json!("team:forgetful"),
+        )]))
+        .unwrap(),
+    );
+
+    let opened = engine
+        .start(StartCeremonyInput::new(
+            CeremonyId::new("forgetful-session").unwrap(),
+            definition.name().clone(),
+            definition.version().clone(),
+            context,
+            "host",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+
+    assert!(opened.recollection().is_none());
+}
+
 const HUMAN_GUARD: &str = r#"
 version: "1.0"
 name: "durable_human_guard"

@@ -25,6 +25,18 @@ operator command.
 
 ### Fixed
 
+- Ceremony design returns a domain draft; one adapter renders YAML for both
+  MCP paths, with serialization DTOs and serde_yaml removed from made-app
+  (#104). Rust hosts read DesignedCeremony::definition() and render explicitly.
+
+- Require at least 80% line coverage per production crate, reject reduced
+  committed floors, and exercise binary HTTP/gRPC startup and SIGTERM shutdown
+  so the server also meets its floor (#103).
+
+- Development marketplace checks accept fetched tags from earlier releases;
+  tag builds and publication still require the annotated version tag at HEAD
+  (#89).
+
 - The divergences a read-only review of the parity chain (#55–#64) found
   between the two MCP arms, and the places the gate built to catch them could
   not see. Each is a live difference in what a client gets for the same call
@@ -92,6 +104,17 @@ operator command.
 
 ### Added
 
+- **Durable session memory in the ceremony SQLite store.**
+  `SqliteSessionMemory` stores idempotent memory writes through the same
+  SQLite engine as ceremony streams and passes the nine-property memory
+  conformance suite. `EmbeddedMade::open(path)` and the deployable server's
+  path-aware default now preserve decisions across process restarts; the
+  generic `EmbeddedMadeBuilder` remains side-effect-free and forgetful unless
+  a host supplies memory. `with_ceremony_store_and_memory` gives Rust hosts a
+  typed same-adapter entry point. `MADE_MEMORY=none` disables server memory,
+  while explicit `sqlite` without `MADE_CEREMONY_STORE_PATH` fails startup.
+  A two-process `made-mcp` stdio test proves that a new process recalls the
+  earlier process's decision. (#102)
 - `CeremonyEventSubscriberPort` in `made-core`: the one seam a projection hangs
   off. It is told the sealed records of one successful append, in order, each
   with its place in the global order, after the store confirmed and before the

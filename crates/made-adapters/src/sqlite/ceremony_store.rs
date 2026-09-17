@@ -30,7 +30,7 @@ mod stored_snapshot;
 
 #[derive(Debug, Clone)]
 pub struct SqliteCeremonyStore {
-    engine: Arc<dyn Engine>,
+    pub(super) engine: Arc<dyn Engine>,
 }
 
 impl SqliteCeremonyStore {

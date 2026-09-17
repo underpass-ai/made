@@ -633,6 +633,13 @@ not, on either backend — test one field rather than inferring
 readability from a field that is not there. The full loop is in the
 [embedded ceremony execution runbook](./embedded-ceremony-execution.md).
 
+Session memory lives in that same SQLite file. A completed memory projection
+is visible to a later `made-mcp` process when both processes use the same
+`MADE_MCP_STORE_PATH` and the ceremonies declare the same `memory_scope`.
+There is no separate memory path or engine selector for the embedded MCP
+edition. Closing stdin, restarting `made-mcp`, and starting the next ceremony
+is sufficient; the second process recalls before sealing its opening batch.
+
 ### Who holds a step lease
 
 `made_run_ceremony`, `made_run_ceremony_step` and

@@ -2,7 +2,6 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Instant;
 
-use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{
@@ -106,10 +105,9 @@ impl EmbeddedMade {
         })?;
         let store = Arc::new(store);
         Ok(Self::builder()
-            .with_ceremony_store(store.clone())
+            .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
-            .with_memory(Arc::new(InProcessSessionMemory::new()))
             .with_event_transport(transport)
             .build())
     }
@@ -117,13 +115,9 @@ impl EmbeddedMade {
     fn over(store: SqliteCeremonyStore) -> Self {
         let store = Arc::new(store);
         Self::builder()
-            .with_ceremony_store(store.clone())
+            .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
-            // Memory that lives as long as this process: not durable,
-            // and not pretending to be (E3 puts it in the store). It
-            // is what makes a declared scope usable at all.
-            .with_memory(Arc::new(InProcessSessionMemory::new()))
             .build()
     }
 

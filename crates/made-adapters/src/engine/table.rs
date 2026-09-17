@@ -25,6 +25,8 @@ pub(crate) enum Table {
     EventCursors,
     /// Visible poison records skipped by each consumer.
     EventCursorQuarantine,
+    /// Idempotent session-memory writes, grouped by memory scope.
+    MemoryWrites,
 }
 
 impl Table {
@@ -36,7 +38,8 @@ impl Table {
             | Table::Events
             | Table::EventLog
             | Table::Snapshots
-            | Table::EventCursorQuarantine => KeyShape::Bytes,
+            | Table::EventCursorQuarantine
+            | Table::MemoryWrites => KeyShape::Bytes,
         }
     }
 }
@@ -53,6 +56,7 @@ impl fmt::Display for Table {
             Table::Meta => "store_meta",
             Table::EventCursors => "ceremony_event_cursors",
             Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
+            Table::MemoryWrites => "session_memory_writes",
         })
     }
 }
