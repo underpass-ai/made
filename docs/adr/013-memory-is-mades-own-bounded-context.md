@@ -1,8 +1,9 @@
 # ADR-013: Memory is MADE's own bounded context
 
-Status: Accepted (decided 2026-09-16); E1–E4 implemented — the KMP adapter is
-out of tree (#41), recall and the trimmed port landed in E1/E2, and the SQLite
-reference adapter and durable composition are E3 (#72); the slices are
+Status: Implemented (decided 2026-09-16; verified 2026-09-18). The KMP adapter
+left the tree in #41, recall and the trimmed port landed in E1/E2 (#84), the
+SQLite reference adapter and durable composition landed in E3 (#102), and E5
+closed the documentation in #121. The slices are
 §3.8 of [`../orchestration-patterns-plan.md`](../orchestration-patterns-plan.md)
 
 ## Context
@@ -65,6 +66,16 @@ to the current KMP surface and its refusal matching replaced by structured
 error codes once KMP exposes them. Where the crate lives — this
 organisation, or the KMP repository — is a packaging decision recorded when
 it moves. MADE's release does not depend on KMP's wording.
+
+## Implementation result
+
+MADE owns the memory value objects, recall use case, ports and conformance
+suite. `SqliteSessionMemory` is the in-tree reference adapter and shares the
+ceremony SQLite engine in path-aware embedded and server compositions (#102).
+The generic `EmbeddedMadeBuilder` remains deliberately forgetful until its
+host supplies memory. Memory writes are derived from sealed ceremony records
+through the subscriber seam (#83). MADE ships no KMP adapter; an external KMP
+adapter may implement the same port and must pass the same conformance suite.
 
 ## Consequences
 

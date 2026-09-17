@@ -68,8 +68,9 @@ impl<'a> CeremonyInstanceView<'a> {
                         Ok(CeremonyGuardView::new(
                             name,
                             matches!(guard.condition(), GuardCondition::HumanApproval),
-                            definition.guard_is_satisfied(
+                            definition.guard_is_satisfied_for_transition(
                                 guard,
+                                transition,
                                 instance.step_records(),
                                 instance.context(),
                             ),
@@ -79,8 +80,8 @@ impl<'a> CeremonyInstanceView<'a> {
                 Ok(CeremonyTransitionView::new(
                     transition,
                     instance.transition_is_enabled(definition, transition),
-                    definition.repeat_requirements_are_satisfied(
-                        transition.from(),
+                    definition.repeat_requirements_are_satisfied_for_transition(
+                        transition,
                         instance.step_records(),
                     ),
                     guards,
@@ -179,3 +180,6 @@ impl<'a> CeremonyInstanceView<'a> {
         self.completed
     }
 }
+
+#[cfg(test)]
+mod tests;

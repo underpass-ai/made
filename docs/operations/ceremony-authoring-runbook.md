@@ -184,9 +184,73 @@ the same semantic iteration. Runtime views expose both `iteration` and
 `attempt`, plus `repeat_condition_satisfied` and `repeat_limit_reached`.
 
 When the condition becomes true, normal guards and transitions may fire. When
-the final permitted iteration still returns false, the transition remains
+the final permitted iteration still returns false, ordinary transitions remain
 blocked; one-shot execution records the `repeat_limit` outcome metric and
-returns a repeat-limit error instead of silently completing or looping.
+returns a repeat-limit error instead of silently completing or looping. An
+explicit `step_repeat_exhausted:<step>` guard may route that bounded outcome:
+
+```yaml
+transitions:
+  - from: COORDINATING
+    to: NEEDS_ATTENTION
+    trigger: escalate_refresh
+    guards:
+      - refresh_completed
+      - refresh_exhausted
+      - facilitator_approved
+guards:
+  refresh_completed:
+    type: automated
+    check: "step_status:refresh_and_validate:COMPLETED"
+  refresh_exhausted:
+    type: automated
+    check: "step_repeat_exhausted:refresh_and_validate"
+  facilitator_approved:
+    type: human
+    check: manual_approval
+```
+
+Required guards are a conjunction. Here exhaustion waives only
+`refresh_and_validate`'s unmet repeat condition on this transition; it does not
+waive `facilitator_approved`, another repeating step, a required completion or
+join guard that is blocked by an active lease, or an open intervention.
+
+Use `output_field:<step>:<field>=<json>` to guard a transition with an exact
+top-level output value:
+
+```yaml
+guards:
+  prior_result_selected:
+    type: automated
+    check: 'output_field:produce_candidate:decision={"selected":true}'
+```
+
+The step must be declared, but it may belong to an earlier state. MADE reads
+that step's current record and requires a successful status; it never falls
+back to an older successful output after the current record fails or a repeat
+opens a new iteration. A missing field is false, and JSON types remain exact.
+Fields may contain `=` and JSON strings may contain `=`; the parser identifies
+the unique split whose suffix is valid JSON.
+
+`made_design_ceremony` exposes the same conditions as `stages[].exit_guards`:
+
+```json
+{
+  "exit_guards": [
+    {
+      "kind": "output_field",
+      "step": "produce_candidate",
+      "output_field": "decision",
+      "equals": {"selected": true}
+    },
+    {"kind": "step_repeat_exhausted", "step": "refresh_and_validate"}
+  ]
+}
+```
+
+These guards are added to the generated completion guard, group join guard
+when present, and final human approval. `equals` is required; explicit `null`
+means JSON null rather than omission.
 
 ## 7. Dynamic participant interventions
 

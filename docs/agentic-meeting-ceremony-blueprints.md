@@ -72,6 +72,20 @@ Meeting blueprints compose these generic phases:
 
 ## Meeting Blueprints
 
+### Shipped preset: fixed-order roundtable
+
+`made_design_ceremony` accepts `pattern: roundtable_fixed_order` in place of
+explicit `stages`. It emits one sequential speaking turn per participant in
+the order the caller declared them and requires at least two participants.
+The first turn receives no prior contribution; every later turn receives the
+full prior transcript through `see_prior`. This preset performs no implicit
+aggregation and does not choose speakers dynamically. It is the executable D1
+v0 built only from existing sequential primitives; the manager-selected group
+chat remains deferred.
+
+The concrete fragment is
+[`../api/examples/ceremonies/fragments/roundtable_fixed_order.yaml`](../api/examples/ceremonies/fragments/roundtable_fixed_order.yaml).
+
 ### 1. Intake Meeting
 
 Purpose: turn an ambiguous request into a framed problem and select the next

@@ -5,17 +5,18 @@ use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyGuard, CeremonyInputDefinition, CeremonyOutputDefinition, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
-    GuardName, RepeatUntilCondition, RetryPolicy, RoleAction, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepRepeatPolicy, StepStatus, StepTimeout,
-    TransitionTrigger,
+    GuardName, OutputFieldGuardCondition, RepeatUntilCondition, RetryPolicy, RoleAction, StateId,
+    StepAttempt, StepHandlerConfig, StepHandlerKind, StepRepeatExhaustedGuardCondition,
+    StepRepeatPolicy, StepStatus, StepTimeout, TransitionTrigger,
 };
 use serde_json::{json, Value};
 
 use super::{
-    approval_guard_name, approval_trigger, completion_guard, num_agents, CeremonyDesignDocument,
-    CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS, DEFAULT_HANDLER,
-    DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
+    approval_guard_name, approval_trigger, completion_guard, exit_guard_name, num_agents,
+    CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS,
+    DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
 };
+use crate::usecases::CeremonyDesignExitGuard;
 
 /// The linear topology, assembled atomically from one intent: one state
 /// per stage plus the terminal one, one automated completion guard per
@@ -83,22 +84,41 @@ pub(super) fn build_definition(
                 status: StepStatus::Completed,
             },
         ));
-        let (trigger, required_guards, owner) = match document.final_approval() {
+        let mut required_guards = vec![completion.clone()];
+        for (guard_index, guard) in stage.exit_guards().iter().enumerate() {
+            let name = GuardName::new(exit_guard_name(stage.id().as_str(), guard_index))?;
+            let condition = match guard {
+                CeremonyDesignExitGuard::OutputField(guard) => {
+                    GuardCondition::OutputField(OutputFieldGuardCondition::new(
+                        guard.step_id().clone(),
+                        guard.output_field().clone(),
+                        guard.expected().clone(),
+                    ))
+                }
+                CeremonyDesignExitGuard::StepRepeatExhausted(guard) => {
+                    GuardCondition::StepRepeatExhausted(StepRepeatExhaustedGuardCondition::new(
+                        guard.step_id().clone(),
+                    ))
+                }
+            };
+            guards.push(CeremonyGuard::new(name.clone(), condition));
+            required_guards.push(name);
+        }
+        let (trigger, owner) = match document.final_approval() {
             Some(approval) if index + 1 == document.stages().len() => {
                 let human = GuardName::new(approval_guard_name(document))?;
                 guards.push(CeremonyGuard::new(
                     human.clone(),
                     GuardCondition::HumanApproval,
                 ));
+                required_guards.push(human);
                 (
                     TransitionTrigger::new(approval_trigger(document))?,
-                    vec![completion, human],
                     approval.role_id(),
                 )
             }
             _ => (
                 TransitionTrigger::new(completion.as_str())?,
-                vec![completion],
                 stage.owner_role_id(),
             ),
         };

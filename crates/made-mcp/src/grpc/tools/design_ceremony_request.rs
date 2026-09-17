@@ -33,7 +33,17 @@ pub(super) fn build_design_ceremony_request(
         step_timeout_seconds: j2p::optional_present_u64(obj, "step_timeout_seconds")?,
         max_attempts: j2p::optional_present_u32(obj, "max_attempts")?,
         backoff_seconds: j2p::optional_present_u64(obj, "backoff_seconds")?,
+        pattern: optional_pattern(obj)?,
     })
+}
+
+fn optional_pattern(obj: &serde_json::Map<String, Value>) -> Result<String, String> {
+    match obj.get("pattern") {
+        None => Ok(String::new()),
+        Some(Value::String(pattern)) if !pattern.is_empty() => Ok(pattern.clone()),
+        Some(Value::String(_)) => Err("`pattern` must not be empty".to_owned()),
+        Some(_) => Err("`pattern` must be a string".to_owned()),
+    }
 }
 
 fn participants(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignParticipant>, String> {
@@ -65,7 +75,45 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 num_agents: j2p::optional_present_u64(stage, "num_agents")?,
                 review_rounds: j2p::optional_u64(stage, "review_rounds")?,
                 repeat: repeat(stage)?,
+                exit_guards: exit_guards(stage)?,
             })
+        })
+        .collect()
+}
+
+fn exit_guards(stage: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignExitGuard>, String> {
+    array(stage, "exit_guards")?
+        .iter()
+        .map(|value| {
+            let guard = j2p::require_object(value, "stages[].exit_guards[]")?;
+            let kind = j2p::require_str(guard, "kind")?;
+            let guard = match kind {
+                "output_field" => {
+                    let expected = guard.get("equals").ok_or_else(|| {
+                        "field `stages[].exit_guards[].equals` is required".to_owned()
+                    })?;
+                    pb::ceremony_design_exit_guard::Guard::OutputField(
+                        pb::CeremonyDesignOutputFieldGuard {
+                            step_id: j2p::require_str(guard, "step")?.to_owned(),
+                            output_field: j2p::require_str(guard, "output_field")?.to_owned(),
+                            equals: Some(j2p::json_to_pb_value(expected)),
+                        },
+                    )
+                }
+                "step_repeat_exhausted" => {
+                    pb::ceremony_design_exit_guard::Guard::StepRepeatExhausted(
+                        pb::CeremonyDesignStepRepeatExhaustedGuard {
+                            step_id: j2p::require_str(guard, "step")?.to_owned(),
+                        },
+                    )
+                }
+                _ => {
+                    return Err(format!(
+                        "field `stages[].exit_guards[].kind` has unsupported value `{kind}`"
+                    ));
+                }
+            };
+            Ok(pb::CeremonyDesignExitGuard { guard: Some(guard) })
         })
         .collect()
 }
@@ -187,5 +235,60 @@ mod tests {
             Some(j2p::json_to_pb_value(&json!(true))),
             "the value that ends the repetition is carried, not described"
         );
+    }
+
+    #[test]
+    fn exit_guards_cross_the_wire_with_explicit_null_presence() {
+        let mut value = intent();
+        value["stages"][0]["exit_guards"] = json!([
+            {
+                "kind": "output_field",
+                "step": "compose",
+                "output_field": "answer",
+                "equals": null
+            },
+            {"kind": "step_repeat_exhausted", "step": "compose"}
+        ]);
+
+        let request = build_design_ceremony_request(&value).unwrap();
+        let guards = &request.stages[0].exit_guards;
+        assert_eq!(guards.len(), 2);
+        assert!(matches!(
+            guards[0].guard.as_ref(),
+            Some(pb::ceremony_design_exit_guard::Guard::OutputField(guard))
+                if guard.step_id == "compose"
+                    && guard.output_field == "answer"
+                    && guard.equals == Some(j2p::json_to_pb_value(&Value::Null))
+        ));
+        assert!(matches!(
+            guards[1].guard.as_ref(),
+            Some(pb::ceremony_design_exit_guard::Guard::StepRepeatExhausted(guard))
+                if guard.step_id == "compose"
+        ));
+    }
+
+    #[test]
+    fn output_guard_refuses_an_absent_equals_field() {
+        let mut value = intent();
+        value["stages"][0]["exit_guards"] = json!([{
+            "kind": "output_field",
+            "step": "compose",
+            "output_field": "answer"
+        }]);
+
+        let error = build_design_ceremony_request(&value).unwrap_err();
+        assert!(error.contains("equals"), "{error}");
+    }
+
+    #[test]
+    fn a_pattern_crosses_on_reserved_field_fourteen_without_stages() {
+        let mut value = intent();
+        value.as_object_mut().unwrap().remove("stages");
+        value["pattern"] = json!("roundtable_fixed_order");
+
+        let request = build_design_ceremony_request(&value).expect("the preset is accepted");
+
+        assert_eq!(request.pattern, "roundtable_fixed_order");
+        assert!(request.stages.is_empty());
     }
 }

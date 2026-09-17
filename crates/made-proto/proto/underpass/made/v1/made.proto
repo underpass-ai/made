@@ -1490,6 +1490,28 @@ message CeremonyDesignRepeat {
   google.protobuf.Value equals = 3;
 }
 
+// Exact JSON comparison against one declared step's current successful output.
+message CeremonyDesignOutputFieldGuard {
+  string step_id = 1;
+  string output_field = 2;
+  // Presence is required. An explicit protobuf null compares with JSON null.
+  google.protobuf.Value equals = 3;
+}
+
+// True only when the referenced repeating step used its final permitted
+// iteration without satisfying its repeat-until condition.
+message CeremonyDesignStepRepeatExhaustedGuard {
+  string step_id = 1;
+}
+
+// One extra condition conjoined with the generated stage-completion guard.
+message CeremonyDesignExitGuard {
+  oneof guard {
+    CeremonyDesignOutputFieldGuard output_field = 1;
+    CeremonyDesignStepRepeatExhaustedGuard step_repeat_exhausted = 2;
+  }
+}
+
 // One stage of the working session, in the author's terms.
 // Declaration order is execution order.
 message CeremonyDesignStage {
@@ -1516,6 +1538,9 @@ message CeremonyDesignStage {
   // value requires at least two agents.
   uint64 review_rounds = 7;
   CeremonyDesignRepeat repeat = 8;
+  repeated CeremonyDesignExitGuard exit_guards = 10;
+  // Reserved for P5 role and context-write authoring fields.
+  reserved 11 to 13;
 }
 
 // The explicit human gate after the final stage. Designing it never
@@ -1553,6 +1578,9 @@ message DesignCeremonyRequest {
   // Retry backoff. Absent takes one second; zero is a legitimate
   // choice, which is why absent has to be tellable from it.
   optional uint64 backoff_seconds = 12;
+  // Shipped authoring preset. Mutually exclusive with explicit stages.
+  // Empty preserves legacy explicit-stage design.
+  string pattern = 14;
 }
 
 // What the design decided, beside the document it rendered. Counting

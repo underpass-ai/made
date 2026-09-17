@@ -92,7 +92,7 @@ impl DesignedCeremonyYaml {
             states,
             transitions,
             steps: steps(draft),
-            guards: guards(draft),
+            guards: guards(draft)?,
             roles: roles(draft),
             timeouts: TimeoutsDocument {
                 step_default: first_step
@@ -112,7 +112,7 @@ impl DesignedCeremonyYaml {
     }
 }
 
-fn guards(draft: &CeremonyDefinitionDraft) -> BTreeMap<String, GuardDocument> {
+fn guards(draft: &CeremonyDefinitionDraft) -> Result<BTreeMap<String, GuardDocument>, DomainError> {
     draft
         .guards()
         .iter()
@@ -129,15 +129,33 @@ fn guards(draft: &CeremonyDefinitionDraft) -> BTreeMap<String, GuardDocument> {
                         status.as_label().to_ascii_uppercase()
                     ),
                 ),
+                GuardCondition::OutputField(condition) => (
+                    "automated",
+                    format!(
+                        "output_field:{}:{}={}",
+                        condition.step_id(),
+                        condition.output_field(),
+                        serde_json::to_string(condition.expected()).map_err(|_| {
+                            DomainError::InvalidDocument {
+                                reason: "ceremony output-field guard could not be rendered"
+                                    .to_owned(),
+                            }
+                        })?
+                    ),
+                ),
+                GuardCondition::StepRepeatExhausted(condition) => (
+                    "automated",
+                    format!("step_repeat_exhausted:{}", condition.step_id()),
+                ),
                 GuardCondition::HumanApproval => ("human", "manual_approval".to_owned()),
             };
-            (
+            Ok((
                 guard.name().as_str().to_owned(),
                 GuardDocument {
                     guard_type: guard_type.to_owned(),
                     check,
                 },
-            )
+            ))
         })
         .collect()
 }

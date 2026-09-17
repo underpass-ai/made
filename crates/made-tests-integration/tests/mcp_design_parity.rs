@@ -11,6 +11,11 @@
 //! That is the property the F3b move exists for: one designer, called
 //! by both, rather than one per adapter.
 
+use made_adapters::yaml::DesignedCeremonyYaml;
+use made_app::usecases::{
+    CeremonyDesignDocument, CeremonyDesignParticipant, CeremonyPatternPreset,
+};
+use made_core::value_objects::{CeremonyDescription, CeremonyName, OutputName, RoleId};
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::protocol::ToolErrorCode;
@@ -50,7 +55,24 @@ fn intent() -> Value {
                 "instructions": "Weigh them against the brief.",
                 "num_agents": 2,
                 "review_rounds": 1,
-                "see_prior": true
+                "see_prior": true,
+                "repeat": {
+                    "max_iterations": 2,
+                    "output_field": "accepted",
+                    "equals": true
+                },
+                "exit_guards": [
+                    {
+                        "kind": "output_field",
+                        "step": "draft_options",
+                        "output_field": "decision=key",
+                        "equals": {"label": "left=right"}
+                    },
+                    {
+                        "kind": "step_repeat_exhausted",
+                        "step": "weigh_options"
+                    }
+                ]
             }
         ],
         "final_approval": { "role_id": "EDITOR" },
@@ -60,6 +82,42 @@ fn intent() -> Value {
 
 fn structured(result: &Value) -> Value {
     result["structuredContent"].clone()
+}
+
+fn pattern_intent() -> Value {
+    json!({
+        "name": "fixed_roundtable",
+        "objective": "Collect distinct perspectives on one bounded question.",
+        "outputs": ["discussion"],
+        "participants": [
+            { "role_id": "FACILITATOR" },
+            { "role_id": "REVIEWER" },
+            { "role_id": "RECORDER" }
+        ],
+        "stages": [],
+        "pattern": "roundtable_fixed_order"
+    })
+}
+
+fn pattern_document() -> CeremonyDesignDocument {
+    CeremonyDesignDocument::new(
+        CeremonyName::new("fixed_roundtable").unwrap(),
+        None,
+        CeremonyDescription::new("Collect distinct perspectives on one bounded question.").unwrap(),
+        Vec::new(),
+        Vec::new(),
+        vec![OutputName::new("discussion").unwrap()],
+        ["FACILITATOR", "REVIEWER", "RECORDER"]
+            .into_iter()
+            .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+            .collect(),
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    )
+    .with_pattern(CeremonyPatternPreset::RoundtableFixedOrder)
 }
 
 #[tokio::test]
@@ -167,6 +225,14 @@ async fn what_the_caller_left_out_reaches_the_same_answer_on_both_backends() {
             rendered.contains("max_iterations: 3"),
             "the {backend} backend must carry the repeat cap: {rendered}"
         );
+        assert!(
+            rendered.contains("output_field:draft_options:decision=key={\"label\":\"left=right\"}"),
+            "the {backend} backend must preserve the exact JSON guard: {rendered}"
+        );
+        assert!(
+            rendered.contains("step_repeat_exhausted:weigh_options"),
+            "the {backend} backend must preserve the exhausted-repeat guard: {rendered}"
+        );
     }
 
     assert_eq!(
@@ -217,6 +283,76 @@ async fn an_unworkable_intent_is_refused_the_same_way_on_both_backends() {
                 && error.message().contains("draft_options"),
             "the {backend} backend must name the element at fault: {}",
             error.message()
+        );
+    }
+}
+
+#[tokio::test]
+async fn the_pattern_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    let arguments = pattern_intent();
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the gRPC-backed MCP tool accepts the preset"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the embedded MCP tool accepts the preset"),
+    );
+    let facade = DesignedCeremonyYaml::render(
+        &EmbeddedMade::default()
+            .design(&pattern_document())
+            .expect("the facade accepts the typed preset"),
+    )
+    .expect("the YAML adapter renders the facade result");
+
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["definition_yaml"], facade);
+    assert_eq!(over_the_wire["publishable"], true);
+    assert_eq!(over_the_wire["design"]["stages"], 3);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("id: roundtable_turn_1"));
+    assert!(yaml.contains("id: roundtable_turn_3"));
+    assert_eq!(yaml.matches("see_prior: true").count(), 2);
+}
+
+#[tokio::test]
+async fn invalid_pattern_values_are_refused_identically_by_both_mcp_arms() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    for invalid in [Value::Null, json!(7), json!("")] {
+        let mut arguments = pattern_intent();
+        arguments["pattern"] = invalid.clone();
+        let remote_error = remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the gRPC-backed MCP tool must refuse an invalid pattern");
+        let embedded_error = embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the embedded MCP tool must refuse an invalid pattern");
+
+        assert_eq!(remote_error.code(), ToolErrorCode::InvalidRequest);
+        assert_eq!(remote_error.code(), embedded_error.code());
+        assert_eq!(
+            remote_error.message(),
+            embedded_error.message(),
+            "{invalid}"
         );
     }
 }

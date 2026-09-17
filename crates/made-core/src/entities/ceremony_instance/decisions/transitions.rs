@@ -35,11 +35,6 @@ impl CeremonyInstance {
                 from: "ceremony_instance.current_state",
                 to: "transition_trigger",
             })?;
-        if !definition.repeat_requirements_are_satisfied(&self.current_state, &self.step_records) {
-            return Err(DomainError::InvariantViolated {
-                reason: "ceremony step repeat condition is not satisfied",
-            });
-        }
         if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony transition guards are not satisfied",

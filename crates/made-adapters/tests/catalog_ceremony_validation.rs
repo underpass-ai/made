@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 
 use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_app::usecases::CeremonyPatternPreset;
 
 const CATALOG: &[&str] = &[
     "daily-standup.yaml",
@@ -37,6 +38,27 @@ fn shipped_catalog_ceremonies_are_free_of_validation_warnings() {
         "catalog ceremonies produced reachability warnings:\n{}",
         offenders.join("\n")
     );
+}
+
+#[test]
+fn shipped_pattern_fragments_parse_and_analyse_as_ceremonies() {
+    for pattern in CeremonyPatternPreset::ALL {
+        let draft = CeremonyDefinitionYaml::parse_draft_str(pattern.fragment_source())
+            .unwrap_or_else(|error| panic!("{} must parse: {error}", pattern.id()));
+        let report = draft.analyze();
+        assert!(
+            report.is_valid(),
+            "{} produced blocking findings: {:?}",
+            pattern.id(),
+            report.errors().collect::<Vec<_>>()
+        );
+        assert_eq!(
+            report.warnings().count(),
+            0,
+            "{} produced a validation warning",
+            pattern.id()
+        );
+    }
 }
 
 fn catalog_path(file: &str) -> PathBuf {

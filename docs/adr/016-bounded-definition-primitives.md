@@ -2,8 +2,10 @@
 
 Status: Accepted (2026-09-17)
 
-Implementation: planned for phase 3a, P2–P6. Extends ADR-010; its step repeat
-contract remains unchanged except for an explicitly guarded exhaustion exit.
+Implementation: output and exhausted-repeat guards are implemented by P3
+(#116); the remaining primitives are planned for phase 3a P2 and P4–P6.
+Extends ADR-010; its step repeat contract remains unchanged except for an
+explicitly guarded exhaustion exit.
 
 ## Context
 
@@ -51,7 +53,8 @@ construction. There is no expression evaluator or nested-path language.
 `step_repeat_exhausted:<step>` is true when that step completed its final
 permitted iteration with its stop condition still false. That explicit route
 may leave the state despite this step's exhausted repeat; it does not waive
-other unmet repeats, live leases, human approval or open interventions.
+other unmet repeats, required completion or join guards (including those that
+block live leases), human approval or open interventions.
 Ordinary transitions retain ADR-010's refusal on unmet repetition. Each new
 guard variant owns a source file and validated value, rather than expanding
 an untyped expression switch.

@@ -14,12 +14,72 @@ operator command.
 
 ## Unreleased
 
+Phase 3a changes below target **0.5.0**. The phase 2 **0.4.0** candidate
+was completed in #121; its baseline highlights remain recorded separately
+here until the release procedure creates the immutable tagged sections.
+
+### 0.4.0 highlights
+
+- Ceremony event streams are now the source of truth: commands decide sealed
+  events, instances fold them, SQLite stores them with a global order, and
+  snapshots are optional caches (#42–#45).
+- Transcript and memory became projections of sealed records and the transcript
+  store port was removed (#83). Copy-on-write migration imports legacy stores,
+  then removes the old unit-of-work, whole-state write and outbox paths (#86).
+- Session memory is a MADE-owned bounded context with recall, nine-property
+  conformance and a durable SQLite reference adapter selected by path-aware
+  compositions; the generic builder remains forgetful (#84, #102). MADE ships
+  no KMP adapter (#41).
+- Durable named cursors now drive explicit pull acknowledgement, NATS
+  publication and the embedded JSONL sink; whole and paged event history share
+  a typed page limit (#108).
+- Metrics, traces and structured logs consume the same sealed records in both
+  editions, while reports alone capture one bounded stream cut (#110). The
+  shared service-metrics projection preserves legacy statistics and adds
+  registry text and structured samples. Embedded hosts can wire OTLP/mTLS and
+  paired event/registry JSONL lines through the same recorder; that registry
+  snapshot describes the process at delivery time, not an exact historical
+  stream prefix (#119).
+- The final parity session fills optional fields and rotates enum variants in
+  #120 on memory and SQLite, including sealed leases, intact journals and
+  all four result labels. The original report golden remains unchanged.
+
+### Remaining 0.4.0 debt
+
+- Shared domain value objects for the list bounds now enforced at MCP ingress
+  remain tracked in #100. Whole/paged history, its typed page limit and one-cut
+  reports are complete in #108 and #110.
+
+### Added
+
+- `made_design_ceremony` accepts the typed `roundtable_fixed_order` preset on
+  the proto, both MCP backends, and the embedded facade. It expands participants
+  in declaration order into sequential speaking turns, gives prior context to
+  every turn after the first, and ships its discoverable YAML fragment under
+  `api/examples/ceremonies/fragments/`. Explicit-stage design remains unchanged.
+  (#114)
+
 ### Changed
 
 - Ceremony runs now export step and handler spans on every execution surface,
   while provider and judge adapters export concrete identity, stable failure
   class and upstream-reported token usage. Empty or malformed model content no
   longer hides token usage that the provider already reported. (#123)
+
+- Ceremony definitions and `made_design_ceremony` can require exact JSON from
+  a declared step's current successful output and explicitly route a bounded
+  step-repeat exhaustion. An exhaustion route waives only that step's repeat
+  condition on that transition; all other guards and invariants remain in
+  force. (#116)
+
+- Align ADR-003, ADR-012, ADR-013, the phase plan, Editions, the platform
+  boundary and stack analysis with the verified phase 2 implementation; keep
+  future pattern work and the remaining list-bound value-object debt explicit
+  (#121).
+
+- Run the complete MCP parity session with filled optionals and all public
+  actor, result, reason, reference and confidence variants on memory and SQLite;
+  compare status text without hiding non-version differences. (#120)
 
 - `made_get_metrics` now returns the same in-process Prometheus registry as
   text and structured families/samples in both editions while preserving the

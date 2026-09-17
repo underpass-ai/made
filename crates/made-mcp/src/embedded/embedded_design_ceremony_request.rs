@@ -1,4 +1,4 @@
-use made_app::usecases::{CeremonyDesignDocument, DesignedCeremony};
+use made_app::usecases::{CeremonyDesignDocument, CeremonyPatternPreset, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, OutputName,
@@ -8,15 +8,21 @@ use made_embedded::EmbeddedMade;
 use serde::Deserialize;
 use serde_json::Value;
 
+mod exit_guard_intent;
 mod final_approval_intent;
+mod output_field_guard_intent;
 mod participant_intent;
 mod repeat_intent;
 mod stage_intent;
+mod step_repeat_exhausted_guard_intent;
 
+use exit_guard_intent::ExitGuardIntent;
 use final_approval_intent::FinalApprovalIntent;
+use output_field_guard_intent::OutputFieldGuardIntent;
 use participant_intent::ParticipantIntent;
 use repeat_intent::RepeatIntent;
 use stage_intent::StageIntent;
+use step_repeat_exhausted_guard_intent::StepRepeatExhaustedGuardIntent;
 
 /// Structured intent accepted by `made_design_ceremony`.
 ///
@@ -40,7 +46,10 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     optional_inputs: Vec<String>,
     outputs: Vec<String>,
     participants: Vec<ParticipantIntent>,
+    #[serde(default)]
     stages: Vec<StageIntent>,
+    #[serde(default)]
+    pattern: Option<String>,
     #[serde(default)]
     final_approval: Option<FinalApprovalIntent>,
     #[serde(default)]
@@ -55,11 +64,21 @@ impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
     type Error = String;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
-        if !value.is_object() {
-            return Err("tools/call.arguments must be an object".to_owned());
-        }
+        let object = value
+            .as_object()
+            .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
+        validate_pattern(object)?;
         serde_json::from_value(value.clone())
             .map_err(|error| format!("invalid ceremony design intent: {error}"))
+    }
+}
+
+fn validate_pattern(object: &serde_json::Map<String, Value>) -> Result<(), String> {
+    match object.get("pattern") {
+        None => Ok(()),
+        Some(Value::String(pattern)) if !pattern.is_empty() => Ok(()),
+        Some(Value::String(_)) => Err("`pattern` must not be empty".to_owned()),
+        Some(_) => Err("`pattern` must be a string".to_owned()),
     }
 }
 
@@ -84,7 +103,7 @@ impl EmbeddedDesignCeremonyRequest {
             .map(FinalApprovalIntent::into_domain)
             .transpose()?;
 
-        Ok(CeremonyDesignDocument::new(
+        let document = CeremonyDesignDocument::new(
             CeremonyName::new(self.name)?,
             self.version.map(CeremonyVersion::new).transpose()?,
             CeremonyDescription::new(self.objective)?,
@@ -102,7 +121,12 @@ impl EmbeddedDesignCeremonyRequest {
             self.max_attempts.map(StepAttempt::new).transpose()?,
             self.backoff_seconds
                 .map(|seconds| DurationMs::from_millis(seconds.saturating_mul(1_000))),
-        ))
+        );
+        let pattern = self
+            .pattern
+            .map(|pattern| CeremonyPatternPreset::parse(&pattern))
+            .transpose()?;
+        Ok(pattern.map_or(document.clone(), |pattern| document.with_pattern(pattern)))
     }
 }
 
@@ -115,10 +139,12 @@ fn names<T>(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
+
     use super::*;
     use made_adapters::yaml::CeremonyDefinitionYaml;
     use made_core::entities::CeremonyDefinitionDraft;
-    use made_core::value_objects::StepId;
+    use made_core::value_objects::{GuardCondition, GuardName, StateId, StepId};
     use serde_json::json;
 
     fn intent() -> Value {
@@ -204,6 +230,135 @@ mod tests {
             .unwrap()
             .repeat_policy()
             .is_some());
+    }
+
+    #[test]
+    fn designs_output_and_exhausted_guards_as_one_conjunction() {
+        let mut value = intent();
+        value["stages"][1]["repeat"] = json!({
+            "max_iterations": 3,
+            "output_field": "ready",
+            "equals": true
+        });
+        value["stages"][1]["exit_guards"] = json!([
+            {
+                "kind": "output_field",
+                "step": "compose",
+                "output_field": "decision=key",
+                "equals": {"answer": "left=right"}
+            },
+            {"kind": "step_repeat_exhausted", "step": "review"}
+        ]);
+
+        let designed = design(&value).unwrap();
+        let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed).unwrap();
+        let draft = parsed(&designed);
+
+        assert!(yaml.contains("output_field:compose:decision=key={\"answer\":\"left=right\"}"));
+        assert!(yaml.contains("step_repeat_exhausted:review"));
+        assert!(matches!(
+            draft
+                .guards()
+                .iter()
+                .find(|guard| guard.name() == &GuardName::new("exit_review_1").unwrap())
+                .unwrap()
+                .condition(),
+            GuardCondition::OutputField(condition)
+                if condition.step_id() == &StepId::new("compose").unwrap()
+        ));
+        assert!(matches!(
+            draft
+                .guards()
+                .iter()
+                .find(|guard| guard.name() == &GuardName::new("exit_review_2").unwrap())
+                .unwrap()
+                .condition(),
+            GuardCondition::StepRepeatExhausted(condition)
+                if condition.step_id() == &StepId::new("review").unwrap()
+        ));
+        let final_transition = draft
+            .transitions()
+            .iter()
+            .find(|transition| transition.from() == &StateId::new("REVIEW").unwrap())
+            .unwrap();
+        assert_eq!(
+            final_transition.required_guards(),
+            &[
+                GuardName::new("review_completed").unwrap(),
+                GuardName::new("exit_review_1").unwrap(),
+                GuardName::new("exit_review_2").unwrap(),
+                GuardName::new("human_approved_outcome").unwrap(),
+            ]
+            .into_iter()
+            .collect::<BTreeSet<_>>()
+        );
+    }
+
+    #[test]
+    fn refuses_unknown_duplicate_and_unscoped_exit_guards() {
+        let mut unknown = intent();
+        unknown["stages"][1]["exit_guards"] = json!([{
+            "kind": "output_field",
+            "step": "missing",
+            "output_field": "ready",
+            "equals": true
+        }]);
+        assert!(design(&unknown)
+            .unwrap_err()
+            .to_string()
+            .contains("unknown step `missing`"));
+
+        let guard = json!({
+            "kind": "output_field",
+            "step": "compose",
+            "output_field": "ready",
+            "equals": true
+        });
+        let mut duplicate = intent();
+        duplicate["stages"][1]["exit_guards"] = json!([guard.clone(), guard]);
+        assert!(design(&duplicate)
+            .unwrap_err()
+            .to_string()
+            .contains("duplicate exit guard"));
+
+        let mut wrong_stage = intent();
+        wrong_stage["stages"][0]["repeat"] = json!({
+            "max_iterations": 3,
+            "output_field": "ready",
+            "equals": true
+        });
+        wrong_stage["stages"][1]["exit_guards"] = json!([{
+            "kind": "step_repeat_exhausted",
+            "step": "compose"
+        }]);
+        assert!(design(&wrong_stage)
+            .unwrap_err()
+            .to_string()
+            .contains("must reference a step in that stage"));
+    }
+
+    #[test]
+    fn output_guard_requires_equals_but_accepts_explicit_null() {
+        let mut missing = intent();
+        missing["stages"][0]["exit_guards"] = json!([{
+            "kind": "output_field",
+            "step": "compose",
+            "output_field": "answer"
+        }]);
+        assert!(EmbeddedDesignCeremonyRequest::try_from(&missing)
+            .unwrap_err()
+            .contains("equals"));
+
+        let mut explicit_null = intent();
+        explicit_null["stages"][0]["exit_guards"] = json!([{
+            "kind": "output_field",
+            "step": "compose",
+            "output_field": "answer",
+            "equals": null
+        }]);
+        let designed = design(&explicit_null).unwrap();
+        let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed).unwrap();
+        assert!(yaml.contains("output_field:compose:answer=null"), "{yaml}");
     }
 
     #[test]

@@ -6,6 +6,7 @@
 mod catalog;
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 mod ceremony_journal_verdict_view;
+mod ceremony_pattern_catalog;
 mod ceremony_schemas;
 mod default_idempotency_key;
 mod default_lease_owner;
@@ -30,6 +31,7 @@ pub(crate) const PROTOCOL_VERSION: &str = "2024-11-05";
 mod tool_names;
 
 pub(crate) use catalog::{available_tool_catalog, tools_list_result};
+pub(crate) use ceremony_pattern_catalog::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
 // Only a backend applies the rule; a build with neither would carry a
 // function nothing calls.
 #[cfg(any(feature = "embedded", feature = "grpc"))]
