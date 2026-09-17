@@ -14,6 +14,11 @@ operator command.
 
 ## Unreleased
 
+### Changed
+
+- MCP sealed records, instance listings, and statistics envelopes now use one
+  JSON renderer across the embedded, gRPC, and fixture backends (#101).
+
 ### Fixed
 
 - The divergences a read-only review of the parity chain (#55–#64) found
