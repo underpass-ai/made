@@ -83,6 +83,16 @@ impl CeremonyDefinitionDraft {
     }
 
     #[must_use]
+    pub fn inputs(&self) -> &[CeremonyInputDefinition] {
+        &self.inputs
+    }
+
+    #[must_use]
+    pub fn outputs(&self) -> &[CeremonyOutputDefinition] {
+        &self.outputs
+    }
+
+    #[must_use]
     pub fn states(&self) -> &[CeremonyState] {
         &self.states
     }

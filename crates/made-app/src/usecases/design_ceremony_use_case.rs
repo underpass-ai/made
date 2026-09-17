@@ -4,7 +4,7 @@
 //! what each stage asks; this decides the mechanical half — one state
 //! and one automated completion guard per stage, the transitions
 //! between them, the optional human gate at the end, the role actions,
-//! the retry policy — and renders the document they can publish.
+//! the retry policy — and builds the definition they can publish.
 //!
 //! It lives here rather than in a delivery adapter because it is the
 //! whole content of the answer: two adapters deciding it separately is
@@ -15,8 +15,7 @@
 //! decides anything.
 //!
 //! What it deliberately does not do is analyse the result. A designed
-//! draft goes through the same parser and the same analysis as every
-//! hand-authored one, at the same boundary, which is what makes
+//! draft goes through the same analysis as every hand-authored one, which is what makes
 //! "designed" mean nothing more than "written quickly".
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -28,31 +27,14 @@ use super::ceremony_design_document::CeremonyDesignDocument;
 use super::ceremony_design_stage::CeremonyDesignStage;
 use super::designed_ceremony::DesignedCeremony;
 
-mod ceremony_document;
-mod guard_document;
-mod inputs_document;
-mod repeat_until_document;
-mod retry_policies_document;
-mod retry_policy_document;
-mod role_document;
-mod state_document;
-mod step_document;
-mod step_repeat_document;
-mod timeouts_document;
-mod transition_document;
-
-use ceremony_document::CeremonyDocument;
-use guard_document::GuardDocument;
-use inputs_document::InputsDocument;
-use repeat_until_document::RepeatUntilDocument;
-use retry_policies_document::RetryPoliciesDocument;
-use retry_policy_document::RetryPolicyDocument;
-use role_document::RoleDocument;
-use state_document::StateDocument;
-use step_document::StepDocument;
-use step_repeat_document::StepRepeatDocument;
-use timeouts_document::TimeoutsDocument;
-use transition_document::TransitionDocument;
+use made_core::entities::CeremonyDefinitionDraft;
+use made_core::value_objects::{
+    Attributes, CeremonyGuard, CeremonyInputDefinition, CeremonyOutputDefinition, CeremonyRole,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
+    GuardName, RepeatUntilCondition, RetryPolicy, RoleAction, StateId, StepAttempt,
+    StepHandlerConfig, StepHandlerKind, StepRepeatPolicy, StepStatus, StepTimeout,
+    TransitionTrigger,
+};
 
 /// The terminal state every designed ceremony ends in.
 const COMPLETED_STATE: &str = "COMPLETED";
@@ -80,7 +62,7 @@ impl DesignCeremonyUseCase {
         Self
     }
 
-    /// Refuse an intent that cannot become a ceremony, then render the
+    /// Refuse an intent that cannot become a ceremony, then build the
     /// one it describes.
     ///
     /// Everything refused here is a defect no single field is guilty
@@ -99,21 +81,7 @@ impl DesignCeremonyUseCase {
     ) -> Result<DesignedCeremony, DomainError> {
         validate(document)?;
 
-        let stage_count = document.stages().len();
-        let participant_count = document.participants().len();
-        let final_approval_required = document.final_approval().is_some();
-        let rendered = render(document);
-        let definition_yaml =
-            serde_yaml::to_string(&rendered).map_err(|_| DomainError::InvalidDocument {
-                reason: "ceremony draft could not be rendered as YAML".to_owned(),
-            })?;
-
-        Ok(DesignedCeremony::new(
-            definition_yaml,
-            stage_count,
-            participant_count,
-            final_approval_required,
-        ))
+        Ok(DesignedCeremony::new(build_definition(document)?))
     }
 }
 
@@ -266,12 +234,14 @@ fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainError> {
     Ok(())
 }
 
-/// The linear topology, rendered atomically from one intent: one state
+/// The linear topology, assembled atomically from one intent: one state
 /// per stage plus the terminal one, one automated completion guard per
 /// stage, one transition out of each, and the final approval's human
 /// guard where the author asked for it.
-#[allow(clippy::too_many_lines)] // The linear topology is rendered atomically from one intent.
-fn render(document: &CeremonyDesignDocument) -> CeremonyDocument {
+#[allow(clippy::too_many_lines)] // The linear topology is assembled atomically from one intent.
+fn build_definition(
+    document: &CeremonyDesignDocument,
+) -> Result<CeremonyDefinitionDraft, DomainError> {
     let mut actions = document
         .participants()
         .iter()
@@ -279,168 +249,158 @@ fn render(document: &CeremonyDesignDocument) -> CeremonyDocument {
             let capabilities = participant
                 .capabilities()
                 .iter()
-                .map(|capability| capability.as_action().to_owned())
+                .map(|capability| {
+                    RoleAction::from_capability_label(capability.as_action())
+                        .expect("known capability")
+                })
                 .collect::<BTreeSet<_>>();
-            (participant.role_id().as_str().to_owned(), capabilities)
+            (participant.role_id().clone(), capabilities)
         })
         .collect::<BTreeMap<_, _>>();
-
-    let stage_state_ids = document
+    let state_ids = document
         .stages()
         .iter()
-        .map(|stage| stage.id().as_str().to_ascii_uppercase())
-        .collect::<Vec<_>>();
-    let mut states = stage_state_ids
+        .map(|stage| StateId::new(stage.id().as_str().to_ascii_uppercase()))
+        .collect::<Result<Vec<_>, _>>()?;
+    let terminal = StateId::new(COMPLETED_STATE)?;
+    let mut states = state_ids
         .iter()
         .enumerate()
-        .map(|(index, id)| StateDocument {
-            id: id.clone(),
-            initial: index == 0,
-            terminal: false,
+        .map(|(index, id)| {
+            if index == 0 {
+                CeremonyState::initial(id.clone())
+            } else {
+                CeremonyState::intermediate(id.clone())
+            }
         })
         .collect::<Vec<_>>();
-    states.push(StateDocument {
-        id: COMPLETED_STATE.to_owned(),
-        initial: false,
-        terminal: true,
-    });
-
-    let mut guards = BTreeMap::new();
-    let mut transitions = Vec::with_capacity(document.stages().len());
-    let mut steps = Vec::with_capacity(document.stages().len());
+    states.push(CeremonyState::terminal(terminal.clone()));
+    let retry = RetryPolicy::new(
+        StepAttempt::new(document.max_attempts().unwrap_or(DEFAULT_MAX_ATTEMPTS))?,
+        DurationMs::from_millis(
+            document
+                .backoff_seconds()
+                .unwrap_or(DEFAULT_BACKOFF_SECONDS)
+                .saturating_mul(1000),
+        ),
+    );
+    let timeout = StepTimeout::new(DurationMs::from_millis(
+        document
+            .step_timeout_seconds()
+            .unwrap_or(DEFAULT_STEP_TIMEOUT_SECONDS)
+            .saturating_mul(1000),
+    ))?;
+    let mut guards = Vec::new();
+    let mut transitions = Vec::new();
+    let mut steps = Vec::new();
     for (index, stage) in document.stages().iter().enumerate() {
-        let stage_id = stage.id().as_str();
-        let completion_guard = completion_guard(stage_id);
-        guards.insert(
-            completion_guard.clone(),
-            GuardDocument {
-                guard_type: "automated".to_owned(),
-                check: format!("step_status:{stage_id}:COMPLETED"),
+        let completion = GuardName::new(completion_guard(stage.id().as_str()))?;
+        guards.push(CeremonyGuard::new(
+            completion.clone(),
+            GuardCondition::StepStatus {
+                step_id: stage.id().clone(),
+                status: StepStatus::Completed,
             },
-        );
-
-        let is_last = index + 1 == document.stages().len();
-        let (trigger, transition_guards, transition_owner) = match document.final_approval() {
-            // The human gate is the last transition, and it is the
-            // approver's to pull: guarded by the stage's completion
-            // and by the approval itself.
-            Some(approval) if is_last => {
-                let guard_name = approval_guard_name(document);
-                guards.insert(
-                    guard_name.clone(),
-                    GuardDocument {
-                        guard_type: "human".to_owned(),
-                        check: "manual_approval".to_owned(),
-                    },
-                );
+        ));
+        let (trigger, required_guards, owner) = match document.final_approval() {
+            Some(approval) if index + 1 == document.stages().len() => {
+                let human = GuardName::new(approval_guard_name(document))?;
+                guards.push(CeremonyGuard::new(
+                    human.clone(),
+                    GuardCondition::HumanApproval,
+                ));
                 (
-                    approval_trigger(document),
-                    vec![completion_guard, guard_name],
-                    approval.role_id().as_str().to_owned(),
+                    TransitionTrigger::new(approval_trigger(document))?,
+                    vec![completion, human],
+                    approval.role_id(),
                 )
             }
             _ => (
-                completion_guard.clone(),
-                vec![completion_guard],
-                stage.owner_role_id().as_str().to_owned(),
+                TransitionTrigger::new(completion.as_str())?,
+                vec![completion],
+                stage.owner_role_id(),
             ),
         };
-
         actions
-            .get_mut(stage.owner_role_id().as_str())
-            .expect("owner role validated")
-            .insert(stage_id.to_owned());
+            .get_mut(stage.owner_role_id())
+            .expect("validated owner")
+            .insert(RoleAction::step(stage.id().clone()));
         actions
-            .get_mut(&transition_owner)
-            .expect("transition role validated")
-            .insert(trigger.clone());
-
-        transitions.push(TransitionDocument {
-            from: stage_state_ids[index].clone(),
-            to: stage_state_ids
-                .get(index + 1)
-                .cloned()
-                .unwrap_or_else(|| COMPLETED_STATE.to_owned()),
+            .get_mut(owner)
+            .expect("validated transition owner")
+            .insert(RoleAction::transition(trigger.clone()));
+        transitions.push(CeremonyTransition::new(
+            state_ids[index].clone(),
+            state_ids.get(index + 1).unwrap_or(&terminal).clone(),
             trigger,
-            guards: transition_guards,
-        });
-        steps.push(StepDocument {
-            id: stage_id.to_owned(),
-            state: stage_state_ids[index].clone(),
-            handler: stage.handler().map_or_else(
-                || DEFAULT_HANDLER.to_owned(),
-                |kind| kind.as_str().to_owned(),
-            ),
-            config: stage_config(stage, index),
-            repeat: stage.repeat().map(|repeat| StepRepeatDocument {
-                max_iterations: repeat.max_iterations().get(),
-                until: RepeatUntilDocument {
-                    output_field: repeat.output_field().as_str().to_owned(),
-                    equals: repeat.equals().clone(),
-                },
-            }),
-        });
+            required_guards,
+        )?);
+        let handler = stage
+            .handler()
+            .cloned()
+            .unwrap_or(StepHandlerKind::new(DEFAULT_HANDLER)?);
+        let mut step = CeremonyStep::new(
+            stage.id().clone(),
+            state_ids[index].clone(),
+            handler,
+            StepHandlerConfig::new(Attributes::new(stage_config(stage, index))?),
+            retry,
+            Some(timeout),
+        );
+        if let Some(repeat) = stage.repeat() {
+            step = step.with_repeat_policy(StepRepeatPolicy::new(
+                RepeatUntilCondition::output_field_equals(
+                    repeat.output_field().clone(),
+                    repeat.equals().clone(),
+                ),
+                repeat.max_iterations(),
+            ));
+        }
+        steps.push(step);
     }
-
     let roles = document
         .participants()
         .iter()
         .map(|participant| {
-            let role_id = participant.role_id().as_str().to_owned();
-            RoleDocument {
-                allowed_actions: actions
-                    .remove(&role_id)
-                    .expect("participant action bucket exists")
-                    .into_iter()
-                    .collect(),
-                id: role_id,
-            }
+            CeremonyRole::new(
+                participant.role_id().clone(),
+                actions
+                    .remove(participant.role_id())
+                    .expect("validated role"),
+            )
         })
-        .collect();
-
-    CeremonyDocument {
-        version: document.version().map_or_else(
-            || DEFAULT_VERSION.to_owned(),
-            |version| version.as_str().to_owned(),
-        ),
-        name: document.name().as_str().to_owned(),
-        description: document.objective().as_str().to_owned(),
-        inputs: InputsDocument {
-            required: document
-                .required_inputs()
-                .iter()
-                .map(|input| input.as_str().to_owned())
-                .collect(),
-            optional: document
+        .collect::<Result<Vec<_>, _>>()?;
+    let inputs = document
+        .required_inputs()
+        .iter()
+        .cloned()
+        .map(CeremonyInputDefinition::required)
+        .chain(
+            document
                 .optional_inputs()
                 .iter()
-                .map(|input| input.as_str().to_owned())
-                .collect(),
-        },
-        outputs: document
+                .cloned()
+                .map(CeremonyInputDefinition::optional),
+        );
+    Ok(CeremonyDefinitionDraft::new(
+        document.name().clone(),
+        document
+            .version()
+            .cloned()
+            .unwrap_or(CeremonyVersion::new(DEFAULT_VERSION)?),
+        Some(document.objective().clone()),
+        inputs,
+        document
             .outputs()
             .iter()
-            .map(|output| (output.as_str().to_owned(), json!({ "type": "object" })))
-            .collect(),
+            .cloned()
+            .map(CeremonyOutputDefinition::new),
         states,
         transitions,
         steps,
         guards,
         roles,
-        timeouts: TimeoutsDocument {
-            step_default: document
-                .step_timeout_seconds()
-                .unwrap_or(DEFAULT_STEP_TIMEOUT_SECONDS),
-        },
-        retry_policies: RetryPoliciesDocument {
-            default: RetryPolicyDocument {
-                max_attempts: document.max_attempts().unwrap_or(DEFAULT_MAX_ATTEMPTS),
-                backoff_seconds: document
-                    .backoff_seconds()
-                    .unwrap_or(DEFAULT_BACKOFF_SECONDS),
-            },
-        },
-    }
+    ))
 }
 
 fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, Value> {
@@ -627,63 +587,44 @@ mod tests {
     #[test]
     fn one_intent_becomes_one_linear_ceremony() {
         let designed = designed(&document());
-        let rendered: serde_yaml::Value =
-            serde_yaml::from_str(designed.definition_yaml()).expect("the draft is YAML");
-
-        assert_eq!(rendered["version"], serde_yaml::Value::from("1.0"));
-        assert_eq!(rendered["name"], serde_yaml::Value::from("art_review"));
+        let draft = designed.definition();
+        assert_eq!(draft.version().as_str(), "1.0");
+        assert_eq!(draft.name().as_str(), "art_review");
+        assert_eq!(draft.states().len(), 3);
+        assert!(draft.states()[0].is_initial());
+        assert_eq!(draft.states()[2].id().as_str(), "COMPLETED");
+        assert!(draft.states()[2].is_terminal());
+        assert_eq!(draft.transitions()[1].trigger().as_str(), "approve_outcome");
+        assert!(draft
+            .guards()
+            .iter()
+            .any(|guard| guard.name().as_str() == "human_approved_outcome"
+                && matches!(guard.condition(), GuardCondition::HumanApproval)));
+        assert!(draft.guards().iter().any(|guard| guard.name().as_str() == "compose_completed"
+            && matches!(guard.condition(), GuardCondition::StepStatus { step_id, status: StepStatus::Completed } if step_id.as_str() == "compose")));
         assert_eq!(
-            rendered["states"].as_sequence().map(Vec::len),
-            Some(3),
-            "one state per stage plus the terminal one"
+            draft.steps()[0]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(false))
         );
         assert_eq!(
-            rendered["states"][0]["initial"],
-            serde_yaml::Value::from(true)
+            draft.steps()[1]
+                .handler_config()
+                .attributes()
+                .get("see_prior"),
+            Some(&json!(true))
         );
         assert_eq!(
-            rendered["states"][2]["id"],
-            serde_yaml::Value::from("COMPLETED")
+            draft.steps()[1].handler_config().attributes().get("rounds"),
+            Some(&json!(1))
         );
         assert_eq!(
-            rendered["states"][2]["terminal"],
-            serde_yaml::Value::from(true)
+            draft.steps()[0].timeout().unwrap().duration().get(),
+            300_000
         );
-        // The last transition is the human gate: the approver pulls
-        // it, and it waits on the stage's completion and on them.
-        assert_eq!(
-            rendered["transitions"][1]["trigger"],
-            serde_yaml::Value::from("approve_outcome")
-        );
-        assert_eq!(
-            rendered["guards"]["human_approved_outcome"]["type"],
-            serde_yaml::Value::from("human")
-        );
-        assert_eq!(
-            rendered["guards"]["compose_completed"]["check"],
-            serde_yaml::Value::from("step_status:compose:COMPLETED")
-        );
-        assert_eq!(
-            rendered["steps"][0]["config"]["see_prior"],
-            serde_yaml::Value::from(false),
-            "the first stage has nothing to see"
-        );
-        assert_eq!(
-            rendered["steps"][1]["config"]["see_prior"],
-            serde_yaml::Value::from(true)
-        );
-        assert_eq!(
-            rendered["steps"][1]["config"]["rounds"],
-            serde_yaml::Value::from(1)
-        );
-        assert_eq!(
-            rendered["timeouts"]["step_default"],
-            serde_yaml::Value::from(300)
-        );
-        assert_eq!(
-            rendered["retry_policies"]["default"]["max_attempts"],
-            serde_yaml::Value::from(2)
-        );
+        assert_eq!(draft.steps()[0].retry_policy().max_attempts().get(), 2);
 
         assert_eq!(designed.topology(), "linear");
         assert_eq!(designed.stage_count(), 2);
@@ -726,10 +667,13 @@ mod tests {
             None,
         );
 
-        let yaml = designed(&document).definition_yaml().to_owned();
-
-        assert!(yaml.contains("max_iterations: 5"), "{yaml}");
-        assert!(yaml.contains("output_field: ready"), "{yaml}");
+        let designed = designed(&document);
+        let repeat = designed.definition().steps()[0].repeat_policy().unwrap();
+        assert_eq!(repeat.max_iterations().get(), 5);
+        assert!(
+            matches!(repeat.until(), RepeatUntilCondition::OutputFieldEquals { field, expected }
+            if field.as_str() == "ready" && expected == &json!(true))
+        );
     }
 
     /// One case per rule that no single field is guilty of breaking.
@@ -833,32 +777,16 @@ mod tests {
             None,
         );
 
-        let rendered: serde_yaml::Value =
-            serde_yaml::from_str(designed(&document).definition_yaml()).expect("the draft is YAML");
-
-        assert_eq!(rendered["version"], serde_yaml::Value::from("1.0"));
+        let designed = designed(&document);
+        let draft = designed.definition();
+        assert_eq!(draft.version().as_str(), "1.0");
+        let step = &draft.steps()[0];
+        assert_eq!(step.handler_kind().as_str(), "host_callback");
         assert_eq!(
-            rendered["steps"][0]["handler"],
-            serde_yaml::Value::from("host_callback")
+            step.handler_config().attributes().get("num_agents"),
+            Some(&json!(1))
         );
-        assert_eq!(
-            rendered["steps"][0]["config"]["num_agents"],
-            serde_yaml::Value::from(1)
-        );
-        assert_eq!(
-            rendered["timeouts"]["step_default"],
-            serde_yaml::Value::from(300)
-        );
-        assert_eq!(
-            rendered["retry_policies"]["default"]["backoff_seconds"],
-            serde_yaml::Value::from(1)
-        );
-        // No approval asked for, so the last transition is the stage's
-        // own completion and no human guard exists to wait on.
-        assert_eq!(
-            rendered["transitions"][0]["trigger"],
-            serde_yaml::Value::from("compose_completed")
-        );
-        assert!(rendered["guards"]["human_approved_outcome"].is_null());
+        assert_eq!(step.timeout().unwrap().duration().get(), 300_000);
+        assert_eq!(step.retry_policy().backoff().get(), 1_000);
     }
 }
