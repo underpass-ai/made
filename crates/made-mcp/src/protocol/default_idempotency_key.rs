@@ -31,6 +31,11 @@
 use uuid::Uuid;
 
 /// What every key this server mints starts with.
+///
+/// Gated on the two backends because a build with neither mints no
+/// keys — and `uuid` is not even in the graph of such a build, so the
+/// gate has to be the same one the function carries.
+#[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) const IDEMPOTENCY_KEY_PREFIX: &str = "made-mcp:";
 
 #[cfg(any(feature = "embedded", feature = "grpc"))]
