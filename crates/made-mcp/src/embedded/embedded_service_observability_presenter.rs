@@ -1,6 +1,6 @@
 use made_app::usecases::{ServiceMetrics, ServiceStatus};
 use made_core::entities::{MetricFamily, MetricSample, Statistics};
-use made_core::value_objects::MetricValue;
+use made_core::value_objects::{FiniteMetricValue, MetricValue};
 use serde_json::{json, Value};
 
 use crate::renderers::{MetricFamilyView, MetricSampleView, ServiceMetricsView, StatisticsView};
@@ -54,7 +54,7 @@ fn metric_sample_view(sample: &MetricSample) -> MetricSampleView {
         .map(|(name, value)| (name.as_str().to_owned(), value.as_str().to_owned()))
         .collect();
     let value = match sample.value() {
-        MetricValue::Finite(value) => MetricSampleView::finite_value(value),
+        MetricValue::Finite(value) => finite_metric_value(value),
         MetricValue::Nan => Value::String("NaN".to_owned()),
         MetricValue::PositiveInfinity => Value::String("+Inf".to_owned()),
         MetricValue::NegativeInfinity => Value::String("-Inf".to_owned()),
@@ -64,6 +64,23 @@ fn metric_sample_view(sample: &MetricSample) -> MetricSampleView {
         labels,
         value,
     }
+}
+
+/// Render a Prometheus double with the same JSON number shape after a
+/// protobuf round trip. Whole values in the exact integer range stay
+/// integers on both editions.
+fn finite_metric_value(value: FiniteMetricValue) -> Value {
+    const EXACT_WHOLE_LIMIT: f64 = 9_007_199_254_740_992.0;
+    let value = value.get();
+    if value.is_finite() && value.fract() == 0.0 && value.abs() <= EXACT_WHOLE_LIMIT {
+        #[allow(clippy::cast_possible_truncation)]
+        let whole = value as i64;
+        return Value::Number(whole.into());
+    }
+    Value::Number(
+        serde_json::Number::from_f64(value)
+            .expect("FiniteMetricValue always contains a JSON number"),
+    )
 }
 
 /// The five counters `Statistics` carries on the wire.
@@ -228,5 +245,16 @@ mod tests {
         assert_eq!(samples[3]["value"], json!("+Inf"));
         assert_eq!(samples[4]["value"], json!("-Inf"));
         assert!(samples.iter().all(|sample| !sample["value"].is_null()));
+    }
+    #[test]
+    fn whole_prometheus_values_use_the_transport_stable_json_shape() {
+        let MetricValue::Finite(whole) = MetricValue::from_f64(1.0) else {
+            unreachable!()
+        };
+        let MetricValue::Finite(fraction) = MetricValue::from_f64(1.25) else {
+            unreachable!()
+        };
+        assert_eq!(finite_metric_value(whole), json!(1));
+        assert_eq!(finite_metric_value(fraction), json!(1.25));
     }
 }
