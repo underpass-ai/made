@@ -2,11 +2,14 @@
 
 Status: Accepted (2026-09-17)
 
-Implementation: bounded state repetition is implemented by P2 (#128); output and
-exhausted-repeat guards are implemented by P3 (#116); transition budgets
-and cycle analysis by P4 (#131); role binding and atomic context writes
-by P5 (#130).
-Extends ADR-010; its step repeat contract remains unchanged except for an
+Implementation: bounded state repetition was implemented by P2 (#128); output
+and exhausted-repeat guards by P3 (#116); transition budgets and cycle
+analysis by P4 (#131,
+`8785ac5edfb5a8e574430a9d47714d2115ef6d71`); dynamic role binding and atomic
+context writes by P5 (#130); fragment infrastructure and the fixed sequential
+`roundtable_fixed_order` precursor by P6 (#114). Together with P1 (#122), these
+deliver all seven generic definition primitives accepted for Phase 3a.
+Extends ADR-010; its step-repeat contract remains unchanged except for an
 explicitly guarded exhaustion exit.
 
 ## Context
@@ -44,6 +47,12 @@ restart within each state iteration. Successful prior work remains in history
 and the transcript. Events and views carry the state coordinate additively;
 old records with no coordinate mean iteration 1.
 
+P2 implements this boundary as one sealed `StateIterationStarted` event in the
+same append as the completion that closes the prior iteration. Replay,
+snapshot-tail loading, SQLite reopen, history, transcripts and all four public
+surfaces preserve the coordinate. Presence-backed event payloads keep pre-P2
+event hashes and schema-version-1 records byte-for-byte compatible.
+
 ### Output and exhaustion guards
 
 `output_field:<step>:<field>=<json>` compares a declared step's latest successful
@@ -60,6 +69,11 @@ block live leases), human approval or open interventions.
 Ordinary transitions retain ADR-010's refusal on unmet repetition. Each new
 guard variant owns a source file and validated value, rather than expanding
 an untyped expression switch.
+
+P3 implements both typed guards on the active record set. Its exhaustion
+waiver is scoped to the named step and exact transition; it never waives a
+different repeat, the repeated-state all-work barrier, a live lease, human
+approval or an open intervention.
 
 ### Role binding and context writes
 
@@ -81,11 +95,18 @@ The event has the same journal, renderer, verification, report and parity
 coverage as every other ceremony event. Definitions omitting these fields
 preserve their existing shape and behavior.
 
+P5 (#130) implements these fields across YAML, direct gRPC, MCP over gRPC,
+embedded MCP and the Rust facade. Claim seals the resolved role before work
+starts. A successful completion validates the whole patch first, then seals
+`StepCompleted -> ContextWritten -> [StateIterationStarted]` in one optimistic
+append; replay is the only writer of aggregate context.
+
 ### Transition budgets and cycles
 
 Definitions may declare positive `max_transitions` and `max_bounces` limits.
 `max_transitions` caps the total transitions of one instance; `max_bounces`
-caps repetitions of a particular declared edge (source, trigger, target).
+caps applications of a particular declared edge (source, trigger, target),
+including the first application.
 Counters derive from transition events and survive reopening. A command that
 would exceed a cap is refused before append. Analysis rejects a cyclic graph
 without a declared cap and warns when a cyclic graph contains no human state.
@@ -103,23 +124,38 @@ it does not create a new durable state visit or rerun completed steps. Cyclic
 definitions that require fresh work on every visit therefore await the durable
 visit/reset contract tracked in [#129](https://github.com/underpass-ai/made/issues/129).
 
+P4 (#131) implements both typed caps from sealed transition history and
+rejects an unbounded strongly connected component. Refusal occurs before an
+append; replay, snapshots, imported history and process restart derive the
+same counts. A state-iteration boundary consumes no transition budget. The
+caps do not define state re-entry semantics: durable state visits remain
+tracked in #129 before cyclic D3/D4 patterns can be claimed.
+
 ### Fragments and scope
 
 Reusable YAML fragments live under `api/examples/ceremonies/fragments/` and
 are embedded from `made-app` with `include_str!`. The impact planner must route
-every such external source to the Rust jobs that compile it. P6 introduces
-`pattern:` in design input, catalog discovery and `roundtable_fixed_order`,
-a fixed sequential example that uses no new engine primitive. Encoding still
-belongs to an adapter; the embedded fragment is definition input data.
+every such external source to the Rust jobs that compile it. P6 (#114)
+implements the fragment catalog, checked-in source routing, typed `pattern:`
+input and `roundtable_fixed_order`. That preset is D1 v0: fixed, sequential
+speaking turns over existing primitives. It is not full D1, which still
+requires manager-selected speakers, dynamic role binding, state repeat and its
+complete E2E. Encoding remains an adapter concern; the embedded fragment is
+definition input data.
 
 ## Verification and consequences
 
-P2–P6 each include the four surfaces, design schemas, YAML and documentation.
-Tests must cover malformed input, missing output, refusal without appended
-events, bounds, replay/reopen and both MCP editions. P5 updates
-`EVERY_EVENT_TYPE`, pinned event contracts, shared renderers, the parity session
-and the report golden for `ContextWritten`.
+P2–P6 cover their fields on proto, MCP over gRPC, embedded MCP and the Rust
+facade, with design schemas and YAML where the capability is authored. Their
+focused code evidence covers malformed input, missing output, refusal without
+append, bounds, optimistic races, replay/reopen, legacy digests and sealed
+hashes, and both MCP editions. The exact composed candidate, repository gates
+and operator evidence are recorded by the Phase 3a closure PR #130.
 
-These primitives and concurrent states complete phase 3a. Drivers, aggregation,
-`broadcast_collect`, full D1–D5 patterns and composition remain for corte 4;
-accepting this ADR is not evidence that those patterns run end to end.
+Together with ADR-015, these changes complete Phase 3a's generic primitive
+foundation and claimable concurrency as of 2026-09-18. They do not complete
+Phase 3 as a whole. Automated concurrent drivers (B3–B6), aggregation,
+in-ceremony `broadcast_collect` (C1), complete D1–D5 pattern fragments/E2Es,
+local-edition councils (F5) and composition remain deferred to corte 4. #127
+still tracks completion fencing, and #129 must define durable state visits
+before cyclic D3/D4 patterns rely on re-entry.

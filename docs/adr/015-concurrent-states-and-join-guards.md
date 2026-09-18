@@ -2,13 +2,15 @@
 
 Status: Accepted (2026-09-17)
 
-Implementation: planned for phase 3a, P1. Concurrent drivers and aggregation
-remain outside this decision's implementation slice.
+Implementation: B1 and B2 were implemented by P1 in #122
+(`e0dc475b014aab6c629ded2756fbbc4d94e251f8`). Concurrent drivers,
+aggregation and fan-out observability remain outside this decision's
+implementation slice as B3–B6.
 
 ## Context
 
-A state currently exposes its next step in declaration order. Independent
-roles cannot claim different steps at the same time. Making a driver launch
+Before this change, a state exposed its next step in declaration order and
+independent roles could not claim different steps at the same time. Making a driver launch
 more tasks would bypass that aggregate rule and would give the editions
 different execution semantics.
 
@@ -17,9 +19,11 @@ different execution semantics.
 A state may declare `execution: concurrent`; omission means sequential and
 preserves existing definitions. Concurrency is between steps of one state.
 Each step retains its own lease, attempt, semantic iteration and sealed events.
-A concurrent state must assign distinct roles to its steps. Analysis reports
-an error for duplicate roles and for a concurrent state without an outgoing
-join guard. It warns when a concurrent state has more than three roles.
+Static steps in a concurrent state must have distinct role owners. Dynamic
+steps may have overlapping allow-lists; claims enforce distinct actual sealed
+roles within the active state iteration. Analysis rejects duplicate static
+owners and concurrent states without an outgoing join guard. It warns when
+a concurrent state can use more than three roles.
 
 The guards `any_step_completed` and `steps_completed: n` count successful
 steps in the current state iteration. The latter requires a positive `n` no
@@ -53,15 +57,19 @@ state retain sequential semantics.
 
 ## Verification
 
-P1 must prove two distinct claims and completions in either order, same-step
-lease exclusion, capacity exhaustion and expiry, conflict/retry, join counts,
-sequential compatibility and event replay. The parity session exercises the
-same claims and returned ids through both MCP backends, with direct proto
-and facade checks. Analysis tests cover every refusal and warning above.
+#122 proves two distinct claims and completions in either order, same-step
+lease exclusion, capacity exhaustion and expiry, optimistic conflict/retry,
+all/any/count joins, sequential compatibility and event replay. Its real store
+race admits only the capacity-bounded winners. The parity session drives the
+same claimable ids, claims, completions and readiness through both MCP
+backends, while direct proto and Rust-facade tests cover the remaining two
+surfaces. Definition analysis and YAML/design round trips cover the declared
+refusals, warnings, defaults and limits.
 
 ## Consequences
 
-The aggregate supports concurrent hosts before automated concurrent drivers
-ship. B3–B6 (drivers, aggregation and fan-out metrics), C1 and the full pattern
-scenarios remain work for corte 4. This ADR alone does not claim those paths
-run concurrently.
+The aggregate supports concurrent hosts and multiple live step leases before
+an automated concurrent driver ships. The one-shot driver remains sequential.
+B3–B6 (drivers, aggregation and fan-out metrics), C1 and the complete D1–D5
+pattern scenarios remain work for corte 4. This ADR does not claim those paths
+run concurrently end to end.
