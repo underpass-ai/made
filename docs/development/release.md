@@ -4,6 +4,13 @@ Release from reviewed, tested `main`. A release tag is immutable. The
 [release helper](../../scripts/release.sh) owns version synchronization and
 publication ordering; it does not replace the required checks.
 
+The 0.6.0 version bump prepares a candidate. Its source plugin manifests point
+at 0.6.0 assets, which cannot be downloaded before publication. Until both
+the public asset set and the stable marketplace are ready, test the candidate
+through a source build and an explicit `MADE_MCP_BIN`; see
+[local setup](../embedded/README.md#test-a-source-candidate). A merged bump
+does not authorize a tag push or advance the stable catalogue.
+
 ## Prepare
 
 Choose the new version, then run:

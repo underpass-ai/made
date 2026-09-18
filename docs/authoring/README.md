@@ -71,7 +71,7 @@ with `made_start_published_ceremony`:
 }
 ```
 
-The counted-join publication fix in this source tree makes this same YAML
+The counted-join publication fix in 0.6.0 makes this same YAML
 survive publication and SQLite reopen. Published v0.5.0 predates that fix:
 validation alone there does not prove the definition can be published.
 
@@ -140,7 +140,7 @@ exact equality. Reaching a repeat limit does not silently restart or satisfy the
 condition. A one-shot runner reports exhaustion; a definition can declare a
 specific `step_repeat_exhausted:<step>` exit without waiving other guards. Transition budgets bound graph
 cycles independently. See [runtime coordinates](../runtime/README.md) for
-the unreleased state-visit contract.
+the 0.6.0 state-visit contract.
 
 A state-level `repeat` reruns all of its steps under a new `state_iteration`
 once its work has finished and its condition is false. It is not a

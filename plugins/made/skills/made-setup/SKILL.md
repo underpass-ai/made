@@ -6,7 +6,23 @@ description: Install or update the release-matched MADE MCP binary after a Codex
 # Set up MADE
 
 Resolve the plugin root two directories above this skill directory
-(`skills/made-setup/../..`). Run its platform adapter:
+(`skills/made-setup/../..`) and read its manifest version.
+
+For an intentional source-candidate test with `MADE_MCP_BIN` already set,
+verify that the path is executable and its `--version` matches the manifest.
+Keep that absolute override in the host launch environment, report the
+candidate path/version and continue to the launcher and restart checks below.
+Do not invoke the release installer or claim a downloaded/checksummed release
+in this case. An absent or mismatched override needs correction before startup;
+do not silently select another executable.
+
+Without that explicit candidate override, use the release installer only
+after the manifest-matched assets are publicly available. In particular, a
+0.6.0 candidate manifest does not imply that its assets have been published.
+If publication is pending, explain that boundary and direct candidate testing
+to a source build plus `MADE_MCP_BIN`; do not substitute a 0.5.0 download.
+
+For a published release, run its platform adapter:
 
 ```bash
 <plugin-root>/scripts/made-install-binary.sh
@@ -36,7 +52,8 @@ the matching executable and SHA-256 file, verifies the digest and installs
 atomically into `bin/`. Use this path rather than substituting Cargo; setup
 must work without a Rust toolchain and keep the plugin and binary matched.
 
-Report the adapter receipt's installed version and path. After first install
+Report the adapter receipt's installed version and path, or the explicitly
+verified source-candidate identity when using `MADE_MCP_BIN`. After first install
 or an update, tell the user to start a new host task so skills and MCP reload.
 Do not claim that editing a catalogue or installing the binary has changed
 an already-running server. Discovery in the new task verifies the runtime.

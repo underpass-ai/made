@@ -6,22 +6,44 @@ For an in-process engine, see [Rust embedding](rust.md).
 
 ## Install a binary
 
+These instructions target **0.6.0**. The registry command and release downloads
+require that version to have been published. For a candidate whose assets do
+not exist yet, use the source route below; an installed 0.5.0 binary does not
+implement the new completion contract.
+
 ```bash
-cargo install made-mcp --locked
+cargo install made-mcp --version 0.6.0 --locked
 made-mcp --version
 ```
 
-Cargo's default features include the embedded and gRPC backends. An
-embedded-only source build uses:
+Cargo's default features include the embedded and gRPC backends. Alternatively
+choose the 0.6.0 executable and its SHA-256 file for your platform from a
+[published release](https://github.com/underpass-ai/made/releases).
+Check the digest before running it. The plugin's setup adapter automates this
+for Linux x86_64/arm64, macOS arm64 and Windows x86_64 once the assets are public.
+
+## Test a source candidate
+
+From the reviewed 0.6.0 checkout, build an embedded-only executable. In a
+POSIX shell:
 
 ```bash
 cargo build -p made-mcp --release --locked --no-default-features --features embedded
+MADE_CANDIDATE_TARGET="$(cargo metadata --no-deps --format-version 1 | python3 -c 'import json,sys; print(json.load(sys.stdin)["target_directory"])')"
+export MADE_MCP_BIN="${MADE_CANDIDATE_TARGET}/release/made-mcp"
+"$MADE_MCP_BIN" --version
 ```
 
-Alternatively choose the executable and its SHA-256 file for your platform
-from a [published release](https://github.com/underpass-ai/made/releases).
-Check the digest before running it. The plugin's setup adapter automates this
-for Linux x86_64/arm64, macOS arm64 and Windows x86_64.
+Use the reported Cargo target directory; it may be outside the checkout. On
+native Windows the executable ends in `made-mcp.exe`. The build should report
+0.6.0. Register this absolute executable path manually, or set `MADE_MCP_BIN`
+to it in the plugin's host launch environment before starting a new task.
+An export in an unrelated shell does not configure a running desktop host.
+See [local plugin testing](../plugins/README.md#test-a-local-candidate).
+
+Before the release assets exist, do not run the download installer for the
+0.6.0 manifest or silently fall back to a 0.5.0 binary. A source build is a
+candidate test, not evidence that 0.6.0 has been published.
 
 ## Register MCP
 

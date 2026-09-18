@@ -4,39 +4,12 @@ The plugin installs three workflows: setup, ceremony design and ceremony
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
-## Install from the repaired checkout today
+## Install the 0.6.0 release
 
-**The stable `marketplace` branch still points to v0.5.0, whose catalogue is
-named `underpass`. It does not yet offer `made@made`.** Both catalogues in the
-repaired source checkout are named `made`. To use that identity now, obtain
-a current checkout and register its absolute path. For example, on a shell
-with Git and Codex:
-
-```bash
-git clone https://github.com/underpass-ai/made.git
-codex plugin marketplace add "$PWD/made"
-codex plugin add made@made
-```
-
-If you already have a repaired checkout, use its path instead of cloning it
-again. Run `made-setup`, then start a new task. In Claude Code, register that
-same local checkout:
-
-```text
-/plugin marketplace add /absolute/path/to/made
-/plugin install made@made
-/made:setup
-```
-
-For a binary-only installation today, use the
-[manual MCP route](../embedded/README.md) and a checksummed published binary.
-Neither route requires registering the old `underpass` catalogue.
-
-## Stable route after publication
-
-The following commands become usable with `made@made` only after a subsequent
-release publishes the repaired catalogue and advances the co-located
-`marketplace` branch. They are not the current v0.5.0 installation route.
+**The stable route requires public 0.6.0 assets and `marketplace` advanced to
+that release.** The v0.5.0 snapshot uses `underpass` and cannot provide
+`made@made`. Before the new publication completes, use the candidate route
+below; bumping a manifest does not make its download exist.
 
 Codex:
 
@@ -53,18 +26,41 @@ Claude Code:
 /made:setup
 ```
 
-Run setup and start a new task after installation. Release tags remain
-immutable; moving v0.5.0 would not be a valid way to publish this repair.
+After publication, run `made-setup` in Codex (or `/made:setup` in Claude Code)
+and start a new task. The [manual MCP route](../embedded/README.md) is also
+available with a checksummed binary or the matching Cargo release. Moving
+v0.5.0 would not be a valid way to publish the catalogue repair.
 
-Source plugin metadata still pins the released binary version. Installing a
-checkout's plugin therefore does not install unreleased engine changes. For
-source testing, build that engine and set `MADE_MCP_BIN` to its absolute path.
-The runtime's version and capabilities, not the prose or manifest alone,
-determine which protocol it implements.
+## Test a local candidate
+
+Build the reviewed 0.6.0 checkout using the
+[source instructions](../embedded/README.md#test-a-source-candidate).
+Set `MADE_MCP_BIN` to that executable's absolute path in the host launch
+environment, then register the local Codex catalogue:
+
+```bash
+codex plugin marketplace add /absolute/path/to/made
+codex plugin add made@made
+```
+
+Do not run the release download installer while 0.6.0 assets are absent.
+With an explicit `MADE_MCP_BIN`, the setup skill verifies the chosen candidate
+instead. Start a new task and check that discovery reports the intended build.
+
+The Claude catalogue pins an immutable tag even when the catalogue itself is
+registered from a local path. That tag must exist before its plugin install
+can resolve. For Claude candidate testing before publication, use the
+[manual MCP registration](../embedded/README.md#register-mcp) with the built
+binary or the checkout's launcher and explicit `MADE_MCP_BIN`.
+
+The runtime's version and capabilities determine its contract. Neither the
+source manifest nor a PATH fallback proves that unreleased engine changes
+are installed. Preserve the same SQLite path across candidate testing and
+later release installation.
 
 ## Setup and verification
 
-Setup runs `scripts/made-install-binary.sh` on Linux/macOS or its PowerShell
+For a published release, setup runs `scripts/made-install-binary.sh` on Linux/macOS or its PowerShell
 counterpart on native Windows. It selects a supported target, downloads the
 manifest-matched executable and checksum, verifies SHA-256 and installs
 atomically in the plugin's ignored `bin/` directory. Cargo is not required.
@@ -120,4 +116,4 @@ A host's curated public plugin directory is a separate publication channel;
 registering this repository does not submit it there.
 
 For manual configuration, use [local MCP setup](../embedded/README.md).
-For engine changes after v0.5.0, use [migrations](../migrations/README.md).
+For the 0.5.x → 0.6.0 upgrade, use [migrations](../migrations/README.md).
