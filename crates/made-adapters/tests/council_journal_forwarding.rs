@@ -151,3 +151,54 @@ async fn lost_delivery_ack_reopens_and_concurrent_consumers_preserve_one_downstr
         "consumer deduplicates the stable original event ID"
     );
 }
+
+#[tokio::test]
+async fn embedded_callback_failure_keeps_original_event_recoverable() {
+    let journal = Arc::new(made_adapters::memory::InMemoryCouncilJournal::new());
+    let sink = Arc::new(DeduplicatingSink {
+        fail_after_effect: AtomicBool::new(true),
+        ..Default::default()
+    });
+    let messaging =
+        made_adapters::council_journal_messaging::CouncilJournalMessaging::new(journal.clone())
+            .with_immediate_transport(sink.clone());
+    let event = PhaseChangedEvent::new(
+        EventEnvelope::new(
+            EventId::new("embedded-callback").unwrap(),
+            datetime!(2026-09-19 00:00:00 UTC),
+            "fixture",
+            None,
+        )
+        .unwrap(),
+        TaskId::new("callback-task").unwrap(),
+        "proposing",
+        "reviewing",
+    )
+    .unwrap();
+    assert!(messaging.publish_phase_changed(&event).await.is_err());
+    let pending = journal
+        .read(None, CouncilJournalPageLimit::default())
+        .await
+        .unwrap();
+    assert_eq!(pending.len(), 1);
+    assert_eq!(
+        pending[0].event(),
+        &CouncilJournalEvent::PhaseChanged(event)
+    );
+    let consumer = CouncilJournalConsumer::new("embedded-recovery").unwrap();
+    let publisher = PublishCouncilEventsUseCase::new(
+        journal.clone(),
+        sink.clone(),
+        Arc::new(SystemClock::new()),
+    );
+    assert_eq!(
+        publisher
+            .execute(&consumer, CouncilJournalPageLimit::default())
+            .await
+            .unwrap()
+            .len(),
+        1
+    );
+    assert_eq!(sink.calls.load(Ordering::SeqCst), 2);
+    assert_eq!(sink.effects.lock().unwrap().len(), 1);
+}
