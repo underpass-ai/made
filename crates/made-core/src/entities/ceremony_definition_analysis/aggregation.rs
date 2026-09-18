@@ -114,6 +114,14 @@ fn requires_every_sibling(
         .iter()
         .filter_map(|name| parts.guards.get(name))
         .collect::<Vec<_>>();
+    if required.iter().any(|guard| {
+        matches!(
+            guard.condition(),
+            GuardCondition::StepsCompleted(count) if count.get() as usize == steps.len()
+        )
+    }) {
+        return true;
+    }
     steps.iter().all(|step| {
         required.iter().any(|guard| {
             matches!(

@@ -11,6 +11,7 @@ use made_core::value_objects::{MaxParallel, StepLease, StepResult};
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
+use super::{prepare_step_execution, PreparedStepExecution};
 use crate::services::{
     ceremony_transcript_projection, session_facts, ConflictPolicy, SessionStream,
 };
@@ -131,22 +132,32 @@ impl RunCeremonyStepUseCase {
         // that completed is in it, however it was driven.
         let transcript =
             ceremony_transcript_projection::transcript(&self.stream.records(instance.id()).await?);
-        let request = CeremonyStepHandlerRequest::new(
-            instance.id().clone(),
-            instance.definition_name().clone(),
-            instance.definition_version().clone(),
-            instance.current_state().clone(),
-            step.id().clone(),
-            step.handler_kind().clone(),
-            step.handler_config().clone(),
-            instance.context().clone(),
-            attempt,
-        )
-        .with_transcript(transcript)
-        .with_interventions(instance.interventions().to_vec())
-        .with_role(sealed_role.clone())
-        .with_bound_specialty(instance.bound_specialty(&sealed_role).cloned());
-        let result = self.execute_handler(request).await?;
+        let result =
+            match prepare_step_execution(&definition, &step, record.state_visit(), transcript) {
+                Ok(PreparedStepExecution::Handler { transcript }) => {
+                    let request = CeremonyStepHandlerRequest::new(
+                        instance.id().clone(),
+                        instance.definition_name().clone(),
+                        instance.definition_version().clone(),
+                        instance.current_state().clone(),
+                        step.id().clone(),
+                        step.handler_kind().clone(),
+                        step.handler_config().clone(),
+                        instance.context().clone(),
+                        attempt,
+                    )
+                    .with_transcript(transcript)
+                    .with_interventions(instance.interventions().to_vec())
+                    .with_role(sealed_role.clone())
+                    .with_bound_specialty(instance.bound_specialty(&sealed_role).cloned());
+                    self.execute_handler(request).await?
+                }
+                Ok(PreparedStepExecution::Deterministic { result }) => result,
+                Err(error) => {
+                    super::step_span::record_error(&error);
+                    StepResult::from_handler_error(&error)?
+                }
+            };
 
         // Loaded again rather than reusing what the claim left: the
         // handler may have taken a while, and the version that was

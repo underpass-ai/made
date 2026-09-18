@@ -197,6 +197,56 @@ mod tests {
         .with_state_visit(StateVisit::new(visit).unwrap())
     }
 
+    fn guards(sibling_ids: &[StepId]) -> Vec<CeremonyGuard> {
+        sibling_ids
+            .iter()
+            .map(|step_id| {
+                CeremonyGuard::new(
+                    GuardName::new(format!("{step_id}_done")).unwrap(),
+                    GuardCondition::StepStatus {
+                        step_id: step_id.clone(),
+                        status: StepStatus::Completed,
+                    },
+                )
+            })
+            .chain(std::iter::once(CeremonyGuard::new(
+                GuardName::new("aggregate_done").unwrap(),
+                GuardCondition::StepStatus {
+                    step_id: id("aggregate"),
+                    status: StepStatus::Completed,
+                },
+            )))
+            .collect()
+    }
+
+    fn roles(
+        sibling_ids: &[StepId],
+        review_trigger: &TransitionTrigger,
+        finish_trigger: &TransitionTrigger,
+    ) -> Vec<CeremonyRole> {
+        ["ALPHA", "BETA", "GAMMA"]
+            .into_iter()
+            .zip(sibling_ids)
+            .map(|(role, step_id)| {
+                let mut actions = vec![RoleAction::step(step_id.clone())];
+                if role == "ALPHA" {
+                    actions.push(RoleAction::transition(review_trigger.clone()));
+                }
+                CeremonyRole::new(RoleId::new(role).unwrap(), actions).unwrap()
+            })
+            .chain(std::iter::once(
+                CeremonyRole::new(
+                    RoleId::new("DECIDER").unwrap(),
+                    [
+                        RoleAction::step(id("aggregate")),
+                        RoleAction::transition(finish_trigger.clone()),
+                    ],
+                )
+                .unwrap(),
+            ))
+            .collect()
+    }
+
     fn definition(aggregation: CeremonyStepAggregation) -> CeremonyDefinition {
         let review = made_core::value_objects::StateId::new("review").unwrap();
         let decide = made_core::value_objects::StateId::new("decide").unwrap();
@@ -224,48 +274,10 @@ mod tests {
         )
         .with_aggregation(aggregation);
         let sibling_ids = [id("alpha"), id("beta"), id("gamma")];
-        let guards = sibling_ids
-            .iter()
-            .map(|step_id| {
-                CeremonyGuard::new(
-                    GuardName::new(format!("{step_id}_done")).unwrap(),
-                    GuardCondition::StepStatus {
-                        step_id: step_id.clone(),
-                        status: StepStatus::Completed,
-                    },
-                )
-            })
-            .chain(std::iter::once(CeremonyGuard::new(
-                GuardName::new("aggregate_done").unwrap(),
-                GuardCondition::StepStatus {
-                    step_id: id("aggregate"),
-                    status: StepStatus::Completed,
-                },
-            )))
-            .collect::<Vec<_>>();
         let review_trigger = TransitionTrigger::new("reviews_done").unwrap();
         let finish_trigger = TransitionTrigger::new("finish").unwrap();
-        let roles = ["ALPHA", "BETA", "GAMMA"]
-            .into_iter()
-            .zip(sibling_ids.iter())
-            .map(|(role, step_id)| {
-                let mut actions = vec![RoleAction::step(step_id.clone())];
-                if role == "ALPHA" {
-                    actions.push(RoleAction::transition(review_trigger.clone()));
-                }
-                CeremonyRole::new(RoleId::new(role).unwrap(), actions).unwrap()
-            })
-            .chain(std::iter::once(
-                CeremonyRole::new(
-                    RoleId::new("DECIDER").unwrap(),
-                    vec![
-                        RoleAction::step(id("aggregate")),
-                        RoleAction::transition(finish_trigger.clone()),
-                    ],
-                )
-                .unwrap(),
-            ))
-            .collect::<Vec<_>>();
+        let guards = guards(&sibling_ids);
+        let roles = roles(&sibling_ids, &review_trigger, &finish_trigger);
         CeremonyDefinition::new(
             CeremonyName::new("aggregate_review").unwrap(),
             CeremonyVersion::v1(),

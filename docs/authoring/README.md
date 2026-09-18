@@ -128,8 +128,11 @@ The first step in the sequential state after a concurrent state may declare an
 `aggregate` policy. That transition must wait for every sibling in the source
 state, and the aggregate step must set `see_prior: true`. These constraints
 make the input set complete and unambiguous before execution starts. Analysis
-rejects an early `any` or counted join, more than one predecessor, a later step
-in the destination state, or a reused state visit.
+accepts either one successful status guard per sibling or a state-scoped
+`steps_completed:n` whose count equals the source state's width. It rejects an
+early `any` or smaller counted join, more than one predecessor, a later step in
+the destination state, or a reused state visit. The global
+`all_steps_completed` guard is not treated as a source-scoped join.
 
 `synthesize` invokes the step's existing handler or council. Its brief receives
 one final output per sibling, in sibling declaration order:

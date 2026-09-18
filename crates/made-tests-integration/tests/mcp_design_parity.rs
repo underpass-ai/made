@@ -294,17 +294,20 @@ fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDoc
 
 #[test]
 fn aggregation_analysis_rejects_an_early_join() {
-    let designed = EmbeddedMade::default()
-        .design(&aggregation_document_with_join(
-            CeremonyDesignJoin::AnyStepCompleted,
-        ))
-        .unwrap();
-    assert!(designed.definition().analyze().errors().any(|finding| {
-        finding
-            .defect()
-            .to_string()
-            .contains("all-siblings predecessor join")
-    }));
+    for join in [
+        CeremonyDesignJoin::AnyStepCompleted,
+        CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
+    ] {
+        let designed = EmbeddedMade::default()
+            .design(&aggregation_document_with_join(join))
+            .unwrap();
+        assert!(designed.definition().analyze().errors().any(|finding| {
+            finding
+                .defect()
+                .to_string()
+                .contains("all-siblings predecessor join")
+        }));
+    }
 }
 
 fn dynamic_intent() -> Value {
