@@ -17,7 +17,7 @@ impl CeremonyConcurrencyMetrics {
         ).map_err(|failure| error(&failure))?;
         let failures = IntCounterVec::new(
             Opts::new(
-                "made_ceremony_sibling_failure_total",
+                "made_ceremony_step_failure_total",
                 "Classified step failures sealed in the ceremony stream.",
             ),
             &["ceremony", "step", "failure_kind"],

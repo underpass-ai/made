@@ -72,7 +72,7 @@ impl CeremonyFanoutProjection {
         }
         if let CeremonyEvent::StepFailed(failed) = event {
             if let Some(kind) = failed.result.failure_kind() {
-                metrics.record_ceremony_sibling_failure(
+                metrics.record_ceremony_classified_step_failure(
                     record.definition_name().as_str(),
                     failed.step_id.as_str(),
                     kind,

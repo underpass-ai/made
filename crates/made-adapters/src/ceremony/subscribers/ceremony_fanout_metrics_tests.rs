@@ -144,7 +144,7 @@ async fn out_of_order_and_duplicate_notifications_project_one_peak_and_typed_fai
         ),
         "{text}"
     );
-    assert!(text.contains("made_ceremony_sibling_failure_total{ceremony=\"review\",failure_kind=\"no_valid_proposal\",step=\"a\"} 1"), "{text}");
+    assert!(text.contains("made_ceremony_step_failure_total{ceremony=\"review\",failure_kind=\"no_valid_proposal\",step=\"a\"} 1"), "{text}");
 }
 
 #[tokio::test]
@@ -188,5 +188,43 @@ async fn expiry_and_state_repeat_do_not_inflate_peak() {
         ),
         "{text}"
     );
-    assert!(!text.contains("made_ceremony_sibling_failure_total{"));
+    assert!(!text.contains("made_ceremony_step_failure_total{"));
+}
+
+#[tokio::test]
+async fn classified_step_failure_also_counts_single_claim_work() {
+    let failed = CeremonyEvent::StepFailed(StepFailed {
+        step_id: StepId::new("a").unwrap(),
+        state_visit: Some(StateVisit::FIRST),
+        state_iteration: Some(StateIteration::FIRST),
+        iteration: StepIteration::FIRST,
+        attempt: StepAttempt::FIRST,
+        result: StepResult::from_handler_error(&DomainError::NoValidProposal {
+            contract_id: "review".to_owned(),
+        })
+        .unwrap(),
+        finished_by: RoleId::new("a").unwrap(),
+        finished_at: OffsetDateTime::UNIX_EPOCH + Duration::seconds(2),
+    });
+    let store = store(vec![
+        start(),
+        claim("a", 1, StateIteration::FIRST),
+        failed,
+        done(3),
+    ])
+    .await;
+    let records = store
+        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    let metrics = Arc::new(PrometheusMetricsRecorder::new().unwrap());
+    let subscriber = CeremonyFanoutMetricsSubscriber::new(store, metrics.clone());
+    subscriber.observe(&records).await;
+    subscriber.observe(&records).await;
+    let text = metrics.render().unwrap();
+    assert!(
+        text.contains("made_ceremony_claim_peak_width_sum{ceremony=\"review\",state=\"REVIEW\"} 1"),
+        "{text}"
+    );
+    assert!(text.contains("made_ceremony_step_failure_total{ceremony=\"review\",failure_kind=\"no_valid_proposal\",step=\"a\"} 1"), "{text}");
 }

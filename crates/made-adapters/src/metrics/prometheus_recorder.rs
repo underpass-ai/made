@@ -477,7 +477,7 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
         self.concurrency.observe_width(ceremony, state, width);
     }
 
-    fn record_ceremony_sibling_failure(
+    fn record_ceremony_classified_step_failure(
         &self,
         ceremony: &str,
         step: &str,

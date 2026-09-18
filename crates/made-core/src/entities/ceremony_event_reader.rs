@@ -135,6 +135,15 @@ fn validate_seals(
     event_type: AuditEventType,
     version: EventSchemaVersion,
 ) -> Result<(), DomainError> {
+    if let CeremonyEvent::StepCompleted(completed) = event {
+        if completed.result.failure_kind().is_some() {
+            return Err(unreadable(
+                event_type,
+                version,
+                "step completion cannot carry a failure kind",
+            ));
+        }
+    }
     if let CeremonyEvent::StepFailed(failed) = event {
         if failed.result.failure_kind().is_some()
             && failed.result.status() != crate::value_objects::StepStatus::Failed
@@ -218,6 +227,37 @@ mod tests {
                 completed_at: datetime!(2026-07-29 09:00:00 UTC),
             })
         );
+    }
+
+    #[test]
+    fn completed_event_rejects_injected_failure_classification_at_every_readable_version() {
+        let legacy: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/ceremony_events/v1/step_completed.json"
+        ))
+        .unwrap();
+        for version in [
+            EventSchemaVersion::V1,
+            EventSchemaVersion::V2,
+            EventSchemaVersion::V3,
+        ] {
+            let mut raw = legacy.clone();
+            if version != EventSchemaVersion::V1 {
+                raw["state_iteration"] = json!(1);
+            }
+            if version == EventSchemaVersion::V3 {
+                raw["state_visit"] = json!(1);
+            }
+            CeremonyEventReader::read(AuditEventType::StepCompleted, version, raw.clone())
+                .expect("unclassified completion remains readable");
+            raw["result"]["failure_kind"] = json!("no_valid_proposal");
+            assert!(matches!(
+                CeremonyEventReader::read(AuditEventType::StepCompleted, version, raw),
+                Err(DomainError::UnreadableCeremonyEvent {
+                    reason: "step completion cannot carry a failure kind",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

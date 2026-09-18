@@ -23,7 +23,7 @@ Sequential work normally has width 1. This measures claimed work, not provider
 calls or configured capacity. The existing provider in-flight gauge measures
 the calls separately.
 
-`made_ceremony_sibling_failure_total` counts typed failures by definition,
+`made_ceremony_step_failure_total` counts typed failures by definition,
 step and `failure_kind`. A handler's `NoValidProposal` is sealed as
 `no_valid_proposal`; a similar phrase in an unclassified error message is
 not counted. No new failure is inferred for historical events.

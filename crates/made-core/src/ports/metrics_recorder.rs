@@ -128,8 +128,8 @@ pub trait MetricsRecorderPort: Send + Sync {
     ) {
     }
 
-    /// A typed failure of a sibling; never inferred from an error message.
-    fn record_ceremony_sibling_failure(
+    /// A typed failure of a step; never inferred from an error message.
+    fn record_ceremony_classified_step_failure(
         &self,
         _ceremony: &str,
         _step: &str,
