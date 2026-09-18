@@ -1,5 +1,7 @@
 # MADE plugin
 
+![MADE — Your business. Your agents. Your architecture. — by Underpass](assets/made-cuatro-voces.png)
+
 The MADE bundle gives Codex and Claude Code setup, design and execution skills
 plus one local MCP server backed by SQLite. The host supplies the agents and
 tools; MADE coordinates their claims, results and human decisions.

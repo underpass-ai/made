@@ -9,6 +9,9 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Adopt the full-color Cuatro voces artwork and English slogan in the README,
+  documentation, plugin and skill cards, MCP identity, and Helm chart icon.
+
 - Project peak live ceremony claims per state visit/iteration and classified
   step failures from ordered sealed events in both editions. Preserve
   `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain
