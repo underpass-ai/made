@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add an explicit application opt-in for bounded parallel initial proposals,
+  sharing one call pool across simultaneous councils. Record experiment 003
+  with a controlled provider-capacity fixture; retain sequential defaults. (#161)
+
 - Add typed `synthesize` and deterministic strict-majority `vote` aggregation
   to the first step after an all-siblings concurrent join. YAML, design,
   protobuf, both MCP backends and the embedded facade share one schema;
