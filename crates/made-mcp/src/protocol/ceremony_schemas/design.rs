@@ -1,5 +1,8 @@
+mod child_spawn;
+
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
 use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
+use child_spawn::child_spawn_schema;
 
 const NONBLANK_CONTROL_FREE_PATTERN: &str = r"^[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
 const ROLE_FROM_PATTERN: &str = r"^context\.[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
@@ -216,36 +219,6 @@ fn aggregation_schema() -> Value {
             }
         ],
         "description": "Optional aggregation of every output from the immediately preceding concurrent state. The stage must be first in its sequential state and set see_prior to true. Vote fails on a missing field or when no value has a strict majority."
-    })
-}
-
-fn child_spawn_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["children", "max_children", "max_depth"],
-        "properties": {
-            "children": {
-                "type": "array",
-                "minItems": 1,
-                "items": {
-                    "type": "object",
-                    "additionalProperties": false,
-                    "required": ["ceremony", "version"],
-                    "properties": {
-                        "ceremony": string_schema("Published child ceremony name."),
-                        "version": string_schema("Published child ceremony version."),
-                        "inputs": {
-                            "type": "object",
-                            "additionalProperties": { "type": "string" },
-                            "description": "Child context key to sealed parent context key binding."
-                        }
-                    }
-                }
-            },
-            "max_children": { "type": "integer", "minimum": 1 },
-            "max_depth": { "type": "integer", "minimum": 1 }
-        }
     })
 }
 

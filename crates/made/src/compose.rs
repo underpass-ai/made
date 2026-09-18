@@ -9,16 +9,10 @@ use made_adapters::ceremony::{
 };
 use made_adapters::clock::SystemClock;
 use made_adapters::config::{EnvConfiguration, ServiceConfig};
-use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
-};
+use made_adapters::memory::{InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry};
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
-use made_adapters::postgres::{
-    PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
-    PostgresPool, PostgresStatistics,
-};
+use made_adapters::postgres::PostgresPool;
 use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
@@ -61,9 +55,22 @@ use crate::{Application, ComposeError};
 use messaging::{wire_messaging, MessagingWiring};
 
 use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
+use persistence::wire_persistence;
 
 mod ceremony_persistence;
 mod messaging;
+mod persistence;
+
+/// Persistent handles selected together so one deployment never splits
+/// its source of truth across storage backends.
+struct Persistence {
+    repository: Arc<dyn DeliberationRepositoryPort>,
+    council_registry: Arc<dyn CouncilRegistryPort>,
+    agent_registry: Arc<dyn AgentRegistryPort>,
+    agent_resolver: Arc<dyn AgentResolverPort>,
+    statistics: Arc<dyn StatisticsPort>,
+    pool: Option<PostgresPool>,
+}
 
 /// Pick the scoring policy and wire the optional LLM judge.
 ///
@@ -574,57 +581,6 @@ fn executor_backend_name() -> &'static str {
     match ExecutorBackendConfig::from_env() {
         Ok(ExecutorBackendConfig::Runtime(_)) => "runtime",
         _ => "noop",
-    }
-}
-
-/// Composite of the persistent handles the app needs. Kept as a
-/// single bag so the composition root wires them together — either
-/// all backed by Postgres, or all in-memory. Splitting the source of
-/// truth across replicas (half Postgres, half in-memory) is not a
-/// useful configuration today.
-struct Persistence {
-    repository: Arc<dyn DeliberationRepositoryPort>,
-    council_registry: Arc<dyn CouncilRegistryPort>,
-    agent_registry: Arc<dyn AgentRegistryPort>,
-    agent_resolver: Arc<dyn AgentResolverPort>,
-    statistics: Arc<dyn StatisticsPort>,
-    /// `Some` when Postgres-backed, so the readiness probe can check the
-    /// database; `None` for in-memory persistence.
-    pool: Option<PostgresPool>,
-}
-
-/// Pick persistent backings based on config. When `MADE_POSTGRES_URL`
-/// is set, every registry that has a Postgres adapter goes through
-/// it; migrations apply on startup so a fresh cluster is exercisable.
-/// Otherwise the in-memory defaults are wired.
-async fn wire_persistence(
-    cfg: &ServiceConfig,
-    agent_factory: Arc<dyn AgentFactoryPort>,
-) -> Result<Persistence, ComposeError> {
-    if let Some(url) = cfg.postgres_url.as_deref() {
-        let pool = PostgresPool::connect(&PostgresConfig::from_url(url)).await?;
-        pool.run_migrations().await?;
-        let agents = Arc::new(PostgresAgentRegistry::new(pool.clone(), agent_factory));
-        info!("postgres persistence wired (deliberations, councils, agents, statistics)");
-        Ok(Persistence {
-            repository: Arc::new(PostgresDeliberationRepository::new(pool.clone())),
-            council_registry: Arc::new(PostgresCouncilRegistry::new(pool.clone())),
-            agent_registry: agents.clone(),
-            agent_resolver: agents,
-            statistics: Arc::new(PostgresStatistics::new(pool.clone())),
-            pool: Some(pool),
-        })
-    } else {
-        info!("postgres disabled; using in-memory persistence");
-        let agents = Arc::new(InMemoryAgentRegistry::new());
-        Ok(Persistence {
-            repository: Arc::new(InMemoryDeliberationRepository::new()),
-            council_registry: Arc::new(InMemoryCouncilRegistry::new()),
-            agent_registry: agents.clone(),
-            agent_resolver: agents,
-            statistics: Arc::new(InMemoryStatistics::new()),
-            pool: None,
-        })
     }
 }
 
