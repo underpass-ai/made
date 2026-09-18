@@ -1,51 +1,22 @@
-## Summary
+## Problem and result
 
-Describe the change briefly.
+Describe the concrete trigger, the prior behavior and the resulting behavior.
 
-## Why This Belongs In MADE
+## Scope and contracts
 
-Explain why this is made-owned work and not integrating-product logic.
-Remember MADE is:
+Name affected public schemas, stored events, adapters or chart settings.
+Explain migration/compatibility when applicable. Keep consuming-product
+vocabulary and provider-specific behavior at their boundaries.
 
-- **use-case agnostic** (no SWE, clinical, supply-chain, … vocabulary)
-- **provider-agnostic** (no vLLM, Anthropic, OpenAI, … privileged)
-- **API-first** (proto + AsyncAPI are the contract)
+## Validation
 
-## Checks
+List checks actually run and their outcomes. Link reproducible evidence for
+behavioral, persistence, concurrency or performance claims. State any relevant
+checks not run and why. Distinguish real integrations from stubs and no-ops.
 
-- [ ] `cargo fmt --all -- --check`
-- [ ] `cargo clippy --workspace --all-targets --locked -- -D warnings`
-- [ ] `cargo test --workspace --locked`
-- [ ] `bash scripts/ci/contract-gate.sh`
-- [ ] `bash scripts/ci/quality-gate.sh`
-- [ ] Unit coverage ≥ 80 % (target band 80–90 %)
+## Review
 
-## Contract Impact
-
-- [ ] No public contract changes
-- [ ] gRPC (`underpass.made.v1`) contract changed
-- [ ] AsyncAPI (`specs/asyncapi/made.asyncapi.yaml`) changed
-- [ ] Helm chart public surface changed
-
-## Honesty & Evidence
-
-- [ ] No claim in this PR (code, docs, commit message) is unsubstantiated.
-- [ ] Every behavioural claim has a test; every performance claim has a
-      benchmark committed under `docs/experiments/`; every quality claim
-      has a CI gate.
-- [ ] If behaviour changed non-trivially, an entry under
-      `docs/experiments/NNN-…/` records hypothesis → method → results
-      → conclusion → threats to validity.
-- [ ] No marketing language ("blazingly", "industry-leading", "99.x %")
-      without a linked measurement in this repo.
-
-## Architecture Review
-
-- [ ] No god object introduced
-- [ ] No god file introduced
-- [ ] DDD and hexagonal boundaries preserved
-- [ ] No primitive obsession in domain APIs (newtypes / value objects)
-- [ ] SOLID respected (SRP, DIP, ISP in particular)
-- [ ] No integrating-product nouns added to the MADE boundary
-- [ ] No LLM-provider identity leaks into core
-- [ ] Docs updated where needed
+- [ ] Domain/application/adapter ownership remains clear.
+- [ ] Public contract, parity ledger and support claims agree.
+- [ ] Historical event compatibility is covered when storage changes.
+- [ ] Documentation, migration notes and changelog match the final change.

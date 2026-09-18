@@ -1,109 +1,82 @@
-# MADE — Structured work for your agents
+<h1 align="center">MADE — Structured work for your agents</h1>
+<p align="center"><img src="docs/assets/made-wordmark.svg" width="680" alt="MADE"></p>
+<p align="center"><strong>Multi-Agent Deliberation Engine · by Underpass</strong></p>
 
-**Multi-Agent Deliberation Engine, by Underpass.**
+MADE coordinates a shared procedure: who can act, which work is ready, what
+needs review and when a person must decide. Your host supplies the agents,
+tools and people. MADE validates their progress and records the accepted
+results in an auditable ceremony event stream.
 
-MADE gives your coding agent a shared procedure for work: roles, steps,
-review, human approval and a record of the result. The embedded edition runs
-locally inside your agent host, with ceremony state and session memory in
-SQLite. No MADE server, Docker or Kubernetes is required.
+The default path is local: a plugin, an MCP process and SQLite. No MADE
+account, deployed service, Docker or Kubernetes is needed. Rust applications
+can embed the same engine. A separate service distribution supports gRPC,
+provider-backed councils and Kubernetes.
 
-Your agents do the work. MADE keeps track of who can act, what must happen
-next and which results have been accepted.
+## Start locally
 
-## Start with the embedded edition
-
-Install the MCP server with Rust, or download a checksummed executable from
-[Releases](https://github.com/underpass-ai/made/releases):
+Install the current published binary with Cargo:
 
 ```bash
 cargo install made-mcp --locked
-```
-
-Choose where sessions should survive a restart:
-
-```bash
 mkdir -p "$HOME/.local/state/underpass-made"
 MADE_MCP_BACKEND=embedded \
 MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
   made-mcp
 ```
 
-Register that command and those environment variables in your MCP host.
-Codex and Claude Code can share the same local SQLite file. See the
-[MCP setup guide](docs/operations/mcp-stdio.md) for host configuration.
+`made-mcp` speaks MCP over stdio; register that command and environment in
+your host using the [local setup guide](docs/embedded/README.md). Checksummed
+[release binaries](https://github.com/underpass-ai/made/releases) avoid the
+Rust toolchain. To embed the engine in Rust, start with the
+[complete library example](docs/embedded/rust.md).
 
-The [MADE plugin](plugins/made/README.md) adds setup, ceremony-design and
-ceremony-running skills. Its setup downloads the release-matched executable
-and verifies its checksum, so plugin users do not need a Rust toolchain.
+The plugin adds installation, design and execution skills. Its catalogue
+lives in this repository on the `marketplace` branch:
 
-## Give the agent a procedure
+```bash
+codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin add made@made
+```
 
-For example:
+Then run `made-setup` and start a new task. Claude Code uses the same repository
+catalogue and `made@made`; see [plugin installation](docs/plugins/README.md).
+**Release boundary:** this checkout uses the new `made` catalogue identity.
+The published v0.5.0 snapshot still uses `underpass`; the new identity becomes
+available on the stable branch only after a later release publishes. The
+plugin guide explains how to inspect that boundary or test this checkout.
 
-> Design a ceremony to review this change. Have an author propose a solution,
-> a reviewer challenge it, and me approve the final result.
+## Give the host a procedure
 
-With the plugin installed, the agent can design and publish the ceremony,
-then guide its execution. MADE records claims and results; the host supplies
-the agents, tools or people that perform each step.
+> Design a change review: an author proposes a solution, a reviewer challenges
+> it, and I approve the final result.
 
-- **Define the work:** reusable YAML ceremonies with roles, steps and guards.
-- **Control progression:** retries, human approvals, bounded repetition and
-  concurrent steps with explicit joins and capacity limits.
-- **Pass results forward:** select allowed roles from context and copy declared
-  output fields into context atomically.
-- **Resume and inspect:** published definitions, sealed event history, session
-  memory and reports backed by the local store.
+Design produces a draft. Publish its reviewed definition, then start a
+session from that published name and version so it can resume after restart.
+For each delegated step, the host claims the work, performs it and submits
+its output. A claim alone performs nothing. The default no-op handler proves
+engine wiring, not that external work happened.
 
-Publish a definition before starting a session you want to resume after a
-restart. A completed protocol step only proves real external work when the
-host has connected that work to the step. The
-[execution guide](docs/operations/embedded-ceremony-execution.md) shows that
-claim → execute → complete loop.
+Ceremonies can declare sequential or concurrent work, role eligibility,
+human guards, retry policies, bounded repetition, transition budgets and
+context writes. Hosts schedule the workers; MADE does not automatically
+spawn agents or implement every multi-agent orchestration pattern.
 
-## Use it in your own application
+## Pick your path
 
-Rust hosts can embed the same engine through `made-embedded`, supplying async
-callbacks for agent, tool or human work. The host owns execution and its
-runtime; MADE owns the ceremony rules and event history.
+| Need | Start here |
+|:--|:--|
+| Use MADE through a coding agent | [Plugin](docs/plugins/README.md) · [Manual MCP setup](docs/embedded/README.md) |
+| Put the engine inside a Rust application | [Embedding](docs/embedded/rust.md) |
+| Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
+| Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
+| Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
+| Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
 
-See [Embedding MADE](docs/embedded-made.md) and the
-[ceremony authoring guide](docs/operations/ceremony-authoring-runbook.md).
+MADE is pre-1.0. These pages describe this source tree and explicitly mark
+hardening that is not in v0.5.0. Use the running server's `tools/list` and
+`made_discover_capabilities` to check the installed surface. See
+[migrations](docs/migrations/README.md), [release history](CHANGELOG.md) and
+[documentation home](docs/index.md).
 
-## Also deployable on Kubernetes
-
-MADE also ships as a service with a Helm chart. This edition adds the full
-gRPC API, provider-backed councils, an optional LLM judge, NATS messaging,
-Postgres for council data, and metrics and traces. Ceremonies and session
-memory use SQLite when a ceremony-store path is configured.
-
-Both editions use the same ceremony engine. Choose Kubernetes when you need
-a deployed service and are ready to operate it.
-
-[Deploy on Kubernetes](docs/operations/deploy-kubernetes.md) ·
-[Compare editions](docs/editions.md)
-
-## Project status
-
-MADE is pre-1.0. Version 0.5.0 includes the event-stream foundation and the
-primitives for claimable concurrency. Hosts still schedule concurrent work;
-automatic parallel drivers, aggregation and the complete orchestration
-patterns remain on the [roadmap](docs/orchestration-patterns-plan.md).
-
-MADE works independently of [KMP](https://github.com/underpass-ai/kmp) and
-[Underpass Runtime](https://github.com/underpass-ai/underpass-runtime).
-The embedded path needs neither service.
-
-## Documentation
-
-- [Documentation home](docs/index.md)
-- [Plugin installation](plugins/made/README.md)
-- [Ceremony examples](api/examples/ceremonies)
-- [Operations and observability](docs/operations/observability-runbook.md)
-- [Development](docs/dev-loop.md) · [Contributing](CONTRIBUTING.md)
-- [Changelog](CHANGELOG.md) · [Security](SECURITY.md)
-
-## License
-
-[Apache License 2.0](LICENSE). Copyright © 2026 Tirso García Ibáñez.
+[Apache-2.0](LICENSE). Copyright © 2026 Tirso García Ibáñez.
 Part of [Underpass AI](https://underpassai.com).

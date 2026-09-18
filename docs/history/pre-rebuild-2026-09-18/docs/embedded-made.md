@@ -1,0 +1,196 @@
+# MADE Embedded
+
+Status: implemented first slice. The embedded surface currently covers the
+ceremony engine, with process-local defaults and a durable SQLite
+composition. Native embedded facades for the broader council and deliberation
+APIs are not claimed yet.
+
+## One engine, two distributions
+
+MADE has two consumption modes. They share `made-core`,
+`made-app`, domain invariants and the workspace release version.
+
+| Distribution | Entry point | Owns | Does not require |
+|---|---|---|---|
+| Deployable | `made` binary | process config, gRPC/HTTP servers, optional NATS and Postgres wiring | an embedding host |
+| Embedded | `made-embedded` library | in-process facade and host adapters | sockets, gRPC, NATS, Postgres or environment configuration |
+
+The embedded crate is not a second ceremony engine and does not duplicate
+domain behavior. It calls the same application use cases used by the
+deployable composition.
+
+`EmbeddedMade::design_ceremony` returns a `DesignedCeremony` whose `definition()`
+is the domain draft. A Rust host can analyze that model directly. Encode it with
+`made_adapters::yaml::DesignedCeremonyYaml::render` when YAML is needed; the gRPC
+and embedded MCP paths use this same adapter. `made-app` does not depend on
+`serde_yaml` or return encoded YAML. The proto/MCP response retains
+`definition_yaml` and the design outline.
+
+```text
+                  made-core
+            domain + ports + invariants
+                       ^
+                       |
+                   made-app
+                  use cases
+                 /         \
+                /           \
+       made-embedded      made
+       host callbacks       gRPC/NATS/HTTP
+       injected ports       deployment config
+```
+
+Both distributions report the same Cargo workspace version. Ceremony
+definitions retain their own independent `CeremonyVersion`; release version
+and definition version solve different compatibility problems.
+
+## Architectural boundaries
+
+- The domain remains transport-, provider- and product-agnostic.
+- The embedded facade tells application use cases what to do; it does not
+  mutate aggregates or persistence state itself.
+- Every replaceable dependency is a `made-core` port.
+- Every concrete host integration is an adapter.
+- Domain aggregates continue to own state transitions and invariants.
+- One production class lives in one source file.
+- The host retains ownership of its async runtime and the lifecycle of injected
+  resources.
+
+## Default embedded adapters
+
+`EmbeddedMade::default()` deliberately chooses a safe local profile:
+
+| Port | Default adapter |
+|---|---|
+| ceremony definitions | `InMemoryCeremonyDefinitionRepository` |
+| ceremony event stream and snapshots | `InMemoryCeremonyEventStore` |
+| session memory | `ForgetfulMemory` |
+| step execution | `NoopCeremonyStepHandler` |
+| clock | `SystemClock` |
+| metrics | `PrometheusMetricsRecorder` with its own in-process registry |
+
+The metrics default is a real registry rather than a sink that forgets: it is
+local to the engine, has no exporter and no endpoint, and nothing renders it
+over a socket. `EmbeddedMade::status` names which recorder is running, so a
+host can tell whether its own `with_metrics` injection took.
+
+These defaults start no service and perform no remote IO. They are suitable for
+single-process workflows, tests and hosts that begin with ephemeral state.
+They are not a durability claim: a host that must resume after process loss
+injects persistent implementations of the same repositories and the ceremony
+store.
+
+## Durable SQLite composition
+
+`EmbeddedMade::open(path)` supplies a
+`SqliteCeremonyStore` to the ceremony-store, definition-publication and memory
+ports through `with_ceremony_store_and_memory`. One opened SQLite engine and
+connection pool therefore owns ceremony state and `SqliteSessionMemory`; there
+is no second file or independently configured memory connection.
+That composition persists the ceremony event streams, their global order, the
+folded snapshots, published definitions and session memory across process
+restarts. Its
+crash/reopen behavior is exercised by
+`crates/made-embedded/tests/sqlite_store_api.rs`.
+
+The constructor does not silently make every port durable. Mounted definition
+repositories still use their default in-memory
+adapters unless the host injects replacements. Step execution and evidence
+collection also keep their default no-op adapters unless the host supplies real
+implementations. SQLite persistence therefore proves durable ceremony state; it
+does not prove that external work occurred.
+
+One consequence deserves emphasis: an instance started from a mounted
+(unpublished) definition persists its state but cannot rehydrate after the
+store reopens — loading it fails with `not found: ceremony_definition`. A host
+that must resume instances across restarts publishes the definition first and
+starts instances from the published identity.
+
+## Host callback adapter
+
+`CallbackCeremonyStepHandler` turns an async Rust callback into a
+`CeremonyStepHandlerPort`. It is the smallest useful boundary for a host that
+wants its own agent runtime, tool system or human interaction to execute a
+ceremony step.
+
+```rust,no_run
+use made_core::value_objects::{StepOutput, StepResult};
+use made_embedded::EmbeddedMade;
+
+let MADE = EmbeddedMade::builder()
+    .with_step_handler_callback(|request| async move {
+        let _kind = request.handler_kind();
+        // Delegate to the host's own agent/tool/human subsystem here.
+        StepResult::completed(StepOutput::empty())
+    })
+    .build();
+```
+
+For richer integrations the builder accepts `Arc<dyn ...Port>` for:
+
+- definition repository;
+- instance repository;
+- step handler;
+- clock;
+- metrics recorder;
+- event subscriber — a projection of the host's own, told the sealed records of
+  every append that landed.
+
+`with_ceremony_store_and_memory(adapter)` is the typed durable entry point. The
+adapter must implement `CeremonyEventStorePort`, `CeremonySnapshotStorePort`,
+`MemoryWriterPort` and `MemoryReaderPort`, so a Rust host cannot accidentally
+write session memory to one store and recall it from another. The narrower
+`with_ceremony_store` and `with_memory` methods remain for custom compositions.
+Calling `EmbeddedMadeBuilder::new().build()` remains side-effect-free and uses
+`ForgetfulMemory`; only `EmbeddedMade::open(path)` chooses SQLite defaults.
+
+The host keeps the concrete adapter handle when it needs adapter-specific
+administration. The embedded facade does not expose a service locator.
+
+## Ceremony API
+
+The first slice exposes commands and queries required for both one-shot and
+human-active execution:
+
+- mount one or more typed definitions, or one YAML definition;
+- run a ceremony to completion;
+- start a ceremony without advancing it;
+- start, run or complete an individual step;
+- approve a human guard;
+- apply an authorized transition;
+- retrieve definitions, an instance and its transcript;
+- read what a session left behind: `audit_records(id)` for the whole sealed
+  stream — which is what a caller verifying the chain wants, since a chain is
+  verified from its first record — and `audit_records_from(id, from, limit)`
+  for one page of it, answering with where the reader now stands;
+- render the Markdown report over one or more sessions with `report(input)`.
+
+Mounting and queries pass through `made-app` use cases. Execution passes
+through the existing ceremony use cases; the embedded crate contains no second
+state machine. The report is no exception: it is
+`GenerateCeremonyReportUseCase`, a projection of persisted state (ADR-006) that
+the deployable edition renders through as well, so the same sessions in the
+same state report the same bytes on either edition.
+
+## Dependency boundary
+
+`made-embedded` depends on `made-adapters` with default features disabled.
+The adapter crate now gates the outbound Runtime gRPC client behind
+`runtime-grpc`, separately from the inbound `grpc`, `nats` and `postgres`
+features. The embedded dependency tree contains none of `tonic`, `async-nats`
+or `sqlx`.
+
+The deployable binary enables `grpc`, `nats`, `postgres` and `runtime-grpc`
+explicitly, preserving its existing deployment capabilities.
+
+## Current limits
+
+- The embedded facade currently covers ceremonies, not every public gRPC RPC.
+- `EmbeddedMade::default()` is process-local and ephemeral.
+  `EmbeddedMade::open(path)` persists the ceremony store, definition
+  publications and session memory, but mounted definitions remain a
+  host-configured boundary.
+- Callbacks execute on the caller's async runtime; MADE does not create
+  or hide a runtime.
+- Packaging to crates.io and a stable compatibility commitment wait for the
+  repository's first public release.

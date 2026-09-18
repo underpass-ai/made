@@ -1,7 +1,9 @@
 ---
-description: Install or update MADE's release-matched local MCP binary
+description: Install or update the release-matched MADE MCP executable
 argument-hint: "[no arguments]"
 ---
 
-Use the `made-setup` skill. It owns platform selection, checksum verification,
-the plugin-local binary install, and the final receipt.
+Run the `made-setup` skill from this plugin. Its installer chooses the
+platform, verifies the release checksum and installs in the plugin-local
+`bin/` directory. Report its receipt, then request a new task to load the
+updated server. Preserve the existing ceremony store.

@@ -1,0 +1,332 @@
+# Editions: embedded and cluster
+
+MADE ships as **two editions**. This page is the canonical answer to "which one
+do I run, what does it actually give me, and what does it not prove".
+
+Both editions share `made-core`, `made-app`, the domain invariants and the
+workspace release version. The embedded crate is not a second ceremony engine
+and does not duplicate domain behaviour: it calls the same application use cases
+the deployable composition calls.
+
+```text
+                  made-core
+            domain + ports + invariants
+                       ^
+                       |
+                   made-app
+                  use cases
+                 /         \
+       made-embedded      made
+       host callbacks     gRPC / NATS / HTTP
+       injected ports     deployment config
+```
+
+Ceremony definitions keep their own independent `CeremonyVersion`. Release
+version and definition version solve different compatibility problems.
+
+## The short version
+
+| | **Embedded edition** | **Cluster edition** |
+|:--|:--|:--|
+| Who it is for | one developer running a working session | a team whose deliberations must outlive a process |
+| Entry point | `made-mcp` (stdio MCP) or the `made-embedded` library | the `made` binary |
+| Surface today ([table](operations/support-matrix.md#editions)) | the **ceremony engine**: every capability group but the council surface | the full `underpass.made.v1` gRPC contract: every capability group |
+| Persistence | one local SQLite file for ceremony state and session memory | SQLite for ceremonies and session memory when a ceremony-store path is configured; Postgres or memory for other aggregates |
+| Messaging | durable pull cursors and optional event + registry-snapshot JSONL sink | optional NATS publication and the same durable pull cursors |
+| Agents | whatever the host injects | provider-backed, feature-gated at build, credentialed at boot |
+| Judge | host's choice | opt-in `MADE_JUDGE_ENABLED`, fail-fast on misconfiguration |
+| Observability | an in-process Prometheus registry returned by `made_get_metrics`; optional OTLP traces in `made-mcp`; optional event + metric-snapshot JSONL sink; no scrape endpoint | the same registry through `made_get_metrics` and Prometheus at `/metrics`; OTLP traces |
+| Requires | nothing | a cluster, or at least a running binary |
+| Select with | `MADE_MCP_BACKEND=embedded` | `MADE_MCP_GRPC_ENDPOINT=…` (backend defaults to `grpc`) |
+
+There is also a **fixture backend** (`MADE_MCP_BACKEND=fixture`) that returns
+deterministic canned responses. It is for wiring an MCP client and validating
+tool choice; it is not an edition and must be selected explicitly.
+
+Phase 2 established this matrix through the SQLite memory composition (#102),
+cursor/pull/NATS/JSONL delivery (#108), stream-derived telemetry and bounded
+reports (#110), and the shared metrics registry plus embedded exporters
+(verified #119 integration). The final filled-optional and enum parity cases
+are supplied by #120 on both memory and SQLite.
+
+## Embedded edition
+
+Status: phase 2 implementation complete on the verified integration tree. The
+embedded surface covers the **ceremony
+engine**: every capability group the MCP server offers except the council
+surface — deliberation, and council, agent and contract configuration — which
+is cluster-only until B3.
+
+Which group each of the four surfaces serves, the reason for every gap and the
+gate that proves every cell is one table: the [Editions section of the support
+matrix](operations/support-matrix.md#editions). A test derives it from
+[`architecture/parity.tsv`](./architecture/parity.tsv) and the capability
+groups and fails on any cell the two disagree about, so this page points at it
+instead of restating it.
+
+### Install and run
+
+```bash
+cargo install made-mcp
+```
+
+The embedded backend **requires** `MADE_MCP_STORE_PATH`. This is deliberate:
+where ceremony state survives a restart is an operator decision, never a
+default this crate invents. Starting without it fails fast with
+`MADE_MCP_STORE_PATH is required when MADE_MCP_BACKEND=embedded`.
+
+```bash
+mkdir -p "${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made"
+MADE_MCP_BACKEND=embedded \
+MADE_MCP_STORE_PATH="${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3" \
+  made-mcp
+```
+
+Host wiring for Claude Code and Codex CLI is in the
+[MCP setup guide](operations/mcp-stdio.md). The
+[MADE plugin](../plugins/made/README.md) picks the state path for you and ships
+the ceremony skills. Its `made-setup` skill downloads and verifies the
+release-matched `bin/made-mcp` after a repository-marketplace install, so a
+Rust toolchain is not required.
+
+### Embedding it in your own Rust host
+
+`CallbackCeremonyStepHandler` turns an async Rust callback into a
+`CeremonyStepHandlerPort`. It is the smallest useful boundary for a host that
+owns its own agent runtime, tool system, or human interaction.
+
+```rust,no_run
+let made = EmbeddedMade::builder()
+    .with_step_handler_callback(|request| async move {
+        let _kind = request.handler_kind();
+        // Delegate to the host's own agent / tool / human subsystem here.
+        StepResult::completed(StepOutput::empty())
+    })
+    .build();
+```
+
+The builder also accepts `Arc<dyn …Port>` for the definition repository,
+instance repository, step handler, clock, observability, statistics and an
+event subscriber. A host that wires no observability adapter gets an
+**in-process Prometheus registry** rather than a sink that forgets: explicit,
+local to the process, no scrape endpoint. Hosts supplying their own recorder
+use `with_observability` so recording and `made_get_metrics` read the same
+`Arc`. `EmbeddedMade::status` says which recorder is running, so "the host
+chose one" and "nothing is recording" are distinguishable from outside. The
+host keeps ownership of its async runtime and the lifecycle of everything it
+injects. Details: [embedded-made.md](embedded-made.md).
+
+### What it guarantees
+
+- **The real engine.** Same use cases, same domain invariants, same FSM as the
+  deployable binary.
+- **Durable ceremony state** in SQLite: the sealed event streams, their global
+  order, the folded snapshots and published definitions survive process
+  restarts. Crash/reopen behaviour is exercised by
+  `crates/made-embedded/tests/sqlite_store_api.rs`.
+- **Durable session memory** in the same SQLite engine: a later MCP process
+  opening the same file recalls decisions recorded by an earlier process.
+  `crates/made-mcp/tests/embedded_sqlite_stdio.rs` drives that restart through
+  the shipped `made-mcp` binary.
+- **Durable event delivery** through named pull cursors. When a JSONL sink is
+  configured, the event line and current registry snapshot are written under
+  one lock and flush; a write failure leaves the cursor unacknowledged for
+  at-least-once retry. Automatic publication retries the pending record in the
+  same awaited notification; startup recovery drains finite bounded pages, so
+  neither path needs a later append to wake it. Each notification drains at
+  most one page rather than following an unbounded live backlog. The registry
+  snapshot describes the process at delivery time; it is not an exact
+  historical prefix of the event stream.
+
+### What it explicitly does not prove
+
+These three are the reason this repo ships a
+[capability-verification runbook](operations/capability-verification.md).
+
+1. **Durable is not authorized.** `EmbeddedMade::open(path)` makes the
+   ceremony store and session memory durable. It does **not** silently make
+   every port durable:
+   mounted definition repositories keep their in-memory defaults, and step
+   execution and evidence collection keep their no-op
+   defaults, unless the host injects real implementations. A terminal step from
+   a `NoopCeremonyStepHandler` proves ceremony protocol and state-machine
+   behaviour — not that an agent, tool, API, or human performed the requested
+   work.
+2. **Only published definitions rehydrate.** An instance started from a mounted
+   (unpublished) definition persists its state but cannot be loaded after the
+   store reopens — it fails with `not found: ceremony_definition`. The listing
+   reports those as `"rehydratable": false`, on either backend. Publish the definition first if you
+   need to resume across restarts.
+3. **Discovery is not configuration.** `made_discover_capabilities` returns a
+   backend-filtered catalog that is authoritative for the *installed executable
+   surface*. It does not prove a real step handler, durable store, credentials,
+   or external authority are wired.
+
+"MADE supports X" is an incomplete sentence until you name the edition, the
+backend, the tools the running executable exposes, who performs the external
+work, and what survives a restart.
+
+## Cluster edition
+
+The `made` binary reads `MADE_*` configuration from the environment and serves
+the full `underpass.made.v1` contract. Every RPC is backed by a use case; none
+returns `UNIMPLEMENTED`.
+
+When `MADE_CEREMONY_STORE_PATH` is set, ceremony state and session memory use
+the same SQLite engine by default. `MADE_MEMORY=none` deliberately disables
+memory while leaving ceremony state durable. `MADE_MEMORY=sqlite` makes the
+choice explicit and is a startup error without `MADE_CEREMONY_STORE_PATH`; the
+server never falls back to process memory after an operator requested SQLite.
+With no path and no explicit selection, ceremony state is in process and the
+server uses `ForgetfulMemory`, logging both facts.
+
+### Run it locally first
+
+```sh
+MADE_NATS_ENABLED=false MADE_SEED_SPECIALTIES=triage just run
+```
+
+In-memory persistence, noop messaging, the default noop executor, gRPC on
+`localhost:50055`, and one exercisable council per seeded specialty.
+
+### Deploy it
+
+Helm chart under `charts/made/`, with checked-in profiles: minimal (noop,
+in-memory), embedded NATS, Postgres-secret, and a runtime profile wiring mTLS
+to the execution plane, a vLLM endpoint, and the judge at a 0.5 threshold.
+Guide: [operations/deploy-kubernetes.md](operations/deploy-kubernetes.md).
+
+The hardening is enforced by a chart-render CI gate (`scripts/ci/helm-lint.sh`)
+that refuses a manifest which drops any of it:
+
+- pinned images only — a `latest` tag is refused unless
+  `development.allowMutableImageTags` is set;
+- non-root pod and container security contexts, read-only root filesystem,
+  `ALL` capabilities dropped, `seccompProfile: RuntimeDefault`;
+- `automountServiceAccountToken: false` — the binary never calls the Kubernetes
+  API;
+- opt-in NetworkPolicy restricting inbound to declared ports and outbound to
+  DNS, NATS, Postgres and OTLP;
+- `MADE_POSTGRES_URL` sourced via `valueFrom.secretKeyRef`;
+- optional PodDisruptionBudget.
+
+### What it guarantees
+
+- **Persistence is all-or-nothing.** With `MADE_POSTGRES_URL` set,
+  deliberations, councils, the agent registry and operational statistics all
+  persist; otherwise all of them are in-memory. No replica ever reads from a
+  split source of truth. Migrations apply on startup.
+- **Concurrent replicas accumulate correctly.** Statistics counters use
+  `INSERT … ON CONFLICT DO UPDATE … x = x + 1`, verified by a 50-concurrent-record
+  integration test.
+- **No pickled provider state crosses the database boundary.** Agents persist as
+  descriptors; live handles are rehydrated through the wired factory on resolve.
+- **Provider wiring fails loud.** The dispatching factory materializes `noop`
+  unconditionally plus any provider whose Cargo feature is compiled in *and*
+  whose credentials are present at boot. An unsupported kind is an error, never
+  a silent no-op. Startup logs `agent_kinds=`.
+- **The judge cannot degrade silently.** Enabled without an endpoint, model or
+  threshold, composition fails rather than falling back at runtime.
+
+### Current limits, stated plainly
+
+- `StreamDeliberation` emits phase transitions and a final `DeliberationResult`
+  frame — **not** per-proposal, per-critique or per-revision events. That
+  arrives in a later slice.
+- Provider-backed `RegisterAgent` kinds require the matching Cargo feature and
+  boot-time credentials; `noop` is always available.
+- Observability is what the registry holds and nothing else: the families the
+  code records, what is planned with the slice that lands it, and what was
+  dropped are the three lists in
+  [`made-observability-design.md`](./made-observability-design.md) §2 and §7.
+
+## Moving between them
+
+Switching which engine the MCP adapter talks to is configuration:
+
+```sh
+MADE_MCP_GRPC_ENDPOINT=http://127.0.0.1:50055 made-mcp
+```
+
+Two caveats that make this less symmetric than the KMP equivalent:
+
+- **Every ceremony capability is served by both editions**, and what the
+  gates below prove about them is: the same request shapes, the same answers
+  for the same state, and one error envelope. They did differ, and each gap
+  closed in its own slice. The delegated-host protocol — claim the step,
+  run it with your own agents and tools, report what happened — is served by
+  both editions: `ClaimCeremonyStep` and `CompleteCeremonyStep` back
+  `made_claim_ceremony_step` and `made_complete_ceremony_step`, so a host that
+  owns its step execution can point at a cluster without changing a call.
+  Designing one is served by both too: `DesignCeremony` backs
+  `made_design_ceremony`, and the designer itself is a use case both editions
+  call, so the same intent renders the same document whichever engine
+  answered. So is everything a finished session leaves behind:
+  `ReadCeremonyEvents`, `VerifyCeremonyJournal` and `GetCeremonyTranscript`
+  back `made_read_ceremony_events`, `made_pull_ceremony_events`, `made_verify_ceremony_journal` and
+  `made_get_ceremony_transcript`, and
+  `GenerateCeremonyReport` backs `made_generate_ceremony_report` — the report
+  is a `made-app` projection now (ADR-006), so the same sessions in the same
+  state render one document whichever engine served the call, down to the
+  heading, and the document the parity session renders is committed and
+  compared. A read of the
+  stream hands out the **sealed records**, digests and hash chain included, so
+  a client verifies the chain on what it received rather than trusting the
+  server that sent it. The one gap left is the council surface, cluster-only
+  until B3. `tools/list` on the running executable is the authority, and
+  `made_discover_capabilities` filters the catalog by backend for exactly this
+  reason. Which gaps exist is not prose:
+  [`architecture/parity.tsv`](./architecture/parity.tsv) is the checked list,
+  one row per capability with the reason for its gap, and **three** gates read
+  it. The first compares the file with the four surfaces in both directions
+  and fails when either side names something the other does not; it needs no
+  server and runs in milliseconds. The second drives one working session
+  through **every shared tool** on both MCP backends — the same step handler,
+  the same evidence source and the same frozen clock on each — and compares
+  the two answers field for field, so a tool that answers differently
+  depending on which engine served it fails by name. It compares the
+  **argument shapes** too, through the schema gate both arms run before any
+  engine: a table of calls that must be refused identically and a table that
+  must be accepted, compared whole. And it runs twice, the second time with
+  the in-process arm over WAL-mode SQLite — the store the local edition ships
+  with — so what the gate compares is the edition somebody runs and not an
+  in-memory stand-in for it. A shared tool that session never calls fails it
+  too. The third reads the file as the support
+  claim it is: the [Editions section of the support
+  matrix](operations/support-matrix.md#editions) says, per capability group
+  and per surface, supported or not supported with the reason, and a test
+  derives that table from this file and the capability groups and compares it
+  cell by cell — a table that promises what the file denies fails by name, and
+  so does a group the table forgets.
+- **One thing a caller writes is read at ingress rather than carried
+  verbatim: a number in an open payload.** The contract carries `context`,
+  `output`, `details` and the other open objects as `google.protobuf.Struct`,
+  whose numbers are doubles, so `1` and `1.0` are the same bytes on the wire
+  and cannot be told apart again. Both editions therefore settle it before
+  the engine: a whole-valued number is read whole, and a number outside ±2^53
+  is refused as `invalid_request`. Two clients that write the same session
+  seal the same records whichever edition they used; a client that wanted
+  `1.0` back as `1.0` does not get it from either. Carrying the exact bytes
+  is a contract change and is not in this phase.
+  [`architecture/struct-numbers.tsv`](./architecture/struct-numbers.tsv) is
+  the table both implementations are pinned against.
+- **Shared list bounds remain catalogued debt.** Ceremony ids,
+  `reconsider_when` and target role ids are bounded at the MCP schema boundary
+  but do not yet share domain value objects across all four surfaces; issue
+  #100 owns that follow-up. Whole and paged history, the typed page limit and
+  bounded one-cut reports are already implemented in #108 and #110.
+- **Ceremony state does not migrate itself.** A local SQLite store is not a
+  Postgres deployment. Republish the definitions you need and start fresh
+  instances; treat it as a migration, not a config flip.
+
+## Choosing
+
+**Start embedded when** you want to run a structured working session in the
+terminal you already work in, the participants are the agents your host already
+has, and nothing about the outcome has to be defensible to someone who was not
+there.
+
+**Move to the cluster when** deliberations must survive process loss and scale
+across replicas, when agents must be provider-backed and centrally
+credentialed, when the judge must run, or when a past decision has to be
+replayable by trace ID months later.
