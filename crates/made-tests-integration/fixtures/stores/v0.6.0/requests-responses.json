@@ -1,0 +1,1888 @@
+[
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 1,
+      "method": "tools/call",
+      "params": {
+        "name": "made_publish_ceremony_definition",
+        "arguments": {
+          "definition_yaml": "version: \"1.0\"\nname: upgrade_v060\nstates:\n  - {id: WORKING, initial: true}\n  - {id: CLOSED, terminal: true}\ntransitions:\n  - {from: WORKING, to: CLOSED, trigger: finish, guards: [done]}\nguards:\n  done: {type: automated, check: \"step_status:work:COMPLETED\"}\nsteps:\n  - {id: work, state: WORKING, handler: noop}\nroles:\n  - {id: WORKER, allowed_actions: [work, finish]}\n"
+        }
+      }
+    },
+    "response": {
+      "id": 1,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"ceremony\": \"upgrade_v060\",\n  \"digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"outcome\": \"published\",\n  \"version\": \"1.0\"\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "ceremony": "upgrade_v060",
+          "digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "outcome": "published",
+          "version": "1.0"
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 2,
+      "method": "tools/call",
+      "params": {
+        "name": "made_start_published_ceremony",
+        "arguments": {
+          "ceremony_id": "v060-completed",
+          "ceremony": "upgrade_v060",
+          "version": "1.0",
+          "actor_id": "upgrade-fixture",
+          "actor_kind": "service"
+        }
+      }
+    },
+    "response": {
+      "id": 2,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": null,\n  \"ceremony_id\": \"v060-completed\",\n  \"claimable_step_ids\": [\n    \"work\"\n  ],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": \"work\",\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"pending\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"29d4f8b602b34e41aa43292b0430f8e6\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": null,
+          "ceremony_id": "v060-completed",
+          "claimable_step_ids": [
+            "work"
+          ],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-completed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": "work",
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "pending",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "29d4f8b602b34e41aa43292b0430f8e6",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 3,
+      "method": "tools/call",
+      "params": {
+        "name": "made_claim_ceremony_step",
+        "arguments": {
+          "ceremony_id": "v060-completed",
+          "step_id": "work",
+          "actor_kind": "agent",
+          "idempotency_key": "v060-completed",
+          "lease_owner_id": "v060-writer",
+          "lease_ttl_ms": 300000
+        }
+      }
+    },
+    "response": {
+      "id": 3,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"ceremony_id\": \"v060-completed\",\n  \"claim_fence\": \"1bfc22a5365ef57e42a65e84f1bc9350c0f9c6cce05e8392035ffdc70d77f7b7\",\n  \"claimable_step_ids\": [],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"in_progress\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"43adcb2210194d4fbda0ce36cf052e4c\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-completed:ceremony_instance_started:session",
+          "ceremony_id": "v060-completed",
+          "claim_fence": "1bfc22a5365ef57e42a65e84f1bc9350c0f9c6cce05e8392035ffdc70d77f7b7",
+          "claimable_step_ids": [],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-completed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "in_progress",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "43adcb2210194d4fbda0ce36cf052e4c",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 4,
+      "method": "tools/call",
+      "params": {
+        "name": "made_complete_ceremony_step",
+        "arguments": {
+          "ceremony_id": "v060-completed",
+          "step_id": "work",
+          "actor_kind": "agent",
+          "status": "completed",
+          "claim_fence": "1bfc22a5365ef57e42a65e84f1bc9350c0f9c6cce05e8392035ffdc70d77f7b7",
+          "output": {
+            "fixture": "v0.6.0"
+          }
+        }
+      }
+    },
+    "response": {
+      "id": 4,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n  \"ceremony_id\": \"v060-completed\",\n  \"claimable_step_ids\": [],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {\n        \"fixture\": \"v0.6.0\"\n      },\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"completed\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"26857072d73b4bfab5e540c576db8e16\",\n  \"transitions\": [\n    {\n      \"enabled\": true,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": true\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+          "ceremony_id": "v060-completed",
+          "claimable_step_ids": [],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-completed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {
+                "fixture": "v0.6.0"
+              },
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "completed",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "26857072d73b4bfab5e540c576db8e16",
+          "transitions": [
+            {
+              "enabled": true,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": true
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 5,
+      "method": "tools/call",
+      "params": {
+        "name": "made_apply_ceremony_transition",
+        "arguments": {
+          "ceremony_id": "v060-completed",
+          "trigger": "finish",
+          "actor_kind": "agent"
+        }
+      }
+    },
+    "response": {
+      "id": 5,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-completed:transition_applied:transition:1\",\n  \"ceremony_id\": \"v060-completed\",\n  \"claimable_step_ids\": [],\n  \"completed\": true,\n  \"context\": {},\n  \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"current_state\": \"CLOSED\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 2,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {\n        \"fixture\": \"v0.6.0\"\n      },\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"completed\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"8ad2257aaa3442e38f4ba41bbfddc3e8\",\n  \"transitions\": [],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-completed:transition_applied:transition:1",
+          "ceremony_id": "v060-completed",
+          "claimable_step_ids": [],
+          "completed": true,
+          "context": {},
+          "correlation_id": "v060-completed:ceremony_instance_started:session",
+          "current_state": "CLOSED",
+          "current_state_iteration": 1,
+          "current_state_visit": 2,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {
+                "fixture": "v0.6.0"
+              },
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "completed",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "8ad2257aaa3442e38f4ba41bbfddc3e8",
+          "transitions": [],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 6,
+      "method": "tools/call",
+      "params": {
+        "name": "made_read_ceremony_events",
+        "arguments": {
+          "ceremony_id": "v060-completed",
+          "limit": 1000
+        }
+      }
+    },
+    "response": {
+      "id": 6,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"has_more\": false,\n  \"head_version\": 5,\n  \"next_version\": 5,\n  \"record_count\": 5,\n  \"records\": [\n    {\n      \"actor\": {\n        \"actor_id\": \"upgrade-fixture\",\n        \"kind\": \"service\",\n        \"role_id\": null\n      },\n      \"causation_id\": null,\n      \"ceremony_id\": \"v060-completed\",\n      \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"bound_definition\": [\n          24,\n          94,\n          43,\n          75,\n          147,\n          221,\n          202,\n          197,\n          171,\n          239,\n          213,\n          161,\n          122,\n          110,\n          75,\n          202,\n          128,\n          82,\n          166,\n          200,\n          6,\n          196,\n          189,\n          220,\n          69,\n          60,\n          127,\n          220,\n          178,\n          133,\n          153,\n          223\n        ],\n        \"ceremony_id\": \"v060-completed\",\n        \"context\": {},\n        \"created_at\": \"2026-09-18T21:50:35.42335821Z\",\n        \"definition_name\": \"upgrade_v060\",\n        \"definition_version\": \"1.0\",\n        \"initial_state\": \"WORKING\",\n        \"step_ids\": [\n          \"work\"\n        ],\n        \"type\": \"ceremony_instance_started\"\n      },\n      \"event_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"event_schema_version\": 1,\n      \"event_type\": \"ceremony_instance_started\",\n      \"occurred_at\": \"2026-09-18T21:50:35.42335821Z\",\n      \"previous_record_hash\": null,\n      \"record_hash\": [\n        202,\n        71,\n        8,\n        111,\n        251,\n        38,\n        68,\n        143,\n        28,\n        178,\n        107,\n        76,\n        31,\n        59,\n        192,\n        153,\n        203,\n        172,\n        150,\n        154,\n        217,\n        233,\n        229,\n        58,\n        229,\n        36,\n        190,\n        111,\n        10,\n        216,\n        144,\n        74\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 1,\n      \"trace_id\": \"29d4f8b602b34e41aa43292b0430f8e6\"\n    },\n    {\n      \"actor\": {\n        \"actor_id\": \"WORKER\",\n        \"kind\": \"agent\",\n        \"role_id\": \"WORKER\"\n      },\n      \"causation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"ceremony_id\": \"v060-completed\",\n      \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"attempt\": 1,\n        \"iteration\": 1,\n        \"lease\": {\n          \"acquired_at\": \"2026-09-18T21:50:35.426240166Z\",\n          \"expires_at\": \"2026-09-18T21:55:35.426240166Z\",\n          \"idempotency_key\": \"v060-completed\",\n          \"owner_id\": \"v060-writer\"\n        },\n        \"started_at\": \"2026-09-18T21:50:35.426240166Z\",\n        \"started_by\": \"WORKER\",\n        \"state_iteration\": 1,\n        \"state_visit\": 1,\n        \"step_id\": \"work\",\n        \"type\": \"step_started\"\n      },\n      \"event_id\": \"v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n      \"event_schema_version\": 4,\n      \"event_type\": \"step_started\",\n      \"occurred_at\": \"2026-09-18T21:50:35.426240166Z\",\n      \"previous_record_hash\": [\n        202,\n        71,\n        8,\n        111,\n        251,\n        38,\n        68,\n        143,\n        28,\n        178,\n        107,\n        76,\n        31,\n        59,\n        192,\n        153,\n        203,\n        172,\n        150,\n        154,\n        217,\n        233,\n        229,\n        58,\n        229,\n        36,\n        190,\n        111,\n        10,\n        216,\n        144,\n        74\n      ],\n      \"record_hash\": [\n        19,\n        85,\n        214,\n        35,\n        47,\n        200,\n        99,\n        236,\n        235,\n        25,\n        159,\n        188,\n        70,\n        44,\n        1,\n        137,\n        107,\n        17,\n        35,\n        238,\n        142,\n        131,\n        121,\n        59,\n        164,\n        170,\n        161,\n        70,\n        38,\n        222,\n        102,\n        152\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 2,\n      \"trace_id\": \"43adcb2210194d4fbda0ce36cf052e4c\"\n    },\n    {\n      \"actor\": {\n        \"actor_id\": \"WORKER\",\n        \"kind\": \"agent\",\n        \"role_id\": \"WORKER\"\n      },\n      \"causation_id\": \"v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n      \"ceremony_id\": \"v060-completed\",\n      \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"attempt\": 1,\n        \"finished_at\": \"2026-09-18T21:50:35.430071221Z\",\n        \"finished_by\": \"WORKER\",\n        \"iteration\": 1,\n        \"next_iteration\": null,\n        \"result\": {\n          \"error_message\": null,\n          \"output\": {\n            \"fixture\": \"v0.6.0\"\n          },\n          \"status\": \"COMPLETED\"\n        },\n        \"state_iteration\": 1,\n        \"state_visit\": 1,\n        \"step_id\": \"work\",\n        \"type\": \"step_completed\"\n      },\n      \"event_id\": \"v060-completed:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n      \"event_schema_version\": 3,\n      \"event_type\": \"step_completed\",\n      \"occurred_at\": \"2026-09-18T21:50:35.430071221Z\",\n      \"previous_record_hash\": [\n        19,\n        85,\n        214,\n        35,\n        47,\n        200,\n        99,\n        236,\n        235,\n        25,\n        159,\n        188,\n        70,\n        44,\n        1,\n        137,\n        107,\n        17,\n        35,\n        238,\n        142,\n        131,\n        121,\n        59,\n        164,\n        170,\n        161,\n        70,\n        38,\n        222,\n        102,\n        152\n      ],\n      \"record_hash\": [\n        78,\n        142,\n        73,\n        87,\n        9,\n        57,\n        186,\n        232,\n        152,\n        24,\n        209,\n        46,\n        146,\n        4,\n        9,\n        33,\n        17,\n        2,\n        227,\n        51,\n        210,\n        41,\n        226,\n        222,\n        128,\n        45,\n        242,\n        243,\n        48,\n        159,\n        249,\n        3\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 3,\n      \"trace_id\": \"26857072d73b4bfab5e540c576db8e16\"\n    },\n    {\n      \"actor\": {\n        \"actor_id\": \"WORKER\",\n        \"kind\": \"agent\",\n        \"role_id\": \"WORKER\"\n      },\n      \"causation_id\": \"v060-completed:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n      \"ceremony_id\": \"v060-completed\",\n      \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"destination\": {\n          \"state_visit\": 2,\n          \"step_ids\": []\n        },\n        \"transition\": {\n          \"applied_at\": \"2026-09-18T21:50:35.433334534Z\",\n          \"applied_by\": \"WORKER\",\n          \"from_state\": \"WORKING\",\n          \"state_iteration\": 1,\n          \"state_visit\": 1,\n          \"to_state\": \"CLOSED\",\n          \"trigger\": \"finish\"\n        },\n        \"type\": \"transition_applied\"\n      },\n      \"event_id\": \"v060-completed:transition_applied:transition:1\",\n      \"event_schema_version\": 3,\n      \"event_type\": \"transition_applied\",\n      \"occurred_at\": \"2026-09-18T21:50:35.433334534Z\",\n      \"previous_record_hash\": [\n        78,\n        142,\n        73,\n        87,\n        9,\n        57,\n        186,\n        232,\n        152,\n        24,\n        209,\n        46,\n        146,\n        4,\n        9,\n        33,\n        17,\n        2,\n        227,\n        51,\n        210,\n        41,\n        226,\n        222,\n        128,\n        45,\n        242,\n        243,\n        48,\n        159,\n        249,\n        3\n      ],\n      \"record_hash\": [\n        121,\n        154,\n        17,\n        126,\n        242,\n        213,\n        192,\n        178,\n        125,\n        168,\n        48,\n        83,\n        147,\n        140,\n        47,\n        140,\n        56,\n        255,\n        169,\n        9,\n        136,\n        93,\n        192,\n        167,\n        249,\n        53,\n        191,\n        115,\n        221,\n        133,\n        0,\n        159\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 4,\n      \"trace_id\": \"8ad2257aaa3442e38f4ba41bbfddc3e8\"\n    },\n    {\n      \"actor\": {\n        \"actor_id\": \"WORKER\",\n        \"kind\": \"agent\",\n        \"role_id\": \"WORKER\"\n      },\n      \"causation_id\": \"v060-completed:transition_applied:transition:1\",\n      \"ceremony_id\": \"v060-completed\",\n      \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"completed_at\": \"2026-09-18T21:50:35.433334534Z\",\n        \"final_state\": \"CLOSED\",\n        \"type\": \"ceremony_completed\"\n      },\n      \"event_id\": \"v060-completed:ceremony_completed:transition:1\",\n      \"event_schema_version\": 1,\n      \"event_type\": \"ceremony_completed\",\n      \"occurred_at\": \"2026-09-18T21:50:35.433334534Z\",\n      \"previous_record_hash\": [\n        121,\n        154,\n        17,\n        126,\n        242,\n        213,\n        192,\n        178,\n        125,\n        168,\n        48,\n        83,\n        147,\n        140,\n        47,\n        140,\n        56,\n        255,\n        169,\n        9,\n        136,\n        93,\n        192,\n        167,\n        249,\n        53,\n        191,\n        115,\n        221,\n        133,\n        0,\n        159\n      ],\n      \"record_hash\": [\n        183,\n        222,\n        229,\n        44,\n        168,\n        195,\n        153,\n        224,\n        81,\n        244,\n        182,\n        16,\n        201,\n        255,\n        3,\n        227,\n        16,\n        193,\n        102,\n        193,\n        111,\n        138,\n        65,\n        166,\n        171,\n        204,\n        213,\n        29,\n        23,\n        78,\n        162,\n        229\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 5,\n      \"trace_id\": \"8ad2257aaa3442e38f4ba41bbfddc3e8\"\n    }\n  ]\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "has_more": false,
+          "head_version": 5,
+          "next_version": 5,
+          "record_count": 5,
+          "records": [
+            {
+              "actor": {
+                "actor_id": "upgrade-fixture",
+                "kind": "service",
+                "role_id": null
+              },
+              "causation_id": null,
+              "ceremony_id": "v060-completed",
+              "correlation_id": "v060-completed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "bound_definition": [
+                  24,
+                  94,
+                  43,
+                  75,
+                  147,
+                  221,
+                  202,
+                  197,
+                  171,
+                  239,
+                  213,
+                  161,
+                  122,
+                  110,
+                  75,
+                  202,
+                  128,
+                  82,
+                  166,
+                  200,
+                  6,
+                  196,
+                  189,
+                  220,
+                  69,
+                  60,
+                  127,
+                  220,
+                  178,
+                  133,
+                  153,
+                  223
+                ],
+                "ceremony_id": "v060-completed",
+                "context": {},
+                "created_at": "2026-09-18T21:50:35.42335821Z",
+                "definition_name": "upgrade_v060",
+                "definition_version": "1.0",
+                "initial_state": "WORKING",
+                "step_ids": [
+                  "work"
+                ],
+                "type": "ceremony_instance_started"
+              },
+              "event_id": "v060-completed:ceremony_instance_started:session",
+              "event_schema_version": 1,
+              "event_type": "ceremony_instance_started",
+              "occurred_at": "2026-09-18T21:50:35.42335821Z",
+              "previous_record_hash": null,
+              "record_hash": [
+                202,
+                71,
+                8,
+                111,
+                251,
+                38,
+                68,
+                143,
+                28,
+                178,
+                107,
+                76,
+                31,
+                59,
+                192,
+                153,
+                203,
+                172,
+                150,
+                154,
+                217,
+                233,
+                229,
+                58,
+                229,
+                36,
+                190,
+                111,
+                10,
+                216,
+                144,
+                74
+              ],
+              "schema_version": 2,
+              "sequence": 1,
+              "trace_id": "29d4f8b602b34e41aa43292b0430f8e6"
+            },
+            {
+              "actor": {
+                "actor_id": "WORKER",
+                "kind": "agent",
+                "role_id": "WORKER"
+              },
+              "causation_id": "v060-completed:ceremony_instance_started:session",
+              "ceremony_id": "v060-completed",
+              "correlation_id": "v060-completed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "attempt": 1,
+                "iteration": 1,
+                "lease": {
+                  "acquired_at": "2026-09-18T21:50:35.426240166Z",
+                  "expires_at": "2026-09-18T21:55:35.426240166Z",
+                  "idempotency_key": "v060-completed",
+                  "owner_id": "v060-writer"
+                },
+                "started_at": "2026-09-18T21:50:35.426240166Z",
+                "started_by": "WORKER",
+                "state_iteration": 1,
+                "state_visit": 1,
+                "step_id": "work",
+                "type": "step_started"
+              },
+              "event_id": "v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+              "event_schema_version": 4,
+              "event_type": "step_started",
+              "occurred_at": "2026-09-18T21:50:35.426240166Z",
+              "previous_record_hash": [
+                202,
+                71,
+                8,
+                111,
+                251,
+                38,
+                68,
+                143,
+                28,
+                178,
+                107,
+                76,
+                31,
+                59,
+                192,
+                153,
+                203,
+                172,
+                150,
+                154,
+                217,
+                233,
+                229,
+                58,
+                229,
+                36,
+                190,
+                111,
+                10,
+                216,
+                144,
+                74
+              ],
+              "record_hash": [
+                19,
+                85,
+                214,
+                35,
+                47,
+                200,
+                99,
+                236,
+                235,
+                25,
+                159,
+                188,
+                70,
+                44,
+                1,
+                137,
+                107,
+                17,
+                35,
+                238,
+                142,
+                131,
+                121,
+                59,
+                164,
+                170,
+                161,
+                70,
+                38,
+                222,
+                102,
+                152
+              ],
+              "schema_version": 2,
+              "sequence": 2,
+              "trace_id": "43adcb2210194d4fbda0ce36cf052e4c"
+            },
+            {
+              "actor": {
+                "actor_id": "WORKER",
+                "kind": "agent",
+                "role_id": "WORKER"
+              },
+              "causation_id": "v060-completed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+              "ceremony_id": "v060-completed",
+              "correlation_id": "v060-completed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "attempt": 1,
+                "finished_at": "2026-09-18T21:50:35.430071221Z",
+                "finished_by": "WORKER",
+                "iteration": 1,
+                "next_iteration": null,
+                "result": {
+                  "error_message": null,
+                  "output": {
+                    "fixture": "v0.6.0"
+                  },
+                  "status": "COMPLETED"
+                },
+                "state_iteration": 1,
+                "state_visit": 1,
+                "step_id": "work",
+                "type": "step_completed"
+              },
+              "event_id": "v060-completed:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+              "event_schema_version": 3,
+              "event_type": "step_completed",
+              "occurred_at": "2026-09-18T21:50:35.430071221Z",
+              "previous_record_hash": [
+                19,
+                85,
+                214,
+                35,
+                47,
+                200,
+                99,
+                236,
+                235,
+                25,
+                159,
+                188,
+                70,
+                44,
+                1,
+                137,
+                107,
+                17,
+                35,
+                238,
+                142,
+                131,
+                121,
+                59,
+                164,
+                170,
+                161,
+                70,
+                38,
+                222,
+                102,
+                152
+              ],
+              "record_hash": [
+                78,
+                142,
+                73,
+                87,
+                9,
+                57,
+                186,
+                232,
+                152,
+                24,
+                209,
+                46,
+                146,
+                4,
+                9,
+                33,
+                17,
+                2,
+                227,
+                51,
+                210,
+                41,
+                226,
+                222,
+                128,
+                45,
+                242,
+                243,
+                48,
+                159,
+                249,
+                3
+              ],
+              "schema_version": 2,
+              "sequence": 3,
+              "trace_id": "26857072d73b4bfab5e540c576db8e16"
+            },
+            {
+              "actor": {
+                "actor_id": "WORKER",
+                "kind": "agent",
+                "role_id": "WORKER"
+              },
+              "causation_id": "v060-completed:step_completed:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+              "ceremony_id": "v060-completed",
+              "correlation_id": "v060-completed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "destination": {
+                  "state_visit": 2,
+                  "step_ids": []
+                },
+                "transition": {
+                  "applied_at": "2026-09-18T21:50:35.433334534Z",
+                  "applied_by": "WORKER",
+                  "from_state": "WORKING",
+                  "state_iteration": 1,
+                  "state_visit": 1,
+                  "to_state": "CLOSED",
+                  "trigger": "finish"
+                },
+                "type": "transition_applied"
+              },
+              "event_id": "v060-completed:transition_applied:transition:1",
+              "event_schema_version": 3,
+              "event_type": "transition_applied",
+              "occurred_at": "2026-09-18T21:50:35.433334534Z",
+              "previous_record_hash": [
+                78,
+                142,
+                73,
+                87,
+                9,
+                57,
+                186,
+                232,
+                152,
+                24,
+                209,
+                46,
+                146,
+                4,
+                9,
+                33,
+                17,
+                2,
+                227,
+                51,
+                210,
+                41,
+                226,
+                222,
+                128,
+                45,
+                242,
+                243,
+                48,
+                159,
+                249,
+                3
+              ],
+              "record_hash": [
+                121,
+                154,
+                17,
+                126,
+                242,
+                213,
+                192,
+                178,
+                125,
+                168,
+                48,
+                83,
+                147,
+                140,
+                47,
+                140,
+                56,
+                255,
+                169,
+                9,
+                136,
+                93,
+                192,
+                167,
+                249,
+                53,
+                191,
+                115,
+                221,
+                133,
+                0,
+                159
+              ],
+              "schema_version": 2,
+              "sequence": 4,
+              "trace_id": "8ad2257aaa3442e38f4ba41bbfddc3e8"
+            },
+            {
+              "actor": {
+                "actor_id": "WORKER",
+                "kind": "agent",
+                "role_id": "WORKER"
+              },
+              "causation_id": "v060-completed:transition_applied:transition:1",
+              "ceremony_id": "v060-completed",
+              "correlation_id": "v060-completed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "completed_at": "2026-09-18T21:50:35.433334534Z",
+                "final_state": "CLOSED",
+                "type": "ceremony_completed"
+              },
+              "event_id": "v060-completed:ceremony_completed:transition:1",
+              "event_schema_version": 1,
+              "event_type": "ceremony_completed",
+              "occurred_at": "2026-09-18T21:50:35.433334534Z",
+              "previous_record_hash": [
+                121,
+                154,
+                17,
+                126,
+                242,
+                213,
+                192,
+                178,
+                125,
+                168,
+                48,
+                83,
+                147,
+                140,
+                47,
+                140,
+                56,
+                255,
+                169,
+                9,
+                136,
+                93,
+                192,
+                167,
+                249,
+                53,
+                191,
+                115,
+                221,
+                133,
+                0,
+                159
+              ],
+              "record_hash": [
+                183,
+                222,
+                229,
+                44,
+                168,
+                195,
+                153,
+                224,
+                81,
+                244,
+                182,
+                16,
+                201,
+                255,
+                3,
+                227,
+                16,
+                193,
+                102,
+                193,
+                111,
+                138,
+                65,
+                166,
+                171,
+                204,
+                213,
+                29,
+                23,
+                78,
+                162,
+                229
+              ],
+              "schema_version": 2,
+              "sequence": 5,
+              "trace_id": "8ad2257aaa3442e38f4ba41bbfddc3e8"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 7,
+      "method": "tools/call",
+      "params": {
+        "name": "made_verify_ceremony_journal",
+        "arguments": {
+          "ceremony_id": "v060-completed"
+        }
+      }
+    },
+    "response": {
+      "id": 7,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"ceremony_id\": \"v060-completed\",\n  \"first_broken_sequence\": null,\n  \"head_version\": 5,\n  \"intact\": true,\n  \"reason\": null,\n  \"record_count\": 5\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "ceremony_id": "v060-completed",
+          "first_broken_sequence": null,
+          "head_version": 5,
+          "intact": true,
+          "reason": null,
+          "record_count": 5
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 8,
+      "method": "tools/call",
+      "params": {
+        "name": "made_get_ceremony_instance",
+        "arguments": {
+          "ceremony_id": "v060-completed"
+        }
+      }
+    },
+    "response": {
+      "id": 8,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-completed:transition_applied:transition:1\",\n  \"ceremony_id\": \"v060-completed\",\n  \"claimable_step_ids\": [],\n  \"completed\": true,\n  \"context\": {},\n  \"correlation_id\": \"v060-completed:ceremony_instance_started:session\",\n  \"current_state\": \"CLOSED\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 2,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {\n        \"fixture\": \"v0.6.0\"\n      },\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"completed\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"8ad2257aaa3442e38f4ba41bbfddc3e8\",\n  \"transitions\": [],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-completed:transition_applied:transition:1",
+          "ceremony_id": "v060-completed",
+          "claimable_step_ids": [],
+          "completed": true,
+          "context": {},
+          "correlation_id": "v060-completed:ceremony_instance_started:session",
+          "current_state": "CLOSED",
+          "current_state_iteration": 1,
+          "current_state_visit": 2,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {
+                "fixture": "v0.6.0"
+              },
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "completed",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "8ad2257aaa3442e38f4ba41bbfddc3e8",
+          "transitions": [],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 9,
+      "method": "tools/call",
+      "params": {
+        "name": "made_start_published_ceremony",
+        "arguments": {
+          "ceremony_id": "v060-pending",
+          "ceremony": "upgrade_v060",
+          "version": "1.0",
+          "actor_id": "upgrade-fixture",
+          "actor_kind": "service"
+        }
+      }
+    },
+    "response": {
+      "id": 9,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": null,\n  \"ceremony_id\": \"v060-pending\",\n  \"claimable_step_ids\": [\n    \"work\"\n  ],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-pending:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": \"work\",\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"pending\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"c5876385e0aa4b92b4ba46788593e44b\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": null,
+          "ceremony_id": "v060-pending",
+          "claimable_step_ids": [
+            "work"
+          ],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-pending:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": "work",
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "pending",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "c5876385e0aa4b92b4ba46788593e44b",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 10,
+      "method": "tools/call",
+      "params": {
+        "name": "made_read_ceremony_events",
+        "arguments": {
+          "ceremony_id": "v060-pending",
+          "limit": 1000
+        }
+      }
+    },
+    "response": {
+      "id": 10,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"has_more\": false,\n  \"head_version\": 1,\n  \"next_version\": 1,\n  \"record_count\": 1,\n  \"records\": [\n    {\n      \"actor\": {\n        \"actor_id\": \"upgrade-fixture\",\n        \"kind\": \"service\",\n        \"role_id\": null\n      },\n      \"causation_id\": null,\n      \"ceremony_id\": \"v060-pending\",\n      \"correlation_id\": \"v060-pending:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"bound_definition\": [\n          24,\n          94,\n          43,\n          75,\n          147,\n          221,\n          202,\n          197,\n          171,\n          239,\n          213,\n          161,\n          122,\n          110,\n          75,\n          202,\n          128,\n          82,\n          166,\n          200,\n          6,\n          196,\n          189,\n          220,\n          69,\n          60,\n          127,\n          220,\n          178,\n          133,\n          153,\n          223\n        ],\n        \"ceremony_id\": \"v060-pending\",\n        \"context\": {},\n        \"created_at\": \"2026-09-18T21:50:35.441494386Z\",\n        \"definition_name\": \"upgrade_v060\",\n        \"definition_version\": \"1.0\",\n        \"initial_state\": \"WORKING\",\n        \"step_ids\": [\n          \"work\"\n        ],\n        \"type\": \"ceremony_instance_started\"\n      },\n      \"event_id\": \"v060-pending:ceremony_instance_started:session\",\n      \"event_schema_version\": 1,\n      \"event_type\": \"ceremony_instance_started\",\n      \"occurred_at\": \"2026-09-18T21:50:35.441494386Z\",\n      \"previous_record_hash\": null,\n      \"record_hash\": [\n        30,\n        79,\n        179,\n        54,\n        51,\n        45,\n        117,\n        66,\n        89,\n        71,\n        132,\n        63,\n        234,\n        57,\n        249,\n        118,\n        235,\n        183,\n        220,\n        98,\n        117,\n        234,\n        123,\n        197,\n        104,\n        246,\n        215,\n        109,\n        132,\n        73,\n        162,\n        137\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 1,\n      \"trace_id\": \"c5876385e0aa4b92b4ba46788593e44b\"\n    }\n  ]\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "has_more": false,
+          "head_version": 1,
+          "next_version": 1,
+          "record_count": 1,
+          "records": [
+            {
+              "actor": {
+                "actor_id": "upgrade-fixture",
+                "kind": "service",
+                "role_id": null
+              },
+              "causation_id": null,
+              "ceremony_id": "v060-pending",
+              "correlation_id": "v060-pending:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "bound_definition": [
+                  24,
+                  94,
+                  43,
+                  75,
+                  147,
+                  221,
+                  202,
+                  197,
+                  171,
+                  239,
+                  213,
+                  161,
+                  122,
+                  110,
+                  75,
+                  202,
+                  128,
+                  82,
+                  166,
+                  200,
+                  6,
+                  196,
+                  189,
+                  220,
+                  69,
+                  60,
+                  127,
+                  220,
+                  178,
+                  133,
+                  153,
+                  223
+                ],
+                "ceremony_id": "v060-pending",
+                "context": {},
+                "created_at": "2026-09-18T21:50:35.441494386Z",
+                "definition_name": "upgrade_v060",
+                "definition_version": "1.0",
+                "initial_state": "WORKING",
+                "step_ids": [
+                  "work"
+                ],
+                "type": "ceremony_instance_started"
+              },
+              "event_id": "v060-pending:ceremony_instance_started:session",
+              "event_schema_version": 1,
+              "event_type": "ceremony_instance_started",
+              "occurred_at": "2026-09-18T21:50:35.441494386Z",
+              "previous_record_hash": null,
+              "record_hash": [
+                30,
+                79,
+                179,
+                54,
+                51,
+                45,
+                117,
+                66,
+                89,
+                71,
+                132,
+                63,
+                234,
+                57,
+                249,
+                118,
+                235,
+                183,
+                220,
+                98,
+                117,
+                234,
+                123,
+                197,
+                104,
+                246,
+                215,
+                109,
+                132,
+                73,
+                162,
+                137
+              ],
+              "schema_version": 2,
+              "sequence": 1,
+              "trace_id": "c5876385e0aa4b92b4ba46788593e44b"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 11,
+      "method": "tools/call",
+      "params": {
+        "name": "made_verify_ceremony_journal",
+        "arguments": {
+          "ceremony_id": "v060-pending"
+        }
+      }
+    },
+    "response": {
+      "id": 11,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"ceremony_id\": \"v060-pending\",\n  \"first_broken_sequence\": null,\n  \"head_version\": 1,\n  \"intact\": true,\n  \"reason\": null,\n  \"record_count\": 1\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "ceremony_id": "v060-pending",
+          "first_broken_sequence": null,
+          "head_version": 1,
+          "intact": true,
+          "reason": null,
+          "record_count": 1
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 12,
+      "method": "tools/call",
+      "params": {
+        "name": "made_get_ceremony_instance",
+        "arguments": {
+          "ceremony_id": "v060-pending"
+        }
+      }
+    },
+    "response": {
+      "id": 12,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": null,\n  \"ceremony_id\": \"v060-pending\",\n  \"claimable_step_ids\": [\n    \"work\"\n  ],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-pending:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": \"work\",\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"pending\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"c5876385e0aa4b92b4ba46788593e44b\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": null,
+          "ceremony_id": "v060-pending",
+          "claimable_step_ids": [
+            "work"
+          ],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-pending:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": "work",
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "pending",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "c5876385e0aa4b92b4ba46788593e44b",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 13,
+      "method": "tools/call",
+      "params": {
+        "name": "made_start_published_ceremony",
+        "arguments": {
+          "ceremony_id": "v060-claimed",
+          "ceremony": "upgrade_v060",
+          "version": "1.0",
+          "actor_id": "upgrade-fixture",
+          "actor_kind": "service"
+        }
+      }
+    },
+    "response": {
+      "id": 13,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": null,\n  \"ceremony_id\": \"v060-claimed\",\n  \"claimable_step_ids\": [\n    \"work\"\n  ],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-claimed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": \"work\",\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"pending\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"826d805e8da4402d8b018c019f2d3867\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": null,
+          "ceremony_id": "v060-claimed",
+          "claimable_step_ids": [
+            "work"
+          ],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-claimed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": "work",
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "pending",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "826d805e8da4402d8b018c019f2d3867",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 14,
+      "method": "tools/call",
+      "params": {
+        "name": "made_claim_ceremony_step",
+        "arguments": {
+          "ceremony_id": "v060-claimed",
+          "step_id": "work",
+          "actor_kind": "agent",
+          "idempotency_key": "v060-claimed",
+          "lease_owner_id": "v060-writer",
+          "lease_ttl_ms": 300000
+        }
+      }
+    },
+    "response": {
+      "id": 14,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-claimed:ceremony_instance_started:session\",\n  \"ceremony_id\": \"v060-claimed\",\n  \"claim_fence\": \"8a2f882786d2f0121ca225b5770ed6163d1b1693cd16ae9d7ed07477b7430d53\",\n  \"claimable_step_ids\": [],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-claimed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"in_progress\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"5870310d81964c22854e8583bfc2a18e\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-claimed:ceremony_instance_started:session",
+          "ceremony_id": "v060-claimed",
+          "claim_fence": "8a2f882786d2f0121ca225b5770ed6163d1b1693cd16ae9d7ed07477b7430d53",
+          "claimable_step_ids": [],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-claimed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "in_progress",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "5870310d81964c22854e8583bfc2a18e",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 15,
+      "method": "tools/call",
+      "params": {
+        "name": "made_read_ceremony_events",
+        "arguments": {
+          "ceremony_id": "v060-claimed",
+          "limit": 1000
+        }
+      }
+    },
+    "response": {
+      "id": 15,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"has_more\": false,\n  \"head_version\": 2,\n  \"next_version\": 2,\n  \"record_count\": 2,\n  \"records\": [\n    {\n      \"actor\": {\n        \"actor_id\": \"upgrade-fixture\",\n        \"kind\": \"service\",\n        \"role_id\": null\n      },\n      \"causation_id\": null,\n      \"ceremony_id\": \"v060-claimed\",\n      \"correlation_id\": \"v060-claimed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"bound_definition\": [\n          24,\n          94,\n          43,\n          75,\n          147,\n          221,\n          202,\n          197,\n          171,\n          239,\n          213,\n          161,\n          122,\n          110,\n          75,\n          202,\n          128,\n          82,\n          166,\n          200,\n          6,\n          196,\n          189,\n          220,\n          69,\n          60,\n          127,\n          220,\n          178,\n          133,\n          153,\n          223\n        ],\n        \"ceremony_id\": \"v060-claimed\",\n        \"context\": {},\n        \"created_at\": \"2026-09-18T21:50:35.45151711Z\",\n        \"definition_name\": \"upgrade_v060\",\n        \"definition_version\": \"1.0\",\n        \"initial_state\": \"WORKING\",\n        \"step_ids\": [\n          \"work\"\n        ],\n        \"type\": \"ceremony_instance_started\"\n      },\n      \"event_id\": \"v060-claimed:ceremony_instance_started:session\",\n      \"event_schema_version\": 1,\n      \"event_type\": \"ceremony_instance_started\",\n      \"occurred_at\": \"2026-09-18T21:50:35.45151711Z\",\n      \"previous_record_hash\": null,\n      \"record_hash\": [\n        185,\n        216,\n        222,\n        126,\n        224,\n        108,\n        120,\n        182,\n        189,\n        37,\n        46,\n        93,\n        220,\n        33,\n        57,\n        30,\n        25,\n        19,\n        218,\n        254,\n        253,\n        41,\n        246,\n        14,\n        57,\n        58,\n        120,\n        157,\n        46,\n        115,\n        219,\n        246\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 1,\n      \"trace_id\": \"826d805e8da4402d8b018c019f2d3867\"\n    },\n    {\n      \"actor\": {\n        \"actor_id\": \"WORKER\",\n        \"kind\": \"agent\",\n        \"role_id\": \"WORKER\"\n      },\n      \"causation_id\": \"v060-claimed:ceremony_instance_started:session\",\n      \"ceremony_id\": \"v060-claimed\",\n      \"correlation_id\": \"v060-claimed:ceremony_instance_started:session\",\n      \"definition_name\": \"upgrade_v060\",\n      \"definition_version\": \"1.0\",\n      \"event\": {\n        \"attempt\": 1,\n        \"iteration\": 1,\n        \"lease\": {\n          \"acquired_at\": \"2026-09-18T21:50:35.45463476Z\",\n          \"expires_at\": \"2026-09-18T21:55:35.45463476Z\",\n          \"idempotency_key\": \"v060-claimed\",\n          \"owner_id\": \"v060-writer\"\n        },\n        \"started_at\": \"2026-09-18T21:50:35.45463476Z\",\n        \"started_by\": \"WORKER\",\n        \"state_iteration\": 1,\n        \"state_visit\": 1,\n        \"step_id\": \"work\",\n        \"type\": \"step_started\"\n      },\n      \"event_id\": \"v060-claimed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1\",\n      \"event_schema_version\": 4,\n      \"event_type\": \"step_started\",\n      \"occurred_at\": \"2026-09-18T21:50:35.45463476Z\",\n      \"previous_record_hash\": [\n        185,\n        216,\n        222,\n        126,\n        224,\n        108,\n        120,\n        182,\n        189,\n        37,\n        46,\n        93,\n        220,\n        33,\n        57,\n        30,\n        25,\n        19,\n        218,\n        254,\n        253,\n        41,\n        246,\n        14,\n        57,\n        58,\n        120,\n        157,\n        46,\n        115,\n        219,\n        246\n      ],\n      \"record_hash\": [\n        213,\n        107,\n        19,\n        23,\n        57,\n        201,\n        29,\n        15,\n        150,\n        70,\n        229,\n        122,\n        92,\n        163,\n        97,\n        202,\n        226,\n        151,\n        233,\n        147,\n        66,\n        100,\n        151,\n        245,\n        70,\n        49,\n        201,\n        72,\n        155,\n        193,\n        203,\n        145\n      ],\n      \"schema_version\": 2,\n      \"sequence\": 2,\n      \"trace_id\": \"5870310d81964c22854e8583bfc2a18e\"\n    }\n  ]\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "has_more": false,
+          "head_version": 2,
+          "next_version": 2,
+          "record_count": 2,
+          "records": [
+            {
+              "actor": {
+                "actor_id": "upgrade-fixture",
+                "kind": "service",
+                "role_id": null
+              },
+              "causation_id": null,
+              "ceremony_id": "v060-claimed",
+              "correlation_id": "v060-claimed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "bound_definition": [
+                  24,
+                  94,
+                  43,
+                  75,
+                  147,
+                  221,
+                  202,
+                  197,
+                  171,
+                  239,
+                  213,
+                  161,
+                  122,
+                  110,
+                  75,
+                  202,
+                  128,
+                  82,
+                  166,
+                  200,
+                  6,
+                  196,
+                  189,
+                  220,
+                  69,
+                  60,
+                  127,
+                  220,
+                  178,
+                  133,
+                  153,
+                  223
+                ],
+                "ceremony_id": "v060-claimed",
+                "context": {},
+                "created_at": "2026-09-18T21:50:35.45151711Z",
+                "definition_name": "upgrade_v060",
+                "definition_version": "1.0",
+                "initial_state": "WORKING",
+                "step_ids": [
+                  "work"
+                ],
+                "type": "ceremony_instance_started"
+              },
+              "event_id": "v060-claimed:ceremony_instance_started:session",
+              "event_schema_version": 1,
+              "event_type": "ceremony_instance_started",
+              "occurred_at": "2026-09-18T21:50:35.45151711Z",
+              "previous_record_hash": null,
+              "record_hash": [
+                185,
+                216,
+                222,
+                126,
+                224,
+                108,
+                120,
+                182,
+                189,
+                37,
+                46,
+                93,
+                220,
+                33,
+                57,
+                30,
+                25,
+                19,
+                218,
+                254,
+                253,
+                41,
+                246,
+                14,
+                57,
+                58,
+                120,
+                157,
+                46,
+                115,
+                219,
+                246
+              ],
+              "schema_version": 2,
+              "sequence": 1,
+              "trace_id": "826d805e8da4402d8b018c019f2d3867"
+            },
+            {
+              "actor": {
+                "actor_id": "WORKER",
+                "kind": "agent",
+                "role_id": "WORKER"
+              },
+              "causation_id": "v060-claimed:ceremony_instance_started:session",
+              "ceremony_id": "v060-claimed",
+              "correlation_id": "v060-claimed:ceremony_instance_started:session",
+              "definition_name": "upgrade_v060",
+              "definition_version": "1.0",
+              "event": {
+                "attempt": 1,
+                "iteration": 1,
+                "lease": {
+                  "acquired_at": "2026-09-18T21:50:35.45463476Z",
+                  "expires_at": "2026-09-18T21:55:35.45463476Z",
+                  "idempotency_key": "v060-claimed",
+                  "owner_id": "v060-writer"
+                },
+                "started_at": "2026-09-18T21:50:35.45463476Z",
+                "started_by": "WORKER",
+                "state_iteration": 1,
+                "state_visit": 1,
+                "step_id": "work",
+                "type": "step_started"
+              },
+              "event_id": "v060-claimed:step_started:step:work:visit:1:state_iteration:1:iteration:1:attempt:1",
+              "event_schema_version": 4,
+              "event_type": "step_started",
+              "occurred_at": "2026-09-18T21:50:35.45463476Z",
+              "previous_record_hash": [
+                185,
+                216,
+                222,
+                126,
+                224,
+                108,
+                120,
+                182,
+                189,
+                37,
+                46,
+                93,
+                220,
+                33,
+                57,
+                30,
+                25,
+                19,
+                218,
+                254,
+                253,
+                41,
+                246,
+                14,
+                57,
+                58,
+                120,
+                157,
+                46,
+                115,
+                219,
+                246
+              ],
+              "record_hash": [
+                213,
+                107,
+                19,
+                23,
+                57,
+                201,
+                29,
+                15,
+                150,
+                70,
+                229,
+                122,
+                92,
+                163,
+                97,
+                202,
+                226,
+                151,
+                233,
+                147,
+                66,
+                100,
+                151,
+                245,
+                70,
+                49,
+                201,
+                72,
+                155,
+                193,
+                203,
+                145
+              ],
+              "schema_version": 2,
+              "sequence": 2,
+              "trace_id": "5870310d81964c22854e8583bfc2a18e"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 16,
+      "method": "tools/call",
+      "params": {
+        "name": "made_verify_ceremony_journal",
+        "arguments": {
+          "ceremony_id": "v060-claimed"
+        }
+      }
+    },
+    "response": {
+      "id": 16,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"ceremony_id\": \"v060-claimed\",\n  \"first_broken_sequence\": null,\n  \"head_version\": 2,\n  \"intact\": true,\n  \"reason\": null,\n  \"record_count\": 2\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "ceremony_id": "v060-claimed",
+          "first_broken_sequence": null,
+          "head_version": 2,
+          "intact": true,
+          "reason": null,
+          "record_count": 2
+        }
+      }
+    }
+  },
+  {
+    "request": {
+      "jsonrpc": "2.0",
+      "id": 17,
+      "method": "tools/call",
+      "params": {
+        "name": "made_get_ceremony_instance",
+        "arguments": {
+          "ceremony_id": "v060-claimed"
+        }
+      }
+    },
+    "response": {
+      "id": 17,
+      "jsonrpc": "2.0",
+      "result": {
+        "content": [
+          {
+            "text": "{\n  \"bound_definition_digest\": \"185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df\",\n  \"causation_id\": \"v060-claimed:ceremony_instance_started:session\",\n  \"ceremony_id\": \"v060-claimed\",\n  \"claimable_step_ids\": [],\n  \"completed\": false,\n  \"context\": {},\n  \"correlation_id\": \"v060-claimed:ceremony_instance_started:session\",\n  \"current_state\": \"WORKING\",\n  \"current_state_iteration\": 1,\n  \"current_state_visit\": 1,\n  \"definition_name\": \"upgrade_v060\",\n  \"definition_version\": \"1.0\",\n  \"guard_deferrals\": [],\n  \"interventions\": [],\n  \"next_step_id\": null,\n  \"open_intervention_ids\": [],\n  \"participant_bindings\": [],\n  \"reasons\": [],\n  \"recollection\": null,\n  \"state_repeat_condition_satisfied\": true,\n  \"state_repeat_limit_reached\": false,\n  \"state_repeat_max_iterations\": null,\n  \"steps\": [\n    {\n      \"attempt\": 1,\n      \"error\": null,\n      \"iteration\": 1,\n      \"output\": {},\n      \"repeat_condition_satisfied\": true,\n      \"repeat_limit_reached\": false,\n      \"repeat_max_iterations\": null,\n      \"state_id\": \"WORKING\",\n      \"state_iteration\": 1,\n      \"state_visit\": 1,\n      \"status\": \"in_progress\",\n      \"step_id\": \"work\"\n    }\n  ],\n  \"trace_id\": \"5870310d81964c22854e8583bfc2a18e\",\n  \"transitions\": [\n    {\n      \"enabled\": false,\n      \"guards\": [\n        {\n          \"kind\": \"automated\",\n          \"name\": \"done\",\n          \"satisfied\": false\n        }\n      ],\n      \"to_state\": \"CLOSED\",\n      \"trigger\": \"finish\"\n    }\n  ],\n  \"waiting_for_human\": []\n}",
+            "type": "text"
+          }
+        ],
+        "isError": false,
+        "structuredContent": {
+          "bound_definition_digest": "185e2b4b93ddcac5abefd5a17a6e4bca8052a6c806c4bddc453c7fdcb28599df",
+          "causation_id": "v060-claimed:ceremony_instance_started:session",
+          "ceremony_id": "v060-claimed",
+          "claimable_step_ids": [],
+          "completed": false,
+          "context": {},
+          "correlation_id": "v060-claimed:ceremony_instance_started:session",
+          "current_state": "WORKING",
+          "current_state_iteration": 1,
+          "current_state_visit": 1,
+          "definition_name": "upgrade_v060",
+          "definition_version": "1.0",
+          "guard_deferrals": [],
+          "interventions": [],
+          "next_step_id": null,
+          "open_intervention_ids": [],
+          "participant_bindings": [],
+          "reasons": [],
+          "recollection": null,
+          "state_repeat_condition_satisfied": true,
+          "state_repeat_limit_reached": false,
+          "state_repeat_max_iterations": null,
+          "steps": [
+            {
+              "attempt": 1,
+              "error": null,
+              "iteration": 1,
+              "output": {},
+              "repeat_condition_satisfied": true,
+              "repeat_limit_reached": false,
+              "repeat_max_iterations": null,
+              "state_id": "WORKING",
+              "state_iteration": 1,
+              "state_visit": 1,
+              "status": "in_progress",
+              "step_id": "work"
+            }
+          ],
+          "trace_id": "5870310d81964c22854e8583bfc2a18e",
+          "transitions": [
+            {
+              "enabled": false,
+              "guards": [
+                {
+                  "kind": "automated",
+                  "name": "done",
+                  "satisfied": false
+                }
+              ],
+              "to_state": "CLOSED",
+              "trigger": "finish"
+            }
+          ],
+          "waiting_for_human": []
+        }
+      }
+    }
+  }
+]
