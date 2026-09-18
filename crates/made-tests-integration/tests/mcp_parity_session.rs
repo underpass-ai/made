@@ -34,6 +34,8 @@ use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
+#[path = "mcp_parity_session/dynamic_roles.rs"]
+mod dynamic_roles;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
@@ -145,9 +147,15 @@ steps:
   - id: work
     state: OPEN
     handler: parity_step
+    context_writes:
+      last_step: step
   - id: handoff
     state: REVIEW
     handler: parity_step
+    role_from: context.next_role
+    allowed_roles: [FACILITATOR]
+    context_writes:
+      final_summary: handoff_note
 roles:
   - id: FACILITATOR
     allowed_actions:
@@ -573,7 +581,10 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "definition_yaml": PARITY_CEREMONY,
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
-                "context": { "incident_ref": "INC-42", "severity": 2 },
+                "context": {
+                    "incident_ref": "INC-42", "severity": 2,
+                    "next_role": "FACILITATOR"
+                },
             }),
         ),
         (
@@ -953,6 +964,8 @@ async fn drive_the_whole_session(arms: &ParityArms) {
     let session = structured(&session);
     assert_eq!(session["current_state"], json!("DONE"), "{session:#}");
     assert_eq!(session["steps"].as_array().map(Vec::len), Some(2));
+    assert_eq!(session["context"]["last_step"], "work");
+    assert_eq!(session["context"]["final_summary"], "the reviewer has it");
     assert!(
         !session["steps"][0]["output"]
             .as_object()

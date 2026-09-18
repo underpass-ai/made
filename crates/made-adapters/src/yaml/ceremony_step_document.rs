@@ -2,8 +2,8 @@ use std::collections::BTreeMap;
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, CeremonyStep, RetryPolicy, StateId, StepHandlerConfig, StepHandlerKind, StepId,
-    StepTimeout,
+    Attributes, CeremonyStep, ContextKey, ContextWrites, DynamicRoleBinding, RetryPolicy, RoleId,
+    StateId, StepHandlerConfig, StepHandlerKind, StepId, StepOutputField, StepTimeout,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -19,6 +19,12 @@ pub(super) struct CeremonyStepDocument {
     config: BTreeMap<String, Value>,
     #[serde(default)]
     repeat: Option<StepRepeatPolicyDocument>,
+    #[serde(default)]
+    role_from: Option<String>,
+    #[serde(default)]
+    allowed_roles: Vec<String>,
+    #[serde(default)]
+    context_writes: BTreeMap<String, String>,
 }
 
 impl CeremonyStepDocument {
@@ -35,9 +41,34 @@ impl CeremonyStepDocument {
             retry_policy,
             timeout,
         );
-        match self.repeat {
-            Some(repeat) => Ok(step.with_repeat_policy(repeat.into_domain()?)),
-            None => Ok(step),
+        let mut step = match self.repeat {
+            Some(repeat) => step.with_repeat_policy(repeat.into_domain()?),
+            None => step,
+        };
+        match (self.role_from, self.allowed_roles.is_empty()) {
+            (Some(role_from), false) => {
+                step = step.with_dynamic_role_binding(DynamicRoleBinding::new(
+                    ContextKey::from_role_from(&role_from)?,
+                    self.allowed_roles
+                        .into_iter()
+                        .map(RoleId::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )?);
+            }
+            (None, true) => {}
+            _ => {
+                return Err(DomainError::InvariantViolated {
+                    reason: "role_from and allowed_roles must be declared together",
+                });
+            }
         }
+        let writes = self
+            .context_writes
+            .into_iter()
+            .map(|(destination, source)| {
+                Ok((ContextKey::new(destination)?, StepOutputField::new(source)?))
+            })
+            .collect::<Result<BTreeMap<_, _>, DomainError>>()?;
+        Ok(step.with_context_writes(ContextWrites::new(writes)))
     }
 }

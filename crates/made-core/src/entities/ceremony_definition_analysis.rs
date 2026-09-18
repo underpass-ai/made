@@ -168,7 +168,7 @@ impl CeremonyDefinitionParts<'_> {
             );
             let Some(from) = self.states.get(transition.from()) else {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::NotFound {
                         what: "ceremony_transition.from_state",
                     },
@@ -177,7 +177,7 @@ impl CeremonyDefinitionParts<'_> {
             };
             if !self.states.contains_key(transition.to()) {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::NotFound {
                         what: "ceremony_transition.to_state",
                     },
@@ -246,11 +246,40 @@ impl CeremonyDefinitionParts<'_> {
             };
             if state.is_terminal() {
                 findings.push(CeremonyValidationFinding::error(
-                    locus,
+                    locus.clone(),
                     DomainError::InvariantViolated {
                         reason: "terminal ceremony states cannot own executable steps",
                     },
                 ));
+            }
+            if let Some(binding) = step.dynamic_role_binding() {
+                if binding.allowed_roles().is_empty() {
+                    findings.push(CeremonyValidationFinding::error(
+                        locus.clone(),
+                        DomainError::EmptyCollection {
+                            field: "dynamic_role_binding.allowed_roles",
+                        },
+                    ));
+                }
+                for role_id in binding.allowed_roles() {
+                    match self.roles.get(role_id) {
+                        None => findings.push(CeremonyValidationFinding::error(
+                            locus.clone(),
+                            DomainError::NotFound {
+                                what: "ceremony_step.dynamic_role",
+                            },
+                        )),
+                        Some(role) if !role.allows(&RoleAction::step(step_id.clone())) => {
+                            findings.push(CeremonyValidationFinding::error(
+                                locus.clone(),
+                                DomainError::InvariantViolated {
+                                    reason: "dynamic role must be authorised for the ceremony step",
+                                },
+                            ));
+                        }
+                        Some(_) => {}
+                    }
+                }
             }
         }
     }
@@ -325,15 +354,21 @@ impl CeremonyDefinitionParts<'_> {
                 .values()
                 .filter(|step| step.state_id() == state.id())
                 .collect::<Vec<_>>();
-            let mut owners = BTreeSet::new();
+            let mut static_owners = BTreeSet::new();
+            let mut possible_roles = BTreeSet::new();
             let mut duplicate_owner = false;
             for step in &steps {
+                if let Some(binding) = step.dynamic_role_binding() {
+                    possible_roles.extend(binding.allowed_roles().iter().cloned());
+                    continue;
+                }
                 let owner = self
                     .roles
                     .values()
                     .find(|role| role.allows(&RoleAction::step(step.id().clone())));
                 if let Some(owner) = owner {
-                    duplicate_owner |= !owners.insert(owner.id().clone());
+                    possible_roles.insert(owner.id().clone());
+                    duplicate_owner |= !static_owners.insert(owner.id().clone());
                 }
             }
             if duplicate_owner {
@@ -344,7 +379,7 @@ impl CeremonyDefinitionParts<'_> {
                     },
                 ));
             }
-            if owners.len() > 3 {
+            if possible_roles.len() > 3 {
                 findings.push(CeremonyValidationFinding::warning(
                     CeremonyValidationLocus::state(state.id().clone()),
                     DomainError::InvariantViolated {

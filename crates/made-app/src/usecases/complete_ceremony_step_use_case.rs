@@ -54,10 +54,7 @@ impl CompleteCeremonyStepUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
-        // The seat is the definition's to say, as it is everywhere a
-        // step is run. Only what filled it had to be declared.
-        let finished_by = definition.role_id_for_step(&input.step_id)?;
-        let actor = session_facts::seat(&finished_by, input.actor_kind)?;
+        let actor_kind = input.actor_kind;
         let now = self.clock.now();
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: input.step_id,
@@ -70,6 +67,7 @@ impl CompleteCeremonyStepUseCase {
         self.stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&command, &definition)?;
+                let actor = session_facts::step_result_seat(&events, actor_kind)?;
                 session_facts::facts(&session.instance, events, &actor, now)
             })
             .await
@@ -79,19 +77,22 @@ impl CompleteCeremonyStepUseCase {
 
 #[cfg(test)]
 mod tests {
+    use made_core::entities::ceremony_events::StepStarted;
     use made_core::entities::CeremonyEvent;
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
     use made_core::value_objects::{
-        Attributes, AuditActorKind, AuditEventType, StepOutput, StepResult, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, RoleId, StateIteration, StepAttempt,
+        StepIteration, StepLease, StepOutput, StepResult, StepStatus,
     };
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, idempotency_key, lease_owner, now,
-        repeating_definition, role_id, started_instance, step_id, stream, stream_conflicting_once,
-        stream_over, DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        ceremony_id, context_writing_definition, definition, definition_resolver, idempotency_key,
+        lease_owner, now, repeating_definition, role_id, started_instance, step_id, stream,
+        stream_conflicting_once, stream_over, stream_overtaken_once, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -160,6 +161,190 @@ mod tests {
                 .unwrap()
                 .status(),
             StepStatus::Completed
+        );
+    }
+
+    #[tokio::test]
+    async fn retry_attributes_the_ending_to_the_role_sealed_by_the_winning_reclaim() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step_as(
+                &definition,
+                &role_id(),
+                &step_id(),
+                StepLease::new(
+                    lease_owner(),
+                    idempotency_key("lease-old"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let winner = RoleId::new("replacement").unwrap();
+        let won_at = now() + time::Duration::seconds(61);
+        let reclaim = CeremonyEvent::StepStarted(StepStarted {
+            step_id: step_id(),
+            state_iteration: Some(StateIteration::FIRST),
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::new(2).unwrap(),
+            lease: StepLease::new(
+                lease_owner(),
+                idempotency_key("lease-winner"),
+                won_at,
+                won_at + time::Duration::seconds(60),
+            )
+            .unwrap(),
+            started_by: winner.clone(),
+            role_from: None,
+            sealed_role: Some(winner.clone()),
+            started_at: won_at,
+        });
+        let overtaking_fact = session_facts::fact(
+            &instance,
+            reclaim,
+            session_facts::seat(&winner, AuditActorKind::Agent).unwrap(),
+            won_at,
+        )
+        .unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream_overtaken_once(instances.clone(), overtaking_fact),
+            Arc::new(FixedClock::new(won_at)),
+        );
+
+        usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(StepOutput::empty()).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .unwrap();
+
+        let records = instances.records(&ceremony_id()).await;
+        let ending = records
+            .iter()
+            .find(|record| record.event_type() == AuditEventType::StepCompleted)
+            .unwrap();
+        let Some(CeremonyEvent::StepCompleted(completed)) = ending.event() else {
+            panic!("the ending is a completed step");
+        };
+        assert_eq!(completed.finished_by, winner);
+        assert_eq!(ending.actor().role_id(), Some(&winner));
+    }
+
+    #[tokio::test]
+    async fn context_write_completion_retries_as_one_adjacent_event_batch() {
+        let definition = context_writing_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step_as(
+                &definition,
+                &role_id(),
+                &step_id(),
+                StepLease::new(
+                    lease_owner(),
+                    idempotency_key("write-lease"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream_conflicting_once(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+        let output = StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "summary".to_owned(),
+                serde_json::json!("accepted"),
+            )]))
+            .unwrap(),
+        );
+
+        usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(output).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            instances
+                .facts()
+                .await
+                .iter()
+                .map(|fact| fact.event.event_type())
+                .collect::<Vec<_>>(),
+            [
+                AuditEventType::StepCompleted,
+                AuditEventType::ContextWritten
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_context_write_source_appends_neither_completion_event() {
+        let definition = context_writing_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step_as(
+                &definition,
+                &role_id(),
+                &step_id(),
+                StepLease::new(
+                    lease_owner(),
+                    idempotency_key("missing-source"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        assert!(usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(StepOutput::empty()).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .is_err());
+        assert!(instances.facts().await.is_empty());
+        assert_eq!(
+            instances
+                .saved(&ceremony_id())
+                .await
+                .step_record(&step_id())
+                .unwrap()
+                .status(),
+            StepStatus::InProgress
         );
     }
 

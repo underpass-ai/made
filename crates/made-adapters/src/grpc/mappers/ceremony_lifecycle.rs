@@ -104,7 +104,8 @@ pub fn run_ceremony_step_input_from_proto(
         lease_owner_id,
         idempotency_key,
         lease_ttl,
-    ))
+    )
+    .with_automatic_role_resolution())
 }
 
 pub fn apply_ceremony_transition_input_from_proto(

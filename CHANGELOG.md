@@ -19,6 +19,16 @@ the documentation closure in #121 and publication review repairs in #126.
 Its highlights remain recorded separately here until the release procedure
 creates the immutable tagged sections.
 
+### 0.5.0 release-candidate summary
+
+Phase 3a completes the primitive foundation for claimable concurrency:
+concurrent states and typed joins, bounded state repetition, output and
+exhaustion guards, transition budgets and cycle analysis, dynamic role
+binding, atomic context writes, fragment/preset infrastructure, and
+step/provider/judge tracing. #130 records the final composed candidate and
+verification evidence. Entries remain under `Unreleased`; Tirso owns the
+version bump, tag and release publication.
+
 ### 0.4.0 highlights
 
 - Ceremony event streams are now the source of truth: commands decide sealed
@@ -46,7 +56,8 @@ creates the immutable tagged sections.
   stream prefix (#119).
 - The final parity session fills optional fields and rotates enum variants in
   #120 on memory and SQLite, including sealed leases, intact journals and
-  all four result labels. The original report golden remains unchanged.
+  all four result labels. That Phase 2 expansion kept the original report
+  golden unchanged; the later P2/P5 scenarios add their new event contracts.
 
 ### Remaining 0.4.0 debt
 
@@ -55,6 +66,12 @@ creates the immutable tagged sections.
   reports are complete in #108 and #110.
 
 ### Added
+
+- Ceremony steps can resolve an allowed role from a top-level context key at
+  claim time and seal that role for completion, replay and audit attribution.
+  Declared successful output fields can be copied atomically into ceremony
+  context through `ContextWritten`; the proto, both MCP backends, YAML and the
+  embedded facade share the same validation and serialization. (#130)
 
 - Ceremony definitions can declare positive `max_transitions` and
   `max_bounces` budgets across YAML, proto, direct gRPC, both MCP editions and
@@ -136,6 +153,19 @@ creates the immutable tagged sections.
 - MCP sealed records, instance listings, and statistics envelopes now use one
   JSON renderer across the embedded, gRPC, and fixture backends (#101).
 
+### Known limitations for 0.5.0
+
+- Automated fan-out, aggregation and complete patterns remain for corte 4:
+  B3–B6, C1, full D1–D5 and F5. `roundtable_fixed_order` is D1 v0, with fixed
+  sequential turns; full manager-selected group chat remains pending.
+- Shared domain value objects for public list bounds and uniqueness remain
+  tracked in #100.
+- Completion is not fenced to the exact claim/attempt token. A stale worker
+  can complete after reclaim; #127 owns the compatible contract repair.
+- Transition caps bound cycles but preserve step records on state re-entry.
+  #129 owns durable state visits, reset events and replay compatibility before
+  full cyclic handoff or magentic patterns can rely on repeated work.
+
 ### Architecture
 
 - Close the architecture gate blind spots for private primary types, primitive
@@ -161,6 +191,26 @@ creates the immutable tagged sections.
   implementation (#90).
 
 ### Fixed
+
+- The orchestration plan now distinguishes the 18 emitted ceremony events
+  from the 21 audit catalogue entries and uses their implemented names.
+  (#130, fixes #135)
+
+- Concurrent static steps reserve their actual alternate role as well as
+  canonical owners, preventing two steps from claiming the same seat. Legacy
+  event hashes and canonical static claim payloads remain unchanged.
+  (#130, fixes #134)
+
+- Automatic claim and run requests resolve dynamic roles from current context
+  inside each optimistic decision. The winning claim supplies the audit actor,
+  handler role and trace; explicit facade role selection remains enforced.
+  (#130, fixes #133)
+
+- Definition comparison now reports state execution, state repeat and
+  `max_parallel` changes, alongside transition budgets and dynamic role/context
+  policies. Changes that introduce mandatory context-write output sources are
+  classified as potentially stranding an existing session. (#130, fixes #132)
+
 
 - Reject ceremony starts and runs with missing required context inputs before
   opening an instance or event stream; report every missing name through all

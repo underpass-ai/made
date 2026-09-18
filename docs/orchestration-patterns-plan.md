@@ -39,6 +39,16 @@ it; each is checkable at the cited path.
 
 ### 0.1 Execution model
 
+**Phase 3a completion note (2026-09-18).** The bullets below are the historical
+audit that motivated this plan. B1+B2 now let distinct role-owned steps in one
+concurrent state hold bounded live leases and expose all
+`claimable_step_ids`; the aggregate evaluates typed all/any/count joins
+(#122). State repeat, typed output/exhaustion guards, transition caps, dynamic
+role binding and atomic context writes are now generic definition primitives
+(#128, #116, #131, #130). The one-shot and deliberation drivers remain
+sequential: B3–B6 have not landed, so this note does not claim automatic
+fan-out, aggregation or parallel proposing.
+
 - A ceremony is a **single-token state machine**: `CeremonyInstance` holds one
   `current_state` (`crates/made-core/src/entities/ceremony_instance.rs`), and
   `start_step` / `apply_step_result` refuse any step outside it
@@ -161,9 +171,11 @@ MADE's port and conformance suite. ADR-013 records that boundary.
 **Completion note (2026-09-18).** The four surfaces and their intentional
 gaps are derived from `parity.tsv`; whole/paged history and its typed page
 limit landed in #108, and reports fold one bounded stream cut in #110. The
-#120 supplies the final filled-optional and enum-rotation proof on memory
-and SQLite. Shared domain value objects for list bounds remain
-explicit follow-up debt in #100; phase completion does not claim that work.
+#120 supplies the filled-optional and enum-rotation proof on memory and SQLite.
+Shared domain value objects for list bounds remain explicit follow-up debt in
+#100. Phase 3a also leaves claim/attempt completion fencing in #127 and durable
+state re-entry/reset semantics in #129; phase completion does not claim any of
+those three debts.
 
 Four surfaces expose the engine: the gRPC contract
 (`crates/made-proto/proto/underpass/made/v1/made.proto`), the MCP server on the
@@ -452,7 +464,7 @@ happened, not only that something did.
 
 | Element | Design |
 |---|---|
-| **Events** | `CeremonyEvent`, one variant per fact the engine already names (`AuditEventType` has 18): `CeremonyStarted`, `ParticipantsBound`, `StepClaimed`, `StepCompleted`, `StepFailed`, `TransitionApplied`, `GuardApproved`, `GuardDeferred`, `InterventionRequested`/`Responded`/`Closed`, `EvidenceCollected`, `ReasonAsserted`, `ContextWritten` (new, §3.5), `CeremonyCompleted`, `CeremonyFailed`, `CeremonyCancelled`; later `ChildSpawned` / `ChildFinished` (§3.3). Each variant carries its full payload (the step output, the transition trigger and states, the guard decision, the intervention text, the evidence pack, the bindings) and its own `schema_version`. Payloads are the value objects the aggregate already uses; no new vocabulary. |
+| **Events** | Implemented `CeremonyEvent` has 18 stream variants: `CeremonyInstanceStarted`, `ParticipantsBound`, `StepStarted`, `StepCompleted`, `StepFailed`, `ContextWritten`, `StateIterationStarted`, `TransitionApplied`, `InterventionRequested`, `InterventionResponded`, `InterventionClosed`, `EvidenceCollected`, `ReasonAsserted`, `HumanApprovalRecorded`, `HumanDeferralRecorded`, `CeremonyCompleted`, `InstanceImported` and `MemoryRecalled`. `AuditEventType` has 21 entries: `CeremonyDefinitionValidated` / `CeremonyDefinitionPublished` belong to the definition catalogue and `CeremonyFailed` has no stream producer. Each stream variant carries its full typed payload and its own `schema_version`. `ChildSpawned` / `ChildFinished` remain deferred to §3.3. |
 | **Aggregate** | `CeremonyInstance` splits every mutator into `decide(command, &definition) -> Result<Vec<CeremonyEvent>, DomainError>` (pure; all invariants, leases, idempotency and authorization live here) and `apply(&event)` (pure, infallible, no validation). `rehydrate(definition, events)` is the fold. The in-snapshot history lists (`transitions`, `guard_approvals`, `guard_deferrals`, `reasons`, `step_record_history`) become derived state, folded from events. |
 | **Stream** | One stream per ceremony: `(ceremony_id, sequence)`, sequence from 1, contiguous. The sealed envelope is today's `AuditRecord` with the event inside: `event_id` (derived, as `session_facts` already does), `event_type`, `schema_version`, ids, `occurred_at`, `actor`, `correlation_id`, `causation_id`, `trace_id` (all filled, §3.7), `previous_record_hash`, `record_hash` over the canonical envelope **including the payload**. `AuditChain::verify` keeps working unchanged and now verifies content. |
 | **Concurrency** | `append(stream, expected_version, events)` where `expected_version` is the stream length the command was decided against. A stale expectation returns `Conflict` and writes nothing. The use-case layer retries commutative commands (reload = fold the new events, re-decide, re-append; bounded attempts) and fails fast on non-commutative ones (transition, start). Two hosts completing two steps of a concurrent state therefore both land. |
@@ -494,8 +506,8 @@ file, the way `share-store` did.
 
 | Slice | Change | Gate |
 |---|---|---|
-| B1 | Definition: a state gains `execution: sequential \| concurrent` (default `sequential`; absent field keeps today's serialized shape). Analysis rules: a concurrent state's steps must belong to distinct roles or declare distinct councils; it needs at least one join guard. Join guards are new generic conditions: `all_steps_completed` (exists), `any_step_completed`, `steps_completed: n` (quorum). No expression language. | Definition analysis tests; YAML round-trip; design-tool schema; proto and both MCP presenters in the same PR. |
-| B2 | Aggregate: in a concurrent state several steps may hold live leases at once; `next_step_id` keeps returning the first claimable step and a new `claimable_step_ids` lists all of them (additive on every surface). Per-step `repeat` keeps working per step. Transition out of the state is disabled while any repeat is unmet (ADR-010 rule unchanged). | Aggregate tests: two claims, two completions, any order; conflict-and-retry test over the event store. |
+| B1 | Definition: a state gains `execution: sequential \| concurrent` (default `sequential`; absent field keeps the prior serialized shape). Analysis enforces distinct role ownership and a valid all/any/count join; authoring carries the same shape through YAML and all four surfaces. *[Done in #122.]* | Definition analysis, YAML/design round trips, proto/MCP/facade coverage and four-surface parity passed on the verified P1 tree. |
+| B2 | Aggregate: several distinct steps in one concurrent state may hold live leases, bounded by definition `max_parallel` and the host ceiling. `claimable_step_ids` lists every current alternative and `next_step_id` remains its first item. Claims, lease expiry, retries, early joins and transitions share one clock/capacity rule. *[Done in #122.]* | Claim/completion permutations, same-step exclusion, capacity/expiry, real-store conflict/retry, replay and parity passed on the verified P1 tree. |
 | B3 | Cluster driver: `RunCeremonyUseCase` runs a concurrent state's steps with `join_all` under a semaphore (`max_parallel`, per definition with a config ceiling). Each step keeps its claim-then-complete event pair. Inside a deliberation, `seed_proposals` may run agents in parallel under the same semaphore — **as a separate, measured slice**: experiment `003-parallel-proposing` records latency and provider saturation before it becomes the default. | Compose E2E with a two-role concurrent state; experiment README with numbers. |
 | B4 | Embedded driver: the runbook and the `run-ceremony` skill describe fan-out: claim every `claimable_step_ids`, perform with the host's own subagents, complete in any order, then transition. Two hosts sharing the SQLite store may each claim one step. | Embedded stdio test with two claims; two-process test. |
 | B5 | Aggregation as step config, not a new handler: the first step of the following state, with `see_prior: true`, sees every sibling output. Optional `aggregate:` block on that step — `synthesize` (a council whose brief lists sibling outputs; the existing handler), `vote` (deterministic majority over a declared output field, no model call). Strategies are data validated by analysis. | Unit tests for `vote`; E2E for `synthesize`. |
@@ -505,6 +517,10 @@ Definition of done: a `concurrent-review` example ceremony (three reviewers on
 one draft, one synthesizer) runs end to end in both editions, appears in the
 Mermaid diagram as a fork/join region, and can be emitted by
 `made_design_ceremony`.
+
+**Phase 3a status:** B1+B2 are complete. B3–B6 and this workstream's E2E
+definition of done remain deferred to corte 4; no current driver launches the
+claimable steps concurrently or renders a fork/join region.
 
 ### 3.3 WS-C — Broadcasting
 
@@ -537,10 +553,11 @@ in §3.5 because none of them belongs to a single pattern.
   interventions targeted at the table, plus a final human guard.
 - **Caps.** The Azure guide recommends three or fewer agents; the analysis
   warns above three roles in a group-chat state.
-- **Without new primitives** a v0 exists today: fixed round-robin over N speak
-  steps in one state, each with `see_prior`, plus one step repeat with
-  `until: done`. Ship it first as `roundtable_fixed_order`; the
-  manager-selected version follows the primitives.
+- **D1 v0 delivered.** #114 ships `roundtable_fixed_order`: fixed sequential
+  speaking turns in declaration order, with prior contributions visible to
+  later turns. It proves the fragment/preset infrastructure. Full D1 remains
+  pending because manager-selected speakers, dynamic role use, state repeat
+  and the complete cap/fallback E2Es have not been assembled as that pattern.
 - **Gate.** E2E where the manager ends the chat before the cap; E2E where the
   cap fires and the fallback state is reached.
 
@@ -634,21 +651,22 @@ tool emits it from `stages[].pattern` alone.
 
 Seven additions to the definition model, accepted on 2026-09-17 in
 [ADR-015](adr/015-concurrent-states-and-join-guards.md) and
-[ADR-016](adr/016-bounded-definition-primitives.md). Each serves more than one
-pattern and lands on the four surfaces in one PR. Concurrent states, state
-repeat, output guards and exhausted-repeat guards are implemented; phase 3a
-continues with the remaining primitives plus fragment infrastructure and G4.
-Drivers, aggregation, broadcasting and complete patterns remain for corte 4.
+[ADR-016](adr/016-bounded-definition-primitives.md), are implemented on the
+four ceremony surfaces. They are reusable engine primitives, not evidence
+that the patterns which compose them run end to end. Drivers, aggregation,
+broadcasting and complete patterns remain for corte 4. Review repair #132,
+included in #130, makes execution, repeat, capacity and P5 step-policy changes
+visible in `DefinitionDiff` with their carry-or-strand impact.
 
-| Primitive | Used by | Note |
+| Primitive | Used by | Implementation record |
 |---|---|---|
-| `execution: concurrent` on a state + join guards | C1, B, D1 (parallel critics), D5 | WS-B |
-| `repeat` on a **state** (all its steps re-run as one semantic iteration; iteration coordinate on the state) | D1, D2, D4 | Implemented by P2; extends ADR-010 and leaves per-step `repeat` separate |
-| Guard `output_field:<step>:<field>=<json>` | D3, D4, D2 (approved) | Generalises the ADR-010 condition vocabulary; ADR-010 asked for "an explicit future contract" — this is it |
-| Guard `step_repeat_exhausted:<step>` | D2, D4 | Makes the cap a routable outcome instead of an error |
-| Role binding from a context key (`role_from: context.<key>`), with an allow-list of roles per step | D1 (next speaker), D3, D4 | Resolved at claim time against the definition's roles; a role outside the allow-list is a refusal |
-| `context_writes` from step output (declared fields promoted into context) | D4 (ledger), D3 (handoff target), D1 (instructions) | Recorded as `ContextWritten` in the same append as `StepCompleted` |
-| `max_transitions` / `max_bounces` per definition | D3, D4, any cyclic graph | Analysis rejects a cyclic definition without them |
+| `execution: concurrent` on a state + all/any/count joins | C1, B, D1 (parallel critics), D5 | #122: claimable concurrency, bounded leases and shared readiness rules; automated concurrent drivers remain B3/B4. |
+| `repeat` on a **state** | D1, D2, D4 | #128: durable `state_iteration`, separate from step iteration/attempt, with replay and sealed-hash compatibility. |
+| Guard `output_field:<step>:<field>=<json>` | D3, D4, D2 | #116: exact top-level JSON comparison on the active successful record. |
+| Guard `step_repeat_exhausted:<step>` | D2, D4 | #116: exact-transition waiver for that step only. |
+| `role_from: context.<key>` plus an allowed-role list | D1, D3, D4 | #130: claim-time resolution and sealed role identity; does not materialize a pattern. |
+| `context_writes` from step output | D4, D3, D1 | #130: `ContextWritten` is atomic with completion and replay owns context mutation. |
+| `max_transitions` / `max_bounces` | D3, D4, any cyclic graph | #131: counts derive from sealed transitions and unbounded SCCs are rejected; #129 still owns visit/reset semantics. |
 
 ### 3.6 WS-F — Parity between the local edition and the API
 
@@ -729,8 +747,8 @@ required check between a ready pull request and `main`.
 | 0 | Done 2026-09-18 | ADR-012 (event sourcing), ADR-013 (memory), ADR-014 (parity); G5 docs truth pass; H1–H2 (the draft loop and the stand-down), because every later slice iterates on it. | ADRs merged; the observability docs claim only what runs; a draft PR gets feedback in minutes. |
 | 1 | Done 2026-09-18 | F1, F2, F4 (the parity gate, cheap and prerequisite); H3–H5; A1–A4 (events, aggregate, store, use cases); E0–E3 in parallel. | Parity gate green with a non-empty exception file; impact routing and tree proof live; ceremonies are folds over SQLite-stored streams; conflict retry proven; SQLite memory default. |
 | 2 | Done 2026-09-18 | A5–A8 (projections, cursors, migration, ADR); G1–G3 (seam, trace ids, embedded adapters); C2 (NATS publisher, pull tool, file sink); F3 (API catch-up: claim, complete, design, events, transcript). | Pre-stream stores migrate with fold equality against the v0.3.1 fixture; metrics identical across drivers and editions; ceremony events reach NATS and the pull cursor; the exception file has no ceremony rows. The optional/enum parity proof is #120; ADR and documentation closure is #121. |
-| 3 | Planned | B1–B6 and the §3.5 primitives, each on four surfaces; D1–D4 fragments; D5 composition in the design tool; C1; G4. | `concurrent-review` and `incident_review` run E2E in both editions; four fragments run E2E; diagrams show pattern regions. |
-| 4 | Planned; E4, E5 and F6 delivered early | C3 spawn/join; G6 ceremony stream; F5 revisited with B3's numbers. | Parent/children E2E over NATS and over the pull cursor. |
+| 3a | Done 2026-09-18 | B1+B2 claimable concurrency; the seven §3.5 primitives via #122, #128, #116, #131 and #130; fragment/preset infrastructure and D1 v0 via #114; G4 via #123. | The exact composed tree, full repository gates, four-surface parity and operator evidence are recorded by #130 after merge. This closes the primitive foundation, not the original full Phase 3 pattern criteria. |
+| 4 | Planned; E4, E5 and F6 delivered early | B3–B6; C1 and C3; complete D1–D5 fragments, E2Es and composition; F5; G6; #129 durable state visits before cyclic D3/D4. | `concurrent-review`, `incident_review` and the four complete pattern fragments run E2E in the claimed editions; diagrams show pattern regions; parent/children run over NATS and the pull cursor. |
 
 Each slice lands as its own PR, iterated as a draft on the dev loop and
 merged on the full gate, with: the gate named in its table row, a CHANGELOG
@@ -794,5 +812,14 @@ Owner decisions of 2026-09-17:
   council bus events stay outside the ceremony cursor.
 
 The external KMP adapter's repository and council event-sourcing design remain
-outside this cut. B3–B6, C1, D1–D5 and F5 are deferred to corte 4; phase 3a must
-not be described as completion of all phase 3 exit criteria.
+outside this cut. Phase 3a closes claimable concurrency and the seven generic
+definition primitives only. B3–B6, C1, complete D1–D5 and F5 are deferred to
+corte 4; G6 and C3 retain their later streaming/spawn scope.
+
+Three explicit debts remain. #100 owns shared domain value objects for public
+list bounds and uniqueness. #127 owns claim/attempt fencing on completion so a
+stale worker cannot finish a reclaimed step. #129 owns durable state visits:
+P4 bounds the number of transitions but deliberately preserves existing step
+records when a transition returns to a prior state. Until #129 defines a
+sealed reset/re-entry event and compatibility contract, capped cycles are not
+evidence that full handoff or magentic patterns execute correctly.

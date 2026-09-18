@@ -48,6 +48,48 @@ pub(crate) fn seat(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor,
     AuditActor::new(role_id.as_str(), kind, Some(role_id.clone()))
 }
 
+/// The seat sealed by a successful step-ending decision.
+///
+/// Derived inside optimistic retries so the envelope actor and the event's
+/// `finished_by` always describe the same accepted attempt.
+pub(crate) fn step_result_seat(
+    events: &[CeremonyEvent],
+    kind: AuditActorKind,
+) -> Result<AuditActor, DomainError> {
+    let role = events.iter().find_map(|event| match event {
+        CeremonyEvent::StepCompleted(completed) => Some(&completed.finished_by),
+        CeremonyEvent::StepFailed(failed) => Some(&failed.finished_by),
+        _ => None,
+    });
+    seat(
+        role.ok_or(DomainError::InvariantViolated {
+            reason: "a step result decision emits a completed or failed event",
+        })?,
+        kind,
+    )
+}
+
+/// The seat sealed by the step-start decision that won an optimistic append.
+///
+/// Automatic role binding is resolved by the aggregate against the session
+/// seen by each retry. Reading the accepted event here keeps the audit actor
+/// aligned with that decision even when context changed after the first read.
+pub(crate) fn step_started_seat(
+    events: &[CeremonyEvent],
+    kind: AuditActorKind,
+) -> Result<AuditActor, DomainError> {
+    let role = events.iter().find_map(|event| match event {
+        CeremonyEvent::StepStarted(started) => Some(&started.started_by),
+        _ => None,
+    });
+    seat(
+        role.ok_or(DomainError::InvariantViolated {
+            reason: "a step start decision emits a started event",
+        })?,
+        kind,
+    )
+}
+
 /// Who did it, holding no seat.
 ///
 /// Whoever opens a session or seats its table may be a participant,
@@ -178,6 +220,12 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             failed.state_iteration().get(),
             failed.iteration.get(),
             failed.attempt.get(),
+        ),
+        CeremonyEvent::ContextWritten(written) => step_about(
+            &written.step_id,
+            written.state_iteration.get(),
+            written.iteration.get(),
+            written.attempt.get(),
         ),
         CeremonyEvent::StateIterationStarted(started) => format!(
             "state:{}:iteration:{}",

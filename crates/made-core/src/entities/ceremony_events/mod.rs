@@ -8,6 +8,7 @@
 
 mod ceremony_completed;
 mod ceremony_instance_started;
+mod context_written;
 mod evidence_collected;
 mod human_approval_recorded;
 mod human_deferral_recorded;
@@ -26,6 +27,7 @@ mod transition_applied;
 
 pub use ceremony_completed::CeremonyCompleted;
 pub use ceremony_instance_started::CeremonyInstanceStarted;
+pub use context_written::ContextWritten;
 pub use evidence_collected::EvidenceCollected;
 pub use human_approval_recorded::HumanApprovalRecorded;
 pub use human_deferral_recorded::HumanDeferralRecorded;

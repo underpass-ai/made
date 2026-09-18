@@ -4,7 +4,7 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActor, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
     StateIteration, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
 
@@ -19,7 +19,7 @@ impl RunCeremonyUseCase {
             ceremony_name = %session.instance.definition_name(),
             state_id = %session.instance.current_state(),
             step_id = %step_id,
-            role_id = %role_id,
+            role_id = tracing::field::Empty,
             state_iteration = tracing::field::Empty,
             iteration = tracing::field::Empty,
             attempt = tracing::field::Empty,
@@ -32,8 +32,7 @@ impl RunCeremonyUseCase {
         &self,
         definition: &CeremonyDefinition,
         session: LoadedSession,
-        role_id: &RoleId,
-        actor: &AuditActor,
+        actor_kind: AuditActorKind,
         step_id: &StepId,
         lease_owner_id: &LeaseOwnerId,
         lease_ttl: DurationMs,
@@ -42,6 +41,7 @@ impl RunCeremonyUseCase {
     ) -> Result<
         (
             LoadedSession,
+            RoleId,
             StateIteration,
             made_core::value_objects::StepIteration,
             StepAttempt,
@@ -53,8 +53,7 @@ impl RunCeremonyUseCase {
             .run_step_inner(
                 definition,
                 session,
-                role_id,
-                actor,
+                actor_kind,
                 step_id,
                 lease_owner_id,
                 lease_ttl,
@@ -63,7 +62,7 @@ impl RunCeremonyUseCase {
             )
             .await;
         match &result {
-            Ok((_, state_iteration, iteration, attempt, step_result)) => {
+            Ok((_, _, state_iteration, iteration, attempt, step_result)) => {
                 crate::usecases::step_span::record_coordinates(
                     *state_iteration,
                     *iteration,
@@ -81,8 +80,7 @@ impl RunCeremonyUseCase {
         &self,
         definition: &CeremonyDefinition,
         session: LoadedSession,
-        role_id: &RoleId,
-        actor: &AuditActor,
+        actor_kind: AuditActorKind,
         step_id: &StepId,
         lease_owner_id: &LeaseOwnerId,
         lease_ttl: DurationMs,
@@ -91,6 +89,7 @@ impl RunCeremonyUseCase {
     ) -> Result<
         (
             LoadedSession,
+            RoleId,
             StateIteration,
             made_core::value_objects::StepIteration,
             StepAttempt,
@@ -117,7 +116,7 @@ impl RunCeremonyUseCase {
             lease_ttl,
         )?;
         let claim = CeremonyCommand::StartStep(StartStep {
-            role_id: Some(role_id.clone()),
+            role_id: None,
             step_id: step_id.clone(),
             lease,
             now,
@@ -130,7 +129,8 @@ impl RunCeremonyUseCase {
             .stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&claim, definition)?;
-                session_facts::facts(&session.instance, events, actor, now)
+                let actor = session_facts::step_started_seat(&events, actor_kind)?;
+                session_facts::facts(&session.instance, events, &actor, now)
             })
             .await?;
         // Captured off the claim, before the result is applied: a
@@ -146,6 +146,11 @@ impl RunCeremonyUseCase {
             record.iteration(),
             record.attempt(),
         );
+        let sealed_role = record
+            .claimed_role()
+            .cloned()
+            .map_or_else(|| definition.role_id_for_step(step_id), Ok)?;
+        tracing::Span::current().record("role_id", sealed_role.as_str());
 
         let request = CeremonyStepHandlerRequest::new(
             session.instance.id().clone(),
@@ -159,8 +164,8 @@ impl RunCeremonyUseCase {
             attempt,
         )
         .with_transcript(transcript)
-        .with_role(role_id.clone())
-        .with_bound_specialty(session.instance.bound_specialty(role_id).cloned());
+        .with_role(sealed_role.clone())
+        .with_bound_specialty(session.instance.bound_specialty(&sealed_role).cloned());
         let step_result = self.execute_handler(request).await?;
 
         // Loaded again rather than reusing what the claim left: the
@@ -173,15 +178,24 @@ impl RunCeremonyUseCase {
             result: step_result.clone(),
             now: finished_at,
         });
+        let finish_actor_kind = actor_kind;
         let session = self
             .stream
             .execute(finished_session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&finish, definition)?;
-                session_facts::facts(&session.instance, events, actor, finished_at)
+                let finish_actor = session_facts::step_result_seat(&events, finish_actor_kind)?;
+                session_facts::facts(&session.instance, events, &finish_actor, finished_at)
             })
             .await?;
 
-        Ok((session, state_iteration, iteration, attempt, step_result))
+        Ok((
+            session,
+            sealed_role,
+            state_iteration,
+            iteration,
+            attempt,
+            step_result,
+        ))
     }
 
     #[tracing::instrument(

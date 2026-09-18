@@ -170,19 +170,23 @@ impl RunCeremonyUseCase {
                     {
                         break;
                     }
-                    let role_id = definition.role_id_for_step(&step_id)?;
-                    let actor = session_facts::seat(&role_id, actor_kind)?;
                     // What was said so far, folded from the stream the
                     // steps before this one sealed.
                     let transcript = ceremony_transcript_projection::transcript(
                         &self.stream.records(&id).await?,
                     );
-                    let (moved_on, executed_state_iteration, iteration, attempt, step_result) =
-                        self.run_step(
+                    let (
+                        moved_on,
+                        role_id,
+                        executed_state_iteration,
+                        iteration,
+                        attempt,
+                        step_result,
+                    ) = self
+                        .run_step(
                             &definition,
                             session,
-                            &role_id,
-                            &actor,
+                            actor_kind,
                             &step_id,
                             &lease_owner_id,
                             lease_ttl,
@@ -294,13 +298,17 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
-    use made_core::entities::CeremonyDefinition;
+    use made_core::entities::ceremony_events::ContextWritten;
+    use made_core::entities::{CeremonyDefinition, CeremonyEvent};
     use made_core::error::DomainError;
     use made_core::ports::CeremonyDefinitionRepositoryPort;
     use made_core::value_objects::{
-        Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyName, CeremonyRole,
-        CeremonyState, CeremonyTransition, CeremonyVersion, MaxBounces, MaxTransitions, RoleAction,
-        RoleId, StateId, StepId, StepOutput, StepResult, StepStatus, TransitionTrigger,
+        Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyGuard, CeremonyName,
+        CeremonyRole, CeremonyState, CeremonyStep, CeremonyTranscript, CeremonyTransition,
+        CeremonyVersion, ContextKey, ContextPatch, DynamicRoleBinding, GuardCondition, GuardName,
+        MaxBounces, MaxTransitions, RetryPolicy, RoleAction, RoleId, Specialty, StateId,
+        StateIteration, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
+        StepOutput, StepResult, StepStatus, TransitionTrigger,
     };
     use serde_json::json;
 
@@ -309,8 +317,8 @@ mod tests {
         approval_definition, ceremony_id, definition, lease_owner, lease_ttl,
         nested_multi_iteration_definition, nested_repeating_definition, now, repeating_definition,
         started_instance, state_repeating_definition, step_id, stream, stream_over,
-        two_step_definition, DefinitionRepositoryFake, EventStoreFake, FixedClock,
-        SequenceStepHandlerFake, StepHandlerFake,
+        stream_overtaken_once, two_step_definition, DefinitionRepositoryFake, EventStoreFake,
+        FixedClock, SequenceStepHandlerFake, StepHandlerFake,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -348,6 +356,81 @@ mod tests {
             max_bounces,
         )
         .unwrap()
+    }
+
+    fn dynamic_role_definition() -> CeremonyDefinition {
+        let state = StateId::new("REVIEWING").unwrap();
+        let done = StateId::new("DONE").unwrap();
+        let step = CeremonyStep::new(
+            step_id(),
+            state.clone(),
+            StepHandlerKind::new("multiagent_round").unwrap(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::single_attempt(),
+            None,
+        )
+        .with_dynamic_role_binding(
+            DynamicRoleBinding::new(
+                ContextKey::new("next_role").unwrap(),
+                [
+                    RoleId::new("REVIEWER_A").unwrap(),
+                    RoleId::new("REVIEWER_B").unwrap(),
+                ],
+            )
+            .unwrap(),
+        );
+        let guard = CeremonyGuard::new(
+            GuardName::new("reviewed").unwrap(),
+            GuardCondition::StepStatus {
+                step_id: step.id().clone(),
+                status: StepStatus::Completed,
+            },
+        );
+        let transition = CeremonyTransition::new(
+            state.clone(),
+            done.clone(),
+            TransitionTrigger::new("reviewed").unwrap(),
+            vec![guard.name().clone()],
+        )
+        .unwrap();
+        let reviewer_a = CeremonyRole::new(
+            RoleId::new("REVIEWER_A").unwrap(),
+            [RoleAction::step(step.id().clone())],
+        )
+        .unwrap();
+        let reviewer_b = CeremonyRole::new(
+            RoleId::new("REVIEWER_B").unwrap(),
+            [RoleAction::step(step.id().clone())],
+        )
+        .unwrap();
+        let driver = CeremonyRole::new(
+            RoleId::new("DRIVER").unwrap(),
+            [RoleAction::transition(transition.trigger().clone())],
+        )
+        .unwrap();
+        CeremonyDefinition::new(
+            CeremonyName::new("dynamic_review").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyState::initial(state), CeremonyState::terminal(done)],
+            vec![transition],
+            vec![step],
+            vec![guard],
+            vec![reviewer_a, reviewer_b, driver],
+        )
+        .unwrap()
+    }
+
+    fn dynamic_role_context(role: &RoleId) -> CeremonyContext {
+        CeremonyContext::new(
+            Attributes::new(BTreeMap::from([(
+                "next_role".to_owned(),
+                json!(role.as_str()),
+            )]))
+            .unwrap(),
+        )
     }
 
     async fn bounded_driver_refusal(definition: CeremonyDefinition) -> DomainError {
@@ -635,6 +718,114 @@ mod tests {
             (current.state_iteration().get(), current.iteration().get()),
             (2, 2)
         );
+    }
+
+    #[tokio::test]
+    async fn claim_retry_uses_the_dynamic_role_from_the_winning_context() {
+        let definition = dynamic_role_definition();
+        let winning_role = RoleId::new("REVIEWER_B").unwrap();
+        let winning_specialty = Specialty::new("security-review").unwrap();
+        let mut instance = CeremonyInstance::start(
+            ceremony_id(),
+            &definition,
+            dynamic_role_context(&RoleId::new("REVIEWER_A").unwrap()),
+            now(),
+        )
+        .unwrap();
+        instance
+            .bind_participant(
+                &definition,
+                winning_role.clone(),
+                winning_specialty.clone(),
+                now(),
+            )
+            .unwrap();
+
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&instance).await.unwrap();
+        let context_changed = CeremonyEvent::ContextWritten(ContextWritten {
+            step_id: step_id(),
+            state_iteration: StateIteration::FIRST,
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::FIRST,
+            patch: ContextPatch::new(BTreeMap::from([(
+                ContextKey::new("next_role").unwrap(),
+                json!(winning_role.as_str()),
+            )]))
+            .unwrap(),
+            written_at: now(),
+        });
+        let overtaking_fact = session_facts::fact(
+            &instance,
+            context_changed,
+            session_facts::seat(&winning_role, AuditActorKind::Agent).unwrap(),
+            now(),
+        )
+        .unwrap();
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(StepOutput::empty()).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            Arc::new(DefinitionRepositoryFake::new(definition.clone())),
+            stream_overtaken_once(store.clone(), overtaking_fact),
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+        let loaded = usecase.stream.load(&ceremony_id()).await.unwrap();
+
+        let (moved_on, sealed_role, state_iteration, iteration, attempt, result) = usecase
+            .run_step(
+                &definition,
+                loaded,
+                AuditActorKind::Agent,
+                &step_id(),
+                &lease_owner(),
+                lease_ttl(),
+                0,
+                CeremonyTranscript::empty(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(sealed_role, winning_role);
+        assert_eq!(
+            moved_on
+                .instance
+                .step_record(&step_id())
+                .and_then(|record| record.claimed_role()),
+            Some(&winning_role)
+        );
+        let trace = CeremonyStepTrace::for_coordinates(
+            StateId::new("REVIEWING").unwrap(),
+            state_iteration,
+            step_id(),
+            sealed_role,
+            iteration,
+            attempt,
+            result.status(),
+            result.output().clone(),
+        );
+        assert_eq!(trace.role_id(), &winning_role);
+
+        let requests = handler.requests().await;
+        assert_eq!(requests.len(), 1);
+        assert_eq!(requests[0].role_id(), Some(&winning_role));
+        assert_eq!(requests[0].bound_specialty(), Some(&winning_specialty));
+        let step_records = store
+            .records(&ceremony_id())
+            .await
+            .into_iter()
+            .filter(|record| {
+                matches!(
+                    record.event_type(),
+                    AuditEventType::StepStarted | AuditEventType::StepCompleted
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(step_records.len(), 2);
+        assert!(step_records
+            .iter()
+            .all(|record| record.actor().role_id() == Some(&winning_role)));
     }
 
     #[tokio::test]

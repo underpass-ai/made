@@ -1,6 +1,9 @@
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
 use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
 
+const NONBLANK_CONTROL_FREE_PATTERN: &str = r"^[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
+const ROLE_FROM_PATTERN: &str = r"^context\.[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
+
 pub(in crate::protocol) fn ceremony_design_schema() -> Value {
     json!({
         "type": "object",
@@ -98,6 +101,10 @@ fn leaf_stage_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "owner_role_id", "instructions"],
+        "dependentRequired": {
+            "role_from": ["allowed_roles"],
+            "allowed_roles": ["role_from"]
+        },
         "properties": {
             "id": string_schema("Lower_snake_case step identity. Declaration order is execution order."),
             "owner_role_id": string_schema("Participant role allowed to run this stage."),
@@ -123,6 +130,29 @@ fn leaf_stage_schema() -> Value {
                 "uniqueItems": true,
                 "items": exit_guard_schema(),
                 "description": "Additional conditions conjoined with stage completion and any final human approval."
+            },
+            "role_from": {
+                "type": "string", "pattern": ROLE_FROM_PATTERN,
+                "description": "Top-level ceremony-context role selector resolved and sealed at claim time."
+            },
+            "allowed_roles": {
+                "type": "array", "minItems": 1, "uniqueItems": true,
+                "items": {
+                    "type": "string", "minLength": 1,
+                    "pattern": NONBLANK_CONTROL_FREE_PATTERN
+                },
+                "description": "Roles the dynamic selector may resolve to."
+            },
+            "context_writes": {
+                "type": "object",
+                "propertyNames": {
+                    "minLength": 1, "pattern": NONBLANK_CONTROL_FREE_PATTERN
+                },
+                "additionalProperties": {
+                    "type": "string", "minLength": 1,
+                    "pattern": NONBLANK_CONTROL_FREE_PATTERN
+                },
+                "description": "Destination context keys mapped to top-level successful output fields."
             }
         }
     })
@@ -277,4 +307,50 @@ pub(super) fn unique_string_array_schema(description: &str) -> Value {
         "items": { "type": "string", "minLength": 1 },
         "description": description,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dynamic_field_schemas_publish_the_domain_text_constraints_on_every_leaf_shape() {
+        for schema in [leaf_stage_schema(), group_step_schema()] {
+            let properties = schema["properties"].as_object().unwrap();
+            assert_eq!(properties["role_from"]["pattern"], ROLE_FROM_PATTERN);
+            assert_eq!(
+                properties["allowed_roles"]["items"]["pattern"],
+                NONBLANK_CONTROL_FREE_PATTERN
+            );
+            assert_eq!(
+                properties["context_writes"]["propertyNames"]["pattern"],
+                NONBLANK_CONTROL_FREE_PATTERN
+            );
+            assert_eq!(
+                properties["context_writes"]["additionalProperties"]["pattern"],
+                NONBLANK_CONTROL_FREE_PATTERN
+            );
+        }
+    }
+
+    #[test]
+    fn group_containers_publish_no_leaf_only_fields() {
+        let schema = group_stage_schema();
+        let properties = schema["properties"].as_object().unwrap();
+        for field in [
+            "owner_role_id",
+            "instructions",
+            "handler",
+            "see_prior",
+            "num_agents",
+            "review_rounds",
+            "repeat",
+            "exit_guards",
+            "role_from",
+            "allowed_roles",
+            "context_writes",
+        ] {
+            assert!(!properties.contains_key(field), "{field}");
+        }
+    }
 }

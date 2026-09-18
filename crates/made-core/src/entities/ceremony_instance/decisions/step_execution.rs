@@ -1,10 +1,10 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use crate::entities::ceremony_events::{
-    StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+    ContextWritten, StateIterationStarted, StepCompleted, StepFailed, StepStarted,
 };
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{RoleAction, StepAttempt, StepExecutionRecord, StepStatus};
+use crate::value_objects::{StateExecution, StepAttempt, StepExecutionRecord, StepStatus};
 
 impl CeremonyInstance {
     /// A step may be taken when its state is current, its lease is
@@ -18,13 +18,6 @@ impl CeremonyInstance {
         command: &StartStep,
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
-        if let Some(role_id) = command.role_id.as_ref() {
-            self.require_role(
-                definition,
-                role_id,
-                &RoleAction::step(command.step_id.clone()),
-            )?;
-        }
         self.require_definition(definition)?;
         if self.is_terminal(definition) {
             return Err(DomainError::InvariantViolated {
@@ -61,9 +54,26 @@ impl CeremonyInstance {
                 reason: "step retry policy exhausted",
             });
         }
-        let claimable =
-            self.claimable_step_ids_at(definition, command.now, command.max_parallel_ceiling)?;
-        if !claimable.contains(&&command.step_id) {
+        let (started_by, dynamic) =
+            self.resolve_step_role(definition, &command.step_id, command.role_id.as_ref())?;
+        let concurrent_state = definition
+            .state(&self.current_state)
+            .is_some_and(|state| state.execution() == StateExecution::Concurrent);
+        let mixed_concurrent_state = concurrent_state
+            && definition
+                .steps_for_state(&self.current_state)
+                .any(|candidate| candidate.dynamic_role_binding().is_some());
+        let alternate_static_role = !dynamic
+            && concurrent_state
+            && definition.role_id_for_step(&command.step_id)? != started_by;
+        let sealed_role = (!dynamic && (mixed_concurrent_state || alternate_static_role))
+            .then(|| started_by.clone());
+        if !self.resolved_step_is_claimable_at(
+            &command.step_id,
+            definition,
+            command.now,
+            command.max_parallel_ceiling,
+        )? {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony step is not claimable at the observed time and capacity",
             });
@@ -76,11 +86,6 @@ impl CeremonyInstance {
                 what: "ceremony_instance.idempotency_key",
             });
         }
-        let started_by = match command.role_id.clone() {
-            Some(role_id) => role_id,
-            None => definition.role_id_for_step(&command.step_id)?,
-        };
-
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
             state_iteration: Some(self.current_state_iteration),
@@ -88,6 +93,13 @@ impl CeremonyInstance {
             attempt,
             lease: command.lease.clone(),
             started_by,
+            role_from: dynamic.then(|| {
+                step.dynamic_role_binding()
+                    .expect("a dynamically resolved step has a binding")
+                    .context_key()
+                    .clone()
+            }),
+            sealed_role,
             started_at: command.now,
         })])
     }
@@ -130,7 +142,10 @@ impl CeremonyInstance {
         let attempt = record.attempt();
         let result = command.result.clone();
         if !result.is_success() {
-            let finished_by = definition.role_id_for_step(&command.step_id)?;
+            let finished_by = record
+                .claimed_role()
+                .cloned()
+                .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
             return Ok(vec![CeremonyEvent::StepFailed(StepFailed {
                 step_id: command.step_id.clone(),
                 state_iteration: Some(self.current_state_iteration),
@@ -148,7 +163,11 @@ impl CeremonyInstance {
             .filter(|policy| policy.permits_another_iteration(iteration))
             .map(|_| iteration.next())
             .transpose()?;
-        let finished_by = definition.role_id_for_step(&command.step_id)?;
+        let finished_by = record
+            .claimed_role()
+            .cloned()
+            .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
+        let patch = step.context_writes().resolve(result.output())?;
         let completed = CeremonyEvent::StepCompleted(StepCompleted {
             step_id: command.step_id.clone(),
             state_iteration: Some(self.current_state_iteration),
@@ -159,9 +178,19 @@ impl CeremonyInstance {
             finished_by,
             finished_at: command.now,
         });
-        let mut events = vec![completed.clone()];
+        let mut events = vec![completed];
+        if let Some(patch) = patch {
+            events.push(CeremonyEvent::ContextWritten(ContextWritten {
+                step_id: command.step_id.clone(),
+                state_iteration: self.current_state_iteration,
+                iteration,
+                attempt,
+                patch,
+                written_at: command.now,
+            }));
+        }
         let mut projected = self.clone();
-        projected.apply(&completed);
+        projected.apply_all(&events);
         if projected.state_work_is_complete(definition) {
             if let Some(policy) = definition
                 .state(&self.current_state)

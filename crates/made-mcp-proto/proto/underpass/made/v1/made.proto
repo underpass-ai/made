@@ -1553,6 +1553,9 @@ message CeremonyDesignStage {
   repeated CeremonyDesignExitGuard exit_guards = 10;
   // Reserved for P5 role and context-write authoring fields.
   reserved 11 to 13;
+  string role_from = 14;
+  repeated string allowed_roles = 15;
+  map<string, string> context_writes = 16;
 }
 
 // A leaf inside a grouped state. It cannot recursively contain a group or
@@ -1566,6 +1569,9 @@ message CeremonyDesignGroupStep {
   optional uint64 num_agents = 6;
   uint64 review_rounds = 7;
   CeremonyDesignRepeat repeat = 8;
+  string role_from = 9;
+  repeated string allowed_roles = 10;
+  map<string, string> context_writes = 11;
 }
 
 message CeremonyDesignGroupJoin {

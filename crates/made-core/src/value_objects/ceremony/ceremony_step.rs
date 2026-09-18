@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    RetryPolicy, StateId, StepHandlerConfig, StepHandlerKind, StepId, StepRepeatPolicy, StepTimeout,
+    ContextWrites, DynamicRoleBinding, RetryPolicy, StateId, StepHandlerConfig, StepHandlerKind,
+    StepId, StepRepeatPolicy, StepTimeout,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -14,6 +15,10 @@ pub struct CeremonyStep {
     timeout: Option<StepTimeout>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     repeat_policy: Option<StepRepeatPolicy>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dynamic_role_binding: Option<DynamicRoleBinding>,
+    #[serde(default, skip_serializing_if = "ContextWrites::is_empty")]
+    context_writes: ContextWrites,
 }
 
 impl CeremonyStep {
@@ -34,7 +39,21 @@ impl CeremonyStep {
             retry_policy,
             timeout,
             repeat_policy: None,
+            dynamic_role_binding: None,
+            context_writes: ContextWrites::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_dynamic_role_binding(mut self, binding: DynamicRoleBinding) -> Self {
+        self.dynamic_role_binding = Some(binding);
+        self
+    }
+
+    #[must_use]
+    pub fn with_context_writes(mut self, writes: ContextWrites) -> Self {
+        self.context_writes = writes;
+        self
     }
 
     #[must_use]
@@ -76,5 +95,15 @@ impl CeremonyStep {
     #[must_use]
     pub fn repeat_policy(&self) -> Option<&StepRepeatPolicy> {
         self.repeat_policy.as_ref()
+    }
+
+    #[must_use]
+    pub fn dynamic_role_binding(&self) -> Option<&DynamicRoleBinding> {
+        self.dynamic_role_binding.as_ref()
+    }
+
+    #[must_use]
+    pub fn context_writes(&self) -> &ContextWrites {
+        &self.context_writes
     }
 }

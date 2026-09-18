@@ -1,9 +1,11 @@
 use made_app::usecases::CeremonyDesignStage;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    NumAgents, PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions,
+    ContextKey, ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId, Rounds,
+    StepHandlerKind, StepId, StepInstructions, StepOutputField,
 };
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 use super::{ExitGuardIntent, RepeatIntent};
 
@@ -25,6 +27,12 @@ pub(super) struct StageIntent {
     repeat: Option<RepeatIntent>,
     #[serde(default)]
     exit_guards: Vec<ExitGuardIntent>,
+    #[serde(default)]
+    role_from: Option<String>,
+    #[serde(default)]
+    allowed_roles: Vec<String>,
+    #[serde(default)]
+    context_writes: BTreeMap<String, String>,
 }
 
 impl StageIntent {
@@ -34,7 +42,7 @@ impl StageIntent {
             .into_iter()
             .map(ExitGuardIntent::into_domain)
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(CeremonyDesignStage::new(
+        let mut stage = CeremonyDesignStage::new(
             StepId::new(self.id)?,
             RoleId::new(self.owner_role_id)?,
             StepInstructions::new(self.instructions)?,
@@ -46,6 +54,31 @@ impl StageIntent {
             Rounds::new(u32::try_from(self.review_rounds).unwrap_or(u32::MAX))?,
             self.repeat.map(RepeatIntent::into_domain).transpose()?,
         )
-        .with_exit_guards(exit_guards))
+        .with_exit_guards(exit_guards);
+        match (self.role_from, self.allowed_roles.is_empty()) {
+            (Some(role_from), false) => {
+                stage = stage.with_dynamic_role_binding(DynamicRoleBinding::new(
+                    ContextKey::from_role_from(&role_from)?,
+                    self.allowed_roles
+                        .into_iter()
+                        .map(RoleId::new)
+                        .collect::<Result<Vec<_>, _>>()?,
+                )?);
+            }
+            (None, true) => {}
+            _ => {
+                return Err(DomainError::InvalidDocument {
+                    reason: "role_from and allowed_roles must be declared together".to_owned(),
+                });
+            }
+        }
+        let writes = self
+            .context_writes
+            .into_iter()
+            .map(|(destination, source)| {
+                Ok((ContextKey::new(destination)?, StepOutputField::new(source)?))
+            })
+            .collect::<Result<BTreeMap<_, _>, DomainError>>()?;
+        Ok(stage.with_context_writes(ContextWrites::new(writes)))
     }
 }

@@ -17,6 +17,7 @@ use super::super::json_to_proto as j2p;
 pub(super) fn build_design_ceremony_request(
     args: &Value,
 ) -> Result<pb::DesignCeremonyRequest, String> {
+    crate::protocol::validate_design_dynamic_fields(args)?;
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::DesignCeremonyRequest {
         name: j2p::require_str(obj, "name")?.to_owned(),
@@ -88,6 +89,11 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 repeat: repeat(stage)?,
                 exit_guards: exit_guards(stage)?,
                 group: None,
+                role_from: j2p::optional_str(stage, "role_from")
+                    .unwrap_or_default()
+                    .to_owned(),
+                allowed_roles: j2p::string_array(stage, "allowed_roles"),
+                context_writes: string_map(stage, "context_writes")?,
             })
         })
         .collect()
@@ -109,6 +115,11 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
                 num_agents: j2p::optional_present_u64(step, "num_agents")?,
                 review_rounds: j2p::optional_u64(step, "review_rounds")?,
                 repeat: repeat(step)?,
+                role_from: j2p::optional_str(step, "role_from")
+                    .unwrap_or_default()
+                    .to_owned(),
+                allowed_roles: j2p::string_array(step, "allowed_roles"),
+                context_writes: string_map(step, "context_writes")?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -130,6 +141,24 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
         join,
         repeat: group_repeat(group)?,
     })
+}
+
+fn string_map(
+    obj: &Map<String, Value>,
+    key: &str,
+) -> Result<std::collections::HashMap<String, String>, String> {
+    let Some(value) = obj.get(key) else {
+        return Ok(std::collections::HashMap::new());
+    };
+    let map = j2p::require_object(value, key)?;
+    map.iter()
+        .map(|(name, value)| {
+            value
+                .as_str()
+                .map(|value| (name.clone(), value.to_owned()))
+                .ok_or_else(|| format!("field `{key}.{name}` must be a string"))
+        })
+        .collect()
 }
 
 fn group_repeat(

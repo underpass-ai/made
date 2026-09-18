@@ -81,7 +81,8 @@ pub fn claim_ceremony_step_input_from_proto(
         lease_owner_id,
         idempotency_key,
         lease_ttl,
-    ))
+    )
+    .with_automatic_role_resolution())
 }
 
 /// Record what the host saw when it ran the step.

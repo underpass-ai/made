@@ -10,10 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::value_objects::{AuditEventType, EventSchemaVersion};
 
 use super::ceremony_events::{
-    CeremonyCompleted, CeremonyInstanceStarted, EvidenceCollected, HumanApprovalRecorded,
-    HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
-    InterventionResponded, MemoryRecalled, ParticipantsBound, ReasonAsserted,
-    StateIterationStarted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
+    CeremonyCompleted, CeremonyInstanceStarted, ContextWritten, EvidenceCollected,
+    HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
+    InterventionRequested, InterventionResponded, MemoryRecalled, ParticipantsBound,
+    ReasonAsserted, StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+    TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -35,6 +36,7 @@ pub enum CeremonyEvent {
     StepStarted(StepStarted),
     StepCompleted(StepCompleted),
     StepFailed(StepFailed),
+    ContextWritten(ContextWritten),
     StateIterationStarted(StateIterationStarted),
     TransitionApplied(TransitionApplied),
     InterventionRequested(InterventionRequested),
@@ -59,6 +61,7 @@ impl CeremonyEvent {
             Self::StepStarted(_) => AuditEventType::StepStarted,
             Self::StepCompleted(_) => AuditEventType::StepCompleted,
             Self::StepFailed(_) => AuditEventType::StepFailed,
+            Self::ContextWritten(_) => AuditEventType::ContextWritten,
             Self::StateIterationStarted(_) => AuditEventType::StateIterationStarted,
             Self::TransitionApplied(_) => AuditEventType::TransitionApplied,
             Self::InterventionRequested(_) => AuditEventType::InterventionRequested,
@@ -81,9 +84,15 @@ impl CeremonyEvent {
     #[must_use]
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
-            Self::StepStarted(event) => event
-                .state_iteration
-                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::StepStarted(event) => {
+                if event.role_from.is_some() || event.sealed_role.is_some() {
+                    EventSchemaVersion::V3
+                } else {
+                    event
+                        .state_iteration
+                        .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2)
+                }
+            }
             Self::StepCompleted(event) => event
                 .state_iteration
                 .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
@@ -100,6 +109,7 @@ impl CeremonyEvent {
             Self::CeremonyInstanceStarted(_)
             | Self::ParticipantsBound(_)
             | Self::StateIterationStarted(_)
+            | Self::ContextWritten(_)
             | Self::InterventionRequested(_)
             | Self::InterventionResponded(_)
             | Self::InterventionClosed(_)

@@ -60,7 +60,8 @@ impl StartCeremonyStepUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
-        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
+        let requested_role_id = input.requested_role_id();
+        let actor_kind = input.role_kind;
         let now = self.clock.now();
         let lease = StepLease::acquire(
             input.lease_owner_id,
@@ -69,7 +70,7 @@ impl StartCeremonyStepUseCase {
             input.lease_ttl,
         )?;
         let command = CeremonyCommand::StartStep(StartStep {
-            role_id: Some(input.role_id),
+            role_id: requested_role_id,
             step_id: input.step_id.clone(),
             lease,
             now,
@@ -82,6 +83,7 @@ impl StartCeremonyStepUseCase {
             .stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&command, &definition)?;
+                let actor = session_facts::step_started_seat(&events, actor_kind)?;
                 session_facts::facts(&session.instance, events, &actor, now)
             })
             .await?;

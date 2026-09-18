@@ -13,7 +13,15 @@ impl CeremonyInstance {
         let record = self.take_step_record(&started.step_id);
         self.step_records.insert(
             started.step_id.clone(),
-            record.with_started(started.lease.clone(), started.attempt),
+            record.with_started(
+                started.lease.clone(),
+                started.attempt,
+                started
+                    .role_from
+                    .as_ref()
+                    .map(|_| started.started_by.clone())
+                    .or_else(|| started.sealed_role.clone()),
+            ),
         );
         self.updated_at = started.started_at;
     }

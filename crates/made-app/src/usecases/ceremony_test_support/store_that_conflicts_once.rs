@@ -1,6 +1,8 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use made_core::entities::AuditFact;
+
 use super::EventStoreFake;
 
 /// An event store whose first append is overtaken by another writer.
@@ -14,4 +16,5 @@ use super::EventStoreFake;
 pub(in crate::usecases) struct StoreThatConflictsOnce {
     pub(super) inner: Arc<EventStoreFake>,
     pub(super) conflicted: AtomicBool,
+    pub(super) overtaking_fact: Option<AuditFact>,
 }

@@ -6,8 +6,7 @@ use super::{
     approval_guard_name, approval_trigger, completion_guard, exit_guard_name, num_agents,
     CeremonyDesignDocument, COMPLETED_STATE, RESERVED_ACTIONS,
 };
-use crate::usecases::CeremonyDesignExitGuard;
-use crate::usecases::CeremonyDesignStageEntry;
+use crate::usecases::{CeremonyDesignExitGuard, CeremonyDesignStage, CeremonyDesignStageEntry};
 
 fn invalid(reason: impl Into<String>) -> DomainError {
     DomainError::InvalidDocument {
@@ -69,6 +68,16 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                 stage.owner_role_id()
             )));
         }
+        if let Some(binding) = stage.dynamic_role_binding() {
+            for role_id in binding.allowed_roles() {
+                if !participant_set.contains(role_id.as_str()) {
+                    return Err(invalid(format!(
+                        "stage `{}` names unknown allowed role `{role_id}`",
+                        stage.id()
+                    )));
+                }
+            }
+        }
         if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
             return Err(invalid(format!(
                 "stage `{}` requests review rounds with fewer than two agents",
@@ -109,6 +118,16 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                     stage.id(),
                     stage.owner_role_id()
                 )));
+            }
+            if let Some(binding) = stage.dynamic_role_binding() {
+                for role_id in binding.allowed_roles() {
+                    if !participant_set.contains(role_id.as_str()) {
+                        return Err(invalid(format!(
+                            "group step `{}` names unknown allowed role `{role_id}`",
+                            stage.id()
+                        )));
+                    }
+                }
             }
             if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
                 return Err(invalid(format!(
@@ -217,11 +236,11 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     for participant in document.participants() {
         let role_id = participant.role_id().as_str();
         let owns_stage = document.stage_entries().iter().any(|entry| match entry {
-            CeremonyDesignStageEntry::Leaf(stage) => stage.owner_role_id().as_str() == role_id,
+            CeremonyDesignStageEntry::Leaf(stage) => stage_has_role(stage, role_id),
             CeremonyDesignStageEntry::Group(group) => group
                 .steps()
                 .iter()
-                .any(|step| step.step().owner_role_id().as_str() == role_id),
+                .any(|step| stage_has_role(step.step(), role_id)),
         });
         let owns_approval = document
             .final_approval()
@@ -234,6 +253,16 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
     }
 
     Ok(())
+}
+
+fn stage_has_role(stage: &CeremonyDesignStage, role_id: &str) -> bool {
+    stage.owner_role_id().as_str() == role_id
+        || stage.dynamic_role_binding().is_some_and(|binding| {
+            binding
+                .allowed_roles()
+                .iter()
+                .any(|role| role.as_str() == role_id)
+        })
 }
 
 fn completion_guards(stage_ids: &[String]) -> BTreeSet<String> {

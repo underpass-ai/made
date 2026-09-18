@@ -11,15 +11,18 @@
 //! That is the property the F3b move exists for: one designer, called
 //! by both, rather than one per adapter.
 
-use made_adapters::yaml::DesignedCeremonyYaml;
+use std::collections::BTreeMap;
+
+use made_adapters::yaml::{CeremonyDefinitionYaml, DesignedCeremonyYaml};
 use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
     CeremonyDesignParticipant, CeremonyDesignStage, CeremonyDesignStageEntry,
     CeremonyPatternPreset,
 };
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, JoinStepCount, MaxParallel, OutputName, RoleId, Rounds,
-    StateExecution, StepId, StepInstructions,
+    CeremonyDescription, CeremonyName, ContextKey, ContextWrites, DynamicRoleBinding,
+    JoinStepCount, MaxParallel, OutputName, RoleId, Rounds, StateExecution, StepId,
+    StepInstructions, StepOutputField,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
@@ -192,6 +195,85 @@ fn concurrent_document() -> CeremonyDesignDocument {
         ),
     )])
     .with_max_parallel(MaxParallel::new(2).unwrap())
+}
+
+fn dynamic_intent() -> Value {
+    json!({
+        "name": "dynamic_handoff",
+        "objective": "Write a handoff and route its review from context.",
+        "outputs": ["decision"],
+        "participants": [
+            {"role_id": "WRITER"}, {"role_id": "REVIEWER"}, {"role_id": "EDITOR"}
+        ],
+        "stages": [
+            {
+                "id": "draft", "owner_role_id": "WRITER",
+                "instructions": "Draft the handoff.",
+                "context_writes": {"next_role": "reviewer"}
+            },
+            {
+                "id": "review", "owner_role_id": "REVIEWER",
+                "instructions": "Review the handoff.",
+                "role_from": "context.next_role",
+                "allowed_roles": ["REVIEWER", "EDITOR"]
+            }
+        ]
+    })
+}
+
+fn dynamic_document() -> CeremonyDesignDocument {
+    let participants = ["WRITER", "REVIEWER", "EDITOR"]
+        .into_iter()
+        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .collect();
+    let draft = CeremonyDesignStage::new(
+        StepId::new("draft").unwrap(),
+        RoleId::new("WRITER").unwrap(),
+        StepInstructions::new("Draft the handoff.").unwrap(),
+        None,
+        None,
+        None,
+        Rounds::ZERO,
+        None,
+    )
+    .with_context_writes(ContextWrites::new(BTreeMap::from([(
+        ContextKey::new("next_role").unwrap(),
+        StepOutputField::new("reviewer").unwrap(),
+    )])));
+    let review = CeremonyDesignStage::new(
+        StepId::new("review").unwrap(),
+        RoleId::new("REVIEWER").unwrap(),
+        StepInstructions::new("Review the handoff.").unwrap(),
+        None,
+        None,
+        None,
+        Rounds::ZERO,
+        None,
+    )
+    .with_dynamic_role_binding(
+        DynamicRoleBinding::new(
+            ContextKey::new("next_role").unwrap(),
+            [
+                RoleId::new("REVIEWER").unwrap(),
+                RoleId::new("EDITOR").unwrap(),
+            ],
+        )
+        .unwrap(),
+    );
+    CeremonyDesignDocument::new(
+        CeremonyName::new("dynamic_handoff").unwrap(),
+        None,
+        CeremonyDescription::new("Write a handoff and route its review from context.").unwrap(),
+        Vec::new(),
+        Vec::new(),
+        vec![OutputName::new("decision").unwrap()],
+        participants,
+        vec![draft, review],
+        None,
+        None,
+        None,
+        None,
+    )
 }
 
 #[tokio::test]
@@ -409,7 +491,7 @@ async fn invalid_pattern_values_are_refused_identically_by_both_mcp_arms() {
     );
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
 
-    for invalid in [Value::Null, json!(7), json!("")] {
+    for invalid in [Value::Null, json!(7), json!(""), json!("next_role")] {
         let mut arguments = pattern_intent();
         arguments["pattern"] = invalid.clone();
         let remote_error = remote
@@ -467,4 +549,158 @@ async fn concurrent_design_is_identical_on_proto_both_mcp_arms_and_the_facade() 
     assert!(yaml.contains("max_parallel: 2"), "{yaml}");
     assert!(yaml.contains("execution: concurrent"), "{yaml}");
     assert!(yaml.contains("steps_completed:1"), "{yaml}");
+}
+
+#[tokio::test]
+async fn dynamic_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = dynamic_intent();
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the gRPC-backed MCP tool accepts dynamic authoring"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the embedded MCP tool accepts dynamic authoring"),
+    );
+    let facade = DesignedCeremonyYaml::render(
+        &EmbeddedMade::default()
+            .design(&dynamic_document())
+            .expect("the facade accepts typed dynamic authoring"),
+    )
+    .expect("the YAML adapter renders the facade result");
+
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["definition_yaml"], facade);
+    assert_eq!(over_the_wire["publishable"], true);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("role_from: context.next_role"), "{yaml}");
+    assert!(yaml.contains("- REVIEWER"), "{yaml}");
+    assert!(yaml.contains("next_role: reviewer"), "{yaml}");
+    let parsed = CeremonyDefinitionYaml::parse_str(yaml)
+        .expect("the rendered dynamic definition remains valid explicit YAML");
+    let review = parsed.step(&StepId::new("review").unwrap()).unwrap();
+    assert_eq!(
+        review
+            .dynamic_role_binding()
+            .unwrap()
+            .context_key()
+            .as_str(),
+        "next_role"
+    );
+    assert_eq!(
+        parsed
+            .step(&StepId::new("draft").unwrap())
+            .unwrap()
+            .context_writes()
+            .entries()
+            .get(&ContextKey::new("next_role").unwrap())
+            .map(StepOutputField::as_str),
+        Some("reviewer")
+    );
+}
+
+#[tokio::test]
+async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+
+    let mut cases = Vec::new();
+    for invalid in [
+        Value::Null,
+        json!(7),
+        json!(""),
+        json!("next_role"),
+        json!("context.   "),
+        json!("context.bad\u{0007}"),
+    ] {
+        let mut arguments = dynamic_intent();
+        arguments["stages"][1]["role_from"] = invalid.clone();
+        cases.push((format!("role_from={invalid}"), arguments));
+    }
+    for invalid in [
+        Value::Null,
+        json!("REVIEWER"),
+        json!([]),
+        json!(["REVIEWER", 7]),
+        json!(["REVIEWER", "REVIEWER"]),
+        json!([""]),
+        json!(["   "]),
+        json!(["REVIEWER\u{0007}"]),
+    ] {
+        let mut arguments = dynamic_intent();
+        arguments["stages"][1]["allowed_roles"] = invalid.clone();
+        cases.push((format!("allowed_roles={invalid}"), arguments));
+    }
+    let mut missing_allowed = dynamic_intent();
+    missing_allowed["stages"][1]
+        .as_object_mut()
+        .unwrap()
+        .remove("allowed_roles");
+    cases.push(("missing allowed_roles".to_owned(), missing_allowed));
+    for (label, invalid) in [
+        ("non-object context_writes", Value::Null),
+        ("non-string context_writes value", json!({"next_role": 7})),
+        ("blank context_writes key", json!({"": "reviewer"})),
+        ("whitespace context_writes key", json!({"   ": "reviewer"})),
+        ("blank context_writes value", json!({"next_role": ""})),
+        (
+            "control context_writes value",
+            json!({"next_role": "reviewer\u{0007}"}),
+        ),
+    ] {
+        let mut malformed_writes = dynamic_intent();
+        malformed_writes["stages"][0]["context_writes"] = invalid;
+        cases.push((label.to_owned(), malformed_writes));
+    }
+    for (field, value) in [
+        ("owner_role_id", json!("A")),
+        ("instructions", json!("Do the work.")),
+        ("handler", json!("host_callback")),
+        ("see_prior", json!(true)),
+        ("num_agents", json!(2)),
+        ("review_rounds", json!(1)),
+        (
+            "repeat",
+            json!({"max_iterations": 2, "output_field": "done", "equals": true}),
+        ),
+        ("exit_guards", json!([])),
+        ("role_from", json!("context.next_role")),
+        ("allowed_roles", json!(["A"])),
+        ("context_writes", json!({"next_role": "reviewer"})),
+    ] {
+        let mut group_container = concurrent_intent();
+        group_container["stages"][0][field] = value;
+        cases.push((
+            format!("group container leaf field {field}"),
+            group_container,
+        ));
+    }
+
+    for (label, arguments) in cases {
+        let remote_error = remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the gRPC-backed MCP tool must refuse malformed dynamic fields");
+        let embedded_error = embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect_err("the embedded MCP tool must refuse malformed dynamic fields");
+        assert_eq!(remote_error.code(), ToolErrorCode::InvalidRequest);
+        assert_eq!(remote_error.code(), embedded_error.code());
+        assert_eq!(remote_error.message(), embedded_error.message(), "{label}");
+    }
 }

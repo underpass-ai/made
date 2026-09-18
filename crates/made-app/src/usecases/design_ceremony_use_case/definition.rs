@@ -185,10 +185,19 @@ pub(super) fn build_definition(
             _ => (TransitionTrigger::new(completion.as_str())?, first_owner),
         };
         for stage in &entry_stages {
-            actions
-                .get_mut(stage.owner_role_id())
-                .expect("validated owner")
-                .insert(RoleAction::step(stage.id().clone()));
+            if let Some(binding) = stage.dynamic_role_binding() {
+                for role_id in binding.allowed_roles() {
+                    actions
+                        .get_mut(role_id)
+                        .expect("validated dynamic role")
+                        .insert(RoleAction::step(stage.id().clone()));
+                }
+            } else {
+                actions
+                    .get_mut(stage.owner_role_id())
+                    .expect("validated owner")
+                    .insert(RoleAction::step(stage.id().clone()));
+            }
         }
         actions
             .get_mut(owner)
@@ -222,6 +231,10 @@ pub(super) fn build_definition(
                     repeat.max_iterations(),
                 ));
             }
+            if let Some(binding) = stage.dynamic_role_binding() {
+                step = step.with_dynamic_role_binding(binding.clone());
+            }
+            step = step.with_context_writes(stage.context_writes().clone());
             steps.push(step);
         }
     }

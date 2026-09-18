@@ -17,13 +17,13 @@ use made_core::ports::{
 use made_core::value_objects::{
     Attributes, AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyGuard, CeremonyId,
     CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion,
-    DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
-    MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId, MemoryEntryKind,
-    MemoryMoment, MemoryProvenance, MemoryRelation, MemoryScope, MemoryWrite, RepeatUntilCondition,
-    RetryPolicy, RoleAction, RoleId, StateId, StateIteration, StateRepeatPolicy,
-    StateRepeatUntilCondition, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
-    StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus, StreamVersion,
-    TransitionTrigger,
+    ContextKey, ContextWrites, DurationMs, GlobalPosition, GuardCondition, GuardName,
+    IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId,
+    MemoryEntryKind, MemoryMoment, MemoryProvenance, MemoryRelation, MemoryScope, MemoryWrite,
+    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StateIteration,
+    StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus,
+    StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -228,6 +228,22 @@ pub(super) fn definition() -> CeremonyDefinition {
         RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
         None,
     );
+    definition_with_step(step)
+}
+
+pub(super) fn context_writing_definition() -> CeremonyDefinition {
+    let step = CeremonyStep::new(
+        step_id(),
+        StateId::new("COLLECTING_VOICES").unwrap(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+        None,
+    )
+    .with_context_writes(ContextWrites::new(BTreeMap::from([(
+        ContextKey::new("summary").unwrap(),
+        StepOutputField::new("summary").unwrap(),
+    )])));
     definition_with_step(step)
 }
 
@@ -1144,9 +1160,26 @@ pub(super) fn stream_conflicting_once_watched_by(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
+            overtaking_fact: None,
         }),
         store,
         subscriber,
+    ))
+}
+
+/// A stream whose first append loses to the supplied fact.
+pub(super) fn stream_overtaken_once(
+    store: Arc<EventStoreFake>,
+    overtaking_fact: AuditFact,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(
+        Arc::new(StoreThatConflictsOnce {
+            inner: store.clone(),
+            conflicted: std::sync::atomic::AtomicBool::new(false),
+            overtaking_fact: Some(overtaking_fact),
+        }),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
     ))
 }
 
@@ -1212,6 +1245,13 @@ impl CeremonyEventStorePort for StoreThatConflictsOnce {
             .conflicted
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
+            if let Some(fact) = &self.overtaking_fact {
+                let outcome = self
+                    .inner
+                    .append(stream, expected, vec![fact.clone()])
+                    .await?;
+                debug_assert!(outcome.appended_version().is_some());
+            }
             return Ok(overtaken(expected));
         }
         self.inner.append(stream, expected, facts).await

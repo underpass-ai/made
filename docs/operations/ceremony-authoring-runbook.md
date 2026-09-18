@@ -353,7 +353,58 @@ State repeat is separate from leaf `repeat`, which still repeats one step.
 All direct gRPC, MCP-over-gRPC, embedded MCP, and Rust facade reads expose the
 same current state coordinate, per-step coordinate, run trace and transcript.
 
-## 7. Dynamic participant interventions
+## 7. Route a step from context and write results back
+
+Use `role_from` when the participant for a leaf step is selected by a prior
+result rather than fixed when the definition is written. The selector is one
+top-level context key, and `allowed_roles` is the complete set it may name:
+
+```yaml
+steps:
+  - id: choose_reviewer
+    state: DRAFT
+    handler: reviewer_router
+    context_writes:
+      next_role: selected_reviewer
+  - id: review
+    state: REVIEW
+    handler: evidence_reviewer
+    role_from: context.next_role
+    allowed_roles: [LEGAL_REVIEWER, SECURITY_REVIEWER]
+```
+
+`choose_reviewer` must complete with a top-level `selected_reviewer` output.
+MADE appends its `StepCompleted` and `ContextWritten` facts together, in that
+order. Every declared source must be present before either fact is accepted;
+an explicit JSON `null` is present and is copied. If two completed steps write
+the same destination, the last sealed `ContextWritten` in stream order wins.
+
+When `review` is claimed, MADE requires `context.next_role` to be a string in
+the allow-list and requires that role to be authorised for the step. The claim
+seals the chosen role. Changing context later cannot change `finished_by` for
+that attempt. In a concurrent state, another step in the same state iteration
+cannot claim the same sealed role; an expired lease keeps its reservation until
+that step is validly reclaimed or the state iteration resets.
+
+Static steps obey the same role reservation rule. New concurrent claims using
+an alternate authorised role seal that role explicitly. Unmarked historical
+static records reserve their canonical owner without changing stored events
+or replayed record shapes.
+
+Role-less MCP and gRPC claim/run requests resolve the role inside each
+optimistic decision, including retries after another step changes context.
+Rust facade callers using `StartCeremonyStepInput::new` or
+`RunCeremonyStepInput::new` retain explicit role selection and mismatch refusal.
+Use `.with_automatic_role_resolution()` on either input to select from current
+context instead. In that mode, the input's `role_id()` remains its compatibility
+anchor; the accepted role comes from the sealed claim and execution record.
+
+The design tool uses the same fields on a leaf stage or on a child of a grouped
+stage. They cannot be placed on the group container. Its `owner_role_id` still
+owns the generated transition; every `allowed_roles` entry receives permission
+to execute the leaf. Omitted fields keep the static role and legacy YAML shape.
+
+## 8. Dynamic participant interventions
 
 An embedded incremental ceremony can accept new agenda items after it starts;
 the YAML remains the stable frame while the running `CeremonyInstance` owns
@@ -389,7 +440,7 @@ implemented as read-only observation or peek, never consuming messages; any
 external mutation still requires the host's permissions and the ceremony's
 explicit human guards.
 
-## 8. `memory_scope` — what earlier sessions decided
+## 9. `memory_scope` — what earlier sessions decided
 
 *Status: verified on 2026-09-17 by `made-app`'s start tests, `made-core`'s
 rendering tests and the MCP parity session, which drives two sessions in one

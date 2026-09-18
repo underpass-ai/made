@@ -133,6 +133,8 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
                     )
                     .unwrap(),
                     started_by: role_id.clone(),
+                    role_from: None,
+                    sealed_role: None,
                     started_at,
                 }),
                 started_at,
