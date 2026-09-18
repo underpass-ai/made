@@ -17,6 +17,7 @@ use crate::value_objects::{
 };
 
 mod cycles;
+mod global_completion;
 
 use cycles::cyclic_components;
 
@@ -47,6 +48,7 @@ impl CeremonyDefinitionParts<'_> {
         self.collect_role_findings(findings);
         self.collect_concurrent_state_findings(findings);
         self.collect_reachability_findings(findings);
+        self.collect_global_completion_findings(findings);
     }
 
     fn collect_cycle_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {

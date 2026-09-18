@@ -75,9 +75,11 @@ pub(super) fn intervention_view(intervention: &CeremonyIntervention) -> Interven
         requested_by: intervention.requested_by().as_str().to_owned(),
         target_role_ids: match intervention.target() {
             CeremonyInterventionTarget::Table => Vec::new(),
-            CeremonyInterventionTarget::Roles(roles) => {
-                roles.iter().map(|role| role.as_str().to_owned()).collect()
-            }
+            CeremonyInterventionTarget::Roles(roles) => roles
+                .as_set()
+                .iter()
+                .map(|role| role.as_str().to_owned())
+                .collect(),
         },
         request: intervention.request().message().to_owned(),
         open: intervention.status().is_open(),

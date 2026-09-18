@@ -1,4 +1,3 @@
-use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 
@@ -59,8 +58,6 @@ impl GenerateCeremonyReportUseCase {
         &self,
         input: GenerateCeremonyReportInput,
     ) -> Result<CeremonyReport, DomainError> {
-        Self::check(&input)?;
-
         let mut sessions = Vec::with_capacity(input.ceremony_ids().len());
         for ceremony_id in input.ceremony_ids() {
             sessions.push(self.load(ceremony_id).await?);
@@ -84,35 +81,6 @@ impl GenerateCeremonyReportUseCase {
             render_markdown(input.title(), &sessions)?,
             bindings,
         ))
-    }
-
-    /// What the request has to be before anything is read.
-    ///
-    /// The tool schemas say the same thing — `minItems`, `uniqueItems`,
-    /// `minLength` — and the MCP server refuses a call that breaks them
-    /// before any backend is reached. This is for the caller that
-    /// speaks the RPC directly and never saw a schema.
-    fn check(input: &GenerateCeremonyReportInput) -> Result<(), DomainError> {
-        if input.ceremony_ids().is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "ceremony_report.ceremony_ids",
-            });
-        }
-        let mut seen = BTreeSet::new();
-        for ceremony_id in input.ceremony_ids() {
-            if !seen.insert(ceremony_id) {
-                return Err(DomainError::InvalidDocument {
-                    reason: format!(
-                        "the report names the ceremony `{ceremony_id}` more than once, \
-                         and duplicates are refused"
-                    ),
-                });
-            }
-        }
-        // A blank title is refused by `ReportTitle`, which is the only
-        // way one reaches this input, so there is nothing left to check
-        // here about it.
-        Ok(())
     }
 
     /// One session, with everything the report quotes of it.
@@ -195,10 +163,13 @@ mod tests {
 
         let report = fixture
             .usecase
-            .execute(GenerateCeremonyReportInput::new(
-                vec![ceremony_id()],
-                Some(ReportTitle::new("Session review").unwrap()),
-            ))
+            .execute(
+                GenerateCeremonyReportInput::new(
+                    vec![ceremony_id()],
+                    Some(ReportTitle::new("Session review").unwrap()),
+                )
+                .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -239,7 +210,7 @@ mod tests {
     #[tokio::test]
     async fn the_same_state_reports_the_same_bytes() {
         let fixture = fixture().await;
-        let input = GenerateCeremonyReportInput::new(ids(&["session-2"]), None);
+        let input = GenerateCeremonyReportInput::new(ids(&["session-2"]), None).unwrap();
 
         let first = fixture.usecase.execute(input.clone()).await.unwrap();
         let second = fixture.usecase.execute(input).await.unwrap();
@@ -265,7 +236,7 @@ mod tests {
             let usecase = usecase.clone();
             async move {
                 usecase
-                    .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None))
+                    .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None).unwrap())
                     .await
             }
         });
@@ -315,10 +286,9 @@ mod tests {
 
         let report = fixture
             .usecase
-            .execute(GenerateCeremonyReportInput::new(
-                ids(&["session-2", "ceremony-1"]),
-                None,
-            ))
+            .execute(
+                GenerateCeremonyReportInput::new(ids(&["session-2", "ceremony-1"]), None).unwrap(),
+            )
             .await
             .unwrap();
 
@@ -377,7 +347,7 @@ mod tests {
         let usecase = GenerateCeremonyReportUseCase::new(definition_resolver(definitions), store);
 
         let report = usecase
-            .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None))
+            .execute(GenerateCeremonyReportInput::new(vec![ceremony_id()], None).unwrap())
             .await
             .unwrap();
 
@@ -396,48 +366,10 @@ mod tests {
 
         let error = fixture
             .usecase
-            .execute(GenerateCeremonyReportInput::new(ids(&["missing"]), None))
+            .execute(GenerateCeremonyReportInput::new(ids(&["missing"]), None).unwrap())
             .await
             .unwrap_err();
 
         assert!(matches!(error, DomainError::NotFound { .. }));
-    }
-
-    /// The tool schemas say the same thing and the MCP server enforces
-    /// it before any backend is reached. These are for the caller that
-    /// speaks the RPC directly.
-    #[tokio::test]
-    async fn an_unreportable_request_is_refused_before_anything_is_read() {
-        let fixture = fixture().await;
-
-        assert!(matches!(
-            fixture
-                .usecase
-                .execute(GenerateCeremonyReportInput::new(Vec::new(), None))
-                .await
-                .unwrap_err(),
-            DomainError::EmptyCollection {
-                field: "ceremony_report.ceremony_ids"
-            }
-        ));
-        let duplicate = fixture
-            .usecase
-            .execute(GenerateCeremonyReportInput::new(
-                ids(&["session-2", "session-2"]),
-                None,
-            ))
-            .await
-            .unwrap_err();
-        assert!(
-            matches!(&duplicate, DomainError::InvalidDocument { reason } if reason.contains("duplicate")),
-            "{duplicate:?}"
-        );
-        // A blank heading never reaches the use case: it is refused
-        // where a title is built, which is the one place both arms
-        // build one.
-        assert!(matches!(
-            ReportTitle::new("   "),
-            Err(DomainError::EmptyField { field: "title" })
-        ));
     }
 }

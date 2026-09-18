@@ -4,15 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::error::DomainError;
 
+use super::ReconsiderationConditions;
+
 const MAX_STATEMENT_LEN: usize = 4_096;
 const MAX_REASON_LEN: usize = 4_096;
-const MAX_RECONSIDERATION_CONDITION_LEN: usize = 1_024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyGuardDeferralContent {
     statement: String,
     reason: String,
-    reconsider_when: Vec<String>,
+    reconsider_when: ReconsiderationConditions,
 }
 
 impl CeremonyGuardDeferralContent {
@@ -21,11 +22,7 @@ impl CeremonyGuardDeferralContent {
         reason: impl Into<String>,
         reconsider_when: Vec<String>,
     ) -> Result<Self, DomainError> {
-        if reconsider_when.is_empty() {
-            return Err(DomainError::EmptyCollection {
-                field: "ceremony_guard_deferral.reconsider_when",
-            });
-        }
+        let reconsider_when = ReconsiderationConditions::new(reconsider_when)?;
 
         let statement = statement.into();
         let statement = validated_text(
@@ -35,22 +32,16 @@ impl CeremonyGuardDeferralContent {
         )?;
         let reason = reason.into();
         let reason = validated_text(&reason, "ceremony_guard_deferral.reason", MAX_REASON_LEN)?;
-        let reconsider_when = reconsider_when
-            .into_iter()
-            .map(|condition| {
-                validated_text(
-                    &condition,
-                    "ceremony_guard_deferral.reconsider_when",
-                    MAX_RECONSIDERATION_CONDITION_LEN,
-                )
-            })
-            .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             statement,
             reason,
             reconsider_when,
         })
+    }
+
+    pub(crate) fn validate_conditions(&self) -> Result<(), DomainError> {
+        self.reconsider_when.validate()
     }
 
     #[must_use]
@@ -65,7 +56,7 @@ impl CeremonyGuardDeferralContent {
 
     #[must_use]
     pub fn reconsider_when(&self) -> &[String] {
-        &self.reconsider_when
+        self.reconsider_when.as_slice()
     }
 }
 

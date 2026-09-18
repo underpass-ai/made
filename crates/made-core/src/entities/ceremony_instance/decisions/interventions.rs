@@ -15,6 +15,7 @@ impl CeremonyInstance {
         command: &RequestIntervention,
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        command.target.validate()?;
         self.require_active(
             definition,
             "terminal ceremony instances cannot accept interventions",

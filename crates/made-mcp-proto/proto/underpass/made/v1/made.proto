@@ -1128,6 +1128,7 @@ message DeferCeremonyGuardRequest {
   // from nobody having looked.
   string statement = 3;
   string reason = 4;
+  // Between 1 and 100 distinct conditions, compared after trimming.
   repeated string reconsider_when = 5;
   // And who decided it. The fourth of the four, and the only one
   // nobody can reconstruct afterwards.
@@ -1212,7 +1213,8 @@ message RequestCeremonyInterventionRequest {
   string role_kind = 9;
   // "opinion", "investigation" or "action".
   string kind = 4;
-  // Whom it is put to. Empty asks the whole table.
+  // Whom it is put to. Empty asks the whole table. Otherwise at most
+  // 100 distinct role ids, compared after trimming.
   repeated string target_role_ids = 5;
   string message = 6;
   google.protobuf.Struct details = 7;
@@ -1819,8 +1821,8 @@ message CeremonyReportBinding {
 }
 
 message GenerateCeremonyReportRequest {
-  // One or more started sessions, reported in this order. An empty
-  // list, a duplicate and an unknown id are each refused.
+  // Between 1 and 100 started sessions, reported in this order. An empty
+  // list, a duplicate after trimming and an unknown id are each refused.
   repeated string ceremony_ids = 1;
   // Report heading. Empty takes the default one, and whatever is
   // given is escaped as the untrusted Markdown it is.
