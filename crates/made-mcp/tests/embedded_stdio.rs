@@ -130,6 +130,20 @@ async fn embedded_server_advertises_only_executable_tools() {
         // In the order the gRPC service declares them: the catalogue
         // follows the contract, and this list follows the catalogue.
         vec![
+            "made_deliberate",
+            "made_stream_deliberation",
+            "made_get_deliberation_result",
+            "made_orchestrate",
+            "made_create_council",
+            "made_list_councils",
+            "made_delete_council",
+            "made_register_agent",
+            "made_unregister_agent",
+            "made_process_trigger_event",
+            "made_run_council_decision",
+            "made_register_contract",
+            "made_list_contracts",
+            "made_delete_contract",
             "made_run_ceremony",
             "made_get_ceremony_instance",
             "made_list_ceremony_instances",
@@ -1311,7 +1325,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 31);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 45);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

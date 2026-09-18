@@ -1,5 +1,7 @@
 # MADE documentation
 
+![MADE — Your business. Your agents. Your architecture. — by Underpass](assets/made-cuatro-voces.png)
+
 MADE coordinates ceremonies; the host does the work. Start at the
 [repository README](../README.md), then choose a route.
 

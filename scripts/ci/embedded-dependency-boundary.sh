@@ -38,6 +38,21 @@ assert_embedded_boundary \
   --no-default-features \
   --features embedded
 
+# Provider clients are opt-in, but enabling one must not pull the clustered
+# service transports or persistence stack into either embedded edition.
+for provider in agent-vllm agent-anthropic agent-openai; do
+  assert_embedded_boundary \
+    "made-embedded with ${provider}" \
+    -p made-embedded \
+    --no-default-features \
+    --features "${provider}"
+  assert_embedded_boundary \
+    "made-mcp embedded backend with ${provider}" \
+    -p made-mcp \
+    --no-default-features \
+    --features "embedded,${provider}"
+done
+
 # SQLite is the canonical embedded store. The dependency boundary must include
 # it and must never regain the retired Redb engine.
 assert_canonical_sqlite() {

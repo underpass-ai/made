@@ -12,6 +12,7 @@ categories = ["command-line-utilities"]
 publish = true
 readme = "README.md"
 include = [
+    "assets/*.png",
     "src/**/*.rs",
     "src/**/*.yaml",
     "Cargo.toml",
@@ -28,6 +29,7 @@ path = "src/main.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+base64 = { workspace = true }
 made-adapters = { workspace = true, optional = true }
 made-app = { workspace = true, optional = true }
 made-core = { workspace = true, optional = true }
@@ -72,6 +74,9 @@ grpc = [
     "dep:tonic",
 ]
 otel = ["dep:made-adapters", "made-adapters/otel"]
+agent-vllm = ["embedded", "made-embedded/agent-vllm"]
+agent-anthropic = ["embedded", "made-embedded/agent-anthropic"]
+agent-openai = ["embedded", "made-embedded/agent-openai"]
 container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]
