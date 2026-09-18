@@ -33,6 +33,9 @@ The Rust facade returns `StartCeremonyStepOutput`, containing the accepted
 instance, attempt, stream version and fence. `CompleteCeremonyStepInput::new`
 requires that typed fence as its fifth argument. Old Rust callers fail to
 compile until migrated; old wire callers receive an explicit refusal.
+Claim responses render that accepted instance and the audit identity at its
+accepted stream version. A newer claim cannot replace the response snapshot or
+its trace, correlation and causation fields while the original fence is returned.
 
 The fence derives from already sealed claim data. This change adds no event or
 snapshot field and does not alter an event schema version or historical hash.
@@ -53,3 +56,7 @@ injects a winning reclaim between decision and append and verifies refusal.
 Direct RPC and both MCP integration sessions exercise missing, malformed and
 wrong identities without append, then complete with the returned fence.
 Legacy fixture and fold suites continue to verify sealed-history compatibility.
+`made-tests-integration/tests/ceremony_claim_response.rs` pauses A after its
+durable append, accepts B's replacement, then releases A's direct RPC response.
+Both responses retain their own snapshot, audit identity and fence; the test
+fails with the former current-head renderer.
