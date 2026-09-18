@@ -31,10 +31,10 @@ use crate::value_objects::{
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
     CeremonyLifecycle, CeremonyLineage, CeremonyName, CeremonyParticipantBinding, CeremonyReason,
     CeremonyReasonKind, CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, ChildGroupId,
-    ChildGroupState, GuardName, IdempotencyKey, LateStepResult, MemoryConfidence, RoleAction,
-    RoleId, SessionRecollection, Specialty, StateDeadline, StateId, StateIteration, StateVisit,
-    StepAttempt, StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepLease, StepResult,
-    TransitionTrigger,
+    ChildGroupState, ExecutionOperationId, ExecutionReceiptLink, GuardName, IdempotencyKey,
+    LateStepResult, MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty,
+    StateDeadline, StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepDeadline,
+    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
 };
 
 mod children;
@@ -153,6 +153,8 @@ pub struct CeremonyInstance {
     retired_deadline_claims: BTreeMap<StepClaimFence, StepDeadline>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     late_step_results: BTreeMap<StepClaimFence, LateStepResult>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    execution_receipt_links: BTreeMap<ExecutionOperationId, ExecutionReceiptLink>,
 }
 
 impl CeremonyInstance {
@@ -312,6 +314,19 @@ impl CeremonyInstance {
     #[must_use]
     pub fn step_record(&self, step_id: &StepId) -> Option<&StepExecutionRecord> {
         self.step_records.get(step_id)
+    }
+
+    #[must_use]
+    pub fn execution_receipt_links(&self) -> &BTreeMap<ExecutionOperationId, ExecutionReceiptLink> {
+        &self.execution_receipt_links
+    }
+
+    #[must_use]
+    pub fn execution_receipt_link(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Option<&ExecutionReceiptLink> {
+        self.execution_receipt_links.get(operation_id)
     }
 
     /// Finished iterations before the current record, in execution order.

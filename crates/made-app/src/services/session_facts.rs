@@ -303,6 +303,9 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             "late_step_result:{}",
             observed.result.claim_fence().as_str()
         ),
+        CeremonyEvent::ExecutionReceiptLinked(linked) => {
+            format!("execution_receipt:{}", linked.link.receipt_id())
+        }
     }
 }
 

@@ -2,8 +2,9 @@
 
 use crate::entities::CeremonyIntervention;
 use crate::value_objects::{
-    CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion, RoleId,
-    Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+    CeremonyContext, CeremonyId, CeremonyName, CeremonyTranscript, CeremonyVersion,
+    ExecutionRequestBytes, RoleId, Specialty, StateId, StepAttempt, StepHandlerConfig,
+    StepHandlerKind, StepId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -159,5 +160,65 @@ impl CeremonyStepHandlerRequest {
     #[must_use]
     pub fn role_id(&self) -> Option<&RoleId> {
         self.role_id.as_ref()
+    }
+
+    /// Canonical semantic input for recoverable execution.
+    ///
+    /// Technical attempts and lease timestamps are deliberately absent: a
+    /// reclaim is another claim of the same external operation. All fields
+    /// that may change what the handler does remain sealed here.
+    pub fn semantic_request_bytes(&self) -> Result<ExecutionRequestBytes, crate::DomainError> {
+        let value = serde_json::json!({
+            "schema": "made.ceremony-step-request.v1",
+            "instance_id": self.instance_id,
+            "definition_name": self.definition_name,
+            "definition_version": self.definition_version,
+            "current_state": self.current_state,
+            "step_id": self.step_id,
+            "handler_kind": self.handler_kind,
+            "handler_config": self.handler_config,
+            "context": self.context,
+            "transcript": self.transcript,
+            "interventions": self.interventions,
+            "role_id": self.role_id,
+            "bound_specialty": self.bound_specialty,
+        });
+        let bytes =
+            serde_json::to_vec(&value).map_err(|_| crate::DomainError::InvariantViolated {
+                reason: "ceremony step semantic request cannot be encoded",
+            })?;
+        ExecutionRequestBytes::new(bytes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value_objects::Attributes;
+
+    fn request(attempt: u32) -> CeremonyStepHandlerRequest {
+        CeremonyStepHandlerRequest::new(
+            CeremonyId::new("ceremony").unwrap(),
+            CeremonyName::new("review").unwrap(),
+            CeremonyVersion::v1(),
+            StateId::new("OPEN").unwrap(),
+            StepId::new("work").unwrap(),
+            StepHandlerKind::new("no_op").unwrap(),
+            StepHandlerConfig::new(Attributes::empty()),
+            CeremonyContext::empty(),
+            StepAttempt::new(attempt).unwrap(),
+        )
+    }
+
+    #[test]
+    fn reclaim_attempts_have_the_same_semantic_request_digest() {
+        let first = request(1);
+        let reclaimed = request(2);
+
+        assert_ne!(first.attempt(), reclaimed.attempt());
+        assert_eq!(
+            first.semantic_request_bytes().unwrap().digest(),
+            reclaimed.semantic_request_bytes().unwrap().digest()
+        );
     }
 }

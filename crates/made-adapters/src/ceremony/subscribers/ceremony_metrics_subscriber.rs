@@ -137,7 +137,8 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::CeremonyCancelled(_)
             | CeremonyEvent::CeremonyDeadlineExceeded(_)
             | CeremonyEvent::StateDeadlineExceeded(_)
-            | CeremonyEvent::LateStepResultObserved(_) => {}
+            | CeremonyEvent::LateStepResultObserved(_)
+            | CeremonyEvent::ExecutionReceiptLinked(_) => {}
         }
     }
 

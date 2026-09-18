@@ -9,6 +9,7 @@
 
 mod accept_child_completion;
 mod adopt_child_spawn_plan;
+mod apply_execution_receipt_result;
 mod apply_step_result;
 mod apply_transition;
 mod approve_guard;
@@ -28,6 +29,7 @@ mod start_step;
 
 pub use accept_child_completion::AcceptChildCompletion;
 pub use adopt_child_spawn_plan::AdoptChildSpawnPlan;
+pub use apply_execution_receipt_result::ApplyExecutionReceiptResult;
 pub use apply_step_result::ApplyStepResult;
 pub use apply_transition::ApplyTransition;
 pub use approve_guard::ApproveGuard;

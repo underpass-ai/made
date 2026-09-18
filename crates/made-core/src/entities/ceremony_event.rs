@@ -12,10 +12,10 @@ use crate::value_objects::{AuditEventType, EventSchemaVersion};
 use super::ceremony_events::{
     CeremonyCancelled, CeremonyCompleted, CeremonyDeadlineExceeded, CeremonyInstanceStarted,
     CeremonyPaused, CeremonyResumed, ChildCompletionAccepted, ChildSpawnPlanAdopted,
-    ChildSpawnPlanned, ContextWritten, EvidenceCollected, HumanApprovalRecorded,
-    HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
-    InterventionResponded, LateStepResultObserved, MemoryRecalled, ParticipantsBound,
-    ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
+    ChildSpawnPlanned, ContextWritten, EvidenceCollected, ExecutionReceiptLinked,
+    HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
+    InterventionRequested, InterventionResponded, LateStepResultObserved, MemoryRecalled,
+    ParticipantsBound, ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
     StepDeadlineExceeded, StepFailed, StepStarted, TransitionApplied,
 };
 
@@ -61,6 +61,7 @@ pub enum CeremonyEvent {
     StateDeadlineExceeded(StateDeadlineExceeded),
     StepDeadlineExceeded(StepDeadlineExceeded),
     LateStepResultObserved(LateStepResultObserved),
+    ExecutionReceiptLinked(ExecutionReceiptLinked),
 }
 
 impl CeremonyEvent {
@@ -96,6 +97,7 @@ impl CeremonyEvent {
             Self::StateDeadlineExceeded(_) => AuditEventType::StateDeadlineExceeded,
             Self::StepDeadlineExceeded(_) => AuditEventType::StepDeadlineExceeded,
             Self::LateStepResultObserved(_) => AuditEventType::LateStepResultObserved,
+            Self::ExecutionReceiptLinked(_) => AuditEventType::ExecutionReceiptLinked,
         }
     }
 
@@ -191,6 +193,7 @@ impl CeremonyEvent {
             | Self::StateDeadlineExceeded(_)
             | Self::StepDeadlineExceeded(_) => EventSchemaVersion::V1,
             Self::LateStepResultObserved(_) => EventSchemaVersion::V1,
+            Self::ExecutionReceiptLinked(_) => EventSchemaVersion::V1,
         }
     }
 }

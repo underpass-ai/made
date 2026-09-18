@@ -12,6 +12,7 @@ use crate::error::DomainError;
 
 mod children;
 mod context;
+mod execution_receipts;
 mod guard_decisions;
 mod import;
 mod interventions;
@@ -86,6 +87,9 @@ impl CeremonyInstance {
             CeremonyEvent::StepDeadlineExceeded(event) => self.apply_step_deadline_exceeded(event),
             CeremonyEvent::LateStepResultObserved(event) => {
                 self.apply_late_step_result_observed(event)
+            }
+            CeremonyEvent::ExecutionReceiptLinked(event) => {
+                self.apply_execution_receipt_linked(event)
             }
         }
     }
