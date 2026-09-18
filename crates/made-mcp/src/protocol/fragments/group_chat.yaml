@@ -1,0 +1,188 @@
+version: '1.0'
+name: group_chat
+description: Canonical group_chat coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_ROUND_1
+  initial: true
+  x-pattern: group_chat
+- id: COORDINATION_ROUND_2
+  x-pattern: group_chat
+- id: COORDINATION_FALLBACK
+  x-pattern: group_chat
+- id: COORDINATION_RECORD
+  x-pattern: group_chat
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_FALLBACK
+  to: COORDINATION_RECORD
+  trigger: coordination_fallback_completed
+  guards:
+  - coordination_fallback_completed
+- from: COORDINATION_RECORD
+  to: COMPLETED
+  trigger: coordination_record_completed
+  guards:
+  - coordination_record_completed
+- from: COORDINATION_ROUND_1
+  to: COORDINATION_RECORD
+  trigger: coordination_round_1_finished
+  guards:
+  - coordination_round_1_finished_completed
+  - coordination_round_1_finished_output_0
+- from: COORDINATION_ROUND_1
+  to: COORDINATION_ROUND_2
+  trigger: coordination_round_1_continue
+  guards:
+  - coordination_round_1_continue_completed
+  - coordination_round_1_continue_output_0
+- from: COORDINATION_ROUND_2
+  to: COORDINATION_RECORD
+  trigger: coordination_round_2_finished
+  guards:
+  - coordination_round_2_finished_completed
+  - coordination_round_2_finished_output_0
+- from: COORDINATION_ROUND_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_round_2_continue
+  guards:
+  - coordination_round_2_continue_completed
+  - coordination_round_2_continue_output_0
+steps:
+- id: coordination_manage_1
+  state: COORDINATION_ROUND_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Choose the next speaker and return next_speaker, done and instructions.
+    see_prior: true
+  context_writes:
+    coordination_next_speaker: next_speaker
+- id: coordination_speak_1
+  state: COORDINATION_ROUND_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the group_chat coordination fragment.
+    see_prior: true
+  role_from: context.coordination_next_speaker
+  allowed_roles:
+  - OPS
+  - SECURITY
+- id: coordination_manage_2
+  state: COORDINATION_ROUND_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Choose the next speaker and return next_speaker, done and instructions.
+    see_prior: true
+  context_writes:
+    coordination_next_speaker: next_speaker
+- id: coordination_speak_2
+  state: COORDINATION_ROUND_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the group_chat coordination fragment.
+    see_prior: true
+  role_from: context.coordination_next_speaker
+  allowed_roles:
+  - OPS
+  - SECURITY
+- id: coordination_fallback
+  state: COORDINATION_FALLBACK
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Close a discussion that reached its turn cap with an explicit fallback.
+    see_prior: true
+- id: coordination_record
+  state: COORDINATION_RECORD
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Record the discussion outcome and minutes.
+    see_prior: true
+guards:
+  coordination_fallback_completed:
+    type: automated
+    check: step_status:coordination_fallback:COMPLETED
+  coordination_record_completed:
+    type: automated
+    check: step_status:coordination_record:COMPLETED
+  coordination_round_1_continue_completed:
+    type: automated
+    check: step_status:coordination_speak_1:COMPLETED
+  coordination_round_1_continue_output_0:
+    type: automated
+    check: output_field:coordination_manage_1:done=false
+  coordination_round_1_coordination_manage_1_completed:
+    type: automated
+    check: step_status:coordination_manage_1:COMPLETED
+  coordination_round_1_coordination_speak_1_completed:
+    type: automated
+    check: step_status:coordination_speak_1:COMPLETED
+  coordination_round_1_finished_completed:
+    type: automated
+    check: step_status:coordination_speak_1:COMPLETED
+  coordination_round_1_finished_output_0:
+    type: automated
+    check: output_field:coordination_manage_1:done=true
+  coordination_round_2_continue_completed:
+    type: automated
+    check: step_status:coordination_speak_2:COMPLETED
+  coordination_round_2_continue_output_0:
+    type: automated
+    check: output_field:coordination_manage_2:done=false
+  coordination_round_2_coordination_manage_2_completed:
+    type: automated
+    check: step_status:coordination_manage_2:COMPLETED
+  coordination_round_2_coordination_speak_2_completed:
+    type: automated
+    check: step_status:coordination_speak_2:COMPLETED
+  coordination_round_2_finished_completed:
+    type: automated
+    check: step_status:coordination_speak_2:COMPLETED
+  coordination_round_2_finished_output_0:
+    type: automated
+    check: output_field:coordination_manage_2:done=true
+roles:
+- id: LEAD
+  allowed_actions:
+  - coordination_manage_1
+  - coordination_manage_2
+  - coordination_record
+  - coordination_record_completed
+  - coordination_round_1_continue
+  - coordination_round_1_finished
+  - coordination_round_2_continue
+  - coordination_round_2_finished
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_speak_1
+  - coordination_speak_2
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_speak_1
+  - coordination_speak_2
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - coordination_fallback
+  - coordination_fallback_completed
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+

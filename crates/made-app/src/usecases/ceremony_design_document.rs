@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxBounces,
     MaxParallel, MaxTransitions, OutputName, StepAttempt, StepTimeout,
@@ -5,9 +7,11 @@ use made_core::value_objects::{
 
 use super::ceremony_design_final_approval::CeremonyDesignFinalApproval;
 use super::ceremony_design_participant::CeremonyDesignParticipant;
+use super::ceremony_design_route::CeremonyDesignRoute;
 use super::ceremony_design_stage::CeremonyDesignStage;
 use super::ceremony_pattern_preset::CeremonyPatternPreset;
 use super::CeremonyDesignStageEntry;
+use super::CeremonyStagePatternKind;
 
 /// What an author wants, before anything mechanical is decided.
 ///
@@ -37,6 +41,8 @@ pub struct CeremonyDesignDocument {
     max_parallel: MaxParallel,
     max_transitions: Option<MaxTransitions>,
     max_bounces: Option<MaxBounces>,
+    state_patterns: BTreeMap<made_core::value_objects::StepId, CeremonyStagePatternKind>,
+    routes: Vec<CeremonyDesignRoute>,
 }
 
 impl CeremonyDesignDocument {
@@ -78,6 +84,8 @@ impl CeremonyDesignDocument {
             max_parallel: MaxParallel::default(),
             max_transitions: None,
             max_bounces: None,
+            state_patterns: BTreeMap::new(),
+            routes: Vec::new(),
         }
     }
 
@@ -139,7 +147,7 @@ impl CeremonyDesignDocument {
             .iter()
             .filter_map(|entry| match entry {
                 CeremonyDesignStageEntry::Leaf(stage) => Some(stage.clone()),
-                CeremonyDesignStageEntry::Group(_) => None,
+                CeremonyDesignStageEntry::Group(_) | CeremonyDesignStageEntry::Pattern(_) => None,
             })
             .collect();
         self.stage_entries = entries;
@@ -204,6 +212,30 @@ impl CeremonyDesignDocument {
         self.pattern
     }
 
+    #[must_use]
+    pub(crate) fn state_pattern(
+        &self,
+        entry_id: &made_core::value_objects::StepId,
+    ) -> Option<CeremonyStagePatternKind> {
+        self.state_patterns.get(entry_id).copied()
+    }
+
+    pub(crate) fn materialized_with_entries(
+        &self,
+        entries: Vec<CeremonyDesignStageEntry>,
+        state_patterns: BTreeMap<made_core::value_objects::StepId, CeremonyStagePatternKind>,
+        routes: Vec<CeremonyDesignRoute>,
+    ) -> Self {
+        let mut materialized = self.clone().with_stage_entries(entries);
+        materialized.state_patterns = state_patterns;
+        materialized.routes = routes;
+        materialized
+    }
+
+    pub(crate) fn routes(&self) -> &[CeremonyDesignRoute] {
+        &self.routes
+    }
+
     pub(crate) fn materialized_with_stages(&self, stages: Vec<CeremonyDesignStage>) -> Self {
         let mut materialized = self.clone();
         materialized.stages = stages;
@@ -214,6 +246,8 @@ impl CeremonyDesignDocument {
             .map(CeremonyDesignStageEntry::Leaf)
             .collect();
         materialized.pattern = None;
+        materialized.state_patterns.clear();
+        materialized.routes.clear();
         materialized
     }
 }

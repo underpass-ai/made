@@ -80,10 +80,18 @@ PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
 # property of Rust sources, which these files are not.
 EMBEDDED_DATA_GATES = ("clippy", "test")
 
+FRAGMENT_NAMES = (
+    "roundtable_fixed_order", "broadcast_collect", "group_chat",
+    "maker_checker", "handoff", "magentic",
+)
 FRAGMENT_SYNC_PATHS = {
-    "api/examples/ceremonies/fragments/roundtable_fixed_order.yaml",
-    "crates/made-app/src/usecases/fragments/roundtable_fixed_order.yaml",
-    "crates/made-mcp/src/protocol/fragments/roundtable_fixed_order.yaml",
+    f"{root}/{name}.yaml"
+    for root in (
+        "api/examples/ceremonies/fragments",
+        "crates/made-app/src/usecases/fragments",
+        "crates/made-mcp/src/protocol/fragments",
+    )
+    for name in FRAGMENT_NAMES
 }
 
 # Changing any of these changes what "proved" means, so the answer is the

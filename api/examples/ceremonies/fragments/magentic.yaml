@@ -1,0 +1,269 @@
+version: '1.0'
+name: magentic
+description: Canonical magentic coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_PLAN
+  initial: true
+  x-pattern: magentic
+- id: COORDINATION_WORK_1
+  x-pattern: magentic
+- id: COORDINATION_WORK_2
+  x-pattern: magentic
+- id: COORDINATION_FALLBACK
+  x-pattern: magentic
+- id: COORDINATION_RECORD
+  x-pattern: magentic
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_PLAN
+  to: COORDINATION_WORK_1
+  trigger: coordination_plan_completed
+  guards:
+  - coordination_plan_completed
+- from: COORDINATION_FALLBACK
+  to: COORDINATION_RECORD
+  trigger: coordination_fallback_completed
+  guards:
+  - coordination_fallback_completed
+- from: COORDINATION_RECORD
+  to: COMPLETED
+  trigger: coordination_record_completed
+  guards:
+  - coordination_record_completed
+- from: COORDINATION_WORK_1
+  to: COORDINATION_RECORD
+  trigger: coordination_work_1_done
+  guards:
+  - coordination_work_1_done_completed
+  - coordination_work_1_done_output_0
+- from: COORDINATION_WORK_1
+  to: COORDINATION_FALLBACK
+  trigger: coordination_work_1_stalled
+  guards:
+  - coordination_work_1_stalled_completed
+  - coordination_work_1_stalled_output_0
+- from: COORDINATION_WORK_1
+  to: COORDINATION_WORK_2
+  trigger: coordination_work_1_continue
+  guards:
+  - coordination_work_1_continue_completed
+  - coordination_work_1_continue_output_0
+  - coordination_work_1_continue_output_1
+- from: COORDINATION_WORK_2
+  to: COORDINATION_RECORD
+  trigger: coordination_work_2_done
+  guards:
+  - coordination_work_2_done_completed
+  - coordination_work_2_done_output_0
+- from: COORDINATION_WORK_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_work_2_stalled
+  guards:
+  - coordination_work_2_stalled_completed
+  - coordination_work_2_stalled_output_0
+- from: COORDINATION_WORK_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_work_2_continue
+  guards:
+  - coordination_work_2_continue_completed
+  - coordination_work_2_continue_output_0
+  - coordination_work_2_continue_output_1
+steps:
+- id: coordination_plan
+  state: COORDINATION_PLAN
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Create a task ledger with tasks, owners, goals and status.
+    see_prior: true
+  context_writes:
+    coordination_task_ledger: ledger
+- id: coordination_pick_1
+  state: COORDINATION_WORK_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Select the next open task and return its owner role.
+    see_prior: true
+  context_writes:
+    coordination_next_owner: owner
+- id: coordination_do_1
+  state: COORDINATION_WORK_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the magentic coordination fragment.
+    see_prior: true
+  role_from: context.coordination_next_owner
+  allowed_roles:
+  - OPS
+  - SECURITY
+- id: coordination_update_1
+  state: COORDINATION_WORK_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Update the ledger and return ledger, done and stalled.
+    see_prior: true
+  context_writes:
+    coordination_task_ledger: ledger
+- id: coordination_pick_2
+  state: COORDINATION_WORK_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Select the next open task and return its owner role.
+    see_prior: true
+  context_writes:
+    coordination_next_owner: owner
+- id: coordination_do_2
+  state: COORDINATION_WORK_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the magentic coordination fragment.
+    see_prior: true
+  role_from: context.coordination_next_owner
+  allowed_roles:
+  - OPS
+  - SECURITY
+- id: coordination_update_2
+  state: COORDINATION_WORK_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Update the ledger and return ledger, done and stalled.
+    see_prior: true
+  context_writes:
+    coordination_task_ledger: ledger
+- id: coordination_fallback
+  state: COORDINATION_FALLBACK
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Review a stalled or capped task ledger.
+    see_prior: true
+- id: coordination_record
+  state: COORDINATION_RECORD
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Record the final ledger and its audit trail.
+    see_prior: true
+guards:
+  coordination_fallback_completed:
+    type: automated
+    check: step_status:coordination_fallback:COMPLETED
+  coordination_plan_completed:
+    type: automated
+    check: step_status:coordination_plan:COMPLETED
+  coordination_record_completed:
+    type: automated
+    check: step_status:coordination_record:COMPLETED
+  coordination_work_1_continue_completed:
+    type: automated
+    check: step_status:coordination_update_1:COMPLETED
+  coordination_work_1_continue_output_0:
+    type: automated
+    check: output_field:coordination_update_1:done=false
+  coordination_work_1_continue_output_1:
+    type: automated
+    check: output_field:coordination_update_1:stalled=false
+  coordination_work_1_coordination_do_1_completed:
+    type: automated
+    check: step_status:coordination_do_1:COMPLETED
+  coordination_work_1_coordination_pick_1_completed:
+    type: automated
+    check: step_status:coordination_pick_1:COMPLETED
+  coordination_work_1_coordination_update_1_completed:
+    type: automated
+    check: step_status:coordination_update_1:COMPLETED
+  coordination_work_1_done_completed:
+    type: automated
+    check: step_status:coordination_update_1:COMPLETED
+  coordination_work_1_done_output_0:
+    type: automated
+    check: output_field:coordination_update_1:done=true
+  coordination_work_1_stalled_completed:
+    type: automated
+    check: step_status:coordination_update_1:COMPLETED
+  coordination_work_1_stalled_output_0:
+    type: automated
+    check: output_field:coordination_update_1:stalled=true
+  coordination_work_2_continue_completed:
+    type: automated
+    check: step_status:coordination_update_2:COMPLETED
+  coordination_work_2_continue_output_0:
+    type: automated
+    check: output_field:coordination_update_2:done=false
+  coordination_work_2_continue_output_1:
+    type: automated
+    check: output_field:coordination_update_2:stalled=false
+  coordination_work_2_coordination_do_2_completed:
+    type: automated
+    check: step_status:coordination_do_2:COMPLETED
+  coordination_work_2_coordination_pick_2_completed:
+    type: automated
+    check: step_status:coordination_pick_2:COMPLETED
+  coordination_work_2_coordination_update_2_completed:
+    type: automated
+    check: step_status:coordination_update_2:COMPLETED
+  coordination_work_2_done_completed:
+    type: automated
+    check: step_status:coordination_update_2:COMPLETED
+  coordination_work_2_done_output_0:
+    type: automated
+    check: output_field:coordination_update_2:done=true
+  coordination_work_2_stalled_completed:
+    type: automated
+    check: step_status:coordination_update_2:COMPLETED
+  coordination_work_2_stalled_output_0:
+    type: automated
+    check: output_field:coordination_update_2:stalled=true
+roles:
+- id: LEAD
+  allowed_actions:
+  - coordination_pick_1
+  - coordination_pick_2
+  - coordination_plan
+  - coordination_plan_completed
+  - coordination_record
+  - coordination_record_completed
+  - coordination_update_1
+  - coordination_update_2
+  - coordination_work_1_continue
+  - coordination_work_1_done
+  - coordination_work_1_stalled
+  - coordination_work_2_continue
+  - coordination_work_2_done
+  - coordination_work_2_stalled
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_do_1
+  - coordination_do_2
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_do_1
+  - coordination_do_2
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - coordination_fallback
+  - coordination_fallback_completed
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+

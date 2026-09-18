@@ -1,0 +1,87 @@
+version: '1.0'
+name: broadcast_collect
+description: Canonical broadcast_collect coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_BROADCAST
+  initial: true
+  execution: concurrent
+  x-pattern: broadcast_collect
+- id: COORDINATION_COLLECT
+  x-pattern: broadcast_collect
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_BROADCAST
+  to: COORDINATION_COLLECT
+  trigger: coordination_broadcast_completed
+  guards:
+  - coordination_broadcast_coordination_review_1_completed
+  - coordination_broadcast_coordination_review_2_completed
+- from: COORDINATION_COLLECT
+  to: COMPLETED
+  trigger: coordination_collect_completed
+  guards:
+  - coordination_collect_completed
+steps:
+- id: coordination_review_1
+  state: COORDINATION_BROADCAST
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the broadcast_collect coordination fragment.
+    see_prior: false
+- id: coordination_review_2
+  state: COORDINATION_BROADCAST
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the broadcast_collect coordination fragment.
+    see_prior: false
+- id: coordination_collect
+  state: COORDINATION_COLLECT
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Synthesize every independent contribution into one result.
+    see_prior: true
+guards:
+  coordination_broadcast_coordination_review_1_completed:
+    type: automated
+    check: step_status:coordination_review_1:COMPLETED
+  coordination_broadcast_coordination_review_2_completed:
+    type: automated
+    check: step_status:coordination_review_2:COMPLETED
+  coordination_collect_completed:
+    type: automated
+    check: step_status:coordination_collect:COMPLETED
+roles:
+- id: LEAD
+  allowed_actions:
+  - coordination_collect
+  - coordination_collect_completed
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_broadcast_completed
+  - coordination_review_1
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_review_2
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+

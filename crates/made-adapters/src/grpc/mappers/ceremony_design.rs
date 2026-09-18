@@ -16,9 +16,10 @@ use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignExitGuard, CeremonyDesignFinalApproval,
     CeremonyDesignGroup, CeremonyDesignGroupRepeat, CeremonyDesignGroupRepeatUntil,
     CeremonyDesignGroupStep, CeremonyDesignJoin, CeremonyDesignOutputFieldGuard,
-    CeremonyDesignParticipant, CeremonyDesignRepeat, CeremonyDesignStage, CeremonyDesignStageEntry,
-    CeremonyDesignStepRepeatExhaustedGuard, CeremonyDraftView, CeremonyParticipantCapability,
-    CeremonyPatternPreset, DesignedCeremony,
+    CeremonyDesignParticipant, CeremonyDesignPatternStage, CeremonyDesignRepeat,
+    CeremonyDesignStage, CeremonyDesignStageEntry, CeremonyDesignStepRepeatExhaustedGuard,
+    CeremonyDraftView, CeremonyParticipantCapability, CeremonyPatternPreset,
+    CeremonyStagePatternKind, DesignedCeremony,
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
@@ -149,8 +150,51 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
 }
 
 fn stage_entry_from_proto(
-    stage: pb::CeremonyDesignStage,
+    mut stage: pb::CeremonyDesignStage,
 ) -> Result<CeremonyDesignStageEntry, DomainError> {
+    if let Some(pattern) = stage.pattern_stage.take() {
+        if stage.group.is_some()
+            || !stage.owner_role_id.is_empty()
+            || !stage.instructions.is_empty()
+            || !stage.handler.is_empty()
+            || stage.see_prior.is_some()
+            || stage.num_agents.is_some()
+            || stage.review_rounds != 0
+            || stage.repeat.is_some()
+            || !stage.exit_guards.is_empty()
+            || !stage.role_from.is_empty()
+            || !stage.allowed_roles.is_empty()
+            || !stage.context_writes.is_empty()
+        {
+            return Err(DomainError::InvalidDocument {
+                reason: format!(
+                    "pattern stage `{}` cannot also declare leaf/group fields",
+                    stage.id
+                ),
+            });
+        }
+        let mut designed = CeremonyDesignPatternStage::new(
+            StepId::new(stage.id)?,
+            CeremonyStagePatternKind::parse(&pattern.kind)?,
+            pattern
+                .roles
+                .into_iter()
+                .map(RoleId::new)
+                .collect::<Result<Vec<_>, _>>()?,
+            StepInstructions::new(pattern.instructions)?,
+        )
+        .with_join(join_from_proto(pattern.join)?);
+        if !pattern.manager_role_id.is_empty() {
+            designed = designed.with_manager_role(RoleId::new(pattern.manager_role_id)?);
+        }
+        if let Some(cap) = pattern.max_iterations {
+            designed = designed.with_max_iterations(StateIteration::new(cap)?);
+        }
+        if !pattern.fallback_role_id.is_empty() {
+            designed = designed.with_fallback_role(RoleId::new(pattern.fallback_role_id)?);
+        }
+        return Ok(CeremonyDesignStageEntry::Pattern(designed));
+    }
     if let Some(group) = stage.group {
         if !stage.owner_role_id.is_empty()
             || !stage.instructions.is_empty()
@@ -177,27 +221,7 @@ fn stage_entry_from_proto(
                 })
             }
         };
-        let join = match group.join {
-            None => CeremonyDesignJoin::AllStepsCompleted,
-            Some(join) => match join.condition.as_str() {
-                "" | "all_steps_completed" if join.count.is_none() => {
-                    CeremonyDesignJoin::AllStepsCompleted
-                }
-                "any_step_completed" if join.count.is_none() => {
-                    CeremonyDesignJoin::AnyStepCompleted
-                }
-                "steps_completed" => CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(
-                    join.count.ok_or_else(|| DomainError::InvalidDocument {
-                        reason: "steps_completed join requires count".to_owned(),
-                    })?,
-                )?),
-                _ => {
-                    return Err(DomainError::InvalidDocument {
-                        reason: "invalid group join condition or count".to_owned(),
-                    })
-                }
-            },
-        };
+        let join = join_from_proto(group.join)?;
         let steps = group
             .steps
             .into_iter()
@@ -212,6 +236,30 @@ fn stage_entry_from_proto(
         return Ok(CeremonyDesignStageEntry::Group(designed_group));
     }
     stage_from_proto(stage).map(CeremonyDesignStageEntry::Leaf)
+}
+
+fn join_from_proto(
+    join: Option<pb::CeremonyDesignGroupJoin>,
+) -> Result<CeremonyDesignJoin, DomainError> {
+    match join {
+        None => Ok(CeremonyDesignJoin::AllStepsCompleted),
+        Some(join) => match join.condition.as_str() {
+            "" | "all_steps_completed" if join.count.is_none() => {
+                Ok(CeremonyDesignJoin::AllStepsCompleted)
+            }
+            "any_step_completed" if join.count.is_none() => {
+                Ok(CeremonyDesignJoin::AnyStepCompleted)
+            }
+            "steps_completed" => Ok(CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(
+                join.count.ok_or_else(|| DomainError::InvalidDocument {
+                    reason: "steps_completed join requires count".to_owned(),
+                })?,
+            )?)),
+            _ => Err(DomainError::InvalidDocument {
+                reason: "invalid group join condition or count".to_owned(),
+            }),
+        },
+    }
 }
 
 fn group_repeat_from_proto(

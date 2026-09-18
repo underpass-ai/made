@@ -1,0 +1,241 @@
+version: '1.0'
+name: incident_review
+description: Review an incident with independent analysis and a bounded write-up.
+inputs:
+  required: []
+  optional: []
+outputs:
+  report:
+    type: object
+states:
+- id: INTAKE
+  initial: true
+  x-pattern: sequential
+- id: ANALYSIS_BROADCAST
+  execution: concurrent
+  x-pattern: broadcast_collect
+- id: ANALYSIS_COLLECT
+  x-pattern: broadcast_collect
+- id: WRITEUP_ITERATION_1
+  x-pattern: maker_checker
+- id: WRITEUP_ITERATION_2
+  x-pattern: maker_checker
+- id: WRITEUP_FALLBACK
+  x-pattern: maker_checker
+- id: WRITEUP_DELIVER
+  x-pattern: maker_checker
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: INTAKE
+  to: ANALYSIS_BROADCAST
+  trigger: intake_completed
+  guards:
+  - intake_intake_1_completed
+- from: ANALYSIS_BROADCAST
+  to: ANALYSIS_COLLECT
+  trigger: analysis_broadcast_completed
+  guards:
+  - analysis_broadcast_analysis_review_1_completed
+  - analysis_broadcast_analysis_review_2_completed
+- from: ANALYSIS_COLLECT
+  to: WRITEUP_ITERATION_1
+  trigger: analysis_collect_completed
+  guards:
+  - analysis_collect_completed
+- from: WRITEUP_FALLBACK
+  to: WRITEUP_DELIVER
+  trigger: writeup_fallback_completed
+  guards:
+  - writeup_fallback_completed
+- from: WRITEUP_DELIVER
+  to: COMPLETED
+  trigger: writeup_deliver_completed
+  guards:
+  - writeup_deliver_completed
+- from: WRITEUP_ITERATION_1
+  to: WRITEUP_DELIVER
+  trigger: writeup_iteration_1_approved
+  guards:
+  - writeup_iteration_1_approved_completed
+  - writeup_iteration_1_approved_output_0
+- from: WRITEUP_ITERATION_1
+  to: WRITEUP_ITERATION_2
+  trigger: writeup_iteration_1_revise
+  guards:
+  - writeup_iteration_1_revise_completed
+  - writeup_iteration_1_revise_output_0
+- from: WRITEUP_ITERATION_2
+  to: WRITEUP_DELIVER
+  trigger: writeup_iteration_2_approved
+  guards:
+  - writeup_iteration_2_approved_completed
+  - writeup_iteration_2_approved_output_0
+- from: WRITEUP_ITERATION_2
+  to: WRITEUP_FALLBACK
+  trigger: writeup_iteration_2_revise
+  guards:
+  - writeup_iteration_2_revise_completed
+  - writeup_iteration_2_revise_output_0
+steps:
+- id: intake_1
+  state: INTAKE
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Normalize the incident timeline.
+    see_prior: false
+- id: analysis_review_1
+  state: ANALYSIS_BROADCAST
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Analyze the incident independently.
+    see_prior: false
+- id: analysis_review_2
+  state: ANALYSIS_BROADCAST
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Analyze the incident independently.
+    see_prior: false
+- id: analysis_collect
+  state: ANALYSIS_COLLECT
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Synthesize every independent contribution into one result.
+    see_prior: true
+- id: writeup_make_1
+  state: WRITEUP_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Write a corrective-action report.
+    see_prior: true
+- id: writeup_check_1
+  state: WRITEUP_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Check the result and return approved plus findings.
+    see_prior: true
+- id: writeup_make_2
+  state: WRITEUP_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Write a corrective-action report.
+    see_prior: true
+- id: writeup_check_2
+  state: WRITEUP_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Check the result and return approved plus findings.
+    see_prior: true
+- id: writeup_fallback
+  state: WRITEUP_FALLBACK
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Escalate work that reached the declared maker-checker cap.
+    see_prior: true
+- id: writeup_deliver
+  state: WRITEUP_DELIVER
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Deliver the checked result, retaining any findings.
+    see_prior: true
+guards:
+  analysis_broadcast_analysis_review_1_completed:
+    type: automated
+    check: step_status:analysis_review_1:COMPLETED
+  analysis_broadcast_analysis_review_2_completed:
+    type: automated
+    check: step_status:analysis_review_2:COMPLETED
+  analysis_collect_completed:
+    type: automated
+    check: step_status:analysis_collect:COMPLETED
+  intake_intake_1_completed:
+    type: automated
+    check: step_status:intake_1:COMPLETED
+  writeup_deliver_completed:
+    type: automated
+    check: step_status:writeup_deliver:COMPLETED
+  writeup_fallback_completed:
+    type: automated
+    check: step_status:writeup_fallback:COMPLETED
+  writeup_iteration_1_approved_completed:
+    type: automated
+    check: step_status:writeup_check_1:COMPLETED
+  writeup_iteration_1_approved_output_0:
+    type: automated
+    check: output_field:writeup_check_1:approved=true
+  writeup_iteration_1_revise_completed:
+    type: automated
+    check: step_status:writeup_check_1:COMPLETED
+  writeup_iteration_1_revise_output_0:
+    type: automated
+    check: output_field:writeup_check_1:approved=false
+  writeup_iteration_1_writeup_check_1_completed:
+    type: automated
+    check: step_status:writeup_check_1:COMPLETED
+  writeup_iteration_1_writeup_make_1_completed:
+    type: automated
+    check: step_status:writeup_make_1:COMPLETED
+  writeup_iteration_2_approved_completed:
+    type: automated
+    check: step_status:writeup_check_2:COMPLETED
+  writeup_iteration_2_approved_output_0:
+    type: automated
+    check: output_field:writeup_check_2:approved=true
+  writeup_iteration_2_revise_completed:
+    type: automated
+    check: step_status:writeup_check_2:COMPLETED
+  writeup_iteration_2_revise_output_0:
+    type: automated
+    check: output_field:writeup_check_2:approved=false
+  writeup_iteration_2_writeup_check_2_completed:
+    type: automated
+    check: step_status:writeup_check_2:COMPLETED
+  writeup_iteration_2_writeup_make_2_completed:
+    type: automated
+    check: step_status:writeup_make_2:COMPLETED
+roles:
+- id: LEAD
+  allowed_actions:
+  - analysis_collect
+  - analysis_collect_completed
+  - intake_1
+  - intake_completed
+  - writeup_deliver
+  - writeup_deliver_completed
+  - writeup_make_1
+  - writeup_make_2
+- id: OPS
+  allowed_actions:
+  - analysis_broadcast_completed
+  - analysis_review_1
+- id: SECURITY
+  allowed_actions:
+  - analysis_review_2
+  - writeup_check_1
+  - writeup_check_2
+  - writeup_iteration_1_approved
+  - writeup_iteration_1_revise
+  - writeup_iteration_2_approved
+  - writeup_iteration_2_revise
+- id: HUMAN
+  allowed_actions:
+  - writeup_fallback
+  - writeup_fallback_completed
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+max_parallel: 2
+

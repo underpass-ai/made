@@ -63,6 +63,11 @@ impl DesignedCeremonyYaml {
                         equals: repeat.until().equals().clone(),
                     },
                 }),
+                pattern: state
+                    .annotations()
+                    .get("x-pattern")
+                    .and_then(serde_json::Value::as_str)
+                    .map(str::to_owned),
             })
             .collect();
         let transitions = draft

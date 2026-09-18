@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add composable `stages[].pattern` authoring for broadcast/collect, managed
+  group chat, maker-checker, bounded handoff and magentic task-ledger flows.
+  Ship executable fragments, cross-edition design parity and Mermaid pattern
+  regions with concurrent fork/join rendering. (#159)
 - Run siblings in concurrent ceremony states with bounded automatic fan-out,
   durable claims before handlers, drained completions and early-join checks
   between batches. Document delegated host/subagent fan-out and prove distinct

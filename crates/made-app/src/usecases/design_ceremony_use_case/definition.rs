@@ -60,6 +60,17 @@ pub(super) fn build_definition(
                 CeremonyState::intermediate(id.clone())
             };
             let state = state.with_execution(entry_execution(&document.stage_entries()[index]));
+            let state = document
+                .state_pattern(&entry_id(&document.stage_entries()[index]))
+                .map_or(state.clone(), |pattern| {
+                    state.with_annotations(
+                        Attributes::new(BTreeMap::from([(
+                            "x-pattern".to_owned(),
+                            json!(pattern.id()),
+                        )]))
+                        .expect("one fixed nonblank annotation"),
+                    )
+                });
             match &document.stage_entries()[index] {
                 CeremonyDesignStageEntry::Group(group) => {
                     group.repeat().map_or(state.clone(), |repeat| {
@@ -74,6 +85,7 @@ pub(super) fn build_definition(
                     })
                 }
                 CeremonyDesignStageEntry::Leaf(_) => state,
+                CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
             }
         })
         .collect::<Vec<_>>();
@@ -140,6 +152,7 @@ pub(super) fn build_definition(
                     required_guards.push(completion.clone());
                 }
             },
+            CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
         }
         if let CeremonyDesignStageEntry::Leaf(stage) = entry {
             for (guard_index, guard) in stage.exit_guards().iter().enumerate() {
@@ -179,6 +192,9 @@ pub(super) fn build_definition(
                     match entry {
                         CeremonyDesignStageEntry::Group(_) => first_owner,
                         CeremonyDesignStageEntry::Leaf(_) => approval.role_id(),
+                        CeremonyDesignStageEntry::Pattern(_) => {
+                            unreachable!("patterns are materialized")
+                        }
                     },
                 )
             }
@@ -199,16 +215,22 @@ pub(super) fn build_definition(
                     .insert(RoleAction::step(stage.id().clone()));
             }
         }
-        actions
-            .get_mut(owner)
-            .expect("validated transition owner")
-            .insert(RoleAction::transition(trigger.clone()));
-        transitions.push(CeremonyTransition::new(
-            state_ids[index].clone(),
-            state_ids.get(index + 1).unwrap_or(&terminal).clone(),
-            trigger,
-            required_guards,
-        )?);
+        if !document
+            .routes()
+            .iter()
+            .any(|route| route.from() == entry_id(entry))
+        {
+            actions
+                .get_mut(owner)
+                .expect("validated transition owner")
+                .insert(RoleAction::transition(trigger.clone()));
+            transitions.push(CeremonyTransition::new(
+                state_ids[index].clone(),
+                state_ids.get(index + 1).unwrap_or(&terminal).clone(),
+                trigger,
+                required_guards,
+            )?);
+        }
         for stage in entry_stages {
             let handler = stage
                 .handler()
@@ -237,6 +259,26 @@ pub(super) fn build_definition(
             step = step.with_context_writes(stage.context_writes().clone());
             steps.push(step);
         }
+    }
+    for route in document.routes() {
+        let required_guards = route
+            .guards()
+            .iter()
+            .map(|(name, condition)| {
+                guards.push(CeremonyGuard::new(name.clone(), condition.clone()));
+                name.clone()
+            })
+            .collect::<Vec<_>>();
+        actions
+            .get_mut(route.owner())
+            .expect("validated pattern route owner")
+            .insert(RoleAction::transition(route.trigger().clone()));
+        transitions.push(CeremonyTransition::new(
+            StateId::new(route.from().as_str().to_ascii_uppercase())?,
+            StateId::new(route.to().as_str().to_ascii_uppercase())?,
+            route.trigger().clone(),
+            required_guards,
+        )?);
     }
     let roles = document
         .participants()
@@ -295,6 +337,7 @@ fn entry_id(entry: &CeremonyDesignStageEntry) -> &made_core::value_objects::Step
     match entry {
         CeremonyDesignStageEntry::Leaf(stage) => stage.id(),
         CeremonyDesignStageEntry::Group(group) => group.id(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
 }
 
@@ -302,6 +345,7 @@ fn entry_execution(entry: &CeremonyDesignStageEntry) -> StateExecution {
     match entry {
         CeremonyDesignStageEntry::Leaf(_) => StateExecution::Sequential,
         CeremonyDesignStageEntry::Group(group) => group.execution(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
 }
 
@@ -313,6 +357,7 @@ fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
             .iter()
             .map(CeremonyDesignGroupStep::step)
             .collect(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
 }
 

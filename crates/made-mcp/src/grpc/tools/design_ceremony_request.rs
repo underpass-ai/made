@@ -68,6 +68,14 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
         .iter()
         .map(|value| {
             let stage = j2p::require_object(value, "stages[]")?;
+            if let Some(pattern_value) = stage.get("pattern") {
+                let pattern = j2p::require_object(pattern_value, "stages[].pattern")?;
+                return Ok(pb::CeremonyDesignStage {
+                    id: j2p::require_str(stage, "id")?.to_owned(),
+                    pattern_stage: Some(pattern_from_json(pattern)?),
+                    ..pb::CeremonyDesignStage::default()
+                });
+            }
             if let Some(group_value) = stage.get("group") {
                 let group = j2p::require_object(group_value, "stages[].group")?;
                 return Ok(pb::CeremonyDesignStage {
@@ -94,9 +102,38 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                     .to_owned(),
                 allowed_roles: j2p::string_array(stage, "allowed_roles"),
                 context_writes: string_map(stage, "context_writes")?,
+                pattern_stage: None,
             })
         })
         .collect()
+}
+
+fn pattern_from_json(
+    pattern: &Map<String, Value>,
+) -> Result<pb::CeremonyDesignPatternStage, String> {
+    let join = pattern
+        .get("join")
+        .map(|value| -> Result<pb::CeremonyDesignGroupJoin, String> {
+            let join = j2p::require_object(value, "stages[].pattern.join")?;
+            Ok(pb::CeremonyDesignGroupJoin {
+                condition: j2p::require_str(join, "condition")?.to_owned(),
+                count: j2p::optional_present_u32(join, "count")?,
+            })
+        })
+        .transpose()?;
+    Ok(pb::CeremonyDesignPatternStage {
+        kind: j2p::require_str(pattern, "kind")?.to_owned(),
+        roles: j2p::string_array(pattern, "roles"),
+        instructions: j2p::require_str(pattern, "instructions")?.to_owned(),
+        manager_role_id: j2p::optional_str(pattern, "manager_role_id")
+            .unwrap_or_default()
+            .to_owned(),
+        max_iterations: j2p::optional_present_u32(pattern, "max_iterations")?,
+        fallback_role_id: j2p::optional_str(pattern, "fallback_role_id")
+            .unwrap_or_default()
+            .to_owned(),
+        join,
+    })
 }
 
 fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup, String> {

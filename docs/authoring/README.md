@@ -91,6 +91,31 @@ produces linear stages; branching outcomes need explicit YAML. The
 in declaration order, passing prior contributions forward. It does not
 select speakers dynamically or aggregate their answers.
 
+Compose coordination shapes per stage with a `pattern` object. Every pattern
+declares its roles and instructions; bounded patterns also declare
+`max_iterations` and a `fallback_role_id`. `broadcast_collect`, `group_chat`
+and `magentic` additionally declare `manager_role_id`.
+
+```json
+{
+  "id": "analysis",
+  "pattern": {
+    "kind": "broadcast_collect",
+    "roles": ["OPERATIONS", "SECURITY", "PRODUCT"],
+    "manager_role_id": "INCIDENT_LEAD",
+    "instructions": "Analyze the same incident timeline independently."
+  }
+}
+```
+
+Available kinds are `sequential`, `concurrent`, `broadcast_collect`,
+`group_chat`, `maker_checker`, `handoff` and `magentic`. The designer expands
+them into ordinary states, steps, guards and transitions. Its `x-pattern`
+state annotation exists for renderers and reports and never changes runtime
+semantics. See the executable [incident review](../../tests/e2e/ceremonies/incident_review.yaml),
+[concurrent review](../../tests/e2e/ceremonies/concurrent-review.yaml), and
+[fragment catalog](../../api/examples/ceremonies/fragments/README.md).
+
 Validate the draft with `made_validate_ceremony_draft`; use
 `made_explain_ceremony_draft` for a readable account of the same analysis.
 A publishable draft is still a draft. `made_publish_ceremony_definition`

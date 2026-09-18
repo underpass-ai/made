@@ -1,0 +1,65 @@
+version: "1.0"
+name: concurrent_review
+description: "Three independent reviewers inspect one draft before a synthesizer collects every result"
+inputs:
+  required: [draft]
+outputs:
+  review:
+    type: object
+states:
+  - id: REVIEWING
+    initial: true
+    execution: concurrent
+    x-pattern: broadcast_collect
+  - id: COLLECTING
+    x-pattern: broadcast_collect
+  - id: COMPLETED
+    terminal: true
+transitions:
+  - from: REVIEWING
+    to: COLLECTING
+    trigger: reviews_collected
+    guards: [three_reviews_completed]
+  - from: COLLECTING
+    to: COMPLETED
+    trigger: synthesis_completed
+    guards: [synthesis_completed]
+steps:
+  - id: review_correctness
+    state: REVIEWING
+    handler: host_callback
+    config: {see_prior: false, num_agents: 1, prompt: "Review correctness independently."}
+  - id: review_security
+    state: REVIEWING
+    handler: host_callback
+    config: {see_prior: false, num_agents: 1, prompt: "Review security independently."}
+  - id: review_operations
+    state: REVIEWING
+    handler: host_callback
+    config: {see_prior: false, num_agents: 1, prompt: "Review operational impact independently."}
+  - id: synthesize_reviews
+    state: COLLECTING
+    handler: host_callback
+    config: {see_prior: true, num_agents: 1, prompt: "Synthesize every reviewer contribution."}
+    aggregate: {strategy: synthesize}
+guards:
+  three_reviews_completed:
+    type: automated
+    check: "steps_completed:3"
+  synthesis_completed:
+    type: automated
+    check: "step_status:synthesize_reviews:COMPLETED"
+roles:
+  - id: CORRECTNESS_REVIEWER
+    allowed_actions: [review_correctness, reviews_collected]
+  - id: SECURITY_REVIEWER
+    allowed_actions: [review_security]
+  - id: OPERATIONS_REVIEWER
+    allowed_actions: [review_operations]
+  - id: SYNTHESIZER
+    allowed_actions: [synthesize_reviews, synthesis_completed]
+max_parallel: 3
+timeouts:
+  step_default: 300
+retry_policies:
+  default: {max_attempts: 2, backoff_seconds: 1}

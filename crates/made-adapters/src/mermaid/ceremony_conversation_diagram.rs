@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
 
 use made_core::entities::CeremonyDefinition;
-use made_core::value_objects::{RoleAction, RoleId, StateId, StepId};
+use made_core::value_objects::{RoleAction, RoleId, StateExecution, StateId, StepId};
 
 #[derive(Debug, Default, Clone, Copy)]
 pub struct CeremonyConversationDiagram;
@@ -9,70 +9,170 @@ pub struct CeremonyConversationDiagram;
 impl CeremonyConversationDiagram {
     #[must_use]
     pub fn render(definition: &CeremonyDefinition) -> String {
-        let participants = participants(definition);
-        let planned_steps = planned_steps(definition);
-        let all_participants = participant_range(&participants);
-        let mut lines = vec![
-            "sequenceDiagram".to_owned(),
-            format!(
-                "  title {} v{}",
-                escape_label(definition.name().as_str()),
-                escape_label(definition.version().as_str())
-            ),
-        ];
+        if definition
+            .states()
+            .values()
+            .any(|state| state.annotations().get("x-pattern").is_some())
+        {
+            return render_pattern_diagram(definition);
+        }
+        render_legacy(definition)
+    }
+}
 
-        for (index, role_id) in &participants {
+fn render_legacy(definition: &CeremonyDefinition) -> String {
+    let participants = participants(definition);
+    let planned_steps = planned_steps(definition);
+    let all_participants = participant_range(&participants);
+    let mut lines = vec![
+        "sequenceDiagram".to_owned(),
+        format!(
+            "  title {} v{}",
+            escape_label(definition.name().as_str()),
+            escape_label(definition.version().as_str())
+        ),
+    ];
+
+    for (index, role_id) in &participants {
+        lines.push(format!(
+            "  participant R{} as {}",
+            index,
+            escape_label(role_id.as_str())
+        ));
+    }
+
+    for (position, (state_id, step_id, actor_index)) in planned_steps.iter().enumerate() {
+        lines.push(format!(
+            "  Note over {}: State {}",
+            all_participants,
+            escape_label(state_id.as_str())
+        ));
+        let target_index = planned_steps
+            .get(position + 1)
+            .map_or(*actor_index, |(_, _, next_actor)| *next_actor);
+        let step = definition
+            .step(step_id)
+            .expect("planned step comes from ceremony definition");
+        lines.push(format!(
+            "  R{}->>R{}: {} [{}]",
+            actor_index,
+            target_index,
+            escape_label(step_id.as_str()),
+            escape_label(step.handler_kind().as_str())
+        ));
+
+        for transition in definition.available_transitions(state_id) {
+            let guards = transition
+                .required_guards()
+                .iter()
+                .map(|guard| escape_label(guard.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let guard_suffix = if guards.is_empty() {
+                String::new()
+            } else {
+                format!(" (guards: {guards})")
+            };
             lines.push(format!(
-                "  participant R{} as {}",
-                index,
-                escape_label(role_id.as_str())
+                "  Note over {}: {} -> {}{}",
+                all_participants,
+                escape_label(transition.trigger().as_str()),
+                escape_label(transition.to().as_str()),
+                guard_suffix
             ));
         }
+    }
 
-        for (position, (state_id, step_id, actor_index)) in planned_steps.iter().enumerate() {
-            lines.push(format!(
-                "  Note over {}: State {}",
-                all_participants,
-                escape_label(state_id.as_str())
-            ));
-            let target_index = planned_steps
-                .get(position + 1)
-                .map_or(*actor_index, |(_, _, next_actor)| *next_actor);
-            let step = definition
-                .step(step_id)
-                .expect("planned step comes from ceremony definition");
-            lines.push(format!(
-                "  R{}->>R{}: {} [{}]",
-                actor_index,
-                target_index,
-                escape_label(step_id.as_str()),
-                escape_label(step.handler_kind().as_str())
-            ));
+    lines.join("\n")
+}
 
-            for transition in definition.available_transitions(state_id) {
-                let guards = transition
-                    .required_guards()
-                    .iter()
-                    .map(|guard| escape_label(guard.as_str()))
-                    .collect::<Vec<_>>()
-                    .join(", ");
-                let guard_suffix = if guards.is_empty() {
-                    String::new()
-                } else {
-                    format!(" (guards: {guards})")
-                };
+fn render_pattern_diagram(definition: &CeremonyDefinition) -> String {
+    let participants = participants(definition);
+    let all_participants = participant_range(&participants);
+    let mut lines = vec![
+        "sequenceDiagram".to_owned(),
+        format!(
+            "  title {} v{}",
+            escape_label(definition.name().as_str()),
+            escape_label(definition.version().as_str())
+        ),
+    ];
+    for (index, role_id) in &participants {
+        lines.push(format!(
+            "  participant R{index} as {}",
+            escape_label(role_id.as_str())
+        ));
+    }
+    let mut open_pattern: Option<String> = None;
+    for state_id in ordered_state_ids(definition) {
+        if definition.is_terminal_state(&state_id) {
+            continue;
+        }
+        let state = definition.state(&state_id).expect("ordered state exists");
+        let pattern = state
+            .annotations()
+            .get("x-pattern")
+            .and_then(serde_json::Value::as_str);
+        if pattern != open_pattern.as_deref() {
+            if open_pattern.take().is_some() {
+                lines.push("  end".to_owned());
+            }
+            if let Some(pattern) = pattern {
+                lines.push("  rect rgb(245, 245, 255)".to_owned());
                 lines.push(format!(
-                    "  Note over {}: {} -> {}{}",
-                    all_participants,
-                    escape_label(transition.trigger().as_str()),
-                    escape_label(transition.to().as_str()),
-                    guard_suffix
+                    "    Note over {all_participants}: Pattern {}",
+                    escape_label(pattern)
                 ));
+                open_pattern = Some(pattern.to_owned());
             }
         }
-
-        lines.join("\n")
+        lines.push(format!(
+            "    Note over {all_participants}: State {}",
+            escape_label(state_id.as_str())
+        ));
+        let steps = definition.steps_for_state(&state_id).collect::<Vec<_>>();
+        for (index, step) in steps.iter().enumerate() {
+            let actor = actor_index_for_step(definition, &participants, step.id()).unwrap_or(1);
+            if state.execution() == StateExecution::Concurrent {
+                lines.push(format!(
+                    "    {} {}",
+                    if index == 0 { "par" } else { "and" },
+                    escape_label(step.id().as_str())
+                ));
+            }
+            lines.push(format!(
+                "      R{actor}->>R{actor}: {} [{}]",
+                escape_label(step.id().as_str()),
+                escape_label(step.handler_kind().as_str())
+            ));
+        }
+        if state.execution() == StateExecution::Concurrent && !steps.is_empty() {
+            lines.push("    end".to_owned());
+        }
+        for transition in definition.available_transitions(&state_id) {
+            let guards = transition
+                .required_guards()
+                .iter()
+                .map(|guard| escape_label(guard.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let suffix = if guards.is_empty() {
+                String::new()
+            } else {
+                format!(" (guards: {guards})")
+            };
+            lines.push(format!(
+                "    Note over {all_participants}: {} -> {}{}",
+                escape_label(transition.trigger().as_str()),
+                escape_label(transition.to().as_str()),
+                suffix
+            ));
+        }
     }
+    if open_pattern.is_some() {
+        lines.push("  end".to_owned());
+    }
+    lines.join("\n")
 }
 
 fn participants(definition: &CeremonyDefinition) -> Vec<(usize, RoleId)> {
