@@ -310,12 +310,21 @@ impl DeliberateUseCase {
         task: &Task,
     ) -> Result<Vec<ProposalId>, DomainError> {
         let now = self.clock.now();
-        let drafts = match &self.proposal_scheduler {
-            Some(scheduler) => scheduler.generate(agents, task).await?,
-            None => ProposalScheduler::sequential(agents, task).await?,
+        let mut drafts = match &self.proposal_scheduler {
+            Some(scheduler) => Some(scheduler.generate(agents, task).await.into_iter()),
+            None => None,
         };
         let mut ordered_ids = Vec::with_capacity(agents.len());
-        for (agent, draft) in agents.iter().zip(drafts) {
+        for agent in agents {
+            // Sequential defaults retain generate -> record ordering. Parallel
+            // mode drains first, then records the successful declaration-order
+            // prefix before returning its first error. Failures are not saved.
+            let draft = match drafts.as_mut() {
+                Some(drafts) => drafts.next().ok_or(DomainError::InvariantViolated {
+                    reason: "proposal result count must match agent count",
+                })?,
+                None => agent.generate(proposal_scheduler::request(task)).await,
+            }?;
             let proposal_id = new_proposal_id()?;
             let content_len = draft.content.len();
             let preview = content_preview(&draft.content);
@@ -526,6 +535,7 @@ mod tests {
         id: AgentId,
         specialty: Specialty,
         draft: String,
+        fail: bool,
         revise_to: Mutex<Vec<String>>, // per-round revised contents
     }
     impl StubAgent {
@@ -534,6 +544,7 @@ mod tests {
                 id: AgentId::new(id).unwrap(),
                 specialty: specialty.clone(),
                 draft: draft.to_owned(),
+                fail: false,
                 revise_to: Mutex::new(revisions.into_iter().map(String::from).collect()),
             })
         }
@@ -547,6 +558,11 @@ mod tests {
             &self.specialty
         }
         async fn generate(&self, _request: DraftRequest) -> Result<Revision, DomainError> {
+            if self.fail {
+                return Err(DomainError::InvariantViolated {
+                    reason: "proposal boom",
+                });
+            }
             Ok(Revision {
                 content: self.draft.clone().into(),
             })
@@ -1040,6 +1056,56 @@ mod tests {
     }
 
     // --- Tests ------------------------------------------------------------
+
+    #[tokio::test]
+    async fn proposal_failure_keeps_the_successful_local_prefix_without_saving_it() {
+        for parallel in [false, true] {
+            let sp = specialty();
+            let agents: Vec<Arc<dyn AgentPort>> = vec![
+                StubAgent::new("a1", &sp, "first proposal", vec![]),
+                Arc::new(StubAgent {
+                    id: AgentId::new("a2").unwrap(),
+                    specialty: sp.clone(),
+                    draft: String::new(),
+                    fail: true,
+                    revise_to: Mutex::new(vec![]),
+                }),
+                StubAgent::new("a3", &sp, "later proposal", vec![]),
+            ];
+            let (mut usecase, repo, bus) =
+                fixture(agents.clone(), council_with(&["a1", "a2", "a3"]));
+            if parallel {
+                usecase = usecase.with_proposal_parallelism(
+                    made_core::value_objects::MaxParallel::new(3).unwrap(),
+                );
+            }
+            let task = task(TaskConstraints::default());
+            let mut deliberation = Deliberation::start(
+                task.id().clone(),
+                sp,
+                task.constraints().rounds(),
+                usecase.clock.now(),
+            );
+            assert!(usecase
+                .seed_proposals(&mut deliberation, &agents, &task)
+                .await
+                .is_err());
+            assert_eq!(deliberation.proposals().len(), 1);
+            assert_eq!(
+                deliberation
+                    .proposals()
+                    .values()
+                    .next()
+                    .unwrap()
+                    .author()
+                    .as_str(),
+                "a1"
+            );
+            assert!(usecase.execute(task).await.is_err());
+            assert!(repo.saved.lock().unwrap().is_empty());
+            assert!(bus.completed.lock().unwrap().is_empty());
+        }
+    }
 
     #[tokio::test]
     async fn parallel_proposing_opt_in_runs_the_complete_deliberation() {

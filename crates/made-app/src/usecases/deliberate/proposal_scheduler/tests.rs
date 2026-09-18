@@ -107,7 +107,7 @@ fn task() -> Task {
 async fn reverse_completions_still_return_declaration_order_and_drain_failures() {
     let (agents, calls) = fixture(&[30, 20, 1], None, 3);
     let scheduler = ProposalScheduler::new(MaxParallel::new(3).unwrap());
-    let results = scheduler.generate(&agents, &task()).await.unwrap();
+    let results = generated(&scheduler, &agents, &task()).await.unwrap();
     assert_eq!(
         results
             .iter()
@@ -117,7 +117,7 @@ async fn reverse_completions_still_return_declaration_order_and_drain_failures()
     );
     assert_eq!(calls.peak.load(Ordering::SeqCst), 3);
     let (agents, calls) = fixture(&[1, 15, 25], Some(0), 3);
-    assert!(scheduler.generate(&agents, &task()).await.is_err());
+    assert!(generated(&scheduler, &agents, &task()).await.is_err());
     assert_eq!(calls.finished.load(Ordering::SeqCst), 3);
     assert_eq!(calls.active.load(Ordering::SeqCst), 0);
 }
@@ -128,8 +128,8 @@ async fn simultaneous_councils_share_the_same_proposal_limit() {
     let scheduler = ProposalScheduler::new(MaxParallel::new(2).unwrap());
     let task = task();
     let (a, b) = tokio::join!(
-        scheduler.generate(&agents, &task),
-        scheduler.generate(&agents, &task)
+        generated(&scheduler, &agents, &task),
+        generated(&scheduler, &agents, &task)
     );
     assert_eq!(a.unwrap().len() + b.unwrap().len(), 8);
     assert_eq!(calls.peak.load(Ordering::SeqCst), 2);
@@ -152,12 +152,12 @@ async fn cancelling_the_caller_releases_permits_for_the_next_request() {
     let scheduler = ProposalScheduler::new(MaxParallel::new(2).unwrap());
     assert!(tokio::time::timeout(
         Duration::from_millis(10),
-        scheduler.generate(&agents, &task())
+        generated(&scheduler, &agents, &task())
     )
     .await
     .is_err());
     assert_eq!(calls.active.load(Ordering::SeqCst), 0);
-    let results = scheduler.generate(&agents, &task()).await.unwrap();
+    let results = generated(&scheduler, &agents, &task()).await.unwrap();
     assert_eq!(results.len(), 3);
     assert_eq!(calls.peak.load(Ordering::SeqCst), 2);
 }
@@ -177,7 +177,7 @@ async fn experiment_003_bounded_proposing() {
                         .await
                         .unwrap()
                 } else {
-                    scheduler.generate(&agents, &task()).await.unwrap()
+                    generated(&scheduler, &agents, &task()).await.unwrap()
                 };
                 assert_eq!(drafts.len(), 8);
                 println!(
@@ -189,4 +189,12 @@ async fn experiment_003_bounded_proposing() {
             }
         }
     }
+}
+
+async fn generated(
+    scheduler: &ProposalScheduler,
+    agents: &[Arc<dyn AgentPort>],
+    task: &Task,
+) -> Result<Vec<Revision>, DomainError> {
+    scheduler.generate(agents, task).await.into_iter().collect()
 }

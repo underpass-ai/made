@@ -23,11 +23,11 @@ impl ProposalScheduler {
         &self,
         agents: &[Arc<dyn AgentPort>],
         task: &Task,
-    ) -> Result<Vec<Revision>, DomainError> {
+    ) -> Vec<Result<Revision, DomainError>> {
         // Drain every accepted future before returning the first failure in
         // agent order. Dropping siblings on an early error would hide provider
         // calls that may already have produced an external effect.
-        let results = join_all(agents.iter().map(|agent| async {
+        join_all(agents.iter().map(|agent| async {
             let _permit =
                 self.permits
                     .acquire()
@@ -37,10 +37,10 @@ impl ProposalScheduler {
                     })?;
             agent.generate(request(task)).await
         }))
-        .await;
-        results.into_iter().collect()
+        .await
     }
 
+    #[cfg(test)]
     pub(super) async fn sequential(
         agents: &[Arc<dyn AgentPort>],
         task: &Task,
@@ -53,7 +53,7 @@ impl ProposalScheduler {
     }
 }
 
-fn request(task: &Task) -> DraftRequest {
+pub(super) fn request(task: &Task) -> DraftRequest {
     DraftRequest {
         task: task.description().clone(),
         constraints: task.constraints().clone(),
