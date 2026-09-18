@@ -9,6 +9,9 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Adopt the full-color Cuatro voces artwork and English slogan in the README,
+  documentation, plugin and skill cards, MCP identity, and Helm chart icon.
+
 - Expose all council, agent and output-contract operations through
   `EmbeddedMade` and the embedded MCP backend. Local composition accepts
   injected registries, agent factories, deliberation stores, validators,

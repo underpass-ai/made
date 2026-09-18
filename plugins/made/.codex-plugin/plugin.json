@@ -29,6 +29,9 @@
       "Discover the capabilities and report generator exposed by this MADE plugin.",
       "Show me MADE help for a user or an autonomous agent.",
       "Design or run a ceremony and report the governed result."
-    ]
+    ],
+    "composerIcon": "./assets/made-cuatro-voces.png",
+    "logo": "./assets/made-cuatro-voces.png",
+    "logoDark": "./assets/made-cuatro-voces.png"
   }
 }
