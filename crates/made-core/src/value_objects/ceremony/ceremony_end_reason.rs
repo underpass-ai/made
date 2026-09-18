@@ -8,3 +8,15 @@ pub enum CeremonyEndReason {
     CeremonyDeadline,
     StateDeadline,
 }
+
+impl CeremonyEndReason {
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Completed => "completed",
+            Self::Cancelled => "cancelled",
+            Self::CeremonyDeadline => "ceremony_deadline",
+            Self::StateDeadline => "state_deadline",
+        }
+    }
+}

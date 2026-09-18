@@ -206,6 +206,7 @@ mod tests {
             started_by: winner.clone(),
             role_from: None,
             sealed_role: Some(winner.clone()),
+            deadline: None,
             started_at: won_at,
         });
         let overtaking_fact = session_facts::fact(

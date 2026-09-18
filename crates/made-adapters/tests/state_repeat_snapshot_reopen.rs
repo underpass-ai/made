@@ -185,6 +185,8 @@ fn repeated_state_events(
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            ceremony_deadline: None,
+            state_deadline: None,
             created_at: at(0),
         }),
         started(
@@ -280,6 +282,7 @@ fn started(
         started_by: role_id.clone(),
         role_from: None,
         sealed_role: None,
+        deadline: None,
         started_at: at(ordinal),
     })
 }

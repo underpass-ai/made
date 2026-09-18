@@ -84,6 +84,38 @@ impl EmbeddedCeremonyInstancePresenter {
         let interventions = intervention_values(instance);
         let open_intervention_ids = open_intervention_ids(instance);
         let guard_deferrals = guard_deferral_values(instance);
+        let lifecycle = instance.lifecycle();
+        let step_deadlines = instance
+            .step_deadlines()
+            .values()
+            .map(|deadline| {
+                json!({
+                    "step_id": deadline.step_id().as_str(),
+                    "state_visit": deadline.state_visit().get(),
+                    "state_iteration": deadline.state_iteration().get(),
+                    "step_iteration": deadline.step_iteration().get(),
+                    "attempt": deadline.attempt().get(),
+                    "claim_fence": deadline.claim_fence().as_str(),
+                    "deadline_at": moment(deadline.at()),
+                    "finished_by_role_id": deadline.finished_by().as_str(),
+                })
+            })
+            .collect::<Vec<_>>();
+        let reasons = view
+            .reasons()
+            .iter()
+            .map(|reason| {
+                json!({
+                    "from": record_ref_value(reason.from()),
+                    "to": record_ref_value(reason.to()),
+                    "kind": reason.kind().as_label(),
+                    "why": reason.why(),
+                    "confidence": reason.confidence().as_label(),
+                    "asserted_by_role_id": reason.asserted_by().map(RoleId::as_str),
+                    "asserted_at": moment(reason.asserted_at()),
+                })
+            })
+            .collect::<Vec<_>>();
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
@@ -126,6 +158,13 @@ impl EmbeddedCeremonyInstancePresenter {
             "recollection": instance.recollection().map(recollection_value),
             "lineage": instance.lineage().map(lineage_value),
             "child_groups": instance.child_groups().values().map(child_group_value).collect::<Vec<_>>(),
+            "lifecycle": lifecycle.phase().as_label(),
+            "end_reason": lifecycle.end_reason().map(|reason| reason.as_label()),
+            "paused_at": lifecycle.is_paused().then(|| lifecycle.changed_at().map(moment)).flatten(),
+            "ended_at": lifecycle.is_ended().then(|| lifecycle.changed_at().map(moment)).flatten(),
+            "ceremony_deadline_at": instance.ceremony_deadline().map(|deadline| moment(deadline.at())),
+            "state_deadline_at": instance.state_deadline().map(|deadline| moment(deadline.at())),
+            "step_deadlines": step_deadlines,
             "participant_bindings": view
                 .participant_bindings()
                 .values()
@@ -138,19 +177,7 @@ impl EmbeddedCeremonyInstancePresenter {
             // Read back, not only written: a seat that explained this
             // session can find its own explanation again. Until now the
             // edges crossed the wire in one direction only.
-            "reasons": view
-                .reasons()
-                .iter()
-                .map(|reason| json!({
-                    "from": record_ref_value(reason.from()),
-                    "to": record_ref_value(reason.to()),
-                    "kind": reason.kind().as_label(),
-                    "why": reason.why(),
-                    "confidence": reason.confidence().as_label(),
-                    "asserted_by_role_id": reason.asserted_by().map(RoleId::as_str),
-                    "asserted_at": moment(reason.asserted_at()),
-                }))
-                .collect::<Vec<_>>(),
+            "reasons": reasons,
         }))
     }
 }

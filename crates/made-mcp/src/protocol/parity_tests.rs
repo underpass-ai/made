@@ -351,7 +351,7 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 10] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 14] = [
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
     ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
     ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),
@@ -379,6 +379,10 @@ const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 10] = [
         "start_step",
         "the facade calls it starting because that is the use case it runs          (`StartCeremonyStepUseCase`); claiming is what the tool calls the same act",
     ),
+    ("pause_ceremony", "pause_ceremony", "keeps the domain noun to distinguish ceremony lifecycle control from host process control"),
+    ("resume_ceremony", "resume_ceremony", "keeps the domain noun to distinguish ceremony lifecycle control from host process control"),
+    ("cancel_ceremony", "cancel_ceremony", "keeps the domain noun to distinguish ceremony lifecycle control from host process control"),
+    ("enforce_ceremony_deadlines", "enforce_ceremony_deadlines", "keeps the domain noun because enforcement targets one ceremony instance"),
 ];
 
 fn expected_facade_method(capability: &str) -> String {

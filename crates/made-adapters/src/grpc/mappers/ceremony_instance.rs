@@ -32,6 +32,7 @@ pub(super) fn moment(at: OffsetDateTime) -> String {
 
 pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::CeremonyInstanceState {
     let instance = view.instance();
+    let lifecycle = instance.lifecycle();
 
     pb::CeremonyInstanceState {
         ceremony_id: instance.id().as_str().to_owned(),
@@ -108,6 +109,43 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .child_groups()
             .values()
             .map(child_group_state_from)
+            .collect(),
+        lifecycle: lifecycle.phase().as_label().to_owned(),
+        end_reason: lifecycle
+            .end_reason()
+            .map(|reason| reason.as_label().to_owned())
+            .unwrap_or_default(),
+        paused_at: lifecycle
+            .is_paused()
+            .then(|| lifecycle.changed_at().map(moment))
+            .flatten()
+            .unwrap_or_default(),
+        ended_at: lifecycle
+            .is_ended()
+            .then(|| lifecycle.changed_at().map(moment))
+            .flatten()
+            .unwrap_or_default(),
+        ceremony_deadline_at: instance
+            .ceremony_deadline()
+            .map(|deadline| moment(deadline.at()))
+            .unwrap_or_default(),
+        state_deadline_at: instance
+            .state_deadline()
+            .map(|deadline| moment(deadline.at()))
+            .unwrap_or_default(),
+        step_deadlines: instance
+            .step_deadlines()
+            .values()
+            .map(|deadline| pb::CeremonyStepDeadlineState {
+                step_id: deadline.step_id().as_str().to_owned(),
+                state_visit: deadline.state_visit().get(),
+                state_iteration: deadline.state_iteration().get(),
+                step_iteration: deadline.step_iteration().get(),
+                attempt: deadline.attempt().get(),
+                claim_fence: deadline.claim_fence().as_str().to_owned(),
+                deadline_at: moment(deadline.at()),
+                finished_by_role_id: deadline.finished_by().as_str().to_owned(),
+            })
             .collect(),
     }
 }

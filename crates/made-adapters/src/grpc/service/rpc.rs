@@ -200,6 +200,38 @@ impl MadeService for MadeGrpcService {
         run_with_ceremony_trace(trace, self.handle_apply_ceremony_transition(request)).await
     }
 
+    async fn pause_ceremony(
+        &self,
+        request: Request<pb::PauseCeremonyRequest>,
+    ) -> GrpcResult<pb::PauseCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_pause_ceremony(request)).await
+    }
+
+    async fn resume_ceremony(
+        &self,
+        request: Request<pb::ResumeCeremonyRequest>,
+    ) -> GrpcResult<pb::ResumeCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_resume_ceremony(request)).await
+    }
+
+    async fn cancel_ceremony(
+        &self,
+        request: Request<pb::CancelCeremonyRequest>,
+    ) -> GrpcResult<pb::CancelCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_cancel_ceremony(request)).await
+    }
+
+    async fn enforce_ceremony_deadlines(
+        &self,
+        request: Request<pb::EnforceCeremonyDeadlinesRequest>,
+    ) -> GrpcResult<pb::EnforceCeremonyDeadlinesResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_enforce_ceremony_deadlines(request)).await
+    }
+
     async fn approve_ceremony_guard(
         &self,
         request: Request<pb::ApproveCeremonyGuardRequest>,
