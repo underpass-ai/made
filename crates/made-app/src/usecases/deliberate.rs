@@ -30,8 +30,8 @@ use made_core::error::DomainError;
 use made_core::events::{DeliberationCompletedEvent, EventEnvelope};
 use made_core::ports::{
     AgentPort, AgentResolverPort, ClockPort, CouncilRegistryPort, DeliberationObserverPort,
-    DeliberationRepositoryPort, DraftRequest, MessagingPort, MetricsRecorderPort, NullObserver,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    DeliberationRepositoryPort, MessagingPort, MetricsRecorderPort, NullObserver, ScoringPort,
+    StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{AgentId, DeliberationOutcome, Discrimination, EventId, ProposalId};
 use time::OffsetDateTime;
@@ -40,6 +40,9 @@ use uuid::Uuid;
 
 use super::deliberate_output::DeliberateOutput;
 use super::winner_selection;
+
+mod proposal_scheduler;
+use proposal_scheduler::ProposalScheduler;
 
 /// The peer deliberation use case.
 pub struct DeliberateUseCase {
@@ -53,6 +56,7 @@ pub struct DeliberateUseCase {
     statistics: Arc<dyn StatisticsPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
     source: String,
+    proposal_scheduler: Option<ProposalScheduler>,
 }
 
 impl std::fmt::Debug for DeliberateUseCase {
@@ -89,7 +93,20 @@ impl DeliberateUseCase {
             statistics,
             metrics,
             source: source.into(),
+            proposal_scheduler: None,
         }
+    }
+
+    /// Opt into bounded parallel initial proposals. The permit pool is shared
+    /// across calls to this use case, including concurrent ceremony steps.
+    /// Peer review remains ordered. Constructors keep sequential proposing.
+    #[must_use]
+    pub fn with_proposal_parallelism(
+        mut self,
+        limit: made_core::value_objects::MaxParallel,
+    ) -> Self {
+        self.proposal_scheduler = Some(ProposalScheduler::new(limit));
+        self
     }
 
     pub async fn execute(&self, task: Task) -> Result<DeliberateOutput, DomainError> {
@@ -293,16 +310,12 @@ impl DeliberateUseCase {
         task: &Task,
     ) -> Result<Vec<ProposalId>, DomainError> {
         let now = self.clock.now();
+        let drafts = match &self.proposal_scheduler {
+            Some(scheduler) => scheduler.generate(agents, task).await?,
+            None => ProposalScheduler::sequential(agents, task).await?,
+        };
         let mut ordered_ids = Vec::with_capacity(agents.len());
-        for agent in agents {
-            let draft = agent
-                .generate(DraftRequest {
-                    task: task.description().clone(),
-                    constraints: task.constraints().clone(),
-                    diversity: made_core::value_objects::DiversityPreference::Diverse,
-                    external_context: task.external_context().cloned(),
-                })
-                .await?;
+        for (agent, draft) in agents.iter().zip(drafts) {
             let proposal_id = new_proposal_id()?;
             let content_len = draft.content.len();
             let preview = content_preview(&draft.content);
@@ -486,6 +499,7 @@ mod tests {
         DeliberationCompletedEvent, PhaseChangedEvent, TaskCompletedEvent, TaskDispatchedEvent,
         TaskFailedEvent,
     };
+    use made_core::ports::DraftRequest;
     use made_core::ports::{Critique, Revision};
     use made_core::value_objects::{
         Attributes, CouncilId, NumAgents, OutputContract, OutputFieldRule, Rounds, Rubric, Score,
@@ -1026,6 +1040,32 @@ mod tests {
     }
 
     // --- Tests ------------------------------------------------------------
+
+    #[tokio::test]
+    async fn parallel_proposing_opt_in_runs_the_complete_deliberation() {
+        let sp = specialty();
+        let agents: Vec<Arc<dyn AgentPort>> = vec![
+            StubAgent::new("a1", &sp, "AAA", vec![]),
+            StubAgent::new("a2", &sp, "BBBB", vec![]),
+        ];
+        let (usecase, repo, bus) = fixture(agents, council_with(&["a1", "a2"]));
+        assert!(usecase.proposal_scheduler.is_none());
+        let usecase = usecase
+            .with_proposal_parallelism(made_core::value_objects::MaxParallel::new(2).unwrap());
+        let out = usecase
+            .execute(task(TaskConstraints::new(
+                Rubric::empty(),
+                Rounds::new(0).unwrap(),
+                None,
+                None,
+            )))
+            .await
+            .unwrap();
+        assert_eq!(out.deliberation.phase(), DeliberationPhase::Completed);
+        assert_eq!(out.deliberation.proposals().len(), 2);
+        assert_eq!(repo.saved.lock().unwrap().len(), 1);
+        assert_eq!(bus.completed.lock().unwrap().len(), 1);
+    }
 
     #[tokio::test]
     async fn happy_path_returns_winner_and_persists_deliberation() {
