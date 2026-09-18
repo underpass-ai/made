@@ -462,9 +462,13 @@ workflow. Every ceremony tool now has an RPC behind it, so what the gRPC
 backend filters out is nothing, and what the embedded backend filters out is
 the council surface. Status and metrics are served by both (`service_observability`).
 
-The 41 backend-owned MCP tools are 1:1 with MADE's 41 gRPC RPCs.
-Together with the two server-owned discovery/help tools above, gRPC mode
-advertises 43 executable tools:
+The backend-owned MCP catalog is derived one-for-one from the current MADE
+gRPC contract. Discovery and help are server-owned additions. Do not rely on a
+hand-maintained total: inspect `tools/list` and
+`made_discover_capabilities` on the installed process. A compatible gRPC
+backend exposes its contract-compatible surface, while the embedded backend
+filters out the council surface. The table below maps the documented tools to
+their gRPC RPCs:
 
 | MCP tool                          | gRPC RPC                              | Purpose |
 |-----------------------------------|---------------------------------------|---------|
