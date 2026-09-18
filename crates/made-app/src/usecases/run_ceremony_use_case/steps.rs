@@ -8,9 +8,7 @@ use made_core::value_objects::{
     StepLease, StepResult,
 };
 
-use crate::usecases::{
-    prepare_step_execution, PrepareCeremonyChildrenInput, PreparedStepExecution,
-};
+use crate::usecases::{prepare_step_execution, PreparedStepExecution};
 
 use super::{
     claimed_step::ClaimedStep, executed_step::ExecutedStep, run_step_output::RunStepOutput,
@@ -322,31 +320,7 @@ impl RunCeremonyUseCase {
             .spawn()
             .is_some();
         let result = if is_spawn {
-            let children = self
-                .children
-                .as_ref()
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "child-spawning ceremony requires the child orchestrator",
-                })?;
-            let output = children
-                .execute(PrepareCeremonyChildrenInput::new(
-                    claimed.request.instance_id().clone(),
-                    claimed.step_id.clone(),
-                    claimed.claim_fence.clone(),
-                    actor_kind,
-                ))
-                .await?;
-            let session = self.stream.load(output.instance().id()).await?;
-            Ok(RunStepOutput {
-                session,
-                step_id: claimed.step_id,
-                role_id: claimed.role_id,
-                state_visit: claimed.state_visit,
-                state_iteration: claimed.state_iteration,
-                iteration: claimed.iteration,
-                attempt: claimed.attempt,
-                result: output.result().clone(),
-            })
+            self.execute_spawn_claimed_step(claimed, actor_kind).await
         } else {
             match self.execute_claimed_step(definition, claimed).await {
                 Ok(executed) => {

@@ -105,21 +105,21 @@ impl ChildSpawnPlan {
     }
 }
 
-#[derive(Deserialize)]
-struct UncheckedChildSpawnPlan {
-    group_id: ChildGroupId,
-    coordinates: ChildSpawnCoordinates,
-    active_claim_fence: StepClaimFence,
-    children: Vec<PlannedChild>,
-    max_children: MaxChildren,
-    max_depth: MaxChildDepth,
-}
-
 impl<'de> Deserialize<'de> for ChildSpawnPlan {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
+        #[derive(Deserialize)]
+        struct UncheckedChildSpawnPlan {
+            group_id: ChildGroupId,
+            coordinates: ChildSpawnCoordinates,
+            active_claim_fence: StepClaimFence,
+            children: Vec<PlannedChild>,
+            max_children: MaxChildren,
+            max_depth: MaxChildDepth,
+        }
+
         let raw = UncheckedChildSpawnPlan::deserialize(deserializer)?;
         Self::new(
             raw.group_id,
@@ -199,6 +199,17 @@ mod tests {
 
         let mut value = serde_json::to_value(valid_plan()).unwrap();
         value["children"][1]["position"] = json!(0);
+        assert!(serde_json::from_value::<ChildSpawnPlan>(value).is_err());
+
+        let mut value = serde_json::to_value(valid_plan()).unwrap();
+        value["coordinates"]["state_visit"] = json!(2);
+        assert!(
+            serde_json::from_value::<ChildSpawnPlan>(value).is_err(),
+            "a plan from another state visit kept the old group identity"
+        );
+
+        let mut value = serde_json::to_value(valid_plan()).unwrap();
+        value["active_claim_fence"] = json!("not-a-canonical-fence");
         assert!(serde_json::from_value::<ChildSpawnPlan>(value).is_err());
     }
 

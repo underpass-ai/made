@@ -122,6 +122,59 @@ eligible. Analysis now returns an advisory warning for this shape; it does
 not change execution semantics or rewrite the guard. Prefer the appropriate
 source-state join for concurrent work.
 
+## Spawn child ceremonies
+
+A step can open published ceremonies as durable children. Publish every child
+definition first, then declare its exact name and version. `inputs` maps each
+required child input to a key in the parent's sealed context:
+
+```yaml
+steps:
+  - id: delegate_reviews
+    state: REVIEWING
+    handler: child_orchestration
+    spawn:
+      children:
+        - ceremony: specialist_review
+          version: "1.0"
+          inputs:
+            brief: review_brief
+        - ceremony: specialist_review
+          version: "1.0"
+          inputs:
+            brief: review_brief
+      max_children: 2
+      max_depth: 3
+guards:
+  enough_reviews:
+    type: automated
+    check: "children_completed:delegate_reviews:any"
+```
+
+The engine resolves every publication, projects and validates every input,
+captures memory recollection and seals the complete plan before opening the
+first child. Child and group ids derive from the parent, step, visit,
+iterations and declaration position. Replaying the same plan therefore
+verifies the same streams instead of creating replacements. `max_children`
+bounds the declared width. `max_depth` is also constrained by the parent's
+remaining budget, which decreases at every generation.
+
+The spawn step completes after all planned child streams have been opened or
+verified. That does not mean the children have finished. A later transition
+uses `children_completed:<step>:all`, `:any`, or `:quorum:<n>`. A completion
+counts only after MADE locates the named `CeremonyCompleted` record in an
+intact child journal, verifies its hash and opening against the sealed plan,
+and records the acceptance in the parent. A completed child may acquire later
+facts when it is itself a parent; its original terminal record remains the
+stable completion locator.
+
+`made_run_ceremony_step` and `made_run_ceremony` route spawn steps through this
+protocol, including steps in concurrent states. They do not invoke the step's
+ordinary handler for a spawn. Hosts driving claims directly call
+`made_prepare_ceremony_children` with the accepted claim fence. Recovery uses
+`made_recover_ceremony_children`; broker notifications only wake that work,
+while the durable global event cursor decides what remains pending.
+
 ## Aggregate concurrent outputs
 
 The first step in the sequential state after a concurrent state may declare an
@@ -287,11 +340,11 @@ true. Council output JSON Schema examples are documented
 
 ## Boundaries and roadmap
 
-Current primitives are building blocks. Automatic agent spawning,
-complete group-chat/speaker
-selection and the full orchestration pattern catalogue are not implemented
-by declaring concurrency. Embedded council execution and configuration are
-also not exposed. The earlier roadmap labels B3–B6, C1/C3, full D1–D5 and F5
-remain future work; their
+Current primitives are building blocks. Child ceremonies create bounded,
+durable sessions; they do not create operating-system processes, provision
+agents, or grant tools and credentials. Complete group-chat/speaker selection
+and the full orchestration pattern catalogue are not implemented merely by
+declaring concurrency or child spawning. The earlier roadmap remains useful
+for features outside this contract; its
 [historical plan](../history/pre-rebuild-2026-09-18/docs/orchestration-patterns-plan.md)
 is context, not a current API promise.

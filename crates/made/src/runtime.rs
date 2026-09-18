@@ -130,7 +130,7 @@ pub async fn serve(app: Application) -> Result<()> {
         match handle.await {
             Ok(()) => info!("nats ceremony recovery subscriber stopped"),
             Err(err) if err.is_cancelled() => {
-                info!("nats ceremony recovery subscriber cancelled")
+                info!("nats ceremony recovery subscriber cancelled");
             }
             Err(err) => error!(error = %err, "nats ceremony recovery subscriber task errored"),
         }

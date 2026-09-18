@@ -105,7 +105,7 @@ pub(super) async fn wire_messaging(
     let recovery_client = client.clone();
     let recovery_subjects = nats_cfg.subjects.clone();
     let ceremony_recovery_factory: CeremonyRecoveryFactory = Box::new(move |recover| {
-        NatsCeremonyRecoverySubscriber::new(recovery_client, recovery_subjects, recover)
+        NatsCeremonyRecoverySubscriber::new(recovery_client, &recovery_subjects, recover)
     });
 
     Ok(MessagingWiring {

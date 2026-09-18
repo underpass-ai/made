@@ -7,7 +7,7 @@ use made_core::value_objects::{
 use serde::Deserialize;
 use std::collections::BTreeMap;
 
-use super::{ExitGuardIntent, RepeatIntent};
+use super::{ChildSpawnIntent, ExitGuardIntent, RepeatIntent};
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +35,8 @@ pub(super) struct StageIntent {
     context_writes: BTreeMap<String, String>,
     #[serde(default)]
     aggregate: Option<CeremonyStepAggregation>,
+    #[serde(default)]
+    spawn: Option<ChildSpawnIntent>,
 }
 
 impl StageIntent {
@@ -59,6 +61,9 @@ impl StageIntent {
         .with_exit_guards(exit_guards);
         if let Some(aggregation) = self.aggregate {
             stage = stage.with_aggregation(aggregation);
+        }
+        if let Some(spawn) = self.spawn {
+            stage = stage.with_spawn(spawn.into_domain()?);
         }
         match (self.role_from, self.allowed_roles.is_empty()) {
             (Some(role_from), false) => {

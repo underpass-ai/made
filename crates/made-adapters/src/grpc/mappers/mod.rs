@@ -17,6 +17,7 @@ mod ceremony_design;
 mod ceremony_history;
 mod ceremony_human_verbs;
 mod ceremony_instance;
+mod ceremony_instance_children;
 mod ceremony_lifecycle;
 mod context;
 mod council;
@@ -55,9 +56,9 @@ pub use ceremony_human_verbs::{
     respond_to_ceremony_intervention_input_from_proto,
 };
 pub use ceremony_instance::{
-    ceremony_instance_state_from, child_completion_state_from,
-    unrehydratable_ceremony_instance_state_from,
+    ceremony_instance_state_from, unrehydratable_ceremony_instance_state_from,
 };
+pub use ceremony_instance_children::child_completion_state_from;
 pub use ceremony_lifecycle::{
     apply_ceremony_transition_input_from_proto, run_ceremony_step_input_from_proto,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, StartCeremonyFromYaml,
