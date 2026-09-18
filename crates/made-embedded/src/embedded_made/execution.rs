@@ -20,6 +20,7 @@ impl EmbeddedMade {
             self.clock.clone(),
         )
         .with_metrics(self.metrics_recorder.clone())
+        .with_max_parallel_ceiling(self.max_parallel_ceiling)
         .execute(input)
         .await
     }
