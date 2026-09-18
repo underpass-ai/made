@@ -76,7 +76,11 @@ pub(crate) fn mutate(
         }
         CeremonyCommand::PlanCeremonyChildren(_)
         | CeremonyCommand::AdoptChildSpawnPlan(_)
-        | CeremonyCommand::AcceptChildCompletion(_) => {
+        | CeremonyCommand::AcceptChildCompletion(_)
+        | CeremonyCommand::PauseCeremony(_)
+        | CeremonyCommand::ResumeCeremony(_)
+        | CeremonyCommand::CancelCeremony(_)
+        | CeremonyCommand::EnforceCeremonyDeadlines(_) => {
             for event in instance.decide(command, definition)? {
                 instance.apply(&event);
             }

@@ -9,8 +9,8 @@ use made_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTransit
 use made_core::entities::{CeremonyInstance, CeremonyIntervention};
 use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
-    CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef, RecalledEntry, RoleId,
-    SessionRecollection, StepId,
+    CeremonyLifecycle, CeremonyParticipantBinding, CeremonyReason, CeremonyRecordRef,
+    RecalledEntry, RoleId, SessionRecollection, StepDeadline, StepId,
 };
 use made_proto::v1 as pb;
 use time::OffsetDateTime;
@@ -32,6 +32,7 @@ pub(super) fn moment(at: OffsetDateTime) -> String {
 
 pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::CeremonyInstanceState {
     let instance = view.instance();
+    let lifecycle = instance.lifecycle();
 
     pb::CeremonyInstanceState {
         ceremony_id: instance.id().as_str().to_owned(),
@@ -109,6 +110,46 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .values()
             .map(child_group_state_from)
             .collect(),
+        lifecycle: lifecycle.phase().as_label().to_owned(),
+        end_reason: lifecycle
+            .end_reason()
+            .map(|reason| reason.as_label().to_owned())
+            .unwrap_or_default(),
+        paused_at: lifecycle_changed_at(&lifecycle, lifecycle.is_paused()),
+        ended_at: lifecycle_changed_at(&lifecycle, lifecycle.is_ended()),
+        ceremony_deadline_at: instance
+            .ceremony_deadline()
+            .map(|deadline| moment(deadline.at()))
+            .unwrap_or_default(),
+        state_deadline_at: instance
+            .state_deadline()
+            .map(|deadline| moment(deadline.at()))
+            .unwrap_or_default(),
+        step_deadlines: instance
+            .step_deadlines()
+            .values()
+            .map(step_deadline_state_from)
+            .collect(),
+    }
+}
+
+fn lifecycle_changed_at(lifecycle: &CeremonyLifecycle, active: bool) -> String {
+    active
+        .then(|| lifecycle.changed_at().map(moment))
+        .flatten()
+        .unwrap_or_default()
+}
+
+fn step_deadline_state_from(deadline: &StepDeadline) -> pb::CeremonyStepDeadlineState {
+    pb::CeremonyStepDeadlineState {
+        step_id: deadline.step_id().as_str().to_owned(),
+        state_visit: deadline.state_visit().get(),
+        state_iteration: deadline.state_iteration().get(),
+        step_iteration: deadline.step_iteration().get(),
+        attempt: deadline.attempt().get(),
+        claim_fence: deadline.claim_fence().as_str().to_owned(),
+        deadline_at: moment(deadline.at()),
+        finished_by_role_id: deadline.finished_by().as_str().to_owned(),
     }
 }
 

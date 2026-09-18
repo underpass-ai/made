@@ -23,6 +23,12 @@ impl CeremonyInstance {
                     .or_else(|| started.sealed_role.clone()),
             ),
         );
+        if let Some(deadline) = &started.deadline {
+            self.step_deadlines
+                .insert(started.step_id.clone(), deadline.clone());
+        } else {
+            self.step_deadlines.remove(&started.step_id);
+        }
         self.updated_at = started.started_at;
     }
 
@@ -30,6 +36,7 @@ impl CeremonyInstance {
     /// record and reopens the step there; without one, the finished
     /// record is the step's final one.
     pub(super) fn apply_step_completed(&mut self, completed: &StepCompleted) {
+        self.step_deadlines.remove(&completed.step_id);
         let finished = self
             .take_step_record(&completed.step_id)
             .with_result(completed.result.clone());
@@ -56,6 +63,7 @@ impl CeremonyInstance {
     }
 
     pub(super) fn apply_step_failed(&mut self, failed: &StepFailed) {
+        self.step_deadlines.remove(&failed.step_id);
         let finished = self
             .take_step_record(&failed.step_id)
             .with_result(failed.result.clone());

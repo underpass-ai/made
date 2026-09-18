@@ -577,6 +577,7 @@ fn ordinary_static_step_started_events_keep_the_legacy_record_shape() {
         started_by: role("A"),
         role_from: None,
         sealed_role: None,
+        deadline: None,
         started_at: now,
     });
     instance.apply(&event);
@@ -619,6 +620,8 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            ceremony_deadline: None,
+            state_deadline: None,
             created_at: at,
         }),
         CeremonyEvent::StepStarted(StepStarted {
@@ -637,6 +640,7 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
             started_by: role("AUTHOR"),
             role_from: None,
             sealed_role: None,
+            deadline: None,
             started_at: at,
         }),
     ];

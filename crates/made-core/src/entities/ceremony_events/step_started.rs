@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::value_objects::{
-    ContextKey, RoleId, StateIteration, StepAttempt, StepId, StepIteration, StepLease,
+    ContextKey, RoleId, StateIteration, StepAttempt, StepDeadline, StepId, StepIteration, StepLease,
 };
 
 /// A seat took a step to run.
@@ -29,6 +29,8 @@ pub struct StepStarted {
     /// canonical static-only claims retain the legacy unmarked shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sealed_role: Option<RoleId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deadline: Option<StepDeadline>,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
 }

@@ -96,15 +96,22 @@ impl RunCeremonyUseCase {
         self
     }
 
-    // The ceremony driver is one cohesive FSM loop; splitting it would
-    // scatter the state-machine logic and its interleaved instrumentation.
-    #[allow(clippy::too_many_lines)]
     #[tracing::instrument(
         name = "run_ceremony",
         skip_all,
         fields(ceremony_id = %input.id())
     )]
     pub async fn execute(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
+        Box::pin(self.execute_inner(input)).await
+    }
+
+    // The ceremony driver is one cohesive FSM loop; splitting it would
+    // scatter the state-machine logic and its interleaved instrumentation.
+    #[allow(clippy::too_many_lines)]
+    async fn execute_inner(
+        &self,
+        input: RunCeremonyInput,
+    ) -> Result<RunCeremonyOutput, DomainError> {
         let (id, definition, context, lease_owner_id, lease_ttl, actor_id, actor_kind) =
             input.into_parts();
         let ceremony_name = definition.name().as_str().to_owned();
@@ -625,10 +632,10 @@ mod tests {
 
     #[tokio::test]
     async fn one_shot_driver_surfaces_total_transition_budget_refusal() {
-        let error = bounded_driver_refusal(cyclic_definition(
+        let error = Box::pin(bounded_driver_refusal(cyclic_definition(
             Some(MaxTransitions::new(1).unwrap()),
             None,
-        ))
+        )))
         .await;
         assert!(matches!(
             error,
@@ -640,9 +647,11 @@ mod tests {
 
     #[tokio::test]
     async fn one_shot_driver_surfaces_exact_edge_budget_refusal() {
-        let error =
-            bounded_driver_refusal(cyclic_definition(None, Some(MaxBounces::new(1).unwrap())))
-                .await;
+        let error = Box::pin(bounded_driver_refusal(cyclic_definition(
+            None,
+            Some(MaxBounces::new(1).unwrap()),
+        )))
+        .await;
         assert!(matches!(
             error,
             DomainError::InvariantViolated {

@@ -12,9 +12,9 @@ use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
     CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
-    CeremonyStep, CeremonyTransition, CeremonyValidationReport, CeremonyVersion, GuardName,
-    InputName, MaxBounces, MaxParallel, MaxTransitions, OutputName, RoleAction, RoleId, StateId,
-    StepExecutionRecord, StepId, TransitionTrigger,
+    CeremonyStep, CeremonyTimeout, CeremonyTransition, CeremonyValidationReport, CeremonyVersion,
+    GuardName, InputName, MaxBounces, MaxParallel, MaxTransitions, OutputName, RoleAction, RoleId,
+    StateId, StateTimeout, StepExecutionRecord, StepId, TransitionTrigger,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -45,6 +45,10 @@ pub struct CeremonyDefinition {
     max_transitions: Option<MaxTransitions>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     max_bounces: Option<MaxBounces>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ceremony_timeout: Option<CeremonyTimeout>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_timeout: Option<StateTimeout>,
 }
 
 impl CeremonyDefinition {
@@ -118,6 +122,8 @@ impl CeremonyDefinition {
             max_parallel: MaxParallel::default(),
             max_transitions,
             max_bounces,
+            ceremony_timeout: None,
+            state_timeout: None,
         };
         definition.validate()?;
         Ok(definition)
@@ -204,6 +210,25 @@ impl CeremonyDefinition {
     #[must_use]
     pub const fn max_bounces(&self) -> Option<MaxBounces> {
         self.max_bounces
+    }
+
+    #[must_use]
+    pub const fn with_ceremony_timeout(mut self, timeout: CeremonyTimeout) -> Self {
+        self.ceremony_timeout = Some(timeout);
+        self
+    }
+    #[must_use]
+    pub const fn with_state_timeout(mut self, timeout: StateTimeout) -> Self {
+        self.state_timeout = Some(timeout);
+        self
+    }
+    #[must_use]
+    pub const fn ceremony_timeout(&self) -> Option<CeremonyTimeout> {
+        self.ceremony_timeout
+    }
+    #[must_use]
+    pub const fn state_timeout(&self) -> Option<StateTimeout> {
+        self.state_timeout
     }
 
     #[must_use]

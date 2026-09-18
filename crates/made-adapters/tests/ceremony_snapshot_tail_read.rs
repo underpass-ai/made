@@ -136,6 +136,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
                     started_by: role_id.clone(),
                     role_from: None,
                     sealed_role: None,
+                    deadline: None,
                     started_at,
                 }),
                 started_at,
@@ -206,6 +207,8 @@ fn opening_event(
         context: CeremonyContext::empty(),
         bound_definition: None,
         lineage: None,
+        ceremony_deadline: None,
+        state_deadline: None,
         created_at,
     })
 }

@@ -3,17 +3,18 @@ use std::sync::Arc;
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
+    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
     PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
     VerifyCeremonyJournalUseCase,
 };
@@ -48,6 +49,10 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) claim_ceremony_step: Option<Arc<StartCeremonyStepUseCase>>,
     pub(super) complete_ceremony_step: Option<Arc<CompleteCeremonyStepUseCase>>,
     pub(super) apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
+    pub(super) pause_ceremony: Option<Arc<PauseCeremonyUseCase>>,
+    pub(super) resume_ceremony: Option<Arc<ResumeCeremonyUseCase>>,
+    pub(super) cancel_ceremony: Option<Arc<CancelCeremonyUseCase>>,
+    pub(super) enforce_ceremony_deadlines: Option<Arc<EnforceCeremonyDeadlinesUseCase>>,
     pub(super) approve_ceremony_guard: Option<Arc<ApproveCeremonyGuardUseCase>>,
     pub(super) defer_ceremony_guard: Option<Arc<DeferCeremonyGuardUseCase>>,
     pub(super) assert_ceremony_reason: Option<Arc<AssertCeremonyReasonUseCase>>,
@@ -173,6 +178,14 @@ impl MadeGrpcServiceBuilder {
         apply_ceremony_transition,
         ApplyCeremonyTransitionUseCase,
         apply_ceremony_transition
+    );
+    setter!(pause_ceremony, PauseCeremonyUseCase, pause_ceremony);
+    setter!(resume_ceremony, ResumeCeremonyUseCase, resume_ceremony);
+    setter!(cancel_ceremony, CancelCeremonyUseCase, cancel_ceremony);
+    setter!(
+        enforce_ceremony_deadlines,
+        EnforceCeremonyDeadlinesUseCase,
+        enforce_ceremony_deadlines
     );
     setter!(
         approve_ceremony_guard,
@@ -372,6 +385,10 @@ impl MadeGrpcServiceBuilder {
             claim_ceremony_step: required!(self, claim_ceremony_step),
             complete_ceremony_step: required!(self, complete_ceremony_step),
             apply_ceremony_transition: required!(self, apply_ceremony_transition),
+            pause_ceremony: required!(self, pause_ceremony),
+            resume_ceremony: required!(self, resume_ceremony),
+            cancel_ceremony: required!(self, cancel_ceremony),
+            enforce_ceremony_deadlines: required!(self, enforce_ceremony_deadlines),
             approve_ceremony_guard: required!(self, approve_ceremony_guard),
             defer_ceremony_guard: required!(self, defer_ceremony_guard),
             assert_ceremony_reason: required!(self, assert_ceremony_reason),

@@ -61,6 +61,8 @@ impl CeremonyDefinitionDocument {
     pub(super) fn into_draft(self) -> Result<CeremonyDefinitionDraft, DomainError> {
         let retry_policy = self.retry_policies.default_policy()?;
         let timeout = self.timeouts.default_step_timeout()?;
+        let ceremony_timeout = self.timeouts.ceremony_timeout()?;
+        let state_timeout = self.timeouts.state_timeout()?;
         let steps = self
             .steps
             .into_iter()
@@ -113,6 +115,12 @@ impl CeremonyDefinitionDocument {
         }
         if let Some(limit) = self.max_bounces {
             draft = draft.with_max_bounces(MaxBounces::new(limit)?);
+        }
+        if let Some(timeout) = ceremony_timeout {
+            draft = draft.with_ceremony_timeout(timeout);
+        }
+        if let Some(timeout) = state_timeout {
+            draft = draft.with_state_timeout(timeout);
         }
         Ok(draft)
     }

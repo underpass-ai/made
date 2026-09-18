@@ -8,8 +8,8 @@ use async_trait::async_trait;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_app::usecases::{
-    AcceptChildCompletionInput, ApplyCeremonyTransitionInput, PrepareCeremonyChildrenInput,
-    RunCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput,
+    AcceptChildCompletionInput, ApplyCeremonyTransitionInput, PauseCeremonyInput,
+    PrepareCeremonyChildrenInput, RunCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput,
 };
 use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyEvent};
 use made_core::error::DomainError;
@@ -19,7 +19,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, DurationMs, EventId,
-    GlobalPosition, IdempotencyKey, LeaseOwnerId, RoleId, StepId, StreamVersion, TransitionTrigger,
+    GlobalPosition, IdempotencyKey, LeaseOwnerId, LifecycleReason, RoleId, StepId, StreamVersion,
+    TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
@@ -154,6 +155,7 @@ struct PauseBeforeCompletionStore {
 #[derive(Debug, Clone, Copy)]
 enum PausedEvent {
     Plan,
+    SealedPlan,
     Completion,
 }
 
@@ -178,7 +180,16 @@ impl CeremonyEventStorePort for PauseBeforeCompletionStore {
             self.barrier.arrived.notify_one();
             self.barrier.release.notified().await;
         }
-        self.inner.append(stream, expected, facts).await
+        let pause_after = matches!(self.pause_on, PausedEvent::SealedPlan)
+            && facts
+                .iter()
+                .any(|fact| matches!(fact.event, CeremonyEvent::ChildSpawnPlanned(_)));
+        let outcome = self.inner.append(stream, expected, facts).await?;
+        if pause_after && !self.barrier.paused.swap(true, Ordering::AcqRel) {
+            self.barrier.arrived.notify_one();
+            self.barrier.release.notified().await;
+        }
+        Ok(outcome)
     }
 
     async fn read(
@@ -364,6 +375,90 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
             .count(),
         1
     );
+}
+
+#[tokio::test]
+async fn a_child_plan_sealed_before_pause_finishes_opening_and_adoption() {
+    let directory = scratch();
+    let path = directory.path().join("pause-after-plan.sqlite3");
+    let pause = Arc::new(AppendBarrier::default());
+    let raw = Arc::new(SqliteCeremonyStore::open(&path).unwrap());
+    let delayed_store = Arc::new(PauseBeforeCompletionStore {
+        inner: raw.clone(),
+        barrier: pause.clone(),
+        pause_on: PausedEvent::SealedPlan,
+    });
+    let worker = Arc::new(
+        EmbeddedMade::builder()
+            .with_ceremony_store(delayed_store)
+            .with_definition_publications(raw)
+            .with_clock(ParityClock::shared())
+            .with_step_handler(ParityStepHandler::shared())
+            .build(),
+    );
+    let controller = durable_engine(&path);
+    let parent = definition(&parent_yaml("all", 1));
+    publish_pair(&worker, &parent).await;
+    let parent_id = CeremonyId::new("pause-after-plan").unwrap();
+    worker
+        .start_published(StartCeremonyInput::new(
+            parent_id.clone(),
+            parent.name().clone(),
+            parent.version().clone(),
+            CeremonyContext::empty(),
+            "operator",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+    let claim = worker
+        .start_step(StartCeremonyStepInput::new(
+            parent_id.clone(),
+            RoleId::new("PARENT").unwrap(),
+            AuditActorKind::Agent,
+            StepId::new("delegate").unwrap(),
+            LeaseOwnerId::new("worker").unwrap(),
+            IdempotencyKey::new("accepted-before-pause").unwrap(),
+            DurationMs::from_millis(30_000),
+        ))
+        .await
+        .unwrap();
+    let input = PrepareCeremonyChildrenInput::new(
+        parent_id.clone(),
+        StepId::new("delegate").unwrap(),
+        claim.claim_fence().clone(),
+        AuditActorKind::Agent,
+    );
+    let preparing = {
+        let worker = worker.clone();
+        tokio::spawn(async move { worker.prepare_children(input).await })
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), pause.wait_until_paused())
+        .await
+        .expect("the child plan should be sealed before the worker pauses");
+    controller
+        .pause_ceremony(PauseCeremonyInput::new(
+            parent_id.clone(),
+            "operator",
+            AuditActorKind::Service,
+            LifecycleReason::new("maintenance").unwrap(),
+        ))
+        .await
+        .unwrap();
+    pause.resume();
+    let prepared = tokio::time::timeout(std::time::Duration::from_secs(5), preparing)
+        .await
+        .expect("accepted child work should drain")
+        .unwrap()
+        .expect("the sealed plan should finish adoption while paused");
+    assert_eq!(prepared.child_ids().len(), 1);
+
+    let reopened = durable_engine(&path);
+    let parent = reopened.instance(&parent_id).await.unwrap();
+    assert!(parent.is_paused());
+    let group = parent.child_groups().values().next().unwrap();
+    assert_eq!(group.adopted_claim_fence(), claim.claim_fence());
+    assert!(reopened.instance(&prepared.child_ids()[0]).await.is_ok());
 }
 
 #[tokio::test]

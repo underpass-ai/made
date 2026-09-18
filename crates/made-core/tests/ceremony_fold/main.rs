@@ -11,4 +11,5 @@ mod decide_apply;
 mod fixture;
 mod fold_equality;
 mod import;
+mod lifecycle;
 mod property;

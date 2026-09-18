@@ -142,7 +142,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_fold_adds_visits_to_what_the_store_used_to_hold() {
-        let events = two_step_session().await;
+        let events = Box::pin(two_step_session()).await;
 
         let transcript = GetCeremonyTranscriptUseCase::new(events)
             .execute(&ceremony_id())
@@ -158,7 +158,7 @@ mod tests {
     /// never consults one: the records are the whole of the answer.
     #[tokio::test]
     async fn the_answer_survives_losing_every_snapshot() {
-        let events = two_step_session().await;
+        let events = Box::pin(two_step_session()).await;
         let before = GetCeremonyTranscriptUseCase::new(events.clone())
             .execute(&ceremony_id())
             .await

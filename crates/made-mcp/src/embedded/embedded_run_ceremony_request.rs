@@ -32,7 +32,7 @@ impl EmbeddedRunCeremonyRequest {
             ToolError::refused("ceremony definition source returned no definitions")
         })?;
 
-        made.run(RunCeremonyInput::new(
+        Box::pin(made.run(RunCeremonyInput::new(
             self.ceremony_id,
             definition,
             self.context,
@@ -40,7 +40,7 @@ impl EmbeddedRunCeremonyRequest {
             self.lease_ttl,
             self.actor_id,
             self.actor_kind,
-        ))
+        )))
         .await
         .map_err(ToolError::from)
     }

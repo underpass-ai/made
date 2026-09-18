@@ -15,6 +15,7 @@ mod context;
 mod guard_decisions;
 mod import;
 mod interventions;
+mod lifecycle;
 mod participant_bindings;
 mod reasons;
 mod recollection;
@@ -72,6 +73,19 @@ impl CeremonyInstance {
             }
             CeremonyEvent::ChildCompletionAccepted(event) => {
                 self.apply_child_completion_accepted(event);
+            }
+            CeremonyEvent::CeremonyPaused(event) => self.apply_ceremony_paused(event),
+            CeremonyEvent::CeremonyResumed(event) => self.apply_ceremony_resumed(event),
+            CeremonyEvent::CeremonyCancelled(event) => self.apply_ceremony_cancelled(event),
+            CeremonyEvent::CeremonyDeadlineExceeded(event) => {
+                self.apply_ceremony_deadline_exceeded(event);
+            }
+            CeremonyEvent::StateDeadlineExceeded(event) => {
+                self.apply_state_deadline_exceeded(event);
+            }
+            CeremonyEvent::StepDeadlineExceeded(event) => self.apply_step_deadline_exceeded(event),
+            CeremonyEvent::LateStepResultObserved(event) => {
+                self.apply_late_step_result_observed(event);
             }
         }
     }

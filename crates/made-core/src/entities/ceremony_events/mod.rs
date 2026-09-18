@@ -6,8 +6,12 @@
 //! built from the value objects the aggregate already keeps. Every
 //! payload here is at schema version 1.
 
+mod ceremony_cancelled;
 mod ceremony_completed;
+mod ceremony_deadline_exceeded;
 mod ceremony_instance_started;
+mod ceremony_paused;
+mod ceremony_resumed;
 mod child_completion_accepted;
 mod child_spawn_plan_adopted;
 mod child_spawn_planned;
@@ -19,18 +23,25 @@ mod instance_imported;
 mod intervention_closed;
 mod intervention_requested;
 mod intervention_responded;
+mod late_step_result_observed;
 mod memory_recalled;
 mod participants_bound;
 mod reason_asserted;
+mod state_deadline_exceeded;
 mod state_iteration_started;
 mod state_visit_entry;
 mod step_completed;
+mod step_deadline_exceeded;
 mod step_failed;
 mod step_started;
 mod transition_applied;
 
+pub use ceremony_cancelled::CeremonyCancelled;
 pub use ceremony_completed::CeremonyCompleted;
+pub use ceremony_deadline_exceeded::CeremonyDeadlineExceeded;
 pub use ceremony_instance_started::CeremonyInstanceStarted;
+pub use ceremony_paused::CeremonyPaused;
+pub use ceremony_resumed::CeremonyResumed;
 pub use child_completion_accepted::ChildCompletionAccepted;
 pub use child_spawn_plan_adopted::ChildSpawnPlanAdopted;
 pub use child_spawn_planned::ChildSpawnPlanned;
@@ -42,12 +53,15 @@ pub use instance_imported::InstanceImported;
 pub use intervention_closed::InterventionClosed;
 pub use intervention_requested::InterventionRequested;
 pub use intervention_responded::InterventionResponded;
+pub use late_step_result_observed::LateStepResultObserved;
 pub use memory_recalled::MemoryRecalled;
 pub use participants_bound::ParticipantsBound;
 pub use reason_asserted::ReasonAsserted;
+pub use state_deadline_exceeded::StateDeadlineExceeded;
 pub use state_iteration_started::StateIterationStarted;
 pub use state_visit_entry::StateVisitEntry;
 pub use step_completed::StepCompleted;
+pub use step_deadline_exceeded::StepDeadlineExceeded;
 pub use step_failed::StepFailed;
 pub use step_started::StepStarted;
 pub use transition_applied::TransitionApplied;

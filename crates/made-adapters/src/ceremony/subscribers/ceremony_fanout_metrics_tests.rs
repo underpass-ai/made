@@ -25,6 +25,8 @@ fn start() -> CeremonyEvent {
         context: CeremonyContext::empty(),
         bound_definition: None,
         lineage: None,
+        ceremony_deadline: None,
+        state_deadline: None,
         created_at: OffsetDateTime::UNIX_EPOCH,
     })
 }
@@ -47,6 +49,7 @@ fn claim(step: &str, at: i64, iteration: StateIteration) -> CeremonyEvent {
         started_by: RoleId::new(step).unwrap(),
         role_from: None,
         sealed_role: None,
+        deadline: None,
         started_at: now,
     })
 }

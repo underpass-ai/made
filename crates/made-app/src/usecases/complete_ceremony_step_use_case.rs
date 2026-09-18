@@ -68,6 +68,9 @@ impl CompleteCeremonyStepUseCase {
         self.stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&command, &definition)?;
+                if events.is_empty() {
+                    return Ok(Vec::new());
+                }
                 let actor = session_facts::step_result_seat(&events, actor_kind)?;
                 session_facts::facts(&session.instance, events, &actor, now)
             })
@@ -206,6 +209,7 @@ mod tests {
             started_by: winner.clone(),
             role_from: None,
             sealed_role: Some(winner.clone()),
+            deadline: None,
             started_at: won_at,
         });
         let overtaking_fact = session_facts::fact(
@@ -532,5 +536,57 @@ mod tests {
         let facts = store.facts().await;
         assert_eq!(facts.len(), 1);
         assert!(facts[0].event_id.as_str().contains("iteration:1"));
+    }
+    #[tokio::test]
+    async fn identical_late_completion_is_idempotent_through_the_use_case() {
+        use made_core::entities::ceremony_commands::CancelCeremony;
+        use made_core::entities::CeremonyCommand;
+        use made_core::value_objects::LifecycleReason;
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let store = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        let lease = StepLease::new(
+            lease_owner(),
+            idempotency_key("late-retry"),
+            now(),
+            now() + time::Duration::seconds(60),
+        )
+        .unwrap();
+        instance
+            .start_step_as(&definition, &role_id(), &step_id(), lease, now())
+            .unwrap();
+        let fence = instance.step_claim_fence(&step_id()).unwrap();
+        let cancellation = instance
+            .decide(
+                &CeremonyCommand::CancelCeremony(CancelCeremony {
+                    reason: LifecycleReason::new("operator cancelled").unwrap(),
+                    now: now(),
+                }),
+                &definition,
+            )
+            .unwrap();
+        for event in &cancellation {
+            instance.apply(event);
+        }
+        store.save(&instance).await.unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream(store.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+        let input = CompleteCeremonyStepInput::new(
+            ceremony_id(),
+            step_id(),
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            AuditActorKind::Agent,
+            fence,
+        );
+        let first = usecase.execute(input.clone()).await.unwrap();
+        let before = store.records(&ceremony_id()).await;
+        let second = usecase.execute(input).await.unwrap();
+        assert_eq!(first, second);
+        assert_eq!(store.records(&ceremony_id()).await, before);
+        assert_eq!(second.late_step_results().len(), 1);
     }
 }

@@ -7,6 +7,20 @@ publication, use a [source candidate](../embedded/README.md#test-a-source-candid
 Match clients, plugin files and binaries, then inspect the running capability
 catalogue.
 
+## Unreleased lifecycle writers and snapshot v2
+
+New writers seal pause, resume, cancellation and explicit deadline events.
+Historical event and snapshot bytes are unchanged: absent lifecycle/deadline
+fields retain their old representation, and old completion derives its
+terminal phase from `completed_at`. Current readers accept both legacy and v2
+snapshot envelopes.
+
+After a lifecycle writer appends, a v2 snapshot prevents a 0.6.0 reader from
+loading a partial tail and admitting work while ignoring a pause or terminal
+event. Upgrade every writer before enabling lifecycle controls, and do not use
+an older binary as a rollback writer. See the [snapshot v2 compatibility
+barrier](snapshots-v2.md) for the exact reader matrix and recovery procedure.
+
 ## Unreleased classified failures
 
 The Unreleased writer retains a typed handler `NoValidProposal` in the
