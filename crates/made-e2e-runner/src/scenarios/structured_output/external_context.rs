@@ -27,9 +27,7 @@ pub(crate) async fn verify_external_context_bundle_round_trips(
         .subscribe("made.deliberation.completed".to_owned())
         .await
         .context("subscribe made.deliberation.completed for scenario 7")?;
-    nats.flush()
-        .await
-        .context("flush NATS subscribe (scenario 7)")?;
+    super::super::nats_subscription_ready::wait_for_subscription_ready(&nats).await?;
 
     let task_id = "e2e-task-7";
     let external_context = ExternalContextBundle {

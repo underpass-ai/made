@@ -175,9 +175,7 @@ pub(crate) async fn verify_structured_output_against_stub_llm(
         .subscribe("made.deliberation.completed".to_owned())
         .await
         .context("subscribe made.deliberation.completed for scenario 8")?;
-    nats.flush()
-        .await
-        .context("flush NATS subscribe (scenario 8)")?;
+    super::super::nats_subscription_ready::wait_for_subscription_ready(&nats).await?;
 
     // 6. Call RunCouncilDecision.
     let response = client

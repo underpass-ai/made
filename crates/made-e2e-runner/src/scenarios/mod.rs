@@ -4,6 +4,7 @@ mod ceremony_vllm_definition;
 mod ceremony_vllm_provider_config;
 mod connectivity;
 mod daily_standup;
+mod nats_subscription_ready;
 mod runtime;
 mod speaker_talk_qa;
 mod sprint_planning;
