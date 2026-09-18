@@ -17,13 +17,14 @@ use std::sync::Arc;
 use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyEventStore};
 use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_core::ports::{
-    CeremonyEvidenceSourcePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
-    MemoryWriterPort,
+    CeremonyEventStorePort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort,
 };
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
-    ceremony_store: Arc<InMemoryCeremonyEventStore>,
+    ceremony_store: Arc<dyn CeremonyEventStorePort>,
+    ceremony_snapshots: Arc<dyn CeremonySnapshotStorePort>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
@@ -32,8 +33,10 @@ pub struct GrpcFixtureWiring {
 
 impl Default for GrpcFixtureWiring {
     fn default() -> Self {
+        let store = Arc::new(InMemoryCeremonyEventStore::new());
         Self {
-            ceremony_store: Arc::new(InMemoryCeremonyEventStore::new()),
+            ceremony_store: store.clone(),
+            ceremony_snapshots: store,
             step_handler: None,
             evidence_source: None,
             clock: None,
@@ -51,7 +54,11 @@ impl GrpcFixtureWiring {
     /// Serve over a store another server already wrote to — the
     /// restart boundary inside one process.
     #[must_use]
-    pub fn with_ceremony_store(mut self, store: Arc<InMemoryCeremonyEventStore>) -> Self {
+    pub fn with_ceremony_store<S>(mut self, store: Arc<S>) -> Self
+    where
+        S: CeremonyEventStorePort + CeremonySnapshotStorePort + 'static,
+    {
+        self.ceremony_snapshots = store.clone();
         self.ceremony_store = store;
         self
     }
@@ -94,8 +101,13 @@ impl GrpcFixtureWiring {
     }
 
     #[must_use]
-    pub fn ceremony_store(&self) -> Arc<InMemoryCeremonyEventStore> {
+    pub fn ceremony_store(&self) -> Arc<dyn CeremonyEventStorePort> {
         self.ceremony_store.clone()
+    }
+
+    #[must_use]
+    pub fn ceremony_snapshots(&self) -> Arc<dyn CeremonySnapshotStorePort> {
+        self.ceremony_snapshots.clone()
     }
 
     /// The handler a test asked for, or the one the composition picks.

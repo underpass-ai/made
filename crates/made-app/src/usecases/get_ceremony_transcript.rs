@@ -188,7 +188,7 @@ mod tests {
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition));
         let clock = Arc::new(FixedClock::new(now()));
 
-        StartCeremonyStepUseCase::new(
+        let claim = StartCeremonyStepUseCase::new(
             definition_resolver(definitions.clone()),
             stream(events.clone()),
             clock.clone(),
@@ -214,6 +214,7 @@ mod tests {
             step_id(),
             StepResult::completed(spoke("the host did it")).unwrap(),
             AuditActorKind::Agent,
+            claim.claim_fence().clone(),
         ))
         .await
         .unwrap();

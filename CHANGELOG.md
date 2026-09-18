@@ -16,6 +16,12 @@ operator command.
 
 ### Fixed
 
+- Fence step completion to the accepted claim so a late worker cannot finish
+  or clear a replacement worker's lease. Claim replies return `claim_fence`
+  and completion requires it on proto, both MCP editions and the typed Rust
+  facade; omitted identities are refused. App-owned handlers retain their
+  accepted fence through reload and retry. Existing event and snapshot bytes
+  remain compatible. (#127)
 - Ceremony report selections, guard reconsideration conditions and intervention
   recipients now enforce the same 100-item cap and uniqueness after trimming
   on direct RPC, MCP over either backend, and the embedded facade. Empty report

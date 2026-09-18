@@ -1,6 +1,6 @@
 use time::OffsetDateTime;
 
-use crate::value_objects::{StepId, StepResult};
+use crate::value_objects::{StepClaimFence, StepId, StepResult};
 
 /// File the outcome of the step currently running.
 ///
@@ -9,6 +9,7 @@ use crate::value_objects::{StepId, StepResult};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ApplyStepResult {
     pub step_id: StepId,
+    pub claim_fence: StepClaimFence,
     pub result: StepResult,
     pub now: OffsetDateTime,
 }

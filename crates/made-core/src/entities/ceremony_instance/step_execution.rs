@@ -1,6 +1,6 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use crate::entities::CeremonyCommand;
-use crate::value_objects::MaxParallel;
+use crate::value_objects::{MaxParallel, StepClaimFence};
 
 use super::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, DomainError, OffsetDateTime, RoleId,
@@ -76,15 +76,38 @@ impl CeremonyInstance {
         Ok(attempt)
     }
 
+    /// Capture this identity from the accepted claim before starting work.
+    pub fn step_claim_fence(&self, step_id: &StepId) -> Result<StepClaimFence, DomainError> {
+        let record = self.step_record(step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_instance.step_record",
+        })?;
+        StepClaimFence::for_record(self.id(), step_id, record)
+    }
+
+    pub(super) fn require_step_claim_fence(
+        &self,
+        step_id: &StepId,
+        fence: &StepClaimFence,
+    ) -> Result<(), DomainError> {
+        if &self.step_claim_fence(step_id)? != fence {
+            return Err(DomainError::InvariantViolated {
+                reason: "step completion claim fence does not match the current claim",
+            });
+        }
+        Ok(())
+    }
+
     pub fn apply_step_result(
         &mut self,
         definition: &CeremonyDefinition,
         step_id: &StepId,
+        claim_fence: StepClaimFence,
         result: StepResult,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step_id.clone(),
+            claim_fence,
             result,
             now,
         });

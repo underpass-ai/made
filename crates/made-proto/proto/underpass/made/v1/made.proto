@@ -1451,6 +1451,8 @@ message ClaimCeremonyStepRequest {
 
 message ClaimCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
+  // Capture this opaque identity before work; return it unchanged to complete.
+  string claim_fence = 2;
 }
 
 message CompleteCeremonyStepRequest {
@@ -1470,6 +1472,8 @@ message CompleteCeremonyStepRequest {
   // Why it failed. Required for "failed" and refused for every other
   // status: a reason attached to a success describes nothing.
   string error = 6;
+  // Required. Omission, malformed identity or a replaced claim is refused.
+  string claim_fence = 7;
 }
 
 message CompleteCeremonyStepResponse {

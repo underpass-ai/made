@@ -59,6 +59,7 @@ fn rich_script() -> Vec<(&'static str, Value)> {
 }
 
 pub(super) async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: Value) -> Value {
+    let arguments = arms.completing(tool, arguments);
     let (wire, embedded) = arms.call(id, tool, &arguments).await;
     assert!(!failed(&wire), "{tool} gRPC refused {arguments}: {wire:#}");
     assert!(

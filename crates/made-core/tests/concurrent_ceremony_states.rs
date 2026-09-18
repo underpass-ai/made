@@ -217,6 +217,7 @@ fn early_join_waits_for_other_live_leases_but_not_expired_ones() {
         .apply_step_result(
             &definition,
             &step_id("a"),
+            instance.step_claim_fence(&step_id("a")).unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             now + Duration::minutes(1),
         )
@@ -253,6 +254,7 @@ fn concurrent_state_repeat_waits_for_all_work_and_opens_one_boundary() {
         .apply_step_result(
             &definition,
             &step_id("a"),
+            instance.step_claim_fence(&step_id("a")).unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         )
@@ -272,6 +274,7 @@ fn concurrent_state_repeat_waits_for_all_work_and_opens_one_boundary() {
         .apply_step_result(
             &definition,
             &step_id("b"),
+            instance.step_claim_fence(&step_id("b")).unwrap(),
             StepResult::completed(not_ready).unwrap(),
             now,
         )
@@ -282,6 +285,7 @@ fn concurrent_state_repeat_waits_for_all_work_and_opens_one_boundary() {
         .decide(
             &CeremonyCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step_id("c"),
+                claim_fence: instance.step_claim_fence(&step_id("c")).unwrap(),
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
                 now,
             }),
@@ -434,6 +438,7 @@ fn exhausted_retries_remove_only_that_step_from_concurrent_claims() {
             .apply_step_result(
                 &definition,
                 &step_id("a"),
+                instance.step_claim_fence(&step_id("a")).unwrap(),
                 StepResult::failed(StepErrorMessage::new("retry").unwrap()).unwrap(),
                 now,
             )

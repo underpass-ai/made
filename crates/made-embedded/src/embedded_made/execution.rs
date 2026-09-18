@@ -1,3 +1,4 @@
+use made_app::usecases::StartCeremonyStepOutput;
 use made_app::usecases::{
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, BindCeremonyParticipantsInput,
     BindCeremonyParticipantsUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
@@ -7,7 +8,6 @@ use made_app::usecases::{
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
-use made_core::value_objects::StepAttempt;
 
 use super::EmbeddedMade;
 
@@ -67,7 +67,7 @@ impl EmbeddedMade {
     pub async fn start_step(
         &self,
         input: StartCeremonyStepInput,
-    ) -> Result<StepAttempt, DomainError> {
+    ) -> Result<StartCeremonyStepOutput, DomainError> {
         StartCeremonyStepUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),

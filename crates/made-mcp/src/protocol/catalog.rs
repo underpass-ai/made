@@ -208,12 +208,12 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
         ),
         tool_def(
             CLAIM_CEREMONY_STEP_TOOL,
-            "Acquire a lease for one ceremony step that the MCP host will execute with its own agents and tools. This records the claim but performs no external work.",
+            "Acquire a lease for one ceremony step that the MCP host will execute with its own agents and tools. This records the claim but performs no external work. Retain the returned claim_fence before starting work and send it unchanged when completing.",
             claim_ceremony_step_schema(),
         ),
         tool_def(
             COMPLETE_CEREMONY_STEP_TOOL,
-            "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step.",
+            "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step. Requires the claim_fence returned by that claim; missing or replaced identities are refused.",
             complete_ceremony_step_schema(),
         ),
         tool_def(

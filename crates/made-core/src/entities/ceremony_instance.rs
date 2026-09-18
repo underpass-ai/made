@@ -750,6 +750,7 @@ mod tests {
             .apply_step_result(
                 &definition,
                 &step_id("plan"),
+                instance.step_claim_fence(&step_id("plan")).unwrap(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 datetime!(2026-06-06 12:01:00 UTC),
             )
@@ -789,6 +790,7 @@ mod tests {
             .apply_step_result(
                 &definition,
                 &step_id("plan"),
+                instance.step_claim_fence(&step_id("plan")).unwrap(),
                 StepResult::completed(readiness_output(false)).unwrap(),
                 datetime!(2026-06-06 12:01:00 UTC),
             )
@@ -823,6 +825,7 @@ mod tests {
             .apply_step_result(
                 &definition,
                 &step_id("plan"),
+                instance.step_claim_fence(&step_id("plan")).unwrap(),
                 StepResult::completed(readiness_output(true)).unwrap(),
                 datetime!(2026-06-06 12:03:00 UTC),
             )
@@ -863,6 +866,7 @@ mod tests {
                 .apply_step_result(
                     &definition,
                     &step_id("plan"),
+                    instance.step_claim_fence(&step_id("plan")).unwrap(),
                     StepResult::completed(readiness_output(false)).unwrap(),
                     now(),
                 )
