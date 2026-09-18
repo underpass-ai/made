@@ -16,6 +16,8 @@ use made_core::value_objects::{
 };
 use serde_json::Value;
 
+use super::ProjectedWinnerFields;
+
 mod evidence;
 mod output_contract;
 
@@ -37,6 +39,7 @@ mod key {
     pub(super) const SEE_PRIOR: &str = "see_prior";
     /// Structured output contract enforced on the step's proposals.
     pub(super) const OUTPUT_CONTRACT: &str = "output_contract";
+    pub(super) const PROJECT_WINNER_FIELDS: &str = "project_winner_fields";
 }
 
 /// Keys recognised inside the `output_contract` block.
@@ -73,6 +76,7 @@ mod field {
     pub(super) const PARTICIPANTS: &str = "ceremony_step.config.participants";
     pub(super) const SEE_PRIOR: &str = "ceremony_step.config.see_prior";
     pub(super) const OUTPUT_CONTRACT: &str = "ceremony_step.config.output_contract";
+    pub(super) const PROJECT_WINNER_FIELDS: &str = "ceremony_step.config.project_winner_fields";
     pub(super) const CONTRACT_ID: &str = "ceremony_step.config.output_contract.contract_id";
     pub(super) const CONTRACT_FORMAT: &str = "ceremony_step.config.output_contract.format";
     pub(super) const CONTRACT_REQUIRED_FIELDS: &str =
@@ -194,6 +198,30 @@ impl<'a> CeremonyStepConfig<'a> {
     /// (for example, independent estimates before a reveal).
     pub(crate) fn see_prior_steps(&self) -> Result<bool, DomainError> {
         Ok(optional_bool(self.attributes.get(key::SEE_PRIOR), field::SEE_PRIOR)?.unwrap_or(true))
+    }
+
+    pub(crate) fn projected_winner_fields(&self) -> Result<ProjectedWinnerFields, DomainError> {
+        let Some(value) = self.attributes.get(key::PROJECT_WINNER_FIELDS) else {
+            return Ok(ProjectedWinnerFields::default());
+        };
+        if value.is_null() {
+            return Ok(ProjectedWinnerFields::default());
+        }
+        let items = value
+            .as_array()
+            .ok_or(DomainError::InvalidCharacters {
+                field: field::PROJECT_WINNER_FIELDS,
+            })?
+            .iter()
+            .map(|item| {
+                item.as_str()
+                    .map(ToOwned::to_owned)
+                    .ok_or(DomainError::InvalidCharacters {
+                        field: field::PROJECT_WINNER_FIELDS,
+                    })
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        ProjectedWinnerFields::new(items)
     }
 }
 
@@ -397,6 +425,31 @@ mod tests {
                 field: "ceremony_step.config.see_prior"
             }
         ));
+    }
+
+    #[test]
+    fn projected_winner_fields_are_explicit_and_typed() {
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "project_winner_fields".to_owned(),
+            json!(["approved", "findings"]),
+        )]));
+        let step = CeremonyStepConfig::new(&attributes, &handler_kind);
+
+        assert_eq!(
+            step.projected_winner_fields()
+                .unwrap()
+                .iter()
+                .map(|field| field.as_str())
+                .collect::<Vec<_>>(),
+            vec!["approved", "findings"]
+        );
+        let (attributes, handler_kind) = config(BTreeMap::from([(
+            "project_winner_fields".to_owned(),
+            json!("approved"),
+        )]));
+        assert!(CeremonyStepConfig::new(&attributes, &handler_kind)
+            .projected_winner_fields()
+            .is_err());
     }
 
     #[test]

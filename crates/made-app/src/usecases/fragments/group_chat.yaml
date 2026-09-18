@@ -88,6 +88,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - done
     prompt: Decide whether the discussion is done and return done plus instructions.
     see_prior: true
 - id: coordination_select_1
@@ -95,6 +97,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - next_speaker
     prompt: Choose the next speaker and return next_speaker.
     see_prior: true
   context_writes:
@@ -115,6 +119,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - done
     prompt: Decide whether the discussion is done and return done plus instructions.
     see_prior: true
 - id: coordination_select_2
@@ -122,6 +128,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - next_speaker
     prompt: Choose the next speaker and return next_speaker.
     see_prior: true
   context_writes:
@@ -239,4 +247,3 @@ retry_policies:
   default:
     max_attempts: 2
     backoff_seconds: 1
-

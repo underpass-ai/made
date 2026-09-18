@@ -67,6 +67,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - approved
     prompt: Check the result and return approved plus findings.
     see_prior: true
 - id: coordination_make_2
@@ -81,6 +83,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - approved
     prompt: Check the result and return approved plus findings.
     see_prior: true
 - id: coordination_fallback
@@ -143,13 +147,13 @@ guards:
 roles:
 - id: LEAD
   allowed_actions:
+  - request_intervention
+- id: OPS
+  allowed_actions:
   - coordination_deliver
   - coordination_deliver_completed
   - coordination_make_1
   - coordination_make_2
-  - request_intervention
-- id: OPS
-  allowed_actions:
   - request_intervention
 - id: SECURITY
   allowed_actions:
@@ -171,4 +175,3 @@ retry_policies:
   default:
     max_attempts: 2
     backoff_seconds: 1
-

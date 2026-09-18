@@ -81,6 +81,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - ledger
     prompt: Create a task ledger with tasks, owners, goals and status.
     see_prior: true
   context_writes:
@@ -90,6 +92,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - owner
     prompt: Select the next open task and return its owner role.
     see_prior: true
   context_writes:
@@ -110,6 +114,10 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - done
+    - ledger
+    - stalled
     prompt: Update the ledger and return ledger, done and stalled.
     see_prior: true
   context_writes:
@@ -119,6 +127,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - owner
     prompt: Select the next open task and return its owner role.
     see_prior: true
   context_writes:
@@ -139,6 +149,10 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - done
+    - ledger
+    - stalled
     prompt: Update the ledger and return ledger, done and stalled.
     see_prior: true
   context_writes:
@@ -266,4 +280,3 @@ retry_policies:
   default:
     max_attempts: 2
     backoff_seconds: 1
-

@@ -240,7 +240,9 @@ pub(super) fn build_definition(
                 stage.id().clone(),
                 state_ids[index].clone(),
                 handler,
-                StepHandlerConfig::new(Attributes::new(stage_config(stage, index))?),
+                StepHandlerConfig::new(Attributes::new(stage_config(
+                    document, entry, stage, index,
+                ))?),
                 retry,
                 Some(timeout),
             );
@@ -364,7 +366,12 @@ fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
     }
 }
 
-fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, Value> {
+fn stage_config(
+    document: &CeremonyDesignDocument,
+    entry: &CeremonyDesignStageEntry,
+    stage: &CeremonyDesignStage,
+    index: usize,
+) -> BTreeMap<String, Value> {
     let mut config = BTreeMap::from([
         ("num_agents".to_owned(), json!(num_agents(stage))),
         ("prompt".to_owned(), json!(stage.instructions().trim())),
@@ -381,5 +388,52 @@ fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, V
     if stage.review_rounds().get() > 0 {
         config.insert("rounds".to_owned(), json!(stage.review_rounds().get()));
     }
+    let projected = projected_winner_fields(document, entry, stage);
+    if !projected.is_empty() {
+        config.insert("project_winner_fields".to_owned(), json!(projected));
+    }
     config
+}
+
+fn projected_winner_fields(
+    document: &CeremonyDesignDocument,
+    entry: &CeremonyDesignStageEntry,
+    stage: &CeremonyDesignStage,
+) -> Vec<String> {
+    if document.state_pattern(entry_id(entry)).is_none() {
+        return Vec::new();
+    }
+    let from_context = stage
+        .context_writes()
+        .entries()
+        .values()
+        .map(|field| field.as_str().to_owned());
+    let from_exit_guards = document.stages().iter().flat_map(|candidate| {
+        candidate
+            .exit_guards()
+            .iter()
+            .filter_map(|guard| match guard {
+                CeremonyDesignExitGuard::OutputField(guard) if guard.step_id() == stage.id() => {
+                    Some(guard.output_field().as_str().to_owned())
+                }
+                _ => None,
+            })
+    });
+    let from_routes = document.routes().iter().flat_map(|route| {
+        route
+            .guards()
+            .iter()
+            .filter_map(|(_, condition)| match condition {
+                GuardCondition::OutputField(guard) if guard.step_id() == stage.id() => {
+                    Some(guard.output_field().as_str().to_owned())
+                }
+                _ => None,
+            })
+    });
+    from_context
+        .chain(from_exit_guards)
+        .chain(from_routes)
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
 }

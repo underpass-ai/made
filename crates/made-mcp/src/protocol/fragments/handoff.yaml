@@ -20,6 +20,11 @@ states:
 - id: COMPLETED
   terminal: true
 transitions:
+- from: COORDINATION_HUMAN
+  to: COORDINATION_RECORD
+  trigger: coordination_human_completed
+  guards:
+  - coordination_human_completed
 - from: COORDINATION_RECORD
   to: COMPLETED
   trigger: coordination_record_completed
@@ -75,17 +80,15 @@ transitions:
   - coordination_security_to_human_completed
   - coordination_security_to_human_human
   - coordination_security_to_human_output_0
-- from: COORDINATION_HUMAN
-  to: COORDINATION_RECORD
-  trigger: coordination_human_completed
-  guards:
-  - coordination_human_completed
 steps:
 - id: coordination_ops
   state: COORDINATION_OPS
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - handoff_to
+    - resolved
     prompt: Resolve the work or return resolved=false and handoff_to with the next role.
     see_prior: true
 - id: coordination_security
@@ -93,6 +96,9 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - handoff_to
+    - resolved
     prompt: Resolve the work or return resolved=false and handoff_to with the next role.
     see_prior: true
 - id: coordination_human

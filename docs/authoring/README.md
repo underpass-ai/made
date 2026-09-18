@@ -116,6 +116,15 @@ semantics. See the executable [incident review](../../tests/e2e/ceremonies/incid
 [concurrent review](../../tests/e2e/ceremonies/concurrent-review.yaml), and
 [fragment catalog](../../api/examples/ceremonies/fragments/README.md).
 
+Pattern stages that branch on, or write context from, a deliberation result
+declare the required top-level JSON fields in
+`config.project_winner_fields`. The deliberating handler copies only those
+fields into the step output while retaining `winner_content`, `task_id`,
+`winner_proposal_id` and `candidates_total`. Without this opt-in, its output
+keeps the historical four-field shape. The configured names must be unique,
+non-empty and must not collide with those metadata names; invalid JSON,
+non-object JSON and missing declared fields fail the step.
+
 Validate the draft with `made_validate_ceremony_draft`; use
 `made_explain_ceremony_draft` for a readable account of the same analysis.
 A publishable draft is still a draft. `made_publish_ceremony_definition`

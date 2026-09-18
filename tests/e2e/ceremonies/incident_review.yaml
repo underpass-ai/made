@@ -120,6 +120,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - approved
     prompt: Check the result and return approved plus findings.
     see_prior: true
 - id: writeup_make_2
@@ -134,6 +136,8 @@ steps:
   handler: host_callback
   config:
     num_agents: 1
+    project_winner_fields:
+    - approved
     prompt: Check the result and return approved plus findings.
     see_prior: true
 - id: writeup_fallback

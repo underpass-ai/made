@@ -278,6 +278,28 @@ mod tests {
                 .count()
                 >= 4
         );
+        let checker = draft
+            .steps()
+            .iter()
+            .find(|step| step.id().as_str() == "review_flow_check_1")
+            .unwrap();
+        assert_eq!(
+            checker
+                .handler_config()
+                .attributes()
+                .get("project_winner_fields"),
+            Some(&json!(["approved"]))
+        );
+        let maker = draft
+            .steps()
+            .iter()
+            .find(|step| step.id().as_str() == "review_flow_make_1")
+            .unwrap();
+        assert!(maker
+            .handler_config()
+            .attributes()
+            .get("project_winner_fields")
+            .is_none());
     }
 
     #[test]

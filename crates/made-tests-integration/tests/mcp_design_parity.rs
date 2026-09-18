@@ -720,6 +720,10 @@ async fn composed_incident_review_is_identical_on_both_mcp_editions() {
     assert!(yaml.contains("x-pattern: broadcast_collect"), "{yaml}");
     assert!(yaml.contains("execution: concurrent"), "{yaml}");
     assert!(yaml.contains("WRITEUP_FALLBACK"), "{yaml}");
+    assert_eq!(
+        yaml,
+        include_str!("../../../tests/e2e/ceremonies/incident_review.yaml")
+    );
     let definition = CeremonyDefinitionYaml::parse_str(yaml).expect("composed YAML parses");
     let diagram = CeremonyConversationDiagram::render(&definition);
     assert!(diagram.contains("Pattern broadcast_collect"), "{diagram}");
