@@ -1,4 +1,4 @@
-const DEFAULT_SERVER_NAME: &str = "underpass-made-mcp";
+pub(crate) const DEFAULT_SERVER_NAME: &str = "underpass-made-mcp";
 const DEFAULT_SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 /// Identity advertised by the MCP server during initialization.

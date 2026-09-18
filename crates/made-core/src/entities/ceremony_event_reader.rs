@@ -50,7 +50,10 @@ impl CeremonyEventReader {
                     | AuditEventType::StepFailed
                     | AuditEventType::TransitionApplied
             ),
-            EventSchemaVersion::V4 => event_type == AuditEventType::StepStarted,
+            EventSchemaVersion::V4 => matches!(
+                event_type,
+                AuditEventType::StepStarted | AuditEventType::StepFailed
+            ),
             _ => false,
         };
         if !supported {
@@ -74,26 +77,7 @@ impl CeremonyEventReader {
                 "the payload's tag names a different event type",
             ));
         }
-        if let CeremonyEvent::StepStarted(started) = &event {
-            if started.role_from.is_some() && started.sealed_role.is_some() {
-                return Err(unreadable(
-                    event_type,
-                    version,
-                    "a step start cannot carry both dynamic and static role seals",
-                ));
-            }
-            if started
-                .sealed_role
-                .as_ref()
-                .is_some_and(|sealed| sealed != &started.started_by)
-            {
-                return Err(unreadable(
-                    event_type,
-                    version,
-                    "the sealed static role differs from started_by",
-                ));
-            }
-        }
+        validate_seals(&event, event_type, version)?;
         let coordinates_valid = match &event {
             CeremonyEvent::StepStarted(e) => e.state_visit.is_none() || e.state_iteration.is_some(),
             CeremonyEvent::StepCompleted(e) => {
@@ -146,6 +130,54 @@ fn unreadable(
     }
 }
 
+fn validate_seals(
+    event: &CeremonyEvent,
+    event_type: AuditEventType,
+    version: EventSchemaVersion,
+) -> Result<(), DomainError> {
+    if let CeremonyEvent::StepCompleted(completed) = event {
+        if completed.result.failure_kind().is_some() {
+            return Err(unreadable(
+                event_type,
+                version,
+                "step completion cannot carry a failure kind",
+            ));
+        }
+    }
+    if let CeremonyEvent::StepFailed(failed) = event {
+        if failed.result.failure_kind().is_some()
+            && failed.result.status() != crate::value_objects::StepStatus::Failed
+        {
+            return Err(unreadable(
+                event_type,
+                version,
+                "only failed results carry a failure kind",
+            ));
+        }
+    }
+    if let CeremonyEvent::StepStarted(started) = event {
+        if started.role_from.is_some() && started.sealed_role.is_some() {
+            return Err(unreadable(
+                event_type,
+                version,
+                "a step start cannot carry both dynamic and static role seals",
+            ));
+        }
+        if started
+            .sealed_role
+            .as_ref()
+            .is_some_and(|sealed| sealed != &started.started_by)
+        {
+            return Err(unreadable(
+                event_type,
+                version,
+                "the sealed static role differs from started_by",
+            ));
+        }
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -195,6 +227,37 @@ mod tests {
                 completed_at: datetime!(2026-07-29 09:00:00 UTC),
             })
         );
+    }
+
+    #[test]
+    fn completed_event_rejects_injected_failure_classification_at_every_readable_version() {
+        let legacy: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/ceremony_events/v1/step_completed.json"
+        ))
+        .unwrap();
+        for version in [
+            EventSchemaVersion::V1,
+            EventSchemaVersion::V2,
+            EventSchemaVersion::V3,
+        ] {
+            let mut raw = legacy.clone();
+            if version != EventSchemaVersion::V1 {
+                raw["state_iteration"] = json!(1);
+            }
+            if version == EventSchemaVersion::V3 {
+                raw["state_visit"] = json!(1);
+            }
+            CeremonyEventReader::read(AuditEventType::StepCompleted, version, raw.clone())
+                .expect("unclassified completion remains readable");
+            raw["result"]["failure_kind"] = json!("no_valid_proposal");
+            assert!(matches!(
+                CeremonyEventReader::read(AuditEventType::StepCompleted, version, raw),
+                Err(DomainError::UnreadableCeremonyEvent {
+                    reason: "step completion cannot carry a failure kind",
+                    ..
+                })
+            ));
+        }
     }
 
     #[test]

@@ -115,6 +115,12 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
+        if command.result.failure_kind().is_some() && command.result.status() != StepStatus::Failed
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "only failed step results may carry a failure kind",
+            });
+        }
         let step = definition
             .step(&command.step_id)
             .ok_or(DomainError::NotFound {

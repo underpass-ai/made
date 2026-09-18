@@ -1,6 +1,6 @@
 use made_core::value_objects::{
-    ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId, Rounds, StepHandlerKind,
-    StepId, StepInstructions,
+    CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId,
+    Rounds, StepHandlerKind, StepId, StepInstructions,
 };
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
@@ -32,6 +32,7 @@ pub struct CeremonyDesignStage {
     exit_guards: Vec<CeremonyDesignExitGuard>,
     dynamic_role_binding: Option<DynamicRoleBinding>,
     context_writes: ContextWrites,
+    aggregation: Option<CeremonyStepAggregation>,
 }
 
 impl CeremonyDesignStage {
@@ -58,6 +59,7 @@ impl CeremonyDesignStage {
             exit_guards: Vec::new(),
             dynamic_role_binding: None,
             context_writes: ContextWrites::default(),
+            aggregation: None,
         }
     }
 
@@ -76,6 +78,12 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn with_exit_guards(mut self, exit_guards: Vec<CeremonyDesignExitGuard>) -> Self {
         self.exit_guards = exit_guards;
+        self
+    }
+
+    #[must_use]
+    pub fn with_aggregation(mut self, aggregation: CeremonyStepAggregation) -> Self {
+        self.aggregation = Some(aggregation);
         self
     }
 
@@ -132,5 +140,10 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn context_writes(&self) -> &ContextWrites {
         &self.context_writes
+    }
+
+    #[must_use]
+    pub fn aggregation(&self) -> Option<&CeremonyStepAggregation> {
+        self.aggregation.as_ref()
     }
 }

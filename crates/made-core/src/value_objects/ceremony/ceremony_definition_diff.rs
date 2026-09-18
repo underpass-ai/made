@@ -333,6 +333,15 @@ fn diff_steps(
                 "which successful output fields update ceremony context",
             );
         }
+        if now.aggregation() != old.aggregation() {
+            record(
+                changes,
+                CeremonyChangeKind::Altered,
+                locus.clone(),
+                CeremonyChangeImpact::Carries,
+                "how predecessor sibling outputs are aggregated",
+            );
+        }
         if now.retry_policy() != old.retry_policy()
             || now.timeout() != old.timeout()
             || now.repeat_policy() != old.repeat_policy()

@@ -1,6 +1,8 @@
-use crate::{EmbeddedMadeBuilder, VERSION};
+use crate::{embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION};
+use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::{
-    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
+    CeremonyTracingSubscriber,
 };
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
@@ -24,6 +26,7 @@ use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod councils;
 mod definitions;
 mod execution;
 mod history;
@@ -54,6 +57,7 @@ pub struct EmbeddedMade {
     /// council they stay at zero — which is the honest answer, not a
     /// missing one.
     statistics: Arc<dyn StatisticsPort>,
+    councils: Arc<EmbeddedCouncilServices>,
     /// The same adapter the recorder writes through, read back.
     ///
     /// The writer side is a subscriber of the stream (ADR-012), so the
@@ -79,7 +83,7 @@ impl EmbeddedMade {
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
-        Ok(Self::over(store))
+        Self::over(store)
     }
 
     /// Open durable SQLite and publish its global feed after each append.
@@ -91,7 +95,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::builder()
+        Ok(Self::provider_builder()?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -112,7 +116,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::builder()
+        Ok(Self::provider_builder()?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -134,7 +138,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::builder()
+        Ok(Self::provider_builder()?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -143,13 +147,20 @@ impl EmbeddedMade {
             .build())
     }
 
-    fn over(store: SqliteCeremonyStore) -> Self {
+    fn over(store: SqliteCeremonyStore) -> Result<Self, ApiError> {
         let store = Arc::new(store);
-        Self::builder()
+        Ok(Self::provider_builder()?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
-            .build()
+            .build())
+    }
+
+    fn provider_builder() -> Result<EmbeddedMadeBuilder, ApiError> {
+        let factory = DispatchingAgentFactory::from_env().map_err(|error| ApiError::Refused {
+            reason: format!("the embedded agent provider configuration is invalid: {error}"),
+        })?;
+        Ok(Self::builder().with_agent_factory(Arc::new(factory)))
     }
 
     pub(crate) fn new(
@@ -165,6 +176,7 @@ impl EmbeddedMade {
         metrics_recorder: Arc<dyn MetricsRecorderPort>,
         metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
         statistics: Arc<dyn StatisticsPort>,
+        councils: Arc<EmbeddedCouncilServices>,
         memory: Arc<dyn MemoryWriterPort>,
         memory_reader: Arc<dyn MemoryReaderPort>,
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
@@ -196,6 +208,10 @@ impl EmbeddedMade {
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
             Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+            Arc::new(CeremonyFanoutMetricsSubscriber::new(
+                events.clone(),
+                metrics_recorder.clone(),
+            )),
             Arc::new(CeremonyTracingSubscriber::new()),
             Arc::new(CeremonyStructuredLogSubscriber::new()),
         ];
@@ -215,6 +231,7 @@ impl EmbeddedMade {
             metrics_recorder,
             metrics_snapshot,
             statistics,
+            councils,
             memory_reader,
             event_publisher,
             event_publisher_consumer,

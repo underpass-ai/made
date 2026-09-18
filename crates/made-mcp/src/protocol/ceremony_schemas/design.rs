@@ -153,8 +153,32 @@ fn leaf_stage_schema() -> Value {
                     "pattern": NONBLANK_CONTROL_FREE_PATTERN
                 },
                 "description": "Destination context keys mapped to top-level successful output fields."
-            }
+            },
+            "aggregate": aggregation_schema()
         }
+    })
+}
+
+fn aggregation_schema() -> Value {
+    json!({
+        "oneOf": [
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["strategy"],
+                "properties": { "strategy": { "const": "synthesize" } }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["strategy", "output_field"],
+                "properties": {
+                    "strategy": { "const": "vote" },
+                    "output_field": string_schema("Top-level sibling output field counted by strict majority.")
+                }
+            }
+        ],
+        "description": "Optional aggregation of every output from the immediately preceding concurrent state. The stage must be first in its sequential state and set see_prior to true. Vote fails on a missing field or when no value has a strict majority."
     })
 }
 
@@ -349,6 +373,7 @@ mod tests {
             "role_from",
             "allowed_roles",
             "context_writes",
+            "aggregate",
         ] {
             assert!(!properties.contains_key(field), "{field}");
         }

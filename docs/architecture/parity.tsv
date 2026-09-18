@@ -35,17 +35,17 @@ list_ceremony_definitions	-	-	-	definitions	-	decided in F1: host affordance, no
 mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host
 get_status	GetStatus	made_get_status	made_get_status	status	-	
 get_metrics	GetMetrics	made_get_metrics	made_get_metrics	metrics	-	
-deliberate	Deliberate	made_deliberate	-	-	-	council surface: cluster-only until B3 (ADR-014)
-stream_deliberation	StreamDeliberation	made_stream_deliberation	-	-	-	council surface: cluster-only until B3 (ADR-014)
-get_deliberation_result	GetDeliberationResult	made_get_deliberation_result	-	-	-	council surface: cluster-only until B3 (ADR-014)
-orchestrate	Orchestrate	made_orchestrate	-	-	-	council surface: cluster-only until B3 (ADR-014)
-process_trigger_event	ProcessTriggerEvent	made_process_trigger_event	-	-	-	council surface: cluster-only until B3 (ADR-014)
-run_council_decision	RunCouncilDecision	made_run_council_decision	-	-	-	council surface: cluster-only until B3 (ADR-014)
-create_council	CreateCouncil	made_create_council	-	-	-	council configuration: cluster-only until B3 (ADR-014)
-list_councils	ListCouncils	made_list_councils	-	-	-	council configuration: cluster-only until B3 (ADR-014)
-delete_council	DeleteCouncil	made_delete_council	-	-	-	council configuration: cluster-only until B3 (ADR-014)
-register_agent	RegisterAgent	made_register_agent	-	-	-	council configuration: cluster-only until B3 (ADR-014)
-unregister_agent	UnregisterAgent	made_unregister_agent	-	-	-	council configuration: cluster-only until B3 (ADR-014)
-register_contract	RegisterContract	made_register_contract	-	-	-	contract registry: cluster-only until B3 (ADR-014)
-list_contracts	ListContracts	made_list_contracts	-	-	-	contract registry: cluster-only until B3 (ADR-014)
-delete_contract	DeleteContract	made_delete_contract	-	-	-	contract registry: cluster-only until B3 (ADR-014)
+deliberate	Deliberate	made_deliberate	made_deliberate	deliberate	-
+stream_deliberation	StreamDeliberation	made_stream_deliberation	made_stream_deliberation	stream_deliberation	-
+get_deliberation_result	GetDeliberationResult	made_get_deliberation_result	made_get_deliberation_result	get_deliberation_result	-
+orchestrate	Orchestrate	made_orchestrate	made_orchestrate	orchestrate	-
+process_trigger_event	ProcessTriggerEvent	made_process_trigger_event	made_process_trigger_event	process_trigger_event	-
+run_council_decision	RunCouncilDecision	made_run_council_decision	made_run_council_decision	run_council_decision	-
+create_council	CreateCouncil	made_create_council	made_create_council	create_council	-
+list_councils	ListCouncils	made_list_councils	made_list_councils	list_councils	-
+delete_council	DeleteCouncil	made_delete_council	made_delete_council	delete_council	-
+register_agent	RegisterAgent	made_register_agent	made_register_agent	register_agent	-
+unregister_agent	UnregisterAgent	made_unregister_agent	made_unregister_agent	unregister_agent	-
+register_contract	RegisterContract	made_register_contract	made_register_contract	register_contract	-
+list_contracts	ListContracts	made_list_contracts	made_list_contracts	list_contracts	-
+delete_contract	DeleteContract	made_delete_contract	made_delete_contract	delete_contract	-
