@@ -171,7 +171,7 @@ pub(super) fn accept_child_completion_schema() -> Value {
         "required": ["child_id", "terminal_event_id"],
         "properties": {
             "child_id": string_schema("Child ceremony whose terminal record is being presented."),
-            "terminal_event_id": string_schema("Exact CeremonyCompleted event id at the verified child journal head.")
+            "terminal_event_id": string_schema("Exact CeremonyCompleted event id in the verified intact child journal. Later accepted facts may follow it.")
         }
     })
 }

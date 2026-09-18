@@ -123,7 +123,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
         ),
         tool_def(
             ACCEPT_CHILD_COMPLETION_TOOL,
-            "Verify a child's CeremonyCompleted head, lineage, binding and opening snapshot before recording it in the parent group.",
+            "Verify a named CeremonyCompleted record in a child's intact journal, plus its lineage, binding and opening snapshot, before recording it in the parent group.",
             accept_child_completion_schema(),
         ),
         tool_def(

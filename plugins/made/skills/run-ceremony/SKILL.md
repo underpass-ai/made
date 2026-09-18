@@ -14,8 +14,13 @@ workflows. For a design request, use `design-ceremony` first.
 Use one owner for each step:
 
 - A verified server-owned handler: call `made_run_ceremony_step` and inspect
-  its output. One-shot `made_run_ceremony` is suitable only when all handlers
-  are real and no later human decision is required.
+  its output. One-shot `made_run_ceremony` is suitable only when all ordinary
+  handlers are real and no later human decision is required.
+- A declared spawn step: call `made_run_ceremony_step` or
+  `made_prepare_ceremony_children`. Both claim and execute the spawn through
+  the child orchestrator without invoking the ordinary handler. The explicit
+  prepare tool accepts the actor plus optional lease owner, idempotency key and
+  TTL from its running schema; it does not accept a prior claim fence.
 - A delegated host: claim the exact eligible step, retain the accepted claim
   receipt, execute with the host's authorized worker/tools, then complete it
   with the observed status, structured output and artifact/evidence references.
