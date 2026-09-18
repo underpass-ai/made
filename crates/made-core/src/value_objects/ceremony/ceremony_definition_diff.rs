@@ -2,7 +2,8 @@ use crate::entities::CeremonyDefinition;
 
 use super::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyInputDefinition,
-    CeremonyValidationLocus, InputRequirement, StateId, TransitionTrigger,
+    CeremonyValidationLocus, InputRequirement, MaxBounces, MaxTransitions, StateId,
+    TransitionTrigger,
 };
 
 fn is_required(input: &CeremonyInputDefinition) -> bool {
@@ -68,14 +69,14 @@ fn diff_transition_budgets(
     changes: &mut Vec<CeremonyDefinitionChange>,
 ) {
     diff_transition_budget(
-        before.max_transitions().map(|limit| limit.get()),
-        after.max_transitions().map(|limit| limit.get()),
+        before.max_transitions().map(MaxTransitions::get),
+        after.max_transitions().map(MaxTransitions::get),
         changes,
         "the total number of transitions a running session may apply",
     );
     diff_transition_budget(
-        before.max_bounces().map(|limit| limit.get()),
-        after.max_bounces().map(|limit| limit.get()),
+        before.max_bounces().map(MaxBounces::get),
+        after.max_bounces().map(MaxBounces::get),
         changes,
         "the number of times a running session may apply one exact edge",
     );

@@ -577,6 +577,24 @@ mod tests {
     }
 
     #[test]
+    fn facade_transition_budgets_cannot_represent_zero() {
+        use made_core::value_objects::{MaxBounces, MaxTransitions};
+
+        assert!(matches!(
+            MaxTransitions::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_transitions"
+            })
+        ));
+        assert!(matches!(
+            MaxBounces::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_bounces"
+            })
+        ));
+    }
+
+    #[test]
     fn concurrent_group_analysis_rejects_reused_owners_and_impossible_counts() {
         use crate::usecases::{
             CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
