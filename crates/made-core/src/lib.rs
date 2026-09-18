@@ -16,6 +16,7 @@
 
 #![deny(missing_debug_implementations)]
 
+mod budget_error;
 #[cfg(feature = "conformance")]
 pub mod conformance;
 pub mod entities;
@@ -24,4 +25,5 @@ pub mod events;
 pub mod ports;
 pub mod value_objects;
 
+pub use budget_error::BudgetError;
 pub use error::DomainError;

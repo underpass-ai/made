@@ -222,6 +222,7 @@ mod tests {
                 context: CeremonyContext::empty(),
                 bound_definition: None,
                 lineage: None,
+                budget_account_id: None,
                 ceremony_deadline: None,
                 state_deadline: None,
                 created_at: AT,

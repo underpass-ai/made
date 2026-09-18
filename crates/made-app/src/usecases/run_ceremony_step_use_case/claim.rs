@@ -28,6 +28,7 @@ impl RunCeremonyStepUseCase {
             lease,
             now,
             max_parallel_ceiling: self.max_parallel_ceiling,
+            budget_reservation_id: None,
         });
         self.stream
             .execute(session, ConflictPolicy::retry(), |session| {

@@ -6,8 +6,8 @@ use crate::entities::{
 };
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage,
-    SessionRecollection, StateDeadline, StateVisit,
+    BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId,
+    CeremonyLineage, SessionRecollection, StateDeadline, StateVisit,
 };
 
 impl CeremonyInstance {
@@ -30,7 +30,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         Ok(Self::opening_batch(
-            Self::opening(id, definition, context, now, None, None)?,
+            Self::opening(id, definition, context, now, None, None, None)?,
             recollection,
             now,
         ))
@@ -52,6 +52,7 @@ impl CeremonyInstance {
                 context,
                 now,
                 Some(published.digest()),
+                None,
                 None,
             )?,
             recollection,
@@ -76,6 +77,56 @@ impl CeremonyInstance {
                 now,
                 Some(published.digest()),
                 Some(lineage),
+                None,
+            )?,
+            recollection,
+            now,
+        ))
+    }
+
+    /// Open a root ceremony and seal the shared ledger account for its whole tree.
+    pub fn decide_start_bound_budgeted(
+        id: CeremonyId,
+        published: &PublishedCeremonyDefinition,
+        context: CeremonyContext,
+        budget_account_id: BudgetAccountId,
+        recollection: Option<SessionRecollection>,
+        now: OffsetDateTime,
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        Ok(Self::opening_batch(
+            Self::opening(
+                id,
+                published.definition(),
+                context,
+                now,
+                Some(published.digest()),
+                None,
+                Some(budget_account_id),
+            )?,
+            recollection,
+            now,
+        ))
+    }
+
+    /// Open a child with the exact shared ledger account sealed by its parent plan.
+    pub fn decide_start_bound_budgeted_child(
+        id: CeremonyId,
+        published: &PublishedCeremonyDefinition,
+        context: CeremonyContext,
+        lineage: CeremonyLineage,
+        budget_account_id: BudgetAccountId,
+        recollection: Option<SessionRecollection>,
+        now: OffsetDateTime,
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        Ok(Self::opening_batch(
+            Self::opening(
+                id,
+                published.definition(),
+                context,
+                now,
+                Some(published.digest()),
+                Some(lineage),
+                Some(budget_account_id),
             )?,
             recollection,
             now,
@@ -114,6 +165,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
         bound_definition: Option<CeremonyDefinitionDigest>,
         lineage: Option<CeremonyLineage>,
+        budget_account_id: Option<BudgetAccountId>,
     ) -> Result<CeremonyInstanceStarted, DomainError> {
         let missing = definition
             .inputs()
@@ -148,6 +200,7 @@ impl CeremonyInstance {
             context,
             bound_definition,
             lineage,
+            budget_account_id,
             ceremony_deadline,
             state_deadline,
             created_at: now,

@@ -25,6 +25,7 @@ fn start() -> CeremonyEvent {
         context: CeremonyContext::empty(),
         bound_definition: None,
         lineage: None,
+        budget_account_id: None,
         ceremony_deadline: None,
         state_deadline: None,
         created_at: OffsetDateTime::UNIX_EPOCH,
@@ -50,6 +51,7 @@ fn claim(step: &str, at: i64, iteration: StateIteration) -> CeremonyEvent {
         role_from: None,
         sealed_role: None,
         deadline: None,
+        budget_reservation_id: None,
         started_at: now,
     })
 }

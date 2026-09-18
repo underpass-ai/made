@@ -29,6 +29,7 @@ fn claim_plan(instance: &mut CeremonyInstance) -> StepClaimFence {
                 lease: lease("accepted-before-pause", at(1)),
                 now: at(1),
                 max_parallel_ceiling: MaxParallel::SERVER_MAX,
+                budget_reservation_id: None,
             }),
             &definition,
         )
@@ -62,6 +63,7 @@ fn start_plan_as(
                 lease: lease(key, at(minute)),
                 now: at(minute),
                 max_parallel_ceiling: MaxParallel::SERVER_MAX,
+                budget_reservation_id: None,
             }),
             definition,
         )
@@ -96,6 +98,7 @@ fn pause_blocks_new_work_but_an_accepted_claim_can_complete() {
                 lease: lease("new-during-pause", at(3)),
                 now: at(3),
                 max_parallel_ceiling: MaxParallel::SERVER_MAX,
+                budget_reservation_id: None,
             }),
             &definition,
         )

@@ -120,25 +120,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
                 &definition_name,
                 actor.clone(),
                 "snapshot-tail-step-started",
-                CeremonyEvent::StepStarted(StepStarted {
-                    state_visit: None,
-                    step_id: step_id.clone(),
-                    state_iteration: None,
-                    iteration: StepIteration::FIRST,
-                    attempt: StepAttempt::FIRST,
-                    lease: StepLease::acquire(
-                        LeaseOwnerId::new("worker-1").unwrap(),
-                        IdempotencyKey::new("snapshot-tail-work-1").unwrap(),
-                        started_at,
-                        DurationMs::from_millis(60_000),
-                    )
-                    .unwrap(),
-                    started_by: role_id.clone(),
-                    role_from: None,
-                    sealed_role: None,
-                    deadline: None,
-                    started_at,
-                }),
+                started_event(&step_id, &role_id, started_at),
                 started_at,
             )],
         )
@@ -192,6 +174,29 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
     assert_eq!(record.status(), StepStatus::Completed);
 }
 
+fn started_event(step_id: &StepId, role_id: &RoleId, started_at: OffsetDateTime) -> CeremonyEvent {
+    CeremonyEvent::StepStarted(StepStarted {
+        state_visit: None,
+        step_id: step_id.clone(),
+        state_iteration: None,
+        iteration: StepIteration::FIRST,
+        attempt: StepAttempt::FIRST,
+        lease: StepLease::acquire(
+            LeaseOwnerId::new("worker-1").unwrap(),
+            IdempotencyKey::new("snapshot-tail-work-1").unwrap(),
+            started_at,
+            DurationMs::from_millis(60_000),
+        )
+        .unwrap(),
+        started_by: role_id.clone(),
+        role_from: None,
+        sealed_role: None,
+        deadline: None,
+        budget_reservation_id: None,
+        started_at,
+    })
+}
+
 fn opening_event(
     ceremony_id: &CeremonyId,
     definition_name: &CeremonyName,
@@ -207,6 +212,7 @@ fn opening_event(
         context: CeremonyContext::empty(),
         bound_definition: None,
         lineage: None,
+        budget_account_id: None,
         ceremony_deadline: None,
         state_deadline: None,
         created_at,
