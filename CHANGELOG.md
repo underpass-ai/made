@@ -14,6 +14,14 @@ operator command.
 
 ## Unreleased
 
+### Fixed
+
+- Ceremony report selections, guard reconsideration conditions and intervention
+  recipients now enforce the same 100-item cap and uniqueness after trimming
+  on direct RPC, MCP over either backend, and the embedded facade. Empty report
+  selections and conditions are refused; omitted or empty recipients address
+  the whole table. Historical journal payloads remain readable. (#100)
+
 ## [0.5.0] - 2026-09-18
 
 This release combines the event-stream and durable-memory foundation from

@@ -154,7 +154,10 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         let report = self
             .generate_ceremony_report
-            .execute(GenerateCeremonyReportInput::new(ceremony_ids, title))
+            .execute(
+                GenerateCeremonyReportInput::new(ceremony_ids, title)
+                    .map_err(domain_error_to_status)?,
+            )
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(generate_ceremony_report_response_from(

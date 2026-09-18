@@ -210,10 +210,7 @@ async fn the_report_of_an_imported_session_says_it_was_imported() {
     let made = EmbeddedMade::open(&path).expect("the migrated store opens as an engine");
 
     let report = made
-        .report(GenerateCeremonyReportInput::new(
-            vec![ceremony(COMPLETE)],
-            None,
-        ))
+        .report(GenerateCeremonyReportInput::new(vec![ceremony(COMPLETE)], None).unwrap())
         .await
         .expect("an imported session can be reported");
 

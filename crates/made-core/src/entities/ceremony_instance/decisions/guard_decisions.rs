@@ -56,6 +56,7 @@ impl CeremonyInstance {
         command: &DeferGuard,
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        command.content.validate_conditions()?;
         self.require_active(
             definition,
             "terminal ceremony instances cannot defer guard decisions",
