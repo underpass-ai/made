@@ -23,7 +23,8 @@ impl CeremonyInstance {
             )?;
         }
         self.require_definition(definition)?;
-        if self.is_terminal(definition) {
+        self.require_admits_new_work("apply_transition")?;
+        if self.is_terminal(definition) || self.is_ended() {
             return Err(DomainError::InvariantViolated {
                 reason: "terminal ceremony instances cannot transition",
             });
@@ -53,14 +54,23 @@ impl CeremonyInstance {
         }
 
         let to_state = transition.to().clone();
+        let next_visit = self.current_state_visit.next()?;
+        let deadline = definition
+            .state_timeout()
+            .map(|timeout| {
+                super::start::checked_deadline(command.now, timeout.duration(), "state_deadline")
+            })
+            .transpose()?
+            .map(|at| crate::value_objects::StateDeadline::new(to_state.clone(), next_visit, at));
         self.require_interventions_resolved_before_entering(definition, &to_state)?;
         let mut events = vec![CeremonyEvent::TransitionApplied(TransitionApplied {
             destination: Some(crate::entities::ceremony_events::StateVisitEntry {
-                state_visit: self.current_state_visit.next()?,
+                state_visit: next_visit,
                 step_ids: definition
                     .steps_for_state(&to_state)
                     .map(|step| step.id().clone())
                     .collect(),
+                deadline,
             }),
             transition: CeremonyTransitionRecord::record_at(
                 command.trigger.clone(),

@@ -12,6 +12,11 @@ use thiserror::Error;
 /// type involved.
 #[derive(Debug, Clone, PartialEq, Error)]
 pub enum DomainError {
+    #[error("lifecycle refused `{operation}` while ceremony is {phase:?}")]
+    LifecycleRefused {
+        operation: &'static str,
+        phase: crate::value_objects::CeremonyLifecyclePhase,
+    },
     /// A required textual field was empty or whitespace-only.
     #[error("field `{field}` must not be empty")]
     EmptyField { field: &'static str },

@@ -14,6 +14,7 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
+        self.require_admits_new_work("plan_children")?;
         let plan = &command.plan;
         let coordinates = plan.coordinates();
         if coordinates.state_visit() != self.current_state_visit
@@ -121,6 +122,7 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
+        self.require_admits_new_work("adopt_child_plan")?;
         let group = self
             .child_groups
             .get(&command.group_id)

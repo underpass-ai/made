@@ -71,6 +71,19 @@ impl CeremonyMetricsSubscriber {
                 self.metrics
                     .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
             }
+            CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+                self.finish_step(
+                    record.ceremony_id().as_str(),
+                    ceremony,
+                    exceeded.deadline.step_id().as_str(),
+                    exceeded.deadline.step_iteration().get(),
+                    exceeded.deadline.attempt().get(),
+                    exceeded.observed_at,
+                    exceeded.result.status(),
+                );
+                self.metrics
+                    .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
+            }
             CeremonyEvent::TransitionApplied(applied) => {
                 self.metrics.record_ceremony_transition_applied(
                     ceremony,
@@ -118,7 +131,13 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::MemoryRecalled(_)
             | CeremonyEvent::ChildSpawnPlanned(_)
             | CeremonyEvent::ChildSpawnPlanAdopted(_)
-            | CeremonyEvent::ChildCompletionAccepted(_) => {}
+            | CeremonyEvent::ChildCompletionAccepted(_)
+            | CeremonyEvent::CeremonyPaused(_)
+            | CeremonyEvent::CeremonyResumed(_)
+            | CeremonyEvent::CeremonyCancelled(_)
+            | CeremonyEvent::CeremonyDeadlineExceeded(_)
+            | CeremonyEvent::StateDeadlineExceeded(_)
+            | CeremonyEvent::LateStepResultObserved(_) => {}
         }
     }
 

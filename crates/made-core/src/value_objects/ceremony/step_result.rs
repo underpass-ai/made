@@ -63,6 +63,12 @@ impl StepResult {
         Ok(result)
     }
 
+    pub fn timed_out() -> Result<Self, DomainError> {
+        let mut result = Self::failed(StepErrorMessage::new("step deadline exceeded")?)?;
+        result.failure_kind = Some(StepFailureKind::Timeout);
+        Ok(result)
+    }
+
     #[must_use]
     pub fn failure_kind(&self) -> Option<StepFailureKind> {
         self.failure_kind

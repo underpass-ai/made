@@ -118,6 +118,12 @@ impl DesignedCeremonyYaml {
                 step_default: first_step
                     .timeout()
                     .map_or(0, |value| value.duration().get().div_ceil(1000)),
+                ceremony: draft
+                    .ceremony_timeout()
+                    .map(|value| value.duration().get().div_ceil(1000)),
+                state_default: draft
+                    .state_timeout()
+                    .map(|value| value.duration().get().div_ceil(1000)),
             },
             retry_policies: RetryPoliciesDocument {
                 default: RetryPolicyDocument {

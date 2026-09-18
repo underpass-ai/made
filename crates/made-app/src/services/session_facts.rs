@@ -59,6 +59,7 @@ pub(crate) fn step_result_seat(
     let role = events.iter().find_map(|event| match event {
         CeremonyEvent::StepCompleted(completed) => Some(&completed.finished_by),
         CeremonyEvent::StepFailed(failed) => Some(&failed.finished_by),
+        CeremonyEvent::LateStepResultObserved(observed) => Some(observed.result.finished_by()),
         _ => None,
     });
     seat(
@@ -281,6 +282,26 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             "child_group:{}:child:{}",
             accepted.completion.group_id(),
             accepted.completion.child_id()
+        ),
+        CeremonyEvent::CeremonyPaused(paused) => {
+            format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyResumed(resumed) => {
+            format!("resume:{}", resumed.resumed_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyCancelled(_) => "cancel".to_owned(),
+        CeremonyEvent::CeremonyDeadlineExceeded(_) => "ceremony_deadline".to_owned(),
+        CeremonyEvent::StateDeadlineExceeded(exceeded) => format!(
+            "state:{}:visit:{}",
+            exceeded.deadline.state_id(),
+            exceeded.deadline.state_visit().get()
+        ),
+        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+            format!("step_deadline:{}", exceeded.deadline.claim_fence().as_str())
+        }
+        CeremonyEvent::LateStepResultObserved(observed) => format!(
+            "late_step_result:{}",
+            observed.result.claim_fence().as_str()
         ),
     }
 }

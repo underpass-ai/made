@@ -13,6 +13,7 @@ use crate::error::DomainError;
 mod children;
 mod guard_decisions;
 mod interventions;
+mod lifecycle;
 mod participant_bindings;
 mod reasons;
 mod start;
@@ -70,6 +71,12 @@ impl CeremonyInstance {
             }
             CeremonyCommand::AcceptChildCompletion(command) => {
                 self.decide_accept_child_completion(command, definition)
+            }
+            CeremonyCommand::PauseCeremony(command) => self.decide_pause(command, definition),
+            CeremonyCommand::ResumeCeremony(command) => self.decide_resume(command, definition),
+            CeremonyCommand::CancelCeremony(command) => self.decide_cancel(command, definition),
+            CeremonyCommand::EnforceCeremonyDeadlines(command) => {
+                self.decide_enforce_deadlines(command, definition)
             }
         }
     }
