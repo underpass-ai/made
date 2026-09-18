@@ -1,11 +1,12 @@
 use std::sync::Arc;
 
+use async_trait::async_trait;
 use made_core::error::DomainError;
 
 use super::{
     CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
     ExecuteCeremonyOperationUseCase, ExecutionRecoveryItem, RecoverExecutionIntentOutcome,
-    RecoverExecutionIntentUseCase, RecoverableCeremonyWorkerOutcome,
+    RecoverExecutionIntentUseCase, RecoverableCeremonyWorkerOutcome, RecoverableCeremonyWorkerPort,
 };
 
 /// Runs an accepted claim through receipt persistence and fenced completion.
@@ -106,5 +107,22 @@ impl RecoverableCeremonyWorker {
             receipt: Box::new(receipt),
             instance: Box::new(instance),
         })
+    }
+}
+
+#[async_trait]
+impl RecoverableCeremonyWorkerPort for RecoverableCeremonyWorker {
+    async fn execute_claim(
+        &self,
+        input: ExecuteCeremonyOperationInput,
+    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        RecoverableCeremonyWorker::execute_claim(self, input).await
+    }
+
+    async fn recover(
+        &self,
+        item: ExecutionRecoveryItem,
+    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        RecoverableCeremonyWorker::recover(self, item).await
     }
 }
