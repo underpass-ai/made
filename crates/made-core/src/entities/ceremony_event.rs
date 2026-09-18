@@ -105,7 +105,9 @@ impl CeremonyEvent {
                 }
             }
             Self::StepFailed(event) => {
-                if event.state_visit.is_some() {
+                if event.result.failure_kind().is_some() {
+                    EventSchemaVersion::V4
+                } else if event.state_visit.is_some() {
                     EventSchemaVersion::V3
                 } else {
                     event

@@ -20,7 +20,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::{CeremonyMetricsSubscriber, DeliberatingCeremonyStepHandler};
+use made_adapters::ceremony::{
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, DeliberatingCeremonyStepHandler,
+};
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
@@ -148,6 +150,10 @@ impl GrpcFixture {
                     ceremony_store.clone(),
                 )),
                 Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
+                Arc::new(CeremonyFanoutMetricsSubscriber::new(
+                    ceremony_store.clone(),
+                    metrics.clone(),
+                )),
             ])),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
@@ -470,6 +476,10 @@ impl GrpcFixture {
                     ceremony_store.clone(),
                 )),
                 Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
+                Arc::new(CeremonyFanoutMetricsSubscriber::new(
+                    ceremony_store.clone(),
+                    metrics.clone(),
+                )),
             ])),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =

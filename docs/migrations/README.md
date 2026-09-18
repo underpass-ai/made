@@ -7,6 +7,16 @@ publication, use a [source candidate](../embedded/README.md#test-a-source-candid
 Match clients, plugin files and binaries, then inspect the running capability
 catalogue.
 
+## Unreleased classified failures
+
+The Unreleased writer retains a typed handler `NoValidProposal` in the
+`failure_kind` field of its sealed `StepFailed` result, using payload version
+4. Other failures retain their prior schema selection. Existing result
+payloads omit the field and retain their canonical bytes and hashes.
+The classification is read from events; no historical error text is parsed
+to invent it. Version 0.6.0 does not read `StepFailed` v4, so use an upgraded
+reader before allowing these writers to append to a shared store.
+
 ## Completion fence in 0.6.0
 
 The accepted claim response adds `claim_fence` (protobuf field 2). Completion
