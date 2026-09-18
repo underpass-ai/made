@@ -41,6 +41,7 @@ pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
 pub(super) fn ceremony_event() -> Result<CeremonyEvent, DomainError> {
     Ok(CeremonyEvent::StepCompleted(StepCompleted {
         step_id: StepId::new("conformance_step")?,
+        state_iteration: None,
         iteration: StepIteration::FIRST,
         attempt: StepAttempt::FIRST,
         result: StepResult::completed(StepOutput::empty())?,

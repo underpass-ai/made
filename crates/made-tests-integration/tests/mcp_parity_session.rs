@@ -36,6 +36,8 @@ use serde_json::{json, Value};
 
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
+#[path = "mcp_parity_session/state_repeat.rs"]
+mod state_repeat;
 
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`

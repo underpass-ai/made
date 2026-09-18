@@ -15,7 +15,8 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         transition: &CeremonyTransition,
     ) -> bool {
-        definition.guards_are_satisfied(transition, &self.step_records, &self.context)
+        self.state_repeat_permits_transition(definition)
+            && definition.guards_are_satisfied(transition, &self.step_records, &self.context)
             && self
                 .require_interventions_resolved_before_entering(definition, transition.to())
                 .is_ok()

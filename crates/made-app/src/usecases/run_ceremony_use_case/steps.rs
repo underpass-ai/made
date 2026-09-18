@@ -4,8 +4,8 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActor, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepAttempt,
-    StepErrorMessage, StepId, StepLease, StepResult,
+    AuditActor, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
+    StateIteration, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
 };
 
 use super::RunCeremonyUseCase;
@@ -20,6 +20,7 @@ impl RunCeremonyUseCase {
             state_id = %session.instance.current_state(),
             step_id = %step_id,
             role_id = %role_id,
+            state_iteration = tracing::field::Empty,
             iteration = tracing::field::Empty,
             attempt = tracing::field::Empty,
             outcome = tracing::field::Empty,
@@ -41,6 +42,7 @@ impl RunCeremonyUseCase {
     ) -> Result<
         (
             LoadedSession,
+            StateIteration,
             made_core::value_objects::StepIteration,
             StepAttempt,
             StepResult,
@@ -61,8 +63,12 @@ impl RunCeremonyUseCase {
             )
             .await;
         match &result {
-            Ok((_, iteration, attempt, step_result)) => {
-                crate::usecases::step_span::record_coordinates(*iteration, *attempt);
+            Ok((_, state_iteration, iteration, attempt, step_result)) => {
+                crate::usecases::step_span::record_coordinates(
+                    *state_iteration,
+                    *iteration,
+                    *attempt,
+                );
                 crate::usecases::step_span::record_result(step_result);
             }
             Err(error) => crate::usecases::step_span::record_error(error),
@@ -85,6 +91,7 @@ impl RunCeremonyUseCase {
     ) -> Result<
         (
             LoadedSession,
+            StateIteration,
             made_core::value_objects::StepIteration,
             StepAttempt,
             StepResult,
@@ -134,7 +141,11 @@ impl RunCeremonyUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
-        let (iteration, attempt) = (record.iteration(), record.attempt());
+        let (state_iteration, iteration, attempt) = (
+            record.state_iteration(),
+            record.iteration(),
+            record.attempt(),
+        );
 
         let request = CeremonyStepHandlerRequest::new(
             session.instance.id().clone(),
@@ -170,7 +181,7 @@ impl RunCeremonyUseCase {
             })
             .await?;
 
-        Ok((session, iteration, attempt, step_result))
+        Ok((session, state_iteration, iteration, attempt, step_result))
     }
 
     #[tracing::instrument(

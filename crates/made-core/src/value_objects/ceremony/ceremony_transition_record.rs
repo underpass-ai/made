@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 
 use crate::value_objects::RoleId;
 
-use super::{StateId, TransitionTrigger};
+use super::{StateId, StateIteration, TransitionTrigger};
 
 /// One move a session made, and who made it.
 ///
@@ -19,6 +19,8 @@ use super::{StateId, TransitionTrigger};
 pub struct CeremonyTransitionRecord {
     trigger: TransitionTrigger,
     from_state: StateId,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_iteration: Option<StateIteration>,
     to_state: StateId,
     #[serde(default)]
     applied_by: Option<RoleId>,
@@ -38,6 +40,26 @@ impl CeremonyTransitionRecord {
         Self {
             trigger,
             from_state,
+            state_iteration: None,
+            to_state,
+            applied_by,
+            applied_at,
+        }
+    }
+
+    #[must_use]
+    pub fn record_at(
+        trigger: TransitionTrigger,
+        from_state: StateId,
+        state_iteration: StateIteration,
+        to_state: StateId,
+        applied_by: Option<RoleId>,
+        applied_at: OffsetDateTime,
+    ) -> Self {
+        Self {
+            trigger,
+            from_state,
+            state_iteration: Some(state_iteration),
             to_state,
             applied_by,
             applied_at,
@@ -52,6 +74,15 @@ impl CeremonyTransitionRecord {
     #[must_use]
     pub fn from_state(&self) -> &StateId {
         &self.from_state
+    }
+
+    #[must_use]
+    pub fn state_iteration(&self) -> StateIteration {
+        self.state_iteration.unwrap_or(StateIteration::FIRST)
+    }
+
+    pub(crate) fn has_explicit_state_iteration(&self) -> bool {
+        self.state_iteration.is_some()
     }
 
     #[must_use]

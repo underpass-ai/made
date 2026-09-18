@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -18,8 +20,8 @@ use made_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
-    StepId,
+    Attributes, AuditActorKind, CeremonyContext, CeremonyId, DurationMs, IdempotencyKey,
+    LeaseOwnerId, RoleId, StepId, StepOutput, StepResult,
 };
 use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::Value;
@@ -32,6 +34,38 @@ name: span_linear
 states:
   - id: STARTED
     initial: true
+  - id: COMPLETED
+    terminal: true
+transitions:
+  - from: STARTED
+    to: COMPLETED
+    trigger: finish
+    guards: [work_completed]
+steps:
+  - id: work
+    state: STARTED
+    handler: host_callback
+guards:
+  work_completed:
+    type: automated
+    check: "step_status:work:COMPLETED"
+roles:
+  - id: SYSTEM
+    allowed_actions: [work, finish]
+"#;
+
+const REPEATING_STATE_CEREMONY: &str = r#"
+version: "1.0"
+name: span_repeating_state
+states:
+  - id: STARTED
+    initial: true
+    repeat:
+      max_iterations: 2
+      until:
+        step: work
+        output_field: ready
+        equals: true
   - id: COMPLETED
     terminal: true
 transitions:
@@ -124,6 +158,23 @@ fn span_for(
         .clone()
 }
 
+fn state_iterations_for(
+    spans: &[opentelemetry_sdk::trace::SpanData],
+    name: &str,
+    ceremony_id: &str,
+) -> Vec<i64> {
+    spans
+        .iter()
+        .filter(|span| {
+            span.name == name && string_attr(span, "ceremony_id").as_deref() == Some(ceremony_id)
+        })
+        .map(|span| {
+            int_attr(span, "state_iteration")
+                .unwrap_or_else(|| panic!("{name} span has no state_iteration: {span:?}"))
+        })
+        .collect()
+}
+
 #[derive(Debug)]
 struct FailingHandler;
 
@@ -136,6 +187,24 @@ impl CeremonyStepHandlerPort for FailingHandler {
         Err(DomainError::InvariantViolated {
             reason: "handler refused test work",
         })
+    }
+}
+
+#[derive(Debug, Default)]
+struct ReadinessSequenceHandler {
+    calls: AtomicUsize,
+}
+
+#[async_trait]
+impl CeremonyStepHandlerPort for ReadinessSequenceHandler {
+    async fn execute(
+        &self,
+        _request: CeremonyStepHandlerRequest,
+    ) -> Result<StepResult, DomainError> {
+        let ready = self.calls.fetch_add(1, Ordering::SeqCst) > 0;
+        StepResult::completed(StepOutput::new(
+            Attributes::new(BTreeMap::from([("ready".to_owned(), ready.into())])).unwrap(),
+        ))
     }
 }
 
@@ -182,6 +251,94 @@ async fn one_shot_exports_step_and_handler_topology_with_late_fields() {
     );
     assert_eq!(int_attr(&handler, "attempt"), Some(1));
     assert_eq!(string_attr(&handler, "outcome").as_deref(), Some("success"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn state_repeat_spans_keep_the_state_iteration_that_each_step_executed_in() {
+    let (exporter, _guard) = install_bridge();
+    let definition = CeremonyDefinitionYaml::parse_str(REPEATING_STATE_CEREMONY).unwrap();
+    let one_shot = RunCeremonyUseCase::new(
+        Arc::new(InMemoryCeremonyDefinitionRepository::new()),
+        stream(),
+        Arc::new(ReadinessSequenceHandler::default()),
+        Arc::new(SystemClock::new()),
+    );
+
+    one_shot
+        .execute(RunCeremonyInput::new(
+            CeremonyId::new("span-state-repeat").unwrap(),
+            definition.clone(),
+            CeremonyContext::empty(),
+            LeaseOwnerId::new("span-host").unwrap(),
+            DurationMs::from_millis(30_000),
+            "operator",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+
+    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    let stream = stream();
+    let clock = Arc::new(SystemClock::new());
+    definitions.save(&definition).await.unwrap();
+    StartCeremonyUseCase::new(
+        definitions.clone(),
+        stream.clone(),
+        clock.clone(),
+        Arc::new(ForgetfulMemory::new()),
+    )
+    .execute(StartCeremonyInput::new(
+        CeremonyId::new("span-delegated-repeat").unwrap(),
+        definition.name().clone(),
+        definition.version().clone(),
+        CeremonyContext::empty(),
+        "operator",
+        AuditActorKind::Service,
+    ))
+    .await
+    .unwrap();
+    let delegated = RunCeremonyStepUseCase::new(
+        Arc::new(ResolveCeremonyDefinitionUseCase::new(
+            definitions,
+            Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+        )),
+        stream,
+        Arc::new(ReadinessSequenceHandler::default()),
+        clock,
+    );
+
+    let first = delegated
+        .execute(repeating_step_input("span-delegated-repeat", 1))
+        .await
+        .unwrap();
+    assert_eq!(first.instance().current_state_iteration().get(), 2);
+    delegated
+        .execute(repeating_step_input("span-delegated-repeat", 2))
+        .await
+        .unwrap();
+
+    let spans = exporter.get_finished_spans().unwrap();
+    assert_eq!(
+        state_iterations_for(&spans, "ceremony_step", "span-state-repeat"),
+        [1, 2]
+    );
+    assert_eq!(
+        state_iterations_for(&spans, "run_ceremony_step", "span-delegated-repeat"),
+        [1, 2],
+        "the first delegated span must retain the claimed state iteration even though completion opens the next one"
+    );
+}
+
+fn repeating_step_input(ceremony_id: &str, invocation: usize) -> RunCeremonyStepInput {
+    RunCeremonyStepInput::new(
+        CeremonyId::new(ceremony_id).unwrap(),
+        RoleId::new("SYSTEM").unwrap(),
+        AuditActorKind::Service,
+        StepId::new("work").unwrap(),
+        LeaseOwnerId::new("span-host").unwrap(),
+        IdempotencyKey::new(format!("{ceremony_id}:work:{invocation}")).unwrap(),
+        DurationMs::from_millis(30_000),
+    )
 }
 
 #[tokio::test(flavor = "current_thread")]

@@ -1,12 +1,20 @@
 use made_core::error::DomainError;
-use made_core::value_objects::{StepAttempt, StepIteration, StepResult};
+use made_core::value_objects::{StateIteration, StepAttempt, StepIteration, StepResult};
 
-pub(super) fn record_coordinates(iteration: StepIteration, attempt: StepAttempt) {
+pub(super) fn record_coordinates(
+    state_iteration: StateIteration,
+    iteration: StepIteration,
+    attempt: StepAttempt,
+) {
     use opentelemetry::trace::TraceContextExt as _;
     use tracing_opentelemetry::OpenTelemetrySpanExt as _;
 
     let context = tracing::Span::current().context();
     let otel_span = context.span();
+    otel_span.set_attribute(opentelemetry::KeyValue::new(
+        "state_iteration",
+        i64::from(state_iteration.get()),
+    ));
     otel_span.set_attribute(opentelemetry::KeyValue::new(
         "iteration",
         i64::from(iteration.get()),

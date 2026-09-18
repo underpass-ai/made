@@ -1,12 +1,15 @@
+use made_core::entities::ceremony_commands::ApplyStepResult;
 use made_core::entities::{
-    CeremonyDefinition, CeremonyDefinitionDraft, CeremonyInstance, PublishedCeremonyDefinition,
+    CeremonyCommand, CeremonyDefinition, CeremonyDefinitionDraft, CeremonyEvent, CeremonyInstance,
+    PublishedCeremonyDefinition,
 };
 use made_core::value_objects::{
-    CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState,
-    CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition, GuardName,
-    IdempotencyKey, JoinStepCount, LeaseOwnerId, MaxParallel, RetryPolicy, RoleAction, RoleId,
-    StateExecution, StateId, StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
-    StepHandlerKind, StepId, StepLease, StepOutput, StepResult, TransitionTrigger,
+    Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, DurationMs, GuardCondition,
+    GuardName, IdempotencyKey, JoinStepCount, LeaseOwnerId, MaxParallel, RetryPolicy, RoleAction,
+    RoleId, StateExecution, StateId, StateIteration, StateRepeatPolicy, StateRepeatUntilCondition,
+    StepAttempt, StepErrorMessage, StepExecutionRecord, StepHandlerConfig, StepHandlerKind, StepId,
+    StepLease, StepOutput, StepOutputField, StepResult, TransitionTrigger,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -86,6 +89,36 @@ fn definition_with_steps(ids: &[&str], max_parallel: u8) -> CeremonyDefinition {
     )
     .unwrap()
     .with_max_parallel(MaxParallel::new(max_parallel).unwrap())
+}
+
+fn repeating_concurrent_definition() -> CeremonyDefinition {
+    let base = definition(3);
+    CeremonyDefinition::new(
+        base.name().clone(),
+        base.version().clone(),
+        base.description().cloned(),
+        base.inputs().values().cloned(),
+        base.outputs().values().cloned(),
+        vec![
+            CeremonyState::initial(state_id("work"))
+                .with_execution(StateExecution::Concurrent)
+                .with_repeat_policy(StateRepeatPolicy::new(
+                    StateIteration::new(2).unwrap(),
+                    StateRepeatUntilCondition::new(
+                        step_id("b"),
+                        StepOutputField::new("ready").unwrap(),
+                        serde_json::json!(true),
+                    ),
+                )),
+            CeremonyState::terminal(state_id("done")),
+        ],
+        base.transitions().iter().cloned(),
+        base.steps_in_declaration_order().cloned(),
+        base.guards().values().cloned(),
+        base.roles().values().cloned(),
+    )
+    .unwrap()
+    .with_max_parallel(MaxParallel::new(3).unwrap())
 }
 
 fn lease(key: &str, now: OffsetDateTime) -> StepLease {
@@ -198,6 +231,84 @@ fn early_join_waits_for_other_live_leases_but_not_expired_ones() {
             .unwrap(),
         state_id("done")
     );
+}
+
+#[test]
+fn concurrent_state_repeat_waits_for_all_work_and_opens_one_boundary() {
+    let definition = repeating_concurrent_definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = opened(&definition);
+    for id in ["a", "b", "c"] {
+        instance
+            .start_step(
+                &definition,
+                &step_id(id),
+                lease(&format!("{id}-1"), now),
+                now,
+            )
+            .unwrap();
+    }
+
+    instance
+        .apply_step_result(
+            &definition,
+            &step_id("a"),
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            now,
+        )
+        .unwrap();
+    assert!(instance
+        .apply_transition(&definition, &trigger("finish"), now)
+        .is_err());
+
+    let not_ready = StepOutput::new(
+        Attributes::new(std::collections::BTreeMap::from([(
+            "ready".to_owned(),
+            serde_json::json!(false),
+        )]))
+        .unwrap(),
+    );
+    instance
+        .apply_step_result(
+            &definition,
+            &step_id("b"),
+            StepResult::completed(not_ready).unwrap(),
+            now,
+        )
+        .unwrap();
+    assert_eq!(instance.current_state_iteration(), StateIteration::FIRST);
+
+    let boundary = instance
+        .decide(
+            &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+                step_id: step_id("c"),
+                result: StepResult::completed(StepOutput::empty()).unwrap(),
+                now,
+            }),
+            &definition,
+        )
+        .unwrap();
+    assert_eq!(
+        boundary
+            .iter()
+            .filter(|event| matches!(event, CeremonyEvent::StateIterationStarted(_)))
+            .count(),
+        1
+    );
+    for event in &boundary {
+        instance.apply(event);
+    }
+
+    assert_eq!(instance.current_state_iteration().get(), 2);
+    for id in ["a", "b", "c"] {
+        let record = instance.step_record(&step_id(id)).unwrap();
+        assert_eq!(record.state_iteration().get(), 2);
+        assert!(record.status().is_executable());
+        assert_eq!(instance.step_record_history(&step_id(id)).len(), 1);
+    }
+    assert!(instance
+        .apply_transition(&definition, &trigger("finish"), now)
+        .is_err());
 }
 
 #[test]

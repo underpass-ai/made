@@ -1,5 +1,7 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
-use crate::entities::ceremony_events::{StepCompleted, StepFailed, StepStarted};
+use crate::entities::ceremony_events::{
+    StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+};
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 use crate::value_objects::{RoleAction, StepAttempt, StepExecutionRecord, StepStatus};
@@ -81,6 +83,7 @@ impl CeremonyInstance {
 
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
+            state_iteration: Some(self.current_state_iteration),
             iteration: record.iteration(),
             attempt,
             lease: command.lease.clone(),
@@ -130,6 +133,7 @@ impl CeremonyInstance {
             let finished_by = definition.role_id_for_step(&command.step_id)?;
             return Ok(vec![CeremonyEvent::StepFailed(StepFailed {
                 step_id: command.step_id.clone(),
+                state_iteration: Some(self.current_state_iteration),
                 iteration,
                 attempt,
                 result,
@@ -145,15 +149,42 @@ impl CeremonyInstance {
             .map(|_| iteration.next())
             .transpose()?;
         let finished_by = definition.role_id_for_step(&command.step_id)?;
-        Ok(vec![CeremonyEvent::StepCompleted(StepCompleted {
+        let completed = CeremonyEvent::StepCompleted(StepCompleted {
             step_id: command.step_id.clone(),
+            state_iteration: Some(self.current_state_iteration),
             iteration,
             attempt,
             result,
             next_iteration,
             finished_by,
             finished_at: command.now,
-        })])
+        });
+        let mut events = vec![completed.clone()];
+        let mut projected = self.clone();
+        projected.apply(&completed);
+        if projected.state_work_is_complete(definition) {
+            if let Some(policy) = definition
+                .state(&self.current_state)
+                .and_then(|state| state.repeat_policy())
+            {
+                if !projected.state_repeat_condition_is_satisfied(definition)
+                    && policy.permits_another_iteration(self.current_state_iteration)
+                {
+                    events.push(CeremonyEvent::StateIterationStarted(
+                        StateIterationStarted {
+                            state_id: self.current_state.clone(),
+                            state_iteration: self.current_state_iteration.next()?,
+                            step_ids: definition
+                                .steps_for_state(&self.current_state)
+                                .map(|step| step.id().clone())
+                                .collect(),
+                            started_at: command.now,
+                        },
+                    ));
+                }
+            }
+        }
+        Ok(events)
     }
 }
 

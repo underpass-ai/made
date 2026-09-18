@@ -1,6 +1,11 @@
-use made_app::usecases::{CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin};
+use made_app::usecases::{
+    CeremonyDesignGroup, CeremonyDesignGroupRepeat, CeremonyDesignGroupRepeatUntil,
+    CeremonyDesignGroupStep, CeremonyDesignJoin,
+};
 use made_core::error::DomainError;
-use made_core::value_objects::{JoinStepCount, StateExecution, StepId};
+use made_core::value_objects::{
+    JoinStepCount, StateExecution, StateIteration, StepId, StepOutputField,
+};
 use serde::Deserialize;
 
 use super::group_intent::GroupIntent;
@@ -44,11 +49,17 @@ impl GroupStageIntent {
             .into_iter()
             .map(|step| step.into_domain().map(CeremonyDesignGroupStep::new))
             .collect::<Result<Vec<_>, _>>()?;
-        Ok(CeremonyDesignGroup::new(
-            StepId::new(self.id)?,
-            execution,
-            steps,
-            join,
-        ))
+        let group = CeremonyDesignGroup::new(StepId::new(self.id)?, execution, steps, join);
+        Ok(match self.group.repeat {
+            Some(repeat) => group.with_repeat(CeremonyDesignGroupRepeat::new(
+                StateIteration::new(repeat.max_iterations)?,
+                CeremonyDesignGroupRepeatUntil::new(
+                    StepId::new(repeat.until.step)?,
+                    StepOutputField::new(repeat.until.output_field)?,
+                    repeat.until.equals,
+                ),
+            )),
+            None => group,
+        })
     }
 }

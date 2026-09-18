@@ -1,6 +1,6 @@
 use made_core::value_objects::{StateExecution, StepId};
 
-use super::{CeremonyDesignGroupStep, CeremonyDesignJoin};
+use super::{CeremonyDesignGroupRepeat, CeremonyDesignGroupStep, CeremonyDesignJoin};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct CeremonyDesignGroup {
@@ -8,6 +8,7 @@ pub struct CeremonyDesignGroup {
     execution: StateExecution,
     steps: Vec<CeremonyDesignGroupStep>,
     join: CeremonyDesignJoin,
+    repeat: Option<CeremonyDesignGroupRepeat>,
 }
 
 impl CeremonyDesignGroup {
@@ -23,6 +24,7 @@ impl CeremonyDesignGroup {
             execution,
             steps,
             join,
+            repeat: None,
         }
     }
     #[must_use]
@@ -40,5 +42,14 @@ impl CeremonyDesignGroup {
     #[must_use]
     pub fn join(&self) -> CeremonyDesignJoin {
         self.join
+    }
+    #[must_use]
+    pub fn with_repeat(mut self, repeat: CeremonyDesignGroupRepeat) -> Self {
+        self.repeat = Some(repeat);
+        self
+    }
+    #[must_use]
+    pub fn repeat(&self) -> Option<&CeremonyDesignGroupRepeat> {
+        self.repeat.as_ref()
     }
 }

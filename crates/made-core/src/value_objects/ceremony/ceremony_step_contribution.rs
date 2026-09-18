@@ -8,12 +8,14 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::{RoleId, StepId, StepOutput};
+use super::{RoleId, StateIteration, StepId, StepOutput};
 
 /// One intervention produced during a ceremony step.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyStepContribution {
     step_id: StepId,
+    #[serde(default, skip_serializing_if = "StateIteration::is_first")]
+    state_iteration: StateIteration,
     role_id: RoleId,
     output: StepOutput,
 }
@@ -22,8 +24,19 @@ impl CeremonyStepContribution {
     /// Record the `output` produced by `role_id` while executing `step_id`.
     #[must_use]
     pub fn new(step_id: StepId, role_id: RoleId, output: StepOutput) -> Self {
+        Self::at_state_iteration(step_id, StateIteration::FIRST, role_id, output)
+    }
+
+    #[must_use]
+    pub fn at_state_iteration(
+        step_id: StepId,
+        state_iteration: StateIteration,
+        role_id: RoleId,
+        output: StepOutput,
+    ) -> Self {
         Self {
             step_id,
+            state_iteration,
             role_id,
             output,
         }
@@ -33,6 +46,11 @@ impl CeremonyStepContribution {
     #[must_use]
     pub fn step_id(&self) -> &StepId {
         &self.step_id
+    }
+
+    #[must_use]
+    pub fn state_iteration(&self) -> StateIteration {
+        self.state_iteration
     }
 
     /// The role that produced this contribution.

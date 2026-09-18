@@ -25,6 +25,7 @@ impl EventSchemaVersion {
     /// The first payload shape of every event type, and today the only
     /// one.
     pub const V1: Self = Self(1);
+    pub const V2: Self = Self(2);
 
     pub fn new(value: u32) -> Result<Self, DomainError> {
         if value == 0 {

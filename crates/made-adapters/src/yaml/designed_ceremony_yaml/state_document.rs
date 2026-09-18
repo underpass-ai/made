@@ -1,3 +1,4 @@
+use super::StateRepeatDocument;
 use made_core::value_objects::StateExecution;
 use serde::Serialize;
 
@@ -10,6 +11,8 @@ pub(super) struct StateDocument {
     pub(super) terminal: bool,
     #[serde(skip_serializing_if = "StateExecution::is_sequential")]
     pub(super) execution: StateExecution,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) repeat: Option<StateRepeatDocument>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

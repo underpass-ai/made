@@ -1,10 +1,11 @@
 use made_core::value_objects::{
-    RoleId, StateId, StepAttempt, StepId, StepIteration, StepOutput, StepStatus,
+    RoleId, StateId, StateIteration, StepAttempt, StepId, StepIteration, StepOutput, StepStatus,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CeremonyStepTrace {
     state_id: StateId,
+    state_iteration: StateIteration,
     step_id: StepId,
     role_id: RoleId,
     iteration: StepIteration,
@@ -23,8 +24,9 @@ impl CeremonyStepTrace {
         status: StepStatus,
         output: StepOutput,
     ) -> Self {
-        Self::for_iteration(
+        Self::for_coordinates(
             state_id,
+            StateIteration::FIRST,
             step_id,
             role_id,
             StepIteration::FIRST,
@@ -44,8 +46,32 @@ impl CeremonyStepTrace {
         status: StepStatus,
         output: StepOutput,
     ) -> Self {
+        Self::for_coordinates(
+            state_id,
+            StateIteration::FIRST,
+            step_id,
+            role_id,
+            iteration,
+            attempt,
+            status,
+            output,
+        )
+    }
+
+    #[must_use]
+    pub fn for_coordinates(
+        state_id: StateId,
+        state_iteration: StateIteration,
+        step_id: StepId,
+        role_id: RoleId,
+        iteration: StepIteration,
+        attempt: StepAttempt,
+        status: StepStatus,
+        output: StepOutput,
+    ) -> Self {
         Self {
             state_id,
+            state_iteration,
             step_id,
             role_id,
             iteration,
@@ -58,6 +84,11 @@ impl CeremonyStepTrace {
     #[must_use]
     pub fn iteration(&self) -> StepIteration {
         self.iteration
+    }
+
+    #[must_use]
+    pub fn state_iteration(&self) -> StateIteration {
+        self.state_iteration
     }
 
     #[must_use]

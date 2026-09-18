@@ -139,10 +139,42 @@ fn group_stage_schema() -> Value {
                             { "type": "object", "additionalProperties": false, "required": ["condition"], "properties": { "condition": { "enum": ["all_steps_completed", "any_step_completed"] } } },
                             { "type": "object", "additionalProperties": false, "required": ["condition", "count"], "properties": { "condition": { "const": "steps_completed" }, "count": { "type": "integer", "minimum": 1 } } }
                         ]
-                    }
+                    },
+                    "repeat": group_repeat_schema()
                 }
             }
         }
+    })
+}
+
+fn group_repeat_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["max_iterations", "until"],
+        "properties": {
+            "max_iterations": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 1000,
+                "description": "Hard cap on complete state iterations, including the first."
+            },
+            "until": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["step", "output_field", "equals"],
+                "properties": {
+                    "step": string_schema("Step in this group whose successful output is inspected after every group iteration."),
+                    "output_field": string_schema("Top-level structured output field tested after each group iteration."),
+                    "equals": {
+                        "description": format!(
+                            "Exact JSON value that ends repetition after every group step and its own repeats finish. {STRUCT_NUMBER_RULE}"
+                        )
+                    }
+                }
+            }
+        },
+        "description": "Optional bounded repeat-until policy for the whole group state."
     })
 }
 

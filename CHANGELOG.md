@@ -56,6 +56,12 @@ creates the immutable tagged sections.
 
 ### Added
 
+- Ceremony states can declare a bounded repeat-until policy that reruns every
+  state step under a durable `state_iteration`. Step iteration and retry
+  attempt remain independent; replay, snapshots, history, traces, transcripts,
+  direct gRPC, both MCP backends, YAML, and the embedded facade expose the
+  coordinate while pre-repeat sealed records retain their hashes. (#128)
+
 - Ceremony definitions can declare concurrent states with `all`, `any`, or
   counted joins and a definition-level `max_parallel` limit. Live reads expose
   every currently claimable step while preserving `next_step_id`; aggregate

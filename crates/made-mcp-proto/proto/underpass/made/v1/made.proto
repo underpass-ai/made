@@ -739,6 +739,8 @@ message CeremonyStepExecution {
   // Semantic repeat iteration. Starts at one and is independent of the
   // technical retry attempt above.
   uint32 iteration = 7;
+  // Whole-state iteration. Starts at one and is independent of step repeat.
+  uint32 state_iteration = 8;
 }
 
 message RunCeremonyResponse {
@@ -780,6 +782,8 @@ message CeremonyStepState {
   bool repeat_limit_reached = 9;
   // Zero for a non-repeating step; otherwise the declared hard cap.
   uint32 repeat_max_iterations = 10;
+  // Whole-state iteration containing this record.
+  uint32 state_iteration = 11;
 }
 
 // A guard on an outgoing transition.
@@ -940,6 +944,10 @@ message CeremonyInstanceState {
   // Every step that may be claimed at this observed instant. Ordered by
   // declaration. `next_step_id` remains the first item for compatibility.
   repeated string claimable_step_ids = 23;
+  uint32 current_state_iteration = 24;
+  uint32 state_repeat_max_iterations = 25;
+  bool state_repeat_condition_satisfied = 26;
+  bool state_repeat_limit_reached = 27;
 }
 
 // What a session was told when it opened, bounded and in order:
@@ -1566,12 +1574,26 @@ message CeremonyDesignGroupJoin {
   optional uint32 count = 2;
 }
 
+message CeremonyDesignGroupRepeatUntil {
+  string step_id = 1;
+  string output_field = 2;
+  // Message presence is required; explicit null is a valid value.
+  google.protobuf.Value equals = 3;
+}
+
+message CeremonyDesignGroupRepeat {
+  uint32 max_iterations = 1;
+  CeremonyDesignGroupRepeatUntil until = 2;
+}
+
 message CeremonyDesignGroup {
   // sequential | concurrent; empty defaults to sequential.
   string execution = 1;
   repeated CeremonyDesignGroupStep steps = 2;
   CeremonyDesignGroupJoin join = 3;
+  // Tag 4 was reserved in the published group contract.
   reserved 4;
+  CeremonyDesignGroupRepeat repeat = 5;
 }
 
 // The explicit human gate after the final stage. Designing it never
@@ -1756,6 +1778,7 @@ message CeremonyTranscriptEntry {
   // Structured output, as the step produced it. Empty when it
   // produced none.
   google.protobuf.Struct output = 3;
+  uint32 state_iteration = 4;
 }
 
 message GetCeremonyTranscriptRequest {

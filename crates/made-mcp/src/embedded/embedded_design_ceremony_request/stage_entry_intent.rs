@@ -1,4 +1,6 @@
 mod group_intent;
+mod group_repeat_intent;
+mod group_repeat_until_intent;
 mod group_stage_intent;
 mod join_intent;
 

@@ -12,8 +12,10 @@ use super::CeremonyEvent;
 /// payload is read under the schema version its record was sealed
 /// with; when a payload shape changes, its new version deserializes
 /// directly and the old one gets an upcaster here, so records written
-/// under earlier shapes keep reading. Today every shape is version 1
-/// and reads directly.
+/// under earlier shapes keep reading. State-repeat coordinates are the
+/// first versioned evolution: affected payloads use version 2 when the
+/// coordinate is explicitly present, while their version-1 shape remains
+/// readable without it.
 #[derive(Debug)]
 pub struct CeremonyEventReader;
 
@@ -40,6 +42,23 @@ impl CeremonyEventReader {
                     )
                 })?
             }
+            EventSchemaVersion::V2
+                if matches!(
+                    event_type,
+                    AuditEventType::StepStarted
+                        | AuditEventType::StepCompleted
+                        | AuditEventType::StepFailed
+                        | AuditEventType::TransitionApplied
+                ) =>
+            {
+                serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
+                    unreadable(
+                        event_type,
+                        version,
+                        "the payload does not deserialize as a ceremony event",
+                    )
+                })?
+            }
             other => {
                 return Err(unreadable(
                     event_type,
@@ -53,6 +72,13 @@ impl CeremonyEventReader {
                 event_type,
                 version,
                 "the payload's tag names a different event type",
+            ));
+        }
+        if event.schema_version() != version {
+            return Err(unreadable(
+                event_type,
+                version,
+                "the payload shape does not match its schema version",
             ));
         }
         Ok(event)
@@ -84,6 +110,23 @@ mod tests {
             "type": "ceremony_completed",
             "final_state": "DONE",
             "completed_at": "2026-07-29T09:00:00Z",
+        })
+    }
+
+    fn step_started_json() -> serde_json::Value {
+        json!({
+            "type": "step_started",
+            "step_id": "draft",
+            "iteration": 1,
+            "attempt": 1,
+            "lease": {
+                "owner_id": "host-1",
+                "idempotency_key": "ceremony-1:draft:1",
+                "acquired_at": "2026-07-29T09:00:00Z",
+                "expires_at": "2026-07-29T09:01:00Z"
+            },
+            "started_by": "writer",
+            "started_at": "2026-07-29T09:00:00Z"
         })
     }
 
@@ -158,6 +201,44 @@ mod tests {
             error,
             DomainError::UnreadableCeremonyEvent {
                 event_type: "ceremony_completed",
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn version_one_refuses_a_version_two_coordinate() {
+        let mut raw = step_started_json();
+        raw["state_iteration"] = json!(1);
+
+        let error =
+            CeremonyEventReader::read(AuditEventType::StepStarted, EventSchemaVersion::V1, raw)
+                .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::UnreadableCeremonyEvent {
+                event_type: "step_started",
+                version: 1,
+                ..
+            }
+        ));
+    }
+
+    #[test]
+    fn version_two_requires_an_explicit_coordinate() {
+        let error = CeremonyEventReader::read(
+            AuditEventType::StepStarted,
+            EventSchemaVersion::V2,
+            step_started_json(),
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            DomainError::UnreadableCeremonyEvent {
+                event_type: "step_started",
+                version: 2,
                 ..
             }
         ));

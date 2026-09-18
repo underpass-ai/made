@@ -28,6 +28,7 @@ impl EmbeddedRunCeremonyPresenter {
                     // and this presenter did not, so the same run read
                     // two different traces depending on the backend.
                     "iteration": trace.iteration().get(),
+                    "state_iteration": trace.state_iteration().get(),
                     "output": trace
                         .output()
                         .attributes()

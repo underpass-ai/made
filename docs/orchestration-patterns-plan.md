@@ -633,14 +633,15 @@ tool emits it from `stages[].pattern` alone.
 Seven additions to the definition model, accepted on 2026-09-17 in
 [ADR-015](adr/015-concurrent-states-and-join-guards.md) and
 [ADR-016](adr/016-bounded-definition-primitives.md). Each serves more than one
-pattern and lands on the four surfaces in one PR. Implementation is pending:
-phase 3a covers these primitives plus fragment infrastructure and G4; drivers,
-aggregation, broadcasting and complete patterns remain for corte 4.
+pattern and lands on the four surfaces in one PR. Concurrent states, state
+repeat, output guards and exhausted-repeat guards are implemented; phase 3a
+continues with the remaining primitives plus fragment infrastructure and G4.
+Drivers, aggregation, broadcasting and complete patterns remain for corte 4.
 
 | Primitive | Used by | Note |
 |---|---|---|
 | `execution: concurrent` on a state + join guards | C1, B, D1 (parallel critics), D5 | WS-B |
-| `repeat` on a **state** (all its steps re-run as one semantic iteration; iteration coordinate on the state) | D1, D2, D4 | Extends ADR-010; per-step `repeat` stays |
+| `repeat` on a **state** (all its steps re-run as one semantic iteration; iteration coordinate on the state) | D1, D2, D4 | Implemented by P2; extends ADR-010 and leaves per-step `repeat` separate |
 | Guard `output_field:<step>:<field>=<json>` | D3, D4, D2 (approved) | Generalises the ADR-010 condition vocabulary; ADR-010 asked for "an explicit future contract" — this is it |
 | Guard `step_repeat_exhausted:<step>` | D2, D4 | Makes the cap a routable outcome instead of an error |
 | Role binding from a context key (`role_from: context.<key>`), with an allow-list of roles per step | D1 (next speaker), D3, D4 | Resolved at claim time against the definition's roles; a role outside the allow-list is a refusal |

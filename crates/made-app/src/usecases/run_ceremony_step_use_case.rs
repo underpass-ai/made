@@ -55,7 +55,9 @@ impl RunCeremonyStepUseCase {
     #[tracing::instrument(
         name = "run_ceremony_step",
         skip_all,
-        fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
+        fields(ceremony_id = %input.instance_id, step_id = %input.step_id,
+               state_iteration = tracing::field::Empty, iteration = tracing::field::Empty,
+               attempt = tracing::field::Empty)
     )]
     pub async fn execute(
         &self,
@@ -110,6 +112,7 @@ impl RunCeremonyStepUseCase {
                 what: "ceremony_step",
             })?;
         let attempt = record.attempt();
+        super::step_span::record_coordinates(record.state_iteration(), record.iteration(), attempt);
 
         // What was said so far, folded from the stream: every step
         // that completed is in it, however it was driven.
