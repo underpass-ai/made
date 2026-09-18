@@ -28,6 +28,7 @@ services:
   # (Deliberate -> winner -> RuntimeExecutor::execute) without pulling
   # the real underpass-runtime image into this repo.
   stub-runtime:
+    image: "${MADE_E2E_STUB_RUNTIME_IMAGE:-made-e2e-stub-runtime:local}"
     build:
       context: ../..
       dockerfile: tests/e2e/stub-runtime.Dockerfile
@@ -41,6 +42,7 @@ services:
   # peer so scenario 8 can prove the positive structured-output path
   # end-to-end without a real provider in the test path.
   stub-llm:
+    image: "${MADE_E2E_STUB_LLM_IMAGE:-made-e2e-stub-llm:local}"
     build:
       context: ../..
       dockerfile: tests/e2e/stub-llm.Dockerfile
@@ -49,6 +51,7 @@ services:
       RUST_LOG: "info"
 
   made:
+    image: "${MADE_E2E_MADE_IMAGE:-made-e2e-made:local}"
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -83,6 +86,7 @@ services:
       - stub-llm
 
   e2e-runner:
+    image: "${MADE_E2E_RUNNER_IMAGE:-made-e2e-runner:local}"
     build:
       context: ../..
       dockerfile: tests/e2e/runner.Dockerfile
