@@ -1,8 +1,8 @@
 use made_app::usecases::CeremonyDesignStage;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    ContextKey, ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId, Rounds,
-    StepHandlerKind, StepId, StepInstructions, StepOutputField,
+    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, NumAgents,
+    PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions, StepOutputField,
 };
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -33,6 +33,8 @@ pub(super) struct StageIntent {
     allowed_roles: Vec<String>,
     #[serde(default)]
     context_writes: BTreeMap<String, String>,
+    #[serde(default)]
+    aggregate: Option<CeremonyStepAggregation>,
 }
 
 impl StageIntent {
@@ -55,6 +57,9 @@ impl StageIntent {
             self.repeat.map(RepeatIntent::into_domain).transpose()?,
         )
         .with_exit_guards(exit_guards);
+        if let Some(aggregation) = self.aggregate {
+            stage = stage.with_aggregation(aggregation);
+        }
         match (self.role_from, self.allowed_roles.is_empty()) {
             (Some(role_from), false) => {
                 stage = stage.with_dynamic_role_binding(DynamicRoleBinding::new(

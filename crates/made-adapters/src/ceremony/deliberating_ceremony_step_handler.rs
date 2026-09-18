@@ -143,13 +143,19 @@ fn build_description(
                 .attributes()
                 .get(WINNER_CONTENT_KEY)
                 .and_then(Value::as_str)
-                .unwrap_or("(no content recorded)");
+                .map_or_else(
+                    || {
+                        serde_json::to_string(contribution.output().attributes().as_map())
+                            .unwrap_or_else(|_| "(output could not be rendered)".to_owned())
+                    },
+                    ToOwned::to_owned,
+                );
             let _ = writeln!(
                 text,
                 "- {role} ({step}): {said}",
                 role = contribution.role_id().as_str(),
                 step = contribution.step_id().as_str(),
-                said = truncate(said, MAX_RENDERED_CONTRIBUTION_LEN),
+                said = truncate(&said, MAX_RENDERED_CONTRIBUTION_LEN),
             );
         }
     }
@@ -961,6 +967,30 @@ mod tests {
         assert!(text
             .contains("FACILITATOR (open_room): Restating the brief and inviting perspectives."));
         assert!(text.contains("Your task now: Open the meeting"));
+    }
+
+    #[test]
+    fn description_lists_structured_sibling_outputs_for_synthesis() {
+        let contribution = CeremonyStepContribution::new(
+            StepId::new("review_api").unwrap(),
+            RoleId::new("API_REVIEWER").unwrap(),
+            StepOutput::new(
+                Attributes::new(BTreeMap::from([
+                    ("recommendation".to_owned(), json!("ship")),
+                    ("risk".to_owned(), json!({"severity": "low"})),
+                ]))
+                .unwrap(),
+            ),
+        );
+        let request =
+            request_with_prompt().with_transcript(CeremonyTranscript::new(vec![contribution]));
+        let config = DeliberationStepConfig::from_request(&request).unwrap();
+
+        let text = build_description(&request, &config).unwrap();
+
+        assert!(text.as_str().contains(
+            r#"API_REVIEWER (review_api): {"recommendation":"ship","risk":{"severity":"low"}}"#
+        ));
     }
 
     #[test]

@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add typed `synthesize` and deterministic strict-majority `vote` aggregation
+  to the first step after an all-siblings concurrent join. YAML, design,
+  protobuf, both MCP backends and the embedded facade share one schema;
+  omitted aggregation preserves existing definition bytes and digests. (#156)
 - Wait for a private NATS inbox round trip before E2E scenarios trigger events
   from another connection. The harness no longer treats a local socket flush
   as server acknowledgement of its subscription. (#153)

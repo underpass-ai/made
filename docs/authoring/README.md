@@ -122,6 +122,51 @@ eligible. Analysis now returns an advisory warning for this shape; it does
 not change execution semantics or rewrite the guard. Prefer the appropriate
 source-state join for concurrent work.
 
+## Aggregate concurrent outputs
+
+The first step in the sequential state after a concurrent state may declare an
+`aggregate` policy. That transition must wait for every sibling in the source
+state, and the aggregate step must set `see_prior: true`. These constraints
+make the input set complete and unambiguous before execution starts. Analysis
+rejects an early `any` or counted join, more than one predecessor, a later step
+in the destination state, or a reused state visit.
+
+`synthesize` invokes the step's existing handler or council. Its brief receives
+one final output per sibling, in sibling declaration order:
+
+```yaml
+steps:
+  - id: synthesize
+    state: SYNTHESIS
+    handler: editorial_council
+    config:
+      see_prior: true
+    aggregate:
+      strategy: synthesize
+```
+
+`vote` makes no handler or model call. It compares one declared top-level
+output field with exact JSON equality and writes the winning value under that
+same field:
+
+```yaml
+steps:
+  - id: select
+    state: DECISION
+    handler: host_callback
+    config:
+      see_prior: true
+    aggregate:
+      strategy: vote
+      output_field: recommendation
+```
+
+A value wins only with more than half of all sibling votes. JSON `null` is a
+present value. A missing sibling, a missing field, or a tie/plurality without a
+strict majority fails the claimed step explicitly. Aggregation reads only the
+immediately preceding state visit and its final state iteration, so a cycle or
+reopened ceremony cannot mix older outputs into the result.
+
 Human approval is a separate recorded decision. A design containing a human
 guard does not grant the approval. A deferral preserves a statement, reason
 and conditions for reconsideration and leaves the guard unsatisfied.
@@ -239,8 +284,8 @@ true. Council output JSON Schema examples are documented
 
 ## Boundaries and roadmap
 
-Current primitives are building blocks. Automatic parallel drivers,
-automatic agent spawning, general aggregation, complete group-chat/speaker
+Current primitives are building blocks. Automatic agent spawning,
+complete group-chat/speaker
 selection and the full orchestration pattern catalogue are not implemented
 by declaring concurrency. Embedded council execution and configuration are
 also not exposed. The earlier roadmap labels B3–B6, C1/C3, full D1–D5 and F5

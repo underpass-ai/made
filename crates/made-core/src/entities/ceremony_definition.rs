@@ -379,6 +379,7 @@ impl CeremonyDefinition {
             states: &self.states,
             transitions: &self.transitions,
             steps: &self.steps,
+            step_order: &self.step_order,
             guards: &self.guards,
             roles: &self.roles,
             max_transitions: self.max_transitions,

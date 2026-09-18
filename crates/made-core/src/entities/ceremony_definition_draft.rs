@@ -193,6 +193,11 @@ impl CeremonyDefinitionDraft {
         );
 
         let (steps, duplicate_steps) = index(&self.steps, CeremonyStep::id);
+        let step_order = self
+            .steps
+            .iter()
+            .map(|step| step.id().clone())
+            .collect::<Vec<_>>();
         push_duplicates(
             &mut findings,
             duplicate_steps,
@@ -220,6 +225,7 @@ impl CeremonyDefinitionDraft {
             states: &states,
             transitions: &self.transitions,
             steps: &steps,
+            step_order: &step_order,
             guards: &guards,
             roles: &roles,
             max_transitions: self.max_transitions,

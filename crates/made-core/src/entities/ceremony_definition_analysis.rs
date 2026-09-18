@@ -16,6 +16,7 @@ use crate::value_objects::{
     MaxTransitions, RoleAction, RoleId, StateExecution, StateId, StepId,
 };
 
+mod aggregation;
 mod cycles;
 mod global_completion;
 
@@ -27,6 +28,7 @@ pub(super) struct CeremonyDefinitionParts<'a> {
     pub(super) states: &'a BTreeMap<StateId, CeremonyState>,
     pub(super) transitions: &'a [CeremonyTransition],
     pub(super) steps: &'a BTreeMap<StepId, CeremonyStep>,
+    pub(super) step_order: &'a [StepId],
     pub(super) guards: &'a BTreeMap<GuardName, CeremonyGuard>,
     pub(super) roles: &'a BTreeMap<RoleId, CeremonyRole>,
     pub(super) max_transitions: Option<MaxTransitions>,
@@ -43,6 +45,7 @@ impl CeremonyDefinitionParts<'_> {
         self.collect_transition_graph_findings(findings);
         self.collect_cycle_findings(findings);
         self.collect_step_findings(findings);
+        aggregation::collect(self, findings);
         self.collect_state_repeat_findings(findings);
         self.collect_guard_findings(findings);
         self.collect_role_findings(findings);
