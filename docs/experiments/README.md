@@ -1,5 +1,8 @@
 # Experiments
 
+- [Bounded parallel proposing](003-parallel-proposing/README.md): measured
+  scheduler behavior and provider saturation; sequential defaults retained.
+
 The runner scripts and raw results below are historical evidence retained at
 stable paths. Their original narratives are in the
 [documentation snapshot](../history/pre-rebuild-2026-09-18/docs/experiments/README.md).
