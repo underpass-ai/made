@@ -45,6 +45,7 @@ mod ceremony_event_wire;
 pub mod clock;
 pub mod config;
 pub mod event_sink;
+pub mod execution;
 pub mod memory;
 pub mod mermaid;
 pub mod metrics;

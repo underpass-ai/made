@@ -38,6 +38,33 @@ impl Ops<'_> {
             .map_err(|error| failure(&error, "scan rows"))
     }
 
+    pub(super) fn scan_str_after(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError> {
+        if table.key_shape() != KeyShape::Str {
+            return Err(scan_shape_mismatch(table, KeyShape::Str));
+        }
+        let limit = i64::try_from(limit).map_err(|_| DomainError::OutOfRange {
+            field: "embedded_store.scan_limit",
+            value: limit as f64,
+            min: 0.0,
+            max: i64::MAX as f64,
+        })?;
+        let sql = format!("SELECT k, v FROM \"{table}\" WHERE k > ?1 ORDER BY k LIMIT ?2");
+        let after = after.unwrap_or_default();
+        let mut statement = self.prepare(&sql)?;
+        let rows = statement
+            .query_map(params![after, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|error| failure(&error, "scan bounded rows"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error, "scan bounded rows"))
+    }
+
     pub(super) fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
         if table.key_shape() != KeyShape::Bytes {
             return Err(scan_shape_mismatch(table, KeyShape::Bytes));

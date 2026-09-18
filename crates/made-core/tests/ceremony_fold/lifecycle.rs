@@ -1,12 +1,13 @@
 use made_core::entities::ceremony_commands::{
-    ApplyStepResult, CancelCeremony, EnforceCeremonyDeadlines, PauseCeremony, ResumeCeremony,
-    StartStep,
+    ApplyExecutionReceiptResult, ApplyStepResult, CancelCeremony, EnforceCeremonyDeadlines,
+    PauseCeremony, ResumeCeremony, StartStep,
 };
 use made_core::entities::ceremony_events::CeremonyCompleted;
 use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyEndReason, CeremonyLifecyclePhase, CeremonyTimeout, DurationMs, LifecycleReason,
+    CeremonyEndReason, CeremonyLifecyclePhase, CeremonyTimeout, DurationMs, ExecutionOperationId,
+    ExecutionReceiptId, ExecutionReceiptLink, ExecutionReceiptLinkKind, LifecycleReason,
     MaxParallel, StateTimeout, StepClaimFence, StepOutput, StepResult, StepStatus,
 };
 
@@ -139,6 +140,69 @@ fn pause_blocks_new_work_but_an_accepted_claim_can_complete() {
         instance.lifecycle().phase(),
         CeremonyLifecyclePhase::Running
     );
+}
+
+#[test]
+fn pause_accepts_a_direct_receipt_but_refuses_a_new_adoption() {
+    let definition = definition();
+    for (kind, accepted) in [
+        (ExecutionReceiptLinkKind::Direct, true),
+        (ExecutionReceiptLinkKind::Adopted, false),
+    ] {
+        let mut instance = opened(&definition);
+        let fence = claim_plan(&mut instance);
+        let paused = instance
+            .decide(
+                &CeremonyCommand::PauseCeremony(PauseCeremony {
+                    reason: LifecycleReason::new("operator hold").unwrap(),
+                    now: at(2),
+                }),
+                &definition,
+            )
+            .unwrap();
+        apply(&mut instance, &paused);
+        let record = instance.step_record(&step("plan")).unwrap();
+        let operation_id = ExecutionOperationId::for_step(
+            instance.id(),
+            &step("plan"),
+            record.state_visit(),
+            record.state_iteration(),
+            record.iteration(),
+        );
+        let producer_fence = match kind {
+            ExecutionReceiptLinkKind::Direct => fence.clone(),
+            ExecutionReceiptLinkKind::Adopted => StepClaimFence::new("9".repeat(64)).unwrap(),
+        };
+        let link = ExecutionReceiptLink::new(
+            ExecutionReceiptId::for_operation(&operation_id),
+            operation_id,
+            producer_fence,
+            fence.clone(),
+            kind,
+        )
+        .unwrap();
+        let result = instance.decide(
+            &CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+                step_id: step("plan"),
+                claim_fence: fence,
+                receipt_link: link,
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(3),
+            }),
+            &definition,
+        );
+
+        assert_eq!(result.is_ok(), accepted);
+        if !accepted {
+            assert!(matches!(
+                result,
+                Err(DomainError::LifecycleRefused {
+                    operation: "adopt_execution_receipt",
+                    ..
+                })
+            ));
+        }
+    }
 }
 
 #[test]

@@ -135,6 +135,27 @@ def job_block(text: str, name: str) -> str | None:
     return "\n".join(strip_comments(lines[start:end]))
 
 
+def step_block(block: str, name: str) -> str | None:
+    """One named step from a job block, ending before the next step."""
+    lines = block.splitlines()
+    marker = f"      - name: {name}"
+    start = next(
+        (number for number, line in enumerate(lines) if line == marker),
+        None,
+    )
+    if start is None:
+        return None
+    end = next(
+        (
+            number
+            for number, line in enumerate(lines[start + 1 :], start + 1)
+            if line.startswith("      - name:")
+        ),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
 def trigger_block(text: str) -> str:
     lines = text.splitlines()
     start = next(
@@ -487,6 +508,141 @@ def validate(sources: dict[str, str]) -> list[str]:
                 f"{PACKAGING_JOB}, so it would publish a partial release"
             )
 
+    # --- commit-image smoke reuses all four images by immutable digest ----
+    distribution = sources[PUBLISH_DISTRIBUTION]
+    smoke = job_block(distribution, "compose-smoke")
+    publish = job_block(distribution, "publish-image")
+    image_contract = (
+        (
+            "made",
+            "MADE_IMAGE",
+            "ghcr.io/underpass-ai/made",
+            "./Dockerfile",
+            "made",
+            "latest",
+        ),
+        (
+            "runner",
+            "RUNNER_IMAGE",
+            "ghcr.io/underpass-ai/made-e2e-runner",
+            "./tests/e2e/runner.Dockerfile",
+            "runner",
+            "e2e-latest",
+        ),
+        (
+            "stub_runtime",
+            "STUB_RUNTIME_IMAGE",
+            "ghcr.io/underpass-ai/made-e2e-stub-runtime",
+            "./tests/e2e/stub-runtime.Dockerfile",
+            "stub-runtime",
+            "e2e-latest",
+        ),
+        (
+            "stub_llm",
+            "STUB_LLM_IMAGE",
+            "ghcr.io/underpass-ai/made-e2e-stub-llm",
+            "./tests/e2e/stub-llm.Dockerfile",
+            "stub-llm",
+            "e2e-latest",
+        ),
+    )
+    smoke_locators = {
+        "made": ("IMAGE_NAME", "made-e2e-made:ci"),
+        "runner": ("E2E_RUNNER_IMAGE_NAME", "made-e2e-runner:ci"),
+        "stub_runtime": (
+            "STUB_RUNTIME_IMAGE_NAME",
+            "made-e2e-stub-runtime:ci",
+        ),
+        "stub_llm": ("STUB_LLM_IMAGE_NAME", "made-e2e-stub-llm:ci"),
+    }
+    if smoke is None:
+        failures.append(f"{PUBLISH_DISTRIBUTION} lost the compose-smoke job")
+    else:
+        for output, (identity, local_tag) in smoke_locators.items():
+            commit_locator = (
+                f'{output}_image="${{{identity}}}:sha-' + '${short_sha}"'
+            )
+            if commit_locator not in smoke:
+                failures.append(
+                    f"commit-image mode no longer locates {output} by commit"
+                )
+            if f'{output}_image="{local_tag}"' not in smoke:
+                failures.append(f"source mode lost its local {output} tag")
+            if f'echo "{output}_image=${{{output}_image}}"' not in smoke:
+                failures.append(f"image resolver stopped exporting {output}")
+
+        verify = step_block(smoke, "Pull and verify exact commit images")
+        if verify is None:
+            failures.append("compose smoke lost exact-commit image verification")
+        else:
+            for output, variable, *_ in image_contract:
+                if f'"${{{variable}}}"' not in verify:
+                    failures.append(
+                        f"commit-image verification no longer covers {output}"
+                    )
+                if f"echo \"${{image_name}}_image=${{digest}}\"" not in verify:
+                    failures.append("verified image digests are no longer exported")
+                    break
+
+        for step_name in (
+            "Build MADE image from source",
+            "Build E2E runner image from source",
+            "Build runtime stub image",
+            "Build LLM stub image",
+        ):
+            build = step_block(smoke, step_name)
+            if build is None:
+                failures.append(f"compose smoke lost source build: {step_name}")
+            elif "if: steps.smoke-images.outputs.reuse_commit_images != 'true'" not in build:
+                failures.append(
+                    f"{step_name} runs in commit-images mode and recompiles Rust"
+                )
+
+        compose = step_block(smoke, "Run compose stack smoke")
+        if compose is None:
+            failures.append("compose smoke lost its execution step")
+        else:
+            for output, *_ in image_contract:
+                expected = (
+                    f"steps.verified-images.outputs.{output}_image "
+                    f"|| steps.smoke-images.outputs.{output}_image"
+                )
+                if expected not in compose:
+                    failures.append(
+                        f"compose no longer prefers the verified {output} digest"
+                    )
+
+    if publish is None:
+        failures.append(f"{PUBLISH_DISTRIBUTION} lost the publish-image job")
+    else:
+        if "      fail-fast: false" not in publish:
+            failures.append("four-image publication lost independent matrix failures")
+        for _, _, image, dockerfile, cache_key, floating_tag in image_contract:
+            row = (
+                f"            image: {image}\n"
+                f"            dockerfile: {dockerfile}\n"
+                f"            cache_key: {cache_key}\n"
+                f"            floating_tag: {floating_tag}"
+            )
+            if row not in publish:
+                failures.append(f"publish matrix lost or drifted image {image}")
+        build_action = (
+            "uses: docker/build-push-action@"
+            "263435318d21b8e681c14492fe198d362a7d2c83"
+        )
+        if publish.count(build_action) != 1:
+            failures.append(
+                "publish matrix must have exactly one build per image lane"
+            )
+        if "file: ${{ matrix.dockerfile }}" not in publish:
+            failures.append("publish matrix stopped selecting each image Dockerfile")
+        cache_scope = (
+            "scope=compose-smoke-${{ matrix.cache_key }}-"
+            "${{ runner.arch }}-v1"
+        )
+        if publish.count(cache_scope) != 2:
+            failures.append("publish cache is no longer isolated by image and arch")
+
     # --- H5: `just dev` is the same script, `just check` runs this --------
     justfile = sources[JUSTFILE]
     if "bash scripts/ci/dev-loop.sh {{STAGE}}" not in justfile:
@@ -693,6 +849,43 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         TREE_PROOF,
         "  coverage\n",
         "",
+    ),
+    "commit smoke recompiles the runtime stub": (
+        PUBLISH_DISTRIBUTION,
+        "      - name: Build runtime stub image\n"
+        "        if: steps.smoke-images.outputs.reuse_commit_images != 'true'\n",
+        "      - name: Build runtime stub image\n",
+    ),
+    "commit smoke stops verifying the LLM stub": (
+        PUBLISH_DISTRIBUTION,
+        '            "${STUB_RUNTIME_IMAGE}" \\\n'
+        '            "${STUB_LLM_IMAGE}"\n',
+        '            "${STUB_RUNTIME_IMAGE}"\n',
+    ),
+    "commit smoke resolves a movable runtime stub tag": (
+        PUBLISH_DISTRIBUTION,
+        'stub_runtime_image="${STUB_RUNTIME_IMAGE_NAME}:sha-${short_sha}"',
+        'stub_runtime_image="${STUB_RUNTIME_IMAGE_NAME}:latest"',
+    ),
+    "compose executes a movable runtime stub tag": (
+        PUBLISH_DISTRIBUTION,
+        "${{ steps.verified-images.outputs.stub_runtime_image "
+        "|| steps.smoke-images.outputs.stub_runtime_image }}",
+        "${{ steps.smoke-images.outputs.stub_runtime_image }}",
+    ),
+    "publication loses the LLM stub": (
+        PUBLISH_DISTRIBUTION,
+        "          - name: stub-llm\n"
+        "            image: ghcr.io/underpass-ai/made-e2e-stub-llm\n"
+        "            dockerfile: ./tests/e2e/stub-llm.Dockerfile\n"
+        "            cache_key: stub-llm\n"
+        "            floating_tag: e2e-latest\n",
+        "",
+    ),
+    "published image caches collide": (
+        PUBLISH_DISTRIBUTION,
+        "scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1",
+        "scope=compose-smoke-rust-${{ runner.arch }}-v1",
     ),
 }
 

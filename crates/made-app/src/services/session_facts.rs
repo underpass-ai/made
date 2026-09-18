@@ -246,6 +246,35 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
         }
+        event @ (CeremonyEvent::InterventionRequested(_)
+        | CeremonyEvent::InterventionResponded(_)
+        | CeremonyEvent::InterventionClosed(_)
+        | CeremonyEvent::EvidenceCollected(_)) => intervention_about(event),
+        CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
+        CeremonyEvent::HumanApprovalRecorded(recorded) => {
+            format!("guard:{}", recorded.approval.guard_name())
+        }
+        CeremonyEvent::HumanDeferralRecorded(recorded) => {
+            format!("guard:{}", recorded.deferral.guard_name())
+        }
+        event @ (CeremonyEvent::ChildSpawnPlanned(_)
+        | CeremonyEvent::ChildSpawnPlanAdopted(_)
+        | CeremonyEvent::ChildCompletionAccepted(_)) => child_about(event),
+        CeremonyEvent::CeremonyPaused(_)
+        | CeremonyEvent::CeremonyResumed(_)
+        | CeremonyEvent::CeremonyCancelled(_)
+        | CeremonyEvent::CeremonyDeadlineExceeded(_)
+        | CeremonyEvent::StateDeadlineExceeded(_)
+        | CeremonyEvent::StepDeadlineExceeded(_)
+        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
+        CeremonyEvent::ExecutionReceiptLinked(linked) => {
+            format!("execution_receipt:{}", linked.link.receipt_id())
+        }
+    }
+}
+
+fn intervention_about(event: &CeremonyEvent) -> String {
+    match event {
         CeremonyEvent::InterventionRequested(requested) => {
             format!("intervention:{}", requested.intervention.id())
         }
@@ -261,23 +290,7 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             "intervention:{}:source:{}",
             collected.intervention_id, collected.source_id
         ),
-        CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
-        CeremonyEvent::HumanApprovalRecorded(recorded) => {
-            format!("guard:{}", recorded.approval.guard_name())
-        }
-        CeremonyEvent::HumanDeferralRecorded(recorded) => {
-            format!("guard:{}", recorded.deferral.guard_name())
-        }
-        CeremonyEvent::ChildSpawnPlanned(_)
-        | CeremonyEvent::ChildSpawnPlanAdopted(_)
-        | CeremonyEvent::ChildCompletionAccepted(_) => child_about(event),
-        CeremonyEvent::CeremonyPaused(_)
-        | CeremonyEvent::CeremonyResumed(_)
-        | CeremonyEvent::CeremonyCancelled(_)
-        | CeremonyEvent::CeremonyDeadlineExceeded(_)
-        | CeremonyEvent::StateDeadlineExceeded(_)
-        | CeremonyEvent::StepDeadlineExceeded(_)
-        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
+        _ => unreachable!("caller filters intervention events"),
     }
 }
 

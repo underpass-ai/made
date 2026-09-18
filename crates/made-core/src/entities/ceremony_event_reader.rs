@@ -177,6 +177,12 @@ fn validate_seals(
             ));
         }
     }
+    if let CeremonyEvent::ExecutionReceiptLinked(linked) = event {
+        linked
+            .link
+            .validate()
+            .map_err(|_| unreadable(event_type, version, "execution receipt link is invalid"))?;
+    }
     Ok(())
 }
 

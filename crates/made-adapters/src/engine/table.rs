@@ -27,19 +27,30 @@ pub(crate) enum Table {
     EventCursorQuarantine,
     /// Idempotent session-memory writes, grouped by memory scope.
     MemoryWrites,
+    /// Semantic execution roots keyed by stable operation id.
+    ExecutionOperations,
+    /// One durable intent per operation and accepted claim fence.
+    ExecutionIntents,
+    /// The immutable terminal receipt of each semantic operation.
+    ExecutionReceipts,
 }
 
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies | Table::Meta | Table::EventCursors => KeyShape::Str,
+            Table::Ceremonies
+            | Table::Meta
+            | Table::EventCursors
+            | Table::ExecutionOperations
+            | Table::ExecutionReceipts => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
             | Table::EventLog
             | Table::Snapshots
             | Table::EventCursorQuarantine
-            | Table::MemoryWrites => KeyShape::Bytes,
+            | Table::MemoryWrites
+            | Table::ExecutionIntents => KeyShape::Bytes,
         }
     }
 }
@@ -57,6 +68,9 @@ impl fmt::Display for Table {
             Table::EventCursors => "ceremony_event_cursors",
             Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
             Table::MemoryWrites => "session_memory_writes",
+            Table::ExecutionOperations => "execution_operations",
+            Table::ExecutionIntents => "execution_intents",
+            Table::ExecutionReceipts => "execution_receipts",
         })
     }
 }

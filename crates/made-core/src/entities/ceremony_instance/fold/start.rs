@@ -46,6 +46,7 @@ impl CeremonyInstance {
             step_deadlines: BTreeMap::new(),
             retired_deadline_claims: BTreeMap::new(),
             late_step_results: BTreeMap::new(),
+            execution_receipt_links: BTreeMap::new(),
         }
     }
 }

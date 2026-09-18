@@ -43,6 +43,7 @@ pub enum AuditEventType {
     StateDeadlineExceeded,
     StepDeadlineExceeded,
     LateStepResultObserved,
+    ExecutionReceiptLinked,
 }
 
 impl AuditEventType {
@@ -80,6 +81,7 @@ impl AuditEventType {
             Self::StateDeadlineExceeded => "state_deadline_exceeded",
             Self::StepDeadlineExceeded => "step_deadline_exceeded",
             Self::LateStepResultObserved => "late_step_result_observed",
+            Self::ExecutionReceiptLinked => "execution_receipt_linked",
         }
     }
 

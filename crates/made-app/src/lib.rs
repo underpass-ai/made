@@ -18,3 +18,4 @@
 pub mod budgets;
 pub mod services;
 pub mod usecases;
+pub mod workers;

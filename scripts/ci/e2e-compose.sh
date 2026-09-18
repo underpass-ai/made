@@ -10,6 +10,11 @@ set -euo pipefail
 # Brings up MADE + NATS + the e2e runner container and runs
 # the runner against the stack. The runner drives scenarios over the
 # public gRPC / AsyncAPI contract — no access to internals.
+#
+# CI can prepare content-addressed images separately and set
+# `MADE_E2E_BUILD_SERVICES` (including to an empty string) to make this script
+# run the exact same suite with `--no-build`. When the variable is absent the
+# existing local behavior remains `compose up --build`.
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/tests/e2e/docker-compose.e2e.yaml"
@@ -91,4 +96,12 @@ cleanup() {
 }
 trap cleanup EXIT
 
-"${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --build --abort-on-container-exit --exit-code-from e2e-runner
+if [[ -v MADE_E2E_BUILD_SERVICES ]]; then
+  if [[ -n "${MADE_E2E_BUILD_SERVICES}" ]]; then
+    read -r -a BUILD_SERVICES <<<"${MADE_E2E_BUILD_SERVICES}"
+    "${COMPOSE[@]}" -f "${COMPOSE_FILE}" build "${BUILD_SERVICES[@]}"
+  fi
+  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --no-build --abort-on-container-exit --exit-code-from e2e-runner
+else
+  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --build --abort-on-container-exit --exit-code-from e2e-runner
+fi

@@ -3,10 +3,10 @@ name: publish-distribution
 # The `publish-crates` job at the bottom needs the repo secret
 # `CARGO_REGISTRY_TOKEN`, set on an account with a verified email —
 # crates.io rejects the upload otherwise. Without it the rest of the
-# workflow (image + chart push) still does its job. Tag pushes (`v*`)
-# trigger the crate publish; `workflow_dispatch` deliberately does NOT, so
-# an operator hitting "Run workflow" to re-roll an image cannot
-# accidentally publish to crates.io.
+# workflow (images + chart push) still does its job. Tag pushes (`v*`)
+# trigger the crate publish; `workflow_dispatch` deliberately does NOT. A
+# manual run is smoke-only by default and requires an explicit input to re-roll
+# images, so the cold/warm measurement path has no publication side effect.
 
 on:
   push:
@@ -15,18 +15,37 @@ on:
     tags:
       - "v*"
   workflow_dispatch:
+    inputs:
+      smoke_image_source:
+        description: Images used by the Compose smoke
+        type: choice
+        options:
+          - commit-images
+          - source
+        default: commit-images
+      cache_epoch:
+        description: Cache namespace; change it for a comparable cold-cache run
+        type: string
+        default: v1
+      publish_after_smoke:
+        description: Rebuild and publish image tags after a successful manual smoke
+        type: boolean
+        default: false
 
 env:
   IMAGE_NAME: ghcr.io/underpass-ai/made
   E2E_RUNNER_IMAGE_NAME: ghcr.io/underpass-ai/made-e2e-runner
+  STUB_RUNTIME_IMAGE_NAME: ghcr.io/underpass-ai/made-e2e-stub-runtime
+  STUB_LLM_IMAGE_NAME: ghcr.io/underpass-ai/made-e2e-stub-llm
   CHART_NAME: made
   CHART_REGISTRY: oci://ghcr.io/underpass-ai/charts
   CHART_PATH: charts/made
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
-  # Tag-only smoke gate: builds the compose stack and runs the
-  # full compose e2e-runner end-to-end before any image / chart push.
+  # Tag-only smoke gate: resolves exact-commit images (or explicitly builds
+  # them from source) and runs the full compose e2e-runner end-to-end before
+  # any image / chart push.
   # Plain `main` pushes (which roll the `latest` / `main` image tags)
   # skip this on purpose. A skipped `needs` skips its dependents too, so
   # the publish jobs below have to say out loud that a skipped gate is
@@ -37,6 +56,7 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
+      packages: read
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -44,12 +64,126 @@ jobs:
       - name: Docker version
         run: docker version
 
-      - name: Cache Rust build artifacts
-        uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
         with:
-          shared-key: release-smoke
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image and cache identities
+        id: smoke-images
+        shell: bash
+        env:
+          REQUESTED_SOURCE: ${{ inputs.smoke_image_source }}
+          REQUESTED_CACHE_EPOCH: ${{ inputs.cache_epoch }}
+        run: |
+          cache_epoch="${REQUESTED_CACHE_EPOCH:-v1}"
+          if [[ ! "${cache_epoch}" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "cache_epoch may contain only letters, digits, dot, underscore and hyphen" >&2
+            exit 2
+          fi
+
+          short_sha="${GITHUB_SHA:0:7}"
+          if [[ "${GITHUB_EVENT_NAME}" != "workflow_dispatch" || "${REQUESTED_SOURCE:-commit-images}" == "commit-images" ]]; then
+            reuse_commit_images=true
+            made_image="${IMAGE_NAME}:sha-${short_sha}"
+            runner_image="${E2E_RUNNER_IMAGE_NAME}:sha-${short_sha}"
+            stub_runtime_image="${STUB_RUNTIME_IMAGE_NAME}:sha-${short_sha}"
+            stub_llm_image="${STUB_LLM_IMAGE_NAME}:sha-${short_sha}"
+          else
+            reuse_commit_images=false
+            made_image="made-e2e-made:ci"
+            runner_image="made-e2e-runner:ci"
+            stub_runtime_image="made-e2e-stub-runtime:ci"
+            stub_llm_image="made-e2e-stub-llm:ci"
+          fi
+
+          echo "cache_epoch=${cache_epoch}" >> "${GITHUB_OUTPUT}"
+          echo "reuse_commit_images=${reuse_commit_images}" >> "${GITHUB_OUTPUT}"
+          echo "made_image=${made_image}" >> "${GITHUB_OUTPUT}"
+          echo "runner_image=${runner_image}" >> "${GITHUB_OUTPUT}"
+          echo "stub_runtime_image=${stub_runtime_image}" >> "${GITHUB_OUTPUT}"
+          echo "stub_llm_image=${stub_llm_image}" >> "${GITHUB_OUTPUT}"
+
+      - name: Pull and verify exact commit images
+        id: verified-images
+        if: steps.smoke-images.outputs.reuse_commit_images == 'true'
+        env:
+          MADE_IMAGE: ${{ steps.smoke-images.outputs.made_image }}
+          RUNNER_IMAGE: ${{ steps.smoke-images.outputs.runner_image }}
+          STUB_RUNTIME_IMAGE: ${{ steps.smoke-images.outputs.stub_runtime_image }}
+          STUB_LLM_IMAGE: ${{ steps.smoke-images.outputs.stub_llm_image }}
+        run: |
+          bash scripts/ci/verify-commit-image.sh \
+            "${GITHUB_SHA}" \
+            "${MADE_IMAGE}" \
+            "${RUNNER_IMAGE}" \
+            "${STUB_RUNTIME_IMAGE}" \
+            "${STUB_LLM_IMAGE}"
+          # Bind the execution to the verified immutable digests, not the
+          # locator tags, which a registry administrator could later move.
+          for image_name in made runner stub_runtime stub_llm; do
+            variable_name="${image_name^^}_IMAGE"
+            image="${!variable_name}"
+            digest="$(docker image inspect --format '{{ index .RepoDigests 0 }}' "${image}")"
+            echo "${image_name}_image=${digest}" >> "${GITHUB_OUTPUT}"
+          done
+
+      - name: Build MADE image from source
+        if: steps.smoke-images.outputs.reuse_commit_images != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: ${{ steps.smoke-images.outputs.made_image }}
+          cache-from: type=gha,scope=compose-smoke-made-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+          cache-to: type=gha,mode=max,scope=compose-smoke-made-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+
+      - name: Build E2E runner image from source
+        if: steps.smoke-images.outputs.reuse_commit_images != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./tests/e2e/runner.Dockerfile
+          load: true
+          tags: ${{ steps.smoke-images.outputs.runner_image }}
+          cache-from: type=gha,scope=compose-smoke-runner-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+          cache-to: type=gha,mode=max,scope=compose-smoke-runner-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+
+      - name: Build runtime stub image
+        if: steps.smoke-images.outputs.reuse_commit_images != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./tests/e2e/stub-runtime.Dockerfile
+          load: true
+          tags: ${{ steps.smoke-images.outputs.stub_runtime_image }}
+          cache-from: type=gha,scope=compose-smoke-stub-runtime-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+          cache-to: type=gha,mode=max,scope=compose-smoke-stub-runtime-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+
+      - name: Build LLM stub image
+        if: steps.smoke-images.outputs.reuse_commit_images != 'true'
+        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
+        with:
+          context: .
+          file: ./tests/e2e/stub-llm.Dockerfile
+          load: true
+          tags: ${{ steps.smoke-images.outputs.stub_llm_image }}
+          cache-from: type=gha,scope=compose-smoke-stub-llm-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
+          cache-to: type=gha,mode=max,scope=compose-smoke-stub-llm-${{ runner.arch }}-${{ steps.smoke-images.outputs.cache_epoch }}
 
       - name: Run compose stack smoke
+        env:
+          MADE_E2E_BUILD_SERVICES: ""
+          MADE_E2E_MADE_IMAGE: ${{ steps.verified-images.outputs.made_image || steps.smoke-images.outputs.made_image }}
+          MADE_E2E_RUNNER_IMAGE: ${{ steps.verified-images.outputs.runner_image || steps.smoke-images.outputs.runner_image }}
+          MADE_E2E_STUB_RUNTIME_IMAGE: ${{ steps.verified-images.outputs.stub_runtime_image || steps.smoke-images.outputs.stub_runtime_image }}
+          MADE_E2E_STUB_LLM_IMAGE: ${{ steps.verified-images.outputs.stub_llm_image || steps.smoke-images.outputs.stub_llm_image }}
         run: bash scripts/ci/e2e-compose.sh
 
       - name: Upload compose logs on failure
@@ -61,10 +195,35 @@ jobs:
           if-no-files-found: ignore
 
   publish-image:
+    name: publish-image (${{ matrix.name }})
     needs: [compose-smoke]
-    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) }}
+    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) && (github.event_name != 'workflow_dispatch' || inputs.publish_after_smoke) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: made
+            image: ghcr.io/underpass-ai/made
+            dockerfile: ./Dockerfile
+            cache_key: made
+            floating_tag: latest
+          - name: e2e-runner
+            image: ghcr.io/underpass-ai/made-e2e-runner
+            dockerfile: ./tests/e2e/runner.Dockerfile
+            cache_key: runner
+            floating_tag: e2e-latest
+          - name: stub-runtime
+            image: ghcr.io/underpass-ai/made-e2e-stub-runtime
+            dockerfile: ./tests/e2e/stub-runtime.Dockerfile
+            cache_key: stub-runtime
+            floating_tag: e2e-latest
+          - name: stub-llm
+            image: ghcr.io/underpass-ai/made-e2e-stub-llm
+            dockerfile: ./tests/e2e/stub-llm.Dockerfile
+            cache_key: stub-llm
+            floating_tag: e2e-latest
     permissions:
       contents: read
       packages: write
@@ -86,20 +245,9 @@ jobs:
         id: meta
         uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f
         with:
-          images: ${{ env.IMAGE_NAME }}
+          images: ${{ matrix.image }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=ref,event=tag
-            type=sha,format=short,prefix=sha-
-
-      - name: Extract E2E runner image metadata
-        id: meta-e2e-runner
-        uses: docker/metadata-action@c1e51972afc2121e065aed6d45c65596fe445f3f
-        with:
-          images: ${{ env.E2E_RUNNER_IMAGE_NAME }}
-          tags: |
-            type=raw,value=e2e-latest,enable={{is_default_branch}}
+            type=raw,value=${{ matrix.floating_tag }},enable={{is_default_branch}}
             type=ref,event=branch
             type=ref,event=tag
             type=sha,format=short,prefix=sha-
@@ -108,19 +256,12 @@ jobs:
         uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
         with:
           context: .
-          file: ./Dockerfile
+          file: ${{ matrix.dockerfile }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-      - name: Build and push E2E runner image
-        uses: docker/build-push-action@263435318d21b8e681c14492fe198d362a7d2c83
-        with:
-          context: .
-          file: ./tests/e2e/runner.Dockerfile
-          push: true
-          tags: ${{ steps.meta-e2e-runner.outputs.tags }}
-          labels: ${{ steps.meta-e2e-runner.outputs.labels }}
+          cache-from: type=gha,scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1
+          cache-to: type=gha,mode=max,scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1
 
   publish-helm-chart:
     needs: [compose-smoke]
