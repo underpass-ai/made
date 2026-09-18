@@ -35,7 +35,7 @@ in one state, while the outer stage id names that state:
         {"id":"security_review","owner_role_id":"SECURITY","instructions":"Review security."},
         {"id":"operations_review","owner_role_id":"OPERATIONS","instructions":"Review operations."}
       ],
-      "join": {"condition":"all_steps_completed"}
+      "join": {"condition":"steps_completed", "count":2}
     }
   }]
 }
@@ -50,6 +50,17 @@ rewriting the stored definition. Live clients should fan out over every id in
 `claimable_step_ids`, complete claims in any order, then transition. A live
 lease always blocks the transition, including an early `any_step_completed`
 join; an expired lease does not.
+
+`all_steps_completed` checks every step in the ceremony, including future
+states. It is suitable after all required work is already reachable. On a
+review-to-synthesis transition it would also wait for synthesis, which cannot
+start yet. Use `steps_completed` with the number of source-state steps, or
+explicit `step_status:<step>:COMPLETED` guards for the required source steps.
+`any_step_completed` and `steps_completed` are scoped to the source state.
+Draft analysis warns when a global completion barrier precedes downstream
+steps that cannot be reached without crossing such a barrier. This is an
+advisory graph check: other guards can still block execution, and cycles or
+detours that allow the work to happen first remain publishable.
 
 Definitions with a cycle must declare at least one positive transition budget:
 
@@ -340,7 +351,7 @@ by `until` must be one of that group's children:
       {"id":"draft","owner_role_id":"AUTHOR","instructions":"Draft."},
       {"id":"check","owner_role_id":"REVIEWER","instructions":"Return approved."}
     ],
-    "join": {"condition":"all_steps_completed"},
+    "join": {"condition":"steps_completed", "count":2},
     "repeat": {
       "max_iterations": 4,
       "until": {"step":"check","output_field":"approved","equals":true}

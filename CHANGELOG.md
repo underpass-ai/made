@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+- Warn during definition analysis when global completion guards wait for
+  downstream work that they prevent from starting; preserve global guard
+  execution semantics and allow valid cyclic/revisit definitions. (#143)
+
 - Give MADE its own `underpass-made` marketplace identity so its catalogue can
   coexist with KMP's `underpass`; document migration and expose the official
   website on the plugin card. (#39)
