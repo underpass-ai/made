@@ -117,7 +117,7 @@ impl CompleteExecutionReceiptUseCase {
                 })?
                 .reconcile_receipt(account_id, &receipt)
                 .await
-                .map_err(budget_error)?;
+                .map_err(crate::budgets::budget_error_to_domain)?;
         }
         let definition = self.definitions.execute(&session.instance).await?;
         let now = self.clock.now();
@@ -139,29 +139,5 @@ impl CompleteExecutionReceiptUseCase {
             })
             .await
             .map(|session| session.instance)
-    }
-}
-
-fn budget_error(error: made_core::BudgetError) -> DomainError {
-    match error {
-        made_core::BudgetError::Persistence(error) => error,
-        made_core::BudgetError::LedgerNotOpen => DomainError::NotFound {
-            what: "budget_ledger",
-        },
-        made_core::BudgetError::ReservationNotFound(_) => DomainError::NotFound {
-            what: "budget_reservation",
-        },
-        made_core::BudgetError::ReservationConflict(_) => DomainError::Conflict {
-            what: "budget_reservation",
-        },
-        made_core::BudgetError::ReconciliationConflict(_) => DomainError::Conflict {
-            what: "budget_reconciliation",
-        },
-        made_core::BudgetError::Exhausted { .. } => DomainError::InvariantViolated {
-            reason: "budget reconciliation cannot reject already observed execution",
-        },
-        made_core::BudgetError::MissingReservationEstimate(_) => DomainError::InvariantViolated {
-            reason: "receipt reconciliation does not prepare a budget reservation",
-        },
     }
 }

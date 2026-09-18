@@ -7,6 +7,7 @@
 //! random sequences of accepted and refused commands; and a session
 //! imported from a pre-stream store folds to the snapshot it carried.
 
+mod budget_tree;
 mod decide_apply;
 mod fixture;
 mod fold_equality;

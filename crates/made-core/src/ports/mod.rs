@@ -24,6 +24,7 @@ mod budget_append_outcome;
 mod budget_ledger_snapshot;
 mod budget_ledger_store;
 mod budget_reservation_page;
+mod budget_reservation_planner;
 mod ceremony_definition_publication;
 mod ceremony_definition_repository;
 mod ceremony_definition_source;
@@ -87,6 +88,7 @@ pub use budget_append_outcome::BudgetAppendOutcome;
 pub use budget_ledger_snapshot::BudgetLedgerSnapshot;
 pub use budget_ledger_store::BudgetLedgerStorePort;
 pub use budget_reservation_page::BudgetReservationPage;
+pub use budget_reservation_planner::BudgetReservationPlannerPort;
 
 pub use ceremony_definition_publication::CeremonyDefinitionPublicationPort;
 pub use ceremony_definition_repository::CeremonyDefinitionRepositoryPort;

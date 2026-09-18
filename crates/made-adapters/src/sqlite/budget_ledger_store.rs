@@ -224,12 +224,15 @@ mod tests {
 
     use made_app::budgets::{BudgetLedgerService, BudgetMutationOutcome};
     use made_core::value_objects::{
-        BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetQuantities,
-        BudgetReconciliationId, BudgetReservationEstimate, BudgetTokenCount, CeremonyId,
-        CostMicros, CurrencyCode, ExecutionDuration, ExecutionOperationId,
-        MeasuredBudgetQuantities, StateIteration, StateVisit, StepId, StepIteration, ToolCallCount,
+        ArtifactSourceKind, BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetQuantities,
+        BudgetReservationEstimate, BudgetTokenCount, CeremonyId, CostMicros, CurrencyCode,
+        ExecutionConnectorId, ExecutionDuration, ExecutionOperationId, ExecutionReceipt,
+        ExecutionRecoveryCapability, ExecutionRequestDigest, MeasuredBudgetQuantities,
+        StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+        ToolCallCount,
     };
     use made_core::BudgetError;
+    use time::OffsetDateTime;
 
     use crate::clock::SystemClock;
 
@@ -257,15 +260,18 @@ mod tests {
         )
     }
 
-    fn operation(label: &str) -> BudgetOperationId {
-        let execution = ExecutionOperationId::for_step(
+    fn execution_operation(label: &str) -> ExecutionOperationId {
+        ExecutionOperationId::for_step(
             &CeremonyId::new(label).unwrap(),
             &StepId::new("work").unwrap(),
             StateVisit::FIRST,
             StateIteration::FIRST,
             StepIteration::FIRST,
-        );
-        BudgetOperationId::for_execution(&execution)
+        )
+    }
+
+    fn operation(label: &str) -> BudgetOperationId {
+        BudgetOperationId::for_execution(&execution_operation(label))
     }
 
     fn service(path: &Path) -> BudgetLedgerService {
@@ -310,7 +316,8 @@ mod tests {
         let first = service(&path);
         first.open(account.clone(), limits(100)).await.unwrap();
         let second = service(&path);
-        let operation = operation("same-operation");
+        let execution_operation = execution_operation("same-operation");
+        let operation = BudgetOperationId::for_execution(&execution_operation);
 
         let (left, right) = tokio::join!(
             first.reserve(&account, operation.clone(), request(60)),
@@ -347,29 +354,36 @@ mod tests {
             60
         );
 
-        let reservation_id = pending.reservations()[0].id().clone();
-        let reconciliation_id = BudgetReconciliationId::new("receipt-1").unwrap();
         let measured = MeasuredBudgetQuantities::new(
             BudgetMeasurement::Unknown,
             BudgetMeasurement::Observed(BudgetTokenCount::new(120)),
             BudgetMeasurement::Estimated(CostMicros::new(8)),
             BudgetMeasurement::Observed(ToolCallCount::new(1)),
         );
+        let receipt = ExecutionReceipt::new(
+            execution_operation,
+            ExecutionRequestDigest::new("1".repeat(64)).unwrap(),
+            StepClaimFence::new("2".repeat(64)).unwrap(),
+            ExecutionConnectorId::new("budget-test").unwrap(),
+            None,
+            ExecutionRecoveryCapability::IdempotentByOperationId,
+            ArtifactSourceKind::NoOp,
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            Vec::new(),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+        .with_budget_measurement(measured);
         assert!(matches!(
             service(&path)
-                .reconcile(
-                    &account,
-                    reservation_id.clone(),
-                    reconciliation_id.clone(),
-                    measured,
-                )
+                .reconcile_receipt(&account, &receipt)
                 .await
                 .unwrap(),
             BudgetMutationOutcome::Applied { .. }
         ));
         assert!(matches!(
             service(&path)
-                .reconcile(&account, reservation_id, reconciliation_id, measured,)
+                .reconcile_receipt(&account, &receipt)
                 .await
                 .unwrap(),
             BudgetMutationOutcome::Existing { .. }
