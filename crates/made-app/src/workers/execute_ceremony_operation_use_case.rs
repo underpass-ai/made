@@ -63,16 +63,38 @@ impl ExecuteCeremonyOperationUseCase {
             }
             None => candidate,
         };
-        let intent = ExecutionIntent::new(
-            operation,
-            input.claim_fence,
-            self.connector.connector_id().clone(),
-            self.connector.recovery_capability(),
-            self.connector.source_kind(),
-            input.actor_kind,
-            self.clock.now(),
-        )?;
-        let recorded = self.store.record_intent(intent.clone()).await?;
+        let existing_intent = self
+            .store
+            .intent(operation.operation_id(), &input.claim_fence)
+            .await?;
+        let (intent, recorded) = match existing_intent {
+            Some(intent) => {
+                if intent.operation() != &operation
+                    || intent.connector_id() != self.connector.connector_id()
+                    || intent.recovery_capability() != self.connector.recovery_capability()
+                    || intent.source_kind() != self.connector.source_kind()
+                    || intent.actor_kind() != input.actor_kind
+                {
+                    return Err(DomainError::Conflict {
+                        what: "execution_intent",
+                    });
+                }
+                (intent, RecordExecutionIntentOutcome::AlreadyRecorded)
+            }
+            None => {
+                let intent = ExecutionIntent::new(
+                    operation,
+                    input.claim_fence,
+                    self.connector.connector_id().clone(),
+                    self.connector.recovery_capability(),
+                    self.connector.source_kind(),
+                    input.actor_kind,
+                    self.clock.now(),
+                )?;
+                let recorded = self.store.record_intent(intent.clone()).await?;
+                (intent, recorded)
+            }
+        };
         if let Some(receipt) = self
             .store
             .receipt(intent.operation().operation_id())

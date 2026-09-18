@@ -1,3 +1,4 @@
+use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
@@ -110,11 +111,22 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
 }
 
 #[derive(Debug)]
-struct FixedClock;
+struct AdvancingClock {
+    seconds: AtomicI64,
+}
 
-impl ClockPort for FixedClock {
+impl AdvancingClock {
+    const fn new() -> Self {
+        Self {
+            seconds: AtomicI64::new(0),
+        }
+    }
+}
+
+impl ClockPort for AdvancingClock {
     fn now(&self) -> OffsetDateTime {
         OffsetDateTime::UNIX_EPOCH
+            + time::Duration::seconds(self.seconds.fetch_add(1, Ordering::Relaxed))
     }
 }
 
@@ -147,7 +159,44 @@ fn usecase(
     store: Arc<InMemoryExecutionReceiptStore>,
     connector: Arc<FailureInjectingConnector>,
 ) -> ExecuteCeremonyOperationUseCase {
-    ExecuteCeremonyOperationUseCase::new(store, connector, Arc::new(FixedClock))
+    ExecuteCeremonyOperationUseCase::new(store, connector, Arc::new(AdvancingClock::new()))
+}
+
+#[tokio::test]
+async fn retrying_the_same_fence_reuses_the_first_intent_timestamp() {
+    let store = Arc::new(InMemoryExecutionReceiptStore::new());
+    let connector = Arc::new(FailureInjectingConnector::new(
+        FailurePoint::BeforeEffect,
+        ExecutionRecoveryCapability::IdempotentByOperationId,
+    ));
+    let worker = usecase(store.clone(), connector.clone());
+
+    assert!(worker.execute(input(1, fence('1'))).await.is_err());
+    let first_intent = store
+        .intent(
+            &made_core::value_objects::ExecutionOperationId::for_step(
+                &CeremonyId::new("ceremony").unwrap(),
+                &StepId::new("work").unwrap(),
+                StateVisit::FIRST,
+                StateIteration::FIRST,
+                StepIteration::FIRST,
+            ),
+            &fence('1'),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+
+    worker.execute(input(2, fence('1'))).await.unwrap();
+    let retried_intent = store
+        .intent(first_intent.operation().operation_id(), &fence('1'))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_eq!(retried_intent.recorded_at(), first_intent.recorded_at());
+    assert_eq!(connector.calls(), 2);
+    assert_eq!(connector.effects(), 1);
 }
 
 #[tokio::test]

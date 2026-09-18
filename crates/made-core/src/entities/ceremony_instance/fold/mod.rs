@@ -89,7 +89,7 @@ impl CeremonyInstance {
                 self.apply_late_step_result_observed(event)
             }
             CeremonyEvent::ExecutionReceiptLinked(event) => {
-                self.apply_execution_receipt_linked(event)
+                self.apply_execution_receipt_linked(event);
             }
         }
     }

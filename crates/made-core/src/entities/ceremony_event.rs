@@ -185,15 +185,15 @@ impl CeremonyEvent {
             | Self::MemoryRecalled(_)
             | Self::ChildSpawnPlanned(_)
             | Self::ChildSpawnPlanAdopted(_)
-            | Self::ChildCompletionAccepted(_) => EventSchemaVersion::V1,
-            Self::CeremonyPaused(_)
+            | Self::ChildCompletionAccepted(_)
+            | Self::CeremonyPaused(_)
             | Self::CeremonyResumed(_)
             | Self::CeremonyCancelled(_)
             | Self::CeremonyDeadlineExceeded(_)
             | Self::StateDeadlineExceeded(_)
-            | Self::StepDeadlineExceeded(_) => EventSchemaVersion::V1,
-            Self::LateStepResultObserved(_) => EventSchemaVersion::V1,
-            Self::ExecutionReceiptLinked(_) => EventSchemaVersion::V1,
+            | Self::StepDeadlineExceeded(_)
+            | Self::LateStepResultObserved(_)
+            | Self::ExecutionReceiptLinked(_) => EventSchemaVersion::V1,
         }
     }
 }
