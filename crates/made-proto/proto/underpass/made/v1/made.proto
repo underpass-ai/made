@@ -1591,7 +1591,9 @@ message CeremonyDesignGroup {
   string execution = 1;
   repeated CeremonyDesignGroupStep steps = 2;
   CeremonyDesignGroupJoin join = 3;
-  CeremonyDesignGroupRepeat repeat = 4;
+  // Tag 4 was reserved in the published group contract.
+  reserved 4;
+  CeremonyDesignGroupRepeat repeat = 5;
 }
 
 // The explicit human gate after the final stage. Designing it never
