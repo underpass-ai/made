@@ -163,7 +163,7 @@ async fn run_child_to_terminal(
     if !stepped
         .steps
         .iter()
-        .any(|step| step.step_id == "review" && step.status == "COMPLETED")
+        .any(|step| step.step_id == "review" && step.status == "completed")
     {
         bail!("child {child_id} review did not complete");
     }
