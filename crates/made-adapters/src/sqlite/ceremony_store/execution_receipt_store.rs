@@ -390,7 +390,7 @@ mod tests {
             .recoverable(None, ExecutionRecoveryPageLimit::new(1).unwrap())
             .await
             .unwrap();
-        assert_eq!(page.operations(), &[operation.clone()]);
+        assert_eq!(page.operations(), std::slice::from_ref(&operation));
         assert!(reopened
             .intent(operation.operation_id(), &fence('1'))
             .await

@@ -5,7 +5,8 @@ use std::path::{Path, PathBuf};
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionObservation, CeremonyExecutionRequest,
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
+    CeremonyExecutionObservation, CeremonyExecutionRequest,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
@@ -152,15 +153,19 @@ impl CeremonyExecutionConnectorPort for DurableFixtureExecutionConnector {
     async fn execute_or_recover(
         &self,
         request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
-        self.settle_intent(request.intent()).await
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        self.settle_intent(request.intent())
+            .await
+            .map(|observation| CeremonyExecutionConnectorOutcome::Observed(Box::new(observation)))
     }
 
     async fn recover_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
-        self.settle_intent(intent).await
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        self.settle_intent(intent)
+            .await
+            .map(|observation| CeremonyExecutionConnectorOutcome::Observed(Box::new(observation)))
     }
 }
 
@@ -223,8 +228,16 @@ mod tests {
             left.recover_intent(&first),
             right.recover_intent(&reclaimed)
         );
-        let left_observation = left_observation.unwrap();
-        let right_observation = right_observation.unwrap();
+        let CeremonyExecutionConnectorOutcome::Observed(left_observation) =
+            left_observation.unwrap()
+        else {
+            panic!("fixture connector always observes its effect");
+        };
+        let CeremonyExecutionConnectorOutcome::Observed(right_observation) =
+            right_observation.unwrap()
+        else {
+            panic!("fixture connector always observes its effect");
+        };
 
         assert_eq!(
             left_observation.producer_claim_fence(),

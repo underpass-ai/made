@@ -2,10 +2,13 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use made_adapters::clock::SystemClock;
-use made_adapters::execution::DurableFixtureExecutionConnector;
+use made_adapters::execution::{
+    DurableFixtureExecutionConnector, RepositoryScriptExecutionConnector,
+};
 use made_adapters::memory::{
     ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
 };
@@ -23,7 +26,7 @@ use made_app::workers::{
     RecoverableCeremonyWorkerOutcome,
 };
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionObservation, CeremonyExecutionRequest,
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
     ExecutionReceiptStorePort, NoopCeremonyEventSubscriber,
 };
 use made_core::value_objects::{
@@ -62,10 +65,22 @@ retry_policies:
     backoff_seconds: 1
 "#;
 
-#[derive(Debug)]
+fn scratch() -> tempfile::TempDir {
+    std::fs::create_dir_all("tmp").unwrap();
+    tempfile::tempdir_in("tmp").unwrap()
+}
+
 struct FailAfterEffectConnector {
-    inner: Arc<DurableFixtureExecutionConnector>,
+    inner: Arc<dyn CeremonyExecutionConnectorPort>,
     fail_once: AtomicBool,
+}
+
+impl std::fmt::Debug for FailAfterEffectConnector {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("FailAfterEffectConnector")
+            .finish_non_exhaustive()
+    }
 }
 
 #[async_trait]
@@ -85,20 +100,22 @@ impl CeremonyExecutionConnectorPort for FailAfterEffectConnector {
     async fn execute_or_recover(
         &self,
         request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionObservation, made_core::DomainError> {
-        let observation = self.inner.execute_or_recover(request).await?;
-        if self.fail_once.swap(false, Ordering::SeqCst) {
+    ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
+        let outcome = self.inner.execute_or_recover(request).await?;
+        if matches!(outcome, CeremonyExecutionConnectorOutcome::Observed(_))
+            && self.fail_once.swap(false, Ordering::SeqCst)
+        {
             return Err(made_core::DomainError::InvariantViolated {
                 reason: "injected process exit after durable effect",
             });
         }
-        Ok(observation)
+        Ok(outcome)
     }
 
     async fn recover_intent(
         &self,
         intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, made_core::DomainError> {
+    ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
         self.inner.recover_intent(intent).await
     }
 }
@@ -125,12 +142,11 @@ fn intent() -> ExecutionIntent {
 
 #[tokio::test]
 async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
-    let directory = tempfile::tempdir().unwrap();
+    let directory = scratch();
     let database = directory.path().join("ceremonies.sqlite3");
     let effects = directory.path().join("effects");
     let intent = intent();
     let result = StepResult::completed(StepOutput::empty()).unwrap();
-
     {
         let store = SqliteCeremonyStore::open(&database).unwrap();
         store.record_intent(intent.clone()).await.unwrap();
@@ -140,7 +156,10 @@ async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
             OffsetDateTime::UNIX_EPOCH,
         )
         .unwrap();
-        connector.recover_intent(&intent).await.unwrap();
+        assert!(matches!(
+            connector.recover_intent(&intent).await.unwrap(),
+            CeremonyExecutionConnectorOutcome::Observed(_)
+        ));
         assert_eq!(
             store
                 .receipt(intent.operation().operation_id())
@@ -181,109 +200,155 @@ async fn a_restarted_worker_recovers_an_effect_written_before_its_receipt() {
     );
 }
 
-#[tokio::test]
-async fn the_reopened_driver_links_the_recovered_effect_and_completes_the_step() {
-    let directory = tempfile::tempdir().unwrap();
-    let database = directory.path().join("driver.sqlite3");
-    let effects = directory.path().join("driver-effects");
-    let definitions_dir = directory.path().join("definitions");
-    std::fs::create_dir_all(&definitions_dir).unwrap();
-    std::fs::write(definitions_dir.join("durable_worker.yaml"), DEFINITION).unwrap();
-    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
-    MountCeremonyDefinitionsUseCase::new(
-        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_dir).unwrap()),
-        definitions.clone(),
+#[cfg(unix)]
+fn write_repository_worker(repository: &std::path::Path) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let script_path = repository.join("worker.py");
+    std::fs::write(
+        &script_path,
+        r#"#!/usr/bin/env python3
+import json
+import os
+import pathlib
+import sys
+
+operation_id, request_digest, claim_fence, request_path, result_path = sys.argv[1:]
+repository = pathlib.Path(__file__).parent
+with (repository / "invocations.log").open("a", encoding="utf-8") as log:
+    log.write(operation_id + "\n")
+    log.flush()
+    os.fsync(log.fileno())
+temporary_effect = repository / ("." + operation_id + ".effect.tmp")
+temporary_effect.write_bytes(pathlib.Path(request_path).read_bytes())
+os.replace(temporary_effect, repository / "materialized-request.json")
+result = {
+    "operation_id": operation_id,
+    "request_digest": request_digest,
+    "producer_claim_fence": claim_fence,
+    "result": {"status": "COMPLETED", "output": {}},
+    "observed_at": "1970-01-01T00:00:00Z",
+}
+result_path = pathlib.Path(result_path)
+temporary_result = result_path.parent / ("." + operation_id + ".result.tmp")
+with temporary_result.open("w", encoding="utf-8") as output:
+    json.dump(result, output, separators=(",", ":"))
+    output.flush()
+    os.fsync(output.fileno())
+os.replace(temporary_result, result_path)
+directory = os.open(result_path.parent, os.O_RDONLY)
+try:
+    os.fsync(directory)
+finally:
+    os.close(directory)
+"#,
     )
-    .execute()
+    .unwrap();
+    let mut permissions = std::fs::metadata(&script_path).unwrap().permissions();
+    permissions.set_mode(0o700);
+    std::fs::set_permissions(script_path, permissions).unwrap();
+}
+
+#[cfg(unix)]
+async fn leave_real_effect_without_receipt(
+    database: &std::path::Path,
+    repository: &std::path::Path,
+    operation_root: &std::path::Path,
+    definitions: Arc<InMemoryCeremonyDefinitionRepository>,
+    clock: Arc<SystemClock>,
+    ceremony_id: &CeremonyId,
+    step_id: &StepId,
+) {
+    let role_id = RoleId::new("WORKER").unwrap();
+    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
+    let stream = Arc::new(SessionStream::new(
+        store.clone(),
+        store.clone(),
+        Arc::new(NoopCeremonyEventSubscriber),
+    ));
+    StartCeremonyUseCase::new(
+        definitions.clone(),
+        stream.clone(),
+        clock.clone(),
+        Arc::new(ForgetfulMemory::new()),
+    )
+    .execute(StartCeremonyInput::new(
+        ceremony_id.clone(),
+        made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
+        made_core::value_objects::CeremonyVersion::v1(),
+        made_core::value_objects::CeremonyContext::empty(),
+        "operator",
+        AuditActorKind::Service,
+    ))
     .await
     .unwrap();
-    let clock = Arc::new(SystemClock::new());
-    let ceremony_id = CeremonyId::new("driver-restart").unwrap();
-    let step_id = StepId::new("work").unwrap();
-    let role_id = RoleId::new("WORKER").unwrap();
-    let result = StepResult::completed(StepOutput::empty()).unwrap();
-
-    {
-        let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
-        let stream = Arc::new(SessionStream::new(
-            store.clone(),
-            store.clone(),
-            Arc::new(NoopCeremonyEventSubscriber),
-        ));
-        StartCeremonyUseCase::new(
-            definitions.clone(),
-            stream.clone(),
-            clock.clone(),
-            Arc::new(ForgetfulMemory::new()),
-        )
-        .execute(StartCeremonyInput::new(
+    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        definitions,
+        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+    ));
+    let claim = StartCeremonyStepUseCase::new(resolver, stream, clock.clone())
+        .execute(StartCeremonyStepInput::new(
             ceremony_id.clone(),
-            made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
-            made_core::value_objects::CeremonyVersion::v1(),
-            made_core::value_objects::CeremonyContext::empty(),
-            "operator",
-            AuditActorKind::Service,
+            role_id.clone(),
+            AuditActorKind::Agent,
+            step_id.clone(),
+            LeaseOwnerId::new("worker-1").unwrap(),
+            IdempotencyKey::new("driver-restart-work-1").unwrap(),
+            made_core::value_objects::DurationMs::from_millis(60_000),
         ))
         .await
         .unwrap();
-        let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
-            definitions.clone(),
-            Arc::new(InMemoryCeremonyDefinitionPublications::new()),
-        ));
-        let claim = StartCeremonyStepUseCase::new(resolver, stream, clock.clone())
-            .execute(StartCeremonyStepInput::new(
-                ceremony_id.clone(),
-                role_id.clone(),
-                AuditActorKind::Agent,
-                step_id.clone(),
-                LeaseOwnerId::new("worker-1").unwrap(),
-                IdempotencyKey::new("driver-restart-work-1").unwrap(),
-                made_core::value_objects::DurationMs::from_millis(60_000),
-            ))
-            .await
-            .unwrap();
-        let record = claim.instance().step_record(&step_id).unwrap();
-        let handler_request = made_core::ports::CeremonyStepHandlerRequest::new(
-            ceremony_id.clone(),
-            made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
-            made_core::value_objects::CeremonyVersion::v1(),
-            claim.instance().current_state().clone(),
-            step_id.clone(),
-            StepHandlerKind::new("fixture").unwrap(),
-            StepHandlerConfig::empty(),
-            claim.instance().context().clone(),
-            claim.attempt(),
+    let record = claim.instance().step_record(step_id).unwrap();
+    let handler_request = made_core::ports::CeremonyStepHandlerRequest::new(
+        ceremony_id.clone(),
+        made_core::value_objects::CeremonyName::new("durable_worker").unwrap(),
+        made_core::value_objects::CeremonyVersion::v1(),
+        claim.instance().current_state().clone(),
+        step_id.clone(),
+        StepHandlerKind::new("fixture").unwrap(),
+        StepHandlerConfig::empty(),
+        claim.instance().context().clone(),
+        claim.attempt(),
+    )
+    .with_role(role_id);
+    let durable: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(
+        RepositoryScriptExecutionConnector::new(
+            ExecutionConnectorId::new("local.repository-script.driver").unwrap(),
+            repository,
+            "worker.py",
+            operation_root,
+            Duration::from_secs(5),
         )
-        .with_role(role_id.clone());
-        let durable = Arc::new(
-            DurableFixtureExecutionConnector::new(
-                &effects,
-                result.clone(),
-                OffsetDateTime::UNIX_EPOCH,
-            )
-            .unwrap(),
-        );
-        let connector: Arc<dyn CeremonyExecutionConnectorPort> =
-            Arc::new(FailAfterEffectConnector {
-                inner: durable,
-                fail_once: AtomicBool::new(true),
-            });
-        let receipts: Arc<dyn ExecutionReceiptStorePort> = store;
-        let execute = ExecuteCeremonyOperationUseCase::new(receipts, connector, clock.clone());
-        assert!(execute
-            .execute(ExecuteCeremonyOperationInput {
-                handler_request,
-                state_visit: record.state_visit(),
-                state_iteration: record.state_iteration(),
-                step_iteration: record.iteration(),
-                claim_fence: claim.claim_fence().clone(),
-                actor_kind: AuditActorKind::Agent,
-            })
-            .await
-            .is_err());
-    }
+        .unwrap(),
+    );
+    let connector: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(FailAfterEffectConnector {
+        inner: durable,
+        fail_once: AtomicBool::new(true),
+    });
+    let receipts: Arc<dyn ExecutionReceiptStorePort> = store;
+    let execute = ExecuteCeremonyOperationUseCase::new(receipts, connector, clock);
+    assert!(execute
+        .execute(ExecuteCeremonyOperationInput {
+            handler_request,
+            state_visit: record.state_visit(),
+            state_iteration: record.state_iteration(),
+            step_iteration: record.iteration(),
+            claim_fence: claim.claim_fence().clone(),
+            actor_kind: AuditActorKind::Agent,
+        })
+        .await
+        .is_err());
+}
 
-    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+#[cfg(unix)]
+async fn recover_real_effect(
+    database: &std::path::Path,
+    repository: &std::path::Path,
+    operation_root: &std::path::Path,
+    definitions: Arc<InMemoryCeremonyDefinitionRepository>,
+    clock: Arc<SystemClock>,
+) -> RecoverableCeremonyWorkerOutcome {
+    let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
     let stream = Arc::new(SessionStream::new(
         store.clone(),
         store.clone(),
@@ -294,8 +359,14 @@ async fn the_reopened_driver_links_the_recovered_effect_and_completes_the_step()
         Arc::new(InMemoryCeremonyDefinitionPublications::new()),
     ));
     let connector: Arc<dyn CeremonyExecutionConnectorPort> = Arc::new(
-        DurableFixtureExecutionConnector::new(&effects, result, OffsetDateTime::UNIX_EPOCH)
-            .unwrap(),
+        RepositoryScriptExecutionConnector::new(
+            ExecutionConnectorId::new("local.repository-script.driver").unwrap(),
+            repository,
+            "worker.py",
+            operation_root,
+            Duration::from_secs(5),
+        )
+        .unwrap(),
     );
     let receipts: Arc<dyn ExecutionReceiptStorePort> = store.clone();
     let inspect = InspectExecutionRecoveryUseCase::new(stream.clone(), receipts.clone());
@@ -320,13 +391,49 @@ async fn the_reopened_driver_links_the_recovered_effect_and_completes_the_step()
             resolver, stream, receipts, clock,
         )),
     );
-    let RecoverableCeremonyWorkerOutcome::Completed { instance, receipt } =
-        worker.recover(item).await.unwrap()
-    else {
-        panic!("the filesystem connector has authoritative recovery");
+    worker.recover(item).await.unwrap()
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn the_reopened_driver_queries_real_work_then_links_and_completes() {
+    let directory = scratch();
+    let database = directory.path().join("driver.sqlite3");
+    let operation_root = directory.path().join("driver-operations");
+    let repository = directory.path().join("authorized-repository");
+    std::fs::create_dir_all(&repository).unwrap();
+    write_repository_worker(&repository);
+    let definitions_dir = directory.path().join("definitions");
+    std::fs::create_dir_all(&definitions_dir).unwrap();
+    std::fs::write(definitions_dir.join("durable_worker.yaml"), DEFINITION).unwrap();
+    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    MountCeremonyDefinitionsUseCase::new(
+        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_dir).unwrap()),
+        definitions.clone(),
+    )
+    .execute()
+    .await
+    .unwrap();
+    let clock = Arc::new(SystemClock::new());
+    let ceremony_id = CeremonyId::new("driver-restart").unwrap();
+    let step_id = StepId::new("work").unwrap();
+    leave_real_effect_without_receipt(
+        &database,
+        &repository,
+        &operation_root,
+        definitions.clone(),
+        clock.clone(),
+        &ceremony_id,
+        &step_id,
+    )
+    .await;
+    let outcome =
+        recover_real_effect(&database, &repository, &operation_root, definitions, clock).await;
+    let RecoverableCeremonyWorkerOutcome::Completed { instance, receipt } = outcome else {
+        panic!("the repository script connector has authoritative recovery");
     };
 
-    assert_eq!(receipt.source_kind(), ArtifactSourceKind::Fixture);
+    assert_eq!(receipt.source_kind(), ArtifactSourceKind::ExternalExecution);
     assert_eq!(
         instance.step_record(&step_id).unwrap().status(),
         StepStatus::Completed
@@ -335,11 +442,11 @@ async fn the_reopened_driver_links_the_recovered_effect_and_completes_the_step()
         .execution_receipt_link(receipt.operation_id())
         .is_some());
     assert_eq!(
-        std::fs::read_dir(&effects)
+        std::fs::read_to_string(repository.join("invocations.log"))
             .unwrap()
-            .filter_map(Result::ok)
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+            .lines()
             .count(),
         1
     );
+    assert!(repository.join("materialized-request.json").is_file());
 }

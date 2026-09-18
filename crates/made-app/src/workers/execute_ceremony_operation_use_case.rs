@@ -2,15 +2,13 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionRequest, ClockPort, ExecutionReceiptStorePort,
-    RecordExecutionIntentOutcome,
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
+    ClockPort, ExecutionReceiptStorePort, RecordExecutionIntentOutcome,
 };
-use made_core::value_objects::{
-    ExecutionIntent, ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability,
-};
+use made_core::value_objects::{ExecutionIntent, ExecutionOperation, ExecutionRecoveryCapability};
 
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
-use super::ExecuteCeremonyOperationInput;
+use super::{ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome};
 
 /// Persist intent, execute or recover once, then persist an immutable receipt.
 pub struct ExecuteCeremonyOperationUseCase {
@@ -45,7 +43,7 @@ impl ExecuteCeremonyOperationUseCase {
     pub async fn execute(
         &self,
         input: ExecuteCeremonyOperationInput,
-    ) -> Result<ExecutionReceipt, DomainError> {
+    ) -> Result<ExecuteCeremonyOperationOutcome, DomainError> {
         let semantic_request = input.handler_request.semantic_request_bytes()?;
         let candidate = ExecutionOperation::new(
             input.handler_request.instance_id().clone(),
@@ -98,24 +96,32 @@ impl ExecuteCeremonyOperationUseCase {
             .receipt(intent.operation().operation_id())
             .await?
         {
-            return Ok(receipt);
+            return Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)));
         }
         if recorded != RecordExecutionIntentOutcome::RecordedFirst
             && self.connector.recovery_capability()
                 == ExecutionRecoveryCapability::ReconciliationRequired
         {
-            return Err(DomainError::InvariantViolated {
-                reason: "execution intent requires operator reconciliation before retry",
-            });
+            return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
+                intent.operation().operation_id().clone(),
+            ));
         }
 
-        let observation = self
+        let connector_outcome = self
             .connector
             .execute_or_recover(CeremonyExecutionRequest::new(
                 intent.clone(),
                 input.handler_request,
             )?)
             .await?;
+        let observation = match connector_outcome {
+            CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
+            CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+                return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
+                    operation_id,
+                ));
+            }
+        };
         let receipt = execution_receipt_from_observation(
             self.store.as_ref(),
             self.connector.as_ref(),
@@ -124,6 +130,6 @@ impl ExecuteCeremonyOperationUseCase {
         )
         .await?;
         self.store.record_receipt(receipt.clone()).await?;
-        Ok(receipt)
+        Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)))
     }
 }

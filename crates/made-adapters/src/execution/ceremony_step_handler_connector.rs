@@ -3,8 +3,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionObservation, CeremonyExecutionRequest,
-    CeremonyStepHandlerPort, ClockPort,
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
+    CeremonyExecutionObservation, CeremonyExecutionRequest, CeremonyStepHandlerPort, ClockPort,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionRecoveryCapability,
@@ -66,18 +66,20 @@ impl CeremonyExecutionConnectorPort for CeremonyStepHandlerConnector {
     async fn execute_or_recover(
         &self,
         request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
         let producer_claim_fence = request.intent().claim_fence().clone();
         let result = self
             .handler
             .execute(request.handler_request().clone())
             .await?;
-        Ok(CeremonyExecutionObservation::new(
-            producer_claim_fence,
-            None,
-            result,
-            Vec::new(),
-            self.clock.now(),
-        ))
+        Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
+            CeremonyExecutionObservation::new(
+                producer_claim_fence,
+                None,
+                result,
+                Vec::new(),
+                self.clock.now(),
+            ),
+        )))
     }
 }

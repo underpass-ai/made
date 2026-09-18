@@ -5,8 +5,9 @@ use made_core::error::DomainError;
 
 use super::{
     CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
-    ExecuteCeremonyOperationUseCase, ExecutionRecoveryItem, RecoverExecutionIntentOutcome,
-    RecoverExecutionIntentUseCase, RecoverableCeremonyWorkerOutcome, RecoverableCeremonyWorkerPort,
+    ExecuteCeremonyOperationOutcome, ExecuteCeremonyOperationUseCase, ExecutionRecoveryItem,
+    RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase, RecoverableCeremonyWorkerOutcome,
+    RecoverableCeremonyWorkerPort,
 };
 
 /// Runs an accepted claim through receipt persistence and fenced completion.
@@ -46,7 +47,14 @@ impl RecoverableCeremonyWorker {
         let step_id = input.handler_request.step_id().clone();
         let claim_fence = input.claim_fence.clone();
         let actor_kind = input.actor_kind;
-        let receipt = self.execute_operation.execute(input).await?;
+        let receipt = match self.execute_operation.execute(input).await? {
+            ExecuteCeremonyOperationOutcome::Receipt(receipt) => *receipt,
+            ExecuteCeremonyOperationOutcome::ReconciliationRequired(operation_id) => {
+                return Ok(RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
+                    operation_id,
+                ));
+            }
+        };
         let instance = self
             .complete_receipt
             .execute(CompleteExecutionReceiptInput {

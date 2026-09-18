@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::{CeremonyExecutionObservation, CeremonyExecutionRequest};
+use super::{CeremonyExecutionConnectorOutcome, CeremonyExecutionRequest};
 use crate::error::DomainError;
 use crate::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
@@ -18,15 +18,15 @@ pub trait CeremonyExecutionConnectorPort: Send + Sync {
     async fn execute_or_recover(
         &self,
         request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionObservation, DomainError>;
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError>;
 
     /// Settle a durable intent after the handler-shaped request was lost with the process.
     async fn recover_intent(
         &self,
-        _intent: &ExecutionIntent,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
-        Err(DomainError::InvariantViolated {
-            reason: "execution connector cannot recover from a sealed intent",
-        })
+        intent: &ExecutionIntent,
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        Ok(CeremonyExecutionConnectorOutcome::ReconciliationRequired(
+            intent.operation().operation_id().clone(),
+        ))
     }
 }

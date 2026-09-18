@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyExecutionConnectorPort, ExecutionReceiptStorePort};
+use made_core::ports::{
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, ExecutionReceiptStorePort,
+};
 use made_core::value_objects::{ExecutionIntent, ExecutionRecoveryCapability};
 
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
@@ -55,7 +57,14 @@ impl RecoverExecutionIntentUseCase {
                 intent.operation().operation_id().clone(),
             ));
         }
-        let observation = self.connector.recover_intent(intent).await?;
+        let observation = match self.connector.recover_intent(intent).await? {
+            CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
+            CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+                return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
+                    operation_id,
+                ));
+            }
+        };
         let receipt = execution_receipt_from_observation(
             self.store.as_ref(),
             self.connector.as_ref(),

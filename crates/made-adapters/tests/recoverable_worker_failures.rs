@@ -3,11 +3,14 @@ use std::sync::{Arc, Mutex};
 
 use async_trait::async_trait;
 use made_adapters::memory::InMemoryExecutionReceiptStore;
-use made_app::workers::{ExecuteCeremonyOperationInput, ExecuteCeremonyOperationUseCase};
+use made_app::workers::{
+    ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome, ExecuteCeremonyOperationUseCase,
+};
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyExecutionConnectorPort, CeremonyExecutionObservation, CeremonyExecutionRequest,
-    CeremonyStepHandlerRequest, ClockPort, ExecutionReceiptStorePort,
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
+    CeremonyExecutionObservation, CeremonyExecutionRequest, CeremonyStepHandlerRequest, ClockPort,
+    ExecutionReceiptStorePort,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
@@ -79,11 +82,13 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
     async fn execute_or_recover(
         &self,
         request: CeremonyExecutionRequest,
-    ) -> Result<CeremonyExecutionObservation, DomainError> {
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
         let mut state = self.state.lock().unwrap();
         state.calls += 1;
         if let Some(observation) = &state.observation {
-            return Ok(observation.clone());
+            return Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
+                observation.clone(),
+            )));
         }
         if state.failure == FailurePoint::BeforeEffect {
             state.failure = FailurePoint::None;
@@ -106,7 +111,9 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
                 reason: "injected after external effect",
             });
         }
-        Ok(observation)
+        Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
+            observation,
+        )))
     }
 }
 
@@ -162,6 +169,15 @@ fn usecase(
     ExecuteCeremonyOperationUseCase::new(store, connector, Arc::new(AdvancingClock::new()))
 }
 
+fn expect_receipt(
+    outcome: ExecuteCeremonyOperationOutcome,
+) -> made_core::value_objects::ExecutionReceipt {
+    let ExecuteCeremonyOperationOutcome::Receipt(receipt) = outcome else {
+        panic!("the test connector produced an authoritative observation");
+    };
+    *receipt
+}
+
 #[tokio::test]
 async fn retrying_the_same_fence_reuses_the_first_intent_timestamp() {
     let store = Arc::new(InMemoryExecutionReceiptStore::new());
@@ -209,7 +225,7 @@ async fn a_failure_before_effect_recovers_without_changing_the_operation() {
     let worker = usecase(store, connector.clone());
 
     assert!(worker.execute(input(1, fence('1'))).await.is_err());
-    let receipt = worker.execute(input(2, fence('2'))).await.unwrap();
+    let receipt = expect_receipt(worker.execute(input(2, fence('2'))).await.unwrap());
 
     assert_eq!(connector.calls(), 2);
     assert_eq!(connector.effects(), 1);
@@ -226,7 +242,7 @@ async fn a_failure_after_effect_recovers_the_original_fence_without_a_second_eff
     let worker = usecase(store.clone(), connector.clone());
 
     assert!(worker.execute(input(1, fence('1'))).await.is_err());
-    let receipt = worker.execute(input(2, fence('2'))).await.unwrap();
+    let receipt = expect_receipt(worker.execute(input(2, fence('2'))).await.unwrap());
 
     assert_eq!(connector.calls(), 2);
     assert_eq!(connector.effects(), 1);
@@ -247,7 +263,10 @@ async fn reconciliation_required_never_reinvokes_an_ambiguous_intent() {
     let worker = usecase(store, connector.clone());
 
     assert!(worker.execute(input(1, fence('1'))).await.is_err());
-    assert!(worker.execute(input(2, fence('2'))).await.is_err());
+    assert!(matches!(
+        worker.execute(input(2, fence('2'))).await.unwrap(),
+        ExecuteCeremonyOperationOutcome::ReconciliationRequired(_)
+    ));
 
     assert_eq!(connector.calls(), 1);
     assert_eq!(connector.effects(), 1);
@@ -261,13 +280,15 @@ async fn a_receipt_survives_a_crash_before_ceremony_completion() {
         ExecutionRecoveryCapability::IdempotentByOperationId,
     ));
     let first_worker = usecase(store.clone(), connector.clone());
-    let receipt = first_worker.execute(input(1, fence('1'))).await.unwrap();
+    let receipt = expect_receipt(first_worker.execute(input(1, fence('1'))).await.unwrap());
     drop(first_worker);
 
-    let recovered = usecase(store, connector.clone())
-        .execute(input(2, fence('2')))
-        .await
-        .unwrap();
+    let recovered = expect_receipt(
+        usecase(store, connector.clone())
+            .execute(input(2, fence('2')))
+            .await
+            .unwrap(),
+    );
 
     assert_eq!(recovered, receipt);
     assert_eq!(connector.calls(), 1);
