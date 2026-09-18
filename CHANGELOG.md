@@ -13,10 +13,23 @@ even though the new catalogue identity is `made`.
   group chat, maker-checker, bounded handoff and magentic task-ledger flows.
   Ship executable fragments, cross-edition design parity and Mermaid pattern
   regions with concurrent fork/join rendering. (#159)
+- Add an explicit application opt-in for bounded parallel initial proposals,
+  sharing one call pool across simultaneous councils. Record experiment 003
+  with a controlled provider-capacity fixture; retain sequential defaults. (#161)
+
 - Add typed `synthesize` and deterministic strict-majority `vote` aggregation
   to the first step after an all-siblings concurrent join. YAML, design,
   protobuf, both MCP backends and the embedded facade share one schema;
   omitted aggregation preserves existing definition bytes and digests. (#156)
+- Adopt the full-color Cuatro voces artwork and English slogan in the README,
+  documentation, plugin and skill cards, MCP identity, and Helm chart icon.
+
+- Expose all council, agent and output-contract operations through
+  `EmbeddedMade` and the embedded MCP backend. Local composition accepts
+  injected registries, agent factories, deliberation stores, validators,
+  scoring, execution and messaging ports; defaults remain socket-free,
+  retain in-process messages and reject orchestration until an executor is
+  configured. (#157)
 - Run siblings in concurrent ceremony states with bounded automatic fan-out,
   durable claims before handlers, drained completions and early-join checks
   between batches. Document delegated host/subagent fan-out and prove distinct

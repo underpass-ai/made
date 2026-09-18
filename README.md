@@ -1,5 +1,4 @@
-<h1 align="center">MADE — Structured work for your agents</h1>
-<p align="center"><img src="docs/assets/made-wordmark.svg" width="680" alt="MADE"></p>
+<p align="center"><img src="docs/assets/made-cuatro-voces.png" width="936" alt="MADE — Your business. Your agents. Your architecture. — by Underpass"></p>
 <p align="center"><strong>Multi-Agent Deliberation Engine · by Underpass</strong></p>
 
 MADE coordinates a shared procedure: who can act, which work is ready, what

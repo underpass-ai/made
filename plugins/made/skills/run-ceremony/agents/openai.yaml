@@ -1,0 +1,6 @@
+interface:
+  display_name: "Run Ceremony"
+  short_description: "Run and inspect a MADE ceremony"
+  icon_small: "./assets/made-cuatro-voces.png"
+  icon_large: "./assets/made-cuatro-voces.png"
+  default_prompt: "Use $run-ceremony to run a MADE ceremony and report its result."

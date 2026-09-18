@@ -1,0 +1,11 @@
+{
+  "commit": "2180cc8b5e4136040e2de8f0cd33501734166970",
+  "tree": "2dbb6d603bff4a3ddbf5f458e1325df8efba5a04",
+  "kernel": "Linux-7.0.0-1019-nvidia-aarch64-with-glibc2.39",
+  "machine": "aarch64",
+  "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "cargo": "cargo 1.97.1 (c980f4866 2026-06-30)",
+  "fixture": "8 local async agents, 20ms service time each, shared provider semaphore capacity1 or4; no network/inference",
+  "repeats": 5,
+  "mode": "debug, Tokio current-thread runtime, other agent builds active"
+}

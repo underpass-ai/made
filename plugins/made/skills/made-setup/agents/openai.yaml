@@ -1,0 +1,6 @@
+interface:
+  display_name: "Set Up MADE"
+  short_description: "Install and configure local MADE"
+  icon_small: "./assets/made-cuatro-voces.png"
+  icon_large: "./assets/made-cuatro-voces.png"
+  default_prompt: "Use $made-setup to install and configure the MADE plugin."
