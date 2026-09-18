@@ -84,12 +84,8 @@ impl<'a> CeremonyInstanceView<'a> {
                         Ok(CeremonyGuardView::new(
                             name,
                             matches!(guard.condition(), GuardCondition::HumanApproval),
-                            definition.guard_is_satisfied_for_transition(
-                                guard,
-                                transition,
-                                instance.step_records(),
-                                instance.context(),
-                            ),
+                            instance
+                                .guard_is_satisfied_for_transition(definition, transition, guard),
                         ))
                     })
                     .collect::<Result<Vec<_>, DomainError>>()?;

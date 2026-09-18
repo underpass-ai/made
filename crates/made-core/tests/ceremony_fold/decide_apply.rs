@@ -118,6 +118,7 @@ fn starting_is_the_fold_of_the_opening_event() {
             step_ids: [step("plan"), step("check")].into_iter().collect(),
             context: CeremonyContext::empty(),
             bound_definition: None,
+            lineage: None,
             created_at: OPENED_AT,
         }
     );

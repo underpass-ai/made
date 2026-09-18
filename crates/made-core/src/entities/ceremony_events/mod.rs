@@ -8,6 +8,9 @@
 
 mod ceremony_completed;
 mod ceremony_instance_started;
+mod child_completion_accepted;
+mod child_spawn_plan_adopted;
+mod child_spawn_planned;
 mod context_written;
 mod evidence_collected;
 mod human_approval_recorded;
@@ -28,6 +31,9 @@ mod transition_applied;
 
 pub use ceremony_completed::CeremonyCompleted;
 pub use ceremony_instance_started::CeremonyInstanceStarted;
+pub use child_completion_accepted::ChildCompletionAccepted;
+pub use child_spawn_plan_adopted::ChildSpawnPlanAdopted;
+pub use child_spawn_planned::ChildSpawnPlanned;
 pub use context_written::ContextWritten;
 pub use evidence_collected::EvidenceCollected;
 pub use human_approval_recorded::HumanApprovalRecorded;

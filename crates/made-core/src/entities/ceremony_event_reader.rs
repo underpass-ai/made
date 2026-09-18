@@ -36,7 +36,8 @@ impl CeremonyEventReader {
             EventSchemaVersion::V1 => true,
             EventSchemaVersion::V2 => matches!(
                 event_type,
-                AuditEventType::StepStarted
+                AuditEventType::CeremonyInstanceStarted
+                    | AuditEventType::StepStarted
                     | AuditEventType::StepCompleted
                     | AuditEventType::StepFailed
                     | AuditEventType::TransitionApplied

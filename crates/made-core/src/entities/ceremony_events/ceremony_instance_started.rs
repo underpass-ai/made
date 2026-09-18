@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyName, CeremonyVersion, StateId,
-    StepId,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, CeremonyName,
+    CeremonyVersion, StateId, StepId,
 };
 
 /// A ceremony was opened.
@@ -27,6 +27,9 @@ pub struct CeremonyInstanceStarted {
     /// The published definition's digest when the ceremony was started
     /// from one; absent for a definition supplied for the run.
     pub bound_definition: Option<CeremonyDefinitionDigest>,
+    /// Durable parent identity for a spawned ceremony. Never sourced from context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lineage: Option<CeremonyLineage>,
     #[serde(with = "time::serde::rfc3339")]
     pub created_at: OffsetDateTime,
 }

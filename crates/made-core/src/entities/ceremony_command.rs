@@ -15,9 +15,9 @@
 //! [`CeremonyInstance::decide_start`]: super::CeremonyInstance::decide_start
 
 use super::ceremony_commands::{
-    ApplyStepResult, ApplyTransition, ApproveGuard, AssertReason, BindParticipant,
-    CloseIntervention, DeferGuard, RequestIntervention, RespondToIntervention,
-    RespondToInterventionWithEvidence, StartStep,
+    AcceptChildCompletion, AdoptChildSpawnPlan, ApplyStepResult, ApplyTransition, ApproveGuard,
+    AssertReason, BindParticipant, CloseIntervention, DeferGuard, PlanCeremonyChildren,
+    RequestIntervention, RespondToIntervention, RespondToInterventionWithEvidence, StartStep,
 };
 
 /// A request to change a ceremony, in the terms the aggregate decides.
@@ -34,4 +34,7 @@ pub enum CeremonyCommand {
     RespondToInterventionWithEvidence(RespondToInterventionWithEvidence),
     AssertReason(AssertReason),
     CloseIntervention(CloseIntervention),
+    PlanCeremonyChildren(PlanCeremonyChildren),
+    AdoptChildSpawnPlan(AdoptChildSpawnPlan),
+    AcceptChildCompletion(AcceptChildCompletion),
 }

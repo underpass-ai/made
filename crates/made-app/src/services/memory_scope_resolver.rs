@@ -127,6 +127,7 @@ mod tests {
             step_ids: BTreeSet::new(),
             context: context(json!("team:alpha")),
             bound_definition: None,
+            lineage: None,
             created_at: OffsetDateTime::UNIX_EPOCH,
         });
 

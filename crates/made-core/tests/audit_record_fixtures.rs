@@ -24,7 +24,7 @@ const PRE_P2_EVENT_CHAIN: &str =
 const PRE_P5_IN_PROGRESS_SNAPSHOT: &str =
     include_str!("fixtures/legacy_in_progress_instance_pre_p5.json");
 
-const EVERY_EVENT_TYPE: [AuditEventType; 21] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 24] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
@@ -46,6 +46,9 @@ const EVERY_EVENT_TYPE: [AuditEventType; 21] = [
     AuditEventType::CeremonyFailed,
     AuditEventType::InstanceImported,
     AuditEventType::MemoryRecalled,
+    AuditEventType::ChildSpawnPlanned,
+    AuditEventType::ChildSpawnPlanAdopted,
+    AuditEventType::ChildCompletionAccepted,
 ];
 
 /// The pinned version-1 payload of each event type a stream can hold.
@@ -57,7 +60,10 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         AuditEventType::CeremonyDefinitionValidated
         | AuditEventType::CeremonyDefinitionPublished
         | AuditEventType::CeremonyFailed
-        | AuditEventType::StateIterationStarted => None,
+        | AuditEventType::StateIterationStarted
+        | AuditEventType::ChildSpawnPlanned
+        | AuditEventType::ChildSpawnPlanAdopted
+        | AuditEventType::ChildCompletionAccepted => None,
         AuditEventType::CeremonyInstanceStarted => Some(include_str!(
             "fixtures/ceremony_events/v1/ceremony_instance_started.json"
         )),

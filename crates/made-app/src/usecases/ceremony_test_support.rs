@@ -933,6 +933,7 @@ impl EventStoreFake {
                 step_ids: instance.step_records().keys().cloned().collect(),
                 context: instance.context().clone(),
                 bound_definition: instance.bound_definition(),
+                lineage: instance.lineage().cloned(),
                 created_at: instance.created_at(),
             },
         );

@@ -6,7 +6,7 @@ use crate::entities::{
 };
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyId, SessionRecollection,
+    CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, SessionRecollection,
 };
 
 impl CeremonyInstance {
@@ -29,7 +29,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         Ok(Self::opening_batch(
-            Self::opening(id, definition, context, now, None)?,
+            Self::opening(id, definition, context, now, None, None)?,
             recollection,
             now,
         ))
@@ -51,6 +51,30 @@ impl CeremonyInstance {
                 context,
                 now,
                 Some(published.digest()),
+                None,
+            )?,
+            recollection,
+            now,
+        ))
+    }
+
+    /// Open a published child using the exact recollection and lineage sealed by its parent plan.
+    pub fn decide_start_bound_child(
+        id: CeremonyId,
+        published: &PublishedCeremonyDefinition,
+        context: CeremonyContext,
+        lineage: CeremonyLineage,
+        recollection: Option<SessionRecollection>,
+        now: OffsetDateTime,
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        Ok(Self::opening_batch(
+            Self::opening(
+                id,
+                published.definition(),
+                context,
+                now,
+                Some(published.digest()),
+                Some(lineage),
             )?,
             recollection,
             now,
@@ -88,6 +112,7 @@ impl CeremonyInstance {
         context: CeremonyContext,
         now: OffsetDateTime,
         bound_definition: Option<CeremonyDefinitionDigest>,
+        lineage: Option<CeremonyLineage>,
     ) -> Result<CeremonyInstanceStarted, DomainError> {
         let missing = definition
             .inputs()
@@ -109,6 +134,7 @@ impl CeremonyInstance {
             step_ids: definition.steps().keys().cloned().collect(),
             context,
             bound_definition,
+            lineage,
             created_at: now,
         })
     }

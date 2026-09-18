@@ -24,6 +24,7 @@ fn start() -> CeremonyEvent {
         step_ids: BTreeSet::from([StepId::new("a").unwrap(), StepId::new("b").unwrap()]),
         context: CeremonyContext::empty(),
         bound_definition: None,
+        lineage: None,
         created_at: OffsetDateTime::UNIX_EPOCH,
     })
 }

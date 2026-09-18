@@ -305,6 +305,9 @@ impl SessionStream {
         loop {
             attempts_left = attempts_left.saturating_sub(1);
             let facts = decide(&session)?;
+            if facts.is_empty() {
+                return Ok(session);
+            }
             match self.commit(session, facts).await {
                 Err(DomainError::Conflict { .. }) if attempts_left > 0 => {
                     session = self.load(&id).await?;

@@ -618,6 +618,7 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
             step_ids: BTreeSet::from([step("draft")]),
             context: CeremonyContext::empty(),
             bound_definition: None,
+            lineage: None,
             created_at: at,
         }),
         CeremonyEvent::StepStarted(StepStarted {
