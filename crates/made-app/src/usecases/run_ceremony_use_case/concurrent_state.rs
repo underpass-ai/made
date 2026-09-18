@@ -81,8 +81,14 @@ impl RunCeremonyUseCase {
                     .await
                 {
                     Ok(claim) => {
-                        session = self.stream.load(&ceremony_id).await?;
                         claimed.push(claim);
+                        match self.stream.load(&ceremony_id).await {
+                            Ok(reloaded) => session = reloaded,
+                            Err(error) => {
+                                claim_error = Some(error);
+                                break;
+                            }
+                        }
                     }
                     Err(error) => {
                         claim_error = Some(error);
