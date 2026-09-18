@@ -101,11 +101,19 @@ jobs:
           echo "runner_image=${runner_image}" >> "${GITHUB_OUTPUT}"
 
       - name: Pull and verify exact commit images
+        id: verified-images
         if: steps.smoke-images.outputs.reuse_commit_images == 'true'
-        run: >-
-          bash scripts/ci/verify-commit-image.sh "${GITHUB_SHA}"
-          "${{ steps.smoke-images.outputs.made_image }}"
-          "${{ steps.smoke-images.outputs.runner_image }}"
+        env:
+          MADE_IMAGE: ${{ steps.smoke-images.outputs.made_image }}
+          RUNNER_IMAGE: ${{ steps.smoke-images.outputs.runner_image }}
+        run: |
+          bash scripts/ci/verify-commit-image.sh "${GITHUB_SHA}" "${MADE_IMAGE}" "${RUNNER_IMAGE}"
+          # Bind the execution to the verified immutable digests, not the
+          # locator tags, which a registry administrator could later move.
+          made_digest="$(docker image inspect --format '{{ index .RepoDigests 0 }}' "${MADE_IMAGE}")"
+          runner_digest="$(docker image inspect --format '{{ index .RepoDigests 0 }}' "${RUNNER_IMAGE}")"
+          echo "made_image=${made_digest}" >> "${GITHUB_OUTPUT}"
+          echo "runner_image=${runner_digest}" >> "${GITHUB_OUTPUT}"
 
       - name: Build MADE image from source
         if: steps.smoke-images.outputs.reuse_commit_images != 'true'
@@ -152,8 +160,8 @@ jobs:
       - name: Run compose stack smoke
         env:
           MADE_E2E_BUILD_SERVICES: ""
-          MADE_E2E_MADE_IMAGE: ${{ steps.smoke-images.outputs.made_image }}
-          MADE_E2E_RUNNER_IMAGE: ${{ steps.smoke-images.outputs.runner_image }}
+          MADE_E2E_MADE_IMAGE: ${{ steps.verified-images.outputs.made_image || steps.smoke-images.outputs.made_image }}
+          MADE_E2E_RUNNER_IMAGE: ${{ steps.verified-images.outputs.runner_image || steps.smoke-images.outputs.runner_image }}
           MADE_E2E_STUB_RUNTIME_IMAGE: made-e2e-stub-runtime:ci
           MADE_E2E_STUB_LLM_IMAGE: made-e2e-stub-llm:ci
         run: bash scripts/ci/e2e-compose.sh
