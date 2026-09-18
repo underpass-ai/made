@@ -31,6 +31,7 @@ impl CeremonyDefinitionDiff {
         diff_steps(before, after, &mut changes);
         diff_guards(before, after, &mut changes);
         diff_roles(before, after, &mut changes);
+        diff_max_parallel(before, after, &mut changes);
         diff_shape(before, after, &mut changes);
         Self { changes }
     }
@@ -72,32 +73,75 @@ fn record(
     changes.push(CeremonyDefinitionChange::new(kind, locus, impact, detail));
 }
 
+fn diff_max_parallel(
+    before: &CeremonyDefinition,
+    after: &CeremonyDefinition,
+    changes: &mut Vec<CeremonyDefinitionChange>,
+) {
+    if before.max_parallel() == after.max_parallel() {
+        return;
+    }
+    let impact = if after.max_parallel() < before.max_parallel() {
+        CeremonyChangeImpact::Strands
+    } else {
+        CeremonyChangeImpact::Carries
+    };
+    record(
+        changes,
+        CeremonyChangeKind::Altered,
+        CeremonyValidationLocus::Definition,
+        impact,
+        "how many steps may be claimed concurrently",
+    );
+}
+
 fn diff_states(
     before: &CeremonyDefinition,
     after: &CeremonyDefinition,
     changes: &mut Vec<CeremonyDefinitionChange>,
 ) {
     for (id, state) in before.states() {
-        match after.states().get(id) {
-            // A session sitting in a state that no longer exists has
-            // nowhere to be.
-            None => record(
+        let Some(now) = after.states().get(id) else {
+            // A session sitting in a state that no longer exists has nowhere
+            // to be.
+            record(
                 changes,
                 CeremonyChangeKind::Removed,
                 CeremonyValidationLocus::state(id.clone()),
                 CeremonyChangeImpact::Strands,
                 "a session in this state would have nowhere to be",
-            ),
-            Some(now) if now.kind() != state.kind() => record(
+            );
+            continue;
+        };
+        let locus = CeremonyValidationLocus::state(id.clone());
+        if now.kind() != state.kind() {
+            record(
                 changes,
                 CeremonyChangeKind::Altered,
-                CeremonyValidationLocus::state(id.clone()),
+                locus.clone(),
                 // Becoming terminal ends sessions early; ceasing to be
                 // terminal leaves finished ones unfinished.
                 CeremonyChangeImpact::Strands,
                 "whether the session may start or finish here",
-            ),
-            Some(_) => {}
+            );
+        }
+        if now.execution() != state.execution() {
+            record(
+                changes,
+                CeremonyChangeKind::Altered,
+                locus.clone(),
+                CeremonyChangeImpact::Strands,
+                "whether work in this state runs sequentially or concurrently",
+            );
+        }
+        if now.repeat_policy() != state.repeat_policy() {
+            record(
+                changes,
+                CeremonyChangeKind::Altered,
+                locus,
+                CeremonyChangeImpact::Strands,
+                "when and how often this state repeats",
+            );
         }
     }
     for id in after.states().keys() {
@@ -479,8 +523,9 @@ mod tests {
     use super::*;
     use crate::value_objects::{
         CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-        CeremonyVersion, ContextKey, GuardCondition, GuardName, RepeatUntilCondition, RetryPolicy,
-        RoleAction, RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
+        CeremonyVersion, ContextKey, GuardCondition, GuardName, MaxParallel, RepeatUntilCondition,
+        RetryPolicy, RoleAction, RoleId, StateExecution, StateIteration, StateRepeatPolicy,
+        StateRepeatUntilCondition, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
         StepOutputField, StepRepeatPolicy,
     };
 
@@ -579,6 +624,31 @@ mod tests {
         Draft::baseline().build()
     }
 
+    fn state_repeat(max_iterations: u32) -> StateRepeatPolicy {
+        StateRepeatPolicy::new(
+            StateIteration::new(max_iterations).unwrap(),
+            StateRepeatUntilCondition::new(
+                step_id("work"),
+                StepOutputField::new("ready").unwrap(),
+                serde_json::json!(true),
+            ),
+        )
+    }
+
+    fn assert_single_change(
+        diff: &CeremonyDefinitionDiff,
+        locus: &CeremonyValidationLocus,
+        impact: CeremonyChangeImpact,
+        detail: &'static str,
+    ) {
+        assert_eq!(diff.changes().len(), 1, "{:?}", diff.changes());
+        let change = &diff.changes()[0];
+        assert_eq!(change.kind(), CeremonyChangeKind::Altered);
+        assert_eq!(change.locus(), locus);
+        assert_eq!(change.impact(), impact);
+        assert_eq!(change.detail(), detail);
+    }
+
     fn dynamic_binding_for(key: &str, roles: &[&str]) -> DynamicRoleBinding {
         DynamicRoleBinding::new(
             ContextKey::new(key).unwrap(),
@@ -631,6 +701,69 @@ mod tests {
 
         assert!(diff.is_identical());
         assert!(!diff.strands_running_sessions());
+    }
+
+    #[test]
+    fn changing_state_execution_is_a_stranding_state_change() {
+        let mut concurrent = Draft::baseline();
+        concurrent.states[0] =
+            CeremonyState::initial(state("OPEN")).with_execution(StateExecution::Concurrent);
+
+        assert_single_change(
+            &CeremonyDefinitionDiff::between(&baseline(), &concurrent.build()),
+            &CeremonyValidationLocus::state(state("OPEN")),
+            CeremonyChangeImpact::Strands,
+            "whether work in this state runs sequentially or concurrently",
+        );
+    }
+
+    #[test]
+    fn adding_changing_or_removing_state_repeat_is_stranding() {
+        let mut repeating_twice = Draft::baseline();
+        repeating_twice.states[0] =
+            CeremonyState::initial(state("OPEN")).with_repeat_policy(state_repeat(2));
+        let repeating_twice = repeating_twice.build();
+        let mut repeating_thrice = Draft::baseline();
+        repeating_thrice.states[0] =
+            CeremonyState::initial(state("OPEN")).with_repeat_policy(state_repeat(3));
+        let repeating_thrice = repeating_thrice.build();
+
+        for diff in [
+            CeremonyDefinitionDiff::between(&baseline(), &repeating_twice),
+            CeremonyDefinitionDiff::between(&repeating_twice, &repeating_thrice),
+            CeremonyDefinitionDiff::between(&repeating_thrice, &baseline()),
+        ] {
+            assert_single_change(
+                &diff,
+                &CeremonyValidationLocus::state(state("OPEN")),
+                CeremonyChangeImpact::Strands,
+                "when and how often this state repeats",
+            );
+        }
+    }
+
+    #[test]
+    fn lowering_parallel_capacity_strands_and_raising_it_carries() {
+        let baseline = baseline();
+        let lower = baseline
+            .clone()
+            .with_max_parallel(MaxParallel::new(2).unwrap());
+        let higher = baseline
+            .clone()
+            .with_max_parallel(MaxParallel::new(4).unwrap());
+
+        assert_single_change(
+            &CeremonyDefinitionDiff::between(&baseline, &lower),
+            &CeremonyValidationLocus::Definition,
+            CeremonyChangeImpact::Strands,
+            "how many steps may be claimed concurrently",
+        );
+        assert_single_change(
+            &CeremonyDefinitionDiff::between(&baseline, &higher),
+            &CeremonyValidationLocus::Definition,
+            CeremonyChangeImpact::Carries,
+            "how many steps may be claimed concurrently",
+        );
     }
 
     #[test]
