@@ -19,8 +19,8 @@ NATS_TEST_B="crates/made-tests-integration/tests/nats_trigger_subscriber.rs"
 NATS_TEST_C="crates/made-tests-integration/tests/children_recovery_nats.rs"
 
 if [ ! -f "${TEST_CRATE}" ] || [ ! -f "${NATS_TEST_A}" ] || [ ! -f "${NATS_TEST_B}" ] || [ ! -f "${NATS_TEST_C}" ]; then
-  echo "::warning::NATS integration suite not present; skipping"
-  exit 0
+  echo "::error::required NATS integration suite is incomplete"
+  exit 1
 fi
 
 ensure_testcontainers_host
