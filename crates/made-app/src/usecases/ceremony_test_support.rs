@@ -1007,6 +1007,8 @@ impl EventStoreFake {
                 context: instance.context().clone(),
                 bound_definition: instance.bound_definition(),
                 lineage: instance.lineage().cloned(),
+                ceremony_deadline: instance.ceremony_deadline(),
+                state_deadline: instance.state_deadline().cloned(),
                 created_at: instance.created_at(),
             },
         );
