@@ -56,6 +56,7 @@ impl RunCeremonyStepUseCase {
         name = "run_ceremony_step",
         skip_all,
         fields(ceremony_id = %input.instance_id, step_id = %input.step_id,
+               state_visit = tracing::field::Empty,
                state_iteration = tracing::field::Empty, iteration = tracing::field::Empty,
                attempt = tracing::field::Empty)
     )]
@@ -119,7 +120,12 @@ impl RunCeremonyStepUseCase {
             .clone()
             .map_or_else(|| definition.role_id_for_step(&input.step_id), Ok)?;
         let sealed_role = record.claimed_role().cloned().unwrap_or(fallback_role);
-        super::step_span::record_coordinates(record.state_iteration(), record.iteration(), attempt);
+        super::step_span::record_coordinates(
+            record.state_visit(),
+            record.state_iteration(),
+            record.iteration(),
+            attempt,
+        );
 
         // What was said so far, folded from the stream: every step
         // that completed is in it, however it was driven.

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use futures::future::join_all;
-use made_core::entities::CeremonyDefinition;
+use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
+use made_core::value_objects::CeremonyOutcome;
 use made_core::value_objects::{AuditActorKind, DurationMs, LeaseOwnerId, StateId, StateIteration};
 use tokio::sync::Semaphore;
 
@@ -112,6 +113,7 @@ impl RunCeremonyUseCase {
                     step_failed,
                 });
             }
+            self.refuse_exhausted_state_repeat(definition, &session.instance)?;
 
             // An any/count join may now be enabled. Let the outer driver apply
             // it before claiming another batch. No accepted work is cancelled:
@@ -136,6 +138,23 @@ impl RunCeremonyUseCase {
         })
     }
 
+    fn refuse_exhausted_state_repeat(
+        &self,
+        definition: &CeremonyDefinition,
+        instance: &CeremonyInstance,
+    ) -> Result<(), DomainError> {
+        if !instance.state_repeat_limit_reached(definition) {
+            return Ok(());
+        }
+        self.metrics.record_ceremony_outcome(
+            definition.name().as_str(),
+            CeremonyOutcome::StateRepeatLimit,
+        );
+        Err(DomainError::InvariantViolated {
+            reason: "ceremony state repeat limit exhausted",
+        })
+    }
+
     async fn execute_claimed_batch(
         &self,
         definition: &CeremonyDefinition,
@@ -156,21 +175,15 @@ impl RunCeremonyUseCase {
                         reason: "ceremony concurrency limiter closed",
                     }
                 })?;
-                self.execute_claimed_handler(claim).await
+                self.execute_and_complete_claimed_step(definition, claim, actor_kind)
+                    .await
             }
         }))
         .await;
         let mut step_failed = false;
         let mut traces = Vec::with_capacity(executions.len());
         for execution in executions {
-            let result = match execution {
-                Ok(executed) => {
-                    self.complete_executed_step(definition, executed, actor_kind)
-                        .await
-                }
-                Err(error) => Err(error),
-            };
-            match result {
+            match execution {
                 Ok(output) => {
                     step_failed |= !output.result.is_success();
                     traces.push(

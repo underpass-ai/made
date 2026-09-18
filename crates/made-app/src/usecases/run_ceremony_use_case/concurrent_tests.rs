@@ -242,6 +242,29 @@ impl CeremonyStepHandlerPort for RepeatingHandler {
     }
 }
 
+struct NeverReadyHandler;
+
+#[async_trait]
+impl CeremonyStepHandlerPort for NeverReadyHandler {
+    async fn execute(
+        &self,
+        request: CeremonyStepHandlerRequest,
+    ) -> Result<StepResult, DomainError> {
+        let output = if request.step_id() == &StepId::new("step_0").unwrap() {
+            StepOutput::new(
+                Attributes::new(std::collections::BTreeMap::from([(
+                    "ready".to_owned(),
+                    json!(false),
+                )]))
+                .unwrap(),
+            )
+        } else {
+            StepOutput::empty()
+        };
+        StepResult::completed(output)
+    }
+}
+
 fn run_with(
     definition: CeremonyDefinition,
     handler: Arc<dyn CeremonyStepHandlerPort>,
@@ -349,6 +372,36 @@ async fn concurrent_state_repeat_runs_a_fresh_bounded_batch() {
     assert_eq!(output.step_traces().len(), 4);
     assert_eq!(output.step_traces()[0].state_iteration().get(), 1);
     assert_eq!(output.step_traces()[2].state_iteration().get(), 2);
+}
+
+#[tokio::test]
+async fn concurrent_state_reports_repeat_limit_before_joining_terminal() {
+    let definition = repeating_definition();
+    let (store, task) = run_with(definition, Arc::new(NeverReadyHandler), 2);
+
+    let error = task.await.unwrap().unwrap_err();
+
+    assert!(error
+        .to_string()
+        .contains("ceremony state repeat limit exhausted"));
+    let records = store.records(&ceremony_id()).await;
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record.event(), Some(CeremonyEvent::TransitionApplied(_))))
+            .count(),
+        0
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(
+                record.event(),
+                Some(CeremonyEvent::StateIterationStarted(_))
+            ))
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]

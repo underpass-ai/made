@@ -23,6 +23,7 @@ impl RunCeremonyUseCase {
             state_id = %session.instance.current_state(),
             step_id = %step_id,
             role_id = tracing::field::Empty,
+            state_visit = tracing::field::Empty,
             state_iteration = tracing::field::Empty,
             iteration = tracing::field::Empty,
             attempt = tracing::field::Empty,
@@ -66,6 +67,7 @@ impl RunCeremonyUseCase {
         };
         match &result {
             Ok(RunStepOutput {
+                state_visit,
                 state_iteration,
                 iteration,
                 attempt,
@@ -73,6 +75,7 @@ impl RunCeremonyUseCase {
                 ..
             }) => {
                 crate::usecases::step_span::record_coordinates(
+                    *state_visit,
                     *state_iteration,
                     *iteration,
                     *attempt,
@@ -259,6 +262,50 @@ impl RunCeremonyUseCase {
             attempt,
             result: step_result,
         })
+    }
+
+    #[tracing::instrument(
+        name = "ceremony_step",
+        skip_all,
+        fields(
+            ceremony_id = %claimed.request.instance_id(),
+            ceremony_name = %claimed.request.definition_name(),
+            state_id = %claimed.request.current_state(),
+            step_id = %claimed.step_id,
+            role_id = %claimed.role_id,
+            state_visit = tracing::field::Empty,
+            state_iteration = tracing::field::Empty,
+            iteration = tracing::field::Empty,
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
+    pub(super) async fn execute_and_complete_claimed_step(
+        &self,
+        definition: &CeremonyDefinition,
+        claimed: ClaimedStep,
+        actor_kind: AuditActorKind,
+    ) -> Result<RunStepOutput, DomainError> {
+        crate::usecases::step_span::record_coordinates(
+            claimed.state_visit,
+            claimed.state_iteration,
+            claimed.iteration,
+            claimed.attempt,
+        );
+        let result = match self.execute_claimed_handler(claimed).await {
+            Ok(executed) => {
+                self.complete_executed_step(definition, executed, actor_kind)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match &result {
+            Ok(output) => crate::usecases::step_span::record_result(&output.result),
+            Err(error) => crate::usecases::step_span::record_error(error),
+        }
+        result
     }
 
     #[tracing::instrument(
