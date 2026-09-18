@@ -19,7 +19,7 @@ workspace = true
 container-tests = ["dep:testcontainers"]
 
 [dependencies]
-made-core = { workspace = true }
+made-core = { workspace = true, features = ["conformance"] }
 made-app = { workspace = true }
 made-adapters = { workspace = true, features = [
     "grpc",
