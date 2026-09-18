@@ -36,7 +36,7 @@ pub(crate) async fn verify_orchestrate_rejects_proposal_violating_json_schema(
         .subscribe("made.task.failed".to_owned())
         .await
         .context("subscribe made.task.failed")?;
-    nats.flush().await.context("flush NATS subscribe")?;
+    super::super::nats_subscription_ready::wait_for_subscription_ready(&nats).await?;
 
     let attributes = pb_struct_from_pairs([(
         "runtime.tool_name",
@@ -92,8 +92,8 @@ pub(crate) async fn verify_orchestrate_rejects_proposal_violating_json_schema(
         "Orchestrate returned the expected error"
     );
 
-    // The use case publishes `TaskFailed` BEFORE returning the error,
-    // so the envelope should already be on the bus.
+    // The use case enqueues TaskFailed before returning the error. Await its
+    // delivery to the subscription whose server readiness was confirmed above.
     let deadline = std::time::Instant::now() + Duration::from_secs(10);
     while std::time::Instant::now() < deadline {
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());

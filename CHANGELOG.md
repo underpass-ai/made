@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Wait for a private NATS inbox round trip before E2E scenarios trigger events
+  from another connection. The harness no longer treats a local socket flush
+  as server acknowledgement of its subscription. (#153)
+
 ## 0.6.0 — 2026-09-18
 
 The release installation paths require public 0.6.0 assets and the stable

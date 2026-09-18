@@ -115,9 +115,7 @@ pub(crate) async fn verify_causal_metadata_propagates_over_nats(specialty: &str)
         .subscribe("made.deliberation.completed".to_owned())
         .await
         .context("subscribe made.deliberation.completed")?;
-    // Flush so the SUB is acked by the server before we publish the
-    // trigger that should fan out into the event we're waiting for.
-    client.flush().await.context("flush NATS subscribe")?;
+    super::nats_subscription_ready::wait_for_subscription_ready(&client).await?;
 
     let event_id = "stack-e2e-trigger-1";
     let correlation_id = "stack-e2e-corr";
