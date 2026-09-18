@@ -8,6 +8,8 @@ use made_core::value_objects::{
     StepLease, StepResult,
 };
 
+use crate::usecases::{prepare_step_execution, PreparedStepExecution};
+
 use super::{
     claimed_step::ClaimedStep, executed_step::ExecutedStep, run_step_output::RunStepOutput,
     RunCeremonyUseCase,
@@ -56,7 +58,7 @@ impl RunCeremonyUseCase {
             )
             .await
         {
-            Ok(claimed) => match self.execute_claimed_handler(claimed).await {
+            Ok(claimed) => match self.execute_claimed_step(definition, claimed).await {
                 Ok(executed) => {
                     self.complete_executed_step(definition, executed, actor_kind)
                         .await
@@ -183,8 +185,9 @@ impl RunCeremonyUseCase {
         })
     }
 
-    pub(super) async fn execute_claimed_handler(
+    pub(super) async fn execute_claimed_step(
         &self,
+        definition: &CeremonyDefinition,
         claimed: ClaimedStep,
     ) -> Result<ExecutedStep, DomainError> {
         let ClaimedStep {
@@ -198,7 +201,25 @@ impl RunCeremonyUseCase {
             attempt,
         } = claimed;
         let instance_id = request.instance_id().clone();
-        let step_result = self.execute_handler(request).await?;
+        let step = definition.step(&step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_step",
+        })?;
+        let step_result = match prepare_step_execution(
+            definition,
+            step,
+            state_visit,
+            request.transcript().clone(),
+        ) {
+            Ok(PreparedStepExecution::Handler { transcript }) => {
+                self.execute_handler(request.with_transcript(transcript))
+                    .await?
+            }
+            Ok(PreparedStepExecution::Deterministic { result }) => result,
+            Err(error) => {
+                crate::usecases::step_span::record_error(&error);
+                StepResult::from_handler_error(&error)?
+            }
+        };
 
         Ok(ExecutedStep {
             instance_id,
@@ -294,7 +315,7 @@ impl RunCeremonyUseCase {
             claimed.iteration,
             claimed.attempt,
         );
-        let result = match self.execute_claimed_handler(claimed).await {
+        let result = match self.execute_claimed_step(definition, claimed).await {
             Ok(executed) => {
                 self.complete_executed_step(definition, executed, actor_kind)
                     .await

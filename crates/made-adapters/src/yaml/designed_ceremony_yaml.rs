@@ -222,6 +222,7 @@ fn steps(draft: &CeremonyDefinitionDraft) -> Vec<StepDocument> {
                     (destination.as_str().to_owned(), source.as_str().to_owned())
                 })
                 .collect(),
+            aggregate: step.aggregation().cloned(),
         })
         .collect()
 }
