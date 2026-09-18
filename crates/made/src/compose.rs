@@ -27,9 +27,9 @@ use made_app::services::{
 };
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyChildrenUseCase,
