@@ -2,7 +2,7 @@ use crate::entities::ceremony_commands::{ApplyExecutionReceiptResult, ApplyStepR
 use crate::entities::ceremony_events::ExecutionReceiptLinked;
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::ExecutionOperationId;
+use crate::value_objects::{ExecutionOperationId, ExecutionReceiptLinkKind};
 
 impl CeremonyInstance {
     pub(super) fn decide_apply_execution_receipt_result(
@@ -27,6 +27,9 @@ impl CeremonyInstance {
                     what: "execution_receipt_link",
                 })
             };
+        }
+        if command.receipt_link.kind() == ExecutionReceiptLinkKind::Adopted {
+            self.require_admits_new_work("adopt_execution_receipt")?;
         }
 
         let record = self
