@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -7,22 +5,17 @@ use made_core::ports::{
     RecordExecutionReceiptOutcome,
 };
 use made_core::value_objects::{
-    ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionIntent, ExecutionOperationId, ExecutionReceipt, ExecutionRecoveryCursor,
+    ExecutionRecoveryPageLimit, StepClaimFence,
 };
 use tokio::sync::Mutex;
+
+use super::execution_receipt_store_state::ExecutionReceiptStoreState;
 
 /// Ephemeral receipt store with the same atomic root semantics as durable adapters.
 #[derive(Debug, Default)]
 pub struct InMemoryExecutionReceiptStore {
-    state: Mutex<State>,
-}
-
-#[derive(Debug, Default)]
-struct State {
-    operations: BTreeMap<String, ExecutionOperation>,
-    intents: BTreeMap<(String, String), ExecutionIntent>,
-    receipts: BTreeMap<String, ExecutionReceipt>,
+    state: Mutex<ExecutionReceiptStoreState>,
 }
 
 impl InMemoryExecutionReceiptStore {

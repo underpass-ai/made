@@ -14,6 +14,7 @@ mod contract_registry;
 mod council_registry;
 mod deliberation_repository;
 mod execution_receipt_store;
+mod execution_receipt_store_state;
 mod forgetful_memory;
 mod in_memory_message;
 mod messaging;

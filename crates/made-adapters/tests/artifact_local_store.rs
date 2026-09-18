@@ -1,12 +1,14 @@
 use std::fs;
+use std::process::Command;
 use std::sync::Arc;
 
 use made_adapters::artifacts::{ArtifactBackupService, LocalArtifactStore};
 use made_app::artifacts::ArtifactService;
 use made_core::ports::{
-    ArtifactIdempotencyKey, ArtifactPageLimit, ArtifactRetentionActor, ArtifactRetentionPolicy,
-    ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload, PutArtifactChunk,
-    ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_CHUNK_BYTES,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
+    ARTIFACT_MAX_CHUNK_BYTES,
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
@@ -39,13 +41,58 @@ async fn upload(
     store
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             bytes: bytes.to_vec(),
             chunk_digest: digest(bytes),
         })
         .await
         .unwrap();
     store.commit_upload(&status.upload_id).await.unwrap()
+}
+
+#[tokio::test]
+async fn independent_handles_serialize_the_same_idempotent_begin() {
+    let directory = TempDir::new().unwrap();
+    let first = LocalArtifactStore::open(directory.path()).unwrap();
+    let second = LocalArtifactStore::open(directory.path()).unwrap();
+    let bytes = b"same request";
+    let (left, right) = tokio::join!(
+        first.begin_upload(begin(bytes, "two-handles")),
+        second.begin_upload(begin(bytes, "two-handles"))
+    );
+    assert_eq!(left.unwrap().upload_id, right.unwrap().upload_id);
+    assert_eq!(
+        fs::read_dir(directory.path().join("idempotency"))
+            .unwrap()
+            .count(),
+        1
+    );
+}
+
+#[test]
+fn independent_processes_share_one_idempotent_upload() {
+    let directory = TempDir::new().unwrap();
+    let children = [(), ()].map(|()| {
+        Command::new(env!("CARGO_BIN_EXE_artifact_store_writer"))
+            .arg(directory.path())
+            .spawn()
+            .expect("artifact writer spawns")
+    });
+    for child in children {
+        assert!(child.wait_with_output().unwrap().status.success());
+    }
+    assert_eq!(
+        fs::read_dir(directory.path().join("artifacts"))
+            .unwrap()
+            .count(),
+        1
+    );
+    assert_eq!(
+        fs::read_dir(directory.path().join("blobs"))
+            .unwrap()
+            .count(),
+        1
+    );
 }
 
 #[tokio::test]
@@ -61,7 +108,7 @@ async fn upload_resumes_after_restart_and_repeated_chunks_are_idempotent() {
     first
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             bytes: bytes[..split].to_vec(),
             chunk_digest: digest(&bytes[..split]),
         })
@@ -75,22 +122,22 @@ async fn upload_resumes_after_restart_and_repeated_chunks_are_idempotent() {
         .await
         .unwrap();
     assert_eq!(resumed.upload_id, status.upload_id);
-    assert_eq!(resumed.next_offset, split as u64);
+    assert_eq!(resumed.next_offset.get(), split as u64);
     let repeated = reopened
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             bytes: bytes[..split].to_vec(),
             chunk_digest: digest(&bytes[..split]),
         })
         .await
         .unwrap();
-    assert_eq!(repeated.next_offset, split as u64);
+    assert_eq!(repeated.next_offset.get(), split as u64);
     assert!(matches!(
         reopened
             .put_chunk(PutArtifactChunk {
                 upload_id: status.upload_id.clone(),
-                offset: 0,
+                offset: ArtifactByteOffset::ZERO,
                 bytes: b"different!".to_vec(),
                 chunk_digest: digest(b"different!"),
             })
@@ -100,7 +147,7 @@ async fn upload_resumes_after_restart_and_repeated_chunks_are_idempotent() {
     reopened
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: split as u64,
+            offset: ArtifactByteOffset::new(split as u64),
             bytes: bytes[split..].to_vec(),
             chunk_digest: digest(&bytes[split..]),
         })
@@ -114,13 +161,13 @@ async fn upload_resumes_after_restart_and_repeated_chunks_are_idempotent() {
     let chunk = reopened
         .read_chunk(ReadArtifactChunk {
             artifact_id: artifact.artifact_id().clone(),
-            offset: 0,
-            max_bytes: 1024,
+            offset: ArtifactByteOffset::ZERO,
+            max_bytes: ArtifactChunkLimit::new(1024).unwrap(),
         })
         .await
         .unwrap();
     assert_eq!(chunk.bytes, bytes);
-    assert!(chunk.eof);
+    assert!(chunk.is_complete());
 }
 
 #[tokio::test]
@@ -135,7 +182,7 @@ async fn incomplete_wrong_digest_and_oversized_chunks_are_refused() {
     store
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             bytes: bytes[..3].to_vec(),
             chunk_digest: digest(&bytes[..3]),
         })
@@ -152,7 +199,7 @@ async fn incomplete_wrong_digest_and_oversized_chunks_are_refused() {
         store
             .put_chunk(PutArtifactChunk {
                 upload_id: status.upload_id.clone(),
-                offset: 3,
+                offset: ArtifactByteOffset::new(3),
                 bytes: b"bad".to_vec(),
                 chunk_digest: digest(b"not bad"),
             })
@@ -164,7 +211,7 @@ async fn incomplete_wrong_digest_and_oversized_chunks_are_refused() {
         store
             .put_chunk(PutArtifactChunk {
                 upload_id: status.upload_id,
-                offset: 3,
+                offset: ArtifactByteOffset::new(3),
                 chunk_digest: digest(&oversized),
                 bytes: oversized,
             })
@@ -232,8 +279,8 @@ async fn backup_restore_preserves_tombstone_and_detects_tamper_or_missing_conten
         source
             .read_chunk(ReadArtifactChunk {
                 artifact_id: artifact.artifact_id().clone(),
-                offset: 0,
-                max_bytes: 10,
+                offset: ArtifactByteOffset::ZERO,
+                max_bytes: ArtifactChunkLimit::new(10).unwrap(),
             })
             .await,
         Err(ArtifactStoreError::Tombstoned)

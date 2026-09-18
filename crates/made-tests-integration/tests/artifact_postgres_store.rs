@@ -6,8 +6,9 @@ use std::time::Duration;
 use made_adapters::artifacts::{ArtifactBackupService, LocalArtifactStore};
 use made_adapters::postgres::{PostgresArtifactStore, PostgresConfig, PostgresPool};
 use made_core::ports::{
-    ArtifactIdempotencyKey, ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload,
-    PutArtifactChunk, ReadArtifactChunk, ARTIFACT_MAX_CHUNK_BYTES,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactRetentionActor,
+    ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload,
+    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_CHUNK_BYTES,
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactRef, ArtifactSizeBytes,
@@ -81,6 +82,7 @@ async fn postgres_chunks_resume_deduplicate_verify_and_enforce_limits() {
     let raw = sqlx::PgPool::connect(&url).await.unwrap();
     assert_deduplicated(&store, &raw, &bytes, &artifact).await;
     assert_incomplete_and_limits(&store, &artifact).await;
+    assert_tombstone_survives_recommit(&store, &bytes, &artifact).await;
     assert_backup_restore_and_tamper(store, &raw, &artifact).await;
 }
 
@@ -99,7 +101,7 @@ async fn resume_and_commit(
     first_store
         .put_chunk(PutArtifactChunk {
             upload_id: status.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             chunk_digest: digest(&left),
             bytes: left.clone(),
         })
@@ -115,11 +117,11 @@ async fn resume_and_commit(
         .begin_upload(begin(bytes, "postgres-restart"))
         .await
         .unwrap();
-    assert_eq!(resumed.next_offset, left.len() as u64);
+    assert_eq!(resumed.next_offset.get(), left.len() as u64);
     store
         .put_chunk(PutArtifactChunk {
             upload_id: resumed.upload_id.clone(),
-            offset: left.len() as u64,
+            offset: ArtifactByteOffset::new(left.len() as u64),
             chunk_digest: digest(&right),
             bytes: right,
         })
@@ -129,8 +131,8 @@ async fn resume_and_commit(
     let crossing = store
         .read_chunk(ReadArtifactChunk {
             artifact_id: artifact.artifact_id().clone(),
-            offset: 79_990,
-            max_bytes: 40,
+            offset: ArtifactByteOffset::new(79_990),
+            max_bytes: ArtifactChunkLimit::new(40).unwrap(),
         })
         .await
         .unwrap();
@@ -152,7 +154,7 @@ async fn assert_deduplicated(
         store
             .put_chunk(PutArtifactChunk {
                 upload_id: duplicate.upload_id.clone(),
-                offset,
+                offset: ArtifactByteOffset::new(offset),
                 chunk_digest: digest(chunk),
                 bytes: chunk.to_vec(),
             })
@@ -182,7 +184,7 @@ async fn assert_incomplete_and_limits(store: &PostgresArtifactStore, artifact: &
     store
         .put_chunk(PutArtifactChunk {
             upload_id: incomplete.upload_id.clone(),
-            offset: 0,
+            offset: ArtifactByteOffset::ZERO,
             chunk_digest: digest(b"fo"),
             bytes: b"fo".to_vec(),
         })
@@ -192,16 +194,44 @@ async fn assert_incomplete_and_limits(store: &PostgresArtifactStore, artifact: &
         store.commit_upload(&incomplete.upload_id).await,
         Err(ArtifactStoreError::Incomplete { .. })
     ));
-    assert!(matches!(
-        store
-            .read_chunk(ReadArtifactChunk {
-                artifact_id: artifact.artifact_id().clone(),
-                offset: 0,
-                max_bytes: ARTIFACT_MAX_CHUNK_BYTES + 1,
-            })
-            .await,
-        Err(ArtifactStoreError::ChunkTooLarge { .. })
-    ));
+    let _ = artifact;
+    assert!(ArtifactChunkLimit::new(ARTIFACT_MAX_CHUNK_BYTES + 1).is_err());
+}
+
+async fn assert_tombstone_survives_recommit(
+    store: &PostgresArtifactStore,
+    bytes: &[u8],
+    artifact: &ArtifactRef,
+) {
+    let tombstone = store
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:postgres-test").unwrap(),
+            policy: ArtifactRetentionPolicy::new("expired").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    let mut same_id = begin(bytes, "postgres-same-id");
+    same_id.requested_artifact_id = Some(artifact.artifact_id().clone());
+    let upload = store.begin_upload(same_id).await.unwrap();
+    store
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            chunk_digest: digest(bytes),
+            bytes: bytes.to_vec(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(
+        store.commit_upload(&upload.upload_id).await.unwrap(),
+        *artifact
+    );
+    assert_eq!(
+        store.get(artifact.artifact_id()).await.unwrap().tombstone,
+        Some(tombstone)
+    );
 }
 
 async fn assert_backup_restore_and_tamper(

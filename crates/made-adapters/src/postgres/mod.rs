@@ -11,6 +11,7 @@
 //! only ever see domain ports and a `PostgresPool` handle.
 
 mod agent_registry;
+mod artifact_blob_queries;
 mod artifact_store;
 mod council_registry;
 mod deliberation_repository;

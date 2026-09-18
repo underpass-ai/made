@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
 use made_core::ports::{
-    ArtifactChunkPage, ArtifactIdempotencyKey, ArtifactPage, ArtifactPageLimit, ArtifactRecord,
-    ArtifactStoreError, ArtifactStorePort, ArtifactTombstone, ArtifactUploadId,
+    ArtifactByteOffset, ArtifactChunkPage, ArtifactIdempotencyKey, ArtifactPage, ArtifactPageLimit,
+    ArtifactRecord, ArtifactStoreError, ArtifactStorePort, ArtifactTombstone, ArtifactUploadId,
     ArtifactUploadStatus, BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk,
     TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
 };
@@ -107,19 +107,19 @@ impl ArtifactService {
                 idempotency_key,
             })
             .await?;
-        let mut offset = status.next_offset;
+        let mut offset = status.next_offset.get();
         while offset < bytes.len() as u64 {
             let end = (offset as usize + ARTIFACT_DEFAULT_CHUNK_BYTES as usize).min(bytes.len());
             let chunk = bytes[offset as usize..end].to_vec();
             let progress = self
                 .put_chunk(PutArtifactChunk {
                     upload_id: status.upload_id.clone(),
-                    offset,
+                    offset: ArtifactByteOffset::new(offset),
                     chunk_digest: digest(&chunk),
                     bytes: chunk,
                 })
                 .await?;
-            offset = progress.next_offset;
+            offset = progress.next_offset.get();
         }
         self.commit_upload(&status.upload_id).await
     }

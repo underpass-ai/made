@@ -61,6 +61,7 @@ made-core = { workspace = true }
 made-app = { workspace = true }
 made-proto = { workspace = true, optional = true }
 async-trait = { workspace = true }
+fs2 = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
@@ -111,3 +112,7 @@ tracing-opentelemetry = { workspace = true }
 name = "store_writer"
 path = "src/bin/store_writer.rs"
 required-features = ["sqlite"]
+
+[[bin]]
+name = "artifact_store_writer"
+path = "src/bin/artifact_store_writer.rs"

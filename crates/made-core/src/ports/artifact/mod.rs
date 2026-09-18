@@ -1,7 +1,10 @@
+mod artifact_byte_offset;
+mod artifact_chunk_limit;
 mod artifact_chunk_page;
 mod artifact_idempotency_key;
 mod artifact_page;
 mod artifact_page_limit;
+mod artifact_read_completion;
 mod artifact_record;
 mod artifact_retention_actor;
 mod artifact_retention_policy;
@@ -16,10 +19,13 @@ mod put_artifact_chunk;
 mod read_artifact_chunk;
 mod tombstone_artifact;
 
+pub use artifact_byte_offset::ArtifactByteOffset;
+pub use artifact_chunk_limit::ArtifactChunkLimit;
 pub use artifact_chunk_page::ArtifactChunkPage;
 pub use artifact_idempotency_key::ArtifactIdempotencyKey;
 pub use artifact_page::ArtifactPage;
 pub use artifact_page_limit::ArtifactPageLimit;
+pub use artifact_read_completion::ArtifactReadCompletion;
 pub use artifact_record::ArtifactRecord;
 pub use artifact_retention_actor::ArtifactRetentionActor;
 pub use artifact_retention_policy::ArtifactRetentionPolicy;

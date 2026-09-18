@@ -1,18 +1,19 @@
 use async_trait::async_trait;
 use made_core::ports::{
-    ArtifactChunkPage, ArtifactPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError,
-    ArtifactStorePort, ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus,
-    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
-    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactPage, ArtifactPageLimit,
+    ArtifactReadCompletion, ArtifactRecord, ArtifactStoreError, ArtifactStorePort,
+    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
+    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_BYTES,
+    ARTIFACT_MAX_CHUNK_BYTES,
 };
 use made_core::value_objects::{ArtifactId, ArtifactRef};
 use serde_json::Value as JsonValue;
-use sha2::{Digest, Sha256};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
 use crate::artifacts::hashing::digest_bytes;
 
+use super::artifact_blob_queries::{hash_blob_chunks, hash_upload_chunks, persist_canonical_blob};
 use super::PostgresPool;
 
 /// Replica-safe artifact store backed by transactional Postgres chunks.
@@ -76,26 +77,20 @@ impl PostgresArtifactStore {
         request: ReadArtifactChunk,
         include_tombstoned: bool,
     ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
-        if request.max_bytes == 0 || request.max_bytes > ARTIFACT_MAX_CHUNK_BYTES {
-            return Err(ArtifactStoreError::ChunkTooLarge {
-                actual: request.max_bytes as usize,
-                max: ARTIFACT_MAX_CHUNK_BYTES,
-            });
-        }
         let record = self.get(&request.artifact_id).await?;
         if !include_tombstoned && record.tombstone.is_some() {
             return Err(ArtifactStoreError::Tombstoned);
         }
         let size = record.artifact.size_bytes().get();
-        if request.offset > size {
+        let offset = request.offset.get();
+        if offset > size {
             return Err(ArtifactStoreError::UnexpectedOffset {
                 expected: size,
-                actual: request.offset,
+                actual: offset,
             });
         }
-        let end = request
-            .offset
-            .saturating_add(u64::from(request.max_bytes))
+        let end = offset
+            .saturating_add(u64::from(request.max_bytes.get()))
             .min(size);
         let rows = sqlx::query(
             "SELECT chunk_offset, bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset < $3 AND chunk_offset + OCTET_LENGTH(bytes) > $4 ORDER BY chunk_offset",
@@ -103,31 +98,35 @@ impl PostgresArtifactStore {
         .bind(record.artifact.digest().as_str())
         .bind(to_i64(size)?)
         .bind(to_i64(end)?)
-        .bind(to_i64(request.offset)?)
+        .bind(to_i64(offset)?)
         .fetch_all(self.pool.inner())
         .await
         .map_err(storage_failure)?;
-        let mut bytes = Vec::with_capacity((end - request.offset) as usize);
+        let mut bytes = Vec::with_capacity((end - offset) as usize);
         for row in rows {
             let chunk_offset = to_u64(
                 row.try_get::<i64, _>("chunk_offset")
                     .map_err(storage_failure)?,
             )?;
             let chunk: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
-            let start_in_chunk = request.offset.saturating_sub(chunk_offset) as usize;
+            let start_in_chunk = offset.saturating_sub(chunk_offset) as usize;
             let end_in_chunk = ((end - chunk_offset) as usize).min(chunk.len());
             if start_in_chunk < end_in_chunk {
                 bytes.extend_from_slice(&chunk[start_in_chunk..end_in_chunk]);
             }
         }
-        if bytes.len() != (end - request.offset) as usize {
+        if bytes.len() != (end - offset) as usize {
             return Err(ArtifactStoreError::StorageUnavailable);
         }
         Ok(ArtifactChunkPage {
             chunk_digest: digest_bytes(&bytes),
             bytes,
-            next_offset: end,
-            eof: end == size,
+            next_offset: ArtifactByteOffset::new(end),
+            completion: if end == size {
+                ArtifactReadCompletion::Complete
+            } else {
+                ArtifactReadCompletion::More
+            },
         })
     }
 }
@@ -211,10 +210,11 @@ impl ArtifactStorePort for PostgresArtifactStore {
             _ => return Err(ArtifactStoreError::StorageUnavailable),
         }
         let next_offset = Self::next_offset(&mut tx, &request.upload_id).await?;
-        if request.offset < next_offset {
+        let offset = request.offset.get();
+        if offset < next_offset {
             let existing = sqlx::query("SELECT bytes, chunk_digest FROM artifact_upload_chunks WHERE upload_id = $1 AND chunk_offset = $2")
                 .bind(request.upload_id.as_str())
-                .bind(to_i64(request.offset)?)
+                .bind(to_i64(offset)?)
                 .fetch_optional(&mut *tx)
                 .await
                 .map_err(storage_failure)?;
@@ -229,13 +229,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
             }
             return Err(ArtifactStoreError::UnexpectedOffset {
                 expected: next_offset,
-                actual: request.offset,
+                actual: offset,
             });
         }
-        if request.offset != next_offset {
+        if offset != next_offset {
             return Err(ArtifactStoreError::UnexpectedOffset {
                 expected: next_offset,
-                actual: request.offset,
+                actual: offset,
             });
         }
         let new_offset = next_offset.saturating_add(request.bytes.len() as u64);
@@ -247,7 +247,7 @@ impl ArtifactStorePort for PostgresArtifactStore {
         }
         sqlx::query("INSERT INTO artifact_upload_chunks (upload_id, chunk_offset, bytes, chunk_digest) VALUES ($1, $2, $3, $4)")
             .bind(request.upload_id.as_str())
-            .bind(to_i64(request.offset)?)
+            .bind(to_i64(offset)?)
             .bind(request.bytes)
             .bind(request.chunk_digest.as_str())
             .execute(&mut *tx)
@@ -299,11 +299,7 @@ impl ArtifactStorePort for PostgresArtifactStore {
             request.media_type,
             request.provenance,
         );
-        let record = ArtifactRecord {
-            artifact: artifact.clone(),
-            tombstone: None,
-        };
-        if let Some(row) =
+        let record = if let Some(row) =
             sqlx::query("SELECT body FROM artifact_records WHERE artifact_id = $1 FOR UPDATE")
                 .bind(artifact_id.as_str())
                 .fetch_optional(&mut *tx)
@@ -316,7 +312,13 @@ impl ArtifactStorePort for PostgresArtifactStore {
             if existing.artifact != artifact {
                 return Err(ArtifactStoreError::IdempotencyConflict);
             }
-        }
+            existing
+        } else {
+            ArtifactRecord {
+                artifact: artifact.clone(),
+                tombstone: None,
+            }
+        };
         let record_json =
             serde_json::to_value(record).map_err(|_| ArtifactStoreError::StorageUnavailable)?;
         let artifact_json =
@@ -450,126 +452,11 @@ impl ArtifactStorePort for PostgresArtifactStore {
     }
 }
 
-async fn hash_upload_chunks(
-    tx: &mut Transaction<'_, Postgres>,
-    upload_id: &ArtifactUploadId,
-) -> Result<(String, u64), ArtifactStoreError> {
-    let mut hasher = Sha256::new();
-    let mut next = 0_u64;
-    loop {
-        let row = sqlx::query("SELECT chunk_offset, bytes FROM artifact_upload_chunks WHERE upload_id = $1 AND chunk_offset >= $2 ORDER BY chunk_offset LIMIT 1")
-            .bind(upload_id.as_str()).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(storage_failure)?;
-        let Some(row) = row else {
-            break;
-        };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
-        if offset != next {
-            return Err(ArtifactStoreError::StorageUnavailable);
-        }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
-        hasher.update(&bytes);
-        next += bytes.len() as u64;
-    }
-    Ok((format!("sha256:{:x}", hasher.finalize()), next))
-}
-
-async fn hash_blob_chunks(
-    tx: &mut Transaction<'_, Postgres>,
-    digest: &str,
-    size: u64,
-) -> Result<(String, u64), ArtifactStoreError> {
-    let mut hasher = Sha256::new();
-    let mut next = 0_u64;
-    loop {
-        let row = sqlx::query("SELECT chunk_offset, bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset >= $3 ORDER BY chunk_offset LIMIT 1")
-            .bind(digest).bind(to_i64(size)?).bind(to_i64(next)?).fetch_optional(&mut **tx).await.map_err(storage_failure)?;
-        let Some(row) = row else {
-            break;
-        };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
-        if offset != next {
-            return Err(ArtifactStoreError::StorageUnavailable);
-        }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
-        hasher.update(&bytes);
-        next += bytes.len() as u64;
-    }
-    Ok((format!("sha256:{:x}", hasher.finalize()), next))
-}
-
-async fn persist_canonical_blob(
-    tx: &mut Transaction<'_, Postgres>,
-    upload_id: &ArtifactUploadId,
-    digest: &str,
-    size: u64,
-) -> Result<(), ArtifactStoreError> {
-    let canonical = made_core::ports::ARTIFACT_DEFAULT_CHUNK_BYTES as usize;
-    let mut upload_offset = 0_u64;
-    let mut blob_offset = 0_u64;
-    let mut pending = Vec::with_capacity(canonical + ARTIFACT_MAX_CHUNK_BYTES as usize);
-    loop {
-        let row = sqlx::query("SELECT chunk_offset, bytes FROM artifact_upload_chunks WHERE upload_id = $1 AND chunk_offset >= $2 ORDER BY chunk_offset LIMIT 1")
-            .bind(upload_id.as_str())
-            .bind(to_i64(upload_offset)?)
-            .fetch_optional(&mut **tx)
-            .await
-            .map_err(storage_failure)?;
-        let Some(row) = row else {
-            break;
-        };
-        let offset = to_u64(row.try_get("chunk_offset").map_err(storage_failure)?)?;
-        if offset != upload_offset {
-            return Err(ArtifactStoreError::StorageUnavailable);
-        }
-        let bytes: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
-        upload_offset += bytes.len() as u64;
-        pending.extend_from_slice(&bytes);
-        while pending.len() >= canonical {
-            let remainder = pending.split_off(canonical);
-            insert_blob_chunk(tx, digest, size, blob_offset, &pending).await?;
-            blob_offset += pending.len() as u64;
-            pending = remainder;
-        }
-    }
-    if !pending.is_empty() {
-        insert_blob_chunk(tx, digest, size, blob_offset, &pending).await?;
-    }
-    Ok(())
-}
-
-async fn insert_blob_chunk(
-    tx: &mut Transaction<'_, Postgres>,
-    digest: &str,
-    size: u64,
-    offset: u64,
-    bytes: &[u8],
-) -> Result<(), ArtifactStoreError> {
-    sqlx::query("INSERT INTO artifact_blobs (digest, size_bytes, chunk_offset, bytes) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING")
-        .bind(digest)
-        .bind(to_i64(size)?)
-        .bind(to_i64(offset)?)
-        .bind(bytes)
-        .execute(&mut **tx)
-        .await
-        .map_err(storage_failure)?;
-    let existing: Vec<u8> = sqlx::query_scalar("SELECT bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset = $3")
-        .bind(digest)
-        .bind(to_i64(size)?)
-        .bind(to_i64(offset)?)
-        .fetch_one(&mut **tx)
-        .await
-        .map_err(storage_failure)?;
-    if existing != bytes {
-        return Err(ArtifactStoreError::FinalDigestMismatch);
-    }
-    Ok(())
-}
-
 fn status(upload_id: ArtifactUploadId, next_offset: u64) -> ArtifactUploadStatus {
     ArtifactUploadStatus {
         upload_id,
-        next_offset,
-        chunk_limit_bytes: ARTIFACT_MAX_CHUNK_BYTES,
+        next_offset: ArtifactByteOffset::new(next_offset),
+        chunk_limit: ArtifactChunkLimit::MAX,
     }
 }
 

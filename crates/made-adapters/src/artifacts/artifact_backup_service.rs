@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use made_core::ports::{
-    ArtifactIdempotencyKey, ArtifactPageLimit, ArtifactStoreError, ArtifactStorePort,
-    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
-    ARTIFACT_DEFAULT_CHUNK_BYTES,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
+    ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload, PutArtifactChunk,
+    ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
 };
 use made_core::value_objects::ArtifactDigest;
 use uuid::Uuid;
@@ -85,16 +85,16 @@ where
                         .store
                         .read_chunk_for_backup(ReadArtifactChunk {
                             artifact_id: record.artifact.artifact_id().clone(),
-                            offset,
-                            max_bytes: ARTIFACT_DEFAULT_CHUNK_BYTES,
+                            offset: ArtifactByteOffset::new(offset),
+                            max_bytes: ArtifactChunkLimit::DEFAULT,
                         })
                         .await?;
                     if digest_bytes(&chunk.bytes) != chunk.chunk_digest {
                         return Err(ArtifactStoreError::InvalidBackup);
                     }
                     file.write_all(&chunk.bytes).map_err(storage_failure)?;
-                    offset = chunk.next_offset;
-                    if chunk.eof {
+                    offset = chunk.next_offset.get();
+                    if chunk.is_complete() {
                         break;
                     }
                 }
@@ -146,7 +146,7 @@ where
             .await?;
         let mut file = File::open(blob_path(root, reference.artifact_id().as_str()))
             .map_err(storage_failure)?;
-        let mut offset = upload.next_offset;
+        let mut offset = upload.next_offset.get();
         file.seek(std::io::SeekFrom::Start(offset))
             .map_err(storage_failure)?;
         let mut bytes = vec![0; ARTIFACT_DEFAULT_CHUNK_BYTES as usize];
@@ -160,12 +160,12 @@ where
                 .store
                 .put_chunk(PutArtifactChunk {
                     upload_id: upload.upload_id.clone(),
-                    offset,
+                    offset: ArtifactByteOffset::new(offset),
                     chunk_digest: digest_bytes(&chunk),
                     bytes: chunk,
                 })
                 .await?;
-            offset = status.next_offset;
+            offset = status.next_offset.get();
         }
         let restored = self.store.commit_upload(&upload.upload_id).await?;
         if restored != *reference {

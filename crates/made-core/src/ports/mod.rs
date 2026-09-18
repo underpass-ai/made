@@ -80,7 +80,8 @@ pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use append_outcome::AppendOutcome;
 pub use artifact::{
-    ArtifactChunkPage, ArtifactIdempotencyKey, ArtifactPage, ArtifactPageLimit, ArtifactRecord,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
+    ArtifactPage, ArtifactPageLimit, ArtifactReadCompletion, ArtifactRecord,
     ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
     ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
     PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
