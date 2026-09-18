@@ -8,10 +8,18 @@ outputs:
   result:
     type: object
 states:
-- id: COORDINATION_ROUND_1
+- id: COORDINATION_MANAGE_1
   initial: true
   x-pattern: group_chat
-- id: COORDINATION_ROUND_2
+- id: COORDINATION_SELECT_1
+  x-pattern: group_chat
+- id: COORDINATION_SPEAK_1
+  x-pattern: group_chat
+- id: COORDINATION_MANAGE_2
+  x-pattern: group_chat
+- id: COORDINATION_SELECT_2
+  x-pattern: group_chat
+- id: COORDINATION_SPEAK_2
   x-pattern: group_chat
 - id: COORDINATION_FALLBACK
   x-pattern: group_chat
@@ -20,6 +28,26 @@ states:
 - id: COMPLETED
   terminal: true
 transitions:
+- from: COORDINATION_SELECT_1
+  to: COORDINATION_SPEAK_1
+  trigger: coordination_select_1_completed
+  guards:
+  - coordination_select_1_completed
+- from: COORDINATION_SPEAK_1
+  to: COORDINATION_MANAGE_2
+  trigger: coordination_speak_1_completed
+  guards:
+  - coordination_speak_1_completed
+- from: COORDINATION_SELECT_2
+  to: COORDINATION_SPEAK_2
+  trigger: coordination_select_2_completed
+  guards:
+  - coordination_select_2_completed
+- from: COORDINATION_SPEAK_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_speak_2_completed
+  guards:
+  - coordination_speak_2_completed
 - from: COORDINATION_FALLBACK
   to: COORDINATION_RECORD
   trigger: coordination_fallback_completed
@@ -30,42 +58,49 @@ transitions:
   trigger: coordination_record_completed
   guards:
   - coordination_record_completed
-- from: COORDINATION_ROUND_1
+- from: COORDINATION_MANAGE_1
   to: COORDINATION_RECORD
-  trigger: coordination_round_1_finished
+  trigger: coordination_manage_1_finished
   guards:
-  - coordination_round_1_finished_completed
-  - coordination_round_1_finished_output_0
-- from: COORDINATION_ROUND_1
-  to: COORDINATION_ROUND_2
-  trigger: coordination_round_1_continue
+  - coordination_manage_1_finished_completed
+  - coordination_manage_1_finished_output_0
+- from: COORDINATION_MANAGE_1
+  to: COORDINATION_SELECT_1
+  trigger: coordination_manage_1_continue
   guards:
-  - coordination_round_1_continue_completed
-  - coordination_round_1_continue_output_0
-- from: COORDINATION_ROUND_2
+  - coordination_manage_1_continue_completed
+  - coordination_manage_1_continue_output_0
+- from: COORDINATION_MANAGE_2
   to: COORDINATION_RECORD
-  trigger: coordination_round_2_finished
+  trigger: coordination_manage_2_finished
   guards:
-  - coordination_round_2_finished_completed
-  - coordination_round_2_finished_output_0
-- from: COORDINATION_ROUND_2
-  to: COORDINATION_FALLBACK
-  trigger: coordination_round_2_continue
+  - coordination_manage_2_finished_completed
+  - coordination_manage_2_finished_output_0
+- from: COORDINATION_MANAGE_2
+  to: COORDINATION_SELECT_2
+  trigger: coordination_manage_2_continue
   guards:
-  - coordination_round_2_continue_completed
-  - coordination_round_2_continue_output_0
+  - coordination_manage_2_continue_completed
+  - coordination_manage_2_continue_output_0
 steps:
 - id: coordination_manage_1
-  state: COORDINATION_ROUND_1
+  state: COORDINATION_MANAGE_1
   handler: host_callback
   config:
     num_agents: 1
-    prompt: Choose the next speaker and return next_speaker, done and instructions.
+    prompt: Decide whether the discussion is done and return done plus instructions.
+    see_prior: true
+- id: coordination_select_1
+  state: COORDINATION_SELECT_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Choose the next speaker and return next_speaker.
     see_prior: true
   context_writes:
     coordination_next_speaker: next_speaker
 - id: coordination_speak_1
-  state: COORDINATION_ROUND_1
+  state: COORDINATION_SPEAK_1
   handler: host_callback
   config:
     num_agents: 1
@@ -76,16 +111,23 @@ steps:
   - OPS
   - SECURITY
 - id: coordination_manage_2
-  state: COORDINATION_ROUND_2
+  state: COORDINATION_MANAGE_2
   handler: host_callback
   config:
     num_agents: 1
-    prompt: Choose the next speaker and return next_speaker, done and instructions.
+    prompt: Decide whether the discussion is done and return done plus instructions.
+    see_prior: true
+- id: coordination_select_2
+  state: COORDINATION_SELECT_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Choose the next speaker and return next_speaker.
     see_prior: true
   context_writes:
     coordination_next_speaker: next_speaker
 - id: coordination_speak_2
-  state: COORDINATION_ROUND_2
+  state: COORDINATION_SPEAK_2
   handler: host_callback
   config:
     num_agents: 1
@@ -113,61 +155,73 @@ guards:
   coordination_fallback_completed:
     type: automated
     check: step_status:coordination_fallback:COMPLETED
+  coordination_manage_1_completed:
+    type: automated
+    check: step_status:coordination_manage_1:COMPLETED
+  coordination_manage_1_continue_completed:
+    type: automated
+    check: step_status:coordination_manage_1:COMPLETED
+  coordination_manage_1_continue_output_0:
+    type: automated
+    check: output_field:coordination_manage_1:done=false
+  coordination_manage_1_finished_completed:
+    type: automated
+    check: step_status:coordination_manage_1:COMPLETED
+  coordination_manage_1_finished_output_0:
+    type: automated
+    check: output_field:coordination_manage_1:done=true
+  coordination_manage_2_completed:
+    type: automated
+    check: step_status:coordination_manage_2:COMPLETED
+  coordination_manage_2_continue_completed:
+    type: automated
+    check: step_status:coordination_manage_2:COMPLETED
+  coordination_manage_2_continue_output_0:
+    type: automated
+    check: output_field:coordination_manage_2:done=false
+  coordination_manage_2_finished_completed:
+    type: automated
+    check: step_status:coordination_manage_2:COMPLETED
+  coordination_manage_2_finished_output_0:
+    type: automated
+    check: output_field:coordination_manage_2:done=true
   coordination_record_completed:
     type: automated
     check: step_status:coordination_record:COMPLETED
-  coordination_round_1_continue_completed:
+  coordination_select_1_completed:
+    type: automated
+    check: step_status:coordination_select_1:COMPLETED
+  coordination_select_2_completed:
+    type: automated
+    check: step_status:coordination_select_2:COMPLETED
+  coordination_speak_1_completed:
     type: automated
     check: step_status:coordination_speak_1:COMPLETED
-  coordination_round_1_continue_output_0:
-    type: automated
-    check: output_field:coordination_manage_1:done=false
-  coordination_round_1_coordination_manage_1_completed:
-    type: automated
-    check: step_status:coordination_manage_1:COMPLETED
-  coordination_round_1_coordination_speak_1_completed:
-    type: automated
-    check: step_status:coordination_speak_1:COMPLETED
-  coordination_round_1_finished_completed:
-    type: automated
-    check: step_status:coordination_speak_1:COMPLETED
-  coordination_round_1_finished_output_0:
-    type: automated
-    check: output_field:coordination_manage_1:done=true
-  coordination_round_2_continue_completed:
+  coordination_speak_2_completed:
     type: automated
     check: step_status:coordination_speak_2:COMPLETED
-  coordination_round_2_continue_output_0:
-    type: automated
-    check: output_field:coordination_manage_2:done=false
-  coordination_round_2_coordination_manage_2_completed:
-    type: automated
-    check: step_status:coordination_manage_2:COMPLETED
-  coordination_round_2_coordination_speak_2_completed:
-    type: automated
-    check: step_status:coordination_speak_2:COMPLETED
-  coordination_round_2_finished_completed:
-    type: automated
-    check: step_status:coordination_speak_2:COMPLETED
-  coordination_round_2_finished_output_0:
-    type: automated
-    check: output_field:coordination_manage_2:done=true
 roles:
 - id: LEAD
   allowed_actions:
   - coordination_manage_1
+  - coordination_manage_1_continue
+  - coordination_manage_1_finished
   - coordination_manage_2
+  - coordination_manage_2_continue
+  - coordination_manage_2_finished
   - coordination_record
   - coordination_record_completed
-  - coordination_round_1_continue
-  - coordination_round_1_finished
-  - coordination_round_2_continue
-  - coordination_round_2_finished
+  - coordination_select_1
+  - coordination_select_1_completed
+  - coordination_select_2
+  - coordination_select_2_completed
   - request_intervention
 - id: OPS
   allowed_actions:
   - coordination_speak_1
+  - coordination_speak_1_completed
   - coordination_speak_2
+  - coordination_speak_2_completed
   - request_intervention
 - id: SECURITY
   allowed_actions:

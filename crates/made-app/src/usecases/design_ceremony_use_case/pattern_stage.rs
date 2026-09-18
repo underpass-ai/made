@@ -2,11 +2,13 @@ use std::collections::BTreeMap;
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, GuardCondition,
-    GuardName, MaxBounces, OutputFieldGuardCondition, PriorContext, RoleId, Rounds, StateExecution,
-    StepId, StepInstructions, StepOutputField, StepStatus, TransitionTrigger,
+    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, MaxBounces,
+    PriorContext, RoleId, Rounds, StateExecution, StepId, StepInstructions, StepOutputField,
 };
 
+use super::pattern_stage_routes::{
+    human_handoff_route, output_route, string_route, two_output_route,
+};
 use crate::usecases::ceremony_design_route::CeremonyDesignRoute;
 use crate::usecases::{
     CeremonyDesignDocument, CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
@@ -25,7 +27,7 @@ pub(super) fn materialize_stage_patterns(
     let mut entries = Vec::new();
     let mut routes = Vec::new();
     let mut patterns = BTreeMap::new();
-    let mut bounce_cap = None;
+    let mut bounce_cap: Option<u32> = document.max_bounces().map(MaxBounces::get);
     for entry in document.stage_entries() {
         match entry {
             CeremonyDesignStageEntry::Pattern(pattern) => {
@@ -35,7 +37,8 @@ pub(super) fn materialize_stage_patterns(
                     patterns.insert(entry_id(entry).clone(), pattern.kind());
                 }
                 if pattern.kind() == CeremonyStagePatternKind::Handoff {
-                    bounce_cap = pattern.max_iterations();
+                    let cap = pattern.max_iterations().expect("validated cap").get();
+                    bounce_cap = Some(bounce_cap.map_or(cap, |current| current.min(cap)));
                 }
                 entries.extend(expansion.entries);
                 routes.extend(expansion.routes);
@@ -44,10 +47,8 @@ pub(super) fn materialize_stage_patterns(
         }
     }
     let mut materialized = document.materialized_with_entries(entries, patterns, routes);
-    if materialized.max_bounces().is_none() {
-        if let Some(cap) = bounce_cap {
-            materialized = materialized.with_max_bounces(MaxBounces::new(cap.get())?);
-        }
+    if let Some(cap) = bounce_cap {
+        materialized = materialized.with_max_bounces(MaxBounces::new(cap)?);
     }
     Ok(materialized)
 }
@@ -64,6 +65,17 @@ fn validate(pattern: &CeremonyDesignPatternStage) -> Result<(), DomainError> {
             "stage pattern `{}` requires `max_iterations`",
             pattern.id()
         )));
+    }
+    if pattern.kind() == CeremonyStagePatternKind::Handoff {
+        let mut state_ids = std::collections::BTreeSet::new();
+        for role in pattern.roles() {
+            if !state_ids.insert(role.as_str().to_ascii_lowercase()) {
+                return Err(invalid(format!(
+                    "handoff pattern `{}` has roles that collide after state-id normalization",
+                    pattern.id()
+                )));
+            }
+        }
     }
     Ok(())
 }
@@ -157,13 +169,19 @@ fn group_chat(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, DomainE
     let mut entries = Vec::new();
     let mut routes = Vec::new();
     for iteration in 1..=cap {
-        let state_id = StepId::new(format!("{}_round_{iteration}", pattern.id()))?;
         let manage_id = StepId::new(format!("{}_manage_{iteration}", pattern.id()))?;
+        let select_id = StepId::new(format!("{}_select_{iteration}", pattern.id()))?;
         let speak_id = StepId::new(format!("{}_speak_{iteration}", pattern.id()))?;
         let manage = leaf(
             manage_id.as_str(),
             manager,
-            "Choose the next speaker and return next_speaker, done and instructions.",
+            "Decide whether the discussion is done and return done plus instructions.",
+            true,
+        )?;
+        let select = leaf(
+            select_id.as_str(),
+            manager,
+            "Choose the next speaker and return next_speaker.",
             true,
         )?
         .with_context_writes(ContextWrites::new(BTreeMap::from([(
@@ -180,17 +198,14 @@ fn group_chat(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, DomainE
             key.clone(),
             pattern.roles().iter().cloned(),
         )?);
-        entries.push(group(state_id.clone(), vec![manage, speak]));
+        entries.push(CeremonyDesignStageEntry::Leaf(manage));
+        entries.push(CeremonyDesignStageEntry::Leaf(select));
+        entries.push(CeremonyDesignStageEntry::Leaf(speak));
         routes.push(output_route(
-            &state_id, &record_id, manager, &speak_id, &manage_id, "done", true, "finished",
+            &manage_id, &record_id, manager, &manage_id, &manage_id, "done", true, "finished",
         )?);
-        let next = if iteration == cap {
-            fallback_id.clone()
-        } else {
-            StepId::new(format!("{}_round_{}", pattern.id(), iteration + 1))?
-        };
         routes.push(output_route(
-            &state_id, &next, manager, &speak_id, &manage_id, "done", false, "continue",
+            &manage_id, &select_id, manager, &manage_id, &manage_id, "done", false, "continue",
         )?);
     }
     entries.push(CeremonyDesignStageEntry::Leaf(leaf(
@@ -329,7 +344,7 @@ fn handoff(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, DomainErro
                 target_role.as_str(),
             )?);
         }
-        routes.push(string_route(
+        routes.push(human_handoff_route(
             state_id,
             &human_id,
             role,
@@ -350,7 +365,6 @@ fn handoff(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, DomainErro
         "Record the resolved or human-approved handoff outcome.",
         true,
     )?));
-    routes.push(human_route(&human_id, &record_id, human)?);
     Ok(Expansion { entries, routes })
 }
 
@@ -457,125 +471,6 @@ fn group(id: StepId, steps: Vec<CeremonyDesignStage>) -> CeremonyDesignStageEntr
             .map(CeremonyDesignGroupStep::new)
             .collect(),
         CeremonyDesignJoin::AllStepsCompleted,
-    ))
-}
-fn output_route(
-    from: &StepId,
-    to: &StepId,
-    owner: &RoleId,
-    completed: &StepId,
-    output_step: &StepId,
-    field: &str,
-    expected: bool,
-    label: &str,
-) -> Result<CeremonyDesignRoute, DomainError> {
-    route(
-        from,
-        to,
-        owner,
-        completed,
-        vec![(output_step, field, serde_json::json!(expected))],
-        label,
-    )
-}
-fn string_route(
-    from: &StepId,
-    to: &StepId,
-    owner: &RoleId,
-    step: &StepId,
-    field: &str,
-    expected: &str,
-) -> Result<CeremonyDesignRoute, DomainError> {
-    route(
-        from,
-        to,
-        owner,
-        step,
-        vec![(step, field, serde_json::json!(expected))],
-        &format!("to_{}", expected.to_ascii_lowercase()),
-    )
-}
-fn two_output_route(
-    from: &StepId,
-    to: &StepId,
-    owner: &RoleId,
-    step: &StepId,
-    first: &str,
-    first_value: bool,
-    second: &str,
-    second_value: bool,
-    label: &str,
-) -> Result<CeremonyDesignRoute, DomainError> {
-    route(
-        from,
-        to,
-        owner,
-        step,
-        vec![
-            (step, first, serde_json::json!(first_value)),
-            (step, second, serde_json::json!(second_value)),
-        ],
-        label,
-    )
-}
-fn route(
-    from: &StepId,
-    to: &StepId,
-    owner: &RoleId,
-    completed: &StepId,
-    outputs: Vec<(&StepId, &str, serde_json::Value)>,
-    label: &str,
-) -> Result<CeremonyDesignRoute, DomainError> {
-    let prefix = format!("{}_{}", from, label);
-    let mut guards = vec![(
-        GuardName::new(format!("{prefix}_completed"))?,
-        GuardCondition::StepStatus {
-            step_id: completed.clone(),
-            status: StepStatus::Completed,
-        },
-    )];
-    for (index, (step, field, expected)) in outputs.into_iter().enumerate() {
-        guards.push((
-            GuardName::new(format!("{prefix}_output_{index}"))?,
-            GuardCondition::OutputField(OutputFieldGuardCondition::new(
-                step.clone(),
-                StepOutputField::new(field)?,
-                expected,
-            )),
-        ));
-    }
-    Ok(CeremonyDesignRoute::new(
-        from.clone(),
-        to.clone(),
-        TransitionTrigger::new(prefix)?,
-        owner.clone(),
-        guards,
-    ))
-}
-fn human_route(
-    from: &StepId,
-    to: &StepId,
-    owner: &RoleId,
-) -> Result<CeremonyDesignRoute, DomainError> {
-    let prefix = format!("{}_approved", from);
-    Ok(CeremonyDesignRoute::new(
-        from.clone(),
-        to.clone(),
-        TransitionTrigger::new(&prefix)?,
-        owner.clone(),
-        vec![
-            (
-                GuardName::new(format!("{prefix}_completed"))?,
-                GuardCondition::StepStatus {
-                    step_id: from.clone(),
-                    status: StepStatus::Completed,
-                },
-            ),
-            (
-                GuardName::new(format!("{prefix}_human"))?,
-                GuardCondition::HumanApproval,
-            ),
-        ],
     ))
 }
 fn leaf(

@@ -3,6 +3,7 @@ mod group_repeat_intent;
 mod group_repeat_until_intent;
 mod group_stage_intent;
 mod join_intent;
+mod pattern_intent;
 mod pattern_stage_intent;
 
 use made_app::usecases::CeremonyDesignStageEntry;

@@ -27,6 +27,7 @@ use super::designed_ceremony::DesignedCeremony;
 mod definition;
 mod pattern;
 mod pattern_stage;
+mod pattern_stage_routes;
 mod validation;
 
 use definition::build_definition;
@@ -135,8 +136,8 @@ mod tests {
         CeremonyStagePatternKind,
     };
     use made_core::value_objects::{
-        CeremonyDescription, CeremonyName, InputName, NumAgents, OutputName, RoleId, Rounds,
-        StateIteration, StepId, StepInstructions, StepIteration, StepOutputField,
+        CeremonyDescription, CeremonyName, InputName, MaxBounces, NumAgents, OutputName, RoleId,
+        Rounds, StateIteration, StepId, StepInstructions, StepIteration, StepOutputField,
     };
     use made_core::value_objects::{GuardCondition, RepeatUntilCondition, StepStatus};
     use serde_json::json;
@@ -295,6 +296,52 @@ mod tests {
             .guards()
             .iter()
             .any(|guard| matches!(guard.condition(), GuardCondition::HumanApproval)));
+    }
+
+    #[test]
+    fn composed_handoffs_keep_the_strictest_declared_bounce_cap() {
+        let second = CeremonyDesignPatternStage::new(
+            StepId::new("second_handoff").unwrap(),
+            CeremonyStagePatternKind::Handoff,
+            vec![role("WORKER"), role("ARTIST")],
+            instructions("Continue the bounded handoff."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(5).unwrap());
+        let document = pattern_document(pattern(CeremonyStagePatternKind::Handoff))
+            .with_stage_entries(vec![
+                CeremonyDesignStageEntry::Pattern(
+                    pattern(CeremonyStagePatternKind::Handoff)
+                        .with_max_iterations(StateIteration::new(2).unwrap()),
+                ),
+                CeremonyDesignStageEntry::Pattern(second),
+            ])
+            .with_max_bounces(MaxBounces::new(10).unwrap());
+        assert_eq!(
+            designed(&document)
+                .definition()
+                .max_bounces()
+                .unwrap()
+                .get(),
+            2
+        );
+    }
+
+    #[test]
+    fn handoff_rejects_roles_that_collide_as_generated_state_ids() {
+        let colliding = CeremonyDesignPatternStage::new(
+            StepId::new("handoff").unwrap(),
+            CeremonyStagePatternKind::Handoff,
+            vec![role("Worker"), role("WORKER")],
+            instructions("Route the work."),
+        )
+        .with_fallback_role(role("ARTIST"))
+        .with_max_iterations(StateIteration::new(2).unwrap());
+        let reason = refused(&pattern_document(colliding));
+        assert!(
+            reason.contains("collide after state-id normalization"),
+            "{reason}"
+        );
     }
 
     fn refused(document: &CeremonyDesignDocument) -> String {

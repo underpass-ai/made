@@ -61,7 +61,7 @@ pub(super) fn build_definition(
             };
             let state = state.with_execution(entry_execution(&document.stage_entries()[index]));
             let state = document
-                .state_pattern(&entry_id(&document.stage_entries()[index]))
+                .state_pattern(entry_id(&document.stage_entries()[index]))
                 .map_or(state.clone(), |pattern| {
                     state.with_annotations(
                         Attributes::new(BTreeMap::from([(

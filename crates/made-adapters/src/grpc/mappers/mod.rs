@@ -14,6 +14,7 @@ mod attributes;
 mod ceremony_authoring;
 mod ceremony_delegation;
 mod ceremony_design;
+mod ceremony_design_stage;
 mod ceremony_history;
 mod ceremony_human_verbs;
 mod ceremony_instance;

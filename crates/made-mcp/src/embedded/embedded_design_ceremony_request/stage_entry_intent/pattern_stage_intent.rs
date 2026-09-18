@@ -5,23 +5,7 @@ use made_core::error::DomainError;
 use made_core::value_objects::{JoinStepCount, RoleId, StateIteration, StepId, StepInstructions};
 use serde::Deserialize;
 
-use super::join_intent::JoinIntent;
-
-#[derive(Clone, Debug, Deserialize)]
-#[serde(deny_unknown_fields)]
-struct PatternIntent {
-    kind: String,
-    roles: Vec<String>,
-    instructions: String,
-    #[serde(default)]
-    manager_role_id: Option<String>,
-    #[serde(default)]
-    max_iterations: Option<u32>,
-    #[serde(default)]
-    fallback_role_id: Option<String>,
-    #[serde(default)]
-    join: Option<JoinIntent>,
-}
+use super::pattern_intent::PatternIntent;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]

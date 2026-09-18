@@ -48,6 +48,7 @@ transitions:
   trigger: coordination_ops_to_human
   guards:
   - coordination_ops_to_human_completed
+  - coordination_ops_to_human_human
   - coordination_ops_to_human_output_0
 - from: COORDINATION_SECURITY
   to: COORDINATION_RECORD
@@ -72,13 +73,13 @@ transitions:
   trigger: coordination_security_to_human
   guards:
   - coordination_security_to_human_completed
+  - coordination_security_to_human_human
   - coordination_security_to_human_output_0
 - from: COORDINATION_HUMAN
   to: COORDINATION_RECORD
-  trigger: coordination_human_approved
+  trigger: coordination_human_completed
   guards:
-  - coordination_human_approved_completed
-  - coordination_human_approved_human
+  - coordination_human_completed
 steps:
 - id: coordination_ops
   state: COORDINATION_OPS
@@ -109,12 +110,6 @@ steps:
     prompt: Record the resolved or human-approved handoff outcome.
     see_prior: true
 guards:
-  coordination_human_approved_completed:
-    type: automated
-    check: step_status:coordination_human:COMPLETED
-  coordination_human_approved_human:
-    type: human
-    check: manual_approval
   coordination_human_completed:
     type: automated
     check: step_status:coordination_human:COMPLETED
@@ -130,6 +125,9 @@ guards:
   coordination_ops_to_human_completed:
     type: automated
     check: step_status:coordination_ops:COMPLETED
+  coordination_ops_to_human_human:
+    type: human
+    check: manual_approval
   coordination_ops_to_human_output_0:
     type: automated
     check: output_field:coordination_ops:handoff_to="HUMAN"
@@ -160,6 +158,9 @@ guards:
   coordination_security_to_human_completed:
     type: automated
     check: step_status:coordination_security:COMPLETED
+  coordination_security_to_human_human:
+    type: human
+    check: manual_approval
   coordination_security_to_human_output_0:
     type: automated
     check: output_field:coordination_security:handoff_to="HUMAN"
@@ -200,7 +201,7 @@ roles:
 - id: HUMAN
   allowed_actions:
   - coordination_human
-  - coordination_human_approved
+  - coordination_human_completed
   - respond_to_intervention
 timeouts:
   step_default: 300
@@ -209,4 +210,3 @@ retry_policies:
     max_attempts: 2
     backoff_seconds: 1
 max_bounces: 2
-
