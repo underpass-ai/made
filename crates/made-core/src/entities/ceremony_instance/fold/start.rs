@@ -40,6 +40,12 @@ impl CeremonyInstance {
             bound_definition: started.bound_definition,
             lineage: started.lineage.clone(),
             child_groups: BTreeMap::new(),
+            lifecycle: crate::value_objects::CeremonyLifecycle::default(),
+            ceremony_deadline: started.ceremony_deadline,
+            state_deadline: started.state_deadline.clone(),
+            step_deadlines: BTreeMap::new(),
+            retired_deadline_claims: BTreeMap::new(),
+            late_step_results: BTreeMap::new(),
         }
     }
 }

@@ -48,6 +48,7 @@ impl From<DomainError> for ToolError {
             | DomainError::InvariantViolated { .. }
             | DomainError::AlreadyExists { .. }
             | DomainError::NoValidProposal { .. }
+            | DomainError::LifecycleRefused { .. }
             | DomainError::UnreadableCeremonyEvent { .. } => Self::refused(message),
         }
     }

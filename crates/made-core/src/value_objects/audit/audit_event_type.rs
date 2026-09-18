@@ -36,6 +36,13 @@ pub enum AuditEventType {
     /// happen inside the ceremony it belongs to.
     InstanceImported,
     MemoryRecalled,
+    CeremonyPaused,
+    CeremonyResumed,
+    CeremonyCancelled,
+    CeremonyDeadlineExceeded,
+    StateDeadlineExceeded,
+    StepDeadlineExceeded,
+    LateStepResultObserved,
 }
 
 impl AuditEventType {
@@ -66,13 +73,27 @@ impl AuditEventType {
             Self::CeremonyFailed => "ceremony_failed",
             Self::InstanceImported => "instance_imported",
             Self::MemoryRecalled => "memory_recalled",
+            Self::CeremonyPaused => "ceremony_paused",
+            Self::CeremonyResumed => "ceremony_resumed",
+            Self::CeremonyCancelled => "ceremony_cancelled",
+            Self::CeremonyDeadlineExceeded => "ceremony_deadline_exceeded",
+            Self::StateDeadlineExceeded => "state_deadline_exceeded",
+            Self::StepDeadlineExceeded => "step_deadline_exceeded",
+            Self::LateStepResultObserved => "late_step_result_observed",
         }
     }
 
     /// Whether the fact terminates the ceremony it belongs to.
     #[must_use]
     pub fn is_terminal(self) -> bool {
-        matches!(self, Self::CeremonyCompleted | Self::CeremonyFailed)
+        matches!(
+            self,
+            Self::CeremonyCompleted
+                | Self::CeremonyFailed
+                | Self::CeremonyCancelled
+                | Self::CeremonyDeadlineExceeded
+                | Self::StateDeadlineExceeded
+        )
     }
 
     /// Whether the fact records a decision only a human can make.

@@ -28,12 +28,26 @@ impl CeremonyInstance {
         terminal_reason: &'static str,
     ) -> Result<(), DomainError> {
         self.require_definition(definition)?;
-        if self.is_terminal(definition) {
+        if self.is_terminal(definition) || self.is_ended() {
             Err(DomainError::InvariantViolated {
                 reason: terminal_reason,
             })
         } else {
             Ok(())
+        }
+    }
+
+    pub(super) fn require_admits_new_work(
+        &self,
+        operation: &'static str,
+    ) -> Result<(), DomainError> {
+        if self.admits_new_work() {
+            Ok(())
+        } else {
+            Err(DomainError::LifecycleRefused {
+                operation,
+                phase: self.lifecycle().phase(),
+            })
         }
     }
 

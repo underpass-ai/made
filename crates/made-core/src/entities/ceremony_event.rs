@@ -10,11 +10,13 @@ use serde::{Deserialize, Serialize};
 use crate::value_objects::{AuditEventType, EventSchemaVersion};
 
 use super::ceremony_events::{
-    CeremonyCompleted, CeremonyInstanceStarted, ChildCompletionAccepted, ChildSpawnPlanAdopted,
+    CeremonyCancelled, CeremonyCompleted, CeremonyDeadlineExceeded, CeremonyInstanceStarted,
+    CeremonyPaused, CeremonyResumed, ChildCompletionAccepted, ChildSpawnPlanAdopted,
     ChildSpawnPlanned, ContextWritten, EvidenceCollected, HumanApprovalRecorded,
     HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
-    InterventionResponded, MemoryRecalled, ParticipantsBound, ReasonAsserted,
-    StateIterationStarted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
+    InterventionResponded, LateStepResultObserved, MemoryRecalled, ParticipantsBound,
+    ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
+    StepDeadlineExceeded, StepFailed, StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -52,6 +54,13 @@ pub enum CeremonyEvent {
     ChildSpawnPlanned(ChildSpawnPlanned),
     ChildSpawnPlanAdopted(ChildSpawnPlanAdopted),
     ChildCompletionAccepted(ChildCompletionAccepted),
+    CeremonyPaused(CeremonyPaused),
+    CeremonyResumed(CeremonyResumed),
+    CeremonyCancelled(CeremonyCancelled),
+    CeremonyDeadlineExceeded(CeremonyDeadlineExceeded),
+    StateDeadlineExceeded(StateDeadlineExceeded),
+    StepDeadlineExceeded(StepDeadlineExceeded),
+    LateStepResultObserved(LateStepResultObserved),
 }
 
 impl CeremonyEvent {
@@ -80,6 +89,13 @@ impl CeremonyEvent {
             Self::ChildSpawnPlanned(_) => AuditEventType::ChildSpawnPlanned,
             Self::ChildSpawnPlanAdopted(_) => AuditEventType::ChildSpawnPlanAdopted,
             Self::ChildCompletionAccepted(_) => AuditEventType::ChildCompletionAccepted,
+            Self::CeremonyPaused(_) => AuditEventType::CeremonyPaused,
+            Self::CeremonyResumed(_) => AuditEventType::CeremonyResumed,
+            Self::CeremonyCancelled(_) => AuditEventType::CeremonyCancelled,
+            Self::CeremonyDeadlineExceeded(_) => AuditEventType::CeremonyDeadlineExceeded,
+            Self::StateDeadlineExceeded(_) => AuditEventType::StateDeadlineExceeded,
+            Self::StepDeadlineExceeded(_) => AuditEventType::StepDeadlineExceeded,
+            Self::LateStepResultObserved(_) => AuditEventType::LateStepResultObserved,
         }
     }
 
@@ -91,7 +107,9 @@ impl CeremonyEvent {
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
             Self::StepStarted(event) => {
-                if event.state_visit.is_some() {
+                if event.deadline.is_some() {
+                    EventSchemaVersion::V5
+                } else if event.state_visit.is_some() {
                     EventSchemaVersion::V4
                 } else if event.role_from.is_some() || event.sealed_role.is_some() {
                     EventSchemaVersion::V3
@@ -122,7 +140,14 @@ impl CeremonyEvent {
                 }
             }
             Self::TransitionApplied(event) => {
-                if event.destination.is_some() || event.transition.has_explicit_state_visit() {
+                if event
+                    .destination
+                    .as_ref()
+                    .is_some_and(|destination| destination.deadline.is_some())
+                {
+                    EventSchemaVersion::V4
+                } else if event.destination.is_some() || event.transition.has_explicit_state_visit()
+                {
                     EventSchemaVersion::V3
                 } else if event.transition.has_explicit_state_iteration() {
                     EventSchemaVersion::V2
@@ -136,6 +161,11 @@ impl CeremonyEvent {
             Self::ContextWritten(event) => event
                 .state_visit
                 .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::CeremonyInstanceStarted(event)
+                if event.ceremony_deadline.is_some() || event.state_deadline.is_some() =>
+            {
+                EventSchemaVersion::V3
+            }
             Self::CeremonyInstanceStarted(event) if event.lineage.is_some() => {
                 EventSchemaVersion::V2
             }
@@ -154,6 +184,13 @@ impl CeremonyEvent {
             | Self::ChildSpawnPlanned(_)
             | Self::ChildSpawnPlanAdopted(_)
             | Self::ChildCompletionAccepted(_) => EventSchemaVersion::V1,
+            Self::CeremonyPaused(_)
+            | Self::CeremonyResumed(_)
+            | Self::CeremonyCancelled(_)
+            | Self::CeremonyDeadlineExceeded(_)
+            | Self::StateDeadlineExceeded(_)
+            | Self::StepDeadlineExceeded(_) => EventSchemaVersion::V1,
+            Self::LateStepResultObserved(_) => EventSchemaVersion::V1,
         }
     }
 }

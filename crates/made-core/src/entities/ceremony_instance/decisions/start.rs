@@ -1,4 +1,4 @@
-use time::OffsetDateTime;
+use time::{Duration, OffsetDateTime};
 
 use crate::entities::ceremony_events::{CeremonyInstanceStarted, MemoryRecalled};
 use crate::entities::{
@@ -6,7 +6,8 @@ use crate::entities::{
 };
 use crate::error::DomainError;
 use crate::value_objects::{
-    CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, SessionRecollection,
+    CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage,
+    SessionRecollection, StateDeadline, StateVisit,
 };
 
 impl CeremonyInstance {
@@ -126,6 +127,18 @@ impl CeremonyInstance {
                 reason: format!("missing required ceremony inputs: {}", missing.join(", ")),
             });
         }
+        let ceremony_deadline = definition
+            .ceremony_timeout()
+            .map(|timeout| checked_deadline(now, timeout.duration(), "ceremony_deadline"))
+            .transpose()?
+            .map(CeremonyDeadline::new);
+        let state_deadline = definition
+            .state_timeout()
+            .map(|timeout| checked_deadline(now, timeout.duration(), "state_deadline"))
+            .transpose()?
+            .map(|at| {
+                StateDeadline::new(definition.initial_state_id().clone(), StateVisit::FIRST, at)
+            });
         Ok(CeremonyInstanceStarted {
             ceremony_id: id,
             definition_name: definition.name().clone(),
@@ -135,7 +148,29 @@ impl CeremonyInstance {
             context,
             bound_definition,
             lineage,
+            ceremony_deadline,
+            state_deadline,
             created_at: now,
         })
     }
+}
+
+pub(crate) fn checked_deadline(
+    now: OffsetDateTime,
+    duration: crate::value_objects::DurationMs,
+    field: &'static str,
+) -> Result<OffsetDateTime, DomainError> {
+    let millis = i64::try_from(duration.get()).map_err(|_| DomainError::OutOfRange {
+        field,
+        value: duration.get() as f64,
+        min: 0.0,
+        max: i64::MAX as f64,
+    })?;
+    now.checked_add(Duration::milliseconds(millis))
+        .ok_or(DomainError::OutOfRange {
+            field,
+            value: duration.get() as f64,
+            min: 0.0,
+            max: i64::MAX as f64,
+        })
 }

@@ -25,14 +25,15 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId,
-    CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
-    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyLineage, CeremonyName,
-    CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
-    CeremonyTransitionRecord, CeremonyVersion, ChildGroupId, ChildGroupState, GuardName,
-    IdempotencyKey, MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty, StateId,
-    StateIteration, StateVisit, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult,
+    AuditActorKind, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest,
+    CeremonyEvidenceSourceId, CeremonyGuardApproval, CeremonyGuardDeferral,
+    CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
+    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
+    CeremonyLifecycle, CeremonyLineage, CeremonyName, CeremonyParticipantBinding, CeremonyReason,
+    CeremonyReasonKind, CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, ChildGroupId,
+    ChildGroupState, GuardName, IdempotencyKey, LateStepResult, MemoryConfidence, RoleAction,
+    RoleId, SessionRecollection, Specialty, StateDeadline, StateId, StateIteration, StateVisit,
+    StepAttempt, StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepLease, StepResult,
     TransitionTrigger,
 };
 
@@ -140,6 +141,18 @@ pub struct CeremonyInstance {
     lineage: Option<CeremonyLineage>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     child_groups: BTreeMap<ChildGroupId, ChildGroupState>,
+    #[serde(default, skip_serializing_if = "CeremonyLifecycle::is_default")]
+    lifecycle: CeremonyLifecycle,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ceremony_deadline: Option<CeremonyDeadline>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_deadline: Option<StateDeadline>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    step_deadlines: BTreeMap<StepId, StepDeadline>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    retired_deadline_claims: BTreeMap<StepClaimFence, StepDeadline>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    late_step_results: BTreeMap<StepClaimFence, LateStepResult>,
 }
 
 impl CeremonyInstance {
@@ -397,6 +410,41 @@ impl CeremonyInstance {
     #[must_use]
     pub fn completed_at(&self) -> Option<OffsetDateTime> {
         self.completed_at
+    }
+
+    #[must_use]
+    pub fn lifecycle(&self) -> CeremonyLifecycle {
+        self.completed_at
+            .filter(|_| !self.lifecycle.is_explicit())
+            .map_or_else(|| self.lifecycle.clone(), CeremonyLifecycle::completed)
+    }
+    #[must_use]
+    pub fn ceremony_deadline(&self) -> Option<CeremonyDeadline> {
+        self.ceremony_deadline
+    }
+    #[must_use]
+    pub fn state_deadline(&self) -> Option<&StateDeadline> {
+        self.state_deadline.as_ref()
+    }
+    #[must_use]
+    pub fn step_deadlines(&self) -> &BTreeMap<StepId, StepDeadline> {
+        &self.step_deadlines
+    }
+    #[must_use]
+    pub fn late_step_results(&self) -> &BTreeMap<StepClaimFence, LateStepResult> {
+        &self.late_step_results
+    }
+    #[must_use]
+    pub fn is_paused(&self) -> bool {
+        self.lifecycle().is_paused()
+    }
+    #[must_use]
+    pub fn is_ended(&self) -> bool {
+        self.lifecycle().is_ended()
+    }
+    #[must_use]
+    pub fn admits_new_work(&self) -> bool {
+        !self.is_ended() && self.lifecycle.admits_new_work()
     }
 
     #[must_use]

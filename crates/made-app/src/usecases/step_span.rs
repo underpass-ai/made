@@ -81,5 +81,6 @@ const fn domain_error_kind(error: &DomainError) -> &'static str {
         DomainError::Conflict { .. } => "conflict",
         DomainError::NoValidProposal { .. } => "no_valid_proposal",
         DomainError::UnreadableCeremonyEvent { .. } => "unreadable_ceremony_event",
+        DomainError::LifecycleRefused { .. } => "lifecycle_refused",
     }
 }
