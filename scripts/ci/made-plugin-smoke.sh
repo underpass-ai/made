@@ -23,6 +23,7 @@ cd "${ROOT_DIR}"
 python3 -m json.tool "${PLUGIN_DIR}/.codex-plugin/plugin.json" >/dev/null
 python3 -m json.tool "${PLUGIN_DIR}/.claude-plugin/plugin.json" >/dev/null
 python3 -m json.tool "${PLUGIN_DIR}/.mcp.json" >/dev/null
+bash tests/plugin/build-local-made-plugin-target-dir.sh
 
 # Both host manifests must carry the same version: a bundle that tells
 # Codex one version and Claude Code another is a packaging defect.
