@@ -528,6 +528,7 @@ impl GrpcFixture {
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
             ceremony_publications.clone(),
@@ -564,12 +565,38 @@ impl GrpcFixture {
             deliberate.clone(),
             repository.clone(),
         ));
-        let run_ceremony = Arc::new(RunCeremonyUseCase::new(
-            ceremony_definitions.clone(),
+        let child_orchestrator = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_publications.clone(),
             ceremony_stream.clone(),
-            ceremony_step_handler.clone(),
+            clock.clone(),
+            memory_reader.clone(),
+        ));
+        let accept_child_completion = Arc::new(AcceptChildCompletionUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_publications.clone(),
+            ceremony_stream.clone(),
             clock.clone(),
         ));
+        let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
+            ceremony_store.clone(),
+            ceremony_cursors.clone(),
+            ceremony_stream.clone(),
+            child_orchestrator.clone(),
+            accept_child_completion.clone(),
+            clock.clone(),
+            CeremonyEventConsumer::new("made.children.recovery.v1")
+                .expect("fixture recovery consumer should be valid"),
+        ));
+        let run_ceremony = Arc::new(
+            RunCeremonyUseCase::new(
+                ceremony_definitions.clone(),
+                ceremony_stream.clone(),
+                ceremony_step_handler.clone(),
+                clock.clone(),
+            )
+            .with_child_orchestrator(child_orchestrator.clone()),
+        );
         let start_ceremony = Arc::new(StartCeremonyUseCase::new(
             ceremony_definitions.clone(),
             ceremony_stream.clone(),
@@ -582,12 +609,15 @@ impl GrpcFixture {
             clock.clone(),
             memory_reader.clone(),
         ));
-        let run_ceremony_step = Arc::new(RunCeremonyStepUseCase::new(
-            resolve_ceremony_definition.clone(),
-            ceremony_stream.clone(),
-            ceremony_step_handler,
-            clock.clone(),
-        ));
+        let run_ceremony_step = Arc::new(
+            RunCeremonyStepUseCase::new(
+                resolve_ceremony_definition.clone(),
+                ceremony_stream.clone(),
+                ceremony_step_handler,
+                clock.clone(),
+            )
+            .with_child_orchestrator(child_orchestrator),
+        );
         // The delegated-host protocol reaches the fixture too: the
         // parity tests drive claim and complete over these very RPCs,
         // and a fixture missing them would prove the tools agree on a
@@ -700,6 +730,8 @@ impl GrpcFixture {
             .start_ceremony(start_ceremony)
             .start_published_ceremony(start_published_ceremony)
             .run_ceremony_step(run_ceremony_step)
+            .accept_child_completion(accept_child_completion)
+            .recover_ceremony_children(recover_ceremony_children)
             .claim_ceremony_step(claim_ceremony_step)
             .complete_ceremony_step(complete_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
@@ -732,7 +764,7 @@ impl GrpcFixture {
             )))
             .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
-                Arc::new(InMemoryCeremonyEventCursor::new()),
+                ceremony_cursors,
             )))
             .verify_ceremony_journal(Arc::new(VerifyCeremonyJournalUseCase::new(
                 ceremony_store.clone(),
