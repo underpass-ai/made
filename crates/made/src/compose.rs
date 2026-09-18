@@ -27,16 +27,17 @@ use made_app::services::{
 };
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyChildrenUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
+    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase,
+    ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase, RegisterAgentUseCase,
+    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
     VerifyCeremonyJournalUseCase,
@@ -368,6 +369,26 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
+    let pause_ceremony = Arc::new(PauseCeremonyUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
+    let resume_ceremony = Arc::new(ResumeCeremonyUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
+    let cancel_ceremony = Arc::new(CancelCeremonyUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
+    let enforce_ceremony_deadlines = Arc::new(EnforceCeremonyDeadlinesUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
     let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
@@ -505,6 +526,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .claim_ceremony_step(claim_ceremony_step)
         .complete_ceremony_step(complete_ceremony_step)
         .apply_ceremony_transition(apply_ceremony_transition)
+        .pause_ceremony(pause_ceremony)
+        .resume_ceremony(resume_ceremony)
+        .cancel_ceremony(cancel_ceremony)
+        .enforce_ceremony_deadlines(enforce_ceremony_deadlines)
         .approve_ceremony_guard(approve_ceremony_guard)
         .defer_ceremony_guard(defer_ceremony_guard)
         .assert_ceremony_reason(assert_ceremony_reason)

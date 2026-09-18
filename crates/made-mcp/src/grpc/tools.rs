@@ -151,6 +151,50 @@ pub(crate) async fn dispatch(
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 
+        "made_pause_ceremony" => {
+            let request =
+                ceremony_requests::build_pause_ceremony_request(arguments).map_err(bad_request)?;
+            let response = client.pause_ceremony(request).await?;
+            response
+                .into_inner()
+                .instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
+        "made_resume_ceremony" => {
+            let request =
+                ceremony_requests::build_resume_ceremony_request(arguments).map_err(bad_request)?;
+            let response = client.resume_ceremony(request).await?;
+            response
+                .into_inner()
+                .instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
+        "made_cancel_ceremony" => {
+            let request =
+                ceremony_requests::build_cancel_ceremony_request(arguments).map_err(bad_request)?;
+            let response = client.cancel_ceremony(request).await?;
+            response
+                .into_inner()
+                .instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
+        "made_enforce_ceremony_deadlines" => {
+            let request = ceremony_requests::build_enforce_ceremony_deadlines_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.enforce_ceremony_deadlines(request).await?;
+            response
+                .into_inner()
+                .instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
+        }
+
         "made_approve_ceremony_guard" => {
             let request = ceremony_requests::build_approve_ceremony_guard_request(arguments)
                 .map_err(bad_request)?;
@@ -378,12 +422,14 @@ use ceremony_history_requests::{
 use ceremony_requests::{
     build_accept_child_completion_request, build_apply_ceremony_transition_request,
     build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
-    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
-    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
-    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
-    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
-    build_start_ceremony_request, build_start_published_ceremony_request,
+    build_cancel_ceremony_request, build_claim_ceremony_step_request,
+    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
+    build_complete_ceremony_step_request, build_defer_ceremony_guard_request,
+    build_enforce_ceremony_deadlines_request, build_pause_ceremony_request,
+    build_prepare_ceremony_children_request, build_recover_ceremony_children_request,
+    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
+    build_resume_ceremony_request, build_run_ceremony_step_request, build_start_ceremony_request,
+    build_start_published_ceremony_request,
 };
 #[cfg(test)]
 use design_ceremony_request::build_design_ceremony_request;

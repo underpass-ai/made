@@ -8,3 +8,14 @@ pub enum CeremonyLifecyclePhase {
     Paused,
     Ended,
 }
+
+impl CeremonyLifecyclePhase {
+    #[must_use]
+    pub const fn as_label(self) -> &'static str {
+        match self {
+            Self::Running => "running",
+            Self::Paused => "paused",
+            Self::Ended => "ended",
+        }
+    }
+}
