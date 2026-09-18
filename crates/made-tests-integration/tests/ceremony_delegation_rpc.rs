@@ -96,11 +96,13 @@ async fn a_host_claims_a_step_does_the_work_and_reports_what_happened() {
     // Claiming answers with the session, like every other move, and
     // that session already shows the step taken on. A claim a caller
     // has to follow with a read to see is a claim it cannot act on.
-    let claimed = client
+    let claim = client
         .claim_ceremony_step(claim(ceremony_id, "open_room", "integration-delegation-1"))
         .await
         .expect("ClaimCeremonyStep should succeed")
-        .into_inner()
+        .into_inner();
+    let claim_fence = claim.claim_fence;
+    let claimed = claim
         .instance
         .expect("a claimed step must come back with its session");
     assert_eq!(step(&claimed, "open_room").status, "in_progress");
@@ -124,6 +126,7 @@ async fn a_host_claims_a_step_does_the_work_and_reports_what_happened() {
     );
     let completed = client
         .complete_ceremony_step(CompleteCeremonyStepRequest {
+            claim_fence: claim_fence.clone(),
             ceremony_id: ceremony_id.to_owned(),
             step_id: "open_room".to_owned(),
             actor_kind: "human".to_owned(),
@@ -252,13 +255,16 @@ async fn a_reported_failure_reaches_the_session_with_its_reason() {
     let ceremony_id = "integration-delegation-failure";
 
     start(&mut client, ceremony_id).await;
-    client
+    let claim_fence = client
         .claim_ceremony_step(claim(ceremony_id, "open_room", "integration-failure"))
         .await
-        .expect("the claim should succeed");
+        .expect("the claim should succeed")
+        .into_inner()
+        .claim_fence;
 
     let reasonless = client
         .complete_ceremony_step(CompleteCeremonyStepRequest {
+            claim_fence: claim_fence.clone(),
             ceremony_id: ceremony_id.to_owned(),
             step_id: "open_room".to_owned(),
             actor_kind: "agent".to_owned(),
@@ -272,6 +278,7 @@ async fn a_reported_failure_reaches_the_session_with_its_reason() {
 
     let failed = client
         .complete_ceremony_step(CompleteCeremonyStepRequest {
+            claim_fence: claim_fence.clone(),
             ceremony_id: ceremony_id.to_owned(),
             step_id: "open_room".to_owned(),
             actor_kind: "agent".to_owned(),
@@ -294,4 +301,64 @@ async fn a_reported_failure_reaches_the_session_with_its_reason() {
         .transitions
         .iter()
         .all(|transition| !transition.enabled));
+}
+
+#[tokio::test]
+async fn completion_requires_the_returned_fence_and_refusals_append_nothing() {
+    use made_adapters::memory::InMemoryCeremonyEventStore;
+    use made_core::ports::CeremonyEventStorePort;
+    use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, StreamVersion};
+    use std::sync::Arc;
+    let store = Arc::new(InMemoryCeremonyEventStore::new());
+    let fixture = GrpcFixture::start_over(store.clone()).await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+    let ceremony_id = "integration-required-fence";
+    start(&mut client, ceremony_id).await;
+    let accepted = client
+        .claim_ceremony_step(claim(ceremony_id, "open_room", "required-fence"))
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(accepted.claim_fence.len(), 64);
+    let id = CeremonyId::new(ceremony_id).unwrap();
+    let before = store
+        .read(&id, StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    for (fence, code) in [
+        (String::new(), Code::InvalidArgument),
+        ("malformed".to_owned(), Code::InvalidArgument),
+        ("0".repeat(64), Code::FailedPrecondition),
+    ] {
+        let error = client
+            .complete_ceremony_step(CompleteCeremonyStepRequest {
+                ceremony_id: ceremony_id.to_owned(),
+                step_id: "open_room".to_owned(),
+                actor_kind: "agent".to_owned(),
+                status: "completed".to_owned(),
+                claim_fence: fence,
+                ..Default::default()
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(error.code(), code);
+        assert_eq!(
+            store
+                .read(&id, StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
+                .await
+                .unwrap(),
+            before
+        );
+    }
+    client
+        .complete_ceremony_step(CompleteCeremonyStepRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            step_id: "open_room".to_owned(),
+            actor_kind: "agent".to_owned(),
+            status: "completed".to_owned(),
+            claim_fence: accepted.claim_fence,
+            ..Default::default()
+        })
+        .await
+        .unwrap();
 }

@@ -285,8 +285,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 CLAIM_CEREMONY_STEP_TOOL => {
                     let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
-                    self.present_instance(&ceremony_id).await
+                    let claim = request.execute(&self.made).await?;
+                    let value =
+                        EmbeddedCeremonyInstancePresenter::present_claim(&self.made, &claim)
+                            .await?;
+                    Ok(tool_success_result(value))
                 }
                 COMPLETE_CEREMONY_STEP_TOOL => {
                     let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)

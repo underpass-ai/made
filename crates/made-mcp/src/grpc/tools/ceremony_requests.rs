@@ -139,6 +139,7 @@ pub(super) fn build_complete_ceremony_step_request(
 ) -> Result<pb::CompleteCeremonyStepRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::CompleteCeremonyStepRequest {
+        claim_fence: j2p::require_str(obj, "claim_fence")?.to_owned(),
         ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
         step_id: j2p::require_str(obj, "step_id")?.to_owned(),
         actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),

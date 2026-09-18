@@ -186,6 +186,7 @@ impl Generator {
         };
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: self.any_step(),
+            claim_fence: made_core::value_objects::StepClaimFence::new("0".repeat(64)).unwrap(),
             result,
             now: self.now(),
         })
@@ -346,7 +347,12 @@ fn run(seed: u64, coverage: &mut BTreeMap<AuditEventType, usize>) {
     let mut by_mutators = by_events.clone();
 
     for position in 0..COMMANDS_PER_SEED {
-        let command = generator.command();
+        let mut command = generator.command();
+        if let CeremonyCommand::ApplyStepResult(result) = &mut command {
+            if let Ok(fence) = by_events.step_claim_fence(&result.step_id) {
+                result.claim_fence = fence;
+            }
+        }
         let decided = by_events.decide(&command, &definition);
         let mutated = mutate(&mut by_mutators, &definition, &command);
         match decided {

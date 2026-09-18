@@ -236,6 +236,7 @@ fn pending_records_do_not_reserve_but_completed_repeat_history_does() {
         .apply_step_result(
             &definition,
             &step("step_a"),
+            repeated.step_claim_fence(&step("step_a")).unwrap(),
             StepResult::completed(output).unwrap(),
             datetime!(2026-09-18 12:01:00 UTC),
         )

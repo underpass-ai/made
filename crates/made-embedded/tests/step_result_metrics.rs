@@ -88,7 +88,7 @@ async fn complete(engine: &EmbeddedMade, result: StepResult) {
         ))
         .await
         .unwrap();
-    engine
+    let claim = engine
         .start_step(StartCeremonyStepInput::new(
             id.clone(),
             RoleId::new("WORKER").unwrap(),
@@ -106,6 +106,7 @@ async fn complete(engine: &EmbeddedMade, result: StepResult) {
             step_id.clone(),
             result,
             AuditActorKind::Agent,
+            claim.claim_fence().clone(),
         ))
         .await
         .unwrap();

@@ -255,7 +255,15 @@ async fn delegated_host_claim_and_completion_preserve_host_evidence() {
     });
     let completed = send(
         &server,
-        complete_step_call(3, ceremony_id, "work", "completed", &output, None),
+        complete_step_call(
+            3,
+            ceremony_id,
+            "work",
+            "completed",
+            &output,
+            None,
+            structured(&claimed)["claim_fence"].as_str().unwrap(),
+        ),
     )
     .await;
     let completed = structured(&completed);
@@ -275,7 +283,15 @@ async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
 
     let unclaimed = send(
         &server,
-        complete_step_call(2, ceremony_id, "work", "completed", &json!({}), None),
+        complete_step_call(
+            2,
+            ceremony_id,
+            "work",
+            "completed",
+            &json!({}),
+            None,
+            &"0".repeat(64),
+        ),
     )
     .await;
     assert_eq!(unclaimed["result"]["isError"], true);
@@ -283,7 +299,15 @@ async fn delegated_completion_rejects_unclaimed_and_invalid_results() {
     send(&server, claim_step_call(3, ceremony_id, "work")).await;
     let missing_error = send(
         &server,
-        complete_step_call(4, ceremony_id, "work", "failed", &json!({}), None),
+        complete_step_call(
+            4,
+            ceremony_id,
+            "work",
+            "failed",
+            &json!({}),
+            None,
+            &"0".repeat(64),
+        ),
     )
     .await;
     assert_eq!(missing_error["result"]["isError"], true);
@@ -1646,12 +1670,14 @@ fn complete_step_call(
     status: &str,
     output: &Value,
     error: Option<&str>,
+    claim_fence: &str,
 ) -> Value {
     let mut arguments = json!({
         "ceremony_id": ceremony_id,
         "step_id": step_id,
         "actor_kind": "agent",
         "status": status,
+        "claim_fence": claim_fence,
         "output": output
     });
     if let Some(error) = error {

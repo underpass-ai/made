@@ -31,9 +31,13 @@ pub(crate) fn mutate(
             instance.bind_participant(definition, c.role_id.clone(), c.specialty.clone(), c.now)
         }
         CeremonyCommand::StartStep(c) => start_step(instance, definition, c),
-        CeremonyCommand::ApplyStepResult(c) => {
-            instance.apply_step_result(definition, &c.step_id, c.result.clone(), c.now)
-        }
+        CeremonyCommand::ApplyStepResult(c) => instance.apply_step_result(
+            definition,
+            &c.step_id,
+            c.claim_fence.clone(),
+            c.result.clone(),
+            c.now,
+        ),
         CeremonyCommand::ApplyTransition(c) => apply_transition(instance, definition, c),
         CeremonyCommand::ApproveGuard(c) => instance.approve_guard(
             definition,
@@ -169,6 +173,7 @@ fn drafting() -> Vec<CeremonyCommand> {
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: made_core::value_objects::StepClaimFence::new("0".repeat(64)).unwrap(),
             result: StepResult::completed(readiness(false)).unwrap(),
             now: at(3),
         }),
@@ -181,6 +186,7 @@ fn drafting() -> Vec<CeremonyCommand> {
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: made_core::value_objects::StepClaimFence::new("0".repeat(64)).unwrap(),
             result: StepResult::completed(readiness(true)).unwrap(),
             now: at(5),
         }),
@@ -258,6 +264,7 @@ fn review() -> Vec<CeremonyCommand> {
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("check"),
+            claim_fence: made_core::value_objects::StepClaimFence::new("0".repeat(64)).unwrap(),
             result: StepResult::failed(StepErrorMessage::new("timed out").unwrap()).unwrap(),
             now: at(15),
         }),
@@ -270,6 +277,7 @@ fn review() -> Vec<CeremonyCommand> {
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("check"),
+            claim_fence: made_core::value_objects::StepClaimFence::new("0".repeat(64)).unwrap(),
             result: StepResult::completed(readiness(true)).unwrap(),
             now: at(17),
         }),
@@ -306,15 +314,18 @@ fn a_session_is_the_fold_of_the_events_its_mutations_decided() {
     let mut by_events = CeremonyInstance::rehydrate(&stream).unwrap();
     let mut by_mutators = by_events.clone();
 
-    for (position, command) in lifecycle().iter().enumerate() {
+    for (position, mut command) in lifecycle().into_iter().enumerate() {
+        if let CeremonyCommand::ApplyStepResult(result) = &mut command {
+            result.claim_fence = by_events.step_claim_fence(&result.step_id).unwrap();
+        }
         let events = by_events
-            .decide(command, &definition)
+            .decide(&command, &definition)
             .unwrap_or_else(|error| panic!("command {position} refused: {error}"));
         for event in &events {
             by_events.apply(event);
         }
         stream.extend(events);
-        mutate(&mut by_mutators, &definition, command)
+        mutate(&mut by_mutators, &definition, &command)
             .unwrap_or_else(|error| panic!("mutator {position} refused: {error}"));
         assert_eq!(
             by_events, by_mutators,

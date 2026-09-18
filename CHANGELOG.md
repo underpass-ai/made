@@ -14,6 +14,15 @@ operator command.
 
 ## Unreleased
 
+### Fixed
+
+- Fence step completion to the accepted claim so a late worker cannot finish
+  or clear a replacement worker's lease. Claim replies return `claim_fence`
+  and completion requires it on proto, both MCP editions and the typed Rust
+  facade; omitted identities are refused. App-owned handlers retain their
+  accepted fence through reload and retry. Existing event and snapshot bytes
+  remain compatible. (#127)
+
 ## [0.5.0] - 2026-09-18
 
 This release combines the event-stream and durable-memory foundation from

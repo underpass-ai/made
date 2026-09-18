@@ -830,7 +830,8 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
         &embedded as &dyn MadeMcpToolBackend,
     ] {
         let name = backend.backend_name();
-        for (tool, args) in [
+        let mut claim_fence = Value::Null;
+        for (tool, mut args) in [
             (
                 "made_start_ceremony",
                 json!({ "ceremony_id": ceremony_id, "definition_yaml": PARITY_CEREMONY, "actor_id": "parity-operator", "actor_kind": "service" }),
@@ -857,10 +858,16 @@ async fn claiming_and_completing_a_step_leaves_the_same_shape_on_both_backends()
                 }),
             ),
         ] {
-            backend
+            if tool == "made_complete_ceremony_step" {
+                args["claim_fence"] = claim_fence.clone();
+            }
+            let response = backend
                 .call_tool(tool, &args)
                 .await
                 .unwrap_or_else(|error| panic!("{tool} failed on the {name} backend: {error}"));
+            if tool == "made_claim_ceremony_step" {
+                claim_fence = structured(&response)["claim_fence"].clone();
+            }
         }
     }
 

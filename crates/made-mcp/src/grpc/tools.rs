@@ -130,9 +130,7 @@ pub(crate) async fn dispatch(
             let request = ceremony_requests::build_claim_ceremony_step_request(arguments)
                 .map_err(bad_request)?;
             let response = client.claim_ceremony_step(request).await?;
-            let pb::ClaimCeremonyStepResponse { instance } = response.into_inner();
-            instance
-                .map(p2j::ceremony_instance_state_to_json)
+            p2j::ceremony_claim_to_json(response.into_inner())
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 

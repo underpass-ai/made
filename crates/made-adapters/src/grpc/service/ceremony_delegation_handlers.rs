@@ -29,22 +29,14 @@ impl MadeGrpcService {
         let (instance, definition) = self.session(&ceremony_id).await?;
         let input = claim_ceremony_step_input_from_proto(request, &definition, &instance)
             .map_err(domain_error_to_status)?;
-        self.claim_ceremony_step
+        let claim = self
+            .claim_ceremony_step
             .execute(input)
             .await
             .map_err(domain_error_to_status)?;
-        // Read back rather than render what was loaded: claiming
-        // answers with the attempt it took, and the session a caller
-        // gets must already show the step as claimed. The definition
-        // is the one resolved above — a claim changes the instance and
-        // never the definition.
-        let claimed = self
-            .get_ceremony_instance
-            .execute(&ceremony_id)
-            .await
-            .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::ClaimCeremonyStepResponse {
-            instance: Some(self.render(&claimed, &definition).await?),
+            instance: Some(self.render(claim.instance(), &definition).await?),
+            claim_fence: claim.claim_fence().as_str().to_owned(),
         }))
     }
 
