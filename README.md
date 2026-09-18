@@ -92,7 +92,7 @@ patterns remain on the [roadmap](docs/orchestration-patterns-plan.md).
 
 MADE works independently of [KMP](https://github.com/underpass-ai/kmp) and
 [Underpass Runtime](https://github.com/underpass-ai/underpass-runtime).
-Integrations are optional; the embedded path needs neither service.
+The embedded path needs neither service.
 
 ## Documentation
 

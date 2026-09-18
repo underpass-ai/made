@@ -12,6 +12,7 @@ Companion docs:
 
 - [Codex CLI configuration](./mcp/codex.md)
 - [Claude Desktop configuration](./mcp/claude-desktop.md)
+- [Claude Code configuration](#claude-code)
 
 ## Quickstart — fixture mode
 
@@ -946,14 +947,32 @@ Expected:
 
 ## Client configuration
 
-The two officially-supported clients have dedicated guides:
+Host configuration:
 
 - [Codex CLI](./mcp/codex.md) — TOML config + `codex mcp add` form.
 - [Claude Desktop](./mcp/claude-desktop.md) — `claude_desktop_config.json`
   with per-OS paths.
+- [Claude Code](#claude-code) — local embedded MCP registration.
 
-Both share the same env-driven backend selection; the only difference
-is the file location the client expects.
+These clients share the same environment-driven backend selection; each
+host has its own registration format and configuration location.
+
+### Claude Code
+
+After installing `made-mcp`, register the local embedded server:
+
+```bash
+mkdir -p "$HOME/.local/state/underpass-made"
+claude mcp add made --scope user \
+  --env MADE_MCP_BACKEND=embedded \
+  --env MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
+  -- made-mcp
+```
+
+The executable must be on the host's `PATH`; otherwise use its absolute path.
+The [MADE plugin](../../plugins/made/README.md) provides the same embedded
+engine with setup and ceremony skills. Use the plugin's registration when it
+is installed, rather than registering a second server manually.
 
 ## Streaming caveat
 
