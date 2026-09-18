@@ -27,10 +27,12 @@ ceremony surfaces, with specific facade exceptions listed in the ledger.
 full transport. Check its `ApiCapabilities` and `CONTRACT_VERSION` rather than
 assuming crate version implies every capability.
 
-The cluster-only council surface includes deliberation and council, agent and
-output-contract configuration. Embedded ceremony support does not imply
-embedded councils. A provider also requires its build feature, runtime
-configuration and registered agent kind.
+Council deliberation and council, agent and output-contract configuration are
+available through gRPC, both MCP backends and `EmbeddedMade`. The embedded
+builder supplies process-local in-memory registries by default and accepts
+injected adapters; its SQLite ceremony store does not persist those council
+records. A provider also requires its build feature, runtime configuration and
+registered agent kind.
 
 The [runtime guide](../runtime/README.md) describes sequencing and identity.
 Exact request fields belong to the installed schema, especially across the

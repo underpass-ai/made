@@ -44,14 +44,18 @@ process — and `parity.tsv` carries the reason for each.
 | Image | Pinned digest preferred; release tags only after successful publication; `latest` requires the chart's development override |
 | Chart | `charts/made`; explicit version for OCI installs; Kubernetes floor in `Chart.yaml` |
 | Ceremony persistence | SQLite when explicitly configured; published definitions required for rehydration |
-| Council persistence | Optional Postgres adapters in the service composition |
+| Council persistence | In-memory registries by default in embedded composition; hosts can inject council, agent, deliberation and contract adapters; the service can use Postgres adapters |
 | Messaging | Optional core NATS pub/sub; durable ceremony consumption uses the event feed/cursor contract |
 | Providers | Build feature + environment + registered kind; default image includes OpenAI and vLLM, Anthropic needs a custom feature-enabled build |
 
-The embedded facade does not expose council execution/configuration. The
-`made-api` trait is a smaller consumer interface, not an additional full
-transport. See [reference](../reference/README.md) and runtime discovery before
-selecting an operation.
+The embedded facade and embedded MCP backend expose all 14 council operations:
+six deliberation operations and eight council, agent and output-contract
+configuration operations. Their default registries are process-local and
+in-memory; opening a SQLite ceremony store does not make council records
+durable. A host can inject alternative adapters through `EmbeddedMadeBuilder`.
+The `made-api` trait remains a smaller consumer interface, not an additional
+full transport. See [reference](../reference/README.md) and runtime discovery
+before selecting an operation.
 
 Support means the repository implements and checks the boundary; it does not
 promise provider availability, model quality, automatic worker scheduling or
