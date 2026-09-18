@@ -26,8 +26,7 @@ impl CeremonyInstance {
         let Some(binding) = step.dynamic_role_binding() else {
             let role = requested_role
                 .cloned()
-                .map(Ok)
-                .unwrap_or_else(|| definition.role_id_for_step(step_id))?;
+                .map_or_else(|| definition.role_id_for_step(step_id), Ok)?;
             self.require_role(definition, &role, &RoleAction::step(step_id.clone()))?;
             self.require_role_is_available(definition, step_id, &role)?;
             return Ok((role, false));

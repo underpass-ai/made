@@ -367,21 +367,17 @@ fn dynamic_role_binding_impact(
     after: Option<&DynamicRoleBinding>,
 ) -> CeremonyChangeImpact {
     match (before, after) {
-        // Adding a selector can make an already-open step depend on
-        // context its session never supplied. Removing one restores the
-        // statically assigned role.
-        (None, Some(_)) => CeremonyChangeImpact::Strands,
-        (Some(_), None) => CeremonyChangeImpact::Carries,
+        // Without a selector the statically assigned role remains available.
+        (_, None) => CeremonyChangeImpact::Carries,
         (Some(before), Some(after))
             if before.context_key() == after.context_key()
                 && before.allowed_roles().is_subset(after.allowed_roles()) =>
         {
             CeremonyChangeImpact::Carries
         }
-        // A different selector or any removed allowed role can take away
-        // the only claim path a running session had.
-        (Some(_), Some(_)) => CeremonyChangeImpact::Strands,
-        (None, None) => CeremonyChangeImpact::Carries,
+        // Adding or changing a selector can require unavailable context;
+        // removing an allowed role can take away the only claim path.
+        (_, Some(_)) => CeremonyChangeImpact::Strands,
     }
 }
 

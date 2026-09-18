@@ -55,7 +55,7 @@ fn definition() -> CeremonyDefinition {
         [role("A"), role("B"), role("C"), role("D"), role("X")],
     )
     .unwrap();
-    let writes = ContextWrites::new(BTreeMap::from([(
+    let context_updates = ContextWrites::new(BTreeMap::from([(
         ContextKey::new("next_role").unwrap(),
         StepOutputField::new("assigned").unwrap(),
     )]));
@@ -68,7 +68,7 @@ fn definition() -> CeremonyDefinition {
             RetryPolicy::new(StepAttempt::new(3).unwrap(), DurationMs::ZERO),
             None,
         )
-        .with_context_writes(writes),
+        .with_context_writes(context_updates),
         CeremonyStep::new(
             dynamic.clone(),
             work.clone(),

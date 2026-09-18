@@ -145,7 +145,7 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
         stage.repeat.map(repeat_from_proto).transpose()?,
     )
     .with_exit_guards(exit_guards);
-    apply_dynamic_fields(designed, role_from, allowed_roles, context_writes)
+    apply_dynamic_fields(designed, &role_from, allowed_roles, context_writes)
 }
 
 fn stage_entry_from_proto(
@@ -250,7 +250,7 @@ fn group_step_from_proto(
     );
     Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
         designed,
-        step.role_from,
+        &step.role_from,
         step.allowed_roles,
         step.context_writes,
     )?))
@@ -258,7 +258,7 @@ fn group_step_from_proto(
 
 fn apply_dynamic_fields(
     mut stage: CeremonyDesignStage,
-    role_from: String,
+    role_from: &str,
     allowed_roles: Vec<String>,
     context_writes: std::collections::HashMap<String, String>,
 ) -> Result<CeremonyDesignStage, DomainError> {
@@ -266,7 +266,7 @@ fn apply_dynamic_fields(
         (true, true) => {}
         (false, false) => {
             stage = stage.with_dynamic_role_binding(DynamicRoleBinding::new(
-                ContextKey::from_role_from(&role_from)?,
+                ContextKey::from_role_from(role_from)?,
                 allowed_roles
                     .into_iter()
                     .map(RoleId::new)

@@ -140,8 +140,7 @@ impl CeremonyInstance {
             let finished_by = record
                 .claimed_role()
                 .cloned()
-                .map(Ok)
-                .unwrap_or_else(|| definition.role_id_for_step(&command.step_id))?;
+                .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
             return Ok(vec![CeremonyEvent::StepFailed(StepFailed {
                 step_id: command.step_id.clone(),
                 state_iteration: Some(self.current_state_iteration),
@@ -162,8 +161,7 @@ impl CeremonyInstance {
         let finished_by = record
             .claimed_role()
             .cloned()
-            .map(Ok)
-            .unwrap_or_else(|| definition.role_id_for_step(&command.step_id))?;
+            .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
         let patch = step.context_writes().resolve(result.output())?;
         let completed = CeremonyEvent::StepCompleted(StepCompleted {
             step_id: command.step_id.clone(),
