@@ -15,15 +15,15 @@ use made_core::ports::{
     MemoryWriteOutcome, MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyGuard, CeremonyId,
-    CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion,
-    ContextKey, ContextWrites, DurationMs, GlobalPosition, GuardCondition, GuardName,
-    IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId,
-    MemoryEntryKind, MemoryMoment, MemoryProvenance, MemoryRelation, MemoryScope, MemoryWrite,
-    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StateIteration,
-    StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt, StepHandlerConfig, StepHandlerKind,
-    StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus,
-    StreamVersion, TransitionTrigger,
+    Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyEventPageLimit,
+    CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep,
+    CeremonyTransition, CeremonyVersion, ContextKey, ContextWrites, DurationMs, GlobalPosition,
+    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability,
+    MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryMoment, MemoryProvenance, MemoryRelation,
+    MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId,
+    StateIteration, StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt, StepHandlerConfig,
+    StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult,
+    StepStatus, StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -1160,7 +1160,8 @@ pub(super) fn stream_conflicting_once_watched_by(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
-            overtaking_fact: None,
+            overtaking_facts: Vec::new(),
+            conflict_on: None,
         }),
         store,
         subscriber,
@@ -1176,7 +1177,25 @@ pub(super) fn stream_overtaken_once(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
-            overtaking_fact: Some(overtaking_fact),
+            overtaking_facts: vec![overtaking_fact],
+            conflict_on: None,
+        }),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
+    ))
+}
+
+/// A stream whose first step claim loses to the supplied durable facts.
+pub(super) fn stream_overtaken_on_step_claim(
+    store: Arc<EventStoreFake>,
+    overtaking_facts: Vec<AuditFact>,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(
+        Arc::new(StoreThatConflictsOnce {
+            inner: store.clone(),
+            conflicted: std::sync::atomic::AtomicBool::new(false),
+            overtaking_facts,
+            conflict_on: Some(AuditEventType::StepStarted),
         }),
         store,
         Arc::new(NoopCeremonyEventSubscriber),
@@ -1241,16 +1260,27 @@ impl CeremonyEventStorePort for StoreThatConflictsOnce {
         expected: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
-        if !self
-            .conflicted
-            .swap(true, std::sync::atomic::Ordering::SeqCst)
+        let matches = self.conflict_on.is_none_or(|event_type| {
+            facts
+                .iter()
+                .any(|fact| fact.event.event_type() == event_type)
+        });
+        if matches
+            && !self
+                .conflicted
+                .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
-            if let Some(fact) = &self.overtaking_fact {
+            if !self.overtaking_facts.is_empty() {
                 let outcome = self
                     .inner
-                    .append(stream, expected, vec![fact.clone()])
+                    .append(stream, expected, self.overtaking_facts.clone())
                     .await?;
-                debug_assert!(outcome.appended_version().is_some());
+                return Ok(AppendOutcome::Conflict {
+                    expected,
+                    actual: outcome
+                        .appended_version()
+                        .expect("overtaking facts must land"),
+                });
             }
             return Ok(overtaken(expected));
         }

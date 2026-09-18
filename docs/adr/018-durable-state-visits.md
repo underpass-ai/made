@@ -70,3 +70,6 @@ within this ceremony; it is not a per-state counter or a repetition policy.
 - `made-tests-integration/tests/mcp_parity_session/state_visits.rs` compares both
   MCP editions field for field and reads the same coordinates through direct
   gRPC. The Rust facade is exercised by the process-restart test.
+- `run_ceremony_use_case/claim_visit_tests.rs` injects a persisted A → B → A
+  during a claim conflict and checks that the execution trace uses the visit
+  captured from the accepted claim, matching the record and transcript.

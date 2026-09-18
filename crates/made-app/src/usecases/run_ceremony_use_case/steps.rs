@@ -4,11 +4,11 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId,
-    StateIteration, StepAttempt, StepErrorMessage, StepId, StepLease, StepResult,
+    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, StepErrorMessage,
+    StepId, StepLease, StepResult,
 };
 
-use super::RunCeremonyUseCase;
+use super::{run_step_output::RunStepOutput, RunCeremonyUseCase};
 
 impl RunCeremonyUseCase {
     #[tracing::instrument(
@@ -38,17 +38,7 @@ impl RunCeremonyUseCase {
         lease_ttl: DurationMs,
         trace_index: usize,
         transcript: CeremonyTranscript,
-    ) -> Result<
-        (
-            LoadedSession,
-            RoleId,
-            StateIteration,
-            made_core::value_objects::StepIteration,
-            StepAttempt,
-            StepResult,
-        ),
-        DomainError,
-    > {
+    ) -> Result<RunStepOutput, DomainError> {
         let result = self
             .run_step_inner(
                 definition,
@@ -62,7 +52,13 @@ impl RunCeremonyUseCase {
             )
             .await;
         match &result {
-            Ok((_, _, state_iteration, iteration, attempt, step_result)) => {
+            Ok(RunStepOutput {
+                state_iteration,
+                iteration,
+                attempt,
+                result: step_result,
+                ..
+            }) => {
                 crate::usecases::step_span::record_coordinates(
                     *state_iteration,
                     *iteration,
@@ -86,17 +82,7 @@ impl RunCeremonyUseCase {
         lease_ttl: DurationMs,
         trace_index: usize,
         transcript: CeremonyTranscript,
-    ) -> Result<
-        (
-            LoadedSession,
-            RoleId,
-            StateIteration,
-            made_core::value_objects::StepIteration,
-            StepAttempt,
-            StepResult,
-        ),
-        DomainError,
-    > {
+    ) -> Result<RunStepOutput, DomainError> {
         let step = definition
             .step(step_id)
             .cloned()
@@ -141,7 +127,8 @@ impl RunCeremonyUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
-        let (state_iteration, iteration, attempt) = (
+        let (state_visit, state_iteration, iteration, attempt) = (
+            record.state_visit(),
             record.state_iteration(),
             record.iteration(),
             record.attempt(),
@@ -188,14 +175,15 @@ impl RunCeremonyUseCase {
             })
             .await?;
 
-        Ok((
+        Ok(RunStepOutput {
             session,
-            sealed_role,
+            role_id: sealed_role,
+            state_visit,
             state_iteration,
             iteration,
             attempt,
-            step_result,
-        ))
+            result: step_result,
+        })
     }
 
     #[tracing::instrument(
