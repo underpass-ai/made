@@ -3,29 +3,44 @@ name: made-setup
 description: Install or update the release-matched MADE MCP binary after a Codex or Claude Code marketplace install.
 ---
 
-# MADE setup
+# Set up MADE
 
-Resolve the plugin root as two directories above this `SKILL.md`.
-
-On Linux or macOS, run:
+Resolve the plugin root two directories above this skill directory
+(`skills/made-setup/../..`). Run its platform adapter:
 
 ```bash
 <plugin-root>/scripts/made-install-binary.sh
 ```
 
-On native Windows, run:
+On native Windows:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File <plugin-root>\scripts\made-install-binary.ps1
 ```
 
-The adapter reads the plugin manifest version, downloads the matching
-standalone executable and checksum from that immutable GitHub Release,
-verifies SHA-256, and installs atomically into the plugin's ignored `bin/`
-directory. Do not replace this with `cargo install`: marketplace setup must
-not require a Rust toolchain, and the plugin-local executable keeps its files
-and engine on the same release.
+Native Windows also needs the correct launcher. The bundled `.mcp.json`
+points to `scripts/run-embedded-mcp.sh`; the installed EXE does not make that
+POSIX script work without Bash. Configure the existing `made` MCP registration
+to use the plugin's absolute `scripts\run-embedded-mcp.cmd` path. If the host
+requires an executable command, invoke the batch launcher through
+`cmd.exe /d /c`. Replace the existing command instead of adding another MADE
+server, and verify the override after updates.
 
-After setup, report the installed version and path from the adapter receipt.
-Tell the user to start a new host thread when this was a first install or an
-update, because MCP servers and skills are loaded at thread startup.
+The native launcher defaults to
+`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, or
+`%USERPROFILE%\.local\state\underpass-made\ceremonies.sqlite3` when
+`LOCALAPPDATA` is absent. Preserve an explicit `MADE_MCP_STORE_PATH`.
+
+The adapter reads the manifest version, chooses a supported target, downloads
+the matching executable and SHA-256 file, verifies the digest and installs
+atomically into `bin/`. Use this path rather than substituting Cargo; setup
+must work without a Rust toolchain and keep the plugin and binary matched.
+
+Report the adapter receipt's installed version and path. After first install
+or an update, tell the user to start a new host task so skills and MCP reload.
+Do not claim that editing a catalogue or installing the binary has changed
+an already-running server. Discovery in the new task verifies the runtime.
+
+Keep the existing `MADE_MCP_STORE_PATH` and SQLite data. Plugin setup does not
+migrate a store or move it when catalogue identity changes. A legacy Redb
+startup refusal requires its explicit migration path, not an empty replacement.

@@ -1,0 +1,415 @@
+{
+  "source_commit": "4dd5eed9bc447097eac842dbf4d7fd736432f195",
+  "files": [
+    {
+      "path": ".github/pull_request_template.md",
+      "bytes": 1811,
+      "sha256": "87a1dae75dec1f57385cd2bf812b61d9641e9e971fa3d9417eae06d2e9f6fc75"
+    },
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 86452,
+      "sha256": "4b1ff9f9c31602419639a439944ddda634b3f72164cd0f7e4c2d2c209cb2e7d1"
+    },
+    {
+      "path": "CONTRIBUTING.md",
+      "bytes": 5995,
+      "sha256": "4f0804f5b95878e723ed1a9409bc7b06f80307ff28937f1bf3412e9871567f06"
+    },
+    {
+      "path": "README.md",
+      "bytes": 4441,
+      "sha256": "2c416a34db0d7f96461df67ded5384e9db55969c423d586ef4128acfde66179a"
+    },
+    {
+      "path": "SECURITY.md",
+      "bytes": 6044,
+      "sha256": "be64fcdbd9e4d6d8a29baa3a70171763d074eac2580195c91146d91fbc88bf25"
+    },
+    {
+      "path": "api/examples/ceremonies/fragments/README.md",
+      "bytes": 1034,
+      "sha256": "14764e5c26937c10beeec4aef34610cb219ac4c584be39466ba2d4cfaece8d54"
+    },
+    {
+      "path": "api/examples/output-contracts/README.md",
+      "bytes": 2448,
+      "sha256": "f50fee647c0432b825169751f278663e1709a7294e05991c570ae5fc357113c7"
+    },
+    {
+      "path": "charts/made/templates/NOTES.txt",
+      "bytes": 4010,
+      "sha256": "b89a5678abe20ecf911af028f822eb5e828f74b703a7154647b2ec82327cda2d"
+    },
+    {
+      "path": "crates/made-adapters/README.md",
+      "bytes": 1642,
+      "sha256": "7976a57f16954e67cd44a6f37c7c6030f4ef9f998268aecc4f01ad37c8a8d568"
+    },
+    {
+      "path": "crates/made-api/README.md",
+      "bytes": 1218,
+      "sha256": "4b5c358b99ca3100e5d6e9f35b00e684604de99a1921c747c4b8e76913e42d42"
+    },
+    {
+      "path": "crates/made-app/README.md",
+      "bytes": 897,
+      "sha256": "a2a9ee390aef1eaaecdec15c5ef47a95ed4efb9f45467dfa35537f28858ef8ba"
+    },
+    {
+      "path": "crates/made-core/README.md",
+      "bytes": 1730,
+      "sha256": "9ae4fbaaeba975bab20f6ee6841bc48d8425ea51e218fb1190e0cff14585f2ed"
+    },
+    {
+      "path": "crates/made-embedded/README.md",
+      "bytes": 1641,
+      "sha256": "126d08f09b4c271d27e09a2444ebba1a4771192d144f06af8267ac64b3024c9d"
+    },
+    {
+      "path": "crates/made-mcp-proto/README.md",
+      "bytes": 2229,
+      "sha256": "126f1ec974f53b4fb6bf15494996464300cd4888c443840c5b4c6fbc79949110"
+    },
+    {
+      "path": "crates/made-mcp/README.md",
+      "bytes": 16105,
+      "sha256": "aca1f8905d0ca56f6c95d21df96ff129c1afea1b5b54fe2a5ae3eb6c6060470d"
+    },
+    {
+      "path": "crates/made-proto/README.md",
+      "bytes": 1074,
+      "sha256": "33ad2f801dd5e02ee039e226a045634faf5c0b084623ac30f88192c5bf494f00"
+    },
+    {
+      "path": "crates/made-tests-integration/fixtures/stores/v0.3.1/README.md",
+      "bytes": 1959,
+      "sha256": "dbadef05a1dda19e40a6d7afb2fc1505b13b5f86bd52aaceb11d6d6561c9e8fa"
+    },
+    {
+      "path": "crates/made-tests-integration/tests/golden/parity_session_report.md",
+      "bytes": 52800,
+      "sha256": "4da6689754eb325dce161b33aac09b3483b33c2efa6a9bc143a3ec3787088dd7"
+    },
+    {
+      "path": "docs/PRINCIPLES.md",
+      "bytes": 4828,
+      "sha256": "d46357747800db27418079e2eeab15ed27a34c58c24fc20ed9b324552bc600d2"
+    },
+    {
+      "path": "docs/_archive/README.md",
+      "bytes": 304,
+      "sha256": "b14985c5648bcac50e101f46b204ef0a7ff8cf45a098eb4944369add472ada83"
+    },
+    {
+      "path": "docs/_archive/pir-made-integration-design.md",
+      "bytes": 30238,
+      "sha256": "509547bda12d0dc25bcd9a133c4e3c85990a684c934a147472da4333431b3ce0"
+    },
+    {
+      "path": "docs/_archive/product-publication-checklist.md",
+      "bytes": 30878,
+      "sha256": "5c3aa2034026f6eaf5fb448f6b779d6e70ce055dccc2e1ddf06b72491649bcb5"
+    },
+    {
+      "path": "docs/_archive/product-usability-publication-plan.md",
+      "bytes": 8494,
+      "sha256": "600cebd9382d34742cdf6be35ee69e3a0ff820781010bf0004a0e915f44085ea"
+    },
+    {
+      "path": "docs/adr/001-working-session-vocabulary.md",
+      "bytes": 1658,
+      "sha256": "bc3fd57765b0a4cbd336a8b93a74ea38ed1c71acd7231b5505dbd6d8163abbac"
+    },
+    {
+      "path": "docs/adr/002-ceremony-definition-analysis.md",
+      "bytes": 3154,
+      "sha256": "97974b5ac6efef3aebb8b8f96ca8d437231735e3976cad24bb355505043d5d06"
+    },
+    {
+      "path": "docs/adr/003-audit-journal-and-durability.md",
+      "bytes": 5729,
+      "sha256": "5e047a02fa9a7a40bcc4ce3cf4323adf5f115683a0040acd457a03438cfac1c4"
+    },
+    {
+      "path": "docs/adr/004-published-embedded-api-contract.md",
+      "bytes": 3473,
+      "sha256": "25892b38c3dc5c08984cae3da3d668d2ed49b01cdbe868bfc541770afb78efda"
+    },
+    {
+      "path": "docs/adr/005-structured-ceremony-design-tool.md",
+      "bytes": 3027,
+      "sha256": "788311c8385acb04bfd7eb40d47a7a66babf2138a9551294ced5389dea688ac9"
+    },
+    {
+      "path": "docs/adr/006-ceremony-reports-are-persisted-state-projections.md",
+      "bytes": 2442,
+      "sha256": "586a7130b215440774a36dcb99956bee2330ebf824f0afce79b27c04d5a612d8"
+    },
+    {
+      "path": "docs/adr/007-mcp-self-description-uses-the-executable-catalog.md",
+      "bytes": 3623,
+      "sha256": "959e2d45a0ebc23392f6d568af2c9b3f30e68cc3806c2ed635ca4ef35662707c"
+    },
+    {
+      "path": "docs/adr/008-legacy-redb-migration-is-copy-on-write.md",
+      "bytes": 2953,
+      "sha256": "608c8b3a4f415cefc244ef67f933f7f1d9d522fdfb51a6925dcd74913f95a3cb"
+    },
+    {
+      "path": "docs/adr/009-a-second-storage-engine-behind-one-seam.md",
+      "bytes": 4970,
+      "sha256": "c1d2039daa9cc69902f01edda48f89854fecd436eedcb78f28ad55cf5bb84482"
+    },
+    {
+      "path": "docs/adr/010-bounded-step-repetition-is-not-retry.md",
+      "bytes": 3331,
+      "sha256": "b905f3e0c25ca41139c2fc115e467cd55a83ab853ef5bbd7e9d6ad845086c552"
+    },
+    {
+      "path": "docs/adr/011-sqlite-is-the-only-embedded-ceremony-store.md",
+      "bytes": 2965,
+      "sha256": "f3184f2b8d290bea6c4cab31d506abd37953c6c17ae3295edc9243d2a9574fb9"
+    },
+    {
+      "path": "docs/adr/012-a-ceremony-is-its-event-stream.md",
+      "bytes": 7904,
+      "sha256": "3a32cbfd2bd60ec4b628d2dc75cac4ee6bc1157be78b927f62b91b9c1846b3bb"
+    },
+    {
+      "path": "docs/adr/013-memory-is-mades-own-bounded-context.md",
+      "bytes": 4973,
+      "sha256": "cfed798edfe153af89c3b570cf328a8d89716975fbbbab93ee997a6c68b5e303"
+    },
+    {
+      "path": "docs/adr/014-the-local-edition-leads-and-the-api-keeps-parity.md",
+      "bytes": 4279,
+      "sha256": "f9098e0410535a9f734c1caa9d5293e652ea2219d51e3cf44ff703efc2314f66"
+    },
+    {
+      "path": "docs/adr/015-concurrent-states-and-join-guards.md",
+      "bytes": 4007,
+      "sha256": "96a0f6ef1d6cd7b1bfe12872db6ab5a88994049ff8676ecd03253552148192e9"
+    },
+    {
+      "path": "docs/adr/016-bounded-definition-primitives.md",
+      "bytes": 8650,
+      "sha256": "2028562849e320d6a10cfb8e9765f0a39127f1ce20d7190b661dea8d621c3c48"
+    },
+    {
+      "path": "docs/adr/README.md",
+      "bytes": 2707,
+      "sha256": "cc7d85132fc7be4ca546d71e9137747d4ff31267ee11c3857137aafc9d16344d"
+    },
+    {
+      "path": "docs/agentic-conversation-ceremony-evaluation-research.md",
+      "bytes": 31175,
+      "sha256": "1088006239039758912443791819943c55d7d446260344ee1106a1c0d1aa7204"
+    },
+    {
+      "path": "docs/agentic-meeting-ceremony-blueprints.md",
+      "bytes": 26808,
+      "sha256": "b0c2735fdb9614a54dde64cfc0667673c690110ad4de14b1459fc655472a0a10"
+    },
+    {
+      "path": "docs/architecture/conformance.tsv",
+      "bytes": 352,
+      "sha256": "e1d98a806026a0aa82d73e36fa281114bedc0f41b47742ac81ec7c236baffd59"
+    },
+    {
+      "path": "docs/architecture/coverage-floors.tsv",
+      "bytes": 188,
+      "sha256": "b5ecbaa5ec75a0a1cd2a244d36454ea220df9833f1e1c9c8349f78bf19b028eb"
+    },
+    {
+      "path": "docs/architecture/hexagonal-target.md",
+      "bytes": 5215,
+      "sha256": "4d7ccb7d702c9a809948eb0ea8f127fa8788f584408f00ae03ac415d86cdbdb5"
+    },
+    {
+      "path": "docs/architecture/parity.tsv",
+      "bytes": 6188,
+      "sha256": "d852047d499525447b7b94a20d16e830e9e75c85f73b9e78dc69c480aa0708b8"
+    },
+    {
+      "path": "docs/architecture/struct-numbers.tsv",
+      "bytes": 2289,
+      "sha256": "2e80424150679efea70e46628659024b11f2543d8765c3d16851af07c8a6c32a"
+    },
+    {
+      "path": "docs/backlog.md",
+      "bytes": 51864,
+      "sha256": "cdb00beecb7c0c9bab282b7a647e30f979fecd76e6ff2166549fd75c23844b1c"
+    },
+    {
+      "path": "docs/dev-loop.md",
+      "bytes": 20155,
+      "sha256": "ec6c558d7cd43f479a4d317cd6db828fafd028cf0fbd50899233f6d54d4c4312"
+    },
+    {
+      "path": "docs/editions.md",
+      "bytes": 17983,
+      "sha256": "96735b4c7db20ebc01eedd9f052a495b2b502c4f8b1204f0860f0c3390ffbc78"
+    },
+    {
+      "path": "docs/embedded-made.md",
+      "bytes": 8728,
+      "sha256": "4954bea52c6d187621b5f2f4f02563d51d041de8aa1a07159ea13ce9a228a670"
+    },
+    {
+      "path": "docs/experiments/001-baseline-deliberation-latency/README.md",
+      "bytes": 5095,
+      "sha256": "bdf9744bfe2a64ab776a3335385d3fe45039ad2c2a641ac6cb3c971f84381250"
+    },
+    {
+      "path": "docs/experiments/001-baseline-deliberation-latency/results/deliberate.txt",
+      "bytes": 1376,
+      "sha256": "d749a0039bf0859b62f2d6aef1fda9029721016464c0b32f60ac9c49688b6d8c"
+    },
+    {
+      "path": "docs/experiments/001-baseline-deliberation-latency/results/trace_context.txt",
+      "bytes": 2740,
+      "sha256": "83e60ec476df5f04a6cb6b26d809524ed847b227e50b1596e0fb86dc259fea99"
+    },
+    {
+      "path": "docs/experiments/001-baseline-deliberation-latency/run.sh",
+      "bytes": 558,
+      "sha256": "b80ee03bdf01fb0feb306b89b2ef428d8266528913d34f8795d16e79af6fa623"
+    },
+    {
+      "path": "docs/experiments/002-deliberation-scale-sweep/README.md",
+      "bytes": 5823,
+      "sha256": "45395fd7eb06e440b8b78a7b33c07a2a8f3cf6e28273d3b2631c7a495c98d3a4"
+    },
+    {
+      "path": "docs/experiments/002-deliberation-scale-sweep/results/deliberate-grid.txt",
+      "bytes": 7642,
+      "sha256": "848056a2022cf4d12aed1369be2cf27f3f1a9161703622aff7c467c9e51ab383"
+    },
+    {
+      "path": "docs/experiments/002-deliberation-scale-sweep/run.sh",
+      "bytes": 671,
+      "sha256": "38f9d9c1f2f24bde7570381a3af1173c72812fc4a0d4b9e17454803d1044b514"
+    },
+    {
+      "path": "docs/experiments/README.md",
+      "bytes": 3030,
+      "sha256": "067c2025f09317f151975088cf48252191e87617deea48e9537952669a462c2e"
+    },
+    {
+      "path": "docs/index.md",
+      "bytes": 9756,
+      "sha256": "a30d4b5d242ca53e90d390c262298d869293308359276521e178fd34ded333b8"
+    },
+    {
+      "path": "docs/made-architecture-and-differentiation.md",
+      "bytes": 23114,
+      "sha256": "c7a3113c0ebe10f8d0ccaeaac77000bc2d102f9ed0c2a81c6eee10a1645e0643"
+    },
+    {
+      "path": "docs/made-observability-design.md",
+      "bytes": 33341,
+      "sha256": "33209e3399a4a643452243e3fe000b286b455cf97d65d72371747b195d0daf47"
+    },
+    {
+      "path": "docs/operations/capability-verification.md",
+      "bytes": 7534,
+      "sha256": "2181944fca759b1f5e0bcb0b337ec804d7b44a091c892406e406d80a5c9d7f4d"
+    },
+    {
+      "path": "docs/operations/ceremony-authoring-runbook.md",
+      "bytes": 24279,
+      "sha256": "18606005a1872845170719e9448e239cb93d4ea7ca5c64ba910330116ae35af8"
+    },
+    {
+      "path": "docs/operations/codex-plugin.md",
+      "bytes": 7007,
+      "sha256": "a0cee6465254882e6ccdf1d3466bbc54a52b72284cdb1995a681bb54d08b56db"
+    },
+    {
+      "path": "docs/operations/compose-e2e.md",
+      "bytes": 11957,
+      "sha256": "6ed285198efbde687e633cf4e651961564a143d61e5ce31cccb6618c83d06358"
+    },
+    {
+      "path": "docs/operations/consumer-smoke.md",
+      "bytes": 10355,
+      "sha256": "7f6025144c02f7d07dc5d49bd8e48cb035ed16b6002d32b4481e0b78a5894446"
+    },
+    {
+      "path": "docs/operations/deploy-kubernetes.md",
+      "bytes": 36633,
+      "sha256": "7ac8ed62cd8ac0fb99dc4e83e25a1112903291d5127fb6b496dcb25bfc1a9fe3"
+    },
+    {
+      "path": "docs/operations/embedded-ceremony-execution.md",
+      "bytes": 11090,
+      "sha256": "b418079e9e872c9f96dadae14fa4ea7c50dcc594aec92eb19cc4292c21ff32a3"
+    },
+    {
+      "path": "docs/operations/mcp-stdio.md",
+      "bytes": 41316,
+      "sha256": "99f4cf2d1977615a91e297635d8890d48c22b0ba4805ea9dcbdcea3fc604793c"
+    },
+    {
+      "path": "docs/operations/mcp/claude-desktop.md",
+      "bytes": 3039,
+      "sha256": "a00b6b87f99f33f964c750835102fb21ae04a90a9c38a10a8508332365f32aee"
+    },
+    {
+      "path": "docs/operations/mcp/codex.md",
+      "bytes": 4228,
+      "sha256": "d3d106fe2e4b87d69adcae4e26914b1aed0fd1ea6896fffd7cfc5e763299e2c1"
+    },
+    {
+      "path": "docs/operations/observability-runbook.md",
+      "bytes": 11772,
+      "sha256": "6ce1d227e2215cabb3ca7698fef15cce501b82406ba1e3429f81a5554ef67561"
+    },
+    {
+      "path": "docs/operations/support-matrix.md",
+      "bytes": 22207,
+      "sha256": "52d4299bd53f8c30c61a30a91d006bd59ab726dac208974aea3b4b241d9a05ab"
+    },
+    {
+      "path": "docs/orchestration-patterns-plan.md",
+      "bytes": 77184,
+      "sha256": "97ba67a632e0f3ef9206176b6e2b47e9c82bf8cbc42d1390adf036729d85ce84"
+    },
+    {
+      "path": "docs/release.md",
+      "bytes": 5765,
+      "sha256": "5a49206d519bae552b7ddc98864ea7d8c680f15f355c6d56c2d1cd0195f84f8a"
+    },
+    {
+      "path": "docs/stack-gap-analysis.md",
+      "bytes": 8798,
+      "sha256": "73182976b4c98adf663022bc4c55665c190b1bdcb82a902247e8110b064902de"
+    },
+    {
+      "path": "plugins/made/README.md",
+      "bytes": 8233,
+      "sha256": "04a451f1175f3d68029ec984c98fa4fb43065c23a71dfec24ced793fc9fd9a3c"
+    },
+    {
+      "path": "plugins/made/claude/commands/setup.md",
+      "bytes": 247,
+      "sha256": "6ac249b1618b7ca1baed8eb32b7980ec63069981c3dff397edec80ca15f57986"
+    },
+    {
+      "path": "plugins/made/skills/design-ceremony/SKILL.md",
+      "bytes": 3186,
+      "sha256": "bc0b08a6760cb8cb76a1cb9e8a6706ecc8bff24c897757c8d12e62c81762de8d"
+    },
+    {
+      "path": "plugins/made/skills/made-setup/SKILL.md",
+      "bytes": 1075,
+      "sha256": "f8ec8999d2e9212fcfe74371ad90eaaa832cae98075a74208be93d36ebf05c7f"
+    },
+    {
+      "path": "plugins/made/skills/run-ceremony/SKILL.md",
+      "bytes": 10321,
+      "sha256": "e0ed989653dd46e3a9f388a599f50bb8018b4249c64309ac62ce0abe9ebf8f89"
+    }
+  ]
+}

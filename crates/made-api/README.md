@@ -1,33 +1,12 @@
 # made-api
 
-The published contract of the embedded
-[MADE by Underpass](https://github.com/underpass-ai/made) engine — what a
-consuming product is allowed to know.
+Consumer Rust contract for [MADE](https://github.com/underpass-ai/made).
 
-Plain views, a capability report, an error vocabulary and one trait. No
-domain types, no adapters, no storage. A consumer that compiles against
-this crate alone can be developed against a stub and later pointed at any
-implementation that honours the same contract.
+Exposes `CeremonyEngineApi`, plain views, capabilities and errors without domain or storage types. This is a deliberately smaller consumer boundary than the full embedded facade. Inspect `ApiCapabilities`; `CONTRACT_VERSION` tracks meaning independently of the Cargo release number.
 
-## Versioned by meaning
+[Documentation](https://github.com/underpass-ai/made/blob/main/docs/index.md) ·
+[Architecture](https://github.com/underpass-ai/made/blob/main/docs/architecture/README.md) ·
+[Migration notes](https://github.com/underpass-ai/made/blob/main/docs/migrations/README.md)
 
-`CONTRACT_VERSION` moves when the meaning of this surface changes, and it
-is deliberately independent of the crate's release number. Two builds of
-the same release can differ in the features they were compiled with, so a
-consumer that inferred capabilities from a version string would find out
-it was wrong mid-run.
-
-Check `ApiCapabilities` at startup instead: it reports what the engine
-you are actually holding can do.
-
-## Vocabulary
-
-These types speak the engine's own language — councils, ceremonies,
-steps, guards, interventions. Nothing of a consuming product's vocabulary
-appears here, and nothing of this vocabulary needs to leak into a
-product: the mapping belongs at the consumer's own boundary (ADR-001 in
-the repository).
-
-## License
-
-Apache-2.0.
+Apache-2.0. This crate follows the MADE workspace release. Refer to the
+documentation at the matching tag when using a published version.

@@ -1,17 +1,16 @@
-# Ceremony fragments
+# Reusable ceremony fragments
 
-These files are reusable definition inputs for shipped authoring presets. MADE
-embeds them in `made-app`; the application layer selects and materializes a
-preset, while YAML parsing and rendering stay in `made-adapters`.
-The canonical files live here. Packaging copies under `made-app` and
-`made-mcp` are compared byte for byte by the contract gate because published
-crates cannot include files outside their own package.
+[roundtable_fixed_order.yaml](roundtable_fixed_order.yaml) is the canonical
+three-seat example for the fixed-order preset. The preset substitutes the
+caller's participants and creates one sequential turn per participant in
+declaration order. Later turns receive prior contributions; it performs no
+automatic aggregation or dynamic speaker selection.
 
-`roundtable_fixed_order.yaml` is the concrete three-seat example for the
-`roundtable_fixed_order` preset. The preset accepts the caller's participants
-instead: it creates one sequential turn per participant in declaration order.
-The request omits `stages` or supplies an empty list, as repeated proto fields
-cannot distinguish those two forms; any non-empty stage list is refused.
-The first turn has no prior contribution; every later turn receives all prior
-contributions. It performs no aggregation and does not implement the dynamic
-speaker selection of the full D1 group-chat pattern.
+Omit `stages` or pass an empty list when selecting this preset. A nonempty
+stage list is refused. `made-app` selects/materializes the preset;
+`made-adapters` parses and renders YAML. Packaging copies in `made-app` and
+`made-mcp` must match this file byte for byte, as checked by the contract gate.
+
+See [authoring](../../../../docs/authoring/README.md) for draft analysis and
+publication. The fragment is input to the shipped preset, not a promise of
+all group-chat orchestration patterns.

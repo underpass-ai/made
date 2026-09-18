@@ -1,0 +1,51 @@
+# Parity of the ceremony capability set across the four surfaces (ADR-014).
+# One row per capability; a cell names the RPC / tool / method that serves it, or `-`.
+# `reason` is mandatory on a row with `-` in proto, mcp_grpc, mcp_embedded or facade. `api` is the versioned subset (ADR-004).
+# Target: zero rows with a reason. The parity test fails when this file and the code disagree in either direction.
+# The test is crates/made-mcp/src/protocol/parity_tests.rs; facade methods that are variants of a row are mapped there, never ignored.
+capability	proto	mcp_grpc	mcp_embedded	facade	api	reason
+run_ceremony	RunCeremony	made_run_ceremony	made_run_ceremony	run	-	
+get_ceremony_instance	GetCeremonyInstance	made_get_ceremony_instance	made_get_ceremony_instance	instance	ceremony	
+list_ceremony_instances	ListCeremonyInstances	made_list_ceremony_instances	made_list_ceremony_instances	instances	ceremonies	
+start_ceremony	StartCeremony	made_start_ceremony	made_start_ceremony	start	start_ceremony	
+start_published_ceremony	StartPublishedCeremony	made_start_published_ceremony	made_start_published_ceremony	start_published	-	
+run_ceremony_step	RunCeremonyStep	made_run_ceremony_step	made_run_ceremony_step	run_step	-	
+apply_ceremony_transition	ApplyCeremonyTransition	made_apply_ceremony_transition	made_apply_ceremony_transition	apply_transition	-	
+approve_ceremony_guard	ApproveCeremonyGuard	made_approve_ceremony_guard	made_approve_ceremony_guard	approve_guard	-	
+defer_ceremony_guard	DeferCeremonyGuard	made_defer_ceremony_guard	made_defer_ceremony_guard	defer_guard	-	
+request_ceremony_intervention	RequestCeremonyIntervention	made_request_ceremony_intervention	made_request_ceremony_intervention	request_intervention	raise_intervention	
+respond_to_ceremony_intervention	RespondToCeremonyIntervention	made_respond_to_ceremony_intervention	made_respond_to_ceremony_intervention	respond_to_intervention	respond_to_intervention	
+close_ceremony_intervention	CloseCeremonyIntervention	made_close_ceremony_intervention	made_close_ceremony_intervention	close_intervention	-	
+collect_ceremony_evidence	CollectCeremonyEvidence	made_collect_ceremony_evidence	made_collect_ceremony_evidence	collect_evidence	-	
+assert_ceremony_reason	AssertCeremonyReason	made_assert_ceremony_reason	made_assert_ceremony_reason	assert_reason	-	
+validate_ceremony_draft	ValidateCeremonyDraft	made_validate_ceremony_draft	made_validate_ceremony_draft	-	analyze_definition	decided in F1: no facade method; analysing a draft is a pure domain call (CeremonyDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition
+explain_ceremony_draft	ExplainCeremonyDraft	made_explain_ceremony_draft	made_explain_ceremony_draft	-	analyze_definition	decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences
+publish_ceremony_definition	PublishCeremonyDefinition	made_publish_ceremony_definition	made_publish_ceremony_definition	publish_definition	publish_definition	
+diff_ceremony_definitions	DiffCeremonyDefinitions	made_diff_ceremony_definitions	made_diff_ceremony_definitions	diff_definitions	-	
+bind_ceremony_participants	BindCeremonyParticipants	made_bind_ceremony_participants	made_bind_ceremony_participants	bind_participants	-	
+claim_ceremony_step	ClaimCeremonyStep	made_claim_ceremony_step	made_claim_ceremony_step	start_step	-	
+complete_ceremony_step	CompleteCeremonyStep	made_complete_ceremony_step	made_complete_ceremony_step	complete_step	-	
+design_ceremony	DesignCeremony	made_design_ceremony	made_design_ceremony	design	-	
+generate_ceremony_report	GenerateCeremonyReport	made_generate_ceremony_report	made_generate_ceremony_report	report	-	
+read_ceremony_events	ReadCeremonyEvents	made_read_ceremony_events	made_read_ceremony_events	audit_records	-	
+pull_ceremony_events	PullCeremonyEvents	made_pull_ceremony_events	made_pull_ceremony_events	pull_events	-
+verify_ceremony_journal	VerifyCeremonyJournal	made_verify_ceremony_journal	made_verify_ceremony_journal	verify_journal	-
+get_ceremony_transcript	GetCeremonyTranscript	made_get_ceremony_transcript	made_get_ceremony_transcript	transcript	-	
+list_ceremony_definitions	-	-	-	definitions	-	decided in F1: host affordance, not a capability; the catalog a host mounts and publishes into is local to its process, and publish_ceremony_definition is how a definition crosses surfaces
+mount_definition	-	-	-	mount_definition	-	host-process affordance: in-memory definitions exist only inside the host
+get_status	GetStatus	made_get_status	made_get_status	status	-	
+get_metrics	GetMetrics	made_get_metrics	made_get_metrics	metrics	-	
+deliberate	Deliberate	made_deliberate	-	-	-	council surface: cluster-only until B3 (ADR-014)
+stream_deliberation	StreamDeliberation	made_stream_deliberation	-	-	-	council surface: cluster-only until B3 (ADR-014)
+get_deliberation_result	GetDeliberationResult	made_get_deliberation_result	-	-	-	council surface: cluster-only until B3 (ADR-014)
+orchestrate	Orchestrate	made_orchestrate	-	-	-	council surface: cluster-only until B3 (ADR-014)
+process_trigger_event	ProcessTriggerEvent	made_process_trigger_event	-	-	-	council surface: cluster-only until B3 (ADR-014)
+run_council_decision	RunCouncilDecision	made_run_council_decision	-	-	-	council surface: cluster-only until B3 (ADR-014)
+create_council	CreateCouncil	made_create_council	-	-	-	council configuration: cluster-only until B3 (ADR-014)
+list_councils	ListCouncils	made_list_councils	-	-	-	council configuration: cluster-only until B3 (ADR-014)
+delete_council	DeleteCouncil	made_delete_council	-	-	-	council configuration: cluster-only until B3 (ADR-014)
+register_agent	RegisterAgent	made_register_agent	-	-	-	council configuration: cluster-only until B3 (ADR-014)
+unregister_agent	UnregisterAgent	made_unregister_agent	-	-	-	council configuration: cluster-only until B3 (ADR-014)
+register_contract	RegisterContract	made_register_contract	-	-	-	contract registry: cluster-only until B3 (ADR-014)
+list_contracts	ListContracts	made_list_contracts	-	-	-	contract registry: cluster-only until B3 (ADR-014)
+delete_contract	DeleteContract	made_delete_contract	-	-	-	contract registry: cluster-only until B3 (ADR-014)

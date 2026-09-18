@@ -1,39 +1,12 @@
 # made-adapters
 
-Infrastructure adapters for
-[MADE by Underpass](https://github.com/underpass-ai/made). Every port
-declared in [`made-core`](https://crates.io/crates/made-core),
-implemented against a concrete technology.
+Concrete integrations for [MADE](https://github.com/underpass-ai/made).
 
-## No privileged provider
+Implements domain ports for SQLite ceremony storage, YAML, gRPC, providers, messaging and service repositories. Features select optional integrations. The embedded composition uses this crate with default features disabled so its dependency graph does not pull in gRPC, NATS or Postgres clients.
 
-The engine is provider-agnostic, and this crate is where that claim is
-kept honest: transports, buses and model vendors are peers, each behind
-its own Cargo feature, none of them on by default beyond the deployable
-service's own needs. Nothing in the domain or the use cases knows which
-one you picked.
+[Documentation](https://github.com/underpass-ai/made/blob/main/docs/index.md) ·
+[Architecture](https://github.com/underpass-ai/made/blob/main/docs/architecture/README.md) ·
+[Migration notes](https://github.com/underpass-ai/made/blob/main/docs/migrations/README.md)
 
-| Feature | Brings |
-|---|---|
-| `grpc`, `runtime-grpc` | tonic clients for the engine and the Underpass Runtime executor |
-| `nats` | NATS messaging: trigger subjects in, outcome events out |
-| `postgres` | SQLx-backed repositories |
-| `sqlite` | Canonical durable SQLite WAL ceremony store: event streams, snapshots and publications |
-| `otel` | W3C trace context extraction on inbound gRPC |
-| `agent-vllm`, `agent-anthropic`, `agent-openai` | LLM agent adapters, one per vendor |
-
-Always available, with no feature at all: system clock, environment
-configuration, in-memory registries and repositories, Prometheus metrics,
-deterministic no-op agent, executor and messaging.
-
-## The no-op adapters are not filler
-
-`NoopAgent`, `NoopExecutor` and `NoopCeremonyStepHandler` are how a
-ceremony's protocol gets exercised without pretending work happened. A
-terminal step reached through a no-op handler proves the state machine,
-not that an agent, a tool or a human did anything — the engine's
-documentation is explicit about that boundary, and so is this crate.
-
-## License
-
-Apache-2.0.
+Apache-2.0. This crate follows the MADE workspace release. Refer to the
+documentation at the matching tag when using a published version.

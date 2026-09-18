@@ -1,44 +1,17 @@
 # made-embedded
 
-The in-process distribution of the
-[MADE by Underpass](https://github.com/underpass-ai/made) ceremony
-engine.
+In-process ceremony engine for [MADE](https://github.com/underpass-ai/made).
 
-`EmbeddedMade` runs the same use cases as the deployable service without
-opening a socket or reading process-wide configuration. No gRPC, no NATS,
-no database required — and none forbidden either: hosts inject whatever
-adapters they want behind the ports.
+`EmbeddedMade` composes application use cases on the host's async runtime. `default()` is ephemeral and uses a no-op handler; `open(path)` persists ceremony events, snapshots, published definitions and session memory in SQLite. Transcripts derive from the sealed stream. Publish definitions before starting resumable sessions; mounted YAML can remain process-local.
 
-```rust
-use made_embedded::EmbeddedMade;
+Use host callbacks or injected step/evidence ports for real work. The default
+handler performs none. For delegated completion, retain the accepted claim
+identity and return its opaque fence on completion. This source contract is
+not part of the published v0.5.0 binary.
 
-// Everything in memory, dies with the process.
-let engine = EmbeddedMade::default();
+[Documentation](https://github.com/underpass-ai/made/blob/main/docs/index.md) ·
+[Architecture](https://github.com/underpass-ai/made/blob/main/docs/architecture/README.md) ·
+[Migration notes](https://github.com/underpass-ai/made/blob/main/docs/migrations/README.md)
 
-// Or durable on the canonical SQLite WAL store: state survives a restart.
-let engine = EmbeddedMade::open("ceremonies.sqlite3")?;
-```
-
-## What durable does and does not mean
-
-With SQLite, the ceremony event streams, their global order, the folded
-snapshots and definition publications are persisted. Mounted definitions and
-transcripts stay in memory unless the host replaces those ports.
-
-That difference has a consequence worth knowing before you rely on it: an
-instance started from a **published** definition rehydrates after a
-restart, while one started from supplied YAML keeps its snapshot but
-cannot reload the definition it ran. The engine reports the second kind
-as unrehydratable rather than hiding it or failing the whole listing.
-
-## Host-owned execution
-
-`CallbackCeremonyStepHandler` and `CallbackCeremonyEvidenceSource` let the
-host perform the real work — a search, a model call, a deploy — while the
-engine coordinates the ceremony around it. The claim/complete protocol
-means a step is only recorded as done when the host says it produced
-something, with its output attached.
-
-## License
-
-Apache-2.0.
+Apache-2.0. This crate follows the MADE workspace release. Refer to the
+documentation at the matching tag when using a published version.

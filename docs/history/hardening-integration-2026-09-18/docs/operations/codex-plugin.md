@@ -1,0 +1,139 @@
+# Codex plugin acceptance ladder
+
+The `plugins/made` bundle packages the embedded ceremony engine as a
+local MCP stdio server for Codex. Acceptance is cumulative: a later level is
+not considered valid unless every earlier level remains green.
+
+## Levels
+
+| Level | Boundary | Evidence |
+|---|---|---|
+| 1 | Embedded library | `cargo test -p made-embedded --locked` |
+| 2 | MCP backend in process | The embedded server advertises only tools it can execute and completes a real ceremony. |
+| 3 | MCP binary over stdio | A child process completes `initialize`, `tools/list`, and `tools/call`. |
+| 4 | Dependency isolation | The embedded binary tree contains no gRPC, protobuf, NATS, or SQL client. |
+| 5 | Plugin bundle | The manifest validates and the bundle launcher completes the same ceremony. |
+| 6 | Marketplace setup | Codex or Claude installs from this repo, verifies the release binary, and discovers the MCP server in a new thread. |
+
+Run levels 2–4 directly:
+
+```bash
+cargo test -p made-mcp --all-targets \
+  --no-default-features --features embedded --locked
+bash scripts/ci/embedded-dependency-boundary.sh
+```
+
+Build and execute level 5:
+
+```bash
+bash scripts/ci/made-plugin-smoke.sh
+```
+
+The smoke builds an isolated release binary, places it at
+`plugins/made/bin/made-mcp`, starts it through the plugin's own
+launcher, and verifies initialization, the executable tool catalog, machine
+discovery, both help audiences, ceremony design and execution, and actual
+Markdown report generation. It then proves durability the only way that
+counts: a second launcher process publishes and starts a ceremony, a third
+one reopens the same state file and reads that ceremony back with its state,
+next step and bound definition digest intact. The binary is ignored by Git;
+source, manifest, skill, launcher, and tests remain reviewable.
+
+## Current capability
+
+The installed plugin exposes the embedded ceremony engine's design,
+publication, one-shot and incremental execution, delegated-host
+claim/work/complete coordination, recovery, interventions, evidence, the
+read-only reads of the sealed event stream and the transcript, and the
+read-only report projection. `made_discover_capabilities`
+describes the exact running version, backend and executable surface, while
+`made_get_help` returns `user` or `agent` guidance derived against that
+surface. The smoke requires `made_generate_ceremony_report` to be advertised
+and to generate a real report from a ceremony completed in the same process.
+
+The embedded backend opens the SQLite state file named by
+`MADE_MCP_STORE_PATH`; the launcher defaults it to
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`, and
+without a path the binary exits rather than run on memory that dies with the
+process. Durability is still not authority, and it is not unconditional
+recovery: an instance started from a published definition rehydrates, one
+started from supplied YAML keeps its snapshot but cannot reload its
+definition, and the listing marks it `"rehydratable": false`. Mounted
+definitions stay in memory unless the host replaces those
+ports.
+
+The current launcher never opens or imports Redb. If the SQLite default is
+absent and the former `ceremonies.redb` default exists, startup stops before
+creating a replacement store and prints the exact v0.2.0 `share-store` command
+for the one-time conversion. The migration release preserves the source and
+verifies the copied rows; the current release then opens only the resulting
+`ceremonies.sqlite3` file.
+
+The smoke verifies the claim/complete tools are exposed. Behavioral tests keep
+three cases distinct: the bundled no-op handler, a configured real
+server-owned handler, and delegated-host work recorded only after a claim and
+an evidence-bearing completion.
+
+## Installation boundary
+
+The repo-local bundle is installed only after levels 1–5 pass. The public path
+uses the co-located `made` marketplace:
+
+```text
+codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin add made@made
+```
+
+Run `made-setup` next. It selects the supported target, downloads the
+standalone executable and checksum from the release pinned by the plugin,
+rejects a digest mismatch, and installs atomically into that plugin's ignored
+`bin/` directory. `scripts/ci/made-plugin-bootstrap.sh` proves this from a
+clean plugin tree with Cargo absent from `PATH`, then initializes the MCP
+server through the normal launcher. Codex loads new plugin skills and MCP tools
+at the start of a new thread, so the final functional check happens there.
+
+### Coexistence and migration from `underpass`
+
+MADE owns `made`; KMP retains `underpass`. Marketplace identity is
+the catalogue's top-level `name`, not the Git repository name. Codex refuses
+to register a different source under an existing name. The former MADE and
+KMP catalogues both declared `underpass`, so registering either first blocked
+the other. Changing registration order did not combine their plugin lists.
+
+The rename ships after 0.5.0. The immutable 0.5.0 tag and its marketplace
+snapshot still use the old name until a later release advances `marketplace`.
+To test a checkout containing this repair before that release, register its
+absolute root with `codex plugin marketplace add /absolute/path/to/made`
+and use `made@made`.
+
+For an existing installation, inspect the source before changing anything:
+
+```text
+codex plugin marketplace list --json
+codex plugin list --marketplace underpass --available --json
+```
+
+- If `underpass` points to KMP, retain it and add MADE's distinct catalogue.
+- If it points to MADE, register the repaired catalogue first. If the old
+  `made@underpass` plugin is installed, remove that plugin before installing
+  `made@made` to avoid two MADE MCP registrations. Then remove the
+  old `underpass` marketplace registration only after checking it still
+  points to MADE. KMP can subsequently register `underpass`.
+- A manually registered MADE MCP server is separate from a plugin install.
+  Choose one active registration when switching; catalogue discovery itself
+  does not require installing another server.
+
+Plugin cache removal does not migrate ceremony data. Preserve the configured
+`MADE_MCP_STORE_PATH` and the existing SQLite store. Run `made-setup` for the
+new plugin cache, then start a new task. Check `tools/list` and
+`made_discover_capabilities`: the installed manifest version and the running
+binary version are separate facts.
+
+Refresh the new catalogue with `codex plugin marketplace upgrade made`.
+In the app's plugin directory, select the repository marketplace and look
+for MADE, its MCP server and skills, and `https://underpassai.com/`.
+Underpass maintains these repository catalogues and advances the stable
+branch only after release assets exist. Registering a repository does not
+submit it to OpenAI's public curated directory; that is a separate publisher
+submission and review process. See the
+[official marketplace documentation](https://developers.openai.com/plugins/build/plugins).

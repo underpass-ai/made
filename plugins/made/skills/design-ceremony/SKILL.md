@@ -1,50 +1,40 @@
 ---
 name: design-ceremony
-description: Design a new MADE ceremony or working session from user intent, or revise a proposed ceremony before publication. Use when the user asks to create, structure, plan, draft, or design a ceremony, mesa de trabajo, workflow, review loop, governed multi-agent session, or human approval flow.
+description: Design or revise a MADE ceremony, working session, review loop or human approval procedure from user intent before publication.
 ---
 
-# Design a MADE ceremony
+# Design a ceremony
 
-Use `made_design_ceremony` before writing ceremony YAML yourself. Translate
-the user's intent into the tool's structured fields while preserving their
-vocabulary in the objective and stage instructions.
+Use `made_design_ceremony` for structured intent. Discover capabilities first
+when the active version/backend is uncertain; use `made_get_help` with
+`audience: "agent"` for the running server's guidance.
 
-The tool is served by both backends — in process and against a cluster — so
-the same intent designs the same ceremony wherever the server points. If the
-installed surface is uncertain, call `made_discover_capabilities` first. `made_get_help` with `audience: agent` gives the running server's
-short operational guidance without replacing this design policy.
+Establish the question or artifact to resolve, required context, participant
+roles, stage ownership and outputs. Preserve the user's vocabulary in the
+objective and instructions; use `lower_snake_case` ids. Give roles intervention
+capabilities only when they need to request or respond to live agenda items.
+Those capabilities do not authorize external actions.
 
-1. Establish the single question or artifact the ceremony must resolve.
-2. Name the required context, output objects, participant roles and ordered
-   stages. Use `lower_snake_case` for ceremony and stage ids.
-3. Add `request_intervention` or `respond_to_intervention` only when that role
-   needs to change the live agenda. These capabilities never authorize an
-   external mutation.
-4. Use `review_rounds` only with `num_agents >= 2`. Keep one agent for a stage
-   that needs no peer exchange.
-5. Use `repeat` only when the same stage must run again after a successful
-   result until a structured stop condition is true. Always provide
-   `max_iterations` (1–1000), `output_field`, and `equals`. The field is a
-   top-level step-output field and equality is exact JSON equality. Repetition
-   is not a retry: a retry re-attempts failed work; a repeat consumes the
-   successful output as prior context and starts a new semantic iteration.
-6. Add `final_approval` when completion depends on a person's explicit
-   decision. This creates a human guard; it does not approve it.
-7. Call `made_design_ceremony`. Treat its `definition_yaml` as a draft even
-   when `publishable` is true. The tool neither publishes nor starts anything.
-8. Read the returned design and analysis back to the user. Check that stage
-   ownership, sequence, instructions, outputs and approval boundary match their
-   intent. Use `made_explain_ceremony_draft` when a prose explanation helps.
-9. Revise by calling `made_design_ceremony` again with changed intent. Use
-   `made_diff_ceremony_definitions` when comparing an existing draft or
-   published definition.
-10. Call `made_publish_ceremony_definition` only after the user explicitly
-   asks to publish the exact reviewed YAML. Publication is immutable by name
-   and version; changed content requires a new version.
-11. Start the published ceremony only when the user asks to run it. Follow the
-    incremental flow in `run-ceremony` whenever a human guard exists.
+Use peer `review_rounds` only with at least two agents. Use a bounded repeat
+only for successful work that must recur until a structured stop condition:
+provide `max_iterations` (1–1000), a top-level `output_field` and exact JSON
+`equals`. A repeat is different from retrying failed work. Add
+`final_approval` when a person's decision must gate completion.
 
-The design tool currently produces linear ceremonies. If the request requires
-branching decisions or multiple terminal outcomes, explain that limit and
-author explicit YAML for those branches, then validate and explain it through
-the MCP before asking to publish.
+Treat returned YAML as a draft even when `publishable` is true. Inspect its
+analysis and explain ownership, sequence, outputs and approval boundary to
+the user. Revise with another design call; compare versions with
+`made_diff_ceremony_definitions` when useful. The designer produces linear
+stages. For branching outcomes, write explicit YAML and validate/explain it
+through the available tools.
+
+Publish the exact reviewed YAML only when the user has asked for that
+publication. Publication binds immutable name/version/content; changed
+content requires a new version. Starting is a separate action, performed when
+the user asks to run it. Use the `run-ceremony` skill for execution, especially
+when human guards require incremental progress.
+
+Concurrent states expose claimable work; they do not spawn host agents.
+Source-state joins and the global `all_steps_completed` guard have different
+scope. A warning that the global guard can depend on downstream work needs
+review, not a claim that the engine has repaired the draft automatically.
