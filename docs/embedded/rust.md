@@ -101,8 +101,9 @@ metrics registry opens no exporter endpoint by itself.
 The workspace release version and a ceremony's definition version are
 separate identities. Rust integration is pre-1.0; review the
 [migration guide](../migrations/README.md) before upgrading. In particular,
-this source tree requires the fence returned by the accepted claim on
-every completion; the published v0.5.0 binary predates that contract. The runtime keeps it automatically for server-owned `run_step`.
+0.6.0 requires the fence returned by the accepted claim on
+every completion; v0.5.0 predates that contract. The runtime keeps it
+automatically for server-owned `run_step`.
 
 The embedded dependency boundary excludes gRPC, NATS and Postgres clients.
 `made-adapters` is used with default features disabled; adding a transport

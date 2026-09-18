@@ -4,33 +4,11 @@ The MADE bundle gives Codex and Claude Code setup, design and execution skills
 plus one local MCP server backed by SQLite. The host supplies the agents and
 tools; MADE coordinates their claims, results and human decisions.
 
-## Install today
+## Install the 0.6.0 release
 
-**The stable `marketplace` branch still carries the v0.5.0 catalogue named
-`underpass`; `made@made` is not available from that snapshot yet.** Use a local
-checkout containing the repaired `made` catalogue:
-
-```bash
-codex plugin marketplace add /absolute/path/to/made
-codex plugin add made@made
-```
-
-Run `made-setup`, then start a new task. In Claude Code:
-
-```text
-/plugin marketplace add /absolute/path/to/made
-/plugin install made@made
-/made:setup
-```
-
-The [installation guide](https://github.com/underpass-ai/made/blob/main/docs/plugins/README.md)
-shows how to obtain the repaired checkout. A
-[manual binary installation](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md)
-is also available today, without registering the old catalogue.
-
-After a later release publishes the repair and advances `marketplace`, the
-stable routes will be the following. These commands are not usable with
-`made@made` against today's v0.5.0 snapshot:
+**These stable routes require the 0.6.0 assets to be public and `marketplace`
+to have advanced to that release.** The old v0.5.0 marketplace snapshot is
+named `underpass` and cannot provide `made@made`.
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
@@ -43,9 +21,31 @@ codex plugin add made@made
 /made:setup
 ```
 
+After publication, run `made-setup` in Codex or `/made:setup` in Claude Code,
+then start a new task. The
+[installation guide](https://github.com/underpass-ai/made/blob/main/docs/plugins/README.md)
+covers registration and migration from the old catalogue.
+
+## Test a candidate before publication
+
+Build the reviewed checkout using the
+[source instructions](https://github.com/underpass-ai/made/blob/main/docs/embedded/README.md#test-a-source-candidate).
+Set `MADE_MCP_BIN` to its absolute executable path in the host launch
+environment. Codex can then register that checkout's local `made` catalogue:
+
+```bash
+codex plugin marketplace add /absolute/path/to/made
+codex plugin add made@made
+```
+
+The setup skill verifies the explicit candidate instead of downloading an
+asset that does not exist yet. Claude's catalogue source pins the immutable
+release tag; before that tag exists, use manual MCP registration with the
+source-built binary or this checkout's launcher and `MADE_MCP_BIN`.
+
 ## Runtime
 
-Setup verifies and installs the binary matching the manifest version in the
+Release setup verifies and installs the binary matching the manifest version in the
 plugin's `bin/` directory. The launcher honors `MADE_MCP_BIN`, then uses the
 plugin-local executable or a PATH fallback. `MADE_MCP_STORE_PATH` selects the
 SQLite file. On POSIX the default is
@@ -67,8 +67,8 @@ inspect the actual running version/backend. `tools/list` is the authority for
 request schemas. Publish definitions before starting resumable sessions.
 No-op handler success proves protocol wiring only. For delegated work,
 retain the accepted claim response, perform the real work and complete using
-its exact identity. This source tree requires `claim_fence` on completion; the
-published v0.5.0 binary predates that boundary, so inspect the running schema.
+its exact identity. Version 0.6.0 requires `claim_fence` on completion;
+v0.5.0 predates that boundary, so inspect the running schema.
 
 The skills are self-contained inside the bundle:
 [setup](skills/made-setup/SKILL.md),

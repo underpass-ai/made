@@ -1,11 +1,13 @@
 # Upgrade an integration
 
-The current published baseline is v0.5.0. This source tree includes
-the integrated hardening below, which is still unreleased; installing v0.5.0
-does not provide these new contracts. Match clients, plugin files and binaries
-deliberately, then inspect the running capability catalogue.
+This guide covers the **0.5.x → 0.6.0** upgrade. Version 0.6.0 changes client
+contracts; installing v0.5.0 does not provide them. The release installation
+requires public 0.6.0 assets and the stable catalogue at that release. Before
+publication, use a [source candidate](../embedded/README.md#test-a-source-candidate).
+Match clients, plugin files and binaries, then inspect the running capability
+catalogue.
 
-## Completion fence after v0.5.0
+## Completion fence in 0.6.0
 
 The accepted claim response adds `claim_fence` (protobuf field 2). Completion
 requires that unchanged value (request field 7). Both MCP backends return it
@@ -35,7 +37,7 @@ the state visit, state iteration, step iteration and attempt along with the
 exact lease identity. Existing clients must be upgraded before using the new
 mandatory completion boundary.
 
-## Durable state visits after v0.5.0
+## Durable state visits in 0.6.0
 
 New transitions record a destination entry and exact step reset set. Each
 entry increments a ceremony-wide positive `state_visit`, including self
@@ -60,7 +62,7 @@ must not be assumed to read newly appended schemas; plan rollback around
 store compatibility, not only an executable downgrade. Preserve a consistent
 backup before upgrading writers.
 
-## Bounded command lists after v0.5.0
+## Bounded command lists in 0.6.0
 
 New commands validate `ceremony_ids`, `reconsider_when` and `target_role_ids`
 as unique lists of at most 100 items across Rust, direct gRPC and both MCP
@@ -92,9 +94,9 @@ the guard still counts successful work in the state being left. The
 
 ## Catalogue identity
 
-Source catalogues are now `made` in this repository. The stable
-`marketplace` branch remains pinned to a published release; v0.5.0 still has
-the old `underpass` metadata. Follow the
+The 0.6.0 source catalogues are `made` in this repository. The stable
+`marketplace` branch advances only after the matching release assets are
+public; its v0.5.0 snapshot has the old `underpass` metadata. Follow the
 [plugin migration](../plugins/README.md) to inspect and replace an old
 registration without duplicating MCP servers or deleting ceremony data.
 

@@ -1,8 +1,8 @@
 # Execute and resume a ceremony
 
 A host drives the work. MADE accepts claims, validates results and records
-progress. This guide describes the integrated source contract; fencing,
-durable visits and strict list validation require a build after v0.5.0.
+progress. This guide describes the 0.6.0 contract; fencing,
+durable visits and strict list validation are absent from v0.5.0.
 Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
@@ -19,7 +19,7 @@ agent called a tool, produced a file or changed an external system.
    human decision when a human guard blocks it.
 
 Use the exact schema from `tools/list`. The fence requirement is a deliberate
-protocol change after v0.5.0; see [migrations](../migrations/README.md).
+protocol change in 0.6.0; see [migrations](../migrations/README.md).
 Never fetch a replacement worker's current fence to attach an old result.
 
 With a verified server-owned `CeremonyStepHandlerPort`, use

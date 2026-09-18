@@ -63,8 +63,8 @@ was authenticated. The host owns those boundaries.
 
 ## Current hardening contracts
 
-This source tree implements completion fencing and durable visits together;
-they are not in the published v0.5.0 binary. `StepClaimFence` binds the accepted
+Version 0.6.0 implements completion fencing and durable visits together;
+they are not in v0.5.0. `StepClaimFence` binds the accepted
 claim's ceremony, step, state visit, state iteration, step iteration, attempt,
 lease owner, idempotency key and acquisition/expiry instants. It is a canonical
 lowercase SHA-256 value over domain-separated, length-delimited inputs, not

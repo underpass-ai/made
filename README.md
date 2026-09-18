@@ -14,10 +14,14 @@ provider-backed councils and Kubernetes.
 
 ## Start locally
 
-Install the current published binary with Cargo:
+These pages describe **0.6.0**. The release installation below requires the
+0.6.0 crates and checksummed assets to be public. Before publication, use the
+[source candidate route](docs/embedded/README.md#test-a-source-candidate).
+
+Install the published version with Cargo:
 
 ```bash
-cargo install made-mcp --locked
+cargo install made-mcp --version 0.6.0 --locked
 mkdir -p "$HOME/.local/state/underpass-made"
 MADE_MCP_BACKEND=embedded \
 MADE_MCP_STORE_PATH="$HOME/.local/state/underpass-made/ceremonies.sqlite3" \
@@ -30,25 +34,19 @@ your host using the [local setup guide](docs/embedded/README.md). Checksummed
 Rust toolchain. To embed the engine in Rust, start with the
 [complete library example](docs/embedded/rust.md).
 
-The plugin adds installation, design and execution skills. **The stable
-`marketplace` branch still carries v0.5.0's old `underpass` catalogue identity;
-it does not yet support `made@made`.** Use the binary route above today, or
-register a local checkout containing the repaired `made` catalogue:
-
-```bash
-codex plugin marketplace add /absolute/path/to/made
-codex plugin add made@made
-```
-
-Run `made-setup` and start a new task. The
-[plugin guide](docs/plugins/README.md) covers obtaining that checkout, Claude
-Code and the native Windows launcher. Once a later release publishes the
-repaired catalogue and advances `marketplace`, the stable Codex route will be:
+The plugin adds installation, design and execution skills. **The stable route
+requires the 0.6.0 assets to be public and `marketplace` to have advanced to
+that release.** The v0.5.0 marketplace snapshot uses the old `underpass`
+identity and cannot provide `made@made`.
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
 codex plugin add made@made
 ```
+
+After those publication conditions hold, run `made-setup` and start a new
+task. The [plugin guide](docs/plugins/README.md) also covers testing a local
+candidate with `MADE_MCP_BIN`, Claude Code and the native Windows launcher.
 
 ## Give the host a procedure
 
@@ -77,8 +75,8 @@ spawn agents or implement every multi-agent orchestration pattern.
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
 | Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
 
-MADE is pre-1.0. These pages describe this source tree and explicitly mark
-hardening that is not in v0.5.0. Use the running server's `tools/list` and
+MADE is pre-1.0. Version 0.6.0 requires client changes from 0.5.x, including
+the accepted claim's fence on completion. Use the running server's `tools/list` and
 `made_discover_capabilities` to check the installed surface. See
 [migrations](docs/migrations/README.md), [release history](CHANGELOG.md) and
 [documentation home](docs/index.md).

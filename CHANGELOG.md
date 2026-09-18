@@ -9,28 +9,48 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
-- Rebuild the documentation around local setup, host execution, public
-  contracts and service operations; preserve the previous tree and hashes.
-- Add the MADE block wordmark and matching SVG to active entrypoints.
-- Remove the repository `.kmp` memory export; this does not remove live stores.
-- Rename the source marketplace catalogue to `made`, co-located in this
-  repository. The stable `marketplace` branch advances only after a new
-  immutable release and its required assets publish.
-- Warn during definition analysis when global `all_steps_completed` can wait
-  on downstream work. Runtime guard semantics are unchanged.
-- Require the accepted claim's opaque fence on completion. Claim responses keep
+## 0.6.0 — 2026-09-18
+
+The release installation paths require public 0.6.0 assets and the stable
+`marketplace` branch at that release. Before publication, use the
+[source candidate route](docs/embedded/README.md#test-a-source-candidate).
+
+### Breaking client changes
+
+- Require the accepted claim's opaque `claim_fence` on completion across
+  direct RPC, both MCP backends and Rust. Missing identities are refused;
+  Rust callers must retain the new claim output and pass its fence to
+  completion. Claim responses keep
   the accepted snapshot/audit identity; delegated and application-owned work
-  cannot rebind old results to a replacement claim.
+  cannot rebind old results to a replacement claim. (#127)
+- Validate unique report ids, reconsideration conditions and scoped recipients
+  with a shared 100-item cap at command boundaries. Report ids and conditions
+  must be nonempty; empty recipient lists address the table. Rust callers use
+  the validated list types and fallible constructors. Historical event payloads
+  remain readable. (#100)
+
+### Execution and diagnostics
+
 - Add durable state visits to execution coordinates and fact identities. New
   transitions seal destination reset sets; old event bytes and fold behavior
-  remain compatible.
-- Validate bounded unique report ids, reconsideration conditions and scoped
-  recipients at command boundaries; empty recipient lists address the table.
+  remain compatible. State repetition retains its visit; a transition opens a
+  new visit. New event schemas require a compatible reader. (#129)
+- Warn during definition analysis when global `all_steps_completed` can wait
+  on downstream work. Runtime guard semantics are unchanged. (#143)
 - Fix counted-join serialization so `steps_completed:n` definitions can be
-  published, reopened and executed across the shared surfaces.
-- Display the co-located `made` catalogue as **MADE**.
+  published, reopened and executed across the shared surfaces. Other guard
+  representations and existing definition digests are unchanged. (#150)
 
-These changes are integrated in this source tree and remain unreleased.
+### Installation and documentation
+
+- Prepare the co-located marketplace identity `made`, displayed as **MADE**,
+  independently of KMP. The stable branch advances only after the new immutable
+  release and its required assets publish. (#39)
+- Rebuild documentation from a new structure around local setup, host execution,
+  public contracts and service operations; preserve previous prose and hashes.
+- Add the MADE block wordmark and matching SVG to active entrypoints.
+- Remove the repository `.kmp` memory export; this does not remove live stores.
+
 [Migration guidance](docs/migrations/README.md) covers required client changes
 and historical-data behavior. The
 [hardening prose snapshot](docs/history/hardening-integration-2026-09-18/INDEX.md)
