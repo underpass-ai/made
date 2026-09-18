@@ -16,11 +16,12 @@ use scenario_selection::{
     parse_scenario_selection, scenario_selection_summary, E2eScenario, SCENARIO_SELECTION_ENV,
 };
 use scenarios::{
-    connect_with_retry, verify_causal_metadata_propagates_over_nats, verify_daily_standup_ceremony,
+    connect_with_retry, verify_causal_metadata_propagates_over_nats,
+    verify_concurrent_review_pattern, verify_daily_standup_ceremony,
     verify_delete_missing_council_returns_false, verify_deliberate_returns_winner,
     verify_editorial_meeting_ceremony_against_vllm_kind, verify_editorial_meeting_ceremony_diagram,
-    verify_external_context_bundle_round_trips, verify_multi_agent_council_against_real_vllm,
-    verify_orchestrate_invokes_runtime_executor,
+    verify_external_context_bundle_round_trips, verify_incident_review_pattern,
+    verify_multi_agent_council_against_real_vllm, verify_orchestrate_invokes_runtime_executor,
     verify_orchestrate_rejects_proposal_violating_json_schema, verify_seeded_council_visible,
     verify_speaker_talk_qa_ceremony, verify_sprint_planning_ceremony,
     verify_structured_output_against_stub_llm, verify_structured_output_against_vllm_kind,
@@ -197,6 +198,20 @@ async fn run_ceremony_scenarios(
         verify_speaker_talk_qa_ceremony(client)
             .await
             .context("scenario 16 failed")?;
+    }
+
+    if selected_scenarios.contains(&E2eScenario::ConcurrentReviewPattern) {
+        info!("scenario 17: concurrent-review fans out and reports through public RPC");
+        verify_concurrent_review_pattern(client)
+            .await
+            .context("scenario 17 failed")?;
+    }
+
+    if selected_scenarios.contains(&E2eScenario::IncidentReviewPattern) {
+        info!("scenario 18: incident_review composes broadcast and bounded maker-checker stages");
+        verify_incident_review_pattern(client)
+            .await
+            .context("scenario 18 failed")?;
     }
 
     Ok(())

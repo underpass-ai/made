@@ -14,6 +14,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 COMPOSE_FILE="${ROOT_DIR}/tests/e2e/docker-compose.e2e.yaml"
 : "${CONTAINER_RUNTIME:=auto}"
+: "${COMPOSE_PROJECT_NAME:=made-e2e-${CI_JOB_ID:-local}-${BASHPID}}"
+export COMPOSE_PROJECT_NAME
 
 cd "${ROOT_DIR}"
 
@@ -70,6 +72,7 @@ select_compose() {
 # single word (`podman-compose`) or two (`docker compose`).
 read -r -a COMPOSE <<<"$(select_compose)"
 echo ">>> using compose runtime: ${COMPOSE[*]}" >&2
+echo ">>> compose project: ${COMPOSE_PROJECT_NAME}" >&2
 
 compose_logs() {
   local args=("${COMPOSE[@]}" -f "${COMPOSE_FILE}")

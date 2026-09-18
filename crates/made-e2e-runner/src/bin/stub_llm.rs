@@ -3,8 +3,7 @@
 //!
 //! Wired into `tests/e2e/docker-compose.e2e.yaml` as the `stub-llm`
 //! sidecar so MADE's `OpenAiAgent` adapter has a real
-//! HTTP peer to talk to — one that always returns a JSON Report
-//! payload satisfying
+//! HTTP peer to talk to. It normally returns a JSON Report payload satisfying
 //! `api/examples/output-contracts/report.schema.json`. That lets the
 //! compose E2E exercise the positive structured-output path
 //! (`RunCouncilDecision` with a strict Report contract -> winner
@@ -15,10 +14,9 @@
 //!
 //! - `POST /v1/chat/completions` — returns a deterministic
 //!   chat-completion envelope. `choices[0].message.content` is a
-//!   JSON string that, when parsed, satisfies the canonical Report
-//!   schema. The request body is consumed but otherwise ignored —
-//!   the stub does not branch on `model`, `messages`, or
-//!   `max_tokens`.
+//!   JSON string that, when parsed, satisfies the canonical Report schema.
+//!   Maker-checker prompts get a deterministic first rejection and second
+//!   approval so the composed incident-review fixture exercises both routes.
 //! - `GET /health` — `{"status":"ok"}` for compose-level probes.
 //!
 //! Environment:
@@ -93,8 +91,46 @@ fn stub_report_payload() -> Value {
     })
 }
 
-/// Return the canned Report-shaped chat completion. The handler
-/// ignores the request body beyond logging a one-line diagnostic.
+fn response_payload(request: &ChatCompletionsRequest) -> Value {
+    let messages = request
+        .messages
+        .iter()
+        .filter_map(|message| message.get("content").and_then(Value::as_str))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if messages.contains("Your task now:") {
+        if messages.contains("Your task now: Check the result") {
+            if messages.contains("current stage: WRITEUP_ITERATION_1") {
+                return json!({
+                    "approved": false,
+                    "findings": ["The first draft needs one deterministic revision."]
+                });
+            }
+            if messages.contains("current stage: WRITEUP_ITERATION_2") {
+                return json!({
+                    "approved": true,
+                    "findings": []
+                });
+            }
+        }
+        return stub_report_payload();
+    }
+    if messages.contains(r#""approved":false"#) {
+        return json!({
+            "approved": false,
+            "findings": ["The first draft needs one deterministic revision."]
+        });
+    }
+    if messages.contains(r#""approved":true"#) {
+        return json!({
+            "approved": true,
+            "findings": []
+        });
+    }
+    stub_report_payload()
+}
+
+/// Return the deterministic response selected from the stage-aware prompt.
 async fn chat_completions(
     JsonExtractor(req): JsonExtractor<ChatCompletionsRequest>,
 ) -> (StatusCode, Json<ChatCompletionsResponse>) {
@@ -104,7 +140,7 @@ async fn chat_completions(
         max_tokens = req.max_tokens.unwrap_or(0),
         "stub-llm: POST /v1/chat/completions"
     );
-    let content = serde_json::to_string(&stub_report_payload())
+    let content = serde_json::to_string(&response_payload(&req))
         .expect("hard-coded JSON payload always serialises");
     let response = ChatCompletionsResponse {
         id: "chatcmpl-stub-1",
@@ -229,6 +265,44 @@ mod tests {
             payload["report_id"],
             serde_json::Value::from(STUB_REPORT_ID)
         );
+    }
+
+    #[test]
+    fn maker_checker_rejects_the_first_iteration_and_approves_the_second() {
+        for (stage, expected) in [
+            ("WRITEUP_ITERATION_1", false),
+            ("WRITEUP_ITERATION_2", true),
+        ] {
+            let request = ChatCompletionsRequest {
+                messages: vec![json!({
+                    "role": "user",
+                    "content": format!(
+                        "current stage: {stage}. Your task now: Check the result"
+                    )
+                })],
+                ..ChatCompletionsRequest::default()
+            };
+            assert_eq!(response_payload(&request)["approved"], expected);
+        }
+
+        for (content, expected) in [
+            (r#"Revise this proposal: {"approved":false}"#, false),
+            (r#"Revise this proposal: {"approved":true}"#, true),
+        ] {
+            let request = ChatCompletionsRequest {
+                messages: vec![json!({"role": "user", "content": content})],
+                ..ChatCompletionsRequest::default()
+            };
+            assert_eq!(response_payload(&request)["approved"], expected);
+        }
+        let unrelated = ChatCompletionsRequest {
+            messages: vec![json!({
+                "role": "user",
+                "content": "Prior: {\"approved\":false}. Your task now: Deliver the report."
+            })],
+            ..ChatCompletionsRequest::default()
+        };
+        assert_eq!(response_payload(&unrelated)["report_id"], STUB_REPORT_ID);
     }
 
     /// The health route returns the `{"status":"ok"}` body operators

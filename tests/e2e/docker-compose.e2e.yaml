@@ -35,9 +35,9 @@ services:
       STUB_RUNTIME_GRPC_ADDR: "0.0.0.0:50053"
       RUST_LOG: "info"
 
-  # OpenAI-shaped stub LLM. Always returns a JSON Report payload that
-  # satisfies `api/examples/output-contracts/report.schema.json`,
-  # giving MADE's `OpenAiAgent` adapter a deterministic
+  # OpenAI-shaped stub LLM. Returns a JSON Report payload by default and
+  # deterministic maker-checker decisions for the pattern scenarios,
+  # giving MADE's provider adapters a deterministic
   # peer so scenario 8 can prove the positive structured-output path
   # end-to-end without a real provider in the test path.
   stub-llm:
@@ -88,7 +88,7 @@ services:
     environment:
       MADE_ENDPOINT: "http://made:50055"
       MADE_SEED_SPECIALTY: "triage"
-      # Full 1-9 suite by default. Override from the host with, e.g.,
+      # Compose-owned 1-9 and 17-18 suite by default. Override from the host with, e.g.,
       # `MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
       MADE_E2E_SCENARIOS: "${MADE_E2E_SCENARIOS:-compose}"
       # Pinned to the path that runner.Dockerfile copies into the

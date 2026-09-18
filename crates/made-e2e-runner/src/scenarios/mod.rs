@@ -5,6 +5,8 @@ mod ceremony_vllm_provider_config;
 mod connectivity;
 mod daily_standup;
 mod nats_subscription_ready;
+mod pattern_ceremony_definition;
+mod pattern_composition;
 mod runtime;
 mod speaker_talk_qa;
 mod sprint_planning;
@@ -26,6 +28,9 @@ pub(crate) use connectivity::{
     verify_deliberate_returns_winner, verify_seeded_council_visible,
 };
 pub(crate) use daily_standup::verify_daily_standup_ceremony;
+pub(crate) use pattern_composition::{
+    verify_concurrent_review_pattern, verify_incident_review_pattern,
+};
 pub(crate) use runtime::verify_orchestrate_invokes_runtime_executor;
 pub(crate) use speaker_talk_qa::verify_speaker_talk_qa_ceremony;
 pub(crate) use sprint_planning::verify_sprint_planning_ceremony;
