@@ -88,6 +88,7 @@ impl CeremonyInstance {
         }
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
+            state_visit: Some(self.current_state_visit),
             state_iteration: Some(self.current_state_iteration),
             iteration: record.iteration(),
             attempt,
@@ -138,6 +139,8 @@ impl CeremonyInstance {
             });
         }
 
+        self.require_step_claim_fence(&command.step_id, &command.claim_fence)?;
+
         let iteration = record.iteration();
         let attempt = record.attempt();
         let result = command.result.clone();
@@ -148,6 +151,7 @@ impl CeremonyInstance {
                 .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
             return Ok(vec![CeremonyEvent::StepFailed(StepFailed {
                 step_id: command.step_id.clone(),
+                state_visit: Some(self.current_state_visit),
                 state_iteration: Some(self.current_state_iteration),
                 iteration,
                 attempt,
@@ -170,6 +174,7 @@ impl CeremonyInstance {
         let patch = step.context_writes().resolve(result.output())?;
         let completed = CeremonyEvent::StepCompleted(StepCompleted {
             step_id: command.step_id.clone(),
+            state_visit: Some(self.current_state_visit),
             state_iteration: Some(self.current_state_iteration),
             iteration,
             attempt,
@@ -182,6 +187,7 @@ impl CeremonyInstance {
         if let Some(patch) = patch {
             events.push(CeremonyEvent::ContextWritten(ContextWritten {
                 step_id: command.step_id.clone(),
+                state_visit: Some(self.current_state_visit),
                 state_iteration: self.current_state_iteration,
                 iteration,
                 attempt,
@@ -191,29 +197,39 @@ impl CeremonyInstance {
         }
         let mut projected = self.clone();
         projected.apply_all(&events);
-        if projected.state_work_is_complete(definition) {
-            if let Some(policy) = definition
-                .state(&self.current_state)
-                .and_then(|state| state.repeat_policy())
-            {
-                if !projected.state_repeat_condition_is_satisfied(definition)
-                    && policy.permits_another_iteration(self.current_state_iteration)
-                {
-                    events.push(CeremonyEvent::StateIterationStarted(
-                        StateIterationStarted {
-                            state_id: self.current_state.clone(),
-                            state_iteration: self.current_state_iteration.next()?,
-                            step_ids: definition
-                                .steps_for_state(&self.current_state)
-                                .map(|step| step.id().clone())
-                                .collect(),
-                            started_at: command.now,
-                        },
-                    ));
-                }
-            }
-        }
+        events.extend(projected.decide_state_iteration(definition, command.now)?);
         Ok(events)
+    }
+
+    fn decide_state_iteration(
+        &self,
+        definition: &CeremonyDefinition,
+        now: time::OffsetDateTime,
+    ) -> Result<Option<CeremonyEvent>, DomainError> {
+        let Some(policy) = definition
+            .state(&self.current_state)
+            .and_then(|state| state.repeat_policy())
+        else {
+            return Ok(None);
+        };
+        if !self.state_work_is_complete(definition)
+            || self.state_repeat_condition_is_satisfied(definition)
+            || !policy.permits_another_iteration(self.current_state_iteration)
+        {
+            return Ok(None);
+        }
+        Ok(Some(CeremonyEvent::StateIterationStarted(
+            StateIterationStarted {
+                state_id: self.current_state.clone(),
+                state_visit: Some(self.current_state_visit),
+                state_iteration: self.current_state_iteration.next()?,
+                step_ids: definition
+                    .steps_for_state(&self.current_state)
+                    .map(|step| step.id().clone())
+                    .collect(),
+                started_at: now,
+            },
+        )))
     }
 }
 

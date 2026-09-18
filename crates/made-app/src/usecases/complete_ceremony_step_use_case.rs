@@ -59,6 +59,7 @@ impl CompleteCeremonyStepUseCase {
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: input.step_id,
             result: input.result,
+            claim_fence: input.claim_fence,
             now,
         });
         // A step ending commutes with what other writers do to the
@@ -138,6 +139,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .expect("a commuting command rides out one lost race");
@@ -165,7 +167,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn retry_attributes_the_ending_to_the_role_sealed_by_the_winning_reclaim() {
+    async fn retry_refuses_completion_after_another_claim_wins() {
         let definition = definition();
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
         let instances = Arc::new(EventStoreFake::default());
@@ -189,6 +191,7 @@ mod tests {
         let winner = RoleId::new("replacement").unwrap();
         let won_at = now() + time::Duration::seconds(61);
         let reclaim = CeremonyEvent::StepStarted(StepStarted {
+            state_visit: None,
             step_id: step_id(),
             state_iteration: Some(StateIteration::FIRST),
             iteration: StepIteration::FIRST,
@@ -218,26 +221,36 @@ mod tests {
             Arc::new(FixedClock::new(won_at)),
         );
 
-        usecase
+        let error = usecase
             .execute(CompleteCeremonyStepInput::new(
                 ceremony_id(),
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
-            .unwrap();
+            .unwrap_err();
 
+        assert!(error.to_string().contains("claim fence"));
         let records = instances.records(&ceremony_id()).await;
-        let ending = records
+        assert!(!records
             .iter()
-            .find(|record| record.event_type() == AuditEventType::StepCompleted)
-            .unwrap();
-        let Some(CeremonyEvent::StepCompleted(completed)) = ending.event() else {
-            panic!("the ending is a completed step");
-        };
-        assert_eq!(completed.finished_by, winner);
-        assert_eq!(ending.actor().role_id(), Some(&winner));
+            .any(|record| record.event_type() == AuditEventType::StepCompleted));
+        let latest = instances.saved(&ceremony_id()).await;
+        assert_eq!(
+            latest.step_record(&step_id()).unwrap().claimed_role(),
+            Some(&winner)
+        );
+        assert_eq!(
+            latest
+                .step_record(&step_id())
+                .unwrap()
+                .lease()
+                .unwrap()
+                .idempotency_key(),
+            &idempotency_key("lease-winner")
+        );
     }
 
     #[tokio::test]
@@ -281,6 +294,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(output).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .unwrap();
@@ -333,6 +347,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .is_err());
@@ -377,6 +392,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .unwrap();
@@ -439,6 +455,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 AuditActorKind::Human,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .unwrap();
@@ -503,6 +520,7 @@ mod tests {
                 step_id(),
                 StepResult::completed(readiness_output(false)).unwrap(),
                 AuditActorKind::Agent,
+                instance.step_claim_fence(&step_id()).unwrap(),
             ))
             .await
             .unwrap();

@@ -1,6 +1,6 @@
 use made_app::services::SessionStream;
-use made_app::usecases::CeremonyInstanceView;
-use made_core::entities::CeremonyInstance;
+use made_app::usecases::{CeremonyInstanceView, StartCeremonyStepOutput};
+use made_core::entities::{AuditRecord, CeremonyInstance};
 use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RecalledEntry, RoleId,
     SessionRecollection, StepId,
@@ -22,8 +22,27 @@ impl EmbeddedCeremonyInstancePresenter {
     ) -> Result<Value, ToolError> {
         let records = made.audit_records(ceremony_id).await?;
         let read = SessionStream::fold_records(&records)?;
-        let instance = &read.instance;
-        let head = records.last();
+        Self::render(made, &read.instance, records.last()).await
+    }
+
+    pub(super) async fn present_claim(
+        made: &EmbeddedMade,
+        claim: &StartCeremonyStepOutput,
+    ) -> Result<Value, ToolError> {
+        let records = made.audit_records(claim.instance().id()).await?;
+        let head = records
+            .iter()
+            .find(|record| record.sequence().value() == claim.version().value());
+        let mut value = Self::render(made, claim.instance(), head).await?;
+        value["claim_fence"] = json!(claim.claim_fence().as_str());
+        Ok(value)
+    }
+
+    async fn render(
+        made: &EmbeddedMade,
+        instance: &CeremonyInstance,
+        head: Option<&AuditRecord>,
+    ) -> Result<Value, ToolError> {
         let definition = made.definition_for(instance).await?;
         // Derived once in the application layer and rendered here. The
         // gRPC adapter renders the same view, which is what keeps one
@@ -86,6 +105,7 @@ impl EmbeddedCeremonyInstancePresenter {
                 .map(CeremonyDefinitionDigest::to_hex),
             "current_state": instance.current_state().as_str(),
             "current_state_iteration": instance.current_state_iteration().get(),
+            "current_state_visit": instance.current_state_visit().get(),
             "state_repeat_max_iterations": definition.state(instance.current_state())
                 .and_then(|state| state.repeat_policy()).map(|policy| policy.max_iterations().get()),
             "state_repeat_condition_satisfied": instance.state_repeat_condition_is_satisfied(&definition),
@@ -146,6 +166,7 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                 "error": step.record().error_message().map(ToString::to_string),
                 "iteration": step.record().iteration().get(),
                 "state_iteration": step.record().state_iteration().get(),
+                "state_visit": step.record().state_visit().get(),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
                 "repeat_max_iterations": step

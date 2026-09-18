@@ -126,6 +126,7 @@ pub(super) fn present_ceremony_transcript(transcript: &CeremonyTranscript) -> Va
             .map(|contribution| json!({
                 "step_id": contribution.step_id().as_str(),
                 "state_iteration": contribution.state_iteration().get(),
+                "state_visit": contribution.state_visit().get(),
                 "role_id": contribution.role_id().as_str(),
                 "output": contribution.output().attributes().as_map(),
             }))

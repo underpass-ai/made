@@ -63,11 +63,18 @@ was authenticated. The host owns those boundaries.
 
 ## Current hardening contracts
 
-Completion fencing and durable visits are unreleased after v0.5.0. A
-`StepClaimFence` identifies the accepted lease and its execution coordinates;
-it must include the visit when the two hardening changes are integrated.
+This source tree implements completion fencing and durable visits together;
+they are not in the published v0.5.0 binary. `StepClaimFence` binds the accepted
+claim's ceremony, step, state visit, state iteration, step iteration, attempt,
+lease owner, idempotency key and acquisition/expiry instants. It is a canonical
+lowercase SHA-256 value over domain-separated, length-delimited inputs, not
+an authorization token.
+
 Application-owned execution carries the accepted fence through handler and
-completion retries. It never reloads a newer claim to accept old work.
+completion retries. It never reloads a newer claim to accept old work. Claim
+responses also retain the accepted instance and audit identity at that stream
+version: a concurrent replacement cannot make the response pair an old fence
+with a newer snapshot or trace.
 
 `StateVisit` is a positive ceremony-wide entry ordinal, distinct from
 `StateIteration`, step iteration and attempt. Initial entry is visit 1;
@@ -110,3 +117,12 @@ consumer API, 012 the event-stream foundation, 014 the local distribution and
 parity, and 015/016 concurrency and bounded primitives. Historical plans can
 explain a decision; current code, tests and the runtime catalogue establish
 what is implemented.
+
+The hardening decisions are retained in a separate
+[integration snapshot](../history/hardening-integration-2026-09-18/INDEX.md):
+[completion fencing](../history/hardening-integration-2026-09-18/docs/adr/017-step-completion-is-fenced-to-its-accepted-claim.md),
+[state visits](../history/hardening-integration-2026-09-18/docs/adr/018-durable-state-visits.md)
+and [list values](../history/hardening-integration-2026-09-18/docs/architecture/ceremony-list-values.md).
+Their active contract is described here and in the
+[runtime guide](../runtime/README.md); the original pre-rebuild snapshot remains
+unchanged.

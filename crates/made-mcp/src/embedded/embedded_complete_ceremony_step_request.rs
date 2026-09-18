@@ -1,6 +1,7 @@
 use made_app::usecases::CompleteCeremonyStepInput;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, StepErrorMessage, StepId, StepOutput, StepResult, StepStatus,
+    AuditActorKind, CeremonyId, StepClaimFence, StepErrorMessage, StepId, StepOutput, StepResult,
+    StepStatus,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
@@ -18,6 +19,7 @@ pub(super) struct EmbeddedCompleteCeremonyStepRequest {
     step_id: StepId,
     actor_kind: AuditActorKind,
     result: StepResult,
+    claim_fence: StepClaimFence,
 }
 
 impl EmbeddedCompleteCeremonyStepRequest {
@@ -27,6 +29,7 @@ impl EmbeddedCompleteCeremonyStepRequest {
             self.step_id,
             self.result,
             self.actor_kind,
+            self.claim_fence,
         ))
         .await?;
         Ok(self.ceremony_id)
@@ -55,6 +58,8 @@ impl TryFrom<&Value> for EmbeddedCompleteCeremonyStepRequest {
                 .map_err(|error| error.to_string())?,
             actor_kind: required_actor_kind(object, "actor_kind")?,
             result,
+            claim_fence: StepClaimFence::new(required_string(object, "claim_fence")?)
+                .map_err(|error| error.to_string())?,
         })
     }
 }

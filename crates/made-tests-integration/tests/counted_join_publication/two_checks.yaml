@@ -1,0 +1,33 @@
+version: "1.0"
+name: two_checks
+description: Two independent inspections before a review can close
+inputs:
+  required: [change_summary]
+states:
+  - id: CHECKING
+    initial: true
+    execution: concurrent
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: CHECKING
+    to: CLOSED
+    trigger: finish
+    guards: [both_done]
+steps:
+  - id: inspect_api
+    state: CHECKING
+    handler: api_review
+  - id: inspect_storage
+    state: CHECKING
+    handler: storage_review
+guards:
+  both_done:
+    type: automated
+    check: "steps_completed:2"
+roles:
+  - id: API_REVIEWER
+    allowed_actions: [inspect_api, finish]
+  - id: DATA_REVIEWER
+    allowed_actions: [inspect_storage, finish]
+max_parallel: 2

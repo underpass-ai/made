@@ -79,6 +79,7 @@ pub fn run_ceremony_response_from(output: &RunCeremonyOutput) -> pb::RunCeremony
                     .unwrap_or_default()
                     .to_owned(),
                 iteration: trace.iteration().get(),
+                state_visit: trace.state_visit().get(),
                 state_iteration: trace.state_iteration().get(),
             })
             .collect(),
@@ -187,6 +188,7 @@ roles:
             .apply_step_result(
                 &definition,
                 &step_id,
+                instance.step_claim_fence(&step_id).unwrap(),
                 StepResult::completed(StepOutput::empty()).unwrap(),
                 datetime!(2026-06-06 12:00:00 UTC),
             )

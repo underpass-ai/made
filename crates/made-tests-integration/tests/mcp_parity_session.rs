@@ -40,6 +40,8 @@ mod dynamic_roles;
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
 mod state_repeat;
+#[path = "mcp_parity_session/state_visits.rs"]
+mod state_visits;
 
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`
@@ -344,12 +346,13 @@ fn design_intent() -> Value {
 /// is built: a client meets `tools/call`, not a Rust trait.
 struct ParityArms {
     /// Dropping it stops the in-process server.
-    _fixture: GrpcFixture,
+    fixture: GrpcFixture,
     /// Dropping it removes the durable store's directory, on the pass
     /// that has one.
     _store_dir: Option<tempfile::TempDir>,
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
+    claims: std::sync::Mutex<std::collections::BTreeMap<(String, String), Value>>,
 }
 
 impl ParityArms {
@@ -416,19 +419,49 @@ impl ParityArms {
                 .build(),
         ));
         Self {
-            _fixture: fixture,
+            fixture,
             _store_dir: store_dir,
             over_the_wire,
             in_process,
+            claims: std::sync::Mutex::new(std::collections::BTreeMap::new()),
         }
     }
 
-    /// The same call on both arms, answered as the client sees it.
+    /// Test-host cache of identities returned by successful claims. Never a store read.
+    fn completing(&self, tool: &str, mut arguments: Value) -> Value {
+        if tool == "made_complete_ceremony_step" && arguments.get("claim_fence").is_none() {
+            let key = (
+                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                arguments["step_id"].as_str().unwrap().to_owned(),
+            );
+            arguments["claim_fence"] = self
+                .claims
+                .lock()
+                .unwrap()
+                .get(&key)
+                .expect("the scripted host captured a claim")
+                .clone();
+        }
+        arguments
+    }
+
+    /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
-        (
-            call_tool(&self.over_the_wire, id, tool, arguments).await,
-            call_tool(&self.in_process, id, tool, arguments).await,
-        )
+        let wire = call_tool(&self.over_the_wire, id, tool, arguments).await;
+        let local = call_tool(&self.in_process, id, tool, arguments).await;
+        if tool == "made_claim_ceremony_step" && !failed(&wire) && !failed(&local) {
+            let fence = structured(&wire)["claim_fence"].clone();
+            assert_eq!(fence, structured(&local)["claim_fence"]);
+            assert_eq!(fence.as_str().unwrap().len(), 64);
+            self.claims.lock().unwrap().insert(
+                (
+                    arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                    arguments["step_id"].as_str().unwrap().to_owned(),
+                ),
+                fence,
+            );
+        }
+        (wire, local)
     }
 }
 
@@ -926,6 +959,7 @@ async fn drive_the_whole_session(arms: &ParityArms) {
     let mut called: BTreeSet<String> = BTreeSet::new();
 
     for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        let arguments = arms.completing(tool, arguments);
         let id = index as u64 + 1;
         let (over_the_wire, in_process) = arms.call(id, tool, &arguments).await;
 
@@ -1646,6 +1680,7 @@ async fn both_arms_run_the_same_step_handler() {
 async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
     let arms = ParityArms::start().await;
     for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        let arguments = arms.completing(tool, arguments);
         arms.call(index as u64 + 1, tool, &arguments).await;
     }
 
@@ -1793,6 +1828,7 @@ async fn the_parity_session_costs_seconds_not_minutes() {
     let started = std::time::Instant::now();
     let arms = ParityArms::start().await;
     for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+        let arguments = arms.completing(tool, arguments);
         arms.call(index as u64 + 1, tool, &arguments).await;
     }
     let elapsed = started.elapsed();
@@ -1800,4 +1836,47 @@ async fn the_parity_session_costs_seconds_not_minutes() {
         elapsed < std::time::Duration::from_secs(30),
         "the parity session took {elapsed:?}; it runs on every workspace test run"
     );
+}
+
+#[tokio::test]
+async fn omitted_malformed_and_wrong_completion_fences_are_refused_on_both_backends() {
+    let arms = ParityArms::start().await;
+    let ceremony_id = "parity-fence-contract";
+    let (wire, local) = arms.call(4000, "made_start_ceremony", &json!({"ceremony_id": ceremony_id, "definition_yaml": PUBLISHED_CEREMONY, "actor_id": "operator", "actor_kind": "service"})).await;
+    assert_eq!(wire, local);
+    assert!(!failed(&wire), "{wire}");
+    let (wire, local) = arms.call(4001, "made_claim_ceremony_step", &json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "lease_owner_id": "fence-host", "idempotency_key": "fence-claim"})).await;
+    assert_eq!(wire, local);
+    assert!(!failed(&wire), "{wire}");
+    let fence = structured(&wire)["claim_fence"].clone();
+    let history_args = json!({"ceremony_id": ceremony_id, "limit": 100});
+    let before = arms
+        .call(4002, "made_read_ceremony_events", &history_args)
+        .await;
+    for (index, value) in [None, Some(json!("malformed")), Some(json!("0".repeat(64)))]
+        .into_iter()
+        .enumerate()
+    {
+        let mut args = json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "status": "completed"});
+        if let Some(value) = value {
+            args["claim_fence"] = value;
+        }
+        let (wire, local) = arms
+            .call(4010 + index as u64, "made_complete_ceremony_step", &args)
+            .await;
+        assert_eq!(wire, local);
+        assert!(failed(&wire), "{wire}");
+        assert_eq!(
+            arms.call(4002, "made_read_ceremony_events", &history_args)
+                .await,
+            before
+        );
+    }
+    let args = json!({"ceremony_id": ceremony_id, "step_id": "work", "actor_kind": "agent", "status": "completed", "claim_fence": fence});
+    let (wire, local) = arms.call(4020, "made_complete_ceremony_step", &args).await;
+    assert_eq!(wire, local);
+    assert!(!failed(&wire), "{wire}");
+    let (wire, local) = arms.call(4021, "made_complete_ceremony_step", &args).await;
+    assert_eq!(wire, local);
+    assert!(failed(&wire));
 }

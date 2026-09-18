@@ -96,12 +96,12 @@ pub(crate) fn request_ceremony_intervention_schema() -> Value {
             },
             "target_role_ids": {
                 "type": "array",
-                "minItems": 1,
+                "minItems": 0,
                 "maxItems": MAX_ID_LIST_ITEMS,
                 "uniqueItems": true,
                 "items": { "type": "string", "minLength": 1 },
                 "description": format!(
-                    "Optional responding roles. Omit to address the whole table; \
+                    "Optional responding roles. Omit or pass [] to address the whole table; \
                      at most {MAX_ID_LIST_ITEMS}, each distinct."
                 )
             },

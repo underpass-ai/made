@@ -36,13 +36,15 @@ impl CeremonyInstance {
         match completed.next_iteration {
             Some(next_iteration) => {
                 let state_iteration = finished.state_iteration();
+                let state_visit = finished.state_visit();
                 self.step_record_history
                     .entry(completed.step_id.clone())
                     .or_default()
                     .push(finished);
                 self.step_records.insert(
                     completed.step_id.clone(),
-                    StepExecutionRecord::pending_coordinates(state_iteration, next_iteration),
+                    StepExecutionRecord::pending_coordinates(state_iteration, next_iteration)
+                        .with_state_visit(state_visit),
                 );
             }
             None => {
@@ -71,7 +73,8 @@ impl CeremonyInstance {
                 .push(finished);
             self.step_records.insert(
                 step_id.clone(),
-                StepExecutionRecord::pending_state_iteration(started.state_iteration),
+                StepExecutionRecord::pending_state_iteration(started.state_iteration)
+                    .with_state_visit(started.state_visit()),
             );
         }
         self.updated_at = started.started_at;

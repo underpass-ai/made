@@ -19,7 +19,7 @@ pub(crate) use ceremony_history::{
     read_ceremony_events_to_json, verify_ceremony_journal_to_json,
 };
 pub(crate) use ceremony_instance::{
-    ceremony_instance_listing_entry, ceremony_instance_state_to_json,
+    ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,
 };
 pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;
@@ -264,6 +264,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         output,
         iteration,
         state_iteration,
+        state_visit,
     } = step;
     json!({
         "state_id": state_id,
@@ -279,6 +280,7 @@ fn ceremony_step_execution_to_json(step: pb::CeremonyStepExecution) -> Value {
         "attempt": attempt,
         "iteration": iteration,
         "state_iteration": state_iteration,
+        "state_visit": state_visit,
         "output": output,
     })
 }

@@ -36,6 +36,14 @@ fn edge(from: &str, to: &str, trigger: &str, guarded: bool) -> CeremonyTransitio
 }
 
 fn draft(condition: GuardCondition, edges: Vec<CeremonyTransition>) -> CeremonyDefinitionDraft {
+    draft_with_initial(condition, edges, "REVIEW")
+}
+
+fn draft_with_initial(
+    condition: GuardCondition,
+    edges: Vec<CeremonyTransition>,
+    initial: &str,
+) -> CeremonyDefinitionDraft {
     let steps = vec![
         step("a", "REVIEW"),
         step("b", "REVIEW"),
@@ -60,17 +68,26 @@ fn draft(condition: GuardCondition, edges: Vec<CeremonyTransition>) -> CeremonyD
         )
         .unwrap(),
     );
+    let mut states = vec![
+        if initial == "REVIEW" {
+            CeremonyState::initial(state("REVIEW"))
+        } else {
+            CeremonyState::intermediate(state("REVIEW"))
+        }
+        .with_execution(StateExecution::Concurrent),
+        CeremonyState::intermediate(state("SYNTHESIS")),
+        CeremonyState::terminal(state("DONE")),
+    ];
+    if initial != "REVIEW" {
+        states.push(CeremonyState::initial(state(initial)));
+    }
     CeremonyDefinitionDraft::new(
         CeremonyName::new("global_completion").unwrap(),
         CeremonyVersion::v1(),
         None,
         vec![],
         vec![],
-        vec![
-            CeremonyState::initial(state("REVIEW")).with_execution(StateExecution::Concurrent),
-            CeremonyState::intermediate(state("SYNTHESIS")),
-            CeremonyState::terminal(state("DONE")),
-        ],
+        states,
         edges,
         steps,
         vec![CeremonyGuard::new(
@@ -177,4 +194,22 @@ fn invalid_graph_is_reported_without_speculative_guard_warning() {
     );
     assert!(!draft.analyze().is_valid());
     assert_eq!(global_warnings(&draft), 0);
+}
+
+#[test]
+fn a_sibling_branch_without_return_does_not_suppress_the_warning() {
+    let mut edges = vec![
+        edge("START", "REVIEW", "review", false),
+        edge("START", "SYNTHESIS", "synthesize", false),
+        edge("REVIEW", "SYNTHESIS", "reviewed", true),
+        edge("SYNTHESIS", "DONE", "finish", false),
+    ];
+    let branched = draft_with_initial(GuardCondition::AllStepsCompleted, edges.clone(), "START");
+    assert_eq!(global_warnings(&branched), 1);
+    assert!(branched.publish().is_ok());
+
+    edges.push(edge("SYNTHESIS", "REVIEW", "back", false));
+    let returning = draft_with_initial(GuardCondition::AllStepsCompleted, edges, "START");
+    assert_eq!(global_warnings(&returning), 0);
+    assert!(returning.publish().is_ok());
 }

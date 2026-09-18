@@ -141,7 +141,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn the_fold_answers_what_the_store_used_to_hold() {
+    async fn the_fold_adds_visits_to_what_the_store_used_to_hold() {
         let events = two_step_session().await;
 
         let transcript = GetCeremonyTranscriptUseCase::new(events)
@@ -149,10 +149,9 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(
-            serde_json::to_string_pretty(&transcript).unwrap(),
-            TRANSCRIPT_GOLDEN
-        );
+        let mut expected: serde_json::Value = serde_json::from_str(TRANSCRIPT_GOLDEN).unwrap();
+        expected[1]["state_visit"] = serde_json::json!(2);
+        assert_eq!(serde_json::to_value(&transcript).unwrap(), expected);
     }
 
     /// Snapshots are a cache (ADR-012), and this is a transcript that
@@ -188,7 +187,7 @@ mod tests {
         let definitions = Arc::new(DefinitionRepositoryFake::new(definition));
         let clock = Arc::new(FixedClock::new(now()));
 
-        StartCeremonyStepUseCase::new(
+        let claim = StartCeremonyStepUseCase::new(
             definition_resolver(definitions.clone()),
             stream(events.clone()),
             clock.clone(),
@@ -214,6 +213,7 @@ mod tests {
             step_id(),
             StepResult::completed(spoke("the host did it")).unwrap(),
             AuditActorKind::Agent,
+            claim.claim_fence().clone(),
         ))
         .await
         .unwrap();

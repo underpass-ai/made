@@ -32,50 +32,41 @@ impl CeremonyEventReader {
         version: EventSchemaVersion,
         raw: serde_json::Value,
     ) -> Result<CeremonyEvent, DomainError> {
-        let event = match version {
-            EventSchemaVersion::V1 => {
-                serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
-                    unreadable(
-                        event_type,
-                        version,
-                        "the payload does not deserialize as a ceremony event",
-                    )
-                })?
-            }
-            EventSchemaVersion::V2
-                if matches!(
-                    event_type,
-                    AuditEventType::StepStarted
-                        | AuditEventType::StepCompleted
-                        | AuditEventType::StepFailed
-                        | AuditEventType::TransitionApplied
-                ) =>
-            {
-                serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
-                    unreadable(
-                        event_type,
-                        version,
-                        "the payload does not deserialize as a ceremony event",
-                    )
-                })?
-            }
-            EventSchemaVersion::V3 if event_type == AuditEventType::StepStarted => {
-                serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
-                    unreadable(
-                        event_type,
-                        version,
-                        "the payload does not deserialize as a ceremony event",
-                    )
-                })?
-            }
-            other => {
-                return Err(unreadable(
-                    event_type,
-                    other,
-                    "no reader exists for this schema version",
-                ))
-            }
+        let supported = match version {
+            EventSchemaVersion::V1 => true,
+            EventSchemaVersion::V2 => matches!(
+                event_type,
+                AuditEventType::StepStarted
+                    | AuditEventType::StepCompleted
+                    | AuditEventType::StepFailed
+                    | AuditEventType::TransitionApplied
+                    | AuditEventType::ContextWritten
+                    | AuditEventType::StateIterationStarted
+            ),
+            EventSchemaVersion::V3 => matches!(
+                event_type,
+                AuditEventType::StepStarted
+                    | AuditEventType::StepCompleted
+                    | AuditEventType::StepFailed
+                    | AuditEventType::TransitionApplied
+            ),
+            EventSchemaVersion::V4 => event_type == AuditEventType::StepStarted,
+            _ => false,
         };
+        if !supported {
+            return Err(unreadable(
+                event_type,
+                version,
+                "no reader exists for this schema version",
+            ));
+        }
+        let event = serde_json::from_value::<CeremonyEvent>(raw).map_err(|_| {
+            unreadable(
+                event_type,
+                version,
+                "the payload does not deserialize as a ceremony event",
+            )
+        })?;
         if event.event_type() != event_type {
             return Err(unreadable(
                 event_type,
@@ -102,6 +93,35 @@ impl CeremonyEventReader {
                     "the sealed static role differs from started_by",
                 ));
             }
+        }
+        let coordinates_valid = match &event {
+            CeremonyEvent::StepStarted(e) => e.state_visit.is_none() || e.state_iteration.is_some(),
+            CeremonyEvent::StepCompleted(e) => {
+                e.state_visit.is_none() || e.state_iteration.is_some()
+            }
+            CeremonyEvent::StepFailed(e) => e.state_visit.is_none() || e.state_iteration.is_some(),
+            CeremonyEvent::TransitionApplied(e) => match &e.destination {
+                Some(destination) => {
+                    e.transition.has_explicit_state_visit()
+                        && e.transition.has_explicit_state_iteration()
+                        && e.transition.state_visit().next().ok() == Some(destination.state_visit)
+                        && destination
+                            .step_ids
+                            .iter()
+                            .collect::<std::collections::BTreeSet<_>>()
+                            .len()
+                            == destination.step_ids.len()
+                }
+                None => !e.transition.has_explicit_state_visit(),
+            },
+            _ => true,
+        };
+        if !coordinates_valid {
+            return Err(unreadable(
+                event_type,
+                version,
+                "inconsistent state visit coordinates or destination reset",
+            ));
         }
         if event.schema_version() != version {
             return Err(unreadable(

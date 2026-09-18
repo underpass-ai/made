@@ -1,9 +1,9 @@
 # Upgrade an integration
 
-The current published baseline is v0.5.0. This source documentation also
-covers unreleased hardening; installing v0.5.0 does not provide those new
-contracts. Match clients, plugin files and binaries deliberately, then
-inspect the running capability catalogue.
+The current published baseline is v0.5.0. This source tree includes
+the integrated hardening below, which is still unreleased; installing v0.5.0
+does not provide these new contracts. Match clients, plugin files and binaries
+deliberately, then inspect the running capability catalogue.
 
 ## Completion fence after v0.5.0
 
@@ -30,9 +30,10 @@ uses of the old returned `StepAttempt` with `claim.attempt()`. Retain
 The output also exposes the accepted instance and version. Application-owned
 `run_step` retains its own fence automatically.
 
-Fencing alone changes no stored event schema. Combined with visits, the
-fence includes the visit coordinate. Existing clients must be upgraded before
-using the new mandatory completion boundary.
+Fencing alone changes no stored event schema. The integrated fence includes
+the state visit, state iteration, step iteration and attempt along with the
+exact lease identity. Existing clients must be upgraded before using the new
+mandatory completion boundary.
 
 ## Durable state visits after v0.5.0
 
@@ -64,9 +65,30 @@ backup before upgrading writers.
 New commands validate `ceremony_ids`, `reconsider_when` and `target_role_ids`
 as unique lists of at most 100 items across Rust, direct gRPC and both MCP
 backends. Report ids and reconsideration conditions must be nonempty. Empty
-or omitted intervention targets means the whole table. Historical data
-remains deserializable; stricter new command validation is not a rewrite of
-old records.
+or omitted intervention targets means the whole table. Uniqueness is checked
+after whitespace normalization. Report ids and conditions retain input order;
+scoped role ids retain their ordered-set shape.
+Invalid lists reject the request rather than being shortened or deduplicated.
+
+Rust `GenerateCeremonyReportInput::new` now returns a result; handle the
+validation error, or use `from_ids` with a validated `CeremonyReportIds`.
+Typed `CeremonyInterventionTarget::Roles` still requires a nonempty validated
+set; the empty-list-to-table rule applies at the transport boundary.
+Historical oversized lists remain deserializable for replay. Commands validate
+again, so replay compatibility cannot bypass current input rules. Historical
+target payloads are sets; duplicate role ids are rejected during their
+construction/deserialization. These list changes add no event schema version
+or response field.
+
+## Counted joins through durable publication
+
+`steps_completed:n` definitions now round-trip through published-definition
+serialization, SQLite reopening, direct gRPC and both MCP backends. Earlier
+code could analyze a counted join successfully but fail when serializing it
+for publication. The corrected scalar representation removes that failure;
+the guard still counts successful work in the state being left. The
+[two-check example](../authoring/examples/two-checks.yaml) intentionally uses
+`steps_completed:2` so the full publication path exercises this contract.
 
 ## Catalogue identity
 

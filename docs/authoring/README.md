@@ -71,6 +71,10 @@ with `made_start_published_ceremony`:
 }
 ```
 
+The counted-join publication fix in this source tree makes this same YAML
+survive publication and SQLite reopen. Published v0.5.0 predates that fix:
+validation alone there does not prove the definition can be published.
+
 `change_summary` satisfies the definition's required input. The opening actor
 is the actual caller, not necessarily a role at the table. Inspect the
 instance, claim `inspect_api` as `API_REVIEWER` and `inspect_storage` as

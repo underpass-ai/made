@@ -192,6 +192,7 @@ mod support {
         AuditFact {
             event_id: EventId::new(format!("restart-{ordinal}")).unwrap(),
             event: CeremonyEvent::StepCompleted(StepCompleted {
+                state_visit: None,
                 step_id: StepId::new("conformance_step").unwrap(),
                 state_iteration: None,
                 iteration: StepIteration::FIRST,

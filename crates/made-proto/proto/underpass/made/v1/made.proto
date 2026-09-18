@@ -741,6 +741,8 @@ message CeremonyStepExecution {
   uint32 iteration = 7;
   // Whole-state iteration. Starts at one and is independent of step repeat.
   uint32 state_iteration = 8;
+  // Durable state entry, independent of within-state repetition.
+  uint32 state_visit = 9;
 }
 
 message RunCeremonyResponse {
@@ -784,6 +786,7 @@ message CeremonyStepState {
   uint32 repeat_max_iterations = 10;
   // Whole-state iteration containing this record.
   uint32 state_iteration = 11;
+  uint32 state_visit = 12;
 }
 
 // A guard on an outgoing transition.
@@ -948,6 +951,7 @@ message CeremonyInstanceState {
   uint32 state_repeat_max_iterations = 25;
   bool state_repeat_condition_satisfied = 26;
   bool state_repeat_limit_reached = 27;
+  uint32 current_state_visit = 28;
 }
 
 // What a session was told when it opened, bounded and in order:
@@ -1128,6 +1132,7 @@ message DeferCeremonyGuardRequest {
   // from nobody having looked.
   string statement = 3;
   string reason = 4;
+  // Between 1 and 100 distinct conditions, compared after trimming.
   repeated string reconsider_when = 5;
   // And who decided it. The fourth of the four, and the only one
   // nobody can reconstruct afterwards.
@@ -1212,7 +1217,8 @@ message RequestCeremonyInterventionRequest {
   string role_kind = 9;
   // "opinion", "investigation" or "action".
   string kind = 4;
-  // Whom it is put to. Empty asks the whole table.
+  // Whom it is put to. Empty asks the whole table. Otherwise at most
+  // 100 distinct role ids, compared after trimming.
   repeated string target_role_ids = 5;
   string message = 6;
   google.protobuf.Struct details = 7;
@@ -1449,6 +1455,8 @@ message ClaimCeremonyStepRequest {
 
 message ClaimCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
+  // Capture this opaque identity before work; return it unchanged to complete.
+  string claim_fence = 2;
 }
 
 message CompleteCeremonyStepRequest {
@@ -1468,6 +1476,8 @@ message CompleteCeremonyStepRequest {
   // Why it failed. Required for "failed" and refused for every other
   // status: a reason attached to a success describes nothing.
   string error = 6;
+  // Required. Omission, malformed identity or a replaced claim is refused.
+  string claim_fence = 7;
 }
 
 message CompleteCeremonyStepResponse {
@@ -1790,6 +1800,7 @@ message CeremonyTranscriptEntry {
   // produced none.
   google.protobuf.Struct output = 3;
   uint32 state_iteration = 4;
+  uint32 state_visit = 5;
 }
 
 message GetCeremonyTranscriptRequest {
@@ -1815,8 +1826,8 @@ message CeremonyReportBinding {
 }
 
 message GenerateCeremonyReportRequest {
-  // One or more started sessions, reported in this order. An empty
-  // list, a duplicate and an unknown id are each refused.
+  // Between 1 and 100 started sessions, reported in this order. An empty
+  // list, a duplicate after trimming and an unknown id are each refused.
   repeated string ceremony_ids = 1;
   // Report heading. Empty takes the default one, and whatever is
   // given is escaped as the untrusted Markdown it is.

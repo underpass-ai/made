@@ -18,11 +18,24 @@ even though the new catalogue identity is `made`.
   immutable release and its required assets publish.
 - Warn during definition analysis when global `all_steps_completed` can wait
   on downstream work. Runtime guard semantics are unchanged.
+- Require the accepted claim's opaque fence on completion. Claim responses keep
+  the accepted snapshot/audit identity; delegated and application-owned work
+  cannot rebind old results to a replacement claim.
+- Add durable state visits to execution coordinates and fact identities. New
+  transitions seal destination reset sets; old event bytes and fold behavior
+  remain compatible.
+- Validate bounded unique report ids, reconsideration conditions and scoped
+  recipients at command boundaries; empty recipient lists address the table.
+- Fix counted-join serialization so `steps_completed:n` definitions can be
+  published, reopened and executed across the shared surfaces.
+- Display the co-located `made` catalogue as **MADE**.
 
-The completion-fence, state-visit and bounded-list changes are
-unreleased hardening documented in [migrations](docs/migrations/README.md).
-Their integration must pass the relevant code and compatibility gates before
-publication. This documentation does not claim they are part of v0.5.0.
+These changes are integrated in this source tree and remain unreleased.
+[Migration guidance](docs/migrations/README.md) covers required client changes
+and historical-data behavior. The
+[hardening prose snapshot](docs/history/hardening-integration-2026-09-18/INDEX.md)
+preserves the incoming ADRs and implementation notes without changing the
+original documentation archive.
 
 ## 0.5.0 — 2026-09-18
 

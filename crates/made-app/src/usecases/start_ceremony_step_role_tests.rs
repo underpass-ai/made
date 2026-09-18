@@ -27,6 +27,7 @@ async fn automatic_claim_re_resolves_role_and_actor_after_context_wins_the_race(
     let instance = dynamic_role_instance(&definition, "B");
     instances.save(&instance).await.unwrap();
     let context_won = CeremonyEvent::ContextWritten(ContextWritten {
+        state_visit: None,
         step_id: StepId::new("selector").unwrap(),
         state_iteration: StateIteration::FIRST,
         iteration: StepIteration::FIRST,

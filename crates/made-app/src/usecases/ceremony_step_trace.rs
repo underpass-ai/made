@@ -1,11 +1,13 @@
 use made_core::value_objects::{
-    RoleId, StateId, StateIteration, StepAttempt, StepId, StepIteration, StepOutput, StepStatus,
+    RoleId, StateId, StateIteration, StateVisit, StepAttempt, StepId, StepIteration, StepOutput,
+    StepStatus,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CeremonyStepTrace {
     state_id: StateId,
     state_iteration: StateIteration,
+    state_visit: StateVisit,
     step_id: StepId,
     role_id: RoleId,
     iteration: StepIteration,
@@ -72,6 +74,7 @@ impl CeremonyStepTrace {
         Self {
             state_id,
             state_iteration,
+            state_visit: StateVisit::FIRST,
             step_id,
             role_id,
             iteration,
@@ -84,6 +87,17 @@ impl CeremonyStepTrace {
     #[must_use]
     pub fn iteration(&self) -> StepIteration {
         self.iteration
+    }
+
+    #[must_use]
+    pub fn state_visit(&self) -> StateVisit {
+        self.state_visit
+    }
+
+    #[must_use]
+    pub fn with_state_visit(mut self, state_visit: StateVisit) -> Self {
+        self.state_visit = state_visit;
+        self
     }
 
     #[must_use]

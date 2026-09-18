@@ -14,7 +14,7 @@ of the project's development chronology.
 | Protobuf, AsyncAPI, YAML examples and schemas | Operational machine contracts, kept at their original paths |
 | `docs/architecture/*.tsv` | Checked conformance, coverage, parity and numeric-conversion ledgers; unchanged |
 | Support matrix marked table | Compiled test contract; exact table retained while surrounding prose was rebuilt |
-| Golden report and store fixture provenance | Test output/provenance, retained unchanged rather than rewritten as product documentation |
+| Golden report and store fixture provenance | Operational test output/provenance; follows the source contract and is not rewritten as product prose |
 | Helm `NOTES.txt` | Operational render template, retained unchanged |
 | Experiment scripts and result files | Historical raw evidence and runnable inputs, retained unchanged |
 | LICENSE files | Legal terms, retained unchanged |
@@ -27,6 +27,12 @@ records path, byte length and SHA-256 against the source commit. Every prior
 active prose page was replaced or retired; retained operational exceptions
 are listed above. The old ADRs and roadmaps are historical; current contract
 choices are explained in [architecture](architecture/README.md).
+
+The [hardening supplement](history/hardening-integration-2026-09-18/INDEX.md)
+separately preserves 13 incoming Markdown files from the integrated fence,
+visit, list-validation and counted-join fixes. It has its own source commit
+and manifest. Incoming operational fixtures follow that code; the original
+82-file archive is never updated to match later behavior.
 
 A small set of former paths now contains newly written compatibility
 entrypoints for source comments and external links. They route to the active

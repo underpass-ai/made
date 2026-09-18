@@ -89,12 +89,15 @@ fn claim_input() -> StartCeremonyStepInput {
     )
 }
 
-fn finish_input() -> CompleteCeremonyStepInput {
+fn finish_input(
+    claim_fence: made_core::value_objects::StepClaimFence,
+) -> CompleteCeremonyStepInput {
     CompleteCeremonyStepInput::new(
         ceremony_id(),
         step_id(),
         StepResult::completed(StepOutput::empty()).unwrap(),
         AuditActorKind::Agent,
+        claim_fence,
     )
 }
 
@@ -107,13 +110,13 @@ async fn every_record_of_every_append_is_observed_once_and_in_order() {
     let stream = stream_watched_by(store.clone(), watcher.clone());
     let definitions = Arc::new(DefinitionRepositoryFake::new(definition()));
 
-    claim(stream.clone()).execute(claim_input()).await.unwrap();
+    let accepted = claim(stream.clone()).execute(claim_input()).await.unwrap();
     CompleteCeremonyStepUseCase::new(
         definition_resolver(definitions.clone()),
         stream.clone(),
         Arc::new(FixedClock::new(now())),
     )
-    .execute(finish_input())
+    .execute(finish_input(accepted.claim_fence().clone()))
     .await
     .unwrap();
     ApplyCeremonyTransitionUseCase::new(

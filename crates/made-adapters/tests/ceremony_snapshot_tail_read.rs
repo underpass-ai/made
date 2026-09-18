@@ -121,6 +121,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
                 actor.clone(),
                 "snapshot-tail-step-started",
                 CeremonyEvent::StepStarted(StepStarted {
+                    state_visit: None,
                     step_id: step_id.clone(),
                     state_iteration: None,
                     iteration: StepIteration::FIRST,
@@ -153,6 +154,7 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
         actor,
         tail_event_id.as_str(),
         CeremonyEvent::StepCompleted(StepCompleted {
+            state_visit: None,
             step_id: step_id.clone(),
             state_iteration: None,
             iteration: StepIteration::FIRST,
@@ -185,10 +187,8 @@ async fn load_reads_only_the_snapshot_head_and_event_tail() {
     assert_eq!(observed.reads(), vec![expected_after]);
     assert_eq!(loaded.version, StreamVersion::new(3));
     assert_eq!(loaded.head_event_id(), Some(&tail_event_id));
-    assert_eq!(
-        loaded.instance.step_record(&step_id).unwrap().status(),
-        StepStatus::Completed
-    );
+    let record = loaded.instance.step_record(&step_id).unwrap();
+    assert_eq!(record.status(), StepStatus::Completed);
 }
 
 fn opening_event(

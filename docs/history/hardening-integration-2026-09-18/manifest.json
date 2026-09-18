@@ -1,0 +1,72 @@
+{
+  "source_commit": "0d6c823d7d7b323897cd1302d9201d19a9a99072",
+  "comparison_base": "4dd5eed9bc447097eac842dbf4d7fd736432f195",
+  "selection": "Changed or added Markdown/text inputs between base and integrated hardening head; includes golden report as operational evidence.",
+  "files": [
+    {
+      "path": "CHANGELOG.md",
+      "bytes": 87954,
+      "sha256": "4e247497ecec6fb6ba9f03b21159e79e04ab7b51eccb694f9d48da4a52c21722"
+    },
+    {
+      "path": "crates/made-mcp/README.md",
+      "bytes": 16185,
+      "sha256": "85770767ccaad57e542c5d5efe736be502b092fcb83464a1080c32cfaa15e763"
+    },
+    {
+      "path": "crates/made-tests-integration/tests/golden/parity_session_report.md",
+      "bytes": 53337,
+      "sha256": "e1137e77273517119197e74b4162504503cd3050cc0527a2990a4371e836bd30"
+    },
+    {
+      "path": "docs/adr/016-bounded-definition-primitives.md",
+      "bytes": 8655,
+      "sha256": "e1595d794fa4e3030c1c792228c8531a2c15f85824b93ffc016fd2bd5f1a806f"
+    },
+    {
+      "path": "docs/adr/017-step-completion-is-fenced-to-its-accepted-claim.md",
+      "bytes": 3713,
+      "sha256": "bb0f18fdbbb308f4ec0168703453b8ac7e4166146dee35e9f78aad0a672ab436"
+    },
+    {
+      "path": "docs/adr/018-durable-state-visits.md",
+      "bytes": 4312,
+      "sha256": "93b4cfdab840f7882b1f00ae213bb3ff1c0dbe797d680e0a97c2f46f7062b417"
+    },
+    {
+      "path": "docs/adr/README.md",
+      "bytes": 2990,
+      "sha256": "0ddc7be3ee75ec4e47a34ebda2575143be097cb0f2faaf2496ebff82bb7359fe"
+    },
+    {
+      "path": "docs/architecture/ceremony-list-values.md",
+      "bytes": 2755,
+      "sha256": "7ae945af798c8d66cd45f4e1d25064683397c3947d6a5cf557df088da10bafb9"
+    },
+    {
+      "path": "docs/operations/ceremony-authoring-runbook.md",
+      "bytes": 24571,
+      "sha256": "d32aa72f84c33fa6d1d1f39b08b546698cdcbddc29d0bcc0b94fa2fb136534b3"
+    },
+    {
+      "path": "docs/operations/codex-plugin.md",
+      "bytes": 7017,
+      "sha256": "d31283a8165bce9abd2261ca1363d0c2df8e284d97bc282b7865642c18ef72f5"
+    },
+    {
+      "path": "docs/operations/embedded-ceremony-execution.md",
+      "bytes": 11235,
+      "sha256": "37da8f11833329b7f4ada57e7b4f6fde8e0f8b6245bd1126969bec24a1414905"
+    },
+    {
+      "path": "docs/orchestration-patterns-plan.md",
+      "bytes": 77178,
+      "sha256": "9d02c8b61addf820201007321c91471c6ecf73f6e882b5d1faba908cd40f5521"
+    },
+    {
+      "path": "plugins/made/README.md",
+      "bytes": 8253,
+      "sha256": "1a4acc789c895291049fe8af406b6481d0c3280f3d7cc77fa1a24ae4dc292de9"
+    }
+  ]
+}

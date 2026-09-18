@@ -36,6 +36,7 @@ fn exhausted_repeat_exposes_the_only_remaining_human_guard() {
             .apply_step_result(
                 &definition,
                 &step_id,
+                instance.step_claim_fence(&step_id).unwrap(),
                 StepResult::completed(output).unwrap(),
                 now + Duration::seconds(1),
             )
@@ -70,6 +71,9 @@ fn projection_and_decision_share_the_live_lease_barrier_and_expiry_clock() {
         .apply_step_result(
             &definition,
             &StepId::new("a").unwrap(),
+            instance
+                .step_claim_fence(&StepId::new("a").unwrap())
+                .unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         )

@@ -35,14 +35,15 @@ pub(crate) fn transcript(records: &[AuditRecord]) -> CeremonyTranscript {
             .iter()
             .filter_map(AuditRecord::event)
             .filter_map(|event| match event {
-                CeremonyEvent::StepCompleted(completed) => {
-                    Some(CeremonyStepContribution::at_state_iteration(
+                CeremonyEvent::StepCompleted(completed) => Some(
+                    CeremonyStepContribution::at_state_iteration(
                         completed.step_id.clone(),
                         completed.state_iteration(),
                         completed.finished_by.clone(),
                         completed.result.output().clone(),
-                    ))
-                }
+                    )
+                    .with_state_visit(completed.state_visit()),
+                ),
                 _ => None,
             })
             .collect(),
@@ -91,6 +92,7 @@ mod tests {
 
     fn completed(step: &str, role: &str, words: &str) -> CeremonyEvent {
         CeremonyEvent::StepCompleted(StepCompleted {
+            state_visit: None,
             step_id: StepId::new(step).unwrap(),
             state_iteration: None,
             iteration: StepIteration::FIRST,
@@ -145,6 +147,7 @@ mod tests {
             record(
                 "e1",
                 CeremonyEvent::StepFailed(StepFailed {
+                    state_visit: None,
                     step_id: StepId::new("open").unwrap(),
                     state_iteration: None,
                     iteration: StepIteration::FIRST,

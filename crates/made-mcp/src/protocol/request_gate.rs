@@ -733,6 +733,7 @@ mod tests {
             &json!({
                 "ceremony_id": "s",
                 "step_id": "work",
+                "claim_fence": "a".repeat(64),
                 "actor_kind": "agent",
                 "status": "failed",
             }),
@@ -744,6 +745,7 @@ mod tests {
             &json!({
                 "ceremony_id": "s",
                 "step_id": "work",
+                "claim_fence": "a".repeat(64),
                 "actor_kind": "agent",
                 "status": "completed",
                 "error": "but it worked",
@@ -755,6 +757,7 @@ mod tests {
             json!({
                 "ceremony_id": "s",
                 "step_id": "work",
+                "claim_fence": "a".repeat(64),
                 "actor_kind": "agent",
                 "status": "failed",
                 "error": "the queue never drained",
@@ -762,6 +765,7 @@ mod tests {
             json!({
                 "ceremony_id": "s",
                 "step_id": "work",
+                "claim_fence": "a".repeat(64),
                 "actor_kind": "agent",
                 "status": "completed",
             }),

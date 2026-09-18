@@ -40,6 +40,7 @@ pub(super) fn definition() -> Result<CeremonyDefinition, DomainError> {
 /// The one event the suites seal: a step that completed with no output.
 pub(super) fn ceremony_event() -> Result<CeremonyEvent, DomainError> {
     Ok(CeremonyEvent::StepCompleted(StepCompleted {
+        state_visit: None,
         step_id: StepId::new("conformance_step")?,
         state_iteration: None,
         iteration: StepIteration::FIRST,

@@ -141,7 +141,7 @@ impl GrpcFixture {
         );
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
-            ceremony_store.clone(),
+            wiring.ceremony_snapshots(),
             Arc::new(CeremonyEventFanout::new(vec![
                 Arc::new(SessionMemoryRecorder::new(
                     memory_writer,

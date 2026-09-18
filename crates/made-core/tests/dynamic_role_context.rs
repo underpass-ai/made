@@ -250,6 +250,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
         .decide(
             &CeremonyCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("writer"),
+                claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
                 result: StepResult::completed(output).unwrap(),
                 now,
             }),
@@ -277,6 +278,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
         .decide(
             &CeremonyCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("dynamic"),
+                claim_fence: instance.step_claim_fence(&step("dynamic")).unwrap(),
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
                 now,
             }),
@@ -307,6 +309,7 @@ fn context_writes_validate_every_source_before_emitting_any_event() {
     let decision = instance.decide(
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("writer"),
+            claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
             result: StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         }),
@@ -495,6 +498,7 @@ fn an_explicit_free_static_role_is_not_overridden_by_the_default_claim_projectio
         .apply_step_result(
             &definition,
             &step("writer"),
+            instance.step_claim_fence(&step("writer")).unwrap(),
             StepResult::completed(output).unwrap(),
             now,
         )
@@ -534,6 +538,7 @@ fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
         .apply_step_result(
             &definition,
             &step("first_step"),
+            instance.step_claim_fence(&step("first_step")).unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         )
@@ -563,6 +568,7 @@ fn ordinary_static_step_started_events_keep_the_legacy_record_shape() {
     let now = OffsetDateTime::UNIX_EPOCH;
     let mut instance = opened();
     let event = CeremonyEvent::StepStarted(StepStarted {
+        state_visit: None,
         step_id: step("writer"),
         state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
         iteration: StepIteration::FIRST,
@@ -615,6 +621,7 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
             created_at: at,
         }),
         CeremonyEvent::StepStarted(StepStarted {
+            state_visit: None,
             step_id: step("draft"),
             state_iteration: None,
             iteration: StepIteration::FIRST,
@@ -647,6 +654,7 @@ fn same_destination_context_writes_follow_stream_order() {
     let key = ContextKey::new("next_role").unwrap();
     for value in ["C", "D"] {
         instance.apply(&CeremonyEvent::ContextWritten(ContextWritten {
+            state_visit: None,
             step_id: step("writer"),
             state_iteration: made_core::value_objects::StateIteration::FIRST,
             iteration: StepIteration::FIRST,

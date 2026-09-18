@@ -1,15 +1,17 @@
 # Execute and resume a ceremony
 
 A host drives the work. MADE accepts claims, validates results and records
-progress. Neither a claimed step nor a successful no-op is evidence that an
+progress. This guide describes the integrated source contract; fencing,
+durable visits and strict list validation require a build after v0.5.0.
+Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
 ## Claim → work → complete
 
 1. Inspect the instance and choose a claimable step.
 2. Call `made_claim_ceremony_step` with that step and the caller identity.
-3. Retain the accepted claim response. In the unreleased fenced protocol,
-   retain its opaque `claim_fence` before starting external work.
+3. Retain the accepted claim response and its opaque `claim_fence` before
+   starting external work. Completion requires this exact value.
 4. Perform the step with the host's authorized worker and tools.
 5. Call `made_complete_ceremony_step` with observed status and output,
    evidence references and that claim's unchanged `claim_fence`.
@@ -31,7 +33,9 @@ The bundled default handler may be a no-op.
 A claim has an exact execution identity and lease. If another worker takes
 over expired work, the old worker must not append its result to that new
 claim. The opaque SHA-256 fence binds the accepted claim's execution
-coordinates. Missing or malformed fences are invalid requests; a valid but
+coordinates, including `state_visit`. The claim response's instance, stream
+version and audit identity describe that same accepted claim, even if another
+worker replaces it before the response arrives. Missing or malformed fences are invalid requests; a valid but
 wrong or superseded fence is refused. Refusal appends no event and changes
 neither output/context nor the replacement lease.
 
@@ -50,7 +54,7 @@ These are distinct dimensions of execution:
 - `state_iteration` identifies repetition of all work within the current state.
 - `state_visit` identifies entry into a state, including later cycle entries.
 
-The state-visit hardening is unreleased after v0.5.0. It gives re-entered work
+The integrated state-visit contract gives re-entered work
 a fresh execution coordinate and records the exact reset set in the sealed
 transition event. Older event payloads keep their historical meaning; new
 folding must not invent reset instructions for them. Event identifiers must
@@ -74,11 +78,13 @@ collect a read-only response. Otherwise the host obtains the real response
 and records it. An action intervention does not bypass a guard or authorize
 an external mutation.
 
-After the list-validation hardening, report ceremony ids, reconsideration
-conditions and intervention target ids are unique bounded lists of at most
-100 items. Report ids and reconsideration conditions must be nonempty;
+New report ceremony ids, reconsideration conditions and intervention target
+ids are unique bounded lists of at most 100 items. Report ids and reconsideration conditions must be nonempty;
 intervention targets may be empty for the whole table. Legacy deserialization
-remains compatible; new commands validate strictly.
+remains compatible; new commands validate strictly. Uniqueness follows
+whitespace normalization. Report ids and conditions preserve caller order;
+scoped recipients use an ordered set. Invalid input rejects the entire command
+without truncation or silent deduplication.
 
 ## Resume without replaying side effects
 

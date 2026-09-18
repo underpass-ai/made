@@ -109,7 +109,7 @@ mod tests {
         store.save(&started_instance(&definition)).await.unwrap();
 
         let clock = Arc::new(FixedClock::new(now()));
-        StartCeremonyStepUseCase::new(
+        let claim = StartCeremonyStepUseCase::new(
             definition_resolver(definitions.clone()),
             stream(store.clone()),
             clock.clone(),
@@ -135,6 +135,7 @@ mod tests {
             step_id(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             AuditActorKind::Agent,
+            claim.claim_fence().clone(),
         ))
         .await
         .unwrap();

@@ -27,8 +27,11 @@ impl CeremonyDefinitionParts<'_> {
                 continue;
             }
             let downstream = self.states_reachable_from(transition.to());
+            let can_reach_source = self.states_leading_to(transition.from());
             if self.steps.values().any(|step| {
-                downstream.contains(step.state_id()) && !before_barrier.contains(step.state_id())
+                downstream.contains(step.state_id())
+                    && !(before_barrier.contains(step.state_id())
+                        && can_reach_source.contains(step.state_id()))
             }) {
                 findings.push(CeremonyValidationFinding::warning(
                     CeremonyValidationLocus::transition(
@@ -49,6 +52,22 @@ impl CeremonyDefinitionParts<'_> {
                 .get(name)
                 .is_some_and(|guard| matches!(guard.condition(), GuardCondition::AllStepsCompleted))
         })
+    }
+
+    /// A prior visit must be able to return to this edge's source. A sibling
+    /// branch that can never return cannot supply completed work to this path.
+    fn states_leading_to(&self, destination: &StateId) -> BTreeSet<StateId> {
+        let mut reached = BTreeSet::new();
+        let mut pending = vec![destination.clone()];
+        while let Some(current) = pending.pop() {
+            if !reached.insert(current.clone()) {
+                continue;
+            }
+            for transition in self.transitions.iter().filter(|edge| edge.to() == &current) {
+                pending.push(transition.from().clone());
+            }
+        }
+        reached
     }
 
     fn states_before_global_completion(&self, initial: &StateId) -> BTreeSet<StateId> {

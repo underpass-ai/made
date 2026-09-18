@@ -14,6 +14,8 @@ use crate::value_objects::{
 pub struct StepFailed {
     pub step_id: StepId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub state_visit: Option<crate::value_objects::StateVisit>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub state_iteration: Option<StateIteration>,
     pub iteration: StepIteration,
     pub attempt: StepAttempt,
@@ -27,5 +29,10 @@ impl StepFailed {
     #[must_use]
     pub fn state_iteration(&self) -> StateIteration {
         self.state_iteration.unwrap_or(StateIteration::FIRST)
+    }
+
+    #[must_use]
+    pub fn state_visit(&self) -> crate::value_objects::StateVisit {
+        self.state_visit.unwrap_or_default()
     }
 }

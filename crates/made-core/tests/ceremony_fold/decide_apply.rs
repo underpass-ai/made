@@ -20,8 +20,8 @@ use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
     CeremonyInterventionTarget, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
-    CeremonyRecordRef, CeremonyTransitionRecord, MemoryConfidence, StateIteration, StepAttempt,
-    StepErrorMessage, StepIteration, StepResult,
+    CeremonyRecordRef, CeremonyTransitionRecord, MemoryConfidence, StateIteration, StateVisit,
+    StepAttempt, StepErrorMessage, StepIteration, StepResult,
 };
 
 use super::fixture::{
@@ -206,6 +206,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
     assert_eq!(
         events,
         vec![CeremonyEvent::StepStarted(StepStarted {
+            state_visit: Some(StateVisit::FIRST),
             step_id: step("plan"),
             state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
@@ -281,15 +282,25 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     assert_eq!(
         events,
         vec![CeremonyEvent::StepCompleted(StepCompleted {
+            state_visit: Some(StateVisit::FIRST),
             step_id: step("plan"),
             state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
@@ -313,10 +324,19 @@ fn a_final_result_carries_no_next_iteration() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     let [CeremonyEvent::StepCompleted(completed)] = events.as_slice() else {
@@ -336,15 +356,25 @@ fn a_failure_is_its_own_event() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     assert_eq!(
         events,
         vec![CeremonyEvent::StepFailed(StepFailed {
+            state_visit: Some(StateVisit::FIRST),
             step_id: step("plan"),
             state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
             iteration: StepIteration::FIRST,
@@ -364,6 +394,7 @@ fn a_move_into_an_intermediate_state_is_one_event() {
         .apply_step_result(
             &definition,
             &step("plan"),
+            instance.step_claim_fence(&step("plan")).unwrap(),
             StepResult::completed(readiness(true)).unwrap(),
             at(2),
         )
@@ -390,6 +421,10 @@ fn a_move_into_an_intermediate_state_is_one_event() {
     assert_eq!(
         events,
         vec![CeremonyEvent::TransitionApplied(TransitionApplied {
+            destination: Some(made_core::entities::ceremony_events::StateVisitEntry {
+                state_visit: StateVisit::new(2).unwrap(),
+                step_ids: vec![step("check")]
+            }),
             transition: CeremonyTransitionRecord::record_at(
                 trigger("submit"),
                 state("drafting"),
@@ -397,7 +432,8 @@ fn a_move_into_an_intermediate_state_is_one_event() {
                 state("review"),
                 Some(role("facilitator")),
                 at(3),
-            ),
+            )
+            .with_state_visit(StateVisit::FIRST),
         })]
     );
 }
@@ -413,6 +449,7 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
         .apply_step_result(
             &definition,
             &step("plan"),
+            instance.step_claim_fence(&step("plan")).unwrap(),
             StepResult::completed(readiness(true)).unwrap(),
             at(1),
         )
@@ -442,6 +479,10 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
         events,
         vec![
             CeremonyEvent::TransitionApplied(TransitionApplied {
+                destination: Some(made_core::entities::ceremony_events::StateVisitEntry {
+                    state_visit: StateVisit::new(2).unwrap(),
+                    step_ids: vec![]
+                }),
                 transition: CeremonyTransitionRecord::record_at(
                     trigger("abandon"),
                     state("drafting"),
@@ -449,7 +490,8 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
                     state("done"),
                     None,
                     at(2),
-                ),
+                )
+                .with_state_visit(StateVisit::FIRST),
             }),
             CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
                 final_state: state("done"),
@@ -828,6 +870,7 @@ fn deciding_leaves_the_session_untouched() {
     let accepted = instance.decide(
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: StepResult::completed(readiness(true)).unwrap(),
             now: at(2),
         }),

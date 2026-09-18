@@ -67,7 +67,8 @@ inspect the actual running version/backend. `tools/list` is the authority for
 request schemas. Publish definitions before starting resumable sessions.
 No-op handler success proves protocol wiring only. For delegated work,
 retain the accepted claim response, perform the real work and complete using
-its exact identity; newer builds require `claim_fence`.
+its exact identity. This source tree requires `claim_fence` on completion; the
+published v0.5.0 binary predates that boundary, so inspect the running schema.
 
 The skills are self-contained inside the bundle:
 [setup](skills/made-setup/SKILL.md),

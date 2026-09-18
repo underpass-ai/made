@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 
 use crate::value_objects::RoleId;
 
-use super::{StateId, StateIteration, TransitionTrigger};
+use super::{StateId, StateIteration, StateVisit, TransitionTrigger};
 
 /// One move a session made, and who made it.
 ///
@@ -21,6 +21,8 @@ pub struct CeremonyTransitionRecord {
     from_state: StateId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     state_iteration: Option<StateIteration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    state_visit: Option<StateVisit>,
     to_state: StateId,
     #[serde(default)]
     applied_by: Option<RoleId>,
@@ -41,6 +43,7 @@ impl CeremonyTransitionRecord {
             trigger,
             from_state,
             state_iteration: None,
+            state_visit: None,
             to_state,
             applied_by,
             applied_at,
@@ -60,6 +63,7 @@ impl CeremonyTransitionRecord {
             trigger,
             from_state,
             state_iteration: Some(state_iteration),
+            state_visit: None,
             to_state,
             applied_by,
             applied_at,
@@ -83,6 +87,21 @@ impl CeremonyTransitionRecord {
 
     pub(crate) fn has_explicit_state_iteration(&self) -> bool {
         self.state_iteration.is_some()
+    }
+
+    #[must_use]
+    pub fn state_visit(&self) -> StateVisit {
+        self.state_visit.unwrap_or_default()
+    }
+
+    #[must_use]
+    pub fn with_state_visit(mut self, visit: StateVisit) -> Self {
+        self.state_visit = Some(visit);
+        self
+    }
+
+    pub(crate) fn has_explicit_state_visit(&self) -> bool {
+        self.state_visit.is_some()
     }
 
     #[must_use]
