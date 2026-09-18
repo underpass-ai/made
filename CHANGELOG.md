@@ -16,6 +16,10 @@ operator command.
 
 ### Fixed
 
+- Publish and reload definitions with counted joins (`steps_completed:N`). The
+  counted guard now has a canonical JSON object with a validated `count`; other
+  guard bytes and existing definition digests remain unchanged. YAML and proto
+  checks keep their existing spelling. (#150)
 - State transitions now open durable visits and rerun destination steps, while
   preserving prior work with its visit and repetition coordinates. New sealed
   transition payloads describe the reset; legacy events and snapshot hashes keep
