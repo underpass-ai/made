@@ -9,6 +9,12 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Expose all council, agent and output-contract operations through
+  `EmbeddedMade` and the embedded MCP backend. Local composition accepts
+  injected registries, agent factories, deliberation stores, validators,
+  scoring, execution and messaging ports; defaults remain socket-free,
+  retain in-process messages and reject orchestration until an executor is
+  configured. (#157)
 - Wait for a private NATS inbox round trip before E2E scenarios trigger events
   from another connection. The harness no longer treats a local socket flush
   as server acknowledgement of its subscription. (#153)
