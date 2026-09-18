@@ -16,6 +16,10 @@ operator command.
 
 ### Fixed
 
+- Publish and reload definitions with counted joins (`steps_completed:N`). The
+  counted guard now has a canonical JSON object with a validated `count`; other
+  guard bytes and existing definition digests remain unchanged. YAML and proto
+  checks keep their existing spelling. (#150)
 - Fence step completion to the accepted claim so a late worker cannot finish
   or clear a replacement worker's lease. Claim replies return `claim_fence`
   and completion requires it on proto, both MCP editions and the typed Rust
