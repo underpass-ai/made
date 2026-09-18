@@ -40,7 +40,8 @@ actual actor id/kind; an agent acting for a person is still `agent`.
 
 After each action, inspect the returned instance. Work only on eligible steps
 and apply only enabled transitions. The same step id may recur: compare
-`state_visit` when available, semantic `iteration` and technical `attempt`.
+`state_visit` when available, `state_iteration`, step `iteration` and technical
+`attempt`. A new state iteration differs from a new state visit.
 A bounded repeat that exhausts its limit is an explicit failure, not a
 completed loop. Hosts schedule concurrent workers; the engine does not spawn
 them automatically.

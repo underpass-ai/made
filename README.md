@@ -30,20 +30,25 @@ your host using the [local setup guide](docs/embedded/README.md). Checksummed
 Rust toolchain. To embed the engine in Rust, start with the
 [complete library example](docs/embedded/rust.md).
 
-The plugin adds installation, design and execution skills. Its catalogue
-lives in this repository on the `marketplace` branch:
+The plugin adds installation, design and execution skills. **The stable
+`marketplace` branch still carries v0.5.0's old `underpass` catalogue identity;
+it does not yet support `made@made`.** Use the binary route above today, or
+register a local checkout containing the repaired `made` catalogue:
+
+```bash
+codex plugin marketplace add /absolute/path/to/made
+codex plugin add made@made
+```
+
+Run `made-setup` and start a new task. The
+[plugin guide](docs/plugins/README.md) covers obtaining that checkout, Claude
+Code and the native Windows launcher. Once a later release publishes the
+repaired catalogue and advances `marketplace`, the stable Codex route will be:
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
 codex plugin add made@made
 ```
-
-Then run `made-setup` and start a new task. Claude Code uses the same repository
-catalogue and `made@made`; see [plugin installation](docs/plugins/README.md).
-**Release boundary:** this checkout uses the new `made` catalogue identity.
-The published v0.5.0 snapshot still uses `underpass`; the new identity becomes
-available on the stable branch only after a later release publishes. The
-plugin guide explains how to inspect that boundary or test this checkout.
 
 ## Give the host a procedure
 

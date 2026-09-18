@@ -71,9 +71,14 @@ version and digest. Publish before starting a session that must survive a
 restart. A supplied or mounted YAML definition can remain process-local:
 its instance may be listed with `rehydratable: false` after reopening.
 
-The default plugin store is
+The POSIX plugin store defaults to
 `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`.
-`MADE_MCP_STORE_PATH` overrides it. This data directory is independent of
+The native Windows launcher defaults to
+`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, with
+`%USERPROFILE%\.local\state` as the state-root fallback when `LOCALAPPDATA`
+is absent. Native Windows hosts without Bash must use the plugin's `.cmd`
+launcher; see [Windows setup](../plugins/README.md#native-windows-launcher).
+`MADE_MCP_STORE_PATH` overrides either default. This data directory is independent of
 the marketplace identity and the disposable plugin cache.
 
 Concurrent SQLite clients coordinate appends through store transactions and

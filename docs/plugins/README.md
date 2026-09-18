@@ -4,10 +4,39 @@ The plugin installs three workflows: setup, ceremony design and ceremony
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
-## Repository catalogue
+## Install from the repaired checkout today
 
-The marketplace is part of `underpass-ai/made`. Its stable entrypoint is the
-`marketplace` branch; both catalogues in this checkout are named `made`.
+**The stable `marketplace` branch still points to v0.5.0, whose catalogue is
+named `underpass`. It does not yet offer `made@made`.** Both catalogues in the
+repaired source checkout are named `made`. To use that identity now, obtain
+a current checkout and register its absolute path. For example, on a shell
+with Git and Codex:
+
+```bash
+git clone https://github.com/underpass-ai/made.git
+codex plugin marketplace add "$PWD/made"
+codex plugin add made@made
+```
+
+If you already have a repaired checkout, use its path instead of cloning it
+again. Run `made-setup`, then start a new task. In Claude Code, register that
+same local checkout:
+
+```text
+/plugin marketplace add /absolute/path/to/made
+/plugin install made@made
+/made:setup
+```
+
+For a binary-only installation today, use the
+[manual MCP route](../embedded/README.md) and a checksummed published binary.
+Neither route requires registering the old `underpass` catalogue.
+
+## Stable route after publication
+
+The following commands become usable with `made@made` only after a subsequent
+release publishes the repaired catalogue and advances the co-located
+`marketplace` branch. They are not the current v0.5.0 installation route.
 
 Codex:
 
@@ -16,8 +45,7 @@ codex plugin marketplace add underpass-ai/made --ref marketplace
 codex plugin add made@made
 ```
 
-Run `made-setup`, then start a new task so the host loads the installed skills
-and server. Claude Code:
+Claude Code:
 
 ```text
 /plugin marketplace add underpass-ai/made@marketplace
@@ -25,16 +53,8 @@ and server. Claude Code:
 /made:setup
 ```
 
-**Publication status:** the immutable v0.5.0 release and its current stable
-catalogue snapshot use the old `underpass` identity. The commands above target
-the repaired catalogue once a subsequent release advances `marketplace`.
-Do not move an old release tag to make those commands appear current. To
-inspect or test this source checkout before publication:
-
-```bash
-codex plugin marketplace add /absolute/path/to/made
-codex plugin add made@made
-```
+Run setup and start a new task after installation. Release tags remain
+immutable; moving v0.5.0 would not be a valid way to publish this repair.
 
 Source plugin metadata still pins the released binary version. Installing a
 checkout's plugin therefore does not install unreleased engine changes. For
@@ -55,9 +75,28 @@ version. Setup restores a matched binary; it does not migrate session data.
 
 In a fresh task, call `made_discover_capabilities`, then `made_get_help`.
 Check the active backend and version. Use `tools/list` for exact tool schemas.
-The default SQLite path is
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`;
-`MADE_MCP_STORE_PATH` overrides it. Preserve it across plugin updates.
+The POSIX launcher defaults to
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`.
+The native Windows launcher defaults to
+`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, falling back to
+`%USERPROFILE%\.local\state\underpass-made\ceremonies.sqlite3` when
+`LOCALAPPDATA` is absent. `MADE_MCP_STORE_PATH` overrides either default.
+Preserve the selected path across plugin updates.
+
+### Native Windows launcher
+
+The bundled `.mcp.json` declares the POSIX
+`scripts/run-embedded-mcp.sh` launcher. Installing `made-mcp.exe` alone does
+not make that command runnable on a native Windows host without Bash.
+Configure the existing `made` MCP registration to launch the plugin's
+`scripts\run-embedded-mcp.cmd` instead. Use the installed plugin's absolute
+path; a host that requires an executable command can invoke it through
+`cmd.exe /d /c <absolute-path-to-run-embedded-mcp.cmd>`.
+
+Replace the launch command rather than adding a second MADE server. Check the
+Windows command again after a plugin update, then open a new task and verify
+discovery. The CMD launcher sets embedded mode and the Windows state default
+above; it preserves an explicit `MADE_MCP_STORE_PATH`.
 
 ## Replace an old registration
 

@@ -18,6 +18,19 @@ On native Windows:
 powershell -NoProfile -ExecutionPolicy Bypass -File <plugin-root>\scripts\made-install-binary.ps1
 ```
 
+Native Windows also needs the correct launcher. The bundled `.mcp.json`
+points to `scripts/run-embedded-mcp.sh`; the installed EXE does not make that
+POSIX script work without Bash. Configure the existing `made` MCP registration
+to use the plugin's absolute `scripts\run-embedded-mcp.cmd` path. If the host
+requires an executable command, invoke the batch launcher through
+`cmd.exe /d /c`. Replace the existing command instead of adding another MADE
+server, and verify the override after updates.
+
+The native launcher defaults to
+`%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, or
+`%USERPROFILE%\.local\state\underpass-made\ceremonies.sqlite3` when
+`LOCALAPPDATA` is absent. Preserve an explicit `MADE_MCP_STORE_PATH`.
+
 The adapter reads the manifest version, chooses a supported target, downloads
 the matching executable and SHA-256 file, verifies the digest and installs
 atomically into `bin/`. Use this path rather than substituting Cargo; setup
