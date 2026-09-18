@@ -13,6 +13,8 @@ use made_core::value_objects::{
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
+use super::{ArtifactCursor, ArtifactListing};
+
 /// Public application facade for bounded artifact operations.
 pub struct ArtifactService {
     store: Arc<dyn ArtifactStorePort>,
@@ -71,6 +73,19 @@ impl ArtifactService {
         limit: ArtifactPageLimit,
     ) -> Result<ArtifactPage, ArtifactStoreError> {
         self.store.list(after, limit).await
+    }
+
+    pub async fn list_page(
+        &self,
+        cursor: Option<&ArtifactCursor>,
+        limit: ArtifactPageLimit,
+    ) -> Result<ArtifactListing, ArtifactStoreError> {
+        let after = cursor.map(ArtifactCursor::decode).transpose()?;
+        let page = self.store.list(after.as_ref(), limit).await?;
+        Ok(ArtifactListing {
+            items: page.items,
+            next_cursor: page.next_after.as_ref().map(ArtifactCursor::after),
+        })
     }
 
     pub async fn read_chunk(

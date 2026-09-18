@@ -35,4 +35,6 @@ pub enum ArtifactStoreError {
     StorageUnavailable,
     #[error("artifact backup is corrupt or incomplete")]
     InvalidBackup,
+    #[error("artifact pagination cursor is invalid, altered, or belongs to another scope")]
+    InvalidCursor,
 }
