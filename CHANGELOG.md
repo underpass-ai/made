@@ -9,6 +9,11 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Project peak live ceremony claims per state visit/iteration and classified
+  sibling failures from ordered sealed events in both editions. Preserve
+  `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain
+  their bytes and versions. Clarify that `num_agents` caps council size. (#158)
+
 - Wait for a private NATS inbox round trip before E2E scenarios trigger events
   from another connection. The harness no longer treats a local socket flush
   as server acknowledgement of its subscription. (#153)

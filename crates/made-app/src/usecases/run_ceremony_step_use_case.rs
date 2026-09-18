@@ -6,7 +6,7 @@ use made_core::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort};
-use made_core::value_objects::{MaxParallel, StepErrorMessage, StepLease, StepResult};
+use made_core::value_objects::{MaxParallel, StepLease, StepResult};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
@@ -191,8 +191,7 @@ impl RunCeremonyStepUseCase {
             }
             Err(error) => {
                 super::step_span::record_error(&error);
-                let message = StepErrorMessage::new(error.to_string())?;
-                let result = StepResult::failed(message)?;
+                let result = StepResult::from_handler_error(&error)?;
                 super::step_span::record_status(&result);
                 Ok(result)
             }
@@ -446,6 +445,52 @@ mod tests {
         let record = saved.step_record(&step_id()).unwrap();
         assert_eq!(record.status(), StepStatus::Failed);
         assert!(record.error_message().is_some());
+    }
+
+    #[tokio::test]
+    async fn no_valid_proposal_is_sealed_with_its_typed_classification() {
+        let definition = definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        instances
+            .save(&started_instance(&definition))
+            .await
+            .unwrap();
+        let (stream, store) = stream_over(instances);
+        let usecase = RunCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream,
+            Arc::new(StepHandlerFake::failing(DomainError::NoValidProposal {
+                contract_id: "review".to_owned(),
+            })),
+            Arc::new(FixedClock::new(now())),
+        );
+        let output = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                lease_owner(),
+                idempotency_key("classified-failure"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(
+            output.result().failure_kind(),
+            Some(made_core::value_objects::StepFailureKind::NoValidProposal)
+        );
+        let facts = store.facts().await;
+        let made_core::entities::CeremonyEvent::StepFailed(failed) = &facts.last().unwrap().event
+        else {
+            panic!("expected failure")
+        };
+        assert_eq!(failed.result.failure_kind(), output.result().failure_kind());
+        assert_eq!(
+            facts.last().unwrap().event.schema_version(),
+            made_core::value_objects::EventSchemaVersion::V4
+        );
     }
 
     #[tokio::test]

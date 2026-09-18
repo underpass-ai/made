@@ -50,7 +50,10 @@ impl CeremonyEventReader {
                     | AuditEventType::StepFailed
                     | AuditEventType::TransitionApplied
             ),
-            EventSchemaVersion::V4 => event_type == AuditEventType::StepStarted,
+            EventSchemaVersion::V4 => matches!(
+                event_type,
+                AuditEventType::StepStarted | AuditEventType::StepFailed
+            ),
             _ => false,
         };
         if !supported {
@@ -74,26 +77,7 @@ impl CeremonyEventReader {
                 "the payload's tag names a different event type",
             ));
         }
-        if let CeremonyEvent::StepStarted(started) = &event {
-            if started.role_from.is_some() && started.sealed_role.is_some() {
-                return Err(unreadable(
-                    event_type,
-                    version,
-                    "a step start cannot carry both dynamic and static role seals",
-                ));
-            }
-            if started
-                .sealed_role
-                .as_ref()
-                .is_some_and(|sealed| sealed != &started.started_by)
-            {
-                return Err(unreadable(
-                    event_type,
-                    version,
-                    "the sealed static role differs from started_by",
-                ));
-            }
-        }
+        validate_seals(&event, event_type, version)?;
         let coordinates_valid = match &event {
             CeremonyEvent::StepStarted(e) => e.state_visit.is_none() || e.state_iteration.is_some(),
             CeremonyEvent::StepCompleted(e) => {
@@ -144,6 +128,45 @@ fn unreadable(
         version: version.get(),
         reason,
     }
+}
+
+fn validate_seals(
+    event: &CeremonyEvent,
+    event_type: AuditEventType,
+    version: EventSchemaVersion,
+) -> Result<(), DomainError> {
+    if let CeremonyEvent::StepFailed(failed) = event {
+        if failed.result.failure_kind().is_some()
+            && failed.result.status() != crate::value_objects::StepStatus::Failed
+        {
+            return Err(unreadable(
+                event_type,
+                version,
+                "only failed results carry a failure kind",
+            ));
+        }
+    }
+    if let CeremonyEvent::StepStarted(started) = event {
+        if started.role_from.is_some() && started.sealed_role.is_some() {
+            return Err(unreadable(
+                event_type,
+                version,
+                "a step start cannot carry both dynamic and static role seals",
+            ));
+        }
+        if started
+            .sealed_role
+            .as_ref()
+            .is_some_and(|sealed| sealed != &started.started_by)
+        {
+            return Err(unreadable(
+                event_type,
+                version,
+                "the sealed static role differs from started_by",
+            ));
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]

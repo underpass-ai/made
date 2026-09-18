@@ -49,6 +49,7 @@ const NATS_PUBLISH_BUCKETS_SECONDS: &[f64] =
     &[0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5];
 
 pub struct PrometheusMetricsRecorder {
+    concurrency: super::ceremony_concurrency_metrics::CeremonyConcurrencyMetrics,
     registry: Registry,
     deliberation_duration_seconds: HistogramVec,
     deliberation_winner_score: HistogramVec,
@@ -287,6 +288,9 @@ impl PrometheusMetricsRecorder {
         )?;
 
         Ok(Self {
+            concurrency: super::ceremony_concurrency_metrics::CeremonyConcurrencyMetrics::new(
+                &registry,
+            )?,
             registry,
             deliberation_duration_seconds,
             deliberation_winner_score,
@@ -461,6 +465,24 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
         self.ceremony_step_claimed_total
             .with_label_values(&[ceremony, step])
             .inc();
+    }
+
+    fn observe_ceremony_claim_peak_width(
+        &self,
+        ceremony: &str,
+        state: &str,
+        width: made_core::value_objects::MaxParallel,
+    ) {
+        self.concurrency.observe_width(ceremony, state, width);
+    }
+
+    fn record_ceremony_sibling_failure(
+        &self,
+        ceremony: &str,
+        step: &str,
+        kind: made_core::value_objects::StepFailureKind,
+    ) {
+        self.concurrency.record_failure(ceremony, step, kind);
     }
 
     fn record_ceremony_step_attempt(&self, ceremony: &str, step: &str, attempt: u32) {

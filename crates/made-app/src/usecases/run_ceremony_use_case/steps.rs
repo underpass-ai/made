@@ -4,8 +4,8 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, StepErrorMessage,
-    StepId, StepLease, StepResult,
+    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
+    StepLease, StepResult,
 };
 
 use super::{run_step_output::RunStepOutput, RunCeremonyUseCase};
@@ -213,8 +213,7 @@ impl RunCeremonyUseCase {
             }
             Err(error) => {
                 crate::usecases::step_span::record_error(&error);
-                let message = StepErrorMessage::new(error.to_string())?;
-                let result = StepResult::failed(message)?;
+                let result = StepResult::from_handler_error(&error)?;
                 crate::usecases::step_span::record_status(&result);
                 Ok(result)
             }

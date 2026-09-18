@@ -15,6 +15,28 @@ subscribers. Inspect the relevant ceremony id and execution coordinates
 before correlating a worker error with a state change. Events accepted into
 the stream are different from rejected command attempts.
 
+On the Unreleased sources, `made_ceremony_claim_peak_width` observes the peak
+number of unexpired live step leases during each state visit/iteration. The
+sample is emitted when that iteration ends or the ceremony completes; states
+with no claims produce no sample. Labels are definition name and state id.
+Sequential work normally has width 1. This measures claimed work, not provider
+calls or configured capacity. The existing provider in-flight gauge measures
+the calls separately.
+
+`made_ceremony_sibling_failure_total` counts typed failures by definition,
+step and `failure_kind`. A handler's `NoValidProposal` is sealed as
+`no_valid_proposal`; a similar phrase in an unclassified error message is
+not counted. No new failure is inferred for historical events.
+
+These two families catch up each notified ceremony's persisted stream in
+sequence order, deduplicating late or repeated append notifications. A fresh
+process reconstructs that ceremony's historical samples on its first
+notification. They are process registries over observed streams, not global
+fleet totals: do not sum replicas as unique work. Projection read failures
+are logged and retried at the next notification; they cannot fail a committed
+ceremony command. A stream written only by another process is observed when
+a notification for that stream reaches this process.
+
 For diagnosis:
 
 1. Check process readiness and backend/store configuration.
