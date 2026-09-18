@@ -13,7 +13,6 @@ use prost_types::{value::Kind, Struct, Value};
 use tonic::transport::Channel;
 use tracing::info;
 
-use super::ceremony_vllm_provider_config::CeremonyVllmProviderConfig;
 use super::children_ceremony_definitions::ChildrenCeremonyDefinitions;
 
 const PARENT_ID: &str = "e2e-children-parent";
@@ -22,7 +21,7 @@ const SPAWN_STEP: &str = "spawn_reviews";
 pub(crate) async fn verify_durable_children_over_public_rpc(
     client: &mut MadeServiceClient<Channel>,
 ) -> Result<()> {
-    let definitions = ChildrenCeremonyDefinitions::new(&CeremonyVllmProviderConfig::from_env()?)?;
+    let definitions = ChildrenCeremonyDefinitions;
     publish(client, definitions.child()).await?;
     publish(client, definitions.parent()).await?;
 

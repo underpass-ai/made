@@ -22,6 +22,8 @@ steps:
     handler: host_callback
     config:
       prompt: "Review the parent brief and return a concise result."
+      specialty: triage
+      agent_kind: noop
 guards:
   review_completed:
     type: automated

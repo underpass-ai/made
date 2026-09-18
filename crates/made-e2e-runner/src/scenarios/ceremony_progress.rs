@@ -14,7 +14,6 @@ use prost_types::{value::Kind, Struct, Value};
 use tonic::transport::Channel;
 use tracing::info;
 
-use super::ceremony_vllm_provider_config::CeremonyVllmProviderConfig;
 use super::children_ceremony_definitions::ChildrenCeremonyDefinitions;
 
 const PROGRESS_ID: &str = "e2e-ceremony-progress";
@@ -22,7 +21,7 @@ const PROGRESS_ID: &str = "e2e-ceremony-progress";
 pub(crate) async fn verify_live_ceremony_progress(
     client: &mut MadeServiceClient<Channel>,
 ) -> Result<()> {
-    let definitions = ChildrenCeremonyDefinitions::new(&CeremonyVllmProviderConfig::from_env()?)?;
+    let definitions = ChildrenCeremonyDefinitions;
     publish(client, definitions.child()).await?;
     client
         .start_published_ceremony(StartPublishedCeremonyRequest {
