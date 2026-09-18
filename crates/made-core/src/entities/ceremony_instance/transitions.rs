@@ -16,7 +16,20 @@ impl CeremonyInstance {
         transition: &CeremonyTransition,
     ) -> bool {
         self.transition_budget_allows(definition, transition)
-            && self.state_repeat_permits_transition(definition)
+            && self.transition_requirements_are_satisfied(definition, transition)
+    }
+
+    /// Whether every transition requirement other than its declared
+    /// history budget is satisfied. A driver uses this only after no
+    /// budget-enabled edge exists, so the aggregate can issue the same
+    /// stable cap refusal as an explicit transition command.
+    #[must_use]
+    pub fn transition_requirements_are_satisfied(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        self.state_repeat_permits_transition(definition)
             && definition.guards_are_satisfied(transition, &self.step_records, &self.context)
             && self
                 .require_interventions_resolved_before_entering(definition, transition.to())

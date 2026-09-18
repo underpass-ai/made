@@ -90,12 +90,6 @@ fn diff_transition_budget(
     if before == after {
         return;
     }
-    let kind = match (before, after) {
-        (None, Some(_)) => CeremonyChangeKind::Added,
-        (Some(_), None) => CeremonyChangeKind::Removed,
-        (Some(_), Some(_)) => CeremonyChangeKind::Altered,
-        (None, None) => return,
-    };
     let impact = match (before, after) {
         (None, Some(_)) => CeremonyChangeImpact::Strands,
         (Some(old), Some(new)) if new < old => CeremonyChangeImpact::Strands,
@@ -103,7 +97,7 @@ fn diff_transition_budget(
     };
     record(
         changes,
-        kind,
+        CeremonyChangeKind::Altered,
         CeremonyValidationLocus::Definition,
         impact,
         detail,
@@ -606,17 +600,39 @@ mod tests {
         );
         let added = CeremonyDefinitionDiff::between(&baseline, &capped);
         assert_eq!(added.strand_count(), 2);
+        assert!(added.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Strands
+        }));
 
         let lowered = Draft::baseline().build_with_budgets(
             Some(MaxTransitions::new(5).unwrap()),
             Some(MaxBounces::new(2).unwrap()),
         );
-        assert_eq!(
-            CeremonyDefinitionDiff::between(&capped, &lowered).strand_count(),
-            2
-        );
-        assert!(!CeremonyDefinitionDiff::between(&lowered, &capped).strands_running_sessions());
-        assert!(!CeremonyDefinitionDiff::between(&capped, &baseline).strands_running_sessions());
+        let tightening = CeremonyDefinitionDiff::between(&capped, &lowered);
+        assert_eq!(tightening.strand_count(), 2);
+        assert!(tightening.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Strands
+        }));
+
+        let raising = CeremonyDefinitionDiff::between(&lowered, &capped);
+        assert!(!raising.strands_running_sessions());
+        assert!(raising.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Carries
+        }));
+
+        let removing = CeremonyDefinitionDiff::between(&capped, &baseline);
+        assert!(!removing.strands_running_sessions());
+        assert!(removing.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Carries
+        }));
     }
 
     #[test]

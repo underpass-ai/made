@@ -243,6 +243,15 @@ impl RunCeremonyUseCase {
                         .instance
                         .transition_is_enabled(&definition, transition)
                 })
+                .or_else(|| {
+                    definition
+                        .available_transitions(&state_id)
+                        .find(|transition| {
+                            session
+                                .instance
+                                .transition_requirements_are_satisfied(&definition, transition)
+                        })
+                })
             else {
                 self.metrics
                     .record_ceremony_transition_blocked(&ceremony_name, state_id.as_str());
@@ -285,11 +294,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
+    use made_core::entities::CeremonyDefinition;
     use made_core::error::DomainError;
     use made_core::ports::CeremonyDefinitionRepositoryPort;
     use made_core::value_objects::{
-        Attributes, AuditActorKind, AuditEventType, CeremonyContext, StepId, StepOutput,
-        StepResult, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyName, CeremonyRole,
+        CeremonyState, CeremonyTransition, CeremonyVersion, MaxBounces, MaxTransitions, RoleAction,
+        RoleId, StateId, StepId, StepOutput, StepResult, StepStatus, TransitionTrigger,
     };
     use serde_json::json;
 
@@ -310,6 +321,84 @@ mod tests {
             )]))
             .unwrap(),
         )
+    }
+
+    fn cyclic_definition(
+        max_transitions: Option<MaxTransitions>,
+        max_bounces: Option<MaxBounces>,
+    ) -> CeremonyDefinition {
+        let state = StateId::new("LOOP").unwrap();
+        let again = TransitionTrigger::new("again").unwrap();
+        CeremonyDefinition::new_with_transition_budgets(
+            CeremonyName::new("bounded_driver").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyState::initial(state.clone())],
+            vec![CeremonyTransition::new(state.clone(), state, again.clone(), Vec::new()).unwrap()],
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyRole::new(
+                RoleId::new("DRIVER").unwrap(),
+                vec![RoleAction::transition(again)],
+            )
+            .unwrap()],
+            max_transitions,
+            max_bounces,
+        )
+        .unwrap()
+    }
+
+    async fn bounded_driver_refusal(definition: CeremonyDefinition) -> DomainError {
+        let usecase = RunCeremonyUseCase::new(
+            Arc::new(DefinitionRepositoryFake::default()),
+            stream(Arc::new(EventStoreFake::default())),
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(StepOutput::empty()).unwrap(),
+            )),
+            Arc::new(FixedClock::new(now())),
+        );
+        usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn one_shot_driver_surfaces_total_transition_budget_refusal() {
+        let error = bounded_driver_refusal(cyclic_definition(
+            Some(MaxTransitions::new(1).unwrap()),
+            None,
+        ))
+        .await;
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony transition limit exhausted"
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn one_shot_driver_surfaces_exact_edge_budget_refusal() {
+        let error =
+            bounded_driver_refusal(cyclic_definition(None, Some(MaxBounces::new(1).unwrap())))
+                .await;
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony transition bounce limit exhausted"
+            }
+        ));
     }
 
     #[tokio::test]
