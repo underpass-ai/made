@@ -9,6 +9,12 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Expose all council, agent and output-contract operations through
+  `EmbeddedMade` and the embedded MCP backend. Local composition accepts
+  injected registries, agent factories, deliberation stores, validators,
+  scoring, execution and messaging ports; defaults remain socket-free,
+  retain in-process messages and reject orchestration until an executor is
+  configured. (#157)
 - Run siblings in concurrent ceremony states with bounded automatic fan-out,
   durable claims before handlers, drained completions and early-join checks
   between batches. Document delegated host/subagent fan-out and prove distinct

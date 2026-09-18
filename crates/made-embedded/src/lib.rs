@@ -10,10 +10,12 @@
 mod callback_ceremony_evidence_source;
 mod callback_ceremony_step_handler;
 mod embedded_ceremony_projection;
+mod embedded_council_services;
 mod embedded_made;
 mod embedded_made_builder;
 mod engine_api;
 mod in_process_ceremony_definition_source;
+mod unconfigured_executor;
 
 pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;
 pub use callback_ceremony_step_handler::CallbackCeremonyStepHandler;

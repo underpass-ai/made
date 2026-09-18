@@ -24,7 +24,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use made_adapters::memory::InProcessSessionMemory;
+use made_adapters::noop::NoopExecutor;
 use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::validators::{
+    AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
+    JsonSchemaValidator, RequiredFieldsValidator,
+};
+use made_core::ports::ValidatorPort;
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
@@ -87,6 +93,126 @@ const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
+    (
+        "made_deliberate",
+        ".structuredContent.winner_proposal_id",
+        "proposal ids are minted independently by each engine",
+    ),
+    (
+        "made_deliberate",
+        ".structuredContent.results[].proposal.proposal_id",
+        "proposal ids are minted independently by each engine",
+    ),
+    (
+        "made_deliberate",
+        ".content[].text.winner_proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_deliberate",
+        ".content[].text.results[].proposal.proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_stream_deliberation",
+        ".structuredContent.frames[].payload.result.proposal.proposal_id",
+        "the terminal stream frame carries an independently minted proposal id",
+    ),
+    (
+        "made_stream_deliberation",
+        ".structuredContent.winner.proposal.proposal_id",
+        "the collected winner carries an independently minted proposal id",
+    ),
+    (
+        "made_stream_deliberation",
+        ".content[].text.frames[].payload.result.proposal.proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_stream_deliberation",
+        ".content[].text.winner.proposal.proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_get_deliberation_result",
+        ".structuredContent.result.winner_proposal_id",
+        "the stored deliberation retains the proposal id minted by its engine",
+    ),
+    (
+        "made_get_deliberation_result",
+        ".structuredContent.result.results[].proposal.proposal_id",
+        "the stored deliberation retains the proposal id minted by its engine",
+    ),
+    (
+        "made_get_deliberation_result",
+        ".content[].text.result.winner_proposal_id",
+        "the text projection mirrors the proposal id stored by its engine",
+    ),
+    (
+        "made_get_deliberation_result",
+        ".content[].text.result.results[].proposal.proposal_id",
+        "the text projection mirrors the proposal id stored by its engine",
+    ),
+    (
+        "made_orchestrate",
+        ".structuredContent.execution_id",
+        "the injected executor mints one execution id per engine",
+    ),
+    (
+        "made_orchestrate",
+        ".structuredContent.winner.proposal.proposal_id",
+        "proposal ids are minted independently by each engine",
+    ),
+    (
+        "made_orchestrate",
+        ".content[].text.execution_id",
+        "the text projection mirrors the independently minted execution id",
+    ),
+    (
+        "made_orchestrate",
+        ".content[].text.winner.proposal.proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_process_trigger_event",
+        ".structuredContent.ack.dispatched_task_ids[]",
+        "auto-dispatch mints one task id per engine",
+    ),
+    (
+        "made_process_trigger_event",
+        ".content[].text.ack.dispatched_task_ids[]",
+        "the text projection mirrors the independently minted task id",
+    ),
+    (
+        "made_run_council_decision",
+        ".structuredContent.task_id",
+        "the decision use case mints one task id per engine",
+    ),
+    (
+        "made_run_council_decision",
+        ".structuredContent.winner.proposal.proposal_id",
+        "the decision proposal id is minted independently by each engine",
+    ),
+    (
+        "made_run_council_decision",
+        ".structuredContent.candidates[].proposal_id",
+        "the candidate repeats the independently minted proposal id",
+    ),
+    (
+        "made_run_council_decision",
+        ".content[].text.task_id",
+        "the text projection mirrors the independently minted task id",
+    ),
+    (
+        "made_run_council_decision",
+        ".content[].text.winner.proposal.proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
+    (
+        "made_run_council_decision",
+        ".content[].text.candidates[].proposal_id",
+        "the text projection mirrors the independently minted proposal id",
+    ),
     (
         "made_get_status",
         ".structuredContent.version",
@@ -355,6 +481,16 @@ struct ParityArms {
     claims: std::sync::Mutex<std::collections::BTreeMap<(String, String), Value>>,
 }
 
+fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
+    vec![
+        Arc::new(ContentNonEmptyValidator::new()),
+        Arc::new(JsonObjectOutputValidator::new()),
+        Arc::new(RequiredFieldsValidator::new()),
+        Arc::new(AllowedStringValuesValidator::new()),
+        Arc::new(JsonSchemaValidator::new()),
+    ]
+}
+
 impl ParityArms {
     /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
@@ -416,6 +552,8 @@ impl ParityArms {
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
+                .with_council_validators(parity_council_validators())
+                .with_executor(Arc::new(NoopExecutor::new()))
                 .build(),
         ));
         Self {
@@ -576,7 +714,8 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
 /// least once; the coverage assertion below is what keeps it true.
 #[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
 fn session_script() -> Vec<(&'static str, Value)> {
-    vec![
+    let mut calls = council_session_script();
+    calls.extend(vec![
         ("made_design_ceremony", design_intent()),
         (
             "made_validate_ceremony_draft",
@@ -934,7 +1073,113 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": MEMORY_SECOND_ID }),
         ),
+    ]);
+    calls
+}
+
+fn council_session_script() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "made_register_agent",
+            json!({
+                "specialty": "triage",
+                "agent": {
+                    "agent_id": "agent-triage-0",
+                    "specialty": "triage",
+                    "kind": "noop",
+                    "attributes": { "fixture": "deterministic-noop-agent" },
+                },
+                "agent_config": { "fixture": "deterministic-noop-agent" },
+            }),
+        ),
+        (
+            "made_create_council",
+            json!({ "specialty": "triage", "num_agents": 1 }),
+        ),
+        ("made_list_councils", json!({ "include_agents": true })),
+        (
+            "made_register_contract",
+            json!({
+                "contract": {
+                    "contract_id": "parity-contract",
+                    "format": "json_object",
+                    "fields": {
+                        "decision": {
+                            "required": true,
+                            "allowed_string_values": ["accept", "reject"],
+                        },
+                    },
+                    "json_schema": "",
+                },
+            }),
+        ),
+        ("made_list_contracts", json!({})),
+        (
+            "made_deliberate",
+            council_task("parity-deliberate", "Assess the parity fixture."),
+        ),
+        (
+            "made_stream_deliberation",
+            council_task("parity-stream", "Stream the parity fixture."),
+        ),
+        (
+            "made_get_deliberation_result",
+            json!({ "task_id": "parity-deliberate" }),
+        ),
+        (
+            "made_orchestrate",
+            json!({
+                "task": {
+                    "task_id": "parity-orchestrate",
+                    "description": "Execute the parity fixture.",
+                    "specialty": "triage",
+                },
+                "execution_options": { "fixture": true },
+            }),
+        ),
+        (
+            "made_process_trigger_event",
+            json!({
+                "event": {
+                    "event_id": "parity-trigger",
+                    "kind": "parity.requested",
+                    "source": "parity-test",
+                    "emitted_at": "2026-04-15T12:00:00Z",
+                    "requested_specialties": ["triage"],
+                    "task_description_template": "Handle the parity trigger.",
+                    "payload": { "fixture": true },
+                },
+            }),
+        ),
+        (
+            "made_run_council_decision",
+            json!({
+                "contract_id": "parity-contract",
+                "specialty": "triage",
+                "description": "Choose the parity outcome.",
+                "validation_mode": "VALIDATION_MODE_WARN",
+            }),
+        ),
+        (
+            "made_delete_contract",
+            json!({ "contract_id": "parity-contract" }),
+        ),
+        ("made_delete_council", json!({ "specialty": "triage" })),
+        (
+            "made_unregister_agent",
+            json!({ "agent_id": "agent-triage-0" }),
+        ),
     ]
+}
+
+fn council_task(task_id: &str, description: &str) -> Value {
+    json!({
+        "task": {
+            "task_id": task_id,
+            "description": description,
+            "specialty": "triage",
+        },
+    })
 }
 
 #[tokio::test]
@@ -957,10 +1202,18 @@ async fn the_same_session_answers_the_same_over_the_store_the_edition_ships_with
 async fn drive_the_whole_session(arms: &ParityArms) {
     let shared = shared_tools();
     let mut called: BTreeSet<String> = BTreeSet::new();
+    let mut ceremony_call_id = 0_u64;
+    let mut council_call_id = 10_000_u64;
 
-    for (index, (tool, arguments)) in session_script().into_iter().enumerate() {
+    for (tool, arguments) in session_script() {
         let arguments = arms.completing(tool, arguments);
-        let id = index as u64 + 1;
+        let id = if is_council_tool(tool) {
+            council_call_id += 1;
+            council_call_id
+        } else {
+            ceremony_call_id += 1;
+            ceremony_call_id
+        };
         let (over_the_wire, in_process) = arms.call(id, tool, &arguments).await;
 
         assert!(
@@ -1057,6 +1310,26 @@ async fn drive_the_whole_session(arms: &ParityArms) {
          nobody has compared — add it to `session_script`, or say in the file why it is not \
          shared (ADR-014)."
     );
+}
+
+fn is_council_tool(tool: &str) -> bool {
+    matches!(
+        tool,
+        "made_deliberate"
+            | "made_stream_deliberation"
+            | "made_get_deliberation_result"
+            | "made_orchestrate"
+            | "made_process_trigger_event"
+            | "made_run_council_decision"
+            | "made_create_council"
+            | "made_list_councils"
+            | "made_delete_council"
+            | "made_register_agent"
+            | "made_unregister_agent"
+            | "made_register_contract"
+            | "made_list_contracts"
+            | "made_delete_contract"
+    )
 }
 
 // ---------------------------------------------------------------------------
@@ -1351,7 +1624,8 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
     )
     .await;
 
-    let cases: Vec<(&str, &str, Value, &str)> = vec![
+    let mut cases = council_error_cases();
+    cases.extend(vec![
         (
             "a session that is not there",
             "made_get_ceremony_instance",
@@ -1382,7 +1656,7 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
             json!({}),
             "invalid_request",
         ),
-    ];
+    ]);
 
     for (index, (what, tool, arguments, code)) in cases.into_iter().enumerate() {
         let (over_the_wire, in_process) = arms.call(index as u64 + 10, tool, &arguments).await;
@@ -1431,6 +1705,45 @@ async fn both_backends_answer_the_same_envelope_for_the_same_failure() {
     assert_eq!(structured(&answer)["code"], json!("unavailable"));
     assert_eq!(structured(&answer)["retryable"], json!(true));
     assert!(structured(&answer)["message"].is_string());
+}
+
+fn council_error_cases() -> Vec<(&'static str, &'static str, Value, &'static str)> {
+    vec![
+        (
+            "a deliberation for a council that is not there",
+            "made_deliberate",
+            json!({
+                "task": {
+                    "task_id": "missing-council",
+                    "description": "fail before proposing",
+                    "specialty": "unknown",
+                },
+            }),
+            "not_found",
+        ),
+        (
+            "a stream for a council that is not there",
+            "made_stream_deliberation",
+            json!({
+                "task": {
+                    "task_id": "missing-stream-council",
+                    "description": "fail before the first frame",
+                    "specialty": "unknown",
+                },
+            }),
+            "refused",
+        ),
+        (
+            "a council decision naming a contract that is not there",
+            "made_run_council_decision",
+            json!({
+                "contract_id": "no-such-contract",
+                "specialty": "unknown",
+                "description": "fail before deliberating",
+            }),
+            "not_found",
+        ),
+    ]
 }
 
 // ---------------------------------------------------------------------------
@@ -1514,10 +1827,7 @@ fn normalise(value: &Value, path: &str, tool: &str) -> Value {
         return json!("<normalised>");
     }
     match value {
-        Value::String(text)
-            if matches!(tool, "made_get_metrics" | "made_get_status")
-                && path == ".content[].text" =>
-        {
+        Value::String(text) if path == ".content[].text" => {
             let Ok(parsed) = serde_json::from_str::<Value>(text) else {
                 return value.clone();
             };

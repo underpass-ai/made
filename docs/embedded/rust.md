@@ -96,6 +96,64 @@ Keep adapter handles for adapter-specific administration. Optional event
 transport and metrics constructors wire those ports explicitly. A local
 metrics registry opens no exporter endpoint by itself.
 
+## Compose councils locally
+
+The facade also exposes council, agent and output-contract operations. The
+generic builder is process-local and reads no provider configuration. This
+example registers the deterministic built-in `noop` agent and creates a
+council without opening a socket. The same source is compiled as
+[`local_council.rs`](../../crates/made-embedded/examples/local_council.rs):
+
+```rust,no_run
+use made_app::usecases::CreateCouncilInput;
+use made_core::ports::AgentDescriptor;
+use made_core::value_objects::{
+    AgentId, AgentKind, Attributes, CouncilId, Specialty,
+};
+use made_embedded::EmbeddedMade;
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    let engine = EmbeddedMade::builder().build();
+    let agent_id = engine.register_agent(AgentDescriptor {
+        id: AgentId::new("reviewer-1")?,
+        specialty: Specialty::new("review")?,
+        kind: AgentKind::new("noop")?,
+        attributes: Attributes::empty(),
+    }).await?;
+    let council = engine.create_council(CreateCouncilInput {
+        council_id: CouncilId::new("review-council")?,
+        specialty: Specialty::new("review")?,
+        agents: vec![agent_id],
+    }).await?;
+    assert_eq!(council.size(), 1);
+    Ok(())
+}
+```
+
+The default council, agent, contract and deliberation registries live only for
+the lifetime of this composition. `EmbeddedMade::open(path)` makes ceremony
+streams, definitions and session memory durable; it does not make those
+council registries durable. Inject the corresponding ports on
+`EmbeddedMade::builder()` when the host needs a different lifecycle.
+
+The default messaging adapter is an in-process recorder. It preserves complete
+typed event payloads in order and does not publish them to a broker. Inject a
+`MessagingPort` to deliver events elsewhere. The default executor rejects
+`orchestrate` with `embedded executor is not configured`; inject an
+`ExecutorPort` before asking MADE to run external work. Council deliberation
+and `run_council_decision` use registered agents and do not turn that rejected
+executor into a successful fake runtime.
+
+Provider adapters are compile-time features: `agent-vllm`, `agent-openai` and
+`agent-anthropic`. Building a feature only makes that adapter available.
+`EmbeddedMade::builder()` still performs no environment read and no network
+call; inject an `AgentFactoryPort` explicitly. The convenience `open*` paths
+compose enabled providers from their documented environment configuration,
+but make no provider request until a registered agent is used. The repository
+tests provider composition with deterministic doubles and do not establish
+credentials, quota, endpoint policy or real-model behavior.
+
 ## Compatibility
 
 The workspace release version and a ceremony's definition version are
