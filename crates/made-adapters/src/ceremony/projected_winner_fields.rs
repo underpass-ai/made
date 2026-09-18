@@ -63,7 +63,7 @@ mod tests {
     #[test]
     fn validates_bounds_uniqueness_and_reserved_metadata() {
         assert!(ProjectedWinnerFields::new(vec!["approved".to_owned()]).is_ok());
-        assert!(ProjectedWinnerFields::new(vec!["".to_owned()]).is_err());
+        assert!(ProjectedWinnerFields::new(vec![String::new()]).is_err());
         assert!(ProjectedWinnerFields::new(vec!["approved".to_owned(); 2]).is_err());
         assert!(ProjectedWinnerFields::new(vec!["winner_content".to_owned()]).is_err());
         assert!(ProjectedWinnerFields::new(

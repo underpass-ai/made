@@ -439,7 +439,7 @@ mod tests {
             step.projected_winner_fields()
                 .unwrap()
                 .iter()
-                .map(|field| field.as_str())
+                .map(made_core::value_objects::StepOutputField::as_str)
                 .collect::<Vec<_>>(),
             vec!["approved", "findings"]
         );
