@@ -238,16 +238,15 @@ Chart source and release registry:
 | Surface | Current value | Source of truth | Enforcement |
 |---|---:|---|---|
 | Chart path | `charts/made` | repository layout | `scripts/ci/helm-lint.sh` |
-| Chart name | `MADE` | `charts/made/Chart.yaml` | `helm lint` |
-| Chart version | `0.1.0` | `charts/made/Chart.yaml` `version` | `scripts/release.sh release` |
-| App version | `0.1.0` | `charts/made/Chart.yaml` `appVersion` | `scripts/release.sh release` |
+| Chart name | `made` | `charts/made/Chart.yaml` | `helm lint` |
+| Chart version | Read `version` from the checkout | `charts/made/Chart.yaml` `version` | `scripts/release.sh release` |
+| App version | Read `appVersion` from the checkout | `charts/made/Chart.yaml` `appVersion` | `scripts/release.sh release` |
 | Kubernetes version floor | `>=1.28.0-0` | `charts/made/Chart.yaml` `kubeVersion` | Helm client compatibility check |
 | OCI registry | `oci://ghcr.io/underpass-ai/charts/made` | `.github/workflows/publish-distribution.yml` | `helm package` + `helm push` |
 
 | Chart reference | Support status | Notes |
 |---|---|---|
 | Checkout chart at `charts/made` | Supported for development, PR review, and release-candidate validation | Must pass `bash scripts/ci/helm-lint.sh`. |
-| `oci://ghcr.io/underpass-ai/charts/made:0.1.0` | Pending | `0.1.0` is present in metadata but no public `v0.1.0` tag exists in this checkout yet. |
 | `oci://ghcr.io/underpass-ai/charts/made:X.Y.Z` | Supported after the matching `vX.Y.Z` release tag publishes successfully | Chart `version`, `appVersion`, and workspace version must match. |
 | Older chart versions | Not currently supported | No stable-release support window has been declared yet. |
 | Unversioned or moving chart references | Not supported | Use an explicit chart version. |
