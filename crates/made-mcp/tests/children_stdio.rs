@@ -1,8 +1,8 @@
 //! Real `made-mcp` stdio process proof for child orchestration.
 
-#![cfg(feature = "container-tests")]
+#![cfg(feature = "embedded")]
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::Stdio;
 use std::time::Duration;
 
@@ -48,13 +48,7 @@ struct StdioMcp {
 
 impl StdioMcp {
     fn start(store: &Path) -> Self {
-        let binary = made_mcp_binary();
-        assert!(
-            binary.exists(),
-            "made-mcp binary missing at {}; build it in this target first",
-            binary.display()
-        );
-        let mut child = Command::new(binary)
+        let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
             .env("MADE_MCP_BACKEND", "embedded")
             .env("MADE_MCP_STORE_PATH", store)
             .stdin(Stdio::piped())
@@ -102,14 +96,6 @@ impl StdioMcp {
             .unwrap();
         assert!(status.success());
     }
-}
-
-fn made_mcp_binary() -> PathBuf {
-    let mut path = std::env::current_exe().unwrap();
-    path.pop();
-    path.pop();
-    path.push("made-mcp");
-    path
 }
 
 #[tokio::test]
