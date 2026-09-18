@@ -16,8 +16,9 @@
 
 use super::ceremony_commands::{
     AcceptChildCompletion, AdoptChildSpawnPlan, ApplyStepResult, ApplyTransition, ApproveGuard,
-    AssertReason, BindParticipant, CloseIntervention, DeferGuard, PlanCeremonyChildren,
-    RequestIntervention, RespondToIntervention, RespondToInterventionWithEvidence, StartStep,
+    AssertReason, BindParticipant, CancelCeremony, CloseIntervention, DeferGuard,
+    EnforceCeremonyDeadlines, PauseCeremony, PlanCeremonyChildren, RequestIntervention,
+    RespondToIntervention, RespondToInterventionWithEvidence, ResumeCeremony, StartStep,
 };
 
 /// A request to change a ceremony, in the terms the aggregate decides.
@@ -37,4 +38,8 @@ pub enum CeremonyCommand {
     PlanCeremonyChildren(PlanCeremonyChildren),
     AdoptChildSpawnPlan(AdoptChildSpawnPlan),
     AcceptChildCompletion(AcceptChildCompletion),
+    PauseCeremony(PauseCeremony),
+    ResumeCeremony(ResumeCeremony),
+    CancelCeremony(CancelCeremony),
+    EnforceCeremonyDeadlines(EnforceCeremonyDeadlines),
 }

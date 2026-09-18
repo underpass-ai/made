@@ -221,6 +221,9 @@ impl RunCeremonyUseCase {
             .stream
             .execute(finished_session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&finish, definition)?;
+                if events.is_empty() {
+                    return Ok(Vec::new());
+                }
                 let finish_actor = session_facts::step_result_seat(&events, finish_actor_kind)?;
                 session_facts::facts(&session.instance, events, &finish_actor, finished_at)
             })

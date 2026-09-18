@@ -10,14 +10,11 @@ use super::{
     run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
+type RpcResultStream<T> = Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send>>;
+
 #[async_trait]
 impl MadeService for MadeGrpcService {
-    type StreamCeremonyStream = Pin<
-        Box<
-            dyn futures::Stream<Item = std::result::Result<pb::StreamCeremonyResponse, Status>>
-                + Send,
-        >,
-    >;
+    type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,
     >;
@@ -198,6 +195,38 @@ impl MadeService for MadeGrpcService {
     ) -> GrpcResult<pb::ApplyCeremonyTransitionResponse> {
         let trace = trace_context_from_metadata(&request);
         run_with_ceremony_trace(trace, self.handle_apply_ceremony_transition(request)).await
+    }
+
+    async fn pause_ceremony(
+        &self,
+        request: Request<pb::PauseCeremonyRequest>,
+    ) -> GrpcResult<pb::PauseCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_pause_ceremony(request)).await
+    }
+
+    async fn resume_ceremony(
+        &self,
+        request: Request<pb::ResumeCeremonyRequest>,
+    ) -> GrpcResult<pb::ResumeCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_resume_ceremony(request)).await
+    }
+
+    async fn cancel_ceremony(
+        &self,
+        request: Request<pb::CancelCeremonyRequest>,
+    ) -> GrpcResult<pb::CancelCeremonyResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_cancel_ceremony(request)).await
+    }
+
+    async fn enforce_ceremony_deadlines(
+        &self,
+        request: Request<pb::EnforceCeremonyDeadlinesRequest>,
+    ) -> GrpcResult<pb::EnforceCeremonyDeadlinesResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_enforce_ceremony_deadlines(request)).await
     }
 
     async fn approve_ceremony_guard(

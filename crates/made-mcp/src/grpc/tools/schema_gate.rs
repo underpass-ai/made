@@ -15,6 +15,11 @@
 
 use serde_json::{json, Map, Value};
 
+use super::lifecycle_requests::{
+    build_cancel_ceremony_request, build_enforce_ceremony_deadlines_request,
+    build_pause_ceremony_request, build_resume_ceremony_request,
+};
+
 use crate::protocol::{tools_list_result, GET_METRICS_TOOL, GET_STATUS_TOOL};
 
 /// Tools whose builder takes no arguments worth declaring.
@@ -160,6 +165,12 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_complete_ceremony_step" => rendered(build_complete_ceremony_step_request(arguments)),
         "made_apply_ceremony_transition" => {
             rendered(build_apply_ceremony_transition_request(arguments))
+        }
+        "made_pause_ceremony" => rendered(build_pause_ceremony_request(arguments)),
+        "made_resume_ceremony" => rendered(build_resume_ceremony_request(arguments)),
+        "made_cancel_ceremony" => rendered(build_cancel_ceremony_request(arguments)),
+        "made_enforce_ceremony_deadlines" => {
+            rendered(build_enforce_ceremony_deadlines_request(arguments))
         }
         "made_approve_ceremony_guard" => rendered(build_approve_ceremony_guard_request(arguments)),
         "made_defer_ceremony_guard" => rendered(build_defer_ceremony_guard_request(arguments)),

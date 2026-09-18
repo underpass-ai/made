@@ -60,7 +60,14 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         AuditEventType::CeremonyDefinitionValidated
         | AuditEventType::CeremonyDefinitionPublished
         | AuditEventType::CeremonyFailed
-        | AuditEventType::StateIterationStarted => None,
+        | AuditEventType::StateIterationStarted
+        | AuditEventType::CeremonyPaused
+        | AuditEventType::CeremonyResumed
+        | AuditEventType::CeremonyCancelled
+        | AuditEventType::CeremonyDeadlineExceeded
+        | AuditEventType::StateDeadlineExceeded
+        | AuditEventType::StepDeadlineExceeded
+        | AuditEventType::LateStepResultObserved => None,
         AuditEventType::ChildSpawnPlanned => Some(include_str!(
             "fixtures/ceremony_events/v1/child_spawn_planned.json"
         )),

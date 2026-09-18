@@ -44,7 +44,36 @@ pub(crate) fn ceremony_instance_listing_entry(
     CeremonyInstanceListingEntry::rehydratable(ceremony_instance_state_to_json(state))
 }
 
-pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) -> Value {
+pub(crate) fn ceremony_instance_state_to_json(mut state: pb::CeremonyInstanceState) -> Value {
+    let step_deadlines = std::mem::take(&mut state.step_deadlines)
+        .into_iter()
+        .map(|deadline| {
+            json!({
+                "step_id": deadline.step_id,
+                "state_visit": deadline.state_visit,
+                "state_iteration": deadline.state_iteration,
+                "step_iteration": deadline.step_iteration,
+                "attempt": deadline.attempt,
+                "claim_fence": deadline.claim_fence,
+                "deadline_at": deadline.deadline_at,
+                "finished_by_role_id": deadline.finished_by_role_id,
+            })
+        })
+        .collect::<Vec<_>>();
+    let reasons = std::mem::take(&mut state.reasons)
+        .into_iter()
+        .map(|reason| {
+            json!({
+                "from": record_ref_to_json(reason.from),
+                "to": record_ref_to_json(reason.to),
+                "kind": reason.kind,
+                "why": reason.why,
+                "confidence": reason.confidence,
+                "asserted_by_role_id": empty_as_null(reason.asserted_by_role_id),
+                "asserted_at": reason.asserted_at,
+            })
+        })
+        .collect::<Vec<_>>();
     json!({
         "ceremony_id": state.ceremony_id,
         "trace_id": empty_as_null(state.trace_id),
@@ -102,22 +131,17 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
             .into_iter()
             .map(child_group_to_json)
             .collect::<Vec<_>>(),
+        "lifecycle": state.lifecycle,
+        "end_reason": empty_as_null(state.end_reason),
+        "paused_at": empty_as_null(state.paused_at),
+        "ended_at": empty_as_null(state.ended_at),
+        "ceremony_deadline_at": empty_as_null(state.ceremony_deadline_at),
+        "state_deadline_at": empty_as_null(state.state_deadline_at),
+        "step_deadlines": step_deadlines,
         // Both backends answer the same shape or neither does: the
         // parity gate is what says so, and it is the reason this had to
         // be added here the moment the embedded side grew it.
-        "reasons": state
-            .reasons
-            .into_iter()
-            .map(|reason| json!({
-                "from": record_ref_to_json(reason.from),
-                "to": record_ref_to_json(reason.to),
-                "kind": reason.kind,
-                "why": reason.why,
-                "confidence": reason.confidence,
-                "asserted_by_role_id": empty_as_null(reason.asserted_by_role_id),
-                "asserted_at": reason.asserted_at,
-            }))
-            .collect::<Vec<_>>(),
+        "reasons": reasons,
     })
 }
 

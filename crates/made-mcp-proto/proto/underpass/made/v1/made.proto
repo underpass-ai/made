@@ -136,6 +136,10 @@ service MadeService {
   rpc AcceptChildCompletion(AcceptChildCompletionRequest) returns (AcceptChildCompletionResponse);
   rpc RecoverCeremonyChildren(RecoverCeremonyChildrenRequest) returns (RecoverCeremonyChildrenResponse);
   rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
+  rpc PauseCeremony(PauseCeremonyRequest) returns (PauseCeremonyResponse);
+  rpc ResumeCeremony(ResumeCeremonyRequest) returns (ResumeCeremonyResponse);
+  rpc CancelCeremony(CancelCeremonyRequest) returns (CancelCeremonyResponse);
+  rpc EnforceCeremonyDeadlines(EnforceCeremonyDeadlinesRequest) returns (EnforceCeremonyDeadlinesResponse);
 
   // The part of a working session that only a person can do. A guard
   // is approved or deferred, an agenda item is opened, answered and
@@ -958,6 +962,24 @@ message CeremonyInstanceState {
   uint32 current_state_visit = 28;
   CeremonyLineageState lineage = 29;
   repeated CeremonyChildGroupState child_groups = 30;
+  string lifecycle = 31;
+  string end_reason = 32;
+  string paused_at = 33;
+  string ended_at = 34;
+  string ceremony_deadline_at = 35;
+  string state_deadline_at = 36;
+  repeated CeremonyStepDeadlineState step_deadlines = 37;
+}
+
+message CeremonyStepDeadlineState {
+  string step_id = 1;
+  uint32 state_visit = 2;
+  uint32 state_iteration = 3;
+  uint32 step_iteration = 4;
+  uint32 attempt = 5;
+  string claim_fence = 6;
+  string deadline_at = 7;
+  string finished_by_role_id = 8;
 }
 
 message CeremonyLineageState {
@@ -1183,6 +1205,46 @@ message ApplyCeremonyTransitionRequest {
 }
 
 message ApplyCeremonyTransitionResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message PauseCeremonyRequest {
+  string ceremony_id = 1;
+  string actor_id = 2;
+  string actor_kind = 3;
+  string reason = 4;
+}
+
+message PauseCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message ResumeCeremonyRequest {
+  string ceremony_id = 1;
+  string actor_id = 2;
+  string actor_kind = 3;
+}
+
+message ResumeCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message CancelCeremonyRequest {
+  string ceremony_id = 1;
+  string actor_id = 2;
+  string actor_kind = 3;
+  string reason = 4;
+}
+
+message CancelCeremonyResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message EnforceCeremonyDeadlinesRequest {
+  string ceremony_id = 1;
+}
+
+message EnforceCeremonyDeadlinesResponse {
   CeremonyInstanceState instance = 1;
 }
 

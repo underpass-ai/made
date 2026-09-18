@@ -316,6 +316,40 @@ pub(super) fn ceremony_transition_schema() -> Value {
     })
 }
 
+pub(super) fn ceremony_lifecycle_control_schema(requires_reason: bool) -> Value {
+    let required = if requires_reason {
+        json!(["ceremony_id", "actor_id", "actor_kind", "reason"])
+    } else {
+        json!(["ceremony_id", "actor_id", "actor_kind"])
+    };
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": required,
+        "properties": {
+            "ceremony_id": string_schema("Persistent ceremony instance id."),
+            "actor_id": string_schema("Operator identity recorded in the audit journal."),
+            "actor_kind": {
+                "type": "string",
+                "enum": ["human", "agent", "service", "engine"],
+                "description": "What kind of party requested the lifecycle change."
+            },
+            "reason": string_schema("Required explanation for pause or cancellation.")
+        }
+    })
+}
+
+pub(super) fn enforce_ceremony_deadlines_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Persistent ceremony instance whose sealed deadlines are evaluated.")
+        }
+    })
+}
+
 pub(super) fn ceremony_instance_schema() -> Value {
     json!({
         "type": "object",

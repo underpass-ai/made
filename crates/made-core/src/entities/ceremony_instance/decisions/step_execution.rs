@@ -1,10 +1,14 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use crate::entities::ceremony_events::{
-    ContextWritten, StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+    ContextWritten, LateStepResultObserved, StateIterationStarted, StepCompleted, StepFailed,
+    StepStarted,
 };
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{StateExecution, StepAttempt, StepExecutionRecord, StepStatus};
+use crate::value_objects::{
+    LateStepResult, RoleId, StateExecution, StepAttempt, StepClaimFence, StepDeadline,
+    StepExecutionRecord, StepStatus, StepTimeout,
+};
 
 impl CeremonyInstance {
     /// A step may be taken when its state is current, its lease is
@@ -19,7 +23,8 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
-        if self.is_terminal(definition) {
+        self.require_admits_new_work("start_step")?;
+        if self.is_terminal(definition) || self.is_ended() {
             return Err(DomainError::InvariantViolated {
                 reason: "terminal ceremony instances cannot start steps",
             });
@@ -78,14 +83,23 @@ impl CeremonyInstance {
                 reason: "ceremony step is not claimable at the observed time and capacity",
             });
         }
-        if self
-            .idempotency_keys
-            .contains(command.lease.idempotency_key())
-        {
-            return Err(DomainError::AlreadyExists {
-                what: "ceremony_instance.idempotency_key",
-            });
-        }
+        self.require_new_step_idempotency_key(command)?;
+        let claimed_role = dynamic
+            .then(|| started_by.clone())
+            .or_else(|| sealed_role.clone());
+        let claimed_record =
+            record
+                .clone()
+                .with_started(command.lease.clone(), attempt, claimed_role);
+        let claim_fence = StepClaimFence::for_record(self.id(), &command.step_id, &claimed_record)?;
+        let deadline = self.step_deadline(
+            command,
+            record,
+            attempt,
+            claim_fence,
+            started_by.clone(),
+            step.timeout(),
+        )?;
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
             state_visit: Some(self.current_state_visit),
@@ -101,8 +115,62 @@ impl CeremonyInstance {
                     .clone()
             }),
             sealed_role,
+            deadline,
             started_at: command.now,
         })])
+    }
+
+    fn require_new_step_idempotency_key(&self, command: &StartStep) -> Result<(), DomainError> {
+        if self
+            .idempotency_keys
+            .contains(command.lease.idempotency_key())
+        {
+            return Err(DomainError::AlreadyExists {
+                what: "ceremony_instance.idempotency_key",
+            });
+        }
+        Ok(())
+    }
+
+    fn step_deadline(
+        &self,
+        command: &StartStep,
+        record: &StepExecutionRecord,
+        attempt: StepAttempt,
+        claim_fence: StepClaimFence,
+        started_by: RoleId,
+        timeout: Option<StepTimeout>,
+    ) -> Result<Option<StepDeadline>, DomainError> {
+        let mut at = timeout
+            .map(|timeout| {
+                super::start::checked_deadline(command.now, timeout.duration(), "step_deadline")
+            })
+            .transpose()?;
+        if let Some(state) = self
+            .state_deadline
+            .as_ref()
+            .map(crate::value_objects::StateDeadline::at)
+        {
+            at = Some(at.map_or(state, |step| step.min(state)));
+        }
+        if let Some(ceremony) = self
+            .ceremony_deadline
+            .map(crate::value_objects::CeremonyDeadline::at)
+        {
+            at = Some(at.map_or(ceremony, |step| step.min(ceremony)));
+        }
+        Ok(at.map(|at| {
+            StepDeadline::new(
+                command.step_id.clone(),
+                self.current_state_visit,
+                self.current_state_iteration,
+                record.iteration(),
+                attempt,
+                claim_fence,
+                started_by,
+                at,
+            )
+        }))
     }
 
     /// A result is filed against the in-progress record of a step in
@@ -126,6 +194,9 @@ impl CeremonyInstance {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_instance.step",
             })?;
+        if let Some(events) = self.decide_late_step_result(command, definition)? {
+            return Ok(events);
+        }
         if step.state_id() != &self.current_state {
             return Err(DomainError::InvalidTransition {
                 from: "ceremony_instance.current_state",
@@ -205,6 +276,85 @@ impl CeremonyInstance {
         projected.apply_all(&events);
         events.extend(projected.decide_state_iteration(definition, command.now)?);
         Ok(events)
+    }
+
+    fn decide_late_step_result(
+        &self,
+        command: &ApplyStepResult,
+        definition: &CeremonyDefinition,
+    ) -> Result<Option<Vec<CeremonyEvent>>, DomainError> {
+        if let Some(existing) = self.late_step_results.get(&command.claim_fence) {
+            return if existing.step_id() == &command.step_id && existing.result() == &command.result
+            {
+                Ok(Some(Vec::new()))
+            } else {
+                Err(DomainError::InvariantViolated {
+                    reason: "late step claim already has a different step or observed result",
+                })
+            };
+        }
+        let retired = self
+            .retired_deadline_claims
+            .get(&command.claim_fence)
+            .filter(|deadline| deadline.step_id() == &command.step_id);
+        if !self.is_ended() && retired.is_none() {
+            return Ok(None);
+        }
+        let record = self
+            .step_records
+            .get(&command.step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance.step_record",
+            })?;
+        let live_matches = record.status() == StepStatus::InProgress
+            && self
+                .step_claim_fence(&command.step_id)
+                .is_ok_and(|fence| fence == command.claim_fence);
+        if !live_matches && retired.is_none() {
+            return Err(DomainError::InvariantViolated {
+                reason: "step result claim fence is not current or retired by a deadline",
+            });
+        }
+        let (state_visit, state_iteration, iteration, attempt) = retired.map_or(
+            (
+                record.state_visit(),
+                record.state_iteration(),
+                record.iteration(),
+                record.attempt(),
+            ),
+            |deadline| {
+                (
+                    deadline.state_visit(),
+                    deadline.state_iteration(),
+                    deadline.step_iteration(),
+                    deadline.attempt(),
+                )
+            },
+        );
+        let finished_by = retired.map_or_else(
+            || {
+                record
+                    .claimed_role()
+                    .cloned()
+                    .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)
+            },
+            |deadline| Ok(deadline.finished_by().clone()),
+        )?;
+        Ok(Some(vec![CeremonyEvent::LateStepResultObserved(
+            LateStepResultObserved {
+                result: LateStepResult::new(
+                    command.step_id.clone(),
+                    state_visit,
+                    state_iteration,
+                    iteration,
+                    attempt,
+                    command.claim_fence.clone(),
+                    command.result.clone(),
+                    finished_by,
+                ),
+                observed_at: command.now,
+            },
+        )]))
     }
 
     fn decide_state_iteration(

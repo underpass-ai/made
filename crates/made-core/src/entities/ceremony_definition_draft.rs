@@ -13,9 +13,10 @@ use std::collections::BTreeMap;
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
-    CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationFinding, CeremonyValidationLocus, CeremonyValidationReport, CeremonyVersion,
-    MaxBounces, MaxParallel, MaxTransitions,
+    CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTimeout,
+    CeremonyTransition, CeremonyValidationFinding, CeremonyValidationLocus,
+    CeremonyValidationReport, CeremonyVersion, MaxBounces, MaxParallel, MaxTransitions,
+    StateTimeout,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -36,6 +37,8 @@ pub struct CeremonyDefinitionDraft {
     max_parallel: MaxParallel,
     max_transitions: Option<MaxTransitions>,
     max_bounces: Option<MaxBounces>,
+    ceremony_timeout: Option<CeremonyTimeout>,
+    state_timeout: Option<StateTimeout>,
 }
 
 impl CeremonyDefinitionDraft {
@@ -71,6 +74,8 @@ impl CeremonyDefinitionDraft {
             max_parallel: MaxParallel::default(),
             max_transitions: None,
             max_bounces: None,
+            ceremony_timeout: None,
+            state_timeout: None,
         }
     }
 
@@ -105,6 +110,25 @@ impl CeremonyDefinitionDraft {
     #[must_use]
     pub const fn max_bounces(&self) -> Option<MaxBounces> {
         self.max_bounces
+    }
+
+    #[must_use]
+    pub const fn with_ceremony_timeout(mut self, timeout: CeremonyTimeout) -> Self {
+        self.ceremony_timeout = Some(timeout);
+        self
+    }
+    #[must_use]
+    pub const fn with_state_timeout(mut self, timeout: StateTimeout) -> Self {
+        self.state_timeout = Some(timeout);
+        self
+    }
+    #[must_use]
+    pub const fn ceremony_timeout(&self) -> Option<CeremonyTimeout> {
+        self.ceremony_timeout
+    }
+    #[must_use]
+    pub const fn state_timeout(&self) -> Option<StateTimeout> {
+        self.state_timeout
     }
 
     #[must_use]
@@ -255,7 +279,16 @@ impl CeremonyDefinitionDraft {
             self.max_transitions,
             self.max_bounces,
         )
-        .map(|definition| definition.with_max_parallel(self.max_parallel))
+        .map(|definition| {
+            let mut definition = definition.with_max_parallel(self.max_parallel);
+            if let Some(timeout) = self.ceremony_timeout {
+                definition = definition.with_ceremony_timeout(timeout);
+            }
+            if let Some(timeout) = self.state_timeout {
+                definition = definition.with_state_timeout(timeout);
+            }
+            definition
+        })
     }
 }
 

@@ -5,7 +5,7 @@ use super::{CeremonyId, StepExecutionRecord, StepId};
 use crate::error::DomainError;
 
 /// Identity of exactly one accepted claim. It is a concurrency fence, not a credential.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(try_from = "String", into = "String")]
 pub struct StepClaimFence(String);
 

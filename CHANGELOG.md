@@ -9,6 +9,13 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add orthogonal ceremony pause, resume and irreversible cancellation plus
+  sealed ceremony, state and step deadlines across Rust, gRPC and both MCP
+  backends. Paused sessions drain already accepted fenced work; timed-out or
+  terminal late results become idempotent observations without changing
+  outputs or terminality. Historical event bytes remain stable, and snapshot
+  envelope v2 prevents older writers from reopening a partial lifecycle tail.
+
 - Stream resumable ceremony progress as sealed event records over gRPC, both
   MCP backends and `EmbeddedMade`. Requests bound replay and waiting, return an
   explicit resume cursor/end reason, catch up with external store writers and

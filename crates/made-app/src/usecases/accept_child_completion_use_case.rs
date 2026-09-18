@@ -486,7 +486,7 @@ mod tests {
 
     #[tokio::test]
     async fn nested_join_any_accepts_a_late_sibling_and_replays_the_terminal_locator() {
-        let harness = open_nested_join().await;
+        let harness = Box::pin(open_nested_join()).await;
         let leaf_terminals = complete_nested_leaves(&harness).await;
 
         harness

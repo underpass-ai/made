@@ -32,6 +32,7 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         // doing and retrying changes nothing until a reader exists.
         DomainError::InvalidTransition { .. }
         | DomainError::InvariantViolated { .. }
+        | DomainError::LifecycleRefused { .. }
         | DomainError::NoValidProposal { .. }
         | DomainError::UnreadableCeremonyEvent { .. } => Status::failed_precondition(msg),
         // Aborted rather than failed_precondition: the canonical

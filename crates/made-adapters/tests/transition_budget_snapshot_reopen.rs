@@ -129,6 +129,8 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            ceremony_deadline: None,
+            state_deadline: None,
             created_at: at(0),
         }),
         CeremonyEvent::TransitionApplied(TransitionApplied {

@@ -59,6 +59,7 @@ pub(crate) fn step_result_seat(
     let role = events.iter().find_map(|event| match event {
         CeremonyEvent::StepCompleted(completed) => Some(&completed.finished_by),
         CeremonyEvent::StepFailed(failed) => Some(&failed.finished_by),
+        CeremonyEvent::LateStepResultObserved(observed) => Some(observed.result.finished_by()),
         _ => None,
     });
     seat(
@@ -267,21 +268,61 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::HumanDeferralRecorded(recorded) => {
             format!("guard:{}", recorded.deferral.guard_name())
         }
+        CeremonyEvent::ChildSpawnPlanned(_)
+        | CeremonyEvent::ChildSpawnPlanAdopted(_)
+        | CeremonyEvent::ChildCompletionAccepted(_) => child_about(event),
+        CeremonyEvent::CeremonyPaused(_)
+        | CeremonyEvent::CeremonyResumed(_)
+        | CeremonyEvent::CeremonyCancelled(_)
+        | CeremonyEvent::CeremonyDeadlineExceeded(_)
+        | CeremonyEvent::StateDeadlineExceeded(_)
+        | CeremonyEvent::StepDeadlineExceeded(_)
+        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
+    }
+}
+
+fn child_about(event: &CeremonyEvent) -> String {
+    match event {
         CeremonyEvent::ChildSpawnPlanned(planned) => {
             format!("child_group:{}", planned.plan.group_id())
         }
-        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => {
-            format!(
-                "child_group:{}:fence:{}",
-                adopted.group_id,
-                adopted.claim_fence.as_str()
-            )
-        }
+        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => format!(
+            "child_group:{}:fence:{}",
+            adopted.group_id,
+            adopted.claim_fence.as_str()
+        ),
         CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
             "child_group:{}:child:{}",
             accepted.completion.group_id(),
             accepted.completion.child_id()
         ),
+        _ => unreachable!("only child events are delegated here"),
+    }
+}
+
+fn lifecycle_about(event: &CeremonyEvent) -> String {
+    match event {
+        CeremonyEvent::CeremonyPaused(paused) => {
+            format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyResumed(resumed) => {
+            format!("resume:{}", resumed.resumed_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyCancelled(_) => "cancel".to_owned(),
+        CeremonyEvent::CeremonyDeadlineExceeded(_) => "ceremony_deadline".to_owned(),
+        CeremonyEvent::StateDeadlineExceeded(exceeded) => format!(
+            "state:{}:visit:{}",
+            exceeded.deadline.state_id(),
+            exceeded.deadline.state_visit().get()
+        ),
+        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+            format!("step_deadline:{}", exceeded.deadline.claim_fence().as_str())
+        }
+        CeremonyEvent::LateStepResultObserved(observed) => format!(
+            "late_step_result:{}",
+            observed.result.claim_fence().as_str()
+        ),
+        _ => unreachable!("only lifecycle events are delegated here"),
     }
 }
 
