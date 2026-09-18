@@ -7,6 +7,8 @@
 mod audit_chain;
 mod audit_fact;
 mod audit_record;
+mod budget_ledger;
+mod budget_ledger_event;
 mod ceremony_command;
 pub mod ceremony_commands;
 mod ceremony_definition;
@@ -40,9 +42,14 @@ mod task_metadata;
 mod validation;
 mod validator_report;
 
+#[cfg(test)]
+mod budget_ledger_tests;
+
 pub use audit_chain::AuditChain;
 pub use audit_fact::AuditFact;
 pub use audit_record::{AuditRecord, AUDIT_RECORD_SCHEMA_VERSION};
+pub use budget_ledger::BudgetLedger;
+pub use budget_ledger_event::BudgetLedgerEvent;
 pub use ceremony_command::CeremonyCommand;
 pub use ceremony_definition::CeremonyDefinition;
 pub use ceremony_definition_draft::CeremonyDefinitionDraft;

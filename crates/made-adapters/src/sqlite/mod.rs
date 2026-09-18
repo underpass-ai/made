@@ -9,10 +9,12 @@ mod keys;
 mod stored_ceremony;
 mod stored_publication;
 
+pub use budget_ledger_store::SqliteBudgetLedgerStore;
 pub use ceremony_store::SqliteCeremonyStore;
 pub use session_memory::SqliteSessionMemory;
 pub(in crate::sqlite) use stored_ceremony::StoredCeremony;
 pub(in crate::sqlite) use stored_publication::StoredPublication;
 
+mod budget_ledger_store;
 mod ceremony_store;
 mod session_memory;

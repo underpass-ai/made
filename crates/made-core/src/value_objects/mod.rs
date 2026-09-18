@@ -7,6 +7,7 @@
 mod agent_kind;
 mod attributes;
 mod audit;
+mod budget;
 mod ceremony;
 mod ceremony_outcome;
 mod claim_text;
@@ -68,6 +69,12 @@ pub use audit::{
     CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
     CeremonyEventQuarantineReason, CeremonyProgressWait, EventSchemaVersion, GlobalPosition,
     QuarantinedCeremonyEvent, StreamVersion,
+};
+pub use budget::{
+    BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,
+    BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
+    BudgetReconciliationId, BudgetReservation, BudgetReservationId, BudgetTokenCount, CostMicros,
+    CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities, ToolCallCount,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,

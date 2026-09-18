@@ -6,6 +6,7 @@
 //! multi-replica use cases, swap them for a persistent adapter.
 
 mod agent_registry;
+mod budget_ledger_store;
 mod ceremony_definition_publications;
 mod ceremony_definition_repository;
 mod ceremony_event_cursor;
@@ -20,6 +21,7 @@ mod session_memory;
 mod statistics;
 
 pub use agent_registry::InMemoryAgentRegistry;
+pub use budget_ledger_store::InMemoryBudgetLedgerStore;
 pub use ceremony_definition_publications::InMemoryCeremonyDefinitionPublications;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
 pub use ceremony_event_cursor::InMemoryCeremonyEventCursor;
