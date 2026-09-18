@@ -86,3 +86,8 @@ pub(crate) mod engine;
 pub mod sqlite;
 
 pub mod agents;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod persisted_agent_descriptor;
+
+pub mod council_journal_messaging;

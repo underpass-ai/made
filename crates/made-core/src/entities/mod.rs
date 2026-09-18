@@ -71,3 +71,8 @@ pub use task_constraints::TaskConstraints;
 pub use task_metadata::TaskMetadata;
 pub use validation::ValidationOutcome;
 pub use validator_report::ValidatorReport;
+
+mod council_journal_event;
+mod council_journal_record;
+pub use council_journal_event::CouncilJournalEvent;
+pub use council_journal_record::CouncilJournalRecord;

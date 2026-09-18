@@ -5,7 +5,11 @@ use made_adapters::ceremony::{
     CeremonyTracingSubscriber,
 };
 use made_adapters::progress::CeremonyProgressNotifier;
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::{
+    SqliteAgentRegistry, SqliteCeremonyStore, SqliteContractRegistry, SqliteCouncilJournal,
+    SqliteCouncilRegistry, SqliteCouncilStatistics, SqliteCouncilStore,
+    SqliteDeliberationRepository,
+};
 use made_api::ApiError;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
@@ -98,7 +102,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::provider_builder()?
+        Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -119,7 +123,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::provider_builder()?
+        Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -141,7 +145,7 @@ impl EmbeddedMade {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
         let store = Arc::new(store);
-        Ok(Self::provider_builder()?
+        Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -152,18 +156,35 @@ impl EmbeddedMade {
 
     fn over(store: SqliteCeremonyStore) -> Result<Self, ApiError> {
         let store = Arc::new(store);
-        Ok(Self::provider_builder()?
+        Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .build())
     }
 
-    fn provider_builder() -> Result<EmbeddedMadeBuilder, ApiError> {
+    fn provider_builder(store: &SqliteCeremonyStore) -> Result<EmbeddedMadeBuilder, ApiError> {
         let factory = DispatchingAgentFactory::from_env().map_err(|error| ApiError::Refused {
             reason: format!("the embedded agent provider configuration is invalid: {error}"),
         })?;
-        Ok(Self::builder().with_agent_factory(Arc::new(factory)))
+        let factory = Arc::new(factory);
+        let councils = SqliteCouncilStore::over(store);
+        let journal = Arc::new(SqliteCouncilJournal::new(councils.clone()));
+        Ok(Self::builder()
+            .with_messaging(Arc::new(
+                made_adapters::council_journal_messaging::CouncilJournalMessaging::new(journal),
+            ))
+            .with_agent_factory(factory.clone())
+            .with_agent_registry(Arc::new(SqliteAgentRegistry::new(
+                councils.clone(),
+                factory,
+            )))
+            .with_council_registry(Arc::new(SqliteCouncilRegistry::new(councils.clone())))
+            .with_contract_registry(Arc::new(SqliteContractRegistry::new(councils.clone())))
+            .with_deliberation_repository(Arc::new(SqliteDeliberationRepository::new(
+                councils.clone(),
+            )))
+            .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils))))
     }
 
     pub(crate) fn new(

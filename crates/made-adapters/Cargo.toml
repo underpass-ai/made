@@ -28,11 +28,11 @@ runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
 # Other registries (councils, agents, statistics) remain in-memory
 # in this slice; they will grow their own persistent backings in
 # later slices.
-postgres = ["dep:sqlx"]
+postgres = ["dep:sqlx", "dep:url"]
 
 # Canonical embedded persistence: WAL-mode SQLite, shared safely by several
 # agent hosts.
-sqlite = ["dep:rusqlite"]
+sqlite = ["dep:rusqlite", "dep:url"]
 
 # OpenTelemetry integration. Pulls in the bridge crates the gRPC
 # interceptor needs to extract W3C tracecontext from request
