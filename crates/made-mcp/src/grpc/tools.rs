@@ -21,22 +21,15 @@ mod children_dispatch;
 mod design_ceremony_request;
 mod general_dispatch;
 mod general_requests;
+mod request_error;
+
+use request_error::bad_request;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
 // one-shot run mapper lives in `json_to_proto` and uses the same one.
 pub(in crate::grpc) use ceremony_requests::{lease_owner_id, lease_ttl_ms};
 #[cfg(test)]
 mod schema_gate;
-
-/// Turning the caller's JSON into a proto request.
-///
-/// Everything the request mappers report is the call's own fault — a
-/// field missing, a field of the wrong type, a value outside the enum
-/// the contract names — so one function says so instead of each arm
-/// choosing a code.
-fn bad_request(message: String) -> ToolError {
-    ToolError::invalid_request(message)
-}
 
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
