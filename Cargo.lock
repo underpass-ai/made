@@ -2051,6 +2051,7 @@ version = "0.6.0"
 dependencies = [
  "async-trait",
  "criterion",
+ "futures",
  "made-core",
  "mockall",
  "opentelemetry",

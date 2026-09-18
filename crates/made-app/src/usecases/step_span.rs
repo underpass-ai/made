@@ -1,7 +1,10 @@
 use made_core::error::DomainError;
-use made_core::value_objects::{StateIteration, StepAttempt, StepIteration, StepResult};
+use made_core::value_objects::{
+    StateIteration, StateVisit, StepAttempt, StepIteration, StepResult,
+};
 
 pub(super) fn record_coordinates(
+    state_visit: StateVisit,
     state_iteration: StateIteration,
     iteration: StepIteration,
     attempt: StepAttempt,
@@ -11,6 +14,10 @@ pub(super) fn record_coordinates(
 
     let context = tracing::Span::current().context();
     let otel_span = context.span();
+    otel_span.set_attribute(opentelemetry::KeyValue::new(
+        "state_visit",
+        i64::from(state_visit.get()),
+    ));
     otel_span.set_attribute(opentelemetry::KeyValue::new(
         "state_iteration",
         i64::from(state_iteration.get()),

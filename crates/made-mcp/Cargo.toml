@@ -74,6 +74,9 @@ grpc = [
     "dep:tonic",
 ]
 otel = ["dep:made-adapters", "made-adapters/otel"]
+agent-vllm = ["embedded", "made-embedded/agent-vllm"]
+agent-anthropic = ["embedded", "made-embedded/agent-anthropic"]
+agent-openai = ["embedded", "made-embedded/agent-openai"]
 container-tests = ["dep:testcontainers"]
 
 [dev-dependencies]
