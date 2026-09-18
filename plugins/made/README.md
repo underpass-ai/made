@@ -6,7 +6,7 @@ database.
 
 ## Installation
 
-The `underpass-made` catalogue name ships after 0.5.0 and coexists with KMP's
+The `made` catalogue name ships after 0.5.0 and coexists with KMP's
 `underpass`. Before the next release advances the stable branch, test from a
 checkout containing the fix with `codex plugin marketplace add /absolute/path/to/made`.
 For existing `underpass` registrations, follow the
@@ -17,7 +17,7 @@ before installing a second MADE server.
 
 ```text
 /plugin marketplace add underpass-ai/made@marketplace
-/plugin install made@underpass-made
+/plugin install made@made
 /made:setup
 ```
 
@@ -25,7 +25,7 @@ before installing a second MADE server.
 
 ```text
 codex plugin marketplace add underpass-ai/made --ref marketplace
-codex plugin add made@underpass-made
+codex plugin add made@made
 ```
 
 Then ask Codex to run `made-setup`. Setup downloads the `made-mcp` executable
@@ -34,10 +34,10 @@ published SHA-256 checksum, and installs it into the plugin's ignored `bin/`
 directory. No Rust toolchain is required. Start a new host thread after first
 setup or an update so the MCP server and skills reload together.
 
-To update Claude Code, run `/plugin marketplace update underpass-made`,
-`/plugin update made@underpass-made`, and `/made:setup`. For Codex, run
-`codex plugin marketplace upgrade underpass-made`, reinstall with
-`codex plugin add made@underpass-made`, then run `made-setup`. The marketplace and
+To update Claude Code, run `/plugin marketplace update made`,
+`/plugin update made@made`, and `/made:setup`. For Codex, run
+`codex plugin marketplace upgrade made`, reinstall with
+`codex plugin add made@made`, then run `made-setup`. The marketplace and
 engine therefore move to the same immutable release before the new thread
 starts.
 
@@ -62,7 +62,7 @@ tar -xzf made-plugin-<version>-<os>-<arch>.tar.gz
 
 On Windows hosts, register the MCP server with
 `scripts\run-embedded-mcp.cmd` instead of the `.sh` launcher; the state
-file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`.
+file defaults to `%LOCALAPPDATA%\made\ceremonies.sqlite3`.
 
 To build the package from a checkout instead:
 
@@ -77,7 +77,7 @@ The version stamped into both manifests comes from the workspace
 
 This plugin selects the embedded MCP backend, and the launcher points it at
 the canonical SQLite WAL store —
-`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`
+`${XDG_STATE_HOME:-$HOME/.local/state}/made/ceremonies.sqlite3`
 unless `MADE_MCP_STORE_PATH` says otherwise — so ceremonies survive the MCP
 process and multiple agent hosts can share one path. Durable is not the same
 as authorized, and not the same as fully

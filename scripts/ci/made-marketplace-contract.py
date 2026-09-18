@@ -102,8 +102,8 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Codex defaultPrompt must contain at most three prompts")
 
     codex = load_json(".agents/plugins/marketplace.json")
-    if codex.get("name") != "underpass-made":
-        fail("Codex marketplace name must be underpass-made (distinct from KMP)")
+    if codex.get("name") != "made":
+        fail("Codex marketplace name must be made (distinct from KMP)")
     if codex_manifest.get("interface", {}).get("websiteURL") != "https://underpassai.com/":
         fail("Codex plugin card must link to https://underpassai.com/")
     codex_plugins = codex.get("plugins")
@@ -123,8 +123,8 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Codex marketplace category must be Developer Tools")
 
     claude = load_json(".claude-plugin/marketplace.json")
-    if claude.get("name") != "underpass-made":
-        fail("Claude marketplace name must be underpass-made (distinct from KMP)")
+    if claude.get("name") != "made":
+        fail("Claude marketplace name must be made (distinct from KMP)")
     claude_plugins = claude.get("plugins")
     if not isinstance(claude_plugins, list) or len(claude_plugins) != 1:
         fail("Claude marketplace must contain exactly one plugin")
@@ -277,7 +277,7 @@ def main() -> None:
         print("\n".join(expected_assets(version)))
     else:
         print(
-            f"MADE marketplace contract passed: made@underpass-made {version}, "
+            f"MADE marketplace contract passed: made@made {version}, "
             f"co-located plugin tree, {len(expected_assets(version))} release assets"
         )
 
