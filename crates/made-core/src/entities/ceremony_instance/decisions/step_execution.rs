@@ -126,6 +126,7 @@ impl CeremonyInstance {
                 record.iteration(),
                 attempt,
                 claim_fence,
+                started_by.clone(),
                 at,
             )
         });
@@ -170,16 +171,21 @@ impl CeremonyInstance {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_instance.step",
             })?;
-        if self.is_ended() {
-            if let Some(existing) = self.late_step_results.get(&command.claim_fence) {
-                return if existing.result() == &command.result {
-                    Ok(Vec::new())
-                } else {
-                    Err(DomainError::InvariantViolated {
-                        reason: "late step claim already has a different observed result",
-                    })
-                };
-            }
+        if let Some(existing) = self.late_step_results.get(&command.claim_fence) {
+            return if existing.step_id() == &command.step_id && existing.result() == &command.result
+            {
+                Ok(Vec::new())
+            } else {
+                Err(DomainError::InvariantViolated {
+                    reason: "late step claim already has a different step or observed result",
+                })
+            };
+        }
+        let retired = self
+            .retired_deadline_claims
+            .get(&command.claim_fence)
+            .filter(|deadline| deadline.step_id() == &command.step_id);
+        if self.is_ended() || retired.is_some() {
             let record = self
                 .step_records
                 .get(&command.step_id)
@@ -190,10 +196,6 @@ impl CeremonyInstance {
                 && self
                     .step_claim_fence(&command.step_id)
                     .is_ok_and(|fence| fence == command.claim_fence);
-            let retired = self
-                .retired_deadline_claims
-                .get(&command.claim_fence)
-                .filter(|deadline| deadline.step_id() == &command.step_id);
             if !live_matches && retired.is_none() {
                 return Err(DomainError::InvariantViolated {
                     reason: "step result claim fence is not current or retired by a deadline",
@@ -215,10 +217,15 @@ impl CeremonyInstance {
                     )
                 },
             );
-            let finished_by = record
-                .claimed_role()
-                .cloned()
-                .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)?;
+            let finished_by = retired.map_or_else(
+                || {
+                    record
+                        .claimed_role()
+                        .cloned()
+                        .map_or_else(|| definition.role_id_for_step(&command.step_id), Ok)
+                },
+                |deadline| Ok(deadline.finished_by().clone()),
+            )?;
             return Ok(vec![CeremonyEvent::LateStepResultObserved(
                 LateStepResultObserved {
                     result: LateStepResult::new(
