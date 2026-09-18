@@ -85,7 +85,7 @@ impl CeremonyEvent {
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
             Self::StepStarted(event) => {
-                if event.role_from.is_some() {
+                if event.role_from.is_some() || event.sealed_role.is_some() {
                     EventSchemaVersion::V3
                 } else {
                     event

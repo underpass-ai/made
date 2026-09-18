@@ -4,7 +4,7 @@ use crate::entities::ceremony_events::{
 };
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{StepAttempt, StepExecutionRecord, StepStatus};
+use crate::value_objects::{StateExecution, StepAttempt, StepExecutionRecord, StepStatus};
 
 impl CeremonyInstance {
     /// A step may be taken when its state is current, its lease is
@@ -54,6 +54,15 @@ impl CeremonyInstance {
                 reason: "step retry policy exhausted",
             });
         }
+        let (started_by, dynamic) =
+            self.resolve_step_role(definition, &command.step_id, command.role_id.as_ref())?;
+        let mixed_concurrent_state = definition
+            .state(&self.current_state)
+            .is_some_and(|state| state.execution() == StateExecution::Concurrent)
+            && definition
+                .steps_for_state(&self.current_state)
+                .any(|candidate| candidate.dynamic_role_binding().is_some());
+        let sealed_role = (!dynamic && mixed_concurrent_state).then(|| started_by.clone());
         let claimable =
             self.claimable_step_ids_at(definition, command.now, command.max_parallel_ceiling)?;
         if !claimable.contains(&&command.step_id) {
@@ -69,9 +78,6 @@ impl CeremonyInstance {
                 what: "ceremony_instance.idempotency_key",
             });
         }
-        let (started_by, dynamic) =
-            self.resolve_step_role(definition, &command.step_id, command.role_id.as_ref())?;
-
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
             state_iteration: Some(self.current_state_iteration),
@@ -85,6 +91,7 @@ impl CeremonyInstance {
                     .context_key()
                     .clone()
             }),
+            sealed_role,
             started_at: command.now,
         })])
     }

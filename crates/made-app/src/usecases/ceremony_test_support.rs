@@ -1144,9 +1144,26 @@ pub(super) fn stream_conflicting_once_watched_by(
         Arc::new(StoreThatConflictsOnce {
             inner: store.clone(),
             conflicted: std::sync::atomic::AtomicBool::new(false),
+            overtaking_fact: None,
         }),
         store,
         subscriber,
+    ))
+}
+
+/// A stream whose first append loses to the supplied fact.
+pub(super) fn stream_overtaken_once(
+    store: Arc<EventStoreFake>,
+    overtaking_fact: AuditFact,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new(
+        Arc::new(StoreThatConflictsOnce {
+            inner: store.clone(),
+            conflicted: std::sync::atomic::AtomicBool::new(false),
+            overtaking_fact: Some(overtaking_fact),
+        }),
+        store,
+        Arc::new(NoopCeremonyEventSubscriber),
     ))
 }
 
@@ -1212,6 +1229,13 @@ impl CeremonyEventStorePort for StoreThatConflictsOnce {
             .conflicted
             .swap(true, std::sync::atomic::Ordering::SeqCst)
         {
+            if let Some(fact) = &self.overtaking_fact {
+                let outcome = self
+                    .inner
+                    .append(stream, expected, vec![fact.clone()])
+                    .await?;
+                debug_assert!(outcome.appended_version().is_some());
+            }
             return Ok(overtaken(expected));
         }
         self.inner.append(stream, expected, facts).await

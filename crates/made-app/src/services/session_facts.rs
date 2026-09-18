@@ -48,6 +48,27 @@ pub(crate) fn seat(role_id: &RoleId, kind: AuditActorKind) -> Result<AuditActor,
     AuditActor::new(role_id.as_str(), kind, Some(role_id.clone()))
 }
 
+/// The seat sealed by a successful step-ending decision.
+///
+/// Derived inside optimistic retries so the envelope actor and the event's
+/// `finished_by` always describe the same accepted attempt.
+pub(crate) fn step_result_seat(
+    events: &[CeremonyEvent],
+    kind: AuditActorKind,
+) -> Result<AuditActor, DomainError> {
+    let role = events.iter().find_map(|event| match event {
+        CeremonyEvent::StepCompleted(completed) => Some(&completed.finished_by),
+        CeremonyEvent::StepFailed(failed) => Some(&failed.finished_by),
+        _ => None,
+    });
+    seat(
+        role.ok_or(DomainError::InvariantViolated {
+            reason: "a step result decision emits a completed or failed event",
+        })?,
+        kind,
+    )
+}
+
 /// Who did it, holding no seat.
 ///
 /// Whoever opens a session or seats its table may be a participant,

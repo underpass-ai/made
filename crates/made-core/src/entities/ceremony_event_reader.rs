@@ -83,6 +83,26 @@ impl CeremonyEventReader {
                 "the payload's tag names a different event type",
             ));
         }
+        if let CeremonyEvent::StepStarted(started) = &event {
+            if started.role_from.is_some() && started.sealed_role.is_some() {
+                return Err(unreadable(
+                    event_type,
+                    version,
+                    "a step start cannot carry both dynamic and static role seals",
+                ));
+            }
+            if started
+                .sealed_role
+                .as_ref()
+                .is_some_and(|sealed| sealed != &started.started_by)
+            {
+                return Err(unreadable(
+                    event_type,
+                    version,
+                    "the sealed static role differs from started_by",
+                ));
+            }
+        }
         if event.schema_version() != version {
             return Err(unreadable(
                 event_type,
@@ -251,5 +271,34 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn version_three_refuses_contradictory_static_role_seals() {
+        let mut raw = step_started_json();
+        raw["state_iteration"] = json!(1);
+        raw["sealed_role"] = json!("reviewer");
+
+        assert!(CeremonyEventReader::read(
+            AuditEventType::StepStarted,
+            EventSchemaVersion::V3,
+            raw,
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn version_three_refuses_two_role_seal_markers() {
+        let mut raw = step_started_json();
+        raw["state_iteration"] = json!(1);
+        raw["role_from"] = json!("next_role");
+        raw["sealed_role"] = json!("writer");
+
+        assert!(CeremonyEventReader::read(
+            AuditEventType::StepStarted,
+            EventSchemaVersion::V3,
+            raw,
+        )
+        .is_err());
     }
 }

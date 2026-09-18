@@ -177,11 +177,12 @@ impl RunCeremonyUseCase {
             result: step_result.clone(),
             now: finished_at,
         });
-        let finish_actor = session_facts::seat(&sealed_role, actor.kind())?;
+        let finish_actor_kind = actor.kind();
         let session = self
             .stream
             .execute(finished_session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&finish, definition)?;
+                let finish_actor = session_facts::step_result_seat(&events, finish_actor_kind)?;
                 session_facts::facts(&session.instance, events, &finish_actor, finished_at)
             })
             .await?;

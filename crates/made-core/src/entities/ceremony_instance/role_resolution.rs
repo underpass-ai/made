@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use crate::entities::{CeremonyDefinition, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{RoleAction, RoleId, StepId};
+use crate::value_objects::{RoleAction, RoleId, StateExecution, StepId};
 
 impl CeremonyInstance {
     pub fn resolved_step_role(
@@ -29,6 +29,7 @@ impl CeremonyInstance {
                 .map(Ok)
                 .unwrap_or_else(|| definition.role_id_for_step(step_id))?;
             self.require_role(definition, &role, &RoleAction::step(step_id.clone()))?;
+            self.require_role_is_available(definition, step_id, &role)?;
             return Ok((role, false));
         };
 
@@ -53,22 +54,45 @@ impl CeremonyInstance {
             });
         }
         self.require_role(definition, &resolved, &RoleAction::step(step_id.clone()))?;
-        if self
-            .roles_assigned_to_other_steps(step_id)
-            .contains(&resolved)
-        {
-            return Err(DomainError::InvariantViolated {
-                reason: "dynamic role is already assigned to another step in this state iteration",
-            });
-        }
+        self.require_role_is_available(definition, step_id, &resolved)?;
         Ok((resolved, true))
     }
 
-    fn roles_assigned_to_other_steps(&self, step_id: &StepId) -> BTreeSet<RoleId> {
+    fn require_role_is_available(
+        &self,
+        definition: &CeremonyDefinition,
+        step_id: &StepId,
+        role: &RoleId,
+    ) -> Result<(), DomainError> {
+        let concurrent = definition
+            .state(&self.current_state)
+            .is_some_and(|state| state.execution() == StateExecution::Concurrent);
+        if concurrent
+            && self
+                .roles_assigned_to_other_steps(definition, step_id)
+                .contains(role)
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "role is already assigned to another step in this state iteration",
+            });
+        }
+        Ok(())
+    }
+
+    fn roles_assigned_to_other_steps(
+        &self,
+        definition: &CeremonyDefinition,
+        step_id: &StepId,
+    ) -> BTreeSet<RoleId> {
         let current = self.current_state_iteration;
         let mut roles = BTreeSet::new();
         for (other_id, record) in &self.step_records {
-            if other_id != step_id && record.state_iteration() == current {
+            if other_id != step_id
+                && record.state_iteration() == current
+                && definition
+                    .step(other_id)
+                    .is_some_and(|step| step.state_id() == &self.current_state)
+            {
                 roles.extend(record.claimed_role().cloned());
             }
         }
@@ -77,7 +101,11 @@ impl CeremonyInstance {
                 continue;
             }
             for record in history {
-                if record.state_iteration() == current {
+                if record.state_iteration() == current
+                    && definition
+                        .step(other_id)
+                        .is_some_and(|step| step.state_id() == &self.current_state)
+                {
                     roles.extend(record.claimed_role().cloned());
                 }
             }

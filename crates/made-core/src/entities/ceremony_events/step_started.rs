@@ -21,6 +21,10 @@ pub struct StepStarted {
     pub started_by: RoleId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role_from: Option<ContextKey>,
+    /// The actual role accepted for a static step in a mixed dynamic/static
+    /// concurrent state. Absent from legacy and static-only events.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sealed_role: Option<RoleId>,
     #[serde(with = "time::serde::rfc3339")]
     pub started_at: OffsetDateTime,
 }

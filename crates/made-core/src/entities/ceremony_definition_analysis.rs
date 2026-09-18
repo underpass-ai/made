@@ -289,11 +289,12 @@ impl CeremonyDefinitionParts<'_> {
                 .values()
                 .filter(|step| step.state_id() == state.id())
                 .collect::<Vec<_>>();
-            let mut owners = BTreeSet::new();
+            let mut static_owners = BTreeSet::new();
+            let mut possible_roles = BTreeSet::new();
             let mut duplicate_owner = false;
             for step in &steps {
                 if let Some(binding) = step.dynamic_role_binding() {
-                    owners.extend(binding.allowed_roles().iter().cloned());
+                    possible_roles.extend(binding.allowed_roles().iter().cloned());
                     continue;
                 }
                 let owner = self
@@ -301,7 +302,8 @@ impl CeremonyDefinitionParts<'_> {
                     .values()
                     .find(|role| role.allows(&RoleAction::step(step.id().clone())));
                 if let Some(owner) = owner {
-                    duplicate_owner |= !owners.insert(owner.id().clone());
+                    possible_roles.insert(owner.id().clone());
+                    duplicate_owner |= !static_owners.insert(owner.id().clone());
                 }
             }
             if duplicate_owner {
@@ -312,7 +314,7 @@ impl CeremonyDefinitionParts<'_> {
                     },
                 ));
             }
-            if owners.len() > 3 {
+            if possible_roles.len() > 3 {
                 findings.push(CeremonyValidationFinding::warning(
                     CeremonyValidationLocus::state(state.id().clone()),
                     DomainError::InvariantViolated {

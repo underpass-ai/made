@@ -1,14 +1,16 @@
 use std::collections::BTreeMap;
 
 use made_core::entities::ceremony_commands::ApplyStepResult;
+use made_core::entities::ceremony_events::StepStarted;
 use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
+use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
     CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey, ContextWrites,
     DurationMs, DynamicRoleBinding, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
     MaxParallel, RetryPolicy, RoleAction, RoleId, StateExecution, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId, StepLease, StepOutput, StepOutputField, StepResult,
-    TransitionTrigger,
+    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
+    StepOutputField, StepResult, TransitionTrigger,
 };
 use time::{Duration, OffsetDateTime};
 
@@ -50,7 +52,7 @@ fn definition() -> CeremonyDefinition {
     let dynamic_peer = step("dynamic_peer");
     let dynamic_binding = DynamicRoleBinding::new(
         ContextKey::new("next_role").unwrap(),
-        [role("B"), role("C"), role("D")],
+        [role("B"), role("C"), role("D"), role("X")],
     )
     .unwrap();
     let writes = ContextWrites::new(BTreeMap::from([(
@@ -88,16 +90,19 @@ fn definition() -> CeremonyDefinition {
     ];
     let trigger = TransitionTrigger::new("finish").unwrap();
     let guard = GuardName::new("one_done").unwrap();
-    let roles: Vec<_> = ["A", "B", "C", "D"]
+    let roles: Vec<_> = ["A", "B", "C", "D", "X"]
         .into_iter()
         .map(|id| {
-            let mut actions = vec![if id == "A" {
+            let mut actions = vec![if id == "A" || id == "X" {
                 RoleAction::step(writer.clone())
             } else {
                 RoleAction::step(dynamic.clone())
             }];
             if id != "A" {
                 actions.push(RoleAction::step(dynamic_peer.clone()));
+            }
+            if id == "X" {
+                actions.push(RoleAction::step(dynamic.clone()));
             }
             if id == "A" {
                 actions.push(RoleAction::transition(trigger.clone()));
@@ -130,6 +135,78 @@ fn opened() -> CeremonyInstance {
         &definition(),
         context(&[("next_role", serde_json::json!("B"))]),
         OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap()
+}
+
+fn two_state_definition() -> CeremonyDefinition {
+    let first = StateId::new("first").unwrap();
+    let second = StateId::new("second").unwrap();
+    let done = StateId::new("done").unwrap();
+    let first_step = step("first_step");
+    let second_step = step("second_step");
+    let binding =
+        || DynamicRoleBinding::new(ContextKey::new("next_role").unwrap(), [role("B")]).unwrap();
+    let make_step = |id: StepId, state: StateId| {
+        CeremonyStep::new(
+            id,
+            state,
+            StepHandlerKind::new("host_callback").unwrap(),
+            StepHandlerConfig::empty(),
+            RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+            None,
+        )
+        .with_dynamic_role_binding(binding())
+    };
+    let next = TransitionTrigger::new("next").unwrap();
+    let finish = TransitionTrigger::new("finish").unwrap();
+    let first_done = GuardName::new("first_done").unwrap();
+    let second_done = GuardName::new("second_done").unwrap();
+    CeremonyDefinition::new(
+        CeremonyName::new("two_dynamic_states").unwrap(),
+        CeremonyVersion::v1(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![
+            CeremonyState::initial(first.clone()).with_execution(StateExecution::Concurrent),
+            CeremonyState::intermediate(second.clone()).with_execution(StateExecution::Concurrent),
+            CeremonyState::terminal(done.clone()),
+        ],
+        vec![
+            CeremonyTransition::new(
+                first.clone(),
+                second.clone(),
+                next.clone(),
+                vec![first_done.clone()],
+            )
+            .unwrap(),
+            CeremonyTransition::new(
+                second.clone(),
+                done,
+                finish.clone(),
+                vec![second_done.clone()],
+            )
+            .unwrap(),
+        ],
+        vec![
+            make_step(first_step.clone(), first),
+            make_step(second_step.clone(), second),
+        ],
+        vec![
+            CeremonyGuard::new(first_done, GuardCondition::AnyStepCompleted),
+            CeremonyGuard::new(second_done, GuardCondition::AnyStepCompleted),
+        ],
+        vec![CeremonyRole::new(
+            role("B"),
+            vec![
+                RoleAction::step(first_step),
+                RoleAction::step(second_step),
+                RoleAction::transition(next),
+                RoleAction::transition(finish),
+            ],
+        )
+        .unwrap()],
     )
     .unwrap()
 }
@@ -266,6 +343,34 @@ fn dynamic_role_must_be_present_string_allowed_authorized_and_requested() {
 }
 
 #[test]
+fn a_direct_claim_reports_the_dynamic_context_defect_before_claimability() {
+    let definition = definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = CeremonyInstance::start(
+        CeremonyId::new("missing-role-context").unwrap(),
+        &definition,
+        CeremonyContext::empty(),
+        now,
+    )
+    .unwrap();
+    let error = instance
+        .start_step_as(
+            &definition,
+            &role("B"),
+            &step("dynamic"),
+            lease("missing-1", now),
+            now,
+        )
+        .unwrap_err();
+    assert_eq!(
+        error,
+        DomainError::NotFound {
+            what: "ceremony_step.role_from.context_key"
+        }
+    );
+}
+
+#[test]
 fn another_steps_dynamic_role_stays_reserved_after_lease_expiry() {
     let definition = definition();
     let now = OffsetDateTime::UNIX_EPOCH;
@@ -304,6 +409,115 @@ fn another_steps_dynamic_role_stays_reserved_after_lease_expiry() {
             .is_ok(),
         "the same step may reclaim its expired attempt"
     );
+}
+
+#[test]
+fn a_dynamic_claim_blocks_a_static_peer_claimed_by_a_non_default_role() {
+    let definition = definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = CeremonyInstance::start(
+        CeremonyId::new("mixed-static-dynamic").unwrap(),
+        &definition,
+        context(&[("next_role", serde_json::json!("X"))]),
+        now,
+    )
+    .unwrap();
+    instance
+        .start_step_as(
+            &definition,
+            &role("X"),
+            &step("dynamic"),
+            lease("x-dynamic", now),
+            now,
+        )
+        .unwrap();
+
+    let error = instance
+        .start_step_as(
+            &definition,
+            &role("X"),
+            &step("writer"),
+            lease("x-static", now),
+            now,
+        )
+        .unwrap_err();
+    assert!(error.to_string().contains("already assigned"), "{error}");
+}
+
+#[test]
+fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
+    let definition = two_state_definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = CeremonyInstance::start(
+        CeremonyId::new("two-state-dynamic").unwrap(),
+        &definition,
+        context(&[("next_role", serde_json::json!("B"))]),
+        now,
+    )
+    .unwrap();
+    instance
+        .start_step_as(
+            &definition,
+            &role("B"),
+            &step("first_step"),
+            lease("first-1", now),
+            now,
+        )
+        .unwrap();
+    instance
+        .apply_step_result(
+            &definition,
+            &step("first_step"),
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            now,
+        )
+        .unwrap();
+    instance
+        .apply_transition_as(
+            &definition,
+            &role("B"),
+            &TransitionTrigger::new("next").unwrap(),
+            now,
+        )
+        .unwrap();
+
+    assert!(instance
+        .start_step_as(
+            &definition,
+            &role("B"),
+            &step("second_step"),
+            lease("second-1", now),
+            now,
+        )
+        .is_ok());
+}
+
+#[test]
+fn ordinary_static_step_started_events_keep_the_legacy_record_shape() {
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = opened();
+    let event = CeremonyEvent::StepStarted(StepStarted {
+        step_id: step("writer"),
+        state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
+        iteration: StepIteration::FIRST,
+        attempt: StepAttempt::FIRST,
+        lease: lease("legacy-static", now),
+        started_by: role("A"),
+        role_from: None,
+        sealed_role: None,
+        started_at: now,
+    });
+    instance.apply(&event);
+
+    let record = instance.step_record(&step("writer")).unwrap();
+    assert!(record.claimed_role().is_none());
+    assert!(serde_json::to_value(record)
+        .unwrap()
+        .get("claimed_role")
+        .is_none());
+    let wire = serde_json::to_value(event).unwrap();
+    assert!(wire.get("role_from").is_none());
+    assert!(wire.get("sealed_role").is_none());
 }
 
 #[test]
