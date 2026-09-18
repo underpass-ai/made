@@ -192,6 +192,10 @@ version bump, tag and release publication.
 
 ### Fixed
 
+- The orchestration plan now distinguishes the 18 emitted ceremony events
+  from the 21 audit catalogue entries and uses their implemented names.
+  (#130, fixes #135)
+
 - Concurrent static steps reserve their actual alternate role as well as
   canonical owners, preventing two steps from claiming the same seat. Legacy
   event hashes and canonical static claim payloads remain unchanged.
