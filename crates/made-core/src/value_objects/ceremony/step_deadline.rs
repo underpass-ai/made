@@ -1,4 +1,6 @@
-use super::{StateIteration, StateVisit, StepAttempt, StepClaimFence, StepId, StepIteration};
+use super::{
+    RoleId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepId, StepIteration,
+};
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
@@ -10,6 +12,7 @@ pub struct StepDeadline {
     step_iteration: StepIteration,
     attempt: StepAttempt,
     claim_fence: StepClaimFence,
+    finished_by: RoleId,
     #[serde(with = "time::serde::rfc3339")]
     at: OffsetDateTime,
 }
@@ -23,6 +26,7 @@ impl StepDeadline {
         step_iteration: StepIteration,
         attempt: StepAttempt,
         claim_fence: StepClaimFence,
+        finished_by: RoleId,
         at: OffsetDateTime,
     ) -> Self {
         Self {
@@ -32,6 +36,7 @@ impl StepDeadline {
             step_iteration,
             attempt,
             claim_fence,
+            finished_by,
             at,
         }
     }
@@ -58,6 +63,10 @@ impl StepDeadline {
     #[must_use]
     pub fn claim_fence(&self) -> &StepClaimFence {
         &self.claim_fence
+    }
+    #[must_use]
+    pub fn finished_by(&self) -> &RoleId {
+        &self.finished_by
     }
     #[must_use]
     pub fn at(&self) -> OffsetDateTime {

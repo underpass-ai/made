@@ -14,8 +14,17 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
-        self.require_admits_new_work("plan_children")?;
         let plan = &command.plan;
+        if let Some(existing) = self.child_groups.get(plan.group_id()) {
+            return if existing.plan() == plan {
+                Ok(Vec::new())
+            } else {
+                Err(DomainError::AlreadyExists {
+                    what: "child_spawn_group",
+                })
+            };
+        }
+        self.require_admits_new_work("plan_children")?;
         let coordinates = plan.coordinates();
         if coordinates.state_visit() != self.current_state_visit
             || coordinates.state_iteration() != self.current_state_iteration
@@ -100,15 +109,6 @@ impl CeremonyInstance {
                 });
             }
         }
-        if let Some(existing) = self.child_groups.get(plan.group_id()) {
-            return if existing.plan() == plan {
-                Ok(Vec::new())
-            } else {
-                Err(DomainError::AlreadyExists {
-                    what: "child_spawn_group",
-                })
-            };
-        }
         self.require_step_claim_fence(coordinates.step_id(), plan.active_claim_fence())?;
         Ok(vec![CeremonyEvent::ChildSpawnPlanned(ChildSpawnPlanned {
             plan: plan.clone(),
@@ -122,13 +122,16 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
-        self.require_admits_new_work("adopt_child_plan")?;
         let group = self
             .child_groups
             .get(&command.group_id)
             .ok_or(DomainError::NotFound {
                 what: "child_spawn_group",
             })?;
+        if group.adopted_claim_fence() == &command.claim_fence {
+            return Ok(Vec::new());
+        }
+        self.require_admits_new_work("adopt_child_plan")?;
         let coordinates = group.plan().coordinates();
         let record = self
             .step_record(coordinates.step_id())
@@ -146,9 +149,6 @@ impl CeremonyInstance {
             });
         }
         self.require_step_claim_fence(coordinates.step_id(), &command.claim_fence)?;
-        if group.adopted_claim_fence() == &command.claim_fence {
-            return Ok(Vec::new());
-        }
         Ok(vec![CeremonyEvent::ChildSpawnPlanAdopted(
             ChildSpawnPlanAdopted {
                 group_id: command.group_id.clone(),

@@ -3,7 +3,7 @@ use made_core::entities::ceremony_commands::{
     StartStep,
 };
 use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{CeremonyCommand, CeremonyEvent, CeremonyInstance};
+use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyEndReason, CeremonyLifecyclePhase, CeremonyTimeout, DurationMs, LifecycleReason,
@@ -30,6 +30,39 @@ fn claim_plan(instance: &mut CeremonyInstance) -> StepClaimFence {
                 max_parallel_ceiling: MaxParallel::SERVER_MAX,
             }),
             &definition,
+        )
+        .unwrap();
+    apply(instance, &events);
+    instance.step_claim_fence(&step("plan")).unwrap()
+}
+
+fn timed_definition_with_alternate() -> CeremonyDefinition {
+    let mut value = serde_json::to_value(definition()).unwrap();
+    value["steps"]["plan"]["timeout"] = serde_json::json!(60_000);
+    value["roles"]["alternate"] = serde_json::json!({
+        "id": "alternate",
+        "allowed_actions": [{"kind": "step", "value": "plan"}]
+    });
+    serde_json::from_value(value).unwrap()
+}
+
+fn start_plan_as(
+    instance: &mut CeremonyInstance,
+    definition: &CeremonyDefinition,
+    role_id: &str,
+    key: &str,
+    minute: i64,
+) -> StepClaimFence {
+    let events = instance
+        .decide(
+            &CeremonyCommand::StartStep(StartStep {
+                role_id: Some(role(role_id)),
+                step_id: step("plan"),
+                lease: lease(key, at(minute)),
+                now: at(minute),
+                max_parallel_ceiling: MaxParallel::SERVER_MAX,
+            }),
+            definition,
         )
         .unwrap();
     apply(instance, &events);
@@ -224,4 +257,96 @@ fn historical_completion_fold_keeps_the_legacy_snapshot_shape() {
         folded.lifecycle().end_reason(),
         Some(CeremonyEndReason::Completed)
     );
+}
+
+#[test]
+fn step_deadline_accepts_the_retired_fence_before_a_retry() {
+    let definition = timed_definition_with_alternate();
+    let mut instance = CeremonyInstance::start(
+        made_core::value_objects::CeremonyId::new("late-before-retry").unwrap(),
+        &definition,
+        made_core::value_objects::CeremonyContext::empty(),
+        OPENED_AT,
+    )
+    .unwrap();
+    let fence = start_plan_as(&mut instance, &definition, "facilitator", "first", 1);
+    let deadline = instance
+        .decide(
+            &CeremonyCommand::EnforceCeremonyDeadlines(EnforceCeremonyDeadlines { now: at(2) }),
+            &definition,
+        )
+        .unwrap();
+    assert!(matches!(
+        deadline.as_slice(),
+        [CeremonyEvent::StepDeadlineExceeded(_)]
+    ));
+    apply(&mut instance, &deadline);
+    assert!(!instance.is_ended());
+
+    let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        step_id: step("plan"),
+        claim_fence: fence,
+        result: StepResult::completed(readiness(true)).unwrap(),
+        now: at(3),
+    });
+    let late = instance.decide(&command, &definition).unwrap();
+    let [CeremonyEvent::LateStepResultObserved(observed)] = late.as_slice() else {
+        panic!("retired deadline fence must produce one late observation");
+    };
+    assert_eq!(observed.result.finished_by(), &role("facilitator"));
+    apply(&mut instance, &late);
+    assert!(instance.decide(&command, &definition).unwrap().is_empty());
+    assert_eq!(
+        instance.step_record(&step("plan")).unwrap().status(),
+        StepStatus::Failed
+    );
+}
+
+#[test]
+fn retired_fence_keeps_its_actor_after_a_retry_changes_role() {
+    let definition = timed_definition_with_alternate();
+    let mut instance = CeremonyInstance::start(
+        made_core::value_objects::CeremonyId::new("late-after-retry").unwrap(),
+        &definition,
+        made_core::value_objects::CeremonyContext::empty(),
+        OPENED_AT,
+    )
+    .unwrap();
+    let retired = start_plan_as(&mut instance, &definition, "facilitator", "first", 1);
+    let deadline = instance
+        .decide(
+            &CeremonyCommand::EnforceCeremonyDeadlines(EnforceCeremonyDeadlines { now: at(2) }),
+            &definition,
+        )
+        .unwrap();
+    apply(&mut instance, &deadline);
+    let current = start_plan_as(&mut instance, &definition, "alternate", "second", 3);
+    assert_ne!(retired, current);
+
+    let late = instance
+        .decide(
+            &CeremonyCommand::ApplyStepResult(ApplyStepResult {
+                step_id: step("plan"),
+                claim_fence: retired.clone(),
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(4),
+            }),
+            &definition,
+        )
+        .unwrap();
+    let [CeremonyEvent::LateStepResultObserved(observed)] = late.as_slice() else {
+        panic!("retired fence must remain observable after retry");
+    };
+    assert_eq!(observed.result.finished_by(), &role("facilitator"));
+    apply(&mut instance, &late);
+    assert_eq!(instance.step_claim_fence(&step("plan")).unwrap(), current);
+
+    let foreign_step = CeremonyCommand::ApplyStepResult(ApplyStepResult {
+        step_id: step("check"),
+        claim_fence: retired,
+        result: StepResult::completed(StepOutput::empty()).unwrap(),
+        now: at(5),
+    });
+    assert!(instance.decide(&foreign_step, &definition).is_err());
+    assert_eq!(instance.late_step_results().len(), 1);
 }
