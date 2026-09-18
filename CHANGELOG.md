@@ -29,7 +29,7 @@ checkpoint and was not published separately.
 - Allowed dynamic roles, atomic context writes, reusable fragments and
   step/provider/judge tracing.
 - A rebuilt README focused on embedded use, with Kubernetes deployment
-  documented as an additional option.
+  documented as an additional option. (#136)
 
 ### Event-stream foundation
 
