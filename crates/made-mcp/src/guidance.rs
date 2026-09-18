@@ -289,7 +289,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
 
     if let Some(path) = server_owned_execution_path(names) {
         preconditions.push(format!(
-            "Use {RUN_CEREMONY_STEP_TOOL} only after verifying that the active host configured a real handler for the declared step; the bundled default can be no-op."
+            "For an ordinary handler step, use {RUN_CEREMONY_STEP_TOOL} only after verifying that the active host configured a real handler; the bundled default can be no-op. A declared spawn step instead runs the child orchestrator and never invokes its ordinary handler."
         ));
         execution_paths.push(path);
     }
@@ -368,7 +368,7 @@ fn server_owned_execution_path(names: &BTreeSet<String>) -> Option<Value> {
         json!({
             "id": "server_owned_handler",
             "title": "Server-owned handler execution",
-            "when": "Use only when the active host configured a real CeremonyStepHandlerPort for the declared handler.",
+            "when": "Use for an ordinary handler step only when the active host configured a real CeremonyStepHandlerPort. A declared spawn step uses the child orchestrator instead and does not invoke this handler.",
             "default_warning": "The bundled embedded default may use NoopCeremonyStepHandler. A completed no-op proves state-machine wiring, not that search, scraping, modeling, rendering, or artifact creation occurred.",
             "sequence": [{
                 "order": 1,

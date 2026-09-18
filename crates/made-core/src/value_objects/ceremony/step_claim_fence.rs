@@ -1,10 +1,12 @@
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::{CeremonyId, StepExecutionRecord, StepId};
 use crate::error::DomainError;
 
 /// Identity of exactly one accepted claim. It is a concurrency fence, not a credential.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(try_from = "String", into = "String")]
 pub struct StepClaimFence(String);
 
 impl StepClaimFence {
@@ -55,6 +57,19 @@ impl StepClaimFence {
             digest.update(part.as_bytes());
         }
         Ok(Self(format!("{:x}", digest.finalize())))
+    }
+}
+
+impl TryFrom<String> for StepClaimFence {
+    type Error = DomainError;
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::new(value)
+    }
+}
+
+impl From<StepClaimFence> for String {
+    fn from(value: StepClaimFence) -> Self {
+        value.0
     }
 }
 

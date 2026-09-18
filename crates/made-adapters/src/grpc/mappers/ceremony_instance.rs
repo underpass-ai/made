@@ -16,6 +16,7 @@ use made_proto::v1 as pb;
 use time::OffsetDateTime;
 
 use super::attributes::attributes_to_struct;
+use super::ceremony_instance_children::{child_group_state_from, lineage_state_from};
 
 /// One instant, one rendering.
 ///
@@ -24,7 +25,7 @@ use super::attributes::attributes_to_struct;
 /// what the embedded adapter renders from the same view, so the same
 /// moment read two ways depending on which engine served the call.
 /// RFC 3339 on every one of them, as `bound_at` already was.
-fn moment(at: OffsetDateTime) -> String {
+pub(super) fn moment(at: OffsetDateTime) -> String {
     at.format(&time::format_description::well_known::Rfc3339)
         .unwrap_or_default()
 }
@@ -102,6 +103,12 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
         state_repeat_condition_satisfied: instance
             .state_repeat_condition_is_satisfied(view.definition()),
         state_repeat_limit_reached: instance.state_repeat_limit_reached(view.definition()),
+        lineage: instance.lineage().map(lineage_state_from),
+        child_groups: instance
+            .child_groups()
+            .values()
+            .map(child_group_state_from)
+            .collect(),
     }
 }
 
@@ -110,7 +117,9 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
 /// Absent rather than empty for a session that was told nothing: proto
 /// message presence is the one place in this contract where absence can
 /// be said, and "recalled nothing" is not "recalled an empty scope".
-fn recollection_state_from(recollection: &SessionRecollection) -> pb::CeremonyRecollectionState {
+pub(super) fn recollection_state_from(
+    recollection: &SessionRecollection,
+) -> pb::CeremonyRecollectionState {
     pb::CeremonyRecollectionState {
         scope: recollection.scope().as_str().to_owned(),
         entries: recollection

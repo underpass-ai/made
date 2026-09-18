@@ -20,6 +20,7 @@ pub(crate) use ceremony_history::{
 };
 pub(crate) use ceremony_instance::{
     ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,
+    child_completion_to_json,
 };
 pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;

@@ -33,10 +33,9 @@ path = "src/bin/stub_runtime.rs"
 
 # Stub-LLM sidecar for the stack E2E. Serves MADE's
 # OpenAiAgent adapter an OpenAI-shaped Chat Completions endpoint
-# that always returns a JSON Report payload, so the positive
-# structured-output path can be exercised against
-# `api/examples/output-contracts/report.schema.json` without a real
-# provider in the test path.
+# that returns a JSON Report by default and deterministic maker-checker
+# decisions for the pattern scenarios. This exercises the positive
+# structured-output and composed-ceremony paths without a real provider.
 [[bin]]
 name = "made-stub-llm"
 path = "src/bin/stub_llm.rs"
@@ -61,6 +60,7 @@ tracing-subscriber = { workspace = true }
 async-nats = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+serde_yaml = { workspace = true }
 time = { workspace = true }
 futures = { workspace = true }
 jsonschema = { workspace = true }

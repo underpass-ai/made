@@ -267,6 +267,21 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::HumanDeferralRecorded(recorded) => {
             format!("guard:{}", recorded.deferral.guard_name())
         }
+        CeremonyEvent::ChildSpawnPlanned(planned) => {
+            format!("child_group:{}", planned.plan.group_id())
+        }
+        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => {
+            format!(
+                "child_group:{}:fence:{}",
+                adopted.group_id,
+                adopted.claim_fence.as_str()
+            )
+        }
+        CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
+            "child_group:{}:child:{}",
+            accepted.completion.group_id(),
+            accepted.completion.child_id()
+        ),
     }
 }
 

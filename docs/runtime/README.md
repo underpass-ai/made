@@ -52,6 +52,31 @@ the handler and completion retries. Use one-shot `made_run_ceremony` only
 when all required handlers are real and no later human decision is needed.
 The bundled default handler may be a no-op.
 
+## Child execution and recovery
+
+A claimed spawn step is application-owned work. Both automatic drivers call
+the child orchestrator instead of the configured step handler. The
+orchestrator seals one plan, opens or verifies every deterministic child
+stream, then completes the parent step with the child group and ids. A crash
+can leave a planned or adopted group with only some children open; retry and
+recovery continue the same plan and reject a stream whose opening differs.
+
+Child completion is a separate fact. The accept operation names the child's
+exact `CeremonyCompleted` event. MADE verifies the complete audit chain, the
+event hash, the sealed publication and lineage before appending the parent
+acceptance. `all`, `any` and quorum child guards count these accepted facts.
+Completion is irreversible: a child that later accepts one of its own late
+siblings remains terminal, and callers continue to use the original terminal
+event id.
+
+The service listens for NATS ceremony notifications to reduce recovery
+latency, but notification payloads and delivery are not authoritative. A
+named durable cursor scans the global event feed on startup, on broker wake
+and periodically. It acknowledges a position only after its child effect has
+landed; another process may hold the cursor lease temporarily. Embedded
+composition drains the same recovery use case without opening a broker
+connection.
+
 ## Leases, retries and fences
 
 A claim has an exact execution identity and lease. If another worker takes

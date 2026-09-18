@@ -17,25 +17,19 @@ use super::streaming;
 
 mod ceremony_history_requests;
 mod ceremony_requests;
+mod children_dispatch;
 mod design_ceremony_request;
 mod general_dispatch;
 mod general_requests;
+mod request_error;
+
+use request_error::bad_request;
 
 // One rule for the runner an omitted `lease_owner_id` becomes; the
 // one-shot run mapper lives in `json_to_proto` and uses the same one.
 pub(in crate::grpc) use ceremony_requests::{lease_owner_id, lease_ttl_ms};
 #[cfg(test)]
 mod schema_gate;
-
-/// Turning the caller's JSON into a proto request.
-///
-/// Everything the request mappers report is the call's own fault — a
-/// field missing, a field of the wrong type, a value outside the enum
-/// the contract names — so one function says so instead of each arm
-/// choosing a code.
-fn bad_request(message: String) -> ToolError {
-    ToolError::invalid_request(message)
-}
 
 /// Dispatch one tool call. Returns the **structured content** of the
 /// MCP tool result (just the JSON; the caller wraps it in
@@ -58,6 +52,9 @@ pub(crate) async fn dispatch(
         });
     if general_dispatch::handles(name) {
         return general_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if children_dispatch::handles(name) {
+        return children_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {
@@ -379,13 +376,14 @@ use ceremony_history_requests::{
 };
 #[cfg(test)]
 use ceremony_requests::{
-    build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,
-    build_assert_ceremony_reason_request, build_claim_ceremony_step_request,
-    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
-    build_complete_ceremony_step_request, build_defer_ceremony_guard_request,
-    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
-    build_run_ceremony_step_request, build_start_ceremony_request,
-    build_start_published_ceremony_request,
+    build_accept_child_completion_request, build_apply_ceremony_transition_request,
+    build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
+    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
+    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
+    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
+    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
+    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
+    build_start_ceremony_request, build_start_published_ceremony_request,
 };
 #[cfg(test)]
 use design_ceremony_request::build_design_ceremony_request;

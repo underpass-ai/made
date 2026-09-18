@@ -139,7 +139,7 @@ async fn status(engine: &EmbeddedMade, id: &CeremonyId, step: &str) -> StepStatu
 
 #[tokio::test]
 async fn group_chat_stops_early_or_reaches_its_cap_fallback() {
-    let (early, early_id) = run("group-early", GROUP_CHAT, Scenario::GroupEarly).await;
+    let (early, early_id) = Box::pin(run("group-early", GROUP_CHAT, Scenario::GroupEarly)).await;
     assert_eq!(
         status(&early, &early_id, "coordination_fallback").await,
         StepStatus::Pending
@@ -148,7 +148,7 @@ async fn group_chat_stops_early_or_reaches_its_cap_fallback() {
         status(&early, &early_id, "coordination_speak_1").await,
         StepStatus::Pending
     );
-    let (capped, capped_id) = run("group-cap", GROUP_CHAT, Scenario::GroupCap).await;
+    let (capped, capped_id) = Box::pin(run("group-cap", GROUP_CHAT, Scenario::GroupCap)).await;
     assert_eq!(
         status(&capped, &capped_id, "coordination_fallback").await,
         StepStatus::Completed
@@ -157,12 +157,13 @@ async fn group_chat_stops_early_or_reaches_its_cap_fallback() {
 
 #[tokio::test]
 async fn maker_checker_passes_on_iteration_two_or_escalates_after_the_cap() {
-    let (passed, passed_id) = run("maker-pass", MAKER_CHECKER, Scenario::MakerSecond).await;
+    let (passed, passed_id) =
+        Box::pin(run("maker-pass", MAKER_CHECKER, Scenario::MakerSecond)).await;
     assert_eq!(
         status(&passed, &passed_id, "coordination_fallback").await,
         StepStatus::Pending
     );
-    let (capped, capped_id) = run("maker-cap", MAKER_CHECKER, Scenario::MakerCap).await;
+    let (capped, capped_id) = Box::pin(run("maker-cap", MAKER_CHECKER, Scenario::MakerCap)).await;
     assert_eq!(
         status(&capped, &capped_id, "coordination_fallback").await,
         StepStatus::Completed
@@ -171,7 +172,7 @@ async fn maker_checker_passes_on_iteration_two_or_escalates_after_the_cap() {
 
 #[tokio::test]
 async fn handoff_routes_to_the_selected_specialist_and_resolves() {
-    let (engine, id) = run("handoff-resolved", HANDOFF, Scenario::HandoffResolved).await;
+    let (engine, id) = Box::pin(run("handoff-resolved", HANDOFF, Scenario::HandoffResolved)).await;
     assert_eq!(
         status(&engine, &id, "coordination_security").await,
         StepStatus::Completed
@@ -238,7 +239,8 @@ async fn handoff_bounces_within_its_cap_and_lands_on_the_human_exit() {
 
 #[tokio::test]
 async fn magentic_reports_completed_and_stalled_ledgers_from_the_stream() {
-    let (completed, completed_id) = run("ledger-done", MAGENTIC, Scenario::LedgerCompleted).await;
+    let (completed, completed_id) =
+        Box::pin(run("ledger-done", MAGENTIC, Scenario::LedgerCompleted)).await;
     let report = completed
         .report(GenerateCeremonyReportInput::new(vec![completed_id], None).unwrap())
         .await
@@ -248,7 +250,8 @@ async fn magentic_reports_completed_and_stalled_ledgers_from_the_stream() {
         "{}",
         report.markdown()
     );
-    let (stalled, stalled_id) = run("ledger-stalled", MAGENTIC, Scenario::LedgerStalled).await;
+    let (stalled, stalled_id) =
+        Box::pin(run("ledger-stalled", MAGENTIC, Scenario::LedgerStalled)).await;
     assert_eq!(
         status(&stalled, &stalled_id, "coordination_fallback").await,
         StepStatus::Completed

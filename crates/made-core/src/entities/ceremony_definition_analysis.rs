@@ -19,6 +19,7 @@ use crate::value_objects::{
 mod aggregation;
 mod cycles;
 mod global_completion;
+mod reachability;
 
 use cycles::cyclic_components;
 
@@ -257,6 +258,22 @@ impl CeremonyDefinitionParts<'_> {
                     },
                 ));
             }
+            if step.spawn().is_some() && step.repeat_policy().is_some() {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::InvariantViolated {
+                        reason: "child-spawning ceremony steps cannot repeat",
+                    },
+                ));
+            }
+            if step.spawn().is_some() && step.aggregation().is_some() {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::InvariantViolated {
+                        reason: "a ceremony step cannot both spawn children and aggregate a prior state",
+                    },
+                ));
+            }
             if let Some(binding) = step.dynamic_role_binding() {
                 if binding.allowed_roles().is_empty() {
                     findings.push(CeremonyValidationFinding::error(
@@ -310,6 +327,31 @@ impl CeremonyDefinitionParts<'_> {
                             reason: "exhausted-repeat guard must reference a repeating step",
                         },
                     ));
+                }
+                if let GuardCondition::ChildrenCompleted(condition) = guard.condition() {
+                    let Some(spawn) = step.spawn() else {
+                        findings.push(CeremonyValidationFinding::error(
+                            CeremonyValidationLocus::guard(guard_name.clone()),
+                            DomainError::InvariantViolated {
+                                reason:
+                                    "children_completed guard must reference a child-spawning step",
+                            },
+                        ));
+                        continue;
+                    };
+                    if let crate::value_objects::ChildJoin::Quorum { count } = condition.join() {
+                        if usize::from(count.get()) > spawn.children().len() {
+                            findings.push(CeremonyValidationFinding::error(
+                                CeremonyValidationLocus::guard(guard_name.clone()),
+                                DomainError::OutOfRange {
+                                    field: "child_quorum",
+                                    value: f64::from(count.get()),
+                                    min: 1.0,
+                                    max: spawn.children().len() as f64,
+                                },
+                            ));
+                        }
+                    }
                 }
             }
         }
@@ -460,108 +502,5 @@ impl CeremonyDefinitionParts<'_> {
                 )
             })
         })
-    }
-
-    /// Reachability defects are reported as warnings.
-    ///
-    /// They describe a ceremony that can stall rather than one that is
-    /// structurally impossible, and promoting them to errors would
-    /// reject definitions that construct today. Whether any of them
-    /// graduates to an error is a separate, deliberate decision.
-    ///
-    /// Analysis is skipped when the graph is not sound enough to walk:
-    /// structural errors are reported first and reachability noise on
-    /// top of them helps nobody.
-    fn collect_reachability_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
-        let Some(initial) = self.sole_initial_state_id() else {
-            return;
-        };
-        if !self.transition_endpoints_resolve() {
-            return;
-        }
-
-        if !self.states.values().any(CeremonyState::is_terminal) {
-            findings.push(CeremonyValidationFinding::warning(
-                CeremonyValidationLocus::Definition,
-                DomainError::InvariantViolated {
-                    reason: "ceremony definition has no terminal state",
-                },
-            ));
-            return;
-        }
-
-        let reachable = self.states_reachable_from(initial);
-        let can_finish = self.states_that_reach_a_terminal();
-        for state_id in self.states.keys() {
-            if !reachable.contains(state_id) {
-                findings.push(CeremonyValidationFinding::warning(
-                    CeremonyValidationLocus::state(state_id.clone()),
-                    DomainError::InvariantViolated {
-                        reason: "ceremony state is unreachable from the initial state",
-                    },
-                ));
-            } else if !can_finish.contains(state_id) {
-                findings.push(CeremonyValidationFinding::warning(
-                    CeremonyValidationLocus::state(state_id.clone()),
-                    DomainError::InvariantViolated {
-                        reason: "no terminal state is reachable from this ceremony state",
-                    },
-                ));
-            }
-        }
-    }
-
-    fn sole_initial_state_id(&self) -> Option<&StateId> {
-        let mut initial_states = self.states.iter().filter(|(_, state)| state.is_initial());
-        let (state_id, _) = initial_states.next()?;
-        match initial_states.next() {
-            Some(_) => None,
-            None => Some(state_id),
-        }
-    }
-
-    fn transition_endpoints_resolve(&self) -> bool {
-        self.transitions.iter().all(|transition| {
-            self.states.contains_key(transition.from()) && self.states.contains_key(transition.to())
-        })
-    }
-
-    fn states_reachable_from(&self, initial: &StateId) -> BTreeSet<StateId> {
-        let mut reached = BTreeSet::new();
-        let mut pending = vec![initial.clone()];
-        while let Some(current) = pending.pop() {
-            if !reached.insert(current.clone()) {
-                continue;
-            }
-            for transition in self
-                .transitions
-                .iter()
-                .filter(|transition| transition.from() == &current)
-            {
-                pending.push(transition.to().clone());
-            }
-        }
-        reached
-    }
-
-    fn states_that_reach_a_terminal(&self) -> BTreeSet<StateId> {
-        let mut can_finish = self
-            .states
-            .iter()
-            .filter(|(_, state)| state.is_terminal())
-            .map(|(state_id, _)| state_id.clone())
-            .collect::<BTreeSet<_>>();
-
-        let mut grew = true;
-        while grew {
-            grew = false;
-            for transition in self.transitions {
-                if can_finish.contains(transition.to()) && !can_finish.contains(transition.from()) {
-                    can_finish.insert(transition.from().clone());
-                    grew = true;
-                }
-            }
-        }
-        can_finish
     }
 }

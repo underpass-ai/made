@@ -1,0 +1,37 @@
+version: "1.0"
+name: children_review
+description: "One durable child review driven through the public ceremony RPCs"
+inputs:
+  required: [review_brief]
+outputs:
+  review:
+    type: object
+states:
+  - id: REVIEWING
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: REVIEWING
+    to: DONE
+    trigger: finish_review
+    guards: [review_completed]
+steps:
+  - id: review
+    state: REVIEWING
+    handler: host_callback
+    config:
+      prompt: "Review the parent brief and return a concise result."
+      specialty: triage
+      agent_kind: noop
+guards:
+  review_completed:
+    type: automated
+    check: "step_status:review:COMPLETED"
+roles:
+  - id: REVIEWER
+    allowed_actions: [review, finish_review]
+timeouts:
+  step_default: 30
+retry_policies:
+  default: {max_attempts: 1, backoff_seconds: 0}

@@ -2,7 +2,7 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
-const GROUP_FORBIDDEN_LEAF_FIELDS: [&str; 12] = [
+const GROUP_FORBIDDEN_LEAF_FIELDS: [&str; 13] = [
     "owner_role_id",
     "instructions",
     "handler",
@@ -15,6 +15,7 @@ const GROUP_FORBIDDEN_LEAF_FIELDS: [&str; 12] = [
     "allowed_roles",
     "context_writes",
     "aggregate",
+    "spawn",
 ];
 
 /// Validate P5 stage fields before either MCP backend maps its request.

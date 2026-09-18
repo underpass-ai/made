@@ -1,0 +1,43 @@
+{
+  "type": "child_completion_accepted",
+  "completion": {
+    "group_id": "7a2a6f6e6fbba20ef686a24a26b110fa381ffd0e550b26c036df641fb7beaa25",
+    "child_id": "child-d1214c4b3ec2fe24d347360149da0b55acf49d95ab192fb1863c0dc16bd0da04",
+    "terminal_event_id": "child-completed",
+    "terminal_record_hash": [
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9,
+      9
+    ]
+  },
+  "accepted_at": "1970-01-01T00:00:02Z"
+}

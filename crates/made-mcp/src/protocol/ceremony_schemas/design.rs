@@ -1,5 +1,8 @@
+mod child_spawn;
+
 use super::{json, string_schema, Value, STRUCT_NUMBER_RULE};
 use crate::protocol::{design_pattern_catalog, ROUNDTABLE_FIXED_ORDER_ID};
+use child_spawn::child_spawn_schema;
 
 const NONBLANK_CONTROL_FREE_PATTERN: &str = r"^[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
 const ROLE_FROM_PATTERN: &str = r"^context\.[^\x00-\x1F\x7F\u0080-\u009F]*[^\s\x00-\x1F\x7F\u0080-\u009F][^\x00-\x1F\x7F\u0080-\u009F]*$";
@@ -190,7 +193,8 @@ fn leaf_stage_schema() -> Value {
                 },
                 "description": "Destination context keys mapped to top-level successful output fields."
             },
-            "aggregate": aggregation_schema()
+            "aggregate": aggregation_schema(),
+            "spawn": child_spawn_schema()
         }
     })
 }
@@ -309,6 +313,20 @@ fn exit_guard_schema() -> Value {
                     "kind": { "const": "step_repeat_exhausted" },
                     "step": string_schema("Repeating step in this stage whose final iteration must be exhausted.")
                 }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step", "join"],
+                "properties": {
+                    "kind": { "const": "children_completed" },
+                    "step": string_schema("Spawning step whose verified child group is inspected."),
+                    "join": { "type": "string", "enum": ["all", "any", "quorum"] },
+                    "count": { "type": "integer", "minimum": 1 }
+                },
+                "if": { "properties": { "join": { "const": "quorum" } } },
+                "then": { "required": ["count"] },
+                "else": { "not": { "required": ["count"] } }
             }
         ]
     })
@@ -410,6 +428,7 @@ mod tests {
             "allowed_roles",
             "context_writes",
             "aggregate",
+            "spawn",
         ] {
             assert!(!properties.contains_key(field), "{field}");
         }

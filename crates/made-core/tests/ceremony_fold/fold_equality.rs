@@ -74,6 +74,14 @@ pub(crate) fn mutate(
         CeremonyCommand::CloseIntervention(c) => {
             instance.close_intervention_as(definition, &c.intervention_id, &c.role_id, c.now)
         }
+        CeremonyCommand::PlanCeremonyChildren(_)
+        | CeremonyCommand::AdoptChildSpawnPlan(_)
+        | CeremonyCommand::AcceptChildCompletion(_) => {
+            for event in instance.decide(command, definition)? {
+                instance.apply(&event);
+            }
+            Ok(())
+        }
     }
 }
 

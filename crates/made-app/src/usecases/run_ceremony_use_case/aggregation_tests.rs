@@ -221,7 +221,7 @@ async fn counted_all_sibling_join_votes_without_invoking_the_aggregate_handler()
         choice(json!("ship")),
     ]));
 
-    let (store, output) = run(definition.clone(), handler.clone()).await;
+    let (store, output) = Box::pin(run(definition.clone(), handler.clone())).await;
     let output = output.unwrap();
 
     assert!(output.instance().is_completed(&definition));
@@ -256,7 +256,7 @@ async fn synthesize_handler_receives_every_sibling_in_declaration_order() {
         choice(json!("summary")),
     ]));
 
-    let (_, output) = run(definition.clone(), handler.clone()).await;
+    let (_, output) = Box::pin(run(definition.clone(), handler.clone())).await;
     assert!(output.unwrap().instance().is_completed(&definition));
     let requests = handler.requests().await;
     assert_eq!(requests.len(), 4);
@@ -289,7 +289,7 @@ async fn invalid_vote_is_durably_failed_after_claim_without_handler_invocation()
         choice(json!("c")),
     ]));
 
-    let (store, output) = run(definition, handler.clone()).await;
+    let (store, output) = Box::pin(run(definition, handler.clone())).await;
     assert!(output.unwrap_err().to_string().contains("did not complete"));
     assert_eq!(handler.requests().await.len(), 3);
     let reopened = store.saved(&ceremony_id()).await;

@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 use serde_json::Value;
 
-use made_core::value_objects::CeremonyStepAggregation;
+use made_core::value_objects::{CeremonyChildSpawn, CeremonyStepAggregation};
 
 use super::StepRepeatDocument;
 
@@ -23,4 +23,6 @@ pub(super) struct StepDocument {
     pub(super) context_writes: BTreeMap<String, String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) aggregate: Option<CeremonyStepAggregation>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) spawn: Option<CeremonyChildSpawn>,
 }

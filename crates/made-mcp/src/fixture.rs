@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod ceremony_history_fixtures;
+mod children_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
@@ -21,6 +22,10 @@ use crate::renderers::{
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
     read_ceremony_events_fixture, stream_ceremony_fixture, verify_ceremony_journal_fixture,
+};
+use children_fixtures::{
+    accept_child_completion_fixture, prepare_ceremony_children_fixture,
+    recover_ceremony_children_fixture,
 };
 
 /// Backend that returns canned JSON for every tool. The shapes are
@@ -66,6 +71,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_start_ceremony" => ceremony_instance_fixture(),
                 "made_start_published_ceremony" => ceremony_instance_fixture(),
                 "made_run_ceremony_step" => ceremony_instance_fixture(),
+                "made_prepare_ceremony_children" => prepare_ceremony_children_fixture(),
+                "made_accept_child_completion" => accept_child_completion_fixture(),
+                "made_recover_ceremony_children" => recover_ceremony_children_fixture(),
                 "made_apply_ceremony_transition" => ceremony_instance_fixture(),
                 "made_approve_ceremony_guard" => ceremony_instance_fixture(),
                 "made_defer_ceremony_guard" => ceremony_instance_fixture(),
@@ -322,12 +330,21 @@ fn ceremony_listing_fixture() -> Value {
 fn ceremony_instance_fixture() -> Value {
     json!({
         "ceremony_id": "ceremony-fixture-1",
+        "trace_id": null,
+        "correlation_id": null,
+        "causation_id": null,
         "definition_name": "fixture_ceremony",
         "definition_version": "1.0",
         "bound_definition_digest": null,
         "current_state": "REVIEW",
+        "current_state_iteration": 0,
+        "current_state_visit": 0,
+        "state_repeat_max_iterations": null,
+        "state_repeat_condition_satisfied": false,
+        "state_repeat_limit_reached": false,
         "completed": false,
         "next_step_id": null,
+        "claimable_step_ids": [],
         "waiting_for_human": ["human_approved"],
         "guard_deferrals": [
             {
@@ -396,19 +413,23 @@ fn ceremony_instance_fixture() -> Value {
             "brief": "ship the editorial calendar",
             "memory_scope": "team:editorial"
         },
-        "recollection": {
-            "scope": "team:editorial",
-            "truncated": false,
-            "entries": [
-                {
-                    "entry_id": "guard:budget_approved",
-                    "kind": "decision",
-                    "summary": "`budget_approved` was approved",
-                    "from_ceremony_id": "ceremony-fixture-0",
-                    "observed_at": "2025-12-01T00:00:00Z"
-                }
-            ]
-        }
+        "recollection": fixture_recollection(),
+        "lineage": null,
+        "child_groups": []
+    })
+}
+
+fn fixture_recollection() -> Value {
+    json!({
+        "scope": "team:editorial",
+        "truncated": false,
+        "entries": [{
+            "entry_id": "guard:budget_approved",
+            "kind": "decision",
+            "summary": "`budget_approved` was approved",
+            "from_ceremony_id": "ceremony-fixture-0",
+            "observed_at": "2025-12-01T00:00:00Z"
+        }]
     })
 }
 

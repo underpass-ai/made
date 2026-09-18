@@ -57,6 +57,14 @@ leases govern execution. The NATS adapter uses core pub/sub; enabling
 JetStream on a broker does not create an end-to-end delivery guarantee in
 MADE. Consumers use the durable feed/cursor contract where required.
 
+Child orchestration uses that same distinction. A parent seals publication
+digests, projected context, recollection, lineage, claim fence and all child
+ids before any child opens. Opening uses expected-empty append and exact
+comparison on collision. Parent completion joins are accepted only from a
+verified `CeremonyCompleted` record in the child's intact stream. NATS is a
+wake hint for the recovery consumer; the global feed and its leased cursor
+remain the authority after loss, duplication or process restart.
+
 A verified journal establishes internal integrity and ordering. It does not
 prove that an external tool's result was accurate or that a declared actor
 was authenticated. The host owns those boundaries.

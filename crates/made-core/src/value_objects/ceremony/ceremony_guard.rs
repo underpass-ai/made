@@ -53,9 +53,11 @@ impl CeremonyGuard {
             GuardCondition::OutputField(condition) => records
                 .get(condition.step_id())
                 .is_some_and(|record| condition.is_satisfied(record)),
-            // Exhaustion needs the referenced step policy and the transition
-            // source. CeremonyDefinition evaluates it with both available.
-            GuardCondition::StepRepeatExhausted(_) => false,
+            // Exhaustion needs the referenced step policy and transition source.
+            // Child completion needs the instance's durable child-group fold and
+            // exact execution coordinates. Definition-only evaluation cannot
+            // prove either condition.
+            GuardCondition::StepRepeatExhausted(_) | GuardCondition::ChildrenCompleted(_) => false,
             GuardCondition::HumanApproval => context.is_guard_approved(&self.name),
         }
     }

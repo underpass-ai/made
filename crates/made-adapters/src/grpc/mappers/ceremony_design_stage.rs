@@ -5,9 +5,10 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, JoinStepCount,
-    NumAgents, PriorContext, RoleId, Rounds, StateExecution, StateIteration, StepHandlerKind,
-    StepId, StepInstructions, StepIteration, StepOutputField,
+    CeremonyChildSpawn, CeremonyChildSpec, CeremonyName, CeremonyStepAggregation, CeremonyVersion,
+    ContextKey, ContextWrites, DynamicRoleBinding, InputName, JoinStepCount, MaxChildDepth,
+    MaxChildren, NumAgents, PriorContext, RoleId, Rounds, StateExecution, StateIteration,
+    StepHandlerKind, StepId, StepInstructions, StepIteration, StepOutputField,
 };
 use made_proto::v1 as pb;
 
@@ -24,6 +25,7 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     let allowed_roles = stage.allowed_roles.clone();
     let context_writes = stage.context_writes.clone();
     let aggregate = stage.aggregate.map(aggregation_from_proto).transpose()?;
+    let spawn = stage.spawn.map(spawn_from_proto).transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
@@ -40,6 +42,9 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     .with_exit_guards(exit_guards);
     if let Some(aggregation) = aggregate {
         designed = designed.with_aggregation(aggregation);
+    }
+    if let Some(spawn) = spawn {
+        designed = designed.with_spawn(spawn);
     }
     apply_dynamic_fields(designed, &role_from, allowed_roles, context_writes)
 }
@@ -60,6 +65,8 @@ pub(super) fn stage_entry_from_proto(
             || !stage.role_from.is_empty()
             || !stage.allowed_roles.is_empty()
             || !stage.context_writes.is_empty()
+            || stage.aggregate.is_some()
+            || stage.spawn.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!(
@@ -103,6 +110,7 @@ pub(super) fn stage_entry_from_proto(
             || !stage.allowed_roles.is_empty()
             || !stage.context_writes.is_empty()
             || stage.aggregate.is_some()
+            || stage.spawn.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
@@ -181,6 +189,7 @@ fn group_step_from_proto(
     step: pb::CeremonyDesignGroupStep,
 ) -> Result<CeremonyDesignGroupStep, DomainError> {
     let aggregate = step.aggregate.map(aggregation_from_proto).transpose()?;
+    let spawn = step.spawn.map(spawn_from_proto).transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(step.id)?,
         RoleId::new(step.owner_role_id)?,
@@ -195,6 +204,9 @@ fn group_step_from_proto(
     );
     if let Some(aggregation) = aggregate {
         designed = designed.with_aggregation(aggregation);
+    }
+    if let Some(spawn) = spawn {
+        designed = designed.with_spawn(spawn);
     }
     Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
         designed,
@@ -218,6 +230,30 @@ fn aggregation_from_proto(
             reason: "field `aggregate.strategy` is required".to_owned(),
         }),
     }
+}
+
+fn spawn_from_proto(spawn: pb::CeremonyChildSpawn) -> Result<CeremonyChildSpawn, DomainError> {
+    let children = spawn
+        .children
+        .into_iter()
+        .map(|child| {
+            let inputs = child
+                .inputs
+                .into_iter()
+                .map(|(input, context)| Ok((InputName::new(input)?, ContextKey::new(context)?)))
+                .collect::<Result<std::collections::BTreeMap<_, _>, DomainError>>()?;
+            Ok(CeremonyChildSpec::new(
+                CeremonyName::new(child.ceremony)?,
+                CeremonyVersion::new(child.version)?,
+                inputs,
+            ))
+        })
+        .collect::<Result<Vec<_>, DomainError>>()?;
+    CeremonyChildSpawn::new(
+        children,
+        MaxChildren::new(u16::try_from(spawn.max_children).unwrap_or(u16::MAX))?,
+        MaxChildDepth::new(u16::try_from(spawn.max_depth).unwrap_or(u16::MAX))?,
+    )
 }
 
 fn apply_dynamic_fields(

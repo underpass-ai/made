@@ -89,6 +89,7 @@ fn started_fact(instance: &CeremonyInstance, suffix: &str) -> AuditFact {
             step_ids: instance.step_records().keys().cloned().collect(),
             context: instance.context().clone(),
             bound_definition: instance.bound_definition(),
+            lineage: None,
             created_at: instance.created_at(),
         }),
     )

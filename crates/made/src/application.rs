@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use made_adapters::config::ServiceConfig;
-use made_adapters::nats::NatsTriggerSubscriber;
+use made_adapters::nats::{NatsCeremonyRecoverySubscriber, NatsTriggerSubscriber};
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, ContractRegistryPort, CouncilRegistryPort,
     DeliberationRepositoryPort,
@@ -17,6 +17,7 @@ pub struct Application {
     pub repository: Arc<dyn DeliberationRepositoryPort>,
     pub grpc_service: made_adapters::grpc::MadeGrpcService,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
+    pub nats_ceremony_recovery: Option<NatsCeremonyRecoverySubscriber>,
     pub health_state: crate::health::HealthState,
 }
 
@@ -25,6 +26,10 @@ impl std::fmt::Debug for Application {
         f.debug_struct("Application")
             .field("service_config", &self.service_config)
             .field("nats_subscriber_enabled", &self.nats_subscriber.is_some())
+            .field(
+                "nats_ceremony_recovery_enabled",
+                &self.nats_ceremony_recovery.is_some(),
+            )
             .finish()
     }
 }

@@ -10,6 +10,7 @@
 use crate::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
+mod children;
 mod guard_decisions;
 mod interventions;
 mod participant_bindings;
@@ -60,6 +61,15 @@ impl CeremonyInstance {
             }
             CeremonyCommand::CloseIntervention(command) => {
                 self.decide_close_intervention(command, definition)
+            }
+            CeremonyCommand::PlanCeremonyChildren(command) => {
+                self.decide_plan_children(command, definition)
+            }
+            CeremonyCommand::AdoptChildSpawnPlan(command) => {
+                self.decide_adopt_child_plan(command, definition)
+            }
+            CeremonyCommand::AcceptChildCompletion(command) => {
+                self.decide_accept_child_completion(command, definition)
             }
         }
     }

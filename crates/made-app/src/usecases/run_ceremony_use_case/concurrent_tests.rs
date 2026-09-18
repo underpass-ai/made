@@ -7,21 +7,22 @@ use made_core::entities::{CeremonyDefinition, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyGuard, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey,
-    DynamicRoleBinding, GuardCondition, GuardName, MaxParallel, RetryPolicy, RoleAction, RoleId,
-    StateExecution, StateId, StateIteration, StateRepeatPolicy, StateRepeatUntilCondition,
-    StepHandlerConfig, StepHandlerKind, StepId, StepOutput, StepOutputField, StepResult,
-    TransitionTrigger,
+    Attributes, AuditActorKind, CeremonyChildSpawn, CeremonyChildSpec, CeremonyContext,
+    CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
+    CeremonyVersion, ContextKey, DynamicRoleBinding, GuardCondition, GuardName, MaxChildDepth,
+    MaxChildren, MaxParallel, RetryPolicy, RoleAction, RoleId, StateExecution, StateId,
+    StateIteration, StateRepeatPolicy, StateRepeatUntilCondition, StepHandlerConfig,
+    StepHandlerKind, StepId, StepOutput, StepOutputField, StepResult, TransitionTrigger,
 };
 use serde_json::json;
 use tokio::sync::{Barrier, Mutex};
 
 use super::*;
 use crate::usecases::ceremony_test_support::{
-    ceremony_id, lease_owner, lease_ttl, now, stream_over, DefinitionRepositoryFake,
-    EventStoreFake, FixedClock,
+    a_memory, ceremony_id, lease_owner, lease_ttl, now, resolver_with, review_child_definition,
+    stream_over, DefinitionRepositoryFake, EventStoreFake, FixedClock, PublicationsFake,
 };
+use crate::usecases::PrepareCeremonyChildrenUseCase;
 
 struct SnapshotReadFault {
     store: Arc<EventStoreFake>,
@@ -231,6 +232,36 @@ fn concurrent_definition(step_count: usize, join: GuardCondition) -> CeremonyDef
     .with_max_parallel(MaxParallel::new(3).unwrap())
 }
 
+fn concurrent_spawn_definition() -> CeremonyDefinition {
+    let base = concurrent_definition(2, GuardCondition::AllStepsCompleted);
+    let spawn = CeremonyChildSpawn::new(
+        vec![CeremonyChildSpec::new(
+            CeremonyName::new("review_child").unwrap(),
+            CeremonyVersion::v1(),
+            std::collections::BTreeMap::new(),
+        )],
+        MaxChildren::new(1).unwrap(),
+        MaxChildDepth::new(2).unwrap(),
+    )
+    .unwrap();
+    CeremonyDefinition::new(
+        CeremonyName::new("concurrent_child_fanout").unwrap(),
+        base.version().clone(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        base.states().values().cloned(),
+        base.transitions().iter().cloned(),
+        base.steps_in_declaration_order()
+            .cloned()
+            .map(|step| step.with_spawn(spawn.clone())),
+        base.guards().values().cloned(),
+        base.roles().values().cloned(),
+    )
+    .unwrap()
+    .with_max_parallel(MaxParallel::new(2).unwrap())
+}
+
 fn repeating_definition() -> CeremonyDefinition {
     let base = concurrent_definition(2, GuardCondition::AllStepsCompleted);
     CeremonyDefinition::new(
@@ -416,6 +447,68 @@ async fn concurrent_state_overlaps_a_bounded_batch_and_stops_at_an_early_join() 
     assert_eq!(handler.peak.load(Ordering::SeqCst), 2);
     assert_eq!(handler.calls.lock().await.len(), 2);
     assert_eq!(output.step_traces().len(), 2);
+}
+
+#[tokio::test]
+async fn concurrent_spawn_batch_opens_every_child_without_invoking_the_handler() {
+    let definition = concurrent_spawn_definition();
+    let definitions = Arc::new(DefinitionRepositoryFake::default());
+    let publications = Arc::new(PublicationsFake::default());
+    publications.seed(review_child_definition()).await;
+    let store = Arc::new(EventStoreFake::default());
+    let (stream, _) = stream_over(store.clone());
+    let children = Arc::new(PrepareCeremonyChildrenUseCase::new(
+        resolver_with(definitions.clone(), publications.clone()),
+        publications,
+        stream.clone(),
+        Arc::new(FixedClock::new(now())),
+        a_memory(),
+    ));
+    let handler = GatedHandler::new(0, []);
+    let usecase = RunCeremonyUseCase::new(
+        definitions,
+        stream,
+        handler.clone(),
+        Arc::new(FixedClock::new(now())),
+    )
+    .with_max_parallel_ceiling(MaxParallel::new(2).unwrap())
+    .with_child_orchestrator(children);
+
+    let output = usecase
+        .execute(RunCeremonyInput::new(
+            ceremony_id(),
+            definition.clone(),
+            CeremonyContext::empty(),
+            lease_owner(),
+            lease_ttl(),
+            "driver-test",
+            AuditActorKind::Agent,
+        ))
+        .await
+        .unwrap();
+
+    assert!(output.instance().is_completed(&definition));
+    assert!(handler.calls.lock().await.is_empty());
+    assert_eq!(output.instance().child_groups().len(), 2);
+    for group in output.instance().child_groups().values() {
+        assert_eq!(group.plan().children().len(), 1);
+        assert!(store.exists(group.plan().children()[0].child_id()).await);
+    }
+    let records = store.records(&ceremony_id()).await;
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record.event(), Some(CeremonyEvent::ChildSpawnPlanned(_))))
+            .count(),
+        2
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record.event(), Some(CeremonyEvent::StepCompleted(_))))
+            .count(),
+        2
+    );
 }
 
 #[tokio::test]

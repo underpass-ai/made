@@ -1,6 +1,9 @@
 pub(crate) const RUN_CEREMONY_TOOL: &str = "made_run_ceremony";
 pub(crate) const START_CEREMONY_TOOL: &str = "made_start_ceremony";
 pub(crate) const RUN_CEREMONY_STEP_TOOL: &str = "made_run_ceremony_step";
+pub(crate) const PREPARE_CEREMONY_CHILDREN_TOOL: &str = "made_prepare_ceremony_children";
+pub(crate) const ACCEPT_CHILD_COMPLETION_TOOL: &str = "made_accept_child_completion";
+pub(crate) const RECOVER_CEREMONY_CHILDREN_TOOL: &str = "made_recover_ceremony_children";
 pub(crate) const CLAIM_CEREMONY_STEP_TOOL: &str = "made_claim_ceremony_step";
 pub(crate) const COMPLETE_CEREMONY_STEP_TOOL: &str = "made_complete_ceremony_step";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "made_approve_ceremony_guard";
@@ -32,7 +35,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 44] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 47] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -53,6 +56,9 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 44] = [
     START_CEREMONY_TOOL,
     START_PUBLISHED_CEREMONY_TOOL,
     RUN_CEREMONY_STEP_TOOL,
+    PREPARE_CEREMONY_CHILDREN_TOOL,
+    ACCEPT_CHILD_COMPLETION_TOOL,
+    RECOVER_CEREMONY_CHILDREN_TOOL,
     APPLY_CEREMONY_TRANSITION_TOOL,
     APPROVE_CEREMONY_GUARD_TOOL,
     DEFER_CEREMONY_GUARD_TOOL,

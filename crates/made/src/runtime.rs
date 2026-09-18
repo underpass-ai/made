@@ -30,6 +30,7 @@ pub async fn serve(app: Application) -> Result<()> {
         service_config,
         grpc_service,
         nats_subscriber,
+        nats_ceremony_recovery,
         health_state,
         ..
     } = app;
@@ -43,6 +44,15 @@ pub async fn serve(app: Application) -> Result<()> {
                 .spawn()
                 .await
                 .context("failed to spawn nats trigger subscriber")?,
+        ),
+        None => None,
+    };
+    let ceremony_recovery_handle = match nats_ceremony_recovery {
+        Some(subscriber) => Some(
+            subscriber
+                .spawn()
+                .await
+                .context("failed to spawn nats ceremony recovery subscriber")?,
         ),
         None => None,
     };
@@ -113,6 +123,16 @@ pub async fn serve(app: Application) -> Result<()> {
             Ok(()) => info!("nats subscriber stopped"),
             Err(err) if err.is_cancelled() => info!("nats subscriber cancelled"),
             Err(err) => error!(error = %err, "nats subscriber task errored"),
+        }
+    }
+    if let Some(handle) = ceremony_recovery_handle {
+        handle.abort();
+        match handle.await {
+            Ok(()) => info!("nats ceremony recovery subscriber stopped"),
+            Err(err) if err.is_cancelled() => {
+                info!("nats ceremony recovery subscriber cancelled");
+            }
+            Err(err) => error!(error = %err, "nats ceremony recovery subscriber task errored"),
         }
     }
 

@@ -128,6 +128,7 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
             step_ids: BTreeSet::new(),
             context: CeremonyContext::empty(),
             bound_definition: None,
+            lineage: None,
             created_at: at(0),
         }),
         CeremonyEvent::TransitionApplied(TransitionApplied {

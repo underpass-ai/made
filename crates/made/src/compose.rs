@@ -8,17 +8,11 @@ use made_adapters::ceremony::{
     CeremonyTracingSubscriber, DeliberatingCeremonyStepHandler,
 };
 use made_adapters::clock::SystemClock;
-use made_adapters::config::{EnvConfiguration, ServiceConfig};
-use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry,
-    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
-};
+use made_adapters::config::EnvConfiguration;
+use made_adapters::memory::{InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry};
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
-use made_adapters::postgres::{
-    PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
-    PostgresPool, PostgresStatistics,
-};
+use made_adapters::postgres::PostgresPool;
 use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
@@ -32,15 +26,16 @@ use made_app::services::{
     SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
+    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase,
-    ReadCeremonyEventsUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyChildrenUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
@@ -60,9 +55,22 @@ use crate::{Application, ComposeError};
 use messaging::{wire_messaging, MessagingWiring};
 
 use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
+use persistence::wire_persistence;
 
 mod ceremony_persistence;
 mod messaging;
+mod persistence;
+
+/// Persistent handles selected together so one deployment never splits
+/// its source of truth across storage backends.
+struct Persistence {
+    repository: Arc<dyn DeliberationRepositoryPort>,
+    council_registry: Arc<dyn CouncilRegistryPort>,
+    agent_registry: Arc<dyn AgentRegistryPort>,
+    agent_resolver: Arc<dyn AgentResolverPort>,
+    statistics: Arc<dyn StatisticsPort>,
+    pool: Option<PostgresPool>,
+}
 
 /// Pick the scoring policy and wire the optional LLM judge.
 ///
@@ -86,7 +94,7 @@ fn wire_scoring(
 
 /// Wire the full application.
 ///
-/// - Reads [`ServiceConfig`] from the environment.
+/// - Reads [`made_adapters::config::ServiceConfig`] from the environment.
 /// - Builds the in-memory registries plus the configured execution
 ///   backend. `noop` remains the default; richer executors are
 ///   selected explicitly by deployment configuration.
@@ -180,6 +188,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let MessagingWiring {
         port: messaging,
         subscriber_factory: nats_subscriber_factory,
+        ceremony_recovery_factory,
         nats_client,
         ceremony_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
@@ -266,16 +275,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         deliberate.clone(),
         repository.clone(),
     ));
-    let run_ceremony = Arc::new(
-        RunCeremonyUseCase::new(
-            ceremony_definitions.clone(),
-            ceremony_stream.clone(),
-            ceremony_step_handler.clone(),
-            clock.clone(),
-        )
-        .with_metrics(metrics_recorder.clone())
-        .with_max_parallel_ceiling(service_config.max_parallel),
-    );
     // How every verb that advances a session finds what it is running:
     // from the catalogue when the session is bound to a published
     // version, from the repository when it is not.
@@ -296,8 +295,48 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_publications.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        memory_reader.clone(),
+    ));
+    let prepare_ceremony_children = Arc::new(PrepareCeremonyChildrenUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_publications.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
         memory_reader,
     ));
+    let run_ceremony = Arc::new(
+        RunCeremonyUseCase::new(
+            ceremony_definitions.clone(),
+            ceremony_stream.clone(),
+            ceremony_step_handler.clone(),
+            clock.clone(),
+        )
+        .with_metrics(metrics_recorder.clone())
+        .with_max_parallel_ceiling(service_config.max_parallel)
+        .with_child_orchestrator(prepare_ceremony_children.clone()),
+    );
+    let accept_child_completion = Arc::new(AcceptChildCompletionUseCase::new(
+        resolve_ceremony_definition.clone(),
+        ceremony_publications.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+    ));
+    let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
+        ceremony_events.clone(),
+        ceremony_cursors.clone(),
+        ceremony_stream.clone(),
+        prepare_ceremony_children.clone(),
+        accept_child_completion.clone(),
+        clock.clone(),
+        made_core::value_objects::CeremonyEventConsumer::new("made.children.recovery.v1")?,
+    ));
+    loop {
+        let limit = made_core::value_objects::CeremonyEventPageLimit::DEFAULT;
+        let round = recover_ceremony_children.execute(limit).await?;
+        if round.busy || round.failed > 0 || round.acknowledged() < limit.value() {
+            break;
+        }
+    }
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -305,7 +344,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_step_handler,
             clock.clone(),
         )
-        .with_max_parallel_ceiling(service_config.max_parallel),
+        .with_max_parallel_ceiling(service_config.max_parallel)
+        .with_child_orchestrator(prepare_ceremony_children),
     );
     // The delegated-host protocol. Claiming and completing are the
     // same two use cases the embedded edition has always called; only
@@ -417,6 +457,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // Now that the auto-dispatch service exists, the subscriber
     // factory can finish wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
+    let nats_ceremony_recovery =
+        ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
     let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
     let list_ceremony_instances =
@@ -433,7 +475,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let pull_ceremony_events = Arc::new(PullCeremonyEventsUseCase::new(
         ceremony_events.clone(),
-        ceremony_cursors,
+        ceremony_cursors.clone(),
     ));
     let verify_ceremony_journal =
         Arc::new(VerifyCeremonyJournalUseCase::new(ceremony_events.clone()));
@@ -441,7 +483,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_events.clone()));
     let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
         resolve_ceremony_definition.clone(),
-        ceremony_events,
+        ceremony_events.clone(),
     ));
 
     let grpc_service = made_adapters::grpc::MadeGrpcService::builder()
@@ -458,6 +500,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .start_ceremony(start_ceremony)
         .start_published_ceremony(start_published_ceremony)
         .run_ceremony_step(run_ceremony_step)
+        .accept_child_completion(accept_child_completion)
+        .recover_ceremony_children(recover_ceremony_children)
         .claim_ceremony_step(claim_ceremony_step)
         .complete_ceremony_step(complete_ceremony_step)
         .apply_ceremony_transition(apply_ceremony_transition)
@@ -520,6 +564,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         repository,
         grpc_service,
         nats_subscriber,
+        nats_ceremony_recovery,
         health_state,
     })
 }
@@ -536,57 +581,6 @@ fn executor_backend_name() -> &'static str {
     match ExecutorBackendConfig::from_env() {
         Ok(ExecutorBackendConfig::Runtime(_)) => "runtime",
         _ => "noop",
-    }
-}
-
-/// Composite of the persistent handles the app needs. Kept as a
-/// single bag so the composition root wires them together — either
-/// all backed by Postgres, or all in-memory. Splitting the source of
-/// truth across replicas (half Postgres, half in-memory) is not a
-/// useful configuration today.
-struct Persistence {
-    repository: Arc<dyn DeliberationRepositoryPort>,
-    council_registry: Arc<dyn CouncilRegistryPort>,
-    agent_registry: Arc<dyn AgentRegistryPort>,
-    agent_resolver: Arc<dyn AgentResolverPort>,
-    statistics: Arc<dyn StatisticsPort>,
-    /// `Some` when Postgres-backed, so the readiness probe can check the
-    /// database; `None` for in-memory persistence.
-    pool: Option<PostgresPool>,
-}
-
-/// Pick persistent backings based on config. When `MADE_POSTGRES_URL`
-/// is set, every registry that has a Postgres adapter goes through
-/// it; migrations apply on startup so a fresh cluster is exercisable.
-/// Otherwise the in-memory defaults are wired.
-async fn wire_persistence(
-    cfg: &ServiceConfig,
-    agent_factory: Arc<dyn AgentFactoryPort>,
-) -> Result<Persistence, ComposeError> {
-    if let Some(url) = cfg.postgres_url.as_deref() {
-        let pool = PostgresPool::connect(&PostgresConfig::from_url(url)).await?;
-        pool.run_migrations().await?;
-        let agents = Arc::new(PostgresAgentRegistry::new(pool.clone(), agent_factory));
-        info!("postgres persistence wired (deliberations, councils, agents, statistics)");
-        Ok(Persistence {
-            repository: Arc::new(PostgresDeliberationRepository::new(pool.clone())),
-            council_registry: Arc::new(PostgresCouncilRegistry::new(pool.clone())),
-            agent_registry: agents.clone(),
-            agent_resolver: agents,
-            statistics: Arc::new(PostgresStatistics::new(pool.clone())),
-            pool: Some(pool),
-        })
-    } else {
-        info!("postgres disabled; using in-memory persistence");
-        let agents = Arc::new(InMemoryAgentRegistry::new());
-        Ok(Persistence {
-            repository: Arc::new(InMemoryDeliberationRepository::new()),
-            council_registry: Arc::new(InMemoryCouncilRegistry::new()),
-            agent_registry: agents.clone(),
-            agent_resolver: agents,
-            statistics: Arc::new(InMemoryStatistics::new()),
-            pool: None,
-        })
     }
 }
 

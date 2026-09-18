@@ -1,12 +1,13 @@
 use serde_json::{json, Value};
 
 use super::ceremony_schemas::{
-    ceremony_definition_ref_schema, ceremony_design_schema, ceremony_draft_schema,
-    ceremony_guard_approval_schema, ceremony_guard_deferral_schema, ceremony_instance_schema,
-    ceremony_reason_schema, ceremony_report_schema, ceremony_transition_schema,
-    claim_ceremony_step_schema, close_ceremony_intervention_schema,
+    accept_child_completion_schema, ceremony_definition_ref_schema, ceremony_design_schema,
+    ceremony_draft_schema, ceremony_guard_approval_schema, ceremony_guard_deferral_schema,
+    ceremony_instance_schema, ceremony_reason_schema, ceremony_report_schema,
+    ceremony_transition_schema, claim_ceremony_step_schema, close_ceremony_intervention_schema,
     collect_ceremony_evidence_schema, complete_ceremony_step_schema,
-    get_ceremony_transcript_schema, pull_ceremony_events_schema, read_ceremony_events_schema,
+    get_ceremony_transcript_schema, prepare_ceremony_children_schema, pull_ceremony_events_schema,
+    read_ceremony_events_schema, recover_ceremony_children_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
     run_ceremony_schema, run_ceremony_step_schema, start_ceremony_schema,
     start_published_ceremony_schema, stream_ceremony_schema, verify_ceremony_journal_schema,
@@ -17,14 +18,15 @@ use super::general_schemas::{
 };
 use super::schema_primitives::{attributes_schema, string_schema, tool_def};
 use super::tool_names::{
-    is_server_tool, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
-    ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
-    DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
-    DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, GET_METRICS_TOOL,
-    GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    is_server_tool, ACCEPT_CHILD_COMPLETION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
+    APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL,
+    COMPLETE_CEREMONY_STEP_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
+    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL,
+    GET_HELP_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL,
+    READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
     START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
@@ -113,6 +115,21 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             RUN_CEREMONY_STEP_TOOL,
             "Execute one declared step on a started ceremony instance and persist its result.",
             run_ceremony_step_schema(),
+        ),
+        tool_def(
+            PREPARE_CEREMONY_CHILDREN_TOOL,
+            "Claim a spawning step, seal its deterministic child plan, open every child exactly once, and complete the parent step only after all openings are verified.",
+            prepare_ceremony_children_schema(),
+        ),
+        tool_def(
+            ACCEPT_CHILD_COMPLETION_TOOL,
+            "Verify a named CeremonyCompleted record in a child's intact journal, plus its lineage, binding and opening snapshot, before recording it in the parent group.",
+            accept_child_completion_schema(),
+        ),
+        tool_def(
+            RECOVER_CEREMONY_CHILDREN_TOOL,
+            "Advance durable child-plan and child-completion recovery from its owned event cursor. Notifications may wake this operation but never substitute for cursor evidence.",
+            recover_ceremony_children_schema(),
         ),
         tool_def(
             APPLY_CEREMONY_TRANSITION_TOOL,

@@ -150,6 +150,9 @@ async fn embedded_server_advertises_only_executable_tools() {
             "made_start_ceremony",
             "made_start_published_ceremony",
             "made_run_ceremony_step",
+            "made_prepare_ceremony_children",
+            "made_accept_child_completion",
+            "made_recover_ceremony_children",
             "made_apply_ceremony_transition",
             "made_approve_ceremony_guard",
             "made_defer_ceremony_guard",
@@ -1326,7 +1329,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 46);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 49);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

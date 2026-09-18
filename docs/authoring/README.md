@@ -159,6 +159,62 @@ eligible. Analysis now returns an advisory warning for this shape; it does
 not change execution semantics or rewrite the guard. Prefer the appropriate
 source-state join for concurrent work.
 
+## Spawn child ceremonies
+
+A step can open published ceremonies as durable children. Publish every child
+definition first, then declare its exact name and version. `inputs` maps each
+required child input to a key in the parent's sealed context:
+
+```yaml
+steps:
+  - id: delegate_reviews
+    state: REVIEWING
+    handler: child_orchestration
+    spawn:
+      children:
+        - ceremony: specialist_review
+          version: "1.0"
+          inputs:
+            brief: review_brief
+        - ceremony: specialist_review
+          version: "1.0"
+          inputs:
+            brief: review_brief
+      max_children: 2
+      max_depth: 3
+guards:
+  enough_reviews:
+    type: automated
+    check: "children_completed:delegate_reviews:any"
+```
+
+The engine resolves every publication, projects and validates every input,
+captures memory recollection and seals the complete plan before opening the
+first child. Child and group ids derive from the parent, step, visit,
+iterations and declaration position. Replaying the same plan therefore
+verifies the same streams instead of creating replacements. `max_children`
+bounds the declared width. `max_depth` is also constrained by the parent's
+remaining budget, which decreases at every generation.
+
+The spawn step completes after all planned child streams have been opened or
+verified. That does not mean the children have finished. A later transition
+uses `children_completed:<step>:all`, `:any`, or `:quorum:<n>`. A completion
+counts only after MADE locates the named `CeremonyCompleted` record in an
+intact child journal, verifies its hash and opening against the sealed plan,
+and records the acceptance in the parent. A completed child may acquire later
+facts when it is itself a parent; its original terminal record remains the
+stable completion locator.
+
+`made_run_ceremony_step` and `made_run_ceremony` route spawn steps through this
+protocol, including steps in concurrent states. They do not invoke the step's
+ordinary handler for a spawn. MCP hosts call `made_prepare_ceremony_children`,
+and gRPC hosts call `PrepareCeremonyChildren`, with the actor plus optional
+lease owner, idempotency key and TTL; either operation claims and executes the
+spawn. The lower-level Rust facade `prepare_children` instead receives an
+already accepted claim fence. Recovery uses `made_recover_ceremony_children`;
+broker notifications only wake that work, while the durable global event
+cursor decides what remains pending.
+
 ## Aggregate concurrent outputs
 
 The first step in the sequential state after a concurrent state may declare an
@@ -326,12 +382,14 @@ true. Council output JSON Schema examples are documented
 
 The source tree's Unreleased surface includes the bounded concurrent driver,
 typed aggregation, runtime observability, the stage-pattern catalogue described
-above and embedded council configuration and execution. MADE invokes configured
-handlers and councils; it does not create host subagents. A host can fan work
-out to its own subagents through those handlers or can drive the durable
-claim/complete protocol directly.
+above, embedded council configuration and execution, durable child ceremonies,
+and resumable ceremony progress. MADE invokes configured handlers and councils;
+it does not create host subagents. A host can fan work out to its own subagents
+through those handlers or can drive the durable claim/complete protocol
+directly. Child ceremonies create bounded, durable sessions; they do not create
+operating-system processes, provision agents, or grant tools and credentials.
 
-The published 0.6.0 package predates those Unreleased additions. C3 and G6 from
-the earlier roadmap remain future work; the
+The published 0.6.0 package predates those Unreleased additions. The earlier
+roadmap remains useful for features outside this contract; its
 [historical plan](../history/pre-rebuild-2026-09-18/docs/orchestration-patterns-plan.md)
 is context, not a current API promise.

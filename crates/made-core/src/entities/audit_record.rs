@@ -381,6 +381,7 @@ mod tests {
                     step_ids: BTreeSet::from([step_id]),
                     context: CeremonyContext::empty(),
                     bound_definition: None,
+                    lineage: None,
                     created_at: AT,
                 })
             }

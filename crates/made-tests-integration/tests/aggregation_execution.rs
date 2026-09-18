@@ -350,7 +350,7 @@ async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>
     let facade_path = directory.path().join("facade.sqlite3");
     let facade_handler = RecordingAggregationHandler::majority();
     let (facade_instance, facade_history) =
-        run_facade(&facade_path, &yaml, facade_handler.clone()).await;
+        Box::pin(run_facade(&facade_path, &yaml, facade_handler.clone())).await;
     assert_eq!(facade_instance.current_state().as_str(), "DONE");
     let expected_output = aggregate_output_from_mcp(structured(&embedded_instance));
     assert_eq!(aggregate_output(&facade_instance), expected_output);
@@ -386,7 +386,7 @@ async fn execute_parity(strategy: &str) -> (Vec<Arc<RecordingAggregationHandler>
 
 #[tokio::test]
 async fn vote_has_exact_remote_embedded_and_facade_execution_parity() {
-    let (handlers, output) = execute_parity("vote").await;
+    let (handlers, output) = Box::pin(execute_parity("vote")).await;
     assert_eq!(output, json!({"choice": "ship"}));
     for handler in handlers {
         assert_vote_handler_calls(&handler);
@@ -395,7 +395,7 @@ async fn vote_has_exact_remote_embedded_and_facade_execution_parity() {
 
 #[tokio::test]
 async fn synthesis_has_exact_remote_embedded_and_facade_execution_parity() {
-    let (handlers, output) = execute_parity("synthesize").await;
+    let (handlers, output) = Box::pin(execute_parity("synthesize")).await;
     assert_eq!(
         output,
         json!({

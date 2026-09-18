@@ -160,6 +160,36 @@ pub(super) fn run_ceremony_step_schema() -> Value {
     })
 }
 
+pub(super) fn prepare_ceremony_children_schema() -> Value {
+    run_ceremony_step_schema()
+}
+
+pub(super) fn accept_child_completion_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["child_id", "terminal_event_id"],
+        "properties": {
+            "child_id": string_schema("Child ceremony whose terminal record is being presented."),
+            "terminal_event_id": string_schema("Exact CeremonyCompleted event id in the verified intact child journal. Later accepted facts may follow it.")
+        }
+    })
+}
+
+pub(super) fn recover_ceremony_children_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "limit": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Maximum durable cursor records to inspect. Zero or omission uses the engine default."
+            }
+        }
+    })
+}
+
 pub(super) fn claim_ceremony_step_schema() -> Value {
     json!({
         "type": "object",

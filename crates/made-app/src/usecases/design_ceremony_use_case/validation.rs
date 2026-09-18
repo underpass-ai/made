@@ -147,6 +147,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
             let step_id = match guard {
                 CeremonyDesignExitGuard::OutputField(guard) => guard.step_id(),
                 CeremonyDesignExitGuard::StepRepeatExhausted(guard) => guard.step_id(),
+                CeremonyDesignExitGuard::ChildrenCompleted(condition) => condition.step_id(),
             };
             if !declared_steps.contains(step_id.as_str()) {
                 return Err(invalid(format!(

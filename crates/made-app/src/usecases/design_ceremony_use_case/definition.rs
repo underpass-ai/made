@@ -171,6 +171,9 @@ pub(super) fn build_definition(
                             guard.step_id().clone(),
                         ))
                     }
+                    CeremonyDesignExitGuard::ChildrenCompleted(condition) => {
+                        GuardCondition::ChildrenCompleted(condition.clone())
+                    }
                 };
                 guards.push(CeremonyGuard::new(name.clone(), condition));
                 required_guards.push(name);
@@ -265,6 +268,9 @@ pub(super) fn build_definition(
             step = step.with_context_writes(stage.context_writes().clone());
             if let Some(aggregation) = stage.aggregation() {
                 step = step.with_aggregation(aggregation.clone());
+            }
+            if let Some(spawn) = stage.spawn() {
+                step = step.with_spawn(spawn.clone());
             }
             steps.push(step);
         }

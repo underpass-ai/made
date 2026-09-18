@@ -46,7 +46,7 @@ impl CeremonyInstance {
                 reason: "ceremony state repeat condition is not satisfied",
             });
         }
-        if !definition.guards_are_satisfied(transition, &self.step_records, &self.context) {
+        if !self.guards_are_satisfied(definition, transition) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony transition guards are not satisfied",
             });
