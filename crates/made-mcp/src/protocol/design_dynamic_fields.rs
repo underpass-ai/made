@@ -2,6 +2,20 @@ use std::collections::BTreeSet;
 
 use serde_json::{Map, Value};
 
+const GROUP_FORBIDDEN_LEAF_FIELDS: [&str; 11] = [
+    "owner_role_id",
+    "instructions",
+    "handler",
+    "see_prior",
+    "num_agents",
+    "review_rounds",
+    "repeat",
+    "exit_guards",
+    "role_from",
+    "allowed_roles",
+    "context_writes",
+];
+
 /// Validate P5 stage fields before either MCP backend maps its request.
 pub(crate) fn validate_design_dynamic_fields(arguments: &Value) -> Result<(), String> {
     let Some(stages) = arguments
@@ -16,14 +30,13 @@ pub(crate) fn validate_design_dynamic_fields(arguments: &Value) -> Result<(), St
             continue;
         };
         if let Some(group) = stage.get("group").and_then(Value::as_object) {
-            if ["role_from", "allowed_roles", "context_writes"]
-                .iter()
-                .any(|field| stage.contains_key(*field))
+            if let Some(field) = GROUP_FORBIDDEN_LEAF_FIELDS
+                .into_iter()
+                .find(|field| stage.contains_key(*field))
             {
-                return Err(
-                    "a group container cannot declare role_from, allowed_roles or context_writes"
-                        .to_owned(),
-                );
+                return Err(format!(
+                    "a group container cannot declare leaf field `{field}`"
+                ));
             }
             let Some(steps) = group.get("steps").and_then(Value::as_array) else {
                 continue;

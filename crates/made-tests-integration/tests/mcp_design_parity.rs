@@ -619,7 +619,14 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
 
     let mut cases = Vec::new();
-    for invalid in [Value::Null, json!(7), json!("")] {
+    for invalid in [
+        Value::Null,
+        json!(7),
+        json!(""),
+        json!("next_role"),
+        json!("context.   "),
+        json!("context.bad\u{0007}"),
+    ] {
         let mut arguments = dynamic_intent();
         arguments["stages"][1]["role_from"] = invalid.clone();
         cases.push((format!("role_from={invalid}"), arguments));
@@ -631,6 +638,8 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
         json!(["REVIEWER", 7]),
         json!(["REVIEWER", "REVIEWER"]),
         json!([""]),
+        json!(["   "]),
+        json!(["REVIEWER\u{0007}"]),
     ] {
         let mut arguments = dynamic_intent();
         arguments["stages"][1]["allowed_roles"] = invalid.clone();
@@ -646,16 +655,40 @@ async fn malformed_dynamic_fields_are_refused_identically_by_both_mcp_arms() {
         ("non-object context_writes", Value::Null),
         ("non-string context_writes value", json!({"next_role": 7})),
         ("blank context_writes key", json!({"": "reviewer"})),
+        ("whitespace context_writes key", json!({"   ": "reviewer"})),
         ("blank context_writes value", json!({"next_role": ""})),
+        (
+            "control context_writes value",
+            json!({"next_role": "reviewer\u{0007}"}),
+        ),
     ] {
         let mut malformed_writes = dynamic_intent();
         malformed_writes["stages"][0]["context_writes"] = invalid;
         cases.push((label.to_owned(), malformed_writes));
     }
-    let mut group_container = concurrent_intent();
-    group_container["stages"][0]["role_from"] = json!("context.next_role");
-    group_container["stages"][0]["allowed_roles"] = json!(["A"]);
-    cases.push(("leaf fields on group container".to_owned(), group_container));
+    for (field, value) in [
+        ("owner_role_id", json!("A")),
+        ("instructions", json!("Do the work.")),
+        ("handler", json!("host_callback")),
+        ("see_prior", json!(true)),
+        ("num_agents", json!(2)),
+        ("review_rounds", json!(1)),
+        (
+            "repeat",
+            json!({"max_iterations": 2, "output_field": "done", "equals": true}),
+        ),
+        ("exit_guards", json!([])),
+        ("role_from", json!("context.next_role")),
+        ("allowed_roles", json!(["A"])),
+        ("context_writes", json!({"next_role": "reviewer"})),
+    ] {
+        let mut group_container = concurrent_intent();
+        group_container["stages"][0][field] = value;
+        cases.push((
+            format!("group container leaf field {field}"),
+            group_container,
+        ));
+    }
 
     for (label, arguments) in cases {
         let remote_error = remote
