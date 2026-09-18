@@ -260,26 +260,13 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         event @ (CeremonyEvent::ChildSpawnPlanned(_)
         | CeremonyEvent::ChildSpawnPlanAdopted(_)
         | CeremonyEvent::ChildCompletionAccepted(_)) => child_about(event),
-        CeremonyEvent::CeremonyPaused(paused) => {
-            format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
-        }
-        CeremonyEvent::CeremonyResumed(resumed) => {
-            format!("resume:{}", resumed.resumed_at.unix_timestamp_nanos())
-        }
-        CeremonyEvent::CeremonyCancelled(_) => "cancel".to_owned(),
-        CeremonyEvent::CeremonyDeadlineExceeded(_) => "ceremony_deadline".to_owned(),
-        CeremonyEvent::StateDeadlineExceeded(exceeded) => format!(
-            "state:{}:visit:{}",
-            exceeded.deadline.state_id(),
-            exceeded.deadline.state_visit().get()
-        ),
-        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
-            format!("step_deadline:{}", exceeded.deadline.claim_fence().as_str())
-        }
-        CeremonyEvent::LateStepResultObserved(observed) => format!(
-            "late_step_result:{}",
-            observed.result.claim_fence().as_str()
-        ),
+        CeremonyEvent::CeremonyPaused(_)
+        | CeremonyEvent::CeremonyResumed(_)
+        | CeremonyEvent::CeremonyCancelled(_)
+        | CeremonyEvent::CeremonyDeadlineExceeded(_)
+        | CeremonyEvent::StateDeadlineExceeded(_)
+        | CeremonyEvent::StepDeadlineExceeded(_)
+        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
         CeremonyEvent::ExecutionReceiptLinked(linked) => {
             format!("execution_receipt:{}", linked.link.receipt_id())
         }
@@ -322,7 +309,33 @@ fn child_about(event: &CeremonyEvent) -> String {
             accepted.completion.group_id(),
             accepted.completion.child_id()
         ),
-        _ => unreachable!("caller filters child events"),
+        _ => unreachable!("only child events are delegated here"),
+    }
+}
+
+fn lifecycle_about(event: &CeremonyEvent) -> String {
+    match event {
+        CeremonyEvent::CeremonyPaused(paused) => {
+            format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyResumed(resumed) => {
+            format!("resume:{}", resumed.resumed_at.unix_timestamp_nanos())
+        }
+        CeremonyEvent::CeremonyCancelled(_) => "cancel".to_owned(),
+        CeremonyEvent::CeremonyDeadlineExceeded(_) => "ceremony_deadline".to_owned(),
+        CeremonyEvent::StateDeadlineExceeded(exceeded) => format!(
+            "state:{}:visit:{}",
+            exceeded.deadline.state_id(),
+            exceeded.deadline.state_visit().get()
+        ),
+        CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+            format!("step_deadline:{}", exceeded.deadline.claim_fence().as_str())
+        }
+        CeremonyEvent::LateStepResultObserved(observed) => format!(
+            "late_step_result:{}",
+            observed.result.claim_fence().as_str()
+        ),
+        _ => unreachable!("only lifecycle events are delegated here"),
     }
 }
 

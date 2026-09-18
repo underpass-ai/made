@@ -625,10 +625,10 @@ mod tests {
 
     #[tokio::test]
     async fn one_shot_driver_surfaces_total_transition_budget_refusal() {
-        let error = bounded_driver_refusal(cyclic_definition(
+        let error = Box::pin(bounded_driver_refusal(cyclic_definition(
             Some(MaxTransitions::new(1).unwrap()),
             None,
-        ))
+        )))
         .await;
         assert!(matches!(
             error,
@@ -640,9 +640,11 @@ mod tests {
 
     #[tokio::test]
     async fn one_shot_driver_surfaces_exact_edge_budget_refusal() {
-        let error =
-            bounded_driver_refusal(cyclic_definition(None, Some(MaxBounces::new(1).unwrap())))
-                .await;
+        let error = Box::pin(bounded_driver_refusal(cyclic_definition(
+            None,
+            Some(MaxBounces::new(1).unwrap()),
+        )))
+        .await;
         assert!(matches!(
             error,
             DomainError::InvariantViolated {

@@ -108,7 +108,9 @@ async fn a_session_that_runs_moves_the_ceremony_families() {
         "nothing has run yet, so no ceremony family has a sample"
     );
 
-    let output = engine.run(one_run("observability-run")).await.unwrap();
+    let output = Box::pin(engine.run(one_run("observability-run")))
+        .await
+        .unwrap();
     assert!(output.instance().is_completed(output.definition()));
 
     let rendered = recorder.render().unwrap();
@@ -140,7 +142,9 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
     let one_shot = EmbeddedMade::builder()
         .with_metrics(one_shot_metrics.clone())
         .build();
-    one_shot.run(one_run("one-shot-metrics")).await.unwrap();
+    Box::pin(one_shot.run(one_run("one-shot-metrics")))
+        .await
+        .unwrap();
 
     let step_metrics = Arc::new(PrometheusMetricsRecorder::new().unwrap());
     let step = EmbeddedMade::builder()
@@ -216,7 +220,9 @@ async fn the_counters_answer_with_every_family_at_zero_before_and_after_a_sessio
     assert_eq!(before.statistics().average_duration_ms(), 0.0);
     assert!(before.statistics().per_specialty().is_empty());
 
-    engine.run(one_run("observability-counters")).await.unwrap();
+    Box::pin(engine.run(one_run("observability-counters")))
+        .await
+        .unwrap();
 
     let after = engine.metrics().await.unwrap();
     assert_eq!(after.statistics(), before.statistics());

@@ -63,7 +63,9 @@ fn run_input(ceremony_id: &str, definition: CeremonyDefinition) -> RunCeremonyIn
 async fn engine_with_one_ceremony() -> EmbeddedMade {
     let embedded = EmbeddedMade::default();
     let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
-    embedded.run(run_input("api-c1", definition)).await.unwrap();
+    Box::pin(embedded.run(run_input("api-c1", definition)))
+        .await
+        .unwrap();
     embedded
 }
 

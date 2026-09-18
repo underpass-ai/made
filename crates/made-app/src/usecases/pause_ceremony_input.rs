@@ -1,9 +1,9 @@
-use made_core::value_objects::{AuditActorKind, CeremonyId, LifecycleReason};
+use made_core::value_objects::{AuditActorId, AuditActorKind, CeremonyId, LifecycleReason};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PauseCeremonyInput {
     pub(crate) instance_id: CeremonyId,
-    pub(crate) actor_id: String,
+    pub(crate) actor_id: AuditActorId,
     pub(crate) actor_kind: AuditActorKind,
     pub(crate) reason: LifecycleReason,
 }
@@ -18,7 +18,7 @@ impl PauseCeremonyInput {
     ) -> Self {
         Self {
             instance_id,
-            actor_id: actor_id.into(),
+            actor_id: AuditActorId::new(actor_id),
             actor_kind,
             reason,
         }

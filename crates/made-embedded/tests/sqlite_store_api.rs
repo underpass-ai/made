@@ -79,6 +79,79 @@ async fn published_definition_and_instance_survive_reopening_via_the_public_surf
 }
 
 #[tokio::test]
+async fn lifecycle_controls_from_two_hosts_survive_reopening() {
+    use made_app::usecases::{CancelCeremonyInput, PauseCeremonyInput, ResumeCeremonyInput};
+    use made_core::value_objects::{
+        AuditActorKind, CeremonyEndReason, CeremonyLifecyclePhase, LifecycleReason,
+    };
+
+    let directory = tempfile::tempdir().expect("temporary state directory");
+    let path = directory.path().join("made.sqlite3");
+    let id = CeremonyId::new("two-host-lifecycle").unwrap();
+
+    let first = EmbeddedMade::open(&path).expect("first durable host opens");
+    CeremonyEngineApi::publish_definition(&first, DEFINITION)
+        .await
+        .expect("definition publishes");
+    first
+        .start_ceremony(StartCeremonyRequest {
+            ceremony_id: id.as_str().to_owned(),
+            definition_name: "durable_public_contract".to_owned(),
+            definition_version: "1.0".to_owned(),
+            context: BTreeMap::new(),
+            actor_id: "host-1".to_owned(),
+            actor_kind: "service".to_owned(),
+        })
+        .await
+        .expect("ceremony starts");
+    let second = EmbeddedMade::open(&path).expect("second durable host opens");
+
+    first
+        .pause_ceremony(PauseCeremonyInput::new(
+            id.clone(),
+            "host-1",
+            AuditActorKind::Service,
+            LifecycleReason::new("operator_hold").unwrap(),
+        ))
+        .await
+        .expect("first host pauses");
+    let resume = second.resume_ceremony(ResumeCeremonyInput::new(
+        id.clone(),
+        "host-2",
+        AuditActorKind::Service,
+    ));
+    let cancel = first.cancel_ceremony(CancelCeremonyInput::new(
+        id.clone(),
+        "host-1",
+        AuditActorKind::Service,
+        LifecycleReason::new("operator_cancelled").unwrap(),
+    ));
+    let (_resumed, cancelled) = tokio::join!(resume, cancel);
+    let cancelled = cancelled.expect("cancellation retries after a competing append");
+    assert_eq!(cancelled.lifecycle().phase(), CeremonyLifecyclePhase::Ended);
+    assert_eq!(
+        cancelled.lifecycle().end_reason(),
+        Some(CeremonyEndReason::Cancelled)
+    );
+
+    drop(first);
+    drop(second);
+    let reopened = EmbeddedMade::open(&path).expect("third host reopens the store");
+    let recovered = reopened.instance(&id).await.expect("ceremony reopens");
+    assert_eq!(recovered, cancelled);
+    let event_types = reopened
+        .audit_records(&id)
+        .await
+        .unwrap()
+        .iter()
+        .map(|record| record.event_type().as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(event_types.first(), Some(&"ceremony_instance_started"));
+    assert!(event_types.contains(&"ceremony_paused"));
+    assert_eq!(event_types.last(), Some(&"ceremony_cancelled"));
+}
+
+#[tokio::test]
 async fn typed_builder_wires_ceremony_state_and_memory_from_one_adapter() {
     use std::sync::Arc;
 

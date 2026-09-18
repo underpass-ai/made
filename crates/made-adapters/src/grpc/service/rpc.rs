@@ -10,14 +10,11 @@ use super::{
     run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
+type RpcResultStream<T> = Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send>>;
+
 #[async_trait]
 impl MadeService for MadeGrpcService {
-    type StreamCeremonyStream = Pin<
-        Box<
-            dyn futures::Stream<Item = std::result::Result<pb::StreamCeremonyResponse, Status>>
-                + Send,
-        >,
-    >;
+    type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,
     >;

@@ -16,11 +16,14 @@ use super::proto_to_json as p2j;
 use super::streaming;
 
 mod ceremony_history_requests;
+mod ceremony_read_dispatch;
 mod ceremony_requests;
 mod children_dispatch;
 mod design_ceremony_request;
 mod general_dispatch;
 mod general_requests;
+mod lifecycle_dispatch;
+mod lifecycle_requests;
 mod request_error;
 
 use request_error::bad_request;
@@ -56,38 +59,14 @@ pub(crate) async fn dispatch(
     if children_dispatch::handles(name) {
         return children_dispatch::dispatch(&mut client, name, arguments).await;
     }
+    if lifecycle_dispatch::handles(name) {
+        return lifecycle_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if ceremony_read_dispatch::handles(name) {
+        return ceremony_read_dispatch::dispatch(&mut client, name, arguments).await;
+    }
 
     match name {
-        // The read side of a working session. The response is the
-        // same shape the in-process backend renders, which is the
-        // whole point: one tool, either backend, one answer.
-        "made_get_ceremony_instance" => {
-            let obj =
-                j2p::require_object(arguments, "tools/call.arguments").map_err(bad_request)?;
-            let request = pb::GetCeremonyInstanceRequest {
-                ceremony_id: j2p::require_str(obj, "ceremony_id")
-                    .map_err(bad_request)?
-                    .to_owned(),
-            };
-            let response = client.get_ceremony_instance(request).await?;
-            let pb::GetCeremonyInstanceResponse { instance } = response.into_inner();
-            instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_list_ceremony_instances" => {
-            let response = client
-                .list_ceremony_instances(pb::ListCeremonyInstancesRequest {})
-                .await?;
-            let pb::ListCeremonyInstancesResponse { instances } = response.into_inner();
-            let entries = instances
-                .into_iter()
-                .map(p2j::ceremony_instance_listing_entry)
-                .collect::<Vec<_>>();
-            Ok(crate::renderers::CeremonyInstanceListing::new(entries).to_json())
-        }
-
         // Every move answers with the session, so one converter serves
         // them all — the same shape the in-process backend renders.
         "made_start_ceremony" => {
@@ -147,50 +126,6 @@ pub(crate) async fn dispatch(
             let response = client.apply_ceremony_transition(request).await?;
             let pb::ApplyCeremonyTransitionResponse { instance } = response.into_inner();
             instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_pause_ceremony" => {
-            let request =
-                ceremony_requests::build_pause_ceremony_request(arguments).map_err(bad_request)?;
-            let response = client.pause_ceremony(request).await?;
-            response
-                .into_inner()
-                .instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_resume_ceremony" => {
-            let request =
-                ceremony_requests::build_resume_ceremony_request(arguments).map_err(bad_request)?;
-            let response = client.resume_ceremony(request).await?;
-            response
-                .into_inner()
-                .instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_cancel_ceremony" => {
-            let request =
-                ceremony_requests::build_cancel_ceremony_request(arguments).map_err(bad_request)?;
-            let response = client.cancel_ceremony(request).await?;
-            response
-                .into_inner()
-                .instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_enforce_ceremony_deadlines" => {
-            let request = ceremony_requests::build_enforce_ceremony_deadlines_request(arguments)
-                .map_err(bad_request)?;
-            let response = client.enforce_ceremony_deadlines(request).await?;
-            response
-                .into_inner()
-                .instance
                 .map(p2j::ceremony_instance_state_to_json)
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
@@ -422,14 +357,12 @@ use ceremony_history_requests::{
 use ceremony_requests::{
     build_accept_child_completion_request, build_apply_ceremony_transition_request,
     build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
-    build_cancel_ceremony_request, build_claim_ceremony_step_request,
-    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
-    build_complete_ceremony_step_request, build_defer_ceremony_guard_request,
-    build_enforce_ceremony_deadlines_request, build_pause_ceremony_request,
-    build_prepare_ceremony_children_request, build_recover_ceremony_children_request,
-    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
-    build_resume_ceremony_request, build_run_ceremony_step_request, build_start_ceremony_request,
-    build_start_published_ceremony_request,
+    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
+    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
+    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
+    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
+    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
+    build_start_ceremony_request, build_start_published_ceremony_request,
 };
 #[cfg(test)]
 use design_ceremony_request::build_design_ceremony_request;

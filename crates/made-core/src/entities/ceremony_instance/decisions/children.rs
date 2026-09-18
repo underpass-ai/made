@@ -6,6 +6,7 @@ use crate::entities::ceremony_events::{
 };
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
+use crate::value_objects::ChildSpawnPlan;
 
 impl CeremonyInstance {
     pub(super) fn decide_plan_children(
@@ -15,14 +16,8 @@ impl CeremonyInstance {
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
         let plan = &command.plan;
-        if let Some(existing) = self.child_groups.get(plan.group_id()) {
-            return if existing.plan() == plan {
-                Ok(Vec::new())
-            } else {
-                Err(DomainError::AlreadyExists {
-                    what: "child_spawn_group",
-                })
-            };
+        if let Some(outcome) = self.existing_child_plan(plan) {
+            return outcome;
         }
         self.require_admits_new_work("plan_children")?;
         let coordinates = plan.coordinates();
@@ -116,6 +111,21 @@ impl CeremonyInstance {
         })])
     }
 
+    fn existing_child_plan(
+        &self,
+        plan: &ChildSpawnPlan,
+    ) -> Option<Result<Vec<CeremonyEvent>, DomainError>> {
+        self.child_groups.get(plan.group_id()).map(|existing| {
+            if existing.plan() == plan {
+                Ok(Vec::new())
+            } else {
+                Err(DomainError::AlreadyExists {
+                    what: "child_spawn_group",
+                })
+            }
+        })
+    }
+
     pub(super) fn decide_adopt_child_plan(
         &self,
         command: &AdoptChildSpawnPlan,
@@ -131,7 +141,6 @@ impl CeremonyInstance {
         if group.adopted_claim_fence() == &command.claim_fence {
             return Ok(Vec::new());
         }
-        self.require_admits_new_work("adopt_child_plan")?;
         let coordinates = group.plan().coordinates();
         let record = self
             .step_record(coordinates.step_id())

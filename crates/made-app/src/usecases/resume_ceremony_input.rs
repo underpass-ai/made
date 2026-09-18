@@ -1,9 +1,9 @@
-use made_core::value_objects::{AuditActorKind, CeremonyId};
+use made_core::value_objects::{AuditActorId, AuditActorKind, CeremonyId};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResumeCeremonyInput {
     pub(crate) instance_id: CeremonyId,
-    pub(crate) actor_id: String,
+    pub(crate) actor_id: AuditActorId,
     pub(crate) actor_kind: AuditActorKind,
 }
 
@@ -16,7 +16,7 @@ impl ResumeCeremonyInput {
     ) -> Self {
         Self {
             instance_id,
-            actor_id: actor_id.into(),
+            actor_id: AuditActorId::new(actor_id),
             actor_kind,
         }
     }

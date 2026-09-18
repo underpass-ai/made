@@ -30,7 +30,7 @@ impl CeremonyInstance {
                 })])
             }
             CeremonyLifecyclePhase::Paused => Ok(Vec::new()),
-            phase => Err(DomainError::LifecycleRefused {
+            phase @ CeremonyLifecyclePhase::Ended => Err(DomainError::LifecycleRefused {
                 operation: "pause",
                 phase,
             }),
@@ -56,7 +56,7 @@ impl CeremonyInstance {
                 })])
             }
             CeremonyLifecyclePhase::Running => Ok(Vec::new()),
-            phase => Err(DomainError::LifecycleRefused {
+            phase @ CeremonyLifecyclePhase::Ended => Err(DomainError::LifecycleRefused {
                 operation: "resume",
                 phase,
             }),

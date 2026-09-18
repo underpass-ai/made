@@ -1,15 +1,13 @@
 use super::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    assert_ceremony_reason_input_from_proto, cancel_ceremony_input_from_proto,
-    child_completion_state_from, close_ceremony_intervention_input_from_proto,
-    collect_ceremony_evidence_input_from_proto, debug, defer_ceremony_guard_input_from_proto,
-    domain_error_to_status, enforce_ceremony_deadlines_input_from_proto, link_span_to_metadata,
-    pause_ceremony_input_from_proto, pb, request_ceremony_intervention_input_from_proto,
-    respond_to_ceremony_intervention_input_from_proto, resume_ceremony_input_from_proto,
-    run_ceremony_input_from_proto, run_ceremony_response_from, run_ceremony_step_input_from_proto,
-    start_ceremony_from_proto, start_published_ceremony_input_from_proto, CeremonyId,
-    CeremonyParticipantPlanAdapter, GrpcResult, MadeGrpcService, Request, Response,
-    StartCeremonyFromYaml,
+    assert_ceremony_reason_input_from_proto, child_completion_state_from,
+    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
+    debug, defer_ceremony_guard_input_from_proto, domain_error_to_status, link_span_to_metadata,
+    pb, request_ceremony_intervention_input_from_proto,
+    respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
+    run_ceremony_response_from, run_ceremony_step_input_from_proto, start_ceremony_from_proto,
+    start_published_ceremony_input_from_proto, CeremonyId, CeremonyParticipantPlanAdapter,
+    GrpcResult, MadeGrpcService, Request, Response, StartCeremonyFromYaml,
 };
 use made_app::usecases::AcceptChildCompletionInput;
 use made_core::error::DomainError;
@@ -251,78 +249,6 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::ApplyCeremonyTransitionResponse {
             instance: Some(self.render(&moved, &definition).await?),
-        }))
-    }
-
-    #[tracing::instrument(name = "rpc.pause_ceremony", skip_all)]
-    pub(super) async fn handle_pause_ceremony(
-        &self,
-        request: Request<pb::PauseCeremonyRequest>,
-    ) -> GrpcResult<pb::PauseCeremonyResponse> {
-        link_span_to_metadata(&request);
-        let input = pause_ceremony_input_from_proto(request.into_inner())
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .pause_ceremony
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::PauseCeremonyResponse {
-            instance: Some(self.project(&instance).await?),
-        }))
-    }
-
-    #[tracing::instrument(name = "rpc.resume_ceremony", skip_all)]
-    pub(super) async fn handle_resume_ceremony(
-        &self,
-        request: Request<pb::ResumeCeremonyRequest>,
-    ) -> GrpcResult<pb::ResumeCeremonyResponse> {
-        link_span_to_metadata(&request);
-        let input = resume_ceremony_input_from_proto(request.into_inner())
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .resume_ceremony
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::ResumeCeremonyResponse {
-            instance: Some(self.project(&instance).await?),
-        }))
-    }
-
-    #[tracing::instrument(name = "rpc.cancel_ceremony", skip_all)]
-    pub(super) async fn handle_cancel_ceremony(
-        &self,
-        request: Request<pb::CancelCeremonyRequest>,
-    ) -> GrpcResult<pb::CancelCeremonyResponse> {
-        link_span_to_metadata(&request);
-        let input = cancel_ceremony_input_from_proto(request.into_inner())
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .cancel_ceremony
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::CancelCeremonyResponse {
-            instance: Some(self.project(&instance).await?),
-        }))
-    }
-
-    #[tracing::instrument(name = "rpc.enforce_ceremony_deadlines", skip_all)]
-    pub(super) async fn handle_enforce_ceremony_deadlines(
-        &self,
-        request: Request<pb::EnforceCeremonyDeadlinesRequest>,
-    ) -> GrpcResult<pb::EnforceCeremonyDeadlinesResponse> {
-        link_span_to_metadata(&request);
-        let input = enforce_ceremony_deadlines_input_from_proto(request.into_inner())
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .enforce_ceremony_deadlines
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::EnforceCeremonyDeadlinesResponse {
-            instance: Some(self.project(&instance).await?),
         }))
     }
 

@@ -9,7 +9,7 @@ impl CeremonyInstance {
     pub(super) fn apply_transition_applied(&mut self, applied: &TransitionApplied) {
         if let Some(destination) = &applied.destination {
             self.current_state_visit = destination.state_visit;
-            self.state_deadline = destination.deadline.clone();
+            self.state_deadline.clone_from(&destination.deadline);
             for step_id in &destination.step_ids {
                 if let Some(previous) = self.step_records.remove(step_id) {
                     if previous.status() != StepStatus::Pending {
