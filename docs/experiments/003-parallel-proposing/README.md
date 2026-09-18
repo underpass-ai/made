@@ -12,28 +12,28 @@ instances and processes have separate pools. Constructors, the service and the
 embedded defaults continue to propose sequentially. Peer review stays ordered.
 No environment variable enables this experiment automatically.
 
-The opt-in drains provider futures before returning a proposal error and keeps
+The opt-in attempts all requested calls, drains their futures before returning
+a proposal error, and keeps
 results in agent declaration order. Cancelling the entire caller drops local
 futures and releases permits; this does not promise cancellation of a remote
 provider's work. The default sequential path still stops on its first error.
 
 ## Method and evidence
 
-Measured code: `86460f6b784a23e7a39d72cb35b30394a03433d6`.
+Measured code: `2180cc8b5e4136040e2de8f0cd33501734166970`.
 [Environment](results/environment.json) records the exact tree and toolchain;
 [measurements](results/measurements.csv) contain all 40 samples.
 
 Eight fixture agents each wait 20 ms while holding a provider serving slot.
-The provider has either one or four slots. Scheduler widths are 1 (the actual
-sequential helper), 2, 4 and 8, with five runs per combination. This is a debug
+The provider has either one or four slots. Scheduler widths are 1 (sequential calls), 2, 4 and 8, with five runs per combination. This is a debug
 build on Tokio's current-thread test runtime; other development builds were
 running on the host. Compilation time is excluded. The experiment asserts all
 eight proposals finish but makes no timing assertion in ordinary tests.
 
 | Provider slots | Width 1 median ms | Width 2 | Width 4 | Width 8 |
 | --- | ---: | ---: | ---: | ---: |
-| 1 | 169.850 | 170.313 | 169.218 | 169.282 |
-| 4 | 169.746 | 84.879 | 42.563 | 42.575 |
+| 1 | 169.026 | 168.723 | 168.356 | 168.672 |
+| 4 | 169.661 | 84.826 | 42.496 | 42.525 |
 
 Four serving slots reduce proposal time by about four times at width 4 in this
 fixture. Width 8 adds no useful throughput. With one serving slot, all widths
