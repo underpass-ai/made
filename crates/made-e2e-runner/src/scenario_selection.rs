@@ -24,12 +24,14 @@ pub(crate) enum E2eScenario {
     SpeakerTalkQa,
     ConcurrentReviewPattern,
     IncidentReviewPattern,
+    DurableChildren,
+    CeremonyProgress,
 }
 
 impl E2eScenario {
     // Repo-owned compose scenarios only. Real provider scenarios stay
     // opt-in because they require external infrastructure.
-    const ALL: [Self; 11] = [
+    const ALL: [Self; 13] = [
         Self::SeededCouncil,
         Self::Deliberate,
         Self::DeleteMissingCouncil,
@@ -41,6 +43,8 @@ impl E2eScenario {
         Self::VllmStructuredOutput,
         Self::ConcurrentReviewPattern,
         Self::IncidentReviewPattern,
+        Self::DurableChildren,
+        Self::CeremonyProgress,
     ];
 
     const VLLM_REAL: [Self; 1] = [Self::VllmRealMultiAgent];
@@ -58,6 +62,10 @@ impl E2eScenario {
     const SPEAKER_TALK_QA: [Self; 1] = [Self::SpeakerTalkQa];
 
     const PATTERNS: [Self; 2] = [Self::ConcurrentReviewPattern, Self::IncidentReviewPattern];
+
+    const CHILDREN: [Self; 1] = [Self::DurableChildren];
+
+    const PROGRESS: [Self; 1] = [Self::CeremonyProgress];
 
     const CLUSTER_CONNECTIVITY: [Self; 4] = [
         Self::SeededCouncil,
@@ -95,6 +103,8 @@ impl E2eScenario {
             Self::SpeakerTalkQa => 16,
             Self::ConcurrentReviewPattern => 17,
             Self::IncidentReviewPattern => 18,
+            Self::DurableChildren => 19,
+            Self::CeremonyProgress => 20,
         }
     }
 }
@@ -176,6 +186,14 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
             selected.insert(E2eScenario::IncidentReviewPattern);
             return Ok(());
         }
+        "children" | "durable-children" => {
+            selected.extend(E2eScenario::CHILDREN);
+            return Ok(());
+        }
+        "progress" | "ceremony-progress" => {
+            selected.extend(E2eScenario::PROGRESS);
+            return Ok(());
+        }
         _ => {}
     }
 
@@ -201,7 +219,7 @@ fn add_scenario_token(token: &str, selected: &mut BTreeSet<E2eScenario>) -> Resu
     }
 
     bail!(
-        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, technical-debate, sprint-planning, speaker-talk-qa, patterns, 1-18, or a range like 1-4"
+        "unknown scenario selector `{token}`; expected compose, cluster-connectivity, runtime-stub, structured-output, vllm-real-multi-agent, ceremony-vllm, daily-standup, technical-debate, sprint-planning, speaker-talk-qa, patterns, children, progress, 1-20, or a range like 1-4"
     )
 }
 
@@ -225,7 +243,9 @@ fn scenario_from_number(number: u8) -> Result<E2eScenario> {
         16 => Ok(E2eScenario::SpeakerTalkQa),
         17 => Ok(E2eScenario::ConcurrentReviewPattern),
         18 => Ok(E2eScenario::IncidentReviewPattern),
-        _ => bail!("scenario number {number} is out of range; expected 1-18"),
+        19 => Ok(E2eScenario::DurableChildren),
+        20 => Ok(E2eScenario::CeremonyProgress),
+        _ => bail!("scenario number {number} is out of range; expected 1-20"),
     }
 }
 
@@ -251,11 +271,17 @@ mod tests {
 
     #[test]
     fn default_selection_is_full_compose_suite() {
-        assert_eq!(numbers(None), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18]);
-        assert_eq!(numbers(Some("")), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18]);
+        assert_eq!(
+            numbers(None),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 19, 20]
+        );
+        assert_eq!(
+            numbers(Some("")),
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 19, 20]
+        );
         assert_eq!(
             scenario_selection_summary(&parse_scenario_selection(None).unwrap()),
-            "1,2,3,4,5,6,7,8,9,17,18"
+            "1,2,3,4,5,6,7,8,9,17,18,19,20"
         );
     }
 
@@ -263,7 +289,7 @@ mod tests {
     fn named_groups_expand_to_expected_scenarios() {
         assert_eq!(
             numbers(Some("compose")),
-            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18]
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 17, 18, 19, 20]
         );
         assert_eq!(numbers(Some("cluster-connectivity")), vec![1, 2, 3, 4]);
         assert_eq!(numbers(Some("runtime-stub")), vec![5]);
@@ -285,6 +311,8 @@ mod tests {
         assert_eq!(numbers(Some("patterns")), vec![17, 18]);
         assert_eq!(numbers(Some("concurrent-review")), vec![17]);
         assert_eq!(numbers(Some("incident_review")), vec![18]);
+        assert_eq!(numbers(Some("children")), vec![19]);
+        assert_eq!(numbers(Some("ceremony-progress")), vec![20]);
     }
 
     #[test]
@@ -299,12 +327,12 @@ mod tests {
         assert_eq!(numbers(Some("s12")), vec![12]);
         assert_eq!(numbers(Some("s13")), vec![13]);
         assert_eq!(numbers(Some("s16")), vec![16]);
-        assert_eq!(numbers(Some("17-18")), vec![17, 18]);
+        assert_eq!(numbers(Some("17-20")), vec![17, 18, 19, 20]);
     }
 
     #[test]
     fn invalid_selection_is_rejected() {
-        assert!(parse_scenario_selection(Some("19")).is_err());
+        assert!(parse_scenario_selection(Some("21")).is_err());
         assert!(parse_scenario_selection(Some("4-1")).is_err());
         assert!(parse_scenario_selection(Some("unknown")).is_err());
     }

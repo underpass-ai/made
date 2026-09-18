@@ -56,6 +56,7 @@ services:
       MADE_GRPC_PORT: "50055"
       MADE_NATS_ENABLED: "true"
       MADE_NATS_URL: "nats://nats:4222"
+      MADE_CEREMONY_STORE_PATH: "/tmp/made-e2e.sqlite3"
       MADE_PUBLISH_PREFIX: "made"
       MADE_TRIGGER_SUBJECT: "made.trigger.>"
       MADE_SEED_SPECIALTIES: "triage"
@@ -88,7 +89,7 @@ services:
     environment:
       MADE_ENDPOINT: "http://made:50055"
       MADE_SEED_SPECIALTY: "triage"
-      # Compose-owned 1-9 and 17-18 suite by default. Override from the host with, e.g.,
+      # Compose-owned 1-9 and 17-20 suite by default. Override from the host with, e.g.,
       # `MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
       MADE_E2E_SCENARIOS: "${MADE_E2E_SCENARIOS:-compose}"
       # Pinned to the path that runner.Dockerfile copies into the

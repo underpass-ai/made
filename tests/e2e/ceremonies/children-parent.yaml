@@ -1,0 +1,44 @@
+version: "1.0"
+name: children_parent
+description: "A parent fans out two durable children and joins all completions"
+inputs:
+  required: [brief]
+outputs:
+  result:
+    type: object
+states:
+  - id: FAN_OUT
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: FAN_OUT
+    to: DONE
+    trigger: finish_parent
+    guards: [all_children_completed]
+steps:
+  - id: spawn_reviews
+    state: FAN_OUT
+    handler: host_callback
+    config: {}
+    spawn:
+      children:
+        - ceremony: children_review
+          version: "1.0"
+          inputs: {review_brief: brief}
+        - ceremony: children_review
+          version: "1.0"
+          inputs: {review_brief: brief}
+      max_children: 2
+      max_depth: 2
+guards:
+  all_children_completed:
+    type: automated
+    check: "children_completed:spawn_reviews:all"
+roles:
+  - id: COORDINATOR
+    allowed_actions: [spawn_reviews, finish_parent]
+timeouts:
+  step_default: 30
+retry_policies:
+  default: {max_attempts: 1, backoff_seconds: 0}
