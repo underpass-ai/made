@@ -1,4 +1,4 @@
-use made_app::usecases::RunCeremonyStepInput;
+use made_app::usecases::{RunCeremonyStepInput, RunCeremonyStepOutput};
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
 };
@@ -27,23 +27,36 @@ pub(super) struct EmbeddedRunCeremonyStepRequest {
 
 impl EmbeddedRunCeremonyStepRequest {
     pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
+        let ceremony_id = self.ceremony_id.clone();
+        self.execute_output(made).await?;
+        Ok(ceremony_id)
+    }
+
+    pub(super) async fn execute_output(
+        self,
+        made: &EmbeddedMade,
+    ) -> Result<RunCeremonyStepOutput, ToolError> {
         let (definition, _instance) = load_instance_definition(made, &self.ceremony_id).await?;
         let role_id = definition.role_id_for_step(&self.step_id)?;
 
-        made.run_step(
-            RunCeremonyStepInput::new(
-                self.ceremony_id.clone(),
-                role_id,
-                self.actor_kind,
-                self.step_id,
-                self.lease_owner_id,
-                self.idempotency_key,
-                self.lease_ttl,
+        Ok(made
+            .run_step(
+                RunCeremonyStepInput::new(
+                    self.ceremony_id.clone(),
+                    role_id,
+                    self.actor_kind,
+                    self.step_id,
+                    self.lease_owner_id,
+                    self.idempotency_key,
+                    self.lease_ttl,
+                )
+                .with_automatic_role_resolution(),
             )
-            .with_automatic_role_resolution(),
-        )
-        .await?;
-        Ok(self.ceremony_id)
+            .await?)
+    }
+
+    pub(super) fn step_id(&self) -> &StepId {
+        &self.step_id
     }
 }
 

@@ -10,6 +10,7 @@
 use crate::entities::{CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
+mod children;
 mod context;
 mod guard_decisions;
 mod import;
@@ -65,6 +66,13 @@ impl CeremonyInstance {
             CeremonyEvent::CeremonyCompleted(completed) => self.apply_ceremony_completed(completed),
             CeremonyEvent::InstanceImported(imported) => self.apply_instance_imported(imported),
             CeremonyEvent::MemoryRecalled(recalled) => self.apply_memory_recalled(recalled),
+            CeremonyEvent::ChildSpawnPlanned(event) => self.apply_child_spawn_planned(event),
+            CeremonyEvent::ChildSpawnPlanAdopted(event) => {
+                self.apply_child_spawn_plan_adopted(event);
+            }
+            CeremonyEvent::ChildCompletionAccepted(event) => {
+                self.apply_child_completion_accepted(event);
+            }
         }
     }
 

@@ -11,7 +11,10 @@ use made_core::value_objects::{MaxParallel, StepLease, StepResult};
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
-use super::{prepare_step_execution, PreparedStepExecution};
+use super::{
+    prepare_step_execution, PrepareCeremonyChildrenInput, PrepareCeremonyChildrenUseCase,
+    PreparedStepExecution,
+};
 use crate::services::{
     ceremony_transcript_projection, session_facts, ConflictPolicy, SessionStream,
 };
@@ -22,6 +25,7 @@ pub struct RunCeremonyStepUseCase {
     handler: Arc<dyn CeremonyStepHandlerPort>,
     clock: Arc<dyn ClockPort>,
     max_parallel_ceiling: MaxParallel,
+    children: Option<Arc<PrepareCeremonyChildrenUseCase>>,
 }
 
 impl std::fmt::Debug for RunCeremonyStepUseCase {
@@ -44,12 +48,22 @@ impl RunCeremonyStepUseCase {
             handler,
             clock,
             max_parallel_ceiling: MaxParallel::SERVER_MAX,
+            children: None,
         }
     }
 
     #[must_use]
     pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
         self.max_parallel_ceiling = ceiling;
+        self
+    }
+
+    #[must_use]
+    pub fn with_child_orchestrator(
+        mut self,
+        children: Arc<PrepareCeremonyChildrenUseCase>,
+    ) -> Self {
+        self.children = Some(children);
         self
     }
 
@@ -82,6 +96,11 @@ impl RunCeremonyStepUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
+        if step.spawn().is_some() && self.children.is_none() {
+            return Err(DomainError::InvariantViolated {
+                reason: "child-spawning step requires the child orchestrator",
+            });
+        }
         let requested_role_id = input.requested_role_id();
         let actor_kind = input.role_kind;
 
@@ -127,6 +146,23 @@ impl RunCeremonyStepUseCase {
             record.iteration(),
             attempt,
         );
+
+        if step.spawn().is_some() {
+            let children = self
+                .children
+                .as_ref()
+                .expect("child orchestrator checked before the durable claim");
+            let output = children
+                .execute(PrepareCeremonyChildrenInput::new(
+                    instance.id().clone(),
+                    input.step_id,
+                    claim_fence,
+                    input.role_kind,
+                ))
+                .await?;
+            let (instance, result) = output.into_parts();
+            return Ok(RunCeremonyStepOutput::new(instance, attempt, result));
+        }
 
         // What was said so far, folded from the stream: every step
         // that completed is in it, however it was driven.
@@ -229,8 +265,9 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition, definition_resolver, idempotency_key,
-        lease_owner, lease_ttl, now, repeating_approval_definition, resolver_with, role_id,
+        a_memory, approval_definition, ceremony_id, child_spawning_definition, definition,
+        definition_resolver, idempotency_key, lease_owner, lease_ttl, now,
+        repeating_approval_definition, resolver_with, review_child_definition, role_id,
         started_instance, step_id, stream, stream_over, DefinitionRepositoryFake, EventStoreFake,
         FixedClock, PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
     };
@@ -244,6 +281,95 @@ mod tests {
             )]))
             .unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn a_spawn_step_without_an_orchestrator_is_refused_before_the_claim() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&started_instance(&definition)).await.unwrap();
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(StepOutput::empty()).unwrap(),
+        ));
+        let usecase = RunCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream(store.clone()),
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let error = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                lease_owner(),
+                idempotency_key("spawn-without-orchestrator"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("child orchestrator"));
+        assert!(handler.requests().await.is_empty());
+        assert!(
+            store.facts().await.is_empty(),
+            "a refused spawn was claimed"
+        );
+    }
+
+    #[tokio::test]
+    async fn a_spawn_step_opens_every_child_through_the_configured_orchestrator() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(review_child_definition()).await;
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&started_instance(&definition)).await.unwrap();
+        let stream = stream(store.clone());
+        let resolver = resolver_with(definitions, publications.clone());
+        let children = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver.clone(),
+            publications,
+            stream.clone(),
+            Arc::new(FixedClock::new(now())),
+            a_memory(),
+        ));
+        let handler = Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
+            reason: "spawn steps must not reach a handler",
+        }));
+        let usecase = RunCeremonyStepUseCase::new(
+            resolver,
+            stream,
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        )
+        .with_child_orchestrator(children);
+
+        let output = usecase
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                lease_owner(),
+                idempotency_key("spawn-with-orchestrator"),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(output.result().status(), StepStatus::Completed);
+        assert!(handler.requests().await.is_empty());
+        let group = output.instance().child_groups().values().next().unwrap();
+        assert_eq!(group.plan().children().len(), 1);
+        let child = group.plan().children()[0].child_id();
+        assert!(
+            store.exists(child).await,
+            "the planned child was not opened"
+        );
     }
 
     /// The regression this whole change exists for. Publishing writes

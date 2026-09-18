@@ -115,7 +115,10 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::EvidenceCollected(_)
             | CeremonyEvent::ReasonAsserted(_)
             | CeremonyEvent::InstanceImported(_)
-            | CeremonyEvent::MemoryRecalled(_) => {}
+            | CeremonyEvent::MemoryRecalled(_)
+            | CeremonyEvent::ChildSpawnPlanned(_)
+            | CeremonyEvent::ChildSpawnPlanAdopted(_)
+            | CeremonyEvent::ChildCompletionAccepted(_) => {}
         }
     }
 

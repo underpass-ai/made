@@ -123,6 +123,55 @@ pub(crate) async fn dispatch(
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
 
+        "made_prepare_ceremony_children" => {
+            let request = ceremony_requests::build_prepare_ceremony_children_request(arguments)
+                .map_err(bad_request)?;
+            let response = client
+                .prepare_ceremony_children(request)
+                .await?
+                .into_inner();
+            let instance = response
+                .instance
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))?;
+            Ok(json!({
+                "instance": instance,
+                "child_group_id": response.child_group_id,
+                "child_ids": response.child_ids,
+            }))
+        }
+
+        "made_accept_child_completion" => {
+            let request = ceremony_requests::build_accept_child_completion_request(arguments)
+                .map_err(bad_request)?;
+            let response = client.accept_child_completion(request).await?.into_inner();
+            let parent = response
+                .parent
+                .map(p2j::ceremony_instance_state_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no parent ceremony instance"))?;
+            let completion = response
+                .completion
+                .map(p2j::child_completion_to_json)
+                .ok_or_else(|| ToolError::refused("made returned no verified child completion"))?;
+            Ok(json!({ "parent": parent, "completion": completion }))
+        }
+
+        "made_recover_ceremony_children" => {
+            let request = ceremony_requests::build_recover_ceremony_children_request(arguments)
+                .map_err(bad_request)?;
+            let response = client
+                .recover_ceremony_children(request)
+                .await?
+                .into_inner();
+            Ok(json!({
+                "recovered_plans": response.recovered_plans,
+                "accepted_completions": response.accepted_completions,
+                "skipped": response.skipped,
+                "failed": response.failed,
+                "busy": response.busy,
+            }))
+        }
+
         // Claim, do the work outside the engine, complete. The host
         // performs the step itself; these two calls are how the
         // session learns it was taken on and how it ended.
@@ -374,13 +423,14 @@ use ceremony_history_requests::{
 };
 #[cfg(test)]
 use ceremony_requests::{
-    build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,
-    build_assert_ceremony_reason_request, build_claim_ceremony_step_request,
-    build_close_ceremony_intervention_request, build_collect_ceremony_evidence_request,
-    build_complete_ceremony_step_request, build_defer_ceremony_guard_request,
-    build_request_ceremony_intervention_request, build_respond_to_ceremony_intervention_request,
-    build_run_ceremony_step_request, build_start_ceremony_request,
-    build_start_published_ceremony_request,
+    build_accept_child_completion_request, build_apply_ceremony_transition_request,
+    build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
+    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
+    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
+    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
+    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
+    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
+    build_start_ceremony_request, build_start_published_ceremony_request,
 };
 #[cfg(test)]
 use design_ceremony_request::build_design_ceremony_request;

@@ -1,13 +1,18 @@
 use made_app::usecases::StartCeremonyStepOutput;
 use made_app::usecases::{
+    AcceptChildCompletionInput, AcceptChildCompletionOutput, AcceptChildCompletionUseCase,
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, BindCeremonyParticipantsInput,
     BindCeremonyParticipantsUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
-    RunCeremonyInput, RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    PrepareCeremonyChildrenInput, PrepareCeremonyChildrenOutput, PrepareCeremonyChildrenUseCase,
+    RecoverCeremonyChildrenRound, RecoverCeremonyChildrenUseCase, RunCeremonyInput,
+    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
+use made_core::value_objects::{CeremonyEventConsumer, CeremonyEventPageLimit};
+use std::sync::Arc;
 
 use super::EmbeddedMade;
 
@@ -21,6 +26,7 @@ impl EmbeddedMade {
         )
         .with_metrics(self.metrics_recorder.clone())
         .with_max_parallel_ceiling(self.max_parallel_ceiling)
+        .with_child_orchestrator(self.child_orchestrator())
         .execute(input)
         .await
     }
@@ -90,8 +96,59 @@ impl EmbeddedMade {
             self.clock.clone(),
         )
         .with_max_parallel_ceiling(self.max_parallel_ceiling)
+        .with_child_orchestrator(self.child_orchestrator())
         .execute(input)
         .await
+    }
+
+    pub async fn prepare_children(
+        &self,
+        input: PrepareCeremonyChildrenInput,
+    ) -> Result<PrepareCeremonyChildrenOutput, DomainError> {
+        self.child_orchestrator().execute(input).await
+    }
+
+    pub async fn accept_child_completion(
+        &self,
+        input: AcceptChildCompletionInput,
+    ) -> Result<AcceptChildCompletionOutput, DomainError> {
+        self.child_completion_acceptor().execute(input).await
+    }
+
+    pub async fn recover_children(
+        &self,
+        limit: CeremonyEventPageLimit,
+    ) -> Result<RecoverCeremonyChildrenRound, DomainError> {
+        RecoverCeremonyChildrenUseCase::new(
+            self.events.clone(),
+            self.cursors.clone(),
+            self.stream.clone(),
+            self.child_orchestrator(),
+            self.child_completion_acceptor(),
+            self.clock.clone(),
+            CeremonyEventConsumer::new("made.children.recovery.v1")?,
+        )
+        .execute(limit)
+        .await
+    }
+
+    fn child_orchestrator(&self) -> Arc<PrepareCeremonyChildrenUseCase> {
+        Arc::new(PrepareCeremonyChildrenUseCase::new(
+            self.resolve_definition(),
+            self.publications.clone(),
+            self.stream.clone(),
+            self.clock.clone(),
+            self.memory_reader.clone(),
+        ))
+    }
+
+    fn child_completion_acceptor(&self) -> Arc<AcceptChildCompletionUseCase> {
+        Arc::new(AcceptChildCompletionUseCase::new(
+            self.resolve_definition(),
+            self.publications.clone(),
+            self.stream.clone(),
+            self.clock.clone(),
+        ))
     }
 
     pub async fn complete_step(

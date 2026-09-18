@@ -28,13 +28,15 @@ use crate::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyDefinitionDigest, CeremonyEvidenceSourceId,
     CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
-    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName,
+    CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyLineage, CeremonyName,
     CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
-    CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey, MemoryConfidence,
-    RoleAction, RoleId, SessionRecollection, Specialty, StateId, StateIteration, StateVisit,
-    StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
+    CeremonyTransitionRecord, CeremonyVersion, ChildGroupId, ChildGroupState, GuardName,
+    IdempotencyKey, MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty, StateId,
+    StateIteration, StateVisit, StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult,
+    TransitionTrigger,
 };
 
+mod children;
 mod decisions;
 mod fold;
 mod guard_decisions;
@@ -134,6 +136,10 @@ pub struct CeremonyInstance {
     /// to have run it.
     #[serde(default)]
     bound_definition: Option<CeremonyDefinitionDigest>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    lineage: Option<CeremonyLineage>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    child_groups: BTreeMap<ChildGroupId, ChildGroupState>,
 }
 
 impl CeremonyInstance {
@@ -149,7 +155,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
         Ok(Self::from_started(&Self::opening(
-            id, definition, context, now, None,
+            id, definition, context, now, None, None,
         )?))
     }
 
@@ -170,6 +176,7 @@ impl CeremonyInstance {
             context,
             now,
             Some(published.digest()),
+            None,
         )?))
     }
 
@@ -178,6 +185,21 @@ impl CeremonyInstance {
     #[must_use]
     pub fn bound_definition(&self) -> Option<CeremonyDefinitionDigest> {
         self.bound_definition
+    }
+
+    #[must_use]
+    pub fn lineage(&self) -> Option<&CeremonyLineage> {
+        self.lineage.as_ref()
+    }
+
+    #[must_use]
+    pub fn child_groups(&self) -> &BTreeMap<ChildGroupId, ChildGroupState> {
+        &self.child_groups
+    }
+
+    #[must_use]
+    pub fn child_group(&self, group_id: &ChildGroupId) -> Option<&ChildGroupState> {
+        self.child_groups.get(group_id)
     }
 
     /// What earlier sessions in this session's scope decided, as this

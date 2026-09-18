@@ -38,6 +38,8 @@ impl CeremonyInstance {
             updated_at: started.created_at,
             completed_at: None,
             bound_definition: started.bound_definition,
+            lineage: started.lineage.clone(),
+            child_groups: BTreeMap::new(),
         }
     }
 }

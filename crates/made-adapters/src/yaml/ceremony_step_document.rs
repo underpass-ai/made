@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, CeremonyStep, CeremonyStepAggregation, ContextKey, ContextWrites,
-    DynamicRoleBinding, RetryPolicy, RoleId, StateId, StepHandlerConfig, StepHandlerKind, StepId,
-    StepOutputField, StepTimeout,
+    Attributes, CeremonyChildSpawn, CeremonyStep, CeremonyStepAggregation, ContextKey,
+    ContextWrites, DynamicRoleBinding, RetryPolicy, RoleId, StateId, StepHandlerConfig,
+    StepHandlerKind, StepId, StepOutputField, StepTimeout,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -28,6 +28,8 @@ pub(super) struct CeremonyStepDocument {
     context_writes: BTreeMap<String, String>,
     #[serde(default)]
     aggregate: Option<CeremonyStepAggregation>,
+    #[serde(default)]
+    spawn: Option<CeremonyChildSpawn>,
 }
 
 impl CeremonyStepDocument {
@@ -73,8 +75,12 @@ impl CeremonyStepDocument {
             })
             .collect::<Result<BTreeMap<_, _>, DomainError>>()?;
         let step = step.with_context_writes(ContextWrites::new(writes));
-        Ok(match self.aggregate {
+        let step = match self.aggregate {
             Some(aggregation) => step.with_aggregation(aggregation),
+            None => step,
+        };
+        Ok(match self.spawn {
+            Some(spawn) => step.with_spawn(spawn),
             None => step,
         })
     }

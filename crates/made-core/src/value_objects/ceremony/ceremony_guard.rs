@@ -56,6 +56,9 @@ impl CeremonyGuard {
             // Exhaustion needs the referenced step policy and the transition
             // source. CeremonyDefinition evaluates it with both available.
             GuardCondition::StepRepeatExhausted(_) => false,
+            // Requires the instance's durable child-group fold and exact
+            // execution coordinates; definition-only evaluation cannot prove it.
+            GuardCondition::ChildrenCompleted(_) => false,
             GuardCondition::HumanApproval => context.is_guard_approved(&self.name),
         }
     }

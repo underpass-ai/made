@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, RetryPolicy, StateId,
-    StepHandlerConfig, StepHandlerKind, StepId, StepRepeatPolicy, StepTimeout,
+    CeremonyChildSpawn, CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, RetryPolicy,
+    StateId, StepHandlerConfig, StepHandlerKind, StepId, StepRepeatPolicy, StepTimeout,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -19,6 +19,8 @@ pub struct CeremonyStep {
     dynamic_role_binding: Option<DynamicRoleBinding>,
     #[serde(default, skip_serializing_if = "ContextWrites::is_empty")]
     context_writes: ContextWrites,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    spawn: Option<CeremonyChildSpawn>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     aggregation: Option<CeremonyStepAggregation>,
 }
@@ -43,6 +45,7 @@ impl CeremonyStep {
             repeat_policy: None,
             dynamic_role_binding: None,
             context_writes: ContextWrites::default(),
+            spawn: None,
             aggregation: None,
         }
     }
@@ -62,6 +65,12 @@ impl CeremonyStep {
     #[must_use]
     pub fn with_repeat_policy(mut self, repeat_policy: StepRepeatPolicy) -> Self {
         self.repeat_policy = Some(repeat_policy);
+        self
+    }
+
+    #[must_use]
+    pub fn with_spawn(mut self, spawn: CeremonyChildSpawn) -> Self {
+        self.spawn = Some(spawn);
         self
     }
 
@@ -114,6 +123,11 @@ impl CeremonyStep {
     #[must_use]
     pub fn context_writes(&self) -> &ContextWrites {
         &self.context_writes
+    }
+
+    #[must_use]
+    pub fn spawn(&self) -> Option<&CeremonyChildSpawn> {
+        self.spawn.as_ref()
     }
 
     #[must_use]

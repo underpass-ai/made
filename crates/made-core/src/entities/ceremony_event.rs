@@ -10,11 +10,11 @@ use serde::{Deserialize, Serialize};
 use crate::value_objects::{AuditEventType, EventSchemaVersion};
 
 use super::ceremony_events::{
-    CeremonyCompleted, CeremonyInstanceStarted, ContextWritten, EvidenceCollected,
-    HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
-    InterventionRequested, InterventionResponded, MemoryRecalled, ParticipantsBound,
-    ReasonAsserted, StateIterationStarted, StepCompleted, StepFailed, StepStarted,
-    TransitionApplied,
+    CeremonyCompleted, CeremonyInstanceStarted, ChildCompletionAccepted, ChildSpawnPlanAdopted,
+    ChildSpawnPlanned, ContextWritten, EvidenceCollected, HumanApprovalRecorded,
+    HumanDeferralRecorded, InstanceImported, InterventionClosed, InterventionRequested,
+    InterventionResponded, MemoryRecalled, ParticipantsBound, ReasonAsserted,
+    StateIterationStarted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -49,6 +49,9 @@ pub enum CeremonyEvent {
     CeremonyCompleted(CeremonyCompleted),
     InstanceImported(InstanceImported),
     MemoryRecalled(MemoryRecalled),
+    ChildSpawnPlanned(ChildSpawnPlanned),
+    ChildSpawnPlanAdopted(ChildSpawnPlanAdopted),
+    ChildCompletionAccepted(ChildCompletionAccepted),
 }
 
 impl CeremonyEvent {
@@ -74,6 +77,9 @@ impl CeremonyEvent {
             Self::CeremonyCompleted(_) => AuditEventType::CeremonyCompleted,
             Self::InstanceImported(_) => AuditEventType::InstanceImported,
             Self::MemoryRecalled(_) => AuditEventType::MemoryRecalled,
+            Self::ChildSpawnPlanned(_) => AuditEventType::ChildSpawnPlanned,
+            Self::ChildSpawnPlanAdopted(_) => AuditEventType::ChildSpawnPlanAdopted,
+            Self::ChildCompletionAccepted(_) => AuditEventType::ChildCompletionAccepted,
         }
     }
 
@@ -130,6 +136,9 @@ impl CeremonyEvent {
             Self::ContextWritten(event) => event
                 .state_visit
                 .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::CeremonyInstanceStarted(event) if event.lineage.is_some() => {
+                EventSchemaVersion::V2
+            }
             Self::CeremonyInstanceStarted(_)
             | Self::ParticipantsBound(_)
             | Self::InterventionRequested(_)
@@ -141,7 +150,10 @@ impl CeremonyEvent {
             | Self::HumanDeferralRecorded(_)
             | Self::CeremonyCompleted(_)
             | Self::InstanceImported(_)
-            | Self::MemoryRecalled(_) => EventSchemaVersion::V1,
+            | Self::MemoryRecalled(_)
+            | Self::ChildSpawnPlanned(_)
+            | Self::ChildSpawnPlanAdopted(_)
+            | Self::ChildCompletionAccepted(_) => EventSchemaVersion::V1,
         }
     }
 }

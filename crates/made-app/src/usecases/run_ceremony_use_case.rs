@@ -18,6 +18,7 @@ use made_core::value_objects::{MaxParallel, StateExecution};
 use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
+use super::PrepareCeremonyChildrenUseCase;
 
 mod claimed_step;
 mod concurrent_state;
@@ -42,6 +43,7 @@ pub struct RunCeremonyUseCase {
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
     max_parallel_ceiling: MaxParallel,
+    children: Option<Arc<PrepareCeremonyChildrenUseCase>>,
 }
 
 impl std::fmt::Debug for RunCeremonyUseCase {
@@ -65,6 +67,7 @@ impl RunCeremonyUseCase {
             clock,
             metrics: Arc::new(NoopMetricsRecorder),
             max_parallel_ceiling: MaxParallel::SERVER_MAX,
+            children: None,
         }
     }
 
@@ -83,6 +86,15 @@ impl RunCeremonyUseCase {
         self
     }
 
+    #[must_use]
+    pub fn with_child_orchestrator(
+        mut self,
+        children: Arc<PrepareCeremonyChildrenUseCase>,
+    ) -> Self {
+        self.children = Some(children);
+        self
+    }
+
     // The ceremony driver is one cohesive FSM loop; splitting it would
     // scatter the state-machine logic and its interleaved instrumentation.
     #[allow(clippy::too_many_lines)]
@@ -95,6 +107,16 @@ impl RunCeremonyUseCase {
         let (id, definition, context, lease_owner_id, lease_ttl, actor_id, actor_kind) =
             input.into_parts();
         let ceremony_name = definition.name().as_str().to_owned();
+        if definition
+            .steps()
+            .values()
+            .any(|step| step.spawn().is_some())
+            && self.children.is_none()
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "child-spawning ceremony requires the child orchestrator",
+            });
+        }
         // Asked before the definition is stored, so a run that is
         // about to be refused does not leave one behind. This is a
         // courtesy and not the guard: two runs can still both get past
@@ -375,11 +397,12 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        approval_definition, ceremony_id, definition, lease_owner, lease_ttl,
-        nested_multi_iteration_definition, nested_repeating_definition, now, repeating_definition,
-        started_instance, state_repeating_definition, step_id, stream, stream_over,
-        stream_overtaken_once, two_step_definition, DefinitionRepositoryFake, EventStoreFake,
-        FixedClock, SequenceStepHandlerFake, StepHandlerFake,
+        a_memory, approval_definition, ceremony_id, child_spawning_definition, definition,
+        lease_owner, lease_ttl, nested_multi_iteration_definition, nested_repeating_definition,
+        now, repeating_definition, resolver_with, review_child_definition, started_instance,
+        state_repeating_definition, step_id, stream, stream_over, stream_overtaken_once,
+        two_step_definition, DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        PublicationsFake, SequenceStepHandlerFake, StepHandlerFake,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -390,6 +413,88 @@ mod tests {
             )]))
             .unwrap(),
         )
+    }
+
+    #[tokio::test]
+    async fn one_shot_spawn_without_an_orchestrator_is_refused_before_opening() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let store = Arc::new(EventStoreFake::default());
+        let handler = Arc::new(StepHandlerFake::succeeding(
+            StepResult::completed(StepOutput::empty()).unwrap(),
+        ));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            stream(store.clone()),
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        let error = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err();
+
+        assert!(error.to_string().contains("child orchestrator"));
+        assert!(!store.exists(&ceremony_id()).await);
+        assert!(handler.requests().await.is_empty());
+    }
+
+    #[tokio::test]
+    async fn one_shot_spawn_uses_the_configured_orchestrator_and_reaches_terminal() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::default());
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(review_child_definition()).await;
+        let store = Arc::new(EventStoreFake::default());
+        let stream = stream(store.clone());
+        let children = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver_with(definitions.clone(), publications.clone()),
+            publications,
+            stream.clone(),
+            Arc::new(FixedClock::new(now())),
+            a_memory(),
+        ));
+        let handler = Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
+            reason: "spawn steps must not reach a handler",
+        }));
+        let usecase = RunCeremonyUseCase::new(
+            definitions,
+            stream,
+            handler.clone(),
+            Arc::new(FixedClock::new(now())),
+        )
+        .with_child_orchestrator(children);
+
+        let output = usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition.clone(),
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap();
+
+        assert!(output.instance().is_completed(&definition));
+        assert!(handler.requests().await.is_empty());
+        let group = output.instance().child_groups().values().next().unwrap();
+        let child = group.plan().children()[0].child_id();
+        assert!(
+            store.exists(child).await,
+            "the planned child was not opened"
+        );
     }
 
     fn cyclic_definition(

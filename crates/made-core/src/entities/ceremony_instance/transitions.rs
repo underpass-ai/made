@@ -1,6 +1,6 @@
 use crate::entities::ceremony_commands::ApplyTransition;
 use crate::entities::CeremonyCommand;
-use crate::value_objects::CeremonyTransition;
+use crate::value_objects::{CeremonyTransition, GuardCondition};
 
 use super::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, DomainError, OffsetDateTime, RoleId,
@@ -30,10 +30,46 @@ impl CeremonyInstance {
         transition: &CeremonyTransition,
     ) -> bool {
         self.state_repeat_permits_transition(definition)
-            && definition.guards_are_satisfied(transition, &self.step_records, &self.context)
+            && self.guards_are_satisfied(definition, transition)
             && self
                 .require_interventions_resolved_before_entering(definition, transition.to())
                 .is_ok()
+    }
+
+    #[must_use]
+    pub fn guard_is_satisfied_for_transition(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+        guard: &crate::value_objects::CeremonyGuard,
+    ) -> bool {
+        match guard.condition() {
+            GuardCondition::ChildrenCompleted(condition) => {
+                definition
+                    .step(condition.step_id())
+                    .is_some_and(|step| step.state_id() == transition.from())
+                    && self.children_completed_guard_is_satisfied(condition)
+            }
+            _ => definition.guard_is_satisfied_for_transition(
+                guard,
+                transition,
+                &self.step_records,
+                &self.context,
+            ),
+        }
+    }
+
+    pub(super) fn guards_are_satisfied(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        definition.repeat_requirements_are_satisfied_for_transition(transition, &self.step_records)
+            && transition.required_guards().iter().all(|name| {
+                definition.guards().get(name).is_some_and(|guard| {
+                    self.guard_is_satisfied_for_transition(definition, transition, guard)
+                })
+            })
     }
 
     pub(super) fn require_transition_budget(

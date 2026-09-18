@@ -190,7 +190,8 @@ fn leaf_stage_schema() -> Value {
                 },
                 "description": "Destination context keys mapped to top-level successful output fields."
             },
-            "aggregate": aggregation_schema()
+            "aggregate": aggregation_schema(),
+            "spawn": child_spawn_schema()
         }
     })
 }
@@ -215,6 +216,36 @@ fn aggregation_schema() -> Value {
             }
         ],
         "description": "Optional aggregation of every output from the immediately preceding concurrent state. The stage must be first in its sequential state and set see_prior to true. Vote fails on a missing field or when no value has a strict majority."
+    })
+}
+
+fn child_spawn_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["children", "max_children", "max_depth"],
+        "properties": {
+            "children": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": ["ceremony", "version"],
+                    "properties": {
+                        "ceremony": string_schema("Published child ceremony name."),
+                        "version": string_schema("Published child ceremony version."),
+                        "inputs": {
+                            "type": "object",
+                            "additionalProperties": { "type": "string" },
+                            "description": "Child context key to sealed parent context key binding."
+                        }
+                    }
+                }
+            },
+            "max_children": { "type": "integer", "minimum": 1 },
+            "max_depth": { "type": "integer", "minimum": 1 }
+        }
     })
 }
 
@@ -309,6 +340,20 @@ fn exit_guard_schema() -> Value {
                     "kind": { "const": "step_repeat_exhausted" },
                     "step": string_schema("Repeating step in this stage whose final iteration must be exhausted.")
                 }
+            },
+            {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "step", "join"],
+                "properties": {
+                    "kind": { "const": "children_completed" },
+                    "step": string_schema("Spawning step whose verified child group is inspected."),
+                    "join": { "type": "string", "enum": ["all", "any", "quorum"] },
+                    "count": { "type": "integer", "minimum": 1 }
+                },
+                "if": { "properties": { "join": { "const": "quorum" } } },
+                "then": { "required": ["count"] },
+                "else": { "not": { "required": ["count"] } }
             }
         ]
     })
@@ -410,6 +455,7 @@ mod tests {
             "allowed_roles",
             "context_writes",
             "aggregate",
+            "spawn",
         ] {
             assert!(!properties.contains_key(field), "{field}");
         }

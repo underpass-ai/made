@@ -257,6 +257,22 @@ impl CeremonyDefinitionParts<'_> {
                     },
                 ));
             }
+            if step.spawn().is_some() && step.repeat_policy().is_some() {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::InvariantViolated {
+                        reason: "child-spawning ceremony steps cannot repeat",
+                    },
+                ));
+            }
+            if step.spawn().is_some() && step.aggregation().is_some() {
+                findings.push(CeremonyValidationFinding::error(
+                    locus.clone(),
+                    DomainError::InvariantViolated {
+                        reason: "a ceremony step cannot both spawn children and aggregate a prior state",
+                    },
+                ));
+            }
             if let Some(binding) = step.dynamic_role_binding() {
                 if binding.allowed_roles().is_empty() {
                     findings.push(CeremonyValidationFinding::error(
@@ -310,6 +326,31 @@ impl CeremonyDefinitionParts<'_> {
                             reason: "exhausted-repeat guard must reference a repeating step",
                         },
                     ));
+                }
+                if let GuardCondition::ChildrenCompleted(condition) = guard.condition() {
+                    let Some(spawn) = step.spawn() else {
+                        findings.push(CeremonyValidationFinding::error(
+                            CeremonyValidationLocus::guard(guard_name.clone()),
+                            DomainError::InvariantViolated {
+                                reason:
+                                    "children_completed guard must reference a child-spawning step",
+                            },
+                        ));
+                        continue;
+                    };
+                    if let crate::value_objects::ChildJoin::Quorum { count } = condition.join() {
+                        if usize::from(count.get()) > spawn.children().len() {
+                            findings.push(CeremonyValidationFinding::error(
+                                CeremonyValidationLocus::guard(guard_name.clone()),
+                                DomainError::OutOfRange {
+                                    field: "child_quorum",
+                                    value: f64::from(count.get()),
+                                    min: 1.0,
+                                    max: spawn.children().len() as f64,
+                                },
+                            ));
+                        }
+                    }
                 }
             }
         }

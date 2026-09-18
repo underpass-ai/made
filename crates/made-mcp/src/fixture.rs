@@ -66,6 +66,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_start_ceremony" => ceremony_instance_fixture(),
                 "made_start_published_ceremony" => ceremony_instance_fixture(),
                 "made_run_ceremony_step" => ceremony_instance_fixture(),
+                "made_prepare_ceremony_children" => prepare_ceremony_children_fixture(),
+                "made_accept_child_completion" => accept_child_completion_fixture(),
+                "made_recover_ceremony_children" => recover_ceremony_children_fixture(),
                 "made_apply_ceremony_transition" => ceremony_instance_fixture(),
                 "made_approve_ceremony_guard" => ceremony_instance_fixture(),
                 "made_defer_ceremony_guard" => ceremony_instance_fixture(),
@@ -321,12 +324,21 @@ fn ceremony_listing_fixture() -> Value {
 fn ceremony_instance_fixture() -> Value {
     json!({
         "ceremony_id": "ceremony-fixture-1",
+        "trace_id": null,
+        "correlation_id": null,
+        "causation_id": null,
         "definition_name": "fixture_ceremony",
         "definition_version": "1.0",
         "bound_definition_digest": null,
         "current_state": "REVIEW",
+        "current_state_iteration": 0,
+        "current_state_visit": 0,
+        "state_repeat_max_iterations": null,
+        "state_repeat_condition_satisfied": false,
+        "state_repeat_limit_reached": false,
         "completed": false,
         "next_step_id": null,
+        "claimable_step_ids": [],
         "waiting_for_human": ["human_approved"],
         "guard_deferrals": [
             {
@@ -407,7 +419,39 @@ fn ceremony_instance_fixture() -> Value {
                     "observed_at": "2025-12-01T00:00:00Z"
                 }
             ]
+        },
+        "lineage": null,
+        "child_groups": []
+    })
+}
+
+fn prepare_ceremony_children_fixture() -> Value {
+    json!({
+        "instance": ceremony_instance_fixture(),
+        "child_group_id": "child-group-fixture-1",
+        "child_ids": ["child-fixture-1", "child-fixture-2"]
+    })
+}
+
+fn accept_child_completion_fixture() -> Value {
+    json!({
+        "parent": ceremony_instance_fixture(),
+        "completion": {
+            "group_id": "child-group-fixture-1",
+            "child_id": "child-fixture-1",
+            "terminal_event_id": "child-fixture-1:completed",
+            "terminal_record_hash": "00".repeat(32)
         }
+    })
+}
+
+fn recover_ceremony_children_fixture() -> Value {
+    json!({
+        "recovered_plans": 1,
+        "accepted_completions": 1,
+        "skipped": 0,
+        "failed": 0,
+        "busy": false
     })
 }
 

@@ -1,7 +1,8 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyGuard, GuardCondition, GuardName, JoinStepCount, OutputFieldGuardCondition, StepId,
-    StepOutputField, StepRepeatExhaustedGuardCondition, StepStatus,
+    CeremonyGuard, ChildJoin, ChildQuorum, ChildrenCompletedCondition, GuardCondition, GuardName,
+    JoinStepCount, OutputFieldGuardCondition, StepId, StepOutputField,
+    StepRepeatExhaustedGuardCondition, StepStatus,
 };
 use serde::Deserialize;
 
@@ -40,8 +41,27 @@ impl CeremonyGuardDocument {
                 StepRepeatExhaustedGuardCondition::new(StepId::new(step)?),
             ));
         }
+        if let Some(body) = self.check.strip_prefix("children_completed:") {
+            return parse_children_completed(body);
+        }
         parse_step_status_guard(&self.check)
     }
+}
+
+fn parse_children_completed(body: &str) -> Result<GuardCondition, DomainError> {
+    let mut parts = body.split(':');
+    let step_id = StepId::new(parts.next().ok_or_else(unsupported_guard)?)?;
+    let join = match (parts.next(), parts.next(), parts.next()) {
+        (Some("all"), None, None) => ChildJoin::All,
+        (Some("any"), None, None) => ChildJoin::Any,
+        (Some("quorum"), Some(count), None) => ChildJoin::Quorum {
+            count: ChildQuorum::new(count.parse::<u16>().map_err(|_| unsupported_guard())?)?,
+        },
+        _ => return Err(unsupported_guard()),
+    };
+    Ok(GuardCondition::ChildrenCompleted(
+        ChildrenCompletedCondition::new(step_id, join),
+    ))
 }
 
 fn parse_output_field_guard(check: &str) -> Result<GuardCondition, DomainError> {

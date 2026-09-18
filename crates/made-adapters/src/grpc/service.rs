@@ -8,15 +8,16 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_app::services::{AutoDispatchService, CeremonyTraceScope};
 use made_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CeremonyDraftView, CeremonyInstanceView,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
-    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CeremonyDraftView,
+    CeremonyInstanceView, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
+    CompleteCeremonyStepUseCase, CreateCouncilInput, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
@@ -36,15 +37,16 @@ use super::mappers::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
     assert_ceremony_reason_input_from_proto, bind_ceremony_participants_input_from_proto,
     ceremony_definition_source_from_proto, ceremony_design_document_from_proto,
-    ceremony_instance_state_from, claim_ceremony_step_input_from_proto,
-    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
-    complete_ceremony_step_input_from_proto, council_summary_from,
-    defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
-    diff_ceremony_definitions_response_from, explain_ceremony_draft_response_from,
-    generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
-    orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
-    publish_ceremony_definition_response_from, pull_ceremony_events_response_from,
-    read_ceremony_events_response_from, request_ceremony_intervention_input_from_proto,
+    ceremony_instance_state_from, child_completion_state_from,
+    claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
+    collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
+    council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
+    design_ceremony_response_from, diff_ceremony_definitions_response_from,
+    explain_ceremony_draft_response_from, generate_ceremony_report_response_from,
+    get_ceremony_transcript_response_from, orchestrate_response_from, output_contract_from_proto,
+    output_contract_to_proto, publish_ceremony_definition_response_from,
+    pull_ceremony_events_response_from, read_ceremony_events_response_from,
+    request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
@@ -96,6 +98,8 @@ pub struct MadeGrpcService {
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
     pub(super) run_ceremony_step: Arc<RunCeremonyStepUseCase>,
+    pub(super) accept_child_completion: Arc<AcceptChildCompletionUseCase>,
+    pub(super) recover_ceremony_children: Arc<RecoverCeremonyChildrenUseCase>,
     pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
     pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
     pub(super) apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
@@ -400,6 +404,30 @@ impl MadeService for MadeGrpcService {
     ) -> GrpcResult<pb::RunCeremonyStepResponse> {
         let trace = trace_context_from_metadata(&request);
         run_with_ceremony_trace(trace, self.handle_run_ceremony_step(request)).await
+    }
+
+    async fn prepare_ceremony_children(
+        &self,
+        request: Request<pb::PrepareCeremonyChildrenRequest>,
+    ) -> GrpcResult<pb::PrepareCeremonyChildrenResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_prepare_ceremony_children(request)).await
+    }
+
+    async fn accept_child_completion(
+        &self,
+        request: Request<pb::AcceptChildCompletionRequest>,
+    ) -> GrpcResult<pb::AcceptChildCompletionResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_accept_child_completion(request)).await
+    }
+
+    async fn recover_ceremony_children(
+        &self,
+        request: Request<pb::RecoverCeremonyChildrenRequest>,
+    ) -> GrpcResult<pb::RecoverCeremonyChildrenResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_recover_ceremony_children(request)).await
     }
 
     async fn claim_ceremony_step(

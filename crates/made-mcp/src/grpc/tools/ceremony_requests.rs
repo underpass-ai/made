@@ -113,6 +113,39 @@ pub(super) fn build_run_ceremony_step_request(
     })
 }
 
+pub(super) fn build_prepare_ceremony_children_request(
+    args: &Value,
+) -> Result<pb::PrepareCeremonyChildrenRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::PrepareCeremonyChildrenRequest {
+        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+        step_id: j2p::require_str(obj, "step_id")?.to_owned(),
+        lease_owner_id: lease_owner_id(obj)?,
+        idempotency_key: idempotency_key(obj),
+        lease_ttl_ms: lease_ttl_ms(obj, RUN_CEREMONY_STEP_LEASE_TTL_MS)?,
+        actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+    })
+}
+
+pub(super) fn build_accept_child_completion_request(
+    args: &Value,
+) -> Result<pb::AcceptChildCompletionRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::AcceptChildCompletionRequest {
+        child_id: j2p::require_str(obj, "child_id")?.to_owned(),
+        terminal_event_id: j2p::require_str(obj, "terminal_event_id")?.to_owned(),
+    })
+}
+
+pub(super) fn build_recover_ceremony_children_request(
+    args: &Value,
+) -> Result<pb::RecoverCeremonyChildrenRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::RecoverCeremonyChildrenRequest {
+        limit: j2p::optional_u32(obj, "limit")?,
+    })
+}
+
 /// The two ends of a step the host runs itself. Same arguments as
 /// the in-process tools take, because it is the same tool: only the
 /// engine on the other side of it changes.

@@ -8,7 +8,9 @@ use made_core::value_objects::{
     StepLease, StepResult,
 };
 
-use crate::usecases::{prepare_step_execution, PreparedStepExecution};
+use crate::usecases::{
+    prepare_step_execution, PrepareCeremonyChildrenInput, PreparedStepExecution,
+};
 
 use super::{
     claimed_step::ClaimedStep, executed_step::ExecutedStep, run_step_output::RunStepOutput,
@@ -58,13 +60,10 @@ impl RunCeremonyUseCase {
             )
             .await
         {
-            Ok(claimed) => match self.execute_claimed_step(definition, claimed).await {
-                Ok(executed) => {
-                    self.complete_executed_step(definition, executed, actor_kind)
-                        .await
-                }
-                Err(error) => Err(error),
-            },
+            Ok(claimed) => {
+                self.execute_and_complete_claimed_step(definition, claimed, actor_kind)
+                    .await
+            }
             Err(error) => Err(error),
         };
         match &result {
@@ -315,12 +314,47 @@ impl RunCeremonyUseCase {
             claimed.iteration,
             claimed.attempt,
         );
-        let result = match self.execute_claimed_step(definition, claimed).await {
-            Ok(executed) => {
-                self.complete_executed_step(definition, executed, actor_kind)
-                    .await
+        let is_spawn = definition
+            .step(&claimed.step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_step",
+            })?
+            .spawn()
+            .is_some();
+        let result = if is_spawn {
+            let children = self
+                .children
+                .as_ref()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "child-spawning ceremony requires the child orchestrator",
+                })?;
+            let output = children
+                .execute(PrepareCeremonyChildrenInput::new(
+                    claimed.request.instance_id().clone(),
+                    claimed.step_id.clone(),
+                    claimed.claim_fence.clone(),
+                    actor_kind,
+                ))
+                .await?;
+            let session = self.stream.load(output.instance().id()).await?;
+            Ok(RunStepOutput {
+                session,
+                step_id: claimed.step_id,
+                role_id: claimed.role_id,
+                state_visit: claimed.state_visit,
+                state_iteration: claimed.state_iteration,
+                iteration: claimed.iteration,
+                attempt: claimed.attempt,
+                result: output.result().clone(),
+            })
+        } else {
+            match self.execute_claimed_step(definition, claimed).await {
+                Ok(executed) => {
+                    self.complete_executed_step(definition, executed, actor_kind)
+                        .await
+                }
+                Err(error) => Err(error),
             }
-            Err(error) => Err(error),
         };
         match &result {
             Ok(output) => crate::usecases::step_span::record_result(&output.result),

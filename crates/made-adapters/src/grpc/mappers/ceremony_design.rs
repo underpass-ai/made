@@ -20,9 +20,10 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, GuardName, InputName,
-    MaxBounces, MaxParallel, MaxTransitions, OutputName, RoleId, StepAttempt, StepId,
-    StepOutputField, StepTimeout, TransitionTrigger,
+    CeremonyDescription, CeremonyName, CeremonyVersion, ChildJoin, ChildQuorum,
+    ChildrenCompletedCondition, DurationMs, GuardName, InputName, MaxBounces, MaxParallel,
+    MaxTransitions, OutputName, RoleId, StepAttempt, StepId, StepOutputField, StepTimeout,
+    TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -143,6 +144,25 @@ pub(super) fn exit_guard_from_proto(
                 CeremonyDesignStepRepeatExhaustedGuard::new(StepId::new(guard.step_id)?),
             ))
         }
+        pb::ceremony_design_exit_guard::Guard::ChildrenCompleted(condition) => {
+            let join = match condition.join.ok_or_else(|| DomainError::InvalidDocument {
+                reason: "field `children_completed.join` is required".to_owned(),
+            })? {
+                pb::children_completed_condition::Join::All(true) => ChildJoin::All,
+                pb::children_completed_condition::Join::Any(true) => ChildJoin::Any,
+                pb::children_completed_condition::Join::Quorum(count) => ChildJoin::Quorum {
+                    count: ChildQuorum::new(u16::try_from(count).unwrap_or(u16::MAX))?,
+                },
+                _ => {
+                    return Err(DomainError::InvalidDocument {
+                        reason: "children_completed all/any join must be true".to_owned(),
+                    })
+                }
+            };
+            Ok(CeremonyDesignExitGuard::ChildrenCompleted(
+                ChildrenCompletedCondition::new(StepId::new(condition.step_id)?, join),
+            ))
+        }
     }
 }
 
@@ -252,6 +272,7 @@ mod tests {
                 context_writes: std::collections::HashMap::new(),
                 aggregate: None,
                 pattern_stage: None,
+                spawn: None,
                 group: Some(pb::CeremonyDesignGroup {
                     execution: "concurrent".to_owned(),
                     steps: ["A", "B"]
@@ -270,6 +291,7 @@ mod tests {
                             allowed_roles: Vec::new(),
                             context_writes: std::collections::HashMap::new(),
                             aggregate: None,
+                            spawn: None,
                         })
                         .collect(),
                     join: Some(pb::CeremonyDesignGroupJoin {

@@ -221,6 +221,7 @@ mod tests {
                 step_ids: BTreeSet::from([StepId::new("draft").unwrap()]),
                 context: CeremonyContext::empty(),
                 bound_definition: None,
+                lineage: None,
                 created_at: AT,
             }),
             ceremony_id,

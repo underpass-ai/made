@@ -104,6 +104,7 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 context_writes: string_map(stage, "context_writes")?,
                 pattern_stage: None,
                 aggregate: aggregation(stage)?,
+                spawn: spawn(stage)?,
             })
         })
         .collect()
@@ -159,6 +160,7 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
                 allowed_roles: j2p::string_array(step, "allowed_roles"),
                 context_writes: string_map(step, "context_writes")?,
                 aggregate: aggregation(step)?,
+                spawn: spawn(step)?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -180,6 +182,29 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
         join,
         repeat: group_repeat(group)?,
     })
+}
+
+fn spawn(stage: &Map<String, Value>) -> Result<Option<pb::CeremonyChildSpawn>, String> {
+    let Some(value) = stage.get("spawn") else {
+        return Ok(None);
+    };
+    let spawn = j2p::require_object(value, "spawn")?;
+    let children = array(spawn, "children")?
+        .iter()
+        .map(|value| {
+            let child = j2p::require_object(value, "spawn.children[]")?;
+            Ok(pb::CeremonyChildSpec {
+                ceremony: j2p::require_str(child, "ceremony")?.to_owned(),
+                version: j2p::require_str(child, "version")?.to_owned(),
+                inputs: string_map(child, "inputs")?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(Some(pb::CeremonyChildSpawn {
+        children,
+        max_children: j2p::optional_u32(spawn, "max_children")?,
+        max_depth: j2p::optional_u32(spawn, "max_depth")?,
+    }))
 }
 
 fn aggregation(
@@ -274,6 +299,26 @@ fn exit_guards(stage: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignExitG
                     pb::ceremony_design_exit_guard::Guard::StepRepeatExhausted(
                         pb::CeremonyDesignStepRepeatExhaustedGuard {
                             step_id: j2p::require_str(guard, "step")?.to_owned(),
+                        },
+                    )
+                }
+                "children_completed" => {
+                    let join = match j2p::require_str(guard, "join")? {
+                        "all" => pb::children_completed_condition::Join::All(true),
+                        "any" => pb::children_completed_condition::Join::Any(true),
+                        "quorum" => pb::children_completed_condition::Join::Quorum(
+                            j2p::optional_u32(guard, "count")?,
+                        ),
+                        join => {
+                            return Err(format!(
+                                "field `stages[].exit_guards[].join` has unsupported value `{join}`"
+                            ));
+                        }
+                    };
+                    pb::ceremony_design_exit_guard::Guard::ChildrenCompleted(
+                        pb::ChildrenCompletedCondition {
+                            step_id: j2p::require_str(guard, "step")?.to_owned(),
+                            join: Some(join),
                         },
                     )
                 }

@@ -1,7 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    JoinStepCount, OutputFieldGuardCondition, StepId, StepRepeatExhaustedGuardCondition, StepStatus,
+    ChildrenCompletedCondition, JoinStepCount, OutputFieldGuardCondition, StepId,
+    StepRepeatExhaustedGuardCondition, StepStatus,
 };
 
 mod counted_join_condition;
@@ -16,6 +17,7 @@ pub enum GuardCondition {
     StepStatus { step_id: StepId, status: StepStatus },
     OutputField(OutputFieldGuardCondition),
     StepRepeatExhausted(StepRepeatExhaustedGuardCondition),
+    ChildrenCompleted(ChildrenCompletedCondition),
     HumanApproval,
 }
 
@@ -26,6 +28,7 @@ impl GuardCondition {
             Self::StepStatus { step_id, .. } => Some(step_id),
             Self::OutputField(condition) => Some(condition.step_id()),
             Self::StepRepeatExhausted(condition) => Some(condition.step_id()),
+            Self::ChildrenCompleted(condition) => Some(condition.step_id()),
             Self::Always
             | Self::AllStepsCompleted
             | Self::AnyStepCompleted

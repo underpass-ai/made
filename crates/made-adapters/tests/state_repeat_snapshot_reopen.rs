@@ -184,6 +184,7 @@ fn repeated_state_events(
             step_ids: BTreeSet::from([step_id.clone()]),
             context: CeremonyContext::empty(),
             bound_definition: None,
+            lineage: None,
             created_at: at(0),
         }),
         started(
