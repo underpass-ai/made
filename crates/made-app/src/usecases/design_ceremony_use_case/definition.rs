@@ -257,6 +257,9 @@ pub(super) fn build_definition(
                 step = step.with_dynamic_role_binding(binding.clone());
             }
             step = step.with_context_writes(stage.context_writes().clone());
+            if let Some(aggregation) = stage.aggregation() {
+                step = step.with_aggregation(aggregation.clone());
+            }
             steps.push(step);
         }
     }

@@ -2,9 +2,9 @@ use std::collections::BTreeMap;
 
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    ContextKey, ContextWrites, DynamicRoleBinding, GuardCondition, GuardName, MaxBounces,
-    OutputFieldGuardCondition, PriorContext, RoleId, Rounds, StateExecution, StepId,
-    StepInstructions, StepOutputField, StepStatus, TransitionTrigger,
+    CeremonyStepAggregation, ContextKey, ContextWrites, DynamicRoleBinding, GuardCondition,
+    GuardName, MaxBounces, OutputFieldGuardCondition, PriorContext, RoleId, Rounds, StateExecution,
+    StepId, StepInstructions, StepOutputField, StepStatus, TransitionTrigger,
 };
 
 use crate::usecases::ceremony_design_route::CeremonyDesignRoute;
@@ -133,12 +133,15 @@ fn broadcast_collect(pattern: &CeremonyDesignPatternStage) -> Result<Expansion, 
                 steps,
                 CeremonyDesignJoin::AllStepsCompleted,
             )),
-            CeremonyDesignStageEntry::Leaf(leaf(
-                &format!("{}_collect", pattern.id()),
-                manager,
-                "Synthesize every independent contribution into one result.",
-                true,
-            )?),
+            CeremonyDesignStageEntry::Leaf(
+                leaf(
+                    &format!("{}_collect", pattern.id()),
+                    manager,
+                    "Synthesize every independent contribution into one result.",
+                    true,
+                )?
+                .with_aggregation(CeremonyStepAggregation::synthesize()),
+            ),
         ],
         routes: Vec::new(),
     })

@@ -356,6 +356,7 @@ fn a_pre_concurrency_definition_reopens_and_keeps_its_published_binding() {
     assert!(!persisted.contains("max_transitions"));
     assert!(!persisted.contains("max_bounces"));
     assert!(!persisted.contains("execution"));
+    assert!(!persisted.contains("aggregation"));
     let reopened: CeremonyDefinition = serde_json::from_str(&persisted).unwrap();
 
     assert_eq!(reopened.digest().unwrap(), digest);

@@ -13,10 +13,19 @@ even though the new catalogue identity is `made`.
   group chat, maker-checker, bounded handoff and magentic task-ledger flows.
   Ship executable fragments, cross-edition design parity and Mermaid pattern
   regions with concurrent fork/join rendering. (#159)
+- Add typed `synthesize` and deterministic strict-majority `vote` aggregation
+  to the first step after an all-siblings concurrent join. YAML, design,
+  protobuf, both MCP backends and the embedded facade share one schema;
+  omitted aggregation preserves existing definition bytes and digests. (#156)
 - Run siblings in concurrent ceremony states with bounded automatic fan-out,
   durable claims before handlers, drained completions and early-join checks
   between batches. Document delegated host/subagent fan-out and prove distinct
   claims from two processes sharing SQLite. (#155)
+- Project peak live ceremony claims per state visit/iteration and classified
+  step failures from ordered sealed events in both editions. Preserve
+  `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain
+  their bytes and versions. Clarify that `num_agents` caps council size. (#158)
+
 - Wait for a private NATS inbox round trip before E2E scenarios trigger events
   from another connection. The harness no longer treats a local socket flush
   as server acknowledgement of its subscription. (#153)

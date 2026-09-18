@@ -28,6 +28,8 @@ mod steps;
 use run_step_output::RunStepOutput;
 
 #[cfg(test)]
+mod aggregation_tests;
+#[cfg(test)]
 mod claim_visit_tests;
 #[cfg(test)]
 mod concurrent_tests;

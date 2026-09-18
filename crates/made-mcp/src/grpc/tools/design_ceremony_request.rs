@@ -103,6 +103,7 @@ fn stages(obj: &Map<String, Value>) -> Result<Vec<pb::CeremonyDesignStage>, Stri
                 allowed_roles: j2p::string_array(stage, "allowed_roles"),
                 context_writes: string_map(stage, "context_writes")?,
                 pattern_stage: None,
+                aggregate: aggregation(stage)?,
             })
         })
         .collect()
@@ -157,6 +158,7 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
                     .to_owned(),
                 allowed_roles: j2p::string_array(step, "allowed_roles"),
                 context_writes: string_map(step, "context_writes")?,
+                aggregate: aggregation(step)?,
             })
         })
         .collect::<Result<Vec<_>, String>>()?;
@@ -178,6 +180,33 @@ fn group_from_json(group: &Map<String, Value>) -> Result<pb::CeremonyDesignGroup
         join,
         repeat: group_repeat(group)?,
     })
+}
+
+fn aggregation(
+    stage: &Map<String, Value>,
+) -> Result<Option<pb::CeremonyDesignAggregation>, String> {
+    let Some(value) = stage.get("aggregate") else {
+        return Ok(None);
+    };
+    let aggregate = j2p::require_object(value, "aggregate")?;
+    let strategy = match j2p::require_str(aggregate, "strategy")? {
+        "synthesize" => pb::ceremony_design_aggregation::Strategy::Synthesize(
+            pb::CeremonyDesignSynthesizeAggregation {},
+        ),
+        "vote" => {
+            pb::ceremony_design_aggregation::Strategy::Vote(pb::CeremonyDesignVoteAggregation {
+                output_field: j2p::require_str(aggregate, "output_field")?.to_owned(),
+            })
+        }
+        strategy => {
+            return Err(format!(
+                "field `aggregate.strategy` has unsupported value `{strategy}`"
+            ));
+        }
+    };
+    Ok(Some(pb::CeremonyDesignAggregation {
+        strategy: Some(strategy),
+    }))
 }
 
 fn string_map(
@@ -376,6 +405,33 @@ mod tests {
             Some(j2p::json_to_pb_value(&json!(true))),
             "the value that ends the repetition is carried, not described"
         );
+    }
+
+    #[test]
+    fn aggregation_strategies_cross_the_proto_boundary_without_reinterpretation() {
+        let mut synthesize = intent();
+        synthesize["stages"][0]["aggregate"] = json!({"strategy": "synthesize"});
+        let request = build_design_ceremony_request(&synthesize).unwrap();
+        assert!(matches!(
+            request.stages[0]
+                .aggregate
+                .as_ref()
+                .and_then(|aggregate| aggregate.strategy.as_ref()),
+            Some(pb::ceremony_design_aggregation::Strategy::Synthesize(_))
+        ));
+
+        let mut vote = intent();
+        vote["stages"][0]["aggregate"] =
+            json!({"strategy": "vote", "output_field": "recommendation"});
+        let request = build_design_ceremony_request(&vote).unwrap();
+        assert!(matches!(
+            request.stages[0]
+                .aggregate
+                .as_ref()
+                .and_then(|aggregate| aggregate.strategy.as_ref()),
+            Some(pb::ceremony_design_aggregation::Strategy::Vote(vote))
+                if vote.output_field == "recommendation"
+        ));
     }
 
     #[test]

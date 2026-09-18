@@ -23,11 +23,11 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, ContextKey, ContextWrites, DurationMs,
-    DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxBounces, MaxParallel,
-    MaxTransitions, NumAgents, OutputName, PriorContext, RoleId, Rounds, StateExecution,
-    StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions, StepIteration,
-    StepOutputField, StepTimeout, TransitionTrigger,
+    CeremonyDescription, CeremonyName, CeremonyStepAggregation, CeremonyVersion, ContextKey,
+    ContextWrites, DurationMs, DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxBounces,
+    MaxParallel, MaxTransitions, NumAgents, OutputName, PriorContext, RoleId, Rounds,
+    StateExecution, StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions,
+    StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -132,7 +132,8 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     let role_from = stage.role_from.clone();
     let allowed_roles = stage.allowed_roles.clone();
     let context_writes = stage.context_writes.clone();
-    let designed = CeremonyDesignStage::new(
+    let aggregate = stage.aggregate.map(aggregation_from_proto).transpose()?;
+    let mut designed = CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
         StepInstructions::new(stage.instructions)?,
@@ -146,6 +147,9 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
         stage.repeat.map(repeat_from_proto).transpose()?,
     )
     .with_exit_guards(exit_guards);
+    if let Some(aggregation) = aggregate {
+        designed = designed.with_aggregation(aggregation);
+    }
     apply_dynamic_fields(designed, &role_from, allowed_roles, context_writes)
 }
 
@@ -207,6 +211,7 @@ fn stage_entry_from_proto(
             || !stage.role_from.is_empty()
             || !stage.allowed_roles.is_empty()
             || !stage.context_writes.is_empty()
+            || stage.aggregate.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
@@ -284,7 +289,8 @@ fn group_repeat_from_proto(
 fn group_step_from_proto(
     step: pb::CeremonyDesignGroupStep,
 ) -> Result<CeremonyDesignGroupStep, DomainError> {
-    let designed = CeremonyDesignStage::new(
+    let aggregate = step.aggregate.map(aggregation_from_proto).transpose()?;
+    let mut designed = CeremonyDesignStage::new(
         StepId::new(step.id)?,
         RoleId::new(step.owner_role_id)?,
         StepInstructions::new(step.instructions)?,
@@ -296,12 +302,31 @@ fn group_step_from_proto(
         Rounds::new(u32::try_from(step.review_rounds).unwrap_or(u32::MAX))?,
         step.repeat.map(repeat_from_proto).transpose()?,
     );
+    if let Some(aggregation) = aggregate {
+        designed = designed.with_aggregation(aggregation);
+    }
     Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
         designed,
         &step.role_from,
         step.allowed_roles,
         step.context_writes,
     )?))
+}
+
+fn aggregation_from_proto(
+    aggregate: pb::CeremonyDesignAggregation,
+) -> Result<CeremonyStepAggregation, DomainError> {
+    match aggregate.strategy {
+        Some(pb::ceremony_design_aggregation::Strategy::Synthesize(_)) => {
+            Ok(CeremonyStepAggregation::synthesize())
+        }
+        Some(pb::ceremony_design_aggregation::Strategy::Vote(vote)) => Ok(
+            CeremonyStepAggregation::vote(StepOutputField::new(vote.output_field)?),
+        ),
+        None => Err(DomainError::InvalidDocument {
+            reason: "field `aggregate.strategy` is required".to_owned(),
+        }),
+    }
 }
 
 fn apply_dynamic_fields(
@@ -480,6 +505,7 @@ mod tests {
                 role_from: String::new(),
                 allowed_roles: Vec::new(),
                 context_writes: std::collections::HashMap::new(),
+                aggregate: None,
                 group: Some(pb::CeremonyDesignGroup {
                     execution: "concurrent".to_owned(),
                     steps: ["A", "B"]
@@ -497,6 +523,7 @@ mod tests {
                             role_from: String::new(),
                             allowed_roles: Vec::new(),
                             context_writes: std::collections::HashMap::new(),
+                            aggregate: None,
                         })
                         .collect(),
                     join: Some(pb::CeremonyDesignGroupJoin {

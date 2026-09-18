@@ -50,6 +50,8 @@ steps:
     num_agents: 1
     prompt: Synthesize every independent contribution into one result.
     see_prior: true
+  aggregate:
+    strategy: synthesize
 guards:
   coordination_broadcast_coordination_review_1_completed:
     type: automated
@@ -84,4 +86,3 @@ retry_policies:
   default:
     max_attempts: 2
     backoff_seconds: 1
-

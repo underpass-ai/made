@@ -21,9 +21,9 @@ use made_app::usecases::{
     CeremonyPatternPreset,
 };
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, ContextKey, ContextWrites, DynamicRoleBinding,
-    JoinStepCount, MaxParallel, OutputName, RoleId, Rounds, StateExecution, StepId,
-    StepInstructions, StepOutputField,
+    CeremonyDescription, CeremonyName, CeremonyStepAggregation, ContextKey, ContextWrites,
+    DynamicRoleBinding, JoinStepCount, MaxParallel, OutputName, PriorContext, RoleId, Rounds,
+    StateExecution, StepId, StepInstructions, StepOutputField,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
@@ -224,6 +224,119 @@ fn concurrent_document() -> CeremonyDesignDocument {
         ),
     )])
     .with_max_parallel(MaxParallel::new(2).unwrap())
+}
+
+fn aggregation_intent() -> Value {
+    json!({
+        "name": "parallel_vote",
+        "objective": "Collect independent recommendations and select the majority.",
+        "outputs": ["decision"],
+        "participants": [{"role_id": "A"}, {"role_id": "B"}, {"role_id": "JUDGE"}],
+        "stages": [
+            {
+                "id": "review",
+                "group": {
+                    "execution": "concurrent",
+                    "steps": [
+                        {"id": "review_a", "owner_role_id": "A", "instructions": "Recommend."},
+                        {"id": "review_b", "owner_role_id": "B", "instructions": "Recommend independently."}
+                    ],
+                    "join": {"condition": "all_steps_completed"}
+                }
+            },
+            {
+                "id": "vote",
+                "owner_role_id": "JUDGE",
+                "instructions": "Select the strict majority.",
+                "see_prior": true,
+                "aggregate": {"strategy": "vote", "output_field": "recommendation"}
+            }
+        ]
+    })
+}
+
+fn aggregation_document() -> CeremonyDesignDocument {
+    aggregation_document_with_join(CeremonyDesignJoin::AllStepsCompleted)
+}
+
+fn aggregation_document_with_join(join: CeremonyDesignJoin) -> CeremonyDesignDocument {
+    let participants = ["A", "B", "JUDGE"]
+        .into_iter()
+        .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+        .collect::<Vec<_>>();
+    let siblings = [
+        ("review_a", "A", "Recommend."),
+        ("review_b", "B", "Recommend independently."),
+    ]
+    .into_iter()
+    .map(|(id, owner, instructions)| {
+        CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+            StepId::new(id).unwrap(),
+            RoleId::new(owner).unwrap(),
+            StepInstructions::new(instructions).unwrap(),
+            None,
+            None,
+            None,
+            Rounds::ZERO,
+            None,
+        ))
+    })
+    .collect();
+    let vote = CeremonyDesignStage::new(
+        StepId::new("vote").unwrap(),
+        RoleId::new("JUDGE").unwrap(),
+        StepInstructions::new("Select the strict majority.").unwrap(),
+        None,
+        Some(PriorContext::from_visible(true)),
+        None,
+        Rounds::ZERO,
+        None,
+    )
+    .with_aggregation(CeremonyStepAggregation::vote(
+        StepOutputField::new("recommendation").unwrap(),
+    ));
+    CeremonyDesignDocument::new(
+        CeremonyName::new("parallel_vote").unwrap(),
+        None,
+        CeremonyDescription::new("Collect independent recommendations and select the majority.")
+            .unwrap(),
+        Vec::new(),
+        Vec::new(),
+        vec![OutputName::new("decision").unwrap()],
+        participants,
+        Vec::new(),
+        None,
+        None,
+        None,
+        None,
+    )
+    .with_stage_entries(vec![
+        CeremonyDesignStageEntry::Group(CeremonyDesignGroup::new(
+            StepId::new("review").unwrap(),
+            StateExecution::Concurrent,
+            siblings,
+            join,
+        )),
+        CeremonyDesignStageEntry::Leaf(vote),
+    ])
+}
+
+#[test]
+fn aggregation_analysis_rejects_an_early_join() {
+    for join in [
+        CeremonyDesignJoin::AnyStepCompleted,
+        CeremonyDesignJoin::StepsCompleted(JoinStepCount::new(1).unwrap()),
+    ] {
+        let designed = EmbeddedMade::default()
+            .design(&aggregation_document_with_join(join))
+            .unwrap();
+        assert!(designed.definition().analyze().errors().any(|finding| {
+            finding
+                .defect()
+                .to_string()
+                .contains("all-siblings predecessor join")
+        }));
+    }
 }
 
 fn dynamic_intent() -> Value {
@@ -612,6 +725,53 @@ async fn composed_incident_review_is_identical_on_both_mcp_editions() {
     assert!(diagram.contains("Pattern broadcast_collect"), "{diagram}");
     assert!(diagram.contains("par analysis_review_1"), "{diagram}");
     assert!(diagram.contains("and analysis_review_2"), "{diagram}");
+}
+
+#[tokio::test]
+async fn aggregation_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = aggregation_intent();
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the gRPC-backed MCP tool accepts aggregation"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("the embedded MCP tool accepts aggregation"),
+    );
+    let facade = DesignedCeremonyYaml::render(
+        &EmbeddedMade::default()
+            .design(&aggregation_document())
+            .expect("the facade accepts typed aggregation"),
+    )
+    .expect("the YAML adapter renders aggregation");
+
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["definition_yaml"], facade);
+    assert_eq!(over_the_wire["publishable"], true);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("strategy: vote"), "{yaml}");
+    assert!(yaml.contains("output_field: recommendation"), "{yaml}");
+    let parsed = CeremonyDefinitionYaml::parse_str(yaml)
+        .expect("the rendered aggregation definition remains valid explicit YAML");
+    assert_eq!(
+        parsed
+            .step(&StepId::new("vote").unwrap())
+            .unwrap()
+            .aggregation(),
+        Some(&CeremonyStepAggregation::vote(
+            StepOutputField::new("recommendation").unwrap()
+        ))
+    );
 }
 
 #[tokio::test]

@@ -106,6 +106,8 @@ steps:
     num_agents: 1
     prompt: Synthesize every independent contribution into one result.
     see_prior: true
+  aggregate:
+    strategy: synthesize
 - id: writeup_make_1
   state: WRITEUP_ITERATION_1
   handler: host_callback
@@ -238,4 +240,3 @@ retry_policies:
     max_attempts: 2
     backoff_seconds: 1
 max_parallel: 2
-
