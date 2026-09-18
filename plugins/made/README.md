@@ -62,7 +62,7 @@ tar -xzf made-plugin-<version>-<os>-<arch>.tar.gz
 
 On Windows hosts, register the MCP server with
 `scripts\run-embedded-mcp.cmd` instead of the `.sh` launcher; the state
-file defaults to `%LOCALAPPDATA%\made\ceremonies.sqlite3`.
+file defaults to `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`.
 
 To build the package from a checkout instead:
 
@@ -77,7 +77,7 @@ The version stamped into both manifests comes from the workspace
 
 This plugin selects the embedded MCP backend, and the launcher points it at
 the canonical SQLite WAL store —
-`${XDG_STATE_HOME:-$HOME/.local/state}/made/ceremonies.sqlite3`
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`
 unless `MADE_MCP_STORE_PATH` says otherwise — so ceremonies survive the MCP
 process and multiple agent hosts can share one path. Durable is not the same
 as authorized, and not the same as fully
