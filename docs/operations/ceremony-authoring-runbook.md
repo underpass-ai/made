@@ -386,6 +386,19 @@ that attempt. In a concurrent state, another step in the same state iteration
 cannot claim the same sealed role; an expired lease keeps its reservation until
 that step is validly reclaimed or the state iteration resets.
 
+Static steps obey the same role reservation rule. New concurrent claims using
+an alternate authorised role seal that role explicitly. Unmarked historical
+static records reserve their canonical owner without changing stored events
+or replayed record shapes.
+
+Role-less MCP and gRPC claim/run requests resolve the role inside each
+optimistic decision, including retries after another step changes context.
+Rust facade callers using `StartCeremonyStepInput::new` or
+`RunCeremonyStepInput::new` retain explicit role selection and mismatch refusal.
+Use `.with_automatic_role_resolution()` on either input to select from current
+context instead. In that mode, the input's `role_id()` remains its compatibility
+anchor; the accepted role comes from the sealed claim and execution record.
+
 The design tool uses the same fields on a leaf stage or on a child of a grouped
 stage. They cannot be placed on the group container. Its `owner_role_id` still
 owns the generated transition; every `allowed_roles` entry receives permission

@@ -2,7 +2,9 @@ use std::collections::BTreeSet;
 
 use crate::entities::{CeremonyDefinition, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{RoleAction, RoleId, StateExecution, StepId};
+use crate::value_objects::{
+    RoleAction, RoleId, StateExecution, StepExecutionRecord, StepId, StepStatus,
+};
 
 impl CeremonyInstance {
     pub fn resolved_step_role(
@@ -68,7 +70,7 @@ impl CeremonyInstance {
             .is_some_and(|state| state.execution() == StateExecution::Concurrent);
         if concurrent
             && self
-                .roles_assigned_to_other_steps(definition, step_id)
+                .roles_assigned_to_other_steps(definition, step_id)?
                 .contains(role)
         {
             return Err(DomainError::InvariantViolated {
@@ -82,7 +84,7 @@ impl CeremonyInstance {
         &self,
         definition: &CeremonyDefinition,
         step_id: &StepId,
-    ) -> BTreeSet<RoleId> {
+    ) -> Result<BTreeSet<RoleId>, DomainError> {
         let current = self.current_state_iteration;
         let mut roles = BTreeSet::new();
         for (other_id, record) in &self.step_records {
@@ -92,7 +94,7 @@ impl CeremonyInstance {
                     .step(other_id)
                     .is_some_and(|step| step.state_id() == &self.current_state)
             {
-                roles.extend(record.claimed_role().cloned());
+                roles.extend(reserved_role(definition, other_id, record)?);
             }
         }
         for (other_id, history) in &self.step_record_history {
@@ -105,10 +107,29 @@ impl CeremonyInstance {
                         .step(other_id)
                         .is_some_and(|step| step.state_id() == &self.current_state)
                 {
-                    roles.extend(record.claimed_role().cloned());
+                    roles.extend(reserved_role(definition, other_id, record)?);
                 }
             }
         }
-        roles
+        Ok(roles)
+    }
+}
+
+fn reserved_role(
+    definition: &CeremonyDefinition,
+    step_id: &StepId,
+    record: &StepExecutionRecord,
+) -> Result<Option<RoleId>, DomainError> {
+    if let Some(role) = record.claimed_role() {
+        return Ok(Some(role.clone()));
+    }
+    let static_non_pending = record.status() != StepStatus::Pending
+        && definition
+            .step(step_id)
+            .is_some_and(|step| step.dynamic_role_binding().is_none());
+    if static_non_pending {
+        definition.role_id_for_step(step_id).map(Some)
+    } else {
+        Ok(None)
     }
 }

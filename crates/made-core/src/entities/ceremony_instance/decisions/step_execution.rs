@@ -56,13 +56,18 @@ impl CeremonyInstance {
         }
         let (started_by, dynamic) =
             self.resolve_step_role(definition, &command.step_id, command.role_id.as_ref())?;
-        let mixed_concurrent_state = definition
+        let concurrent_state = definition
             .state(&self.current_state)
-            .is_some_and(|state| state.execution() == StateExecution::Concurrent)
+            .is_some_and(|state| state.execution() == StateExecution::Concurrent);
+        let mixed_concurrent_state = concurrent_state
             && definition
                 .steps_for_state(&self.current_state)
                 .any(|candidate| candidate.dynamic_role_binding().is_some());
-        let sealed_role = (!dynamic && mixed_concurrent_state).then(|| started_by.clone());
+        let alternate_static_role = !dynamic
+            && concurrent_state
+            && definition.role_id_for_step(&command.step_id)? != started_by;
+        let sealed_role = (!dynamic && (mixed_concurrent_state || alternate_static_role))
+            .then(|| started_by.clone());
         if !self.resolved_step_is_claimable_at(
             &command.step_id,
             definition,

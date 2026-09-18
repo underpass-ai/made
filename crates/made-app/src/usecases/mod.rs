@@ -8,6 +8,8 @@
 mod ceremony_event_subscriber_tests;
 #[cfg(test)]
 mod ceremony_test_support;
+#[cfg(test)]
+mod start_ceremony_step_role_tests;
 
 mod apply_ceremony_transition_input;
 mod apply_ceremony_transition_use_case;
@@ -116,6 +118,7 @@ mod start_ceremony_step_input;
 mod start_ceremony_step_use_case;
 mod start_ceremony_use_case;
 mod start_published_ceremony_use_case;
+mod step_role_resolution;
 mod step_span;
 mod unregister_agent;
 mod verify_ceremony_journal_use_case;

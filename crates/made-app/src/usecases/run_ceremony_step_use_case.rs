@@ -80,7 +80,8 @@ impl RunCeremonyStepUseCase {
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?;
-        let actor = session_facts::seat(&input.role_id, input.role_kind)?;
+        let requested_role_id = input.requested_role_id();
+        let actor_kind = input.role_kind;
 
         let now = self.clock.now();
         let lease = StepLease::acquire(
@@ -90,7 +91,7 @@ impl RunCeremonyStepUseCase {
             input.lease_ttl,
         )?;
         let claim = CeremonyCommand::StartStep(StartStep {
-            role_id: Some(input.role_id.clone()),
+            role_id: requested_role_id.clone(),
             step_id: input.step_id.clone(),
             lease,
             now,
@@ -100,6 +101,7 @@ impl RunCeremonyStepUseCase {
             .stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&claim, &definition)?;
+                let actor = session_facts::step_started_seat(&events, actor_kind)?;
                 session_facts::facts(&session.instance, events, &actor, now)
             })
             .await?;
@@ -112,10 +114,10 @@ impl RunCeremonyStepUseCase {
                 what: "ceremony_step",
             })?;
         let attempt = record.attempt();
-        let sealed_role = record
-            .claimed_role()
-            .cloned()
-            .unwrap_or_else(|| input.role_id.clone());
+        let fallback_role = requested_role_id
+            .clone()
+            .map_or_else(|| definition.role_id_for_step(&input.step_id), Ok)?;
+        let sealed_role = record.claimed_role().cloned().unwrap_or(fallback_role);
         super::step_span::record_coordinates(record.state_iteration(), record.iteration(), attempt);
 
         // What was said so far, folded from the stream: every step

@@ -34,6 +34,8 @@ use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
+#[path = "mcp_parity_session/dynamic_roles.rs"]
+mod dynamic_roles;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]

@@ -69,6 +69,27 @@ pub(crate) fn step_result_seat(
     )
 }
 
+/// The seat sealed by the step-start decision that won an optimistic append.
+///
+/// Automatic role binding is resolved by the aggregate against the session
+/// seen by each retry. Reading the accepted event here keeps the audit actor
+/// aligned with that decision even when context changed after the first read.
+pub(crate) fn step_started_seat(
+    events: &[CeremonyEvent],
+    kind: AuditActorKind,
+) -> Result<AuditActor, DomainError> {
+    let role = events.iter().find_map(|event| match event {
+        CeremonyEvent::StepStarted(started) => Some(&started.started_by),
+        _ => None,
+    });
+    seat(
+        role.ok_or(DomainError::InvariantViolated {
+            reason: "a step start decision emits a started event",
+        })?,
+        kind,
+    )
+}
+
 /// Who did it, holding no seat.
 ///
 /// Whoever opens a session or seats its table may be a participant,

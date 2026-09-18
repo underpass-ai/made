@@ -30,15 +30,18 @@ impl EmbeddedRunCeremonyStepRequest {
         let (definition, _instance) = load_instance_definition(made, &self.ceremony_id).await?;
         let role_id = definition.role_id_for_step(&self.step_id)?;
 
-        made.run_step(RunCeremonyStepInput::new(
-            self.ceremony_id.clone(),
-            role_id,
-            self.actor_kind,
-            self.step_id,
-            self.lease_owner_id,
-            self.idempotency_key,
-            self.lease_ttl,
-        ))
+        made.run_step(
+            RunCeremonyStepInput::new(
+                self.ceremony_id.clone(),
+                role_id,
+                self.actor_kind,
+                self.step_id,
+                self.lease_owner_id,
+                self.idempotency_key,
+                self.lease_ttl,
+            )
+            .with_automatic_role_resolution(),
+        )
         .await?;
         Ok(self.ceremony_id)
     }

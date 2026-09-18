@@ -21,8 +21,10 @@ pub struct StepStarted {
     pub started_by: RoleId,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub role_from: Option<ContextKey>,
-    /// The actual role accepted for a static step in a mixed dynamic/static
-    /// concurrent state. Absent from legacy and static-only events.
+    /// The actual role accepted for a static concurrent step when replay cannot
+    /// recover it from the definition's canonical owner alone. This covers
+    /// mixed dynamic/static states and explicitly selected alternate roles;
+    /// canonical static-only claims retain the legacy unmarked shape.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub sealed_role: Option<RoleId>,
     #[serde(with = "time::serde::rfc3339")]

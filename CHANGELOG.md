@@ -192,6 +192,16 @@ version bump, tag and release publication.
 
 ### Fixed
 
+- Concurrent static steps reserve their actual alternate role as well as
+  canonical owners, preventing two steps from claiming the same seat. Legacy
+  event hashes and canonical static claim payloads remain unchanged.
+  (#130, fixes #134)
+
+- Automatic claim and run requests resolve dynamic roles from current context
+  inside each optimistic decision. The winning claim supplies the audit actor,
+  handler role and trace; explicit facade role selection remains enforced.
+  (#130, fixes #133)
+
 - Definition comparison now reports state execution, state repeat and
   `max_parallel` changes, alongside transition budgets and dynamic role/context
   policies. Changes that introduce mandatory context-write output sources are

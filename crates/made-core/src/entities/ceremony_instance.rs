@@ -42,6 +42,8 @@ mod interventions;
 mod invariants;
 mod participant_bindings;
 mod role_resolution;
+#[cfg(test)]
+mod role_resolution_tests;
 mod step_claims;
 mod step_execution;
 mod transitions;

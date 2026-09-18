@@ -2,6 +2,8 @@ use made_core::value_objects::{
     AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepId,
 };
 
+use super::step_role_resolution::StepRoleResolution;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct StartCeremonyStepInput {
     pub(crate) instance_id: CeremonyId,
@@ -15,6 +17,7 @@ pub struct StartCeremonyStepInput {
     pub(crate) lease_owner_id: LeaseOwnerId,
     pub(crate) idempotency_key: IdempotencyKey,
     pub(crate) lease_ttl: DurationMs,
+    pub(crate) role_resolution: StepRoleResolution,
 }
 
 impl StartCeremonyStepInput {
@@ -45,7 +48,23 @@ impl StartCeremonyStepInput {
             lease_owner_id,
             idempotency_key,
             lease_ttl,
+            role_resolution: StepRoleResolution::Explicit,
         }
+    }
+
+    /// Let the aggregate resolve the role from the session observed by each
+    /// optimistic attempt.
+    ///
+    /// `role_id()` remains the requested/fallback anchor for compatibility;
+    /// the role actually accepted is the one sealed by `StepStarted`.
+    #[must_use]
+    pub fn with_automatic_role_resolution(mut self) -> Self {
+        self.role_resolution = StepRoleResolution::Automatic;
+        self
+    }
+
+    pub(crate) fn requested_role_id(&self) -> Option<RoleId> {
+        self.role_resolution.requested(&self.role_id)
     }
 
     #[must_use]
