@@ -1,13 +1,18 @@
 use super::{
     apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    assert_ceremony_reason_input_from_proto, close_ceremony_intervention_input_from_proto,
-    collect_ceremony_evidence_input_from_proto, debug, defer_ceremony_guard_input_from_proto,
-    domain_error_to_status, link_span_to_metadata, pb,
-    request_ceremony_intervention_input_from_proto,
+    assert_ceremony_reason_input_from_proto, child_completion_state_from,
+    close_ceremony_intervention_input_from_proto, collect_ceremony_evidence_input_from_proto,
+    debug, defer_ceremony_guard_input_from_proto, domain_error_to_status, link_span_to_metadata,
+    pb, request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto, start_ceremony_from_proto,
     start_published_ceremony_input_from_proto, CeremonyId, CeremonyParticipantPlanAdapter,
     GrpcResult, MadeGrpcService, Request, Response, StartCeremonyFromYaml,
+};
+use made_app::usecases::AcceptChildCompletionInput;
+use made_core::error::DomainError;
+use made_core::value_objects::{
+    CeremonyEventPageLimit, ChildGroupId, ChildSpawnCoordinates, EventId, StepId,
 };
 
 impl MadeGrpcService {
@@ -112,6 +117,116 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::RunCeremonyStepResponse {
             instance: Some(self.render(output.instance(), &definition).await?),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.prepare_ceremony_children", skip_all)]
+    pub(super) async fn handle_prepare_ceremony_children(
+        &self,
+        request: Request<pb::PrepareCeremonyChildrenRequest>,
+    ) -> GrpcResult<pb::PrepareCeremonyChildrenResponse> {
+        link_span_to_metadata(&request);
+        let request = request.into_inner();
+        let ceremony_id =
+            CeremonyId::new(request.ceremony_id.clone()).map_err(domain_error_to_status)?;
+        let step_id = StepId::new(request.step_id.clone()).map_err(domain_error_to_status)?;
+        let (instance, definition) = self.session(&ceremony_id).await?;
+        let input = run_ceremony_step_input_from_proto(
+            pb::RunCeremonyStepRequest {
+                ceremony_id: request.ceremony_id,
+                step_id: request.step_id,
+                actor_kind: request.actor_kind,
+                lease_owner_id: request.lease_owner_id,
+                idempotency_key: request.idempotency_key,
+                lease_ttl_ms: request.lease_ttl_ms,
+            },
+            &definition,
+            &instance,
+        )
+        .map_err(domain_error_to_status)?;
+        let output = self
+            .run_ceremony_step
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let record = output.instance().step_record(&step_id).ok_or_else(|| {
+            domain_error_to_status(DomainError::NotFound {
+                what: "ceremony_step_record",
+            })
+        })?;
+        let coordinates = ChildSpawnCoordinates::new(
+            step_id,
+            output.instance().current_state_visit(),
+            output.instance().current_state_iteration(),
+            record.iteration(),
+        );
+        let group_id = ChildGroupId::derive(output.instance().id(), &coordinates);
+        let group = output.instance().child_group(&group_id).ok_or_else(|| {
+            domain_error_to_status(DomainError::NotFound {
+                what: "child_spawn_group",
+            })
+        })?;
+        Ok(Response::new(pb::PrepareCeremonyChildrenResponse {
+            instance: Some(self.render(output.instance(), &definition).await?),
+            child_group_id: group_id.as_str().to_owned(),
+            child_ids: group
+                .plan()
+                .children()
+                .iter()
+                .map(|child| child.child_id().as_str().to_owned())
+                .collect(),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.accept_child_completion", skip_all)]
+    pub(super) async fn handle_accept_child_completion(
+        &self,
+        request: Request<pb::AcceptChildCompletionRequest>,
+    ) -> GrpcResult<pb::AcceptChildCompletionResponse> {
+        link_span_to_metadata(&request);
+        let request = request.into_inner();
+        let output = self
+            .accept_child_completion
+            .execute(AcceptChildCompletionInput::new(
+                CeremonyId::new(request.child_id).map_err(domain_error_to_status)?,
+                EventId::new(request.terminal_event_id).map_err(domain_error_to_status)?,
+            ))
+            .await
+            .map_err(domain_error_to_status)?;
+        let definition = self
+            .resolve_ceremony_definition
+            .execute(output.parent())
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::AcceptChildCompletionResponse {
+            parent: Some(self.render(output.parent(), &definition).await?),
+            completion: Some(child_completion_state_from(output.completion())),
+        }))
+    }
+
+    #[tracing::instrument(name = "rpc.recover_ceremony_children", skip_all)]
+    pub(super) async fn handle_recover_ceremony_children(
+        &self,
+        request: Request<pb::RecoverCeremonyChildrenRequest>,
+    ) -> GrpcResult<pb::RecoverCeremonyChildrenResponse> {
+        link_span_to_metadata(&request);
+        let requested = request.into_inner().limit;
+        let limit = if requested == 0 {
+            CeremonyEventPageLimit::DEFAULT
+        } else {
+            CeremonyEventPageLimit::new(requested as usize).map_err(domain_error_to_status)?
+        };
+        let round = self
+            .recover_ceremony_children
+            .execute(limit)
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(pb::RecoverCeremonyChildrenResponse {
+            recovered_plans: u32::try_from(round.recovered_plans).unwrap_or(u32::MAX),
+            accepted_completions: u32::try_from(round.accepted_completions).unwrap_or(u32::MAX),
+            skipped: u32::try_from(round.skipped).unwrap_or(u32::MAX),
+            failed: u32::try_from(round.failed).unwrap_or(u32::MAX),
+            busy: round.busy,
         }))
     }
 

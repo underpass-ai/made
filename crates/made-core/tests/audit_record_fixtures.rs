@@ -60,10 +60,16 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         AuditEventType::CeremonyDefinitionValidated
         | AuditEventType::CeremonyDefinitionPublished
         | AuditEventType::CeremonyFailed
-        | AuditEventType::StateIterationStarted
-        | AuditEventType::ChildSpawnPlanned
-        | AuditEventType::ChildSpawnPlanAdopted
-        | AuditEventType::ChildCompletionAccepted => None,
+        | AuditEventType::StateIterationStarted => None,
+        AuditEventType::ChildSpawnPlanned => Some(include_str!(
+            "fixtures/ceremony_events/v1/child_spawn_planned.json"
+        )),
+        AuditEventType::ChildSpawnPlanAdopted => Some(include_str!(
+            "fixtures/ceremony_events/v1/child_spawn_plan_adopted.json"
+        )),
+        AuditEventType::ChildCompletionAccepted => Some(include_str!(
+            "fixtures/ceremony_events/v1/child_completion_accepted.json"
+        )),
         AuditEventType::CeremonyInstanceStarted => Some(include_str!(
             "fixtures/ceremony_events/v1/ceremony_instance_started.json"
         )),
@@ -179,7 +185,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 17);
+    assert_eq!(pinned, 20);
 }
 
 #[test]

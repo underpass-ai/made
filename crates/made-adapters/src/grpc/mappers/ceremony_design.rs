@@ -22,11 +22,12 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyStepAggregation, CeremonyVersion, ContextKey,
-    ContextWrites, DurationMs, DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxBounces,
-    MaxParallel, MaxTransitions, NumAgents, OutputName, PriorContext, RoleId, Rounds,
-    StateExecution, StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions,
-    StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
+    CeremonyChildSpawn, CeremonyChildSpec, CeremonyDescription, CeremonyName,
+    CeremonyStepAggregation, CeremonyVersion, ChildJoin, ChildQuorum, ChildrenCompletedCondition,
+    ContextKey, ContextWrites, DurationMs, DynamicRoleBinding, GuardName, InputName, JoinStepCount,
+    MaxBounces, MaxChildDepth, MaxChildren, MaxParallel, MaxTransitions, NumAgents, OutputName,
+    PriorContext, RoleId, Rounds, StateExecution, StateIteration, StepAttempt, StepHandlerKind,
+    StepId, StepInstructions, StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -132,6 +133,7 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     let allowed_roles = stage.allowed_roles.clone();
     let context_writes = stage.context_writes.clone();
     let aggregate = stage.aggregate.map(aggregation_from_proto).transpose()?;
+    let spawn = stage.spawn.map(spawn_from_proto).transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
@@ -148,6 +150,9 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
     .with_exit_guards(exit_guards);
     if let Some(aggregation) = aggregate {
         designed = designed.with_aggregation(aggregation);
+    }
+    if let Some(spawn) = spawn {
+        designed = designed.with_spawn(spawn);
     }
     apply_dynamic_fields(designed, &role_from, allowed_roles, context_writes)
 }
@@ -168,6 +173,7 @@ fn stage_entry_from_proto(
             || !stage.allowed_roles.is_empty()
             || !stage.context_writes.is_empty()
             || stage.aggregate.is_some()
+            || stage.spawn.is_some()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
@@ -242,6 +248,7 @@ fn group_step_from_proto(
     step: pb::CeremonyDesignGroupStep,
 ) -> Result<CeremonyDesignGroupStep, DomainError> {
     let aggregate = step.aggregate.map(aggregation_from_proto).transpose()?;
+    let spawn = step.spawn.map(spawn_from_proto).transpose()?;
     let mut designed = CeremonyDesignStage::new(
         StepId::new(step.id)?,
         RoleId::new(step.owner_role_id)?,
@@ -256,6 +263,9 @@ fn group_step_from_proto(
     );
     if let Some(aggregation) = aggregate {
         designed = designed.with_aggregation(aggregation);
+    }
+    if let Some(spawn) = spawn {
+        designed = designed.with_spawn(spawn);
     }
     Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
         designed,
@@ -279,6 +289,30 @@ fn aggregation_from_proto(
             reason: "field `aggregate.strategy` is required".to_owned(),
         }),
     }
+}
+
+fn spawn_from_proto(spawn: pb::CeremonyChildSpawn) -> Result<CeremonyChildSpawn, DomainError> {
+    let children = spawn
+        .children
+        .into_iter()
+        .map(|child| {
+            let inputs = child
+                .inputs
+                .into_iter()
+                .map(|(input, context)| Ok((InputName::new(input)?, ContextKey::new(context)?)))
+                .collect::<Result<std::collections::BTreeMap<_, _>, DomainError>>()?;
+            Ok(CeremonyChildSpec::new(
+                CeremonyName::new(child.ceremony)?,
+                CeremonyVersion::new(child.version)?,
+                inputs,
+            ))
+        })
+        .collect::<Result<Vec<_>, DomainError>>()?;
+    CeremonyChildSpawn::new(
+        children,
+        MaxChildren::new(u16::try_from(spawn.max_children).unwrap_or(u16::MAX))?,
+        MaxChildDepth::new(u16::try_from(spawn.max_depth).unwrap_or(u16::MAX))?,
+    )
 }
 
 fn apply_dynamic_fields(
@@ -335,6 +369,25 @@ fn exit_guard_from_proto(
         pb::ceremony_design_exit_guard::Guard::StepRepeatExhausted(guard) => {
             Ok(CeremonyDesignExitGuard::StepRepeatExhausted(
                 CeremonyDesignStepRepeatExhaustedGuard::new(StepId::new(guard.step_id)?),
+            ))
+        }
+        pb::ceremony_design_exit_guard::Guard::ChildrenCompleted(condition) => {
+            let join = match condition.join.ok_or_else(|| DomainError::InvalidDocument {
+                reason: "field `children_completed.join` is required".to_owned(),
+            })? {
+                pb::children_completed_condition::Join::All(true) => ChildJoin::All,
+                pb::children_completed_condition::Join::Any(true) => ChildJoin::Any,
+                pb::children_completed_condition::Join::Quorum(count) => ChildJoin::Quorum {
+                    count: ChildQuorum::new(u16::try_from(count).unwrap_or(u16::MAX))?,
+                },
+                _ => {
+                    return Err(DomainError::InvalidDocument {
+                        reason: "children_completed all/any join must be true".to_owned(),
+                    })
+                }
+            };
+            Ok(CeremonyDesignExitGuard::ChildrenCompleted(
+                ChildrenCompletedCondition::new(StepId::new(condition.step_id)?, join),
             ))
         }
     }
@@ -458,6 +511,7 @@ mod tests {
                 allowed_roles: Vec::new(),
                 context_writes: std::collections::HashMap::new(),
                 aggregate: None,
+                spawn: None,
                 group: Some(pb::CeremonyDesignGroup {
                     execution: "concurrent".to_owned(),
                     steps: ["A", "B"]
@@ -476,6 +530,7 @@ mod tests {
                             allowed_roles: Vec::new(),
                             context_writes: std::collections::HashMap::new(),
                             aggregate: None,
+                            spawn: None,
                         })
                         .collect(),
                     join: Some(pb::CeremonyDesignGroupJoin {

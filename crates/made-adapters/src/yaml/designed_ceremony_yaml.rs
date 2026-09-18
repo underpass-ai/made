@@ -169,6 +169,19 @@ fn guards(draft: &CeremonyDefinitionDraft) -> Result<BTreeMap<String, GuardDocum
                     "automated",
                     format!("step_repeat_exhausted:{}", condition.step_id()),
                 ),
+                GuardCondition::ChildrenCompleted(condition) => {
+                    let join = match condition.join() {
+                        made_core::value_objects::ChildJoin::All => "all".to_owned(),
+                        made_core::value_objects::ChildJoin::Any => "any".to_owned(),
+                        made_core::value_objects::ChildJoin::Quorum { count } => {
+                            format!("quorum:{}", count.get())
+                        }
+                    };
+                    (
+                        "automated",
+                        format!("children_completed:{}:{join}", condition.step_id()),
+                    )
+                }
                 GuardCondition::HumanApproval => ("human", "manual_approval".to_owned()),
             };
             Ok((
@@ -223,6 +236,7 @@ fn steps(draft: &CeremonyDefinitionDraft) -> Vec<StepDocument> {
                 })
                 .collect(),
             aggregate: step.aggregation().cloned(),
+            spawn: step.spawn().cloned(),
         })
         .collect()
 }

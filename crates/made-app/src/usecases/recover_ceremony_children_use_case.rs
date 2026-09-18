@@ -158,3 +158,384 @@ enum RecoveryEffect {
     CompletionAccepted,
     Skipped,
 }
+
+#[cfg(test)]
+mod tests {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use made_core::entities::AuditFact;
+    use made_core::ports::{
+        AppendOutcome, CeremonyEventCursorPort, CeremonyEventSubscriberPort,
+        NoopCeremonyEventSubscriber,
+    };
+    use made_core::value_objects::{
+        AuditActorKind, CeremonyEventCursorAttempt, CeremonyEventQuarantineReason, GlobalPosition,
+        IdempotencyKey, LeaseOwnerId, QuarantinedCeremonyEvent, StreamVersion,
+    };
+    use tokio::sync::Mutex;
+
+    use super::*;
+    use crate::usecases::ceremony_test_support::{
+        a_memory, ceremony_id, child_spawning_definition, lease_ttl, now, resolver_with,
+        review_child_definition, role_id, started_instance, step_id, EventStoreFake, FixedClock,
+        PublicationsFake, StepHandlerFake,
+    };
+    use crate::usecases::{RunCeremonyStepInput, RunCeremonyStepUseCase};
+
+    struct FailFirstChildOpening {
+        store: Arc<EventStoreFake>,
+        parent_id: made_core::value_objects::CeremonyId,
+        failures_remaining: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl CeremonyEventStorePort for FailFirstChildOpening {
+        async fn append(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+            expected: StreamVersion,
+            facts: Vec<AuditFact>,
+        ) -> Result<AppendOutcome, DomainError> {
+            if stream != &self.parent_id
+                && self
+                    .failures_remaining
+                    .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                        remaining.checked_sub(1)
+                    })
+                    .is_ok()
+            {
+                return Err(DomainError::InvariantViolated {
+                    reason: "injected crash before child opening",
+                });
+            }
+            self.store.append(stream, expected, facts).await
+        }
+
+        async fn read(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+            after: StreamVersion,
+            limit: CeremonyEventPageLimit,
+        ) -> Result<Vec<made_core::entities::AuditRecord>, DomainError> {
+            self.store.read(stream, after, limit).await
+        }
+
+        async fn read_all(
+            &self,
+            from: GlobalPosition,
+            limit: CeremonyEventPageLimit,
+        ) -> Result<Vec<made_core::ports::PositionedRecord>, DomainError> {
+            self.store.read_all(from, limit).await
+        }
+
+        async fn head(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+        ) -> Result<StreamVersion, DomainError> {
+            self.store.head(stream).await
+        }
+
+        async fn streams(&self) -> Result<Vec<made_core::value_objects::CeremonyId>, DomainError> {
+            self.store.streams().await
+        }
+    }
+
+    #[derive(Debug, Default)]
+    struct TestCursor {
+        state: Mutex<TestCursorState>,
+    }
+
+    #[derive(Debug, Default)]
+    struct TestCursorState {
+        position: Option<GlobalPosition>,
+        lease: Option<made_core::value_objects::CeremonyEventCursorLease>,
+        attempt: CeremonyEventCursorAttempt,
+    }
+
+    #[async_trait]
+    impl CeremonyEventCursorPort for TestCursor {
+        async fn position(
+            &self,
+            _consumer: &CeremonyEventConsumer,
+        ) -> Result<Option<GlobalPosition>, DomainError> {
+            Ok(self.state.lock().await.position)
+        }
+
+        async fn lease(
+            &self,
+            consumer: &CeremonyEventConsumer,
+            lease_id: CeremonyEventCursorLeaseId,
+            now: time::OffsetDateTime,
+            duration: DurationMs,
+        ) -> Result<Option<made_core::value_objects::CeremonyEventCursorLease>, DomainError>
+        {
+            let mut state = self.state.lock().await;
+            if state.lease.is_some() {
+                return Ok(None);
+            }
+            let lease = made_core::value_objects::CeremonyEventCursorLease::new(
+                consumer.clone(),
+                lease_id,
+                state.position,
+                state.attempt,
+                now + time::Duration::milliseconds(i64::try_from(duration.get()).unwrap()),
+            );
+            state.lease = Some(lease.clone());
+            Ok(Some(lease))
+        }
+
+        async fn acknowledge(
+            &self,
+            _consumer: &CeremonyEventConsumer,
+            through: GlobalPosition,
+        ) -> Result<(), DomainError> {
+            let mut state = self.state.lock().await;
+            state.position = Some(through);
+            state.attempt = CeremonyEventCursorAttempt::NONE;
+            Ok(())
+        }
+
+        async fn acknowledge_lease(
+            &self,
+            lease: &made_core::value_objects::CeremonyEventCursorLease,
+            through: GlobalPosition,
+        ) -> Result<(), DomainError> {
+            let mut state = self.state.lock().await;
+            if state
+                .lease
+                .as_ref()
+                .is_none_or(|held| held.lease_id() != lease.lease_id())
+            {
+                return Err(DomainError::Conflict {
+                    what: "test_cursor",
+                });
+            }
+            state.position = Some(through);
+            state.attempt = CeremonyEventCursorAttempt::NONE;
+            state.lease = None;
+            Ok(())
+        }
+
+        async fn mark_failed(
+            &self,
+            _lease: &made_core::value_objects::CeremonyEventCursorLease,
+            _position: GlobalPosition,
+        ) -> Result<(), DomainError> {
+            let mut state = self.state.lock().await;
+            state.attempt = state.attempt.next();
+            state.lease = None;
+            Ok(())
+        }
+
+        async fn quarantine(
+            &self,
+            _lease: &made_core::value_objects::CeremonyEventCursorLease,
+            _position: GlobalPosition,
+            _reason: CeremonyEventQuarantineReason,
+            _now: time::OffsetDateTime,
+        ) -> Result<(), DomainError> {
+            Err(DomainError::InvariantViolated {
+                reason: "test cursor does not quarantine",
+            })
+        }
+
+        async fn release(
+            &self,
+            _lease: &made_core::value_objects::CeremonyEventCursorLease,
+        ) -> Result<(), DomainError> {
+            self.state.lock().await.lease = None;
+            Ok(())
+        }
+
+        async fn quarantined(
+            &self,
+            _consumer: &CeremonyEventConsumer,
+        ) -> Result<Vec<QuarantinedCeremonyEvent>, DomainError> {
+            Ok(Vec::new())
+        }
+    }
+
+    #[tokio::test]
+    async fn an_adoption_wake_recovers_after_a_crash_before_the_first_child_open() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(
+            crate::usecases::ceremony_test_support::DefinitionRepositoryFake::new(
+                definition.clone(),
+            ),
+        );
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(review_child_definition()).await;
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&started_instance(&definition)).await.unwrap();
+        let crashing_events = Arc::new(FailFirstChildOpening {
+            store: store.clone(),
+            parent_id: ceremony_id(),
+            failures_remaining: AtomicUsize::new(1),
+        });
+        let crashing_stream = Arc::new(SessionStream::new(
+            crashing_events,
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber) as Arc<dyn CeremonyEventSubscriberPort>,
+        ));
+        let resolver = resolver_with(definitions.clone(), publications.clone());
+        let crashing_prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver.clone(),
+            publications.clone(),
+            crashing_stream.clone(),
+            Arc::new(FixedClock::new(now())),
+            a_memory(),
+        ));
+        let runner = RunCeremonyStepUseCase::new(
+            resolver.clone(),
+            crashing_stream,
+            Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
+                reason: "spawn handler must not run",
+            })),
+            Arc::new(FixedClock::new(now())),
+        )
+        .with_child_orchestrator(crashing_prepare);
+
+        let first_error = runner
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                LeaseOwnerId::new("crashed-worker").unwrap(),
+                IdempotencyKey::new("crash-after-plan").unwrap(),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(first_error.to_string().contains("before child opening"));
+
+        let later = now() + time::Duration::seconds(120);
+        let reclaimed_stream = Arc::new(SessionStream::new(
+            Arc::new(FailFirstChildOpening {
+                store: store.clone(),
+                parent_id: ceremony_id(),
+                failures_remaining: AtomicUsize::new(1),
+            }),
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
+        ));
+        let reclaimed_prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver.clone(),
+            publications.clone(),
+            reclaimed_stream.clone(),
+            Arc::new(FixedClock::new(later)),
+            a_memory(),
+        ));
+        let reclaimed_runner = RunCeremonyStepUseCase::new(
+            resolver.clone(),
+            reclaimed_stream,
+            Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
+                reason: "spawn handler must not run",
+            })),
+            Arc::new(FixedClock::new(later)),
+        )
+        .with_child_orchestrator(reclaimed_prepare);
+        let adoption_error = reclaimed_runner
+            .execute(RunCeremonyStepInput::new(
+                ceremony_id(),
+                role_id(),
+                AuditActorKind::Agent,
+                step_id(),
+                LeaseOwnerId::new("replacement-worker").unwrap(),
+                IdempotencyKey::new("crash-after-adoption").unwrap(),
+                lease_ttl(),
+            ))
+            .await
+            .unwrap_err();
+        assert!(
+            adoption_error.to_string().contains("before child opening"),
+            "unexpected reclaim failure: {adoption_error}"
+        );
+        let before = store.saved(&ceremony_id()).await;
+        let group = before.child_groups().values().next().unwrap();
+        let child_id = group.plan().children()[0].child_id().clone();
+        assert!(!store.exists(&child_id).await);
+
+        let plan_position = store
+            .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+            .await
+            .unwrap()
+            .into_iter()
+            .find(|positioned| {
+                matches!(
+                    positioned.record.event(),
+                    Some(CeremonyEvent::ChildSpawnPlanned(_))
+                )
+            })
+            .unwrap()
+            .position;
+        let consumer = CeremonyEventConsumer::new("children-test").unwrap();
+        let cursor = Arc::new(TestCursor::default());
+        cursor.acknowledge(&consumer, plan_position).await.unwrap();
+        let restarted_stream = Arc::new(SessionStream::new(
+            store.clone(),
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
+        ));
+        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver.clone(),
+            publications.clone(),
+            restarted_stream.clone(),
+            Arc::new(FixedClock::new(later)),
+            a_memory(),
+        ));
+        let accept = Arc::new(AcceptChildCompletionUseCase::new(
+            resolver,
+            publications,
+            restarted_stream,
+            Arc::new(FixedClock::new(later)),
+        ));
+        let recover = RecoverCeremonyChildrenUseCase::new(
+            store.clone(),
+            cursor,
+            Arc::new(SessionStream::new(
+                store.clone(),
+                store.clone(),
+                Arc::new(NoopCeremonyEventSubscriber),
+            )),
+            prepare,
+            accept,
+            Arc::new(FixedClock::new(later)),
+            consumer,
+        );
+
+        let round = recover
+            .execute(CeremonyEventPageLimit::DEFAULT)
+            .await
+            .unwrap();
+        assert!(round.recovered_plans >= 1, "the adoption wake was ignored");
+        assert!(store.exists(&child_id).await);
+        let after = store.saved(&ceremony_id()).await;
+        assert_eq!(
+            after.step_record(&step_id()).unwrap().status(),
+            made_core::value_objects::StepStatus::Completed
+        );
+        let records = store.records(&ceremony_id()).await;
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| matches!(
+                    record.event(),
+                    Some(CeremonyEvent::ChildSpawnPlanned(_))
+                ))
+                .count(),
+            1
+        );
+        assert_eq!(
+            records
+                .iter()
+                .filter(|record| matches!(
+                    record.event(),
+                    Some(CeremonyEvent::ChildSpawnPlanAdopted(_))
+                ))
+                .count(),
+            1
+        );
+    }
+}

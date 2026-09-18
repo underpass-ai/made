@@ -12,6 +12,7 @@
 //! [`TriggerEvent`]: made_core::events::TriggerEvent
 
 mod ceremony_event_transport;
+mod ceremony_recovery_subscriber;
 mod config;
 mod messaging;
 mod nats_publish_client;
@@ -19,6 +20,7 @@ mod nats_subjects;
 mod subscriber;
 
 pub use ceremony_event_transport::NatsCeremonyEventTransport;
+pub use ceremony_recovery_subscriber::NatsCeremonyRecoverySubscriber;
 pub use config::NatsConfig;
 pub use messaging::NatsMessaging;
 pub use nats_subjects::NatsSubjects;

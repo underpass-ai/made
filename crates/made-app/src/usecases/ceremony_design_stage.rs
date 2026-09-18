@@ -1,6 +1,6 @@
 use made_core::value_objects::{
-    CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId,
-    Rounds, StepHandlerKind, StepId, StepInstructions,
+    CeremonyChildSpawn, CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, NumAgents,
+    PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions,
 };
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
@@ -33,6 +33,7 @@ pub struct CeremonyDesignStage {
     dynamic_role_binding: Option<DynamicRoleBinding>,
     context_writes: ContextWrites,
     aggregation: Option<CeremonyStepAggregation>,
+    spawn: Option<CeremonyChildSpawn>,
 }
 
 impl CeremonyDesignStage {
@@ -60,6 +61,7 @@ impl CeremonyDesignStage {
             dynamic_role_binding: None,
             context_writes: ContextWrites::default(),
             aggregation: None,
+            spawn: None,
         }
     }
 
@@ -84,6 +86,12 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn with_aggregation(mut self, aggregation: CeremonyStepAggregation) -> Self {
         self.aggregation = Some(aggregation);
+        self
+    }
+
+    #[must_use]
+    pub fn with_spawn(mut self, spawn: CeremonyChildSpawn) -> Self {
+        self.spawn = Some(spawn);
         self
     }
 
@@ -145,5 +153,10 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn aggregation(&self) -> Option<&CeremonyStepAggregation> {
         self.aggregation.as_ref()
+    }
+
+    #[must_use]
+    pub fn spawn(&self) -> Option<&CeremonyChildSpawn> {
+        self.spawn.as_ref()
     }
 }

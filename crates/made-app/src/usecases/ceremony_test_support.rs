@@ -15,15 +15,16 @@ use made_core::ports::{
     MemoryWriteOutcome, MemoryWriterPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
-    Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyEventPageLimit,
-    CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep,
-    CeremonyTransition, CeremonyVersion, ContextKey, ContextWrites, DurationMs, GlobalPosition,
-    GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId, MemoryCapabilities, MemoryCapability,
-    MemoryEntry, MemoryEntryId, MemoryEntryKind, MemoryMoment, MemoryProvenance, MemoryRelation,
-    MemoryScope, MemoryWrite, RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId,
-    StateIteration, StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt, StepHandlerConfig,
-    StepHandlerKind, StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult,
-    StepStatus, StreamVersion, TransitionTrigger,
+    Attributes, AuditActorKind, AuditEventType, CeremonyChildSpawn, CeremonyChildSpec,
+    CeremonyContext, CeremonyEventPageLimit, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey, ContextWrites,
+    DurationMs, GlobalPosition, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
+    MaxChildDepth, MaxChildren, MemoryCapabilities, MemoryCapability, MemoryEntry, MemoryEntryId,
+    MemoryEntryKind, MemoryMoment, MemoryProvenance, MemoryRelation, MemoryScope, MemoryWrite,
+    RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StateId, StateIteration,
+    StateRepeatPolicy, StateRepeatUntilCondition, StepAttempt, StepHandlerConfig, StepHandlerKind,
+    StepId, StepIteration, StepOutputField, StepRepeatPolicy, StepResult, StepStatus,
+    StreamVersion, TransitionTrigger,
 };
 use serde_json::json;
 use time::macros::datetime;
@@ -229,6 +230,78 @@ pub(super) fn definition() -> CeremonyDefinition {
         None,
     );
     definition_with_step(step)
+}
+
+pub(super) fn child_spawning_definition() -> CeremonyDefinition {
+    let spawn = CeremonyChildSpawn::new(
+        vec![CeremonyChildSpec::new(
+            CeremonyName::new("review_child").unwrap(),
+            CeremonyVersion::v1(),
+            BTreeMap::new(),
+        )],
+        MaxChildren::new(1).unwrap(),
+        MaxChildDepth::new(2).unwrap(),
+    )
+    .unwrap();
+    let step = CeremonyStep::new(
+        step_id(),
+        StateId::new("COLLECTING_VOICES").unwrap(),
+        StepHandlerKind::new("must_not_run").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::new(StepAttempt::new(2).unwrap(), DurationMs::ZERO),
+        None,
+    )
+    .with_spawn(spawn);
+    definition_with_step(step)
+}
+
+/// Published definition targeted by [`child_spawning_definition`].
+pub(super) fn review_child_definition() -> CeremonyDefinition {
+    let state = StateId::new("REVIEWING").unwrap();
+    let done = StateId::new("DONE").unwrap();
+    let step = CeremonyStep::new(
+        StepId::new("review").unwrap(),
+        state.clone(),
+        StepHandlerKind::new("multiagent_round").unwrap(),
+        StepHandlerConfig::empty(),
+        RetryPolicy::single_attempt(),
+        None,
+    );
+    let guard = CeremonyGuard::new(
+        GuardName::new("review_complete").unwrap(),
+        GuardCondition::StepStatus {
+            step_id: step.id().clone(),
+            status: StepStatus::Completed,
+        },
+    );
+    let transition = CeremonyTransition::new(
+        state.clone(),
+        done.clone(),
+        TransitionTrigger::new("finish_review").unwrap(),
+        vec![guard.name().clone()],
+    )
+    .unwrap();
+    let role = CeremonyRole::new(
+        RoleId::new("REVIEWER").unwrap(),
+        vec![
+            RoleAction::step(step.id().clone()),
+            RoleAction::transition(transition.trigger().clone()),
+        ],
+    )
+    .unwrap();
+    CeremonyDefinition::new(
+        CeremonyName::new("review_child").unwrap(),
+        CeremonyVersion::v1(),
+        None,
+        Vec::new(),
+        Vec::new(),
+        vec![CeremonyState::initial(state), CeremonyState::terminal(done)],
+        vec![transition],
+        vec![step],
+        vec![guard],
+        vec![role],
+    )
+    .unwrap()
 }
 
 pub(super) fn context_writing_definition() -> CeremonyDefinition {

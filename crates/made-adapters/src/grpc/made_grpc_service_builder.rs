@@ -2,16 +2,16 @@ use std::sync::Arc;
 
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
+    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
+    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
     CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
     DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
     GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
     GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RegisterAgentUseCase,
-    RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
+    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
+    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
@@ -42,6 +42,8 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) start_ceremony: Option<Arc<StartCeremonyUseCase>>,
     pub(super) start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
     pub(super) run_ceremony_step: Option<Arc<RunCeremonyStepUseCase>>,
+    pub(super) accept_child_completion: Option<Arc<AcceptChildCompletionUseCase>>,
+    pub(super) recover_ceremony_children: Option<Arc<RecoverCeremonyChildrenUseCase>>,
     pub(super) claim_ceremony_step: Option<Arc<StartCeremonyStepUseCase>>,
     pub(super) complete_ceremony_step: Option<Arc<CompleteCeremonyStepUseCase>>,
     pub(super) apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
@@ -145,6 +147,16 @@ impl MadeGrpcServiceBuilder {
         start_published_ceremony
     );
     setter!(run_ceremony_step, RunCeremonyStepUseCase, run_ceremony_step);
+    setter!(
+        accept_child_completion,
+        AcceptChildCompletionUseCase,
+        accept_child_completion
+    );
+    setter!(
+        recover_ceremony_children,
+        RecoverCeremonyChildrenUseCase,
+        recover_ceremony_children
+    );
     setter!(
         claim_ceremony_step,
         StartCeremonyStepUseCase,
@@ -352,6 +364,8 @@ impl MadeGrpcServiceBuilder {
             start_ceremony: required!(self, start_ceremony),
             start_published_ceremony: required!(self, start_published_ceremony),
             run_ceremony_step: required!(self, run_ceremony_step),
+            accept_child_completion: required!(self, accept_child_completion),
+            recover_ceremony_children: required!(self, recover_ceremony_children),
             claim_ceremony_step: required!(self, claim_ceremony_step),
             complete_ceremony_step: required!(self, complete_ceremony_step),
             apply_ceremony_transition: required!(self, apply_ceremony_transition),

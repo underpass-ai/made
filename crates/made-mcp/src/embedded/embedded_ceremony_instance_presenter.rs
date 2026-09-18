@@ -2,8 +2,8 @@ use made_app::services::SessionStream;
 use made_app::usecases::{CeremonyInstanceView, StartCeremonyStepOutput};
 use made_core::entities::{AuditRecord, CeremonyInstance};
 use made_core::value_objects::{
-    CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RecalledEntry, RoleId,
-    SessionRecollection, StepId,
+    CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, CeremonyRecordRef, ChildCompletionRef,
+    ChildGroupState, PlannedChild, RecalledEntry, RoleId, SessionRecollection, StepId,
 };
 use made_embedded::{EmbeddedCeremonyProjection, EmbeddedMade};
 use time::OffsetDateTime;
@@ -124,6 +124,8 @@ impl EmbeddedCeremonyInstancePresenter {
             // it was told nothing — which is every session that
             // declares no `memory_scope`.
             "recollection": instance.recollection().map(recollection_value),
+            "lineage": instance.lineage().map(lineage_value),
+            "child_groups": instance.child_groups().values().map(child_group_value).collect::<Vec<_>>(),
             "participant_bindings": view
                 .participant_bindings()
                 .values()
@@ -151,6 +153,58 @@ impl EmbeddedCeremonyInstancePresenter {
                 .collect::<Vec<_>>(),
         }))
     }
+}
+
+pub(super) fn child_completion_value(completion: &ChildCompletionRef) -> Value {
+    json!({
+        "group_id": completion.group_id().as_str(),
+        "child_id": completion.child_id().as_str(),
+        "terminal_event_id": completion.terminal_event_id().as_str(),
+        "terminal_record_hash": completion.terminal_record_hash().to_hex(),
+    })
+}
+
+fn lineage_value(lineage: &CeremonyLineage) -> Value {
+    json!({
+        "root_id": lineage.root_id().as_str(),
+        "parent_id": lineage.parent_id().as_str(),
+        "group_id": lineage.group_id().as_str(),
+        "position": lineage.position().get(),
+        "depth": lineage.depth().get(),
+        "remaining_depth": lineage.remaining_depth().get(),
+    })
+}
+
+fn planned_child_value(child: &PlannedChild) -> Value {
+    json!({
+        "child_id": child.child_id().as_str(),
+        "position": child.position().get(),
+        "ceremony": child.ceremony().as_str(),
+        "version": child.version().as_str(),
+        "definition_digest": child.digest().to_hex(),
+        "context": child.context(),
+        "lineage": lineage_value(child.lineage()),
+        "recollection": child.recollection().map(recollection_value),
+        "opened_at": moment(child.opened_at()),
+    })
+}
+
+fn child_group_value(group: &ChildGroupState) -> Value {
+    let plan = group.plan();
+    let coordinates = plan.coordinates();
+    json!({
+        "group_id": plan.group_id().as_str(),
+        "step_id": coordinates.step_id().as_str(),
+        "state_visit": coordinates.state_visit().get(),
+        "state_iteration": coordinates.state_iteration().get(),
+        "step_iteration": coordinates.step_iteration().get(),
+        "active_claim_fence": plan.active_claim_fence().as_str(),
+        "adopted_claim_fence": group.adopted_claim_fence().as_str(),
+        "max_children": plan.max_children().get(),
+        "max_depth": plan.max_depth().get(),
+        "children": plan.children().iter().map(planned_child_value).collect::<Vec<_>>(),
+        "completions": group.completions().values().map(child_completion_value).collect::<Vec<_>>(),
+    })
 }
 
 fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {

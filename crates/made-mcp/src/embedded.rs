@@ -10,6 +10,7 @@ mod embedded_ceremony_draft_request;
 mod embedded_ceremony_history_presenter;
 mod embedded_ceremony_id_request;
 mod embedded_ceremony_instance_presenter;
+mod embedded_children_request;
 mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
@@ -40,7 +41,7 @@ mod embedded_start_published_ceremony_request;
 
 use made_app::services::CeremonyTraceScope;
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{CeremonyId, TraceContext};
+use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -48,13 +49,14 @@ use crate::backend::{
     MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
 };
 use crate::protocol::{
-    tool_success_result, ToolError, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
-    ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CLAIM_CEREMONY_STEP_TOOL,
-    CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
-    DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    tool_success_result, ToolError, ACCEPT_CHILD_COMPLETION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
+    APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL,
+    CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL,
+    COMPLETE_CEREMONY_STEP_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
+    PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
@@ -75,6 +77,10 @@ use self::embedded_ceremony_history_presenter::{
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use self::embedded_children_request::{
+    EmbeddedAcceptChildCompletionRequest, EmbeddedPrepareCeremonyChildrenRequest,
+    EmbeddedRecoverCeremonyChildrenRequest,
+};
 use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest;
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
@@ -159,7 +165,23 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
             self.made
                 .recover_event_publication()
                 .await
-                .map_err(|error| format!("embedded event publication recovery failed: {error}"))
+                .map_err(|error| format!("embedded event publication recovery failed: {error}"))?;
+            loop {
+                let round = self
+                    .made
+                    .recover_children(CeremonyEventPageLimit::DEFAULT)
+                    .await
+                    .map_err(|error| format!("embedded child recovery failed: {error}"))?;
+                if round.failed > 0 {
+                    return Err(format!(
+                        "embedded child recovery left {} durable record(s) pending",
+                        round.failed
+                    ));
+                }
+                if round.busy || round.acknowledged() == 0 {
+                    return Ok(());
+                }
+            }
         })
     }
 
@@ -172,6 +194,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
             RUN_CEREMONY_TOOL
                 | START_CEREMONY_TOOL
                 | RUN_CEREMONY_STEP_TOOL
+                | PREPARE_CEREMONY_CHILDREN_TOOL
+                | ACCEPT_CHILD_COMPLETION_TOOL
+                | RECOVER_CEREMONY_CHILDREN_TOOL
                 | CLAIM_CEREMONY_STEP_TOOL
                 | COMPLETE_CEREMONY_STEP_TOOL
                 | APPROVE_CEREMONY_GUARD_TOOL
@@ -292,6 +317,21 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
+                }
+                PREPARE_CEREMONY_CHILDREN_TOOL => {
+                    let request = EmbeddedPrepareCeremonyChildrenRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    request.execute(&self.made).await.map(tool_success_result)
+                }
+                ACCEPT_CHILD_COMPLETION_TOOL => {
+                    let request = EmbeddedAcceptChildCompletionRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    request.execute(&self.made).await.map(tool_success_result)
+                }
+                RECOVER_CEREMONY_CHILDREN_TOOL => {
+                    let request = EmbeddedRecoverCeremonyChildrenRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    request.execute(&self.made).await.map(tool_success_result)
                 }
                 CLAIM_CEREMONY_STEP_TOOL => {
                     let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)

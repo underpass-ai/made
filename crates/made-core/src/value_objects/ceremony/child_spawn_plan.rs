@@ -132,3 +132,90 @@ impl<'de> Deserialize<'de> for ChildSpawnPlan {
         .map_err(serde::de::Error::custom)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::value_objects::{
+        CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, CeremonyName,
+        CeremonyVersion, ChildCeremonyId, ChildDepth, ChildDepthBudget, ChildPosition,
+        StateIteration, StateVisit, StepId, StepIteration,
+    };
+    use serde_json::json;
+    use time::OffsetDateTime;
+
+    fn valid_plan() -> ChildSpawnPlan {
+        let parent = CeremonyId::new("parent").unwrap();
+        let coordinates = ChildSpawnCoordinates::new(
+            StepId::new("spawn").unwrap(),
+            StateVisit::FIRST,
+            StateIteration::FIRST,
+            StepIteration::FIRST,
+        );
+        let group_id = ChildGroupId::derive(&parent, &coordinates);
+        let children = (0..2)
+            .map(|position| {
+                let position = ChildPosition::new(position);
+                super::PlannedChild::new(
+                    ChildCeremonyId::derive(&group_id, position)
+                        .unwrap()
+                        .into_ceremony_id(),
+                    position,
+                    CeremonyName::new("review_child").unwrap(),
+                    CeremonyVersion::v1(),
+                    CeremonyDefinitionDigest::from_bytes([7; 32]),
+                    CeremonyContext::empty(),
+                    CeremonyLineage::new(
+                        parent.clone(),
+                        parent.clone(),
+                        group_id.clone(),
+                        position,
+                        ChildDepth::FIRST,
+                        ChildDepthBudget::new(2).unwrap(),
+                    )
+                    .unwrap(),
+                    None,
+                    OffsetDateTime::UNIX_EPOCH,
+                )
+            })
+            .collect();
+        ChildSpawnPlan::new(
+            group_id,
+            coordinates,
+            StepClaimFence::new("a".repeat(64)).unwrap(),
+            children,
+            MaxChildren::new(2).unwrap(),
+            MaxChildDepth::new(3).unwrap(),
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn deserialization_rechecks_derived_group_and_child_identity() {
+        let plan = valid_plan();
+        let mut value = serde_json::to_value(plan).unwrap();
+        value["group_id"] = json!("0".repeat(64));
+        assert!(serde_json::from_value::<ChildSpawnPlan>(value).is_err());
+
+        let mut value = serde_json::to_value(valid_plan()).unwrap();
+        value["children"][1]["position"] = json!(0);
+        assert!(serde_json::from_value::<ChildSpawnPlan>(value).is_err());
+    }
+
+    #[test]
+    fn deserialization_rechecks_lineage_budget_and_parent_relation() {
+        let mut value = serde_json::to_value(valid_plan()).unwrap();
+        value["children"][0]["lineage"]["root_id"] = json!("foreign-root");
+        assert!(serde_json::from_value::<ChildSpawnPlan>(value).is_err());
+
+        let malformed = json!({
+            "root_id": "root",
+            "parent_id": "different-parent",
+            "group_id": "b".repeat(64),
+            "position": 0,
+            "depth": 1,
+            "remaining_depth": 1
+        });
+        assert!(serde_json::from_value::<CeremonyLineage>(malformed).is_err());
+    }
+}

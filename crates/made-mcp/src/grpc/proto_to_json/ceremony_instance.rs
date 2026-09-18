@@ -96,6 +96,12 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
         // what stops "recalled nothing" reading as "recalled an empty
         // scope".
         "recollection": state.recollection.map(recollection_to_json),
+        "lineage": state.lineage.map(lineage_to_json),
+        "child_groups": state
+            .child_groups
+            .into_iter()
+            .map(child_group_to_json)
+            .collect::<Vec<_>>(),
         // Both backends answer the same shape or neither does: the
         // parity gate is what says so, and it is the reason this had to
         // be added here the moment the embedded side grew it.
@@ -112,6 +118,62 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
                 "asserted_at": reason.asserted_at,
             }))
             .collect::<Vec<_>>(),
+    })
+}
+
+pub(crate) fn child_completion_to_json(completion: pb::ChildCompletionState) -> Value {
+    json!({
+        "group_id": completion.group_id,
+        "child_id": completion.child_id,
+        "terminal_event_id": completion.terminal_event_id,
+        "terminal_record_hash": bytes_to_hex(&completion.terminal_record_hash),
+    })
+}
+
+fn bytes_to_hex(bytes: &[u8]) -> String {
+    const DIGITS: &[u8; 16] = b"0123456789abcdef";
+    let mut encoded = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
+        encoded.push(DIGITS[usize::from(byte >> 4)] as char);
+        encoded.push(DIGITS[usize::from(byte & 0x0f)] as char);
+    }
+    encoded
+}
+
+fn lineage_to_json(lineage: pb::CeremonyLineageState) -> Value {
+    json!({
+        "root_id": lineage.root_id,
+        "parent_id": lineage.parent_id,
+        "group_id": lineage.group_id,
+        "position": lineage.position,
+        "depth": lineage.depth,
+        "remaining_depth": lineage.remaining_depth,
+    })
+}
+
+fn child_group_to_json(group: pb::CeremonyChildGroupState) -> Value {
+    json!({
+        "group_id": group.group_id,
+        "step_id": group.step_id,
+        "state_visit": group.state_visit,
+        "state_iteration": group.state_iteration,
+        "step_iteration": group.step_iteration,
+        "active_claim_fence": group.active_claim_fence,
+        "adopted_claim_fence": group.adopted_claim_fence,
+        "max_children": group.max_children,
+        "max_depth": group.max_depth,
+        "children": group.children.into_iter().map(|child| json!({
+            "child_id": child.child_id,
+            "position": child.position,
+            "ceremony": child.ceremony,
+            "version": child.version,
+            "definition_digest": child.definition_digest,
+            "context": optional_pb_struct_to_json(child.context),
+            "lineage": child.lineage.map(lineage_to_json),
+            "recollection": child.recollection.map(recollection_to_json),
+            "opened_at": child.opened_at,
+        })).collect::<Vec<_>>(),
+        "completions": group.completions.into_iter().map(child_completion_to_json).collect::<Vec<_>>(),
     })
 }
 

@@ -132,6 +132,9 @@ service MadeService {
   rpc StartCeremony(StartCeremonyRequest) returns (StartCeremonyResponse);
   rpc StartPublishedCeremony(StartPublishedCeremonyRequest) returns (StartPublishedCeremonyResponse);
   rpc RunCeremonyStep(RunCeremonyStepRequest) returns (RunCeremonyStepResponse);
+  rpc PrepareCeremonyChildren(PrepareCeremonyChildrenRequest) returns (PrepareCeremonyChildrenResponse);
+  rpc AcceptChildCompletion(AcceptChildCompletionRequest) returns (AcceptChildCompletionResponse);
+  rpc RecoverCeremonyChildren(RecoverCeremonyChildrenRequest) returns (RecoverCeremonyChildrenResponse);
   rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
 
   // The part of a working session that only a person can do. A guard
@@ -952,6 +955,50 @@ message CeremonyInstanceState {
   bool state_repeat_condition_satisfied = 26;
   bool state_repeat_limit_reached = 27;
   uint32 current_state_visit = 28;
+  CeremonyLineageState lineage = 29;
+  repeated CeremonyChildGroupState child_groups = 30;
+}
+
+message CeremonyLineageState {
+  string root_id = 1;
+  string parent_id = 2;
+  string group_id = 3;
+  uint32 position = 4;
+  uint32 depth = 5;
+  uint32 remaining_depth = 6;
+}
+
+message PlannedCeremonyChildState {
+  string child_id = 1;
+  uint32 position = 2;
+  string ceremony = 3;
+  string version = 4;
+  string definition_digest = 5;
+  google.protobuf.Struct context = 6;
+  CeremonyLineageState lineage = 7;
+  CeremonyRecollectionState recollection = 8;
+  string opened_at = 9;
+}
+
+message ChildCompletionState {
+  string group_id = 1;
+  string child_id = 2;
+  string terminal_event_id = 3;
+  bytes terminal_record_hash = 4;
+}
+
+message CeremonyChildGroupState {
+  string group_id = 1;
+  string step_id = 2;
+  uint32 state_visit = 3;
+  uint32 state_iteration = 4;
+  uint32 step_iteration = 5;
+  string active_claim_fence = 6;
+  string adopted_claim_fence = 7;
+  repeated PlannedCeremonyChildState children = 8;
+  uint32 max_children = 9;
+  uint32 max_depth = 10;
+  repeated ChildCompletionState completions = 11;
 }
 
 // What a session was told when it opened, bounded and in order:
@@ -1076,6 +1123,43 @@ message RunCeremonyStepRequest {
 
 message RunCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
+}
+
+message PrepareCeremonyChildrenRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string lease_owner_id = 3;
+  string idempotency_key = 4;
+  uint64 lease_ttl_ms = 5;
+  string actor_kind = 6;
+}
+
+message PrepareCeremonyChildrenResponse {
+  CeremonyInstanceState instance = 1;
+  string child_group_id = 2;
+  repeated string child_ids = 3;
+}
+
+message AcceptChildCompletionRequest {
+  string child_id = 1;
+  string terminal_event_id = 2;
+}
+
+message AcceptChildCompletionResponse {
+  CeremonyInstanceState parent = 1;
+  ChildCompletionState completion = 2;
+}
+
+message RecoverCeremonyChildrenRequest {
+  uint32 limit = 1;
+}
+
+message RecoverCeremonyChildrenResponse {
+  uint32 recovered_plans = 1;
+  uint32 accepted_completions = 2;
+  uint32 skipped = 3;
+  uint32 failed = 4;
+  bool busy = 5;
 }
 
 message ApplyCeremonyTransitionRequest {
@@ -1530,6 +1614,28 @@ message CeremonyDesignExitGuard {
   oneof guard {
     CeremonyDesignOutputFieldGuard output_field = 1;
     CeremonyDesignStepRepeatExhaustedGuard step_repeat_exhausted = 2;
+    ChildrenCompletedCondition children_completed = 3;
+  }
+}
+
+message CeremonyChildSpec {
+  string ceremony = 1;
+  string version = 2;
+  map<string, string> inputs = 3;
+}
+
+message CeremonyChildSpawn {
+  repeated CeremonyChildSpec children = 1;
+  uint32 max_children = 2;
+  uint32 max_depth = 3;
+}
+
+message ChildrenCompletedCondition {
+  string step_id = 1;
+  oneof join {
+    bool all = 2;
+    bool any = 3;
+    uint32 quorum = 4;
   }
 }
 
@@ -1581,6 +1687,7 @@ message CeremonyDesignStage {
   repeated string allowed_roles = 15;
   map<string, string> context_writes = 16;
   CeremonyDesignAggregation aggregate = 17;
+  CeremonyChildSpawn spawn = 18;
 }
 
 // A leaf inside a grouped state. It cannot recursively contain a group or
@@ -1598,6 +1705,7 @@ message CeremonyDesignGroupStep {
   repeated string allowed_roles = 10;
   map<string, string> context_writes = 11;
   CeremonyDesignAggregation aggregate = 12;
+  CeremonyChildSpawn spawn = 13;
 }
 
 message CeremonyDesignGroupJoin {
