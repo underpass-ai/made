@@ -227,3 +227,87 @@ fn reconciliation_can_advance_knowledge_without_changing_its_receipt_identity() 
     assert_eq!(ledger.balance().unwrap().observed().tokens().value(), 18);
     assert_eq!(ledger.balance().unwrap().unconfirmed().tokens().value(), 0);
 }
+
+#[test]
+fn applying_a_duplicate_reservation_does_not_replace_reconciled_state() {
+    let mut ledger = open();
+    let operation = BudgetOperationId::new("duplicate-event").unwrap();
+    let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
+    let reserved = ledger
+        .decide_reserve(operation, quantities(20), OffsetDateTime::UNIX_EPOCH)
+        .unwrap()
+        .unwrap();
+    ledger.apply(reserved.clone()).unwrap();
+    let reconciled = ledger
+        .decide_reconcile(
+            reservation_id,
+            BudgetReconciliationId::new("receipt").unwrap(),
+            MeasuredBudgetQuantities::new(
+                BudgetMeasurement::Unknown,
+                BudgetMeasurement::Observed(BudgetTokenCount::new(17)),
+                BudgetMeasurement::Unknown,
+                BudgetMeasurement::Unknown,
+            ),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+        .unwrap();
+    ledger.apply(reconciled).unwrap();
+    let before = ledger.clone();
+
+    assert!(matches!(
+        ledger.apply(reserved),
+        Err(BudgetError::Persistence(
+            crate::DomainError::AlreadyExists {
+                what: "budget_reservation"
+            }
+        ))
+    ));
+    assert_eq!(ledger, before);
+    assert_eq!(ledger.balance().unwrap().observed().tokens().value(), 17);
+}
+
+#[test]
+fn any_overrun_blocks_admission_even_when_the_request_uses_another_dimension() {
+    let mut ledger = open();
+    let operation = BudgetOperationId::new("overrun").unwrap();
+    let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
+    let reserved = ledger
+        .decide_reserve(operation, quantities(80), OffsetDateTime::UNIX_EPOCH)
+        .unwrap()
+        .unwrap();
+    ledger.apply(reserved).unwrap();
+    let reconciled = ledger
+        .decide_reconcile(
+            reservation_id,
+            BudgetReconciliationId::new("overrun-receipt").unwrap(),
+            MeasuredBudgetQuantities::new(
+                BudgetMeasurement::Observed(ExecutionDuration::from_micros(100)),
+                BudgetMeasurement::Observed(BudgetTokenCount::new(120)),
+                BudgetMeasurement::Observed(CostMicros::new(10)),
+                BudgetMeasurement::Observed(ToolCallCount::new(1)),
+            ),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+        .unwrap();
+    ledger.apply(reconciled).unwrap();
+
+    let other_dimension_only = BudgetQuantities::new(
+        ExecutionDuration::from_micros(1),
+        BudgetTokenCount::new(0),
+        CostMicros::new(0),
+        ToolCallCount::new(0),
+    );
+    assert!(matches!(
+        ledger.decide_reserve(
+            BudgetOperationId::new("after-overrun").unwrap(),
+            other_dimension_only,
+            OffsetDateTime::UNIX_EPOCH
+        ),
+        Err(BudgetError::Exhausted {
+            dimension: BudgetDimension::Tokens,
+            ..
+        })
+    ));
+}

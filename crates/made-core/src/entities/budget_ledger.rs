@@ -169,26 +169,18 @@ impl BudgetLedger {
                 if reservation_id != expected_id {
                     return Err(BudgetError::ReservationConflict(reservation_id));
                 }
-                self.ensure_capacity(quantities)?;
-                if self
-                    .reservations
-                    .insert(
-                        reservation_id.clone(),
-                        BudgetReservation::new(
-                            reservation_id,
-                            operation_id,
-                            quantities,
-                            reserved_at,
-                        ),
-                    )
-                    .is_some()
-                {
+                if self.reservations.contains_key(&reservation_id) {
                     return Err(BudgetError::Persistence(
                         crate::DomainError::AlreadyExists {
                             what: "budget_reservation",
                         },
                     ));
                 }
+                self.ensure_capacity(quantities)?;
+                self.reservations.insert(
+                    reservation_id.clone(),
+                    BudgetReservation::new(reservation_id, operation_id, quantities, reserved_at),
+                );
             }
             BudgetLedgerEvent::Reconciled {
                 reservation_id,
@@ -248,17 +240,23 @@ impl BudgetLedger {
 
     fn ensure_capacity(&self, request: BudgetQuantities) -> Result<(), BudgetError> {
         let account_id = self.account_id.clone().ok_or(BudgetError::LedgerNotOpen)?;
-        let available = values(self.balance()?.available());
-        let wanted = values(request);
-        for (index, dimension) in [
+        let balance = self.balance()?;
+        let overrun = values(balance.overrun());
+        let dimensions = [
             BudgetDimension::Duration,
             BudgetDimension::Tokens,
             BudgetDimension::Cost,
             BudgetDimension::ToolCalls,
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        ];
+        if let Some((index, _)) = overrun.iter().enumerate().find(|(_, value)| **value > 0) {
+            return Err(BudgetError::Exhausted {
+                account_id,
+                dimension: dimensions[index],
+            });
+        }
+        let available = values(balance.available());
+        let wanted = values(request);
+        for (index, dimension) in dimensions.into_iter().enumerate() {
             if wanted[index] > available[index] {
                 return Err(BudgetError::Exhausted {
                     account_id,
