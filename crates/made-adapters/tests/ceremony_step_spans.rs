@@ -86,6 +86,31 @@ roles:
     allowed_actions: [work, finish]
 "#;
 
+const CONCURRENT_CEREMONY: &str = r#"
+version: "1.0"
+name: span_concurrent
+states:
+  - id: REVIEW
+    initial: true
+    execution: concurrent
+  - id: COMPLETED
+    terminal: true
+transitions:
+  - from: REVIEW
+    to: COMPLETED
+    trigger: finish
+    guards: [both_completed]
+steps:
+  - {id: api, state: REVIEW, handler: host_callback}
+  - {id: data, state: REVIEW, handler: host_callback}
+guards:
+  both_completed: {type: automated, check: "steps_completed:2"}
+roles:
+  - {id: API, allowed_actions: [api, finish]}
+  - {id: DATA, allowed_actions: [data, finish]}
+max_parallel: 2
+"#;
+
 fn install_bridge() -> (InMemorySpanExporter, tracing::subscriber::DefaultGuard) {
     let exporter = InMemorySpanExporter::default();
     let provider = SdkTracerProvider::builder()
@@ -240,6 +265,7 @@ async fn one_shot_exports_step_and_handler_topology_with_late_fields() {
         step.attributes
     );
     assert_eq!(int_attr(&step, "attempt"), Some(1));
+    assert_eq!(int_attr(&step, "state_visit"), Some(1));
     assert_eq!(string_attr(&step, "outcome").as_deref(), Some("success"));
     assert_eq!(
         string_attr(&step, "step_status").as_deref(),
@@ -251,6 +277,64 @@ async fn one_shot_exports_step_and_handler_topology_with_late_fields() {
     );
     assert_eq!(int_attr(&handler, "attempt"), Some(1));
     assert_eq!(string_attr(&handler, "outcome").as_deref(), Some("success"));
+}
+
+#[tokio::test(flavor = "current_thread")]
+async fn concurrent_steps_export_distinct_children_through_completion() {
+    let (exporter, _guard) = install_bridge();
+    let usecase = RunCeremonyUseCase::new(
+        Arc::new(InMemoryCeremonyDefinitionRepository::new()),
+        stream(),
+        Arc::new(NoopCeremonyStepHandler::new()),
+        Arc::new(SystemClock::new()),
+    );
+    let ceremony_id = "span-concurrent";
+    usecase
+        .execute(RunCeremonyInput::new(
+            CeremonyId::new(ceremony_id).unwrap(),
+            CeremonyDefinitionYaml::parse_str(CONCURRENT_CEREMONY).unwrap(),
+            CeremonyContext::empty(),
+            LeaseOwnerId::new("span-host").unwrap(),
+            DurationMs::from_millis(30_000),
+            "operator",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+
+    let spans = exporter.get_finished_spans().unwrap();
+    let run = span_for(&spans, "run_ceremony", ceremony_id);
+    let steps = spans
+        .iter()
+        .filter(|span| {
+            span.name == "ceremony_step"
+                && string_attr(span, "ceremony_id").as_deref() == Some(ceremony_id)
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(steps.len(), 2, "{spans:#?}");
+    for step in steps {
+        let step_id = string_attr(step, "step_id").expect("step id is sealed on the span");
+        assert_eq!(step.parent_span_id, run.span_context.span_id());
+        assert_eq!(int_attr(step, "state_visit"), Some(1));
+        assert_eq!(int_attr(step, "state_iteration"), Some(1));
+        assert_eq!(int_attr(step, "iteration"), Some(1));
+        assert_eq!(int_attr(step, "attempt"), Some(1));
+        assert_eq!(string_attr(step, "outcome").as_deref(), Some("success"));
+        assert_eq!(
+            string_attr(step, "role_id").as_deref(),
+            Some(if step_id == "api" { "API" } else { "DATA" })
+        );
+        let handlers = spans
+            .iter()
+            .filter(|handler| {
+                handler.name == "ceremony_step_handler"
+                    && string_attr(handler, "ceremony_id").as_deref() == Some(ceremony_id)
+                    && string_attr(handler, "step_id").as_deref() == Some(step_id.as_str())
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(handlers.len(), 1, "{spans:#?}");
+        assert_eq!(handlers[0].parent_span_id, step.span_context.span_id());
+    }
 }
 
 #[tokio::test(flavor = "current_thread")]

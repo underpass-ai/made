@@ -269,7 +269,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_step_handler.clone(),
             clock.clone(),
         )
-        .with_metrics(metrics_recorder.clone()),
+        .with_metrics(metrics_recorder.clone())
+        .with_max_parallel_ceiling(service_config.max_parallel),
     );
     // How every verb that advances a session finds what it is running:
     // from the catalogue when the session is bound to a published

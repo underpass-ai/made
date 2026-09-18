@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Run siblings in concurrent ceremony states with bounded automatic fan-out,
+  durable claims before handlers, drained completions and early-join checks
+  between batches. Document delegated host/subagent fan-out and prove distinct
+  claims from two processes sharing SQLite. (#155)
 - Project peak live ceremony claims per state visit/iteration and classified
   step failures from ordered sealed events in both editions. Preserve
   `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain

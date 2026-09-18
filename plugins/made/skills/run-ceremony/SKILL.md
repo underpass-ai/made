@@ -46,6 +46,19 @@ A bounded repeat that exhausts its limit is an explicit failure, not a
 completed loop. Hosts schedule concurrent workers; the engine does not spawn
 them automatically.
 
+When `claimable_step_ids` contains siblings from a concurrent state, claim a
+bounded set with distinct idempotency keys and delegate each accepted receipt
+to one host worker or subagent. Keep each returned `claim_fence` paired with
+that worker's result, allow completions to arrive out of order, and refresh the
+instance after the accepted siblings are complete. An `any` or counted join
+does not cancel a sibling that already holds a live lease. Two host processes
+may coordinate through the same SQLite store, where durable claims and the
+effective `max_parallel` capacity arbitrate ownership.
+
+MCP does not create agents or processes. If the host cannot actually fan out,
+drive the eligible steps serially and report that execution honestly. Never
+describe a protocol claim as proof that a subagent ran.
+
 Do not claim completion when `isError: true` or `completed: false`.
 
 ## Human decisions

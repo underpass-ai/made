@@ -22,6 +22,30 @@ Use the exact schema from `tools/list`. The fence requirement is a deliberate
 protocol change in 0.6.0; see [migrations](../migrations/README.md).
 Never fetch a replacement worker's current fence to attach an old result.
 
+## Concurrent states and host fan-out
+
+For a one-shot `made_run_ceremony`, the application driver automatically runs
+siblings in a concurrent state as a bounded batch. It first seals every claim
+in the batch, then invokes their handlers concurrently, records every accepted
+result even when a sibling fails, and reloads the fold before it chooses an
+early join, another batch or a transition. The effective width is the lower of
+the definition's `max_parallel` (default 3) and the runtime ceiling
+`MADE_MAX_PARALLEL` (default 8). Sequential states retain declaration-order
+execution. Deliberation proposal seeding remains sequential.
+
+For delegated execution, inspect all `claimable_step_ids` and let the host fan
+them out to its own workers or subagents. Each worker must retain its own claim
+receipt and fence; complete accepted claims in whatever order the work really
+finishes, then refresh the instance before applying a join transition. Do not
+cancel an accepted sibling merely because an `any` or counted join became true:
+a live lease blocks the transition until that work completes or expires.
+
+Separate hosts may share the durable SQLite store. Optimistic append and the
+state's effective capacity decide which distinct claims land. The MCP protocol
+exposes claim and completion operations; it does not create workers, processes
+or subagents. The host owns their lifecycle, authorization, tool access and
+external idempotency.
+
 With a verified server-owned `CeremonyStepHandlerPort`, use
 `made_run_ceremony_step`; the application retains the accepted fence through
 the handler and completion retries. Use one-shot `made_run_ceremony` only
