@@ -1199,7 +1199,7 @@ rename to MADE is itself the first entry under Changed.
   the stdio adapter survive the MCP process. The variable is mandatory —
   without it the binary exits with code 2 instead of inventing a location or
   running on memory that dies with the process — and the Codex plugin launcher
-  supplies `${XDG_STATE_HOME:-$HOME/.local/state}/made/ceremonies.redb`
+  supplies `${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.redb`
   by default. `MadeMcpServer::embedded_redb(path)` exposes the same
   composition to Rust hosts; `MadeMcpServer::embedded()` remains the in-memory
   one. The plugin smoke now proves the claim across processes: one launcher
@@ -1229,7 +1229,7 @@ rename to MADE is itself the first entry under Changed.
   ordered audit journals into deterministic, injection-safe Markdown, return
   structured completion and definition-binding metadata, and perform no write.
 - Host-owned MCP server identity for embedded compositions. The default remains
-  `made-mcp`, while an embedding application can advertise its own
+  `underpass-made-mcp`, while an embedding application can advertise its own
   name and version during the MCP initialization handshake.
 - Embedded ceremony instance discovery through
   `made_list_ceremony_instances`. Hosts can enumerate recoverable meetings

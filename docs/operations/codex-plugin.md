@@ -53,7 +53,7 @@ and to generate a real report from a ceremony completed in the same process.
 
 The embedded backend opens the SQLite state file named by
 `MADE_MCP_STORE_PATH`; the launcher defaults it to
-`${XDG_STATE_HOME:-$HOME/.local/state}/made/ceremonies.sqlite3`, and
+`${XDG_STATE_HOME:-$HOME/.local/state}/underpass-made/ceremonies.sqlite3`, and
 without a path the binary exits rather than run on memory that dies with the
 process. Durability is still not authority, and it is not unconditional
 recovery: an instance started from a published definition rehydrates, one
