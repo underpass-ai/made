@@ -24,6 +24,7 @@ mod claimed_step;
 mod concurrent_state;
 mod executed_step;
 mod run_step_output;
+mod spawn_step;
 mod steps;
 
 use run_step_output::RunStepOutput;

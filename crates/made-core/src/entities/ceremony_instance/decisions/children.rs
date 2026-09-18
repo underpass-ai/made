@@ -68,7 +68,7 @@ impl CeremonyInstance {
                     crate::value_objects::MaxChildDepth::SERVER_MAX,
                 )
             },
-            |lineage| lineage.remaining_depth(),
+            crate::value_objects::CeremonyLineage::remaining_depth,
         );
         let expected_remaining = inherited_budget.for_child(spawn.max_depth())?;
         let expected_depth = self

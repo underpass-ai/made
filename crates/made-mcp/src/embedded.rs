@@ -1,6 +1,7 @@
 //! Embedded MCP backend.
 
 mod domain_tool_error;
+mod embedded_accept_child_completion_request;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_assert_ceremony_reason_request;
@@ -29,6 +30,7 @@ mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
 mod embedded_pull_ceremony_events_request;
 mod embedded_read_ceremony_events_request;
+mod embedded_recover_ceremony_children_request;
 mod embedded_request_ceremony_intervention_request;
 mod embedded_request_fields;
 mod embedded_respond_to_ceremony_intervention_request;
@@ -64,6 +66,7 @@ use crate::protocol::{
 };
 use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
+use self::embedded_accept_child_completion_request::EmbeddedAcceptChildCompletionRequest;
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
 use self::embedded_approve_ceremony_guard_request::EmbeddedApproveCeremonyGuardRequest;
 use self::embedded_assert_ceremony_reason_request::EmbeddedAssertCeremonyReasonRequest;
@@ -78,10 +81,7 @@ use self::embedded_ceremony_history_presenter::{
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
-use self::embedded_children_request::{
-    EmbeddedAcceptChildCompletionRequest, EmbeddedPrepareCeremonyChildrenRequest,
-    EmbeddedRecoverCeremonyChildrenRequest,
-};
+use self::embedded_children_request::EmbeddedPrepareCeremonyChildrenRequest;
 use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest;
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
@@ -95,6 +95,7 @@ use self::embedded_publication_presenter::EmbeddedPublicationPresenter;
 use self::embedded_publish_ceremony_definition_request::EmbeddedPublishCeremonyDefinitionRequest;
 use self::embedded_pull_ceremony_events_request::EmbeddedPullCeremonyEventsRequest;
 use self::embedded_read_ceremony_events_request::EmbeddedReadCeremonyEventsRequest;
+use self::embedded_recover_ceremony_children_request::EmbeddedRecoverCeremonyChildrenRequest;
 use self::embedded_request_ceremony_intervention_request::EmbeddedRequestCeremonyInterventionRequest;
 use self::embedded_respond_to_ceremony_intervention_request::EmbeddedRespondToCeremonyInterventionRequest;
 use self::embedded_run_ceremony_presenter::EmbeddedRunCeremonyPresenter;
@@ -304,7 +305,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 RUN_CEREMONY_TOOL => {
                     let request = EmbeddedRunCeremonyRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let output = request.execute(&self.made).await?;
+                    let output = Box::pin(request.execute(&self.made)).await?;
                     Ok(tool_success_result(EmbeddedRunCeremonyPresenter::present(
                         &output,
                     )))

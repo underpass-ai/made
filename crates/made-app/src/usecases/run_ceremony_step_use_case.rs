@@ -2,19 +2,19 @@
 
 use std::sync::Arc;
 
-use made_core::entities::ceremony_commands::{ApplyStepResult, StartStep};
-use made_core::entities::CeremonyCommand;
+use made_core::entities::ceremony_commands::ApplyStepResult;
+use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort};
-use made_core::value_objects::{MaxParallel, StepLease, StepResult};
+use made_core::value_objects::{MaxParallel, RoleId, StepExecutionRecord, StepId, StepResult};
+
+mod claim;
+mod spawn;
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::run_ceremony_step_input::RunCeremonyStepInput;
 use super::run_ceremony_step_output::RunCeremonyStepOutput;
-use super::{
-    prepare_step_execution, PrepareCeremonyChildrenInput, PrepareCeremonyChildrenUseCase,
-    PreparedStepExecution,
-};
+use super::{prepare_step_execution, PrepareCeremonyChildrenUseCase, PreparedStepExecution};
 use crate::services::{
     ceremony_transcript_projection, session_facts, ConflictPolicy, SessionStream,
 };
@@ -104,27 +104,8 @@ impl RunCeremonyStepUseCase {
         let requested_role_id = input.requested_role_id();
         let actor_kind = input.role_kind;
 
-        let now = self.clock.now();
-        let lease = StepLease::acquire(
-            input.lease_owner_id,
-            input.idempotency_key,
-            now,
-            input.lease_ttl,
-        )?;
-        let claim = CeremonyCommand::StartStep(StartStep {
-            role_id: requested_role_id.clone(),
-            step_id: input.step_id.clone(),
-            lease,
-            now,
-            max_parallel_ceiling: self.max_parallel_ceiling,
-        });
         let claimed = self
-            .stream
-            .execute(session, ConflictPolicy::retry(), |session| {
-                let events = session.instance.decide(&claim, &definition)?;
-                let actor = session_facts::step_started_seat(&events, actor_kind)?;
-                session_facts::facts(&session.instance, events, &actor, now)
-            })
+            .claim_step(session, &definition, &input, requested_role_id, actor_kind)
             .await?;
         let instance = claimed.instance;
         // Captured off the claim, before the result is applied: a
@@ -136,10 +117,7 @@ impl RunCeremonyStepUseCase {
             })?;
         let attempt = record.attempt();
         let claim_fence = instance.step_claim_fence(&input.step_id)?;
-        let fallback_role = requested_role_id
-            .clone()
-            .map_or_else(|| definition.role_id_for_step(&input.step_id), Ok)?;
-        let sealed_role = record.claimed_role().cloned().unwrap_or(fallback_role);
+        let sealed_role = sealed_role(record, &definition, &input.step_id)?;
         super::step_span::record_coordinates(
             record.state_visit(),
             record.state_iteration(),
@@ -148,20 +126,15 @@ impl RunCeremonyStepUseCase {
         );
 
         if step.spawn().is_some() {
-            let children = self
-                .children
-                .as_ref()
-                .expect("child orchestrator checked before the durable claim");
-            let output = children
-                .execute(PrepareCeremonyChildrenInput::new(
-                    instance.id().clone(),
+            return self
+                .execute_spawn_step(
+                    instance,
                     input.step_id,
                     claim_fence,
                     input.role_kind,
-                ))
-                .await?;
-            let (instance, result) = output.into_parts();
-            return Ok(RunCeremonyStepOutput::new(instance, attempt, result));
+                    attempt,
+                )
+                .await;
         }
 
         // What was said so far, folded from the stream: every step
@@ -252,6 +225,17 @@ impl RunCeremonyStepUseCase {
     }
 }
 
+fn sealed_role(
+    record: &StepExecutionRecord,
+    definition: &CeremonyDefinition,
+    step_id: &StepId,
+) -> Result<RoleId, DomainError> {
+    record
+        .claimed_role()
+        .cloned()
+        .map_or_else(|| definition.role_id_for_step(step_id), Ok)
+}
+
 #[cfg(test)]
 mod tests {
     use std::collections::BTreeMap;
@@ -259,8 +243,8 @@ mod tests {
 
     use made_core::error::DomainError;
     use made_core::value_objects::{
-        Attributes, AuditActorKind, AuditEventType, StepAttempt, StepErrorMessage, StepOutput,
-        StepStatus,
+        Attributes, AuditActorKind, AuditEventType, StepAttempt, StepErrorMessage, StepLease,
+        StepOutput, StepStatus,
     };
 
     use super::*;
