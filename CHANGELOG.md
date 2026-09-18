@@ -15,6 +15,15 @@ even though the new catalogue identity is `made`.
   scoring, execution and messaging ports; defaults remain socket-free,
   retain in-process messages and reject orchestration until an executor is
   configured. (#157)
+- Run siblings in concurrent ceremony states with bounded automatic fan-out,
+  durable claims before handlers, drained completions and early-join checks
+  between batches. Document delegated host/subagent fan-out and prove distinct
+  claims from two processes sharing SQLite. (#155)
+- Project peak live ceremony claims per state visit/iteration and classified
+  step failures from ordered sealed events in both editions. Preserve
+  `NoValidProposal` as a typed `StepFailed` v4 result; old payloads retain
+  their bytes and versions. Clarify that `num_agents` caps council size. (#158)
+
 - Wait for a private NATS inbox round trip before E2E scenarios trigger events
   from another connection. The harness no longer treats a local socket flush
   as server acknowledgement of its subscription. (#153)

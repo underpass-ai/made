@@ -82,7 +82,7 @@ fn constraints_schema() -> Value {
         "properties": {
             "rubric": attributes_schema("Opaque rubric forwarded to agents and validators."),
             "rounds": { "type": "integer", "minimum": 0, "description": "Peer-review rounds (0 = adapter default)." },
-            "num_agents": { "type": "integer", "minimum": 0, "description": "Requested parallelism (0 = use council size)." },
+            "num_agents": { "type": "integer", "minimum": 0, "description": "Maximum council size (0 = use the configured council size); does not set execution parallelism." },
             "deadline_ms": { "type": "integer", "minimum": 0, "description": "Optional soft deadline in ms (0 = none)." },
             "output_contract": output_contract_schema()
         }

@@ -13,11 +13,15 @@ use made_core::ports::{
     NoopMetricsRecorder,
 };
 use made_core::value_objects::CeremonyOutcome;
+use made_core::value_objects::{MaxParallel, StateExecution};
 
 use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
 
+mod claimed_step;
+mod concurrent_state;
+mod executed_step;
 mod run_step_output;
 mod steps;
 
@@ -25,6 +29,8 @@ use run_step_output::RunStepOutput;
 
 #[cfg(test)]
 mod claim_visit_tests;
+#[cfg(test)]
+mod concurrent_tests;
 
 /// Drives a declarative ceremony through its steps and transitions.
 pub struct RunCeremonyUseCase {
@@ -33,6 +39,7 @@ pub struct RunCeremonyUseCase {
     handler: Arc<dyn CeremonyStepHandlerPort>,
     clock: Arc<dyn ClockPort>,
     metrics: Arc<dyn MetricsRecorderPort>,
+    max_parallel_ceiling: MaxParallel,
 }
 
 impl std::fmt::Debug for RunCeremonyUseCase {
@@ -55,6 +62,7 @@ impl RunCeremonyUseCase {
             handler,
             clock,
             metrics: Arc::new(NoopMetricsRecorder),
+            max_parallel_ceiling: MaxParallel::SERVER_MAX,
         }
     }
 
@@ -63,6 +71,13 @@ impl RunCeremonyUseCase {
     #[must_use]
     pub fn with_metrics(mut self, metrics: Arc<dyn MetricsRecorderPort>) -> Self {
         self.metrics = metrics;
+        self
+    }
+
+    /// Cap automatic fan-out independently of a definition's declared width.
+    #[must_use]
+    pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
+        self.max_parallel_ceiling = ceiling;
         self
     }
 
@@ -163,75 +178,109 @@ impl RunCeremonyUseCase {
 
             let state_id = session.instance.current_state().clone();
             let state_iteration = session.instance.current_state_iteration();
-            let step_ids = definition
-                .steps_for_state(&state_id)
-                .map(|step| step.id().clone())
-                .collect::<Vec<_>>();
-            for step_id in step_ids {
-                loop {
-                    if session
-                        .instance
-                        .step_record(&step_id)
-                        .is_some_and(|record| record.status().is_success())
-                    {
-                        break;
-                    }
-                    // What was said so far, folded from the stream the
-                    // steps before this one sealed.
-                    let transcript = ceremony_transcript_projection::transcript(
-                        &self.stream.records(&id).await?,
-                    );
-                    let RunStepOutput {
-                        session: moved_on,
-                        role_id,
-                        state_visit: executed_state_visit,
-                        state_iteration: executed_state_iteration,
-                        iteration,
-                        attempt,
-                        result: step_result,
-                    } = self
-                        .run_step(
-                            &definition,
-                            session,
-                            actor_kind,
-                            &step_id,
-                            &lease_owner_id,
-                            lease_ttl,
-                            step_traces.len(),
-                            transcript,
-                        )
-                        .await?;
-                    session = moved_on;
-                    step_traces.push(
-                        CeremonyStepTrace::for_coordinates(
-                            state_id.clone(),
-                            executed_state_iteration,
-                            step_id.clone(),
+            let state_execution = definition
+                .state(&state_id)
+                .ok_or(DomainError::NotFound {
+                    what: "ceremony_instance.current_state",
+                })?
+                .execution();
+            if state_execution == StateExecution::Concurrent {
+                let concurrent = self
+                    .run_concurrent_state(
+                        &definition,
+                        session,
+                        actor_kind,
+                        &state_id,
+                        state_iteration,
+                        &lease_owner_id,
+                        lease_ttl,
+                        step_traces.len(),
+                    )
+                    .await?;
+                session = concurrent.session;
+                step_traces.extend(concurrent.step_traces);
+                if concurrent.state_iteration_changed {
+                    continue 'driver;
+                }
+                if concurrent.step_failed {
+                    return Err(DomainError::InvariantViolated {
+                        reason: "ceremony step did not complete successfully",
+                    });
+                }
+            } else {
+                let step_ids = definition
+                    .steps_for_state(&state_id)
+                    .map(|step| step.id().clone())
+                    .collect::<Vec<_>>();
+                for step_id in step_ids {
+                    loop {
+                        if session
+                            .instance
+                            .step_record(&step_id)
+                            .is_some_and(|record| record.status().is_success())
+                        {
+                            break;
+                        }
+                        // What was said so far, folded from the stream the
+                        // steps before this one sealed.
+                        let transcript = ceremony_transcript_projection::transcript(
+                            &self.stream.records(&id).await?,
+                        );
+                        let RunStepOutput {
+                            session: moved_on,
+                            step_id: _,
                             role_id,
+                            state_visit: executed_state_visit,
+                            state_iteration: executed_state_iteration,
                             iteration,
                             attempt,
-                            step_result.status(),
-                            step_result.output().clone(),
-                        )
-                        .with_state_visit(executed_state_visit),
-                    );
-                    if !step_result.is_success() {
-                        return Err(DomainError::InvariantViolated {
-                            reason: "ceremony step did not complete successfully",
-                        });
-                    }
-                    if session
-                        .instance
-                        .step_repeat_limit_reached(&definition, &step_id)
-                    {
-                        self.metrics
-                            .record_ceremony_outcome(&ceremony_name, CeremonyOutcome::RepeatLimit);
-                        return Err(DomainError::InvariantViolated {
-                            reason: "ceremony step repeat limit exhausted",
-                        });
-                    }
-                    if session.instance.current_state_iteration() != state_iteration {
-                        continue 'driver;
+                            result: step_result,
+                        } = self
+                            .run_step(
+                                &definition,
+                                session,
+                                actor_kind,
+                                &step_id,
+                                &lease_owner_id,
+                                lease_ttl,
+                                step_traces.len(),
+                                transcript,
+                            )
+                            .await?;
+                        session = moved_on;
+                        step_traces.push(
+                            CeremonyStepTrace::for_coordinates(
+                                state_id.clone(),
+                                executed_state_iteration,
+                                step_id.clone(),
+                                role_id,
+                                iteration,
+                                attempt,
+                                step_result.status(),
+                                step_result.output().clone(),
+                            )
+                            .with_state_visit(executed_state_visit),
+                        );
+                        if !step_result.is_success() {
+                            return Err(DomainError::InvariantViolated {
+                                reason: "ceremony step did not complete successfully",
+                            });
+                        }
+                        if session
+                            .instance
+                            .step_repeat_limit_reached(&definition, &step_id)
+                        {
+                            self.metrics.record_ceremony_outcome(
+                                &ceremony_name,
+                                CeremonyOutcome::RepeatLimit,
+                            );
+                            return Err(DomainError::InvariantViolated {
+                                reason: "ceremony step repeat limit exhausted",
+                            });
+                        }
+                        if session.instance.current_state_iteration() != state_iteration {
+                            continue 'driver;
+                        }
                     }
                 }
             }

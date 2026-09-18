@@ -4,8 +4,8 @@ use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::{
-    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
-    DeliberatingCeremonyStepHandler,
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
+    CeremonyTracingSubscriber, DeliberatingCeremonyStepHandler,
 };
 use made_adapters::clock::SystemClock;
 use made_adapters::config::{EnvConfiguration, ServiceConfig};
@@ -216,6 +216,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
         session_memory,
         Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+        Arc::new(CeremonyFanoutMetricsSubscriber::new(
+            ceremony_events.clone(),
+            metrics_recorder.clone(),
+        )),
         Arc::new(CeremonyTracingSubscriber::new()),
         Arc::new(CeremonyStructuredLogSubscriber::new()),
     ];
@@ -265,7 +269,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
             ceremony_step_handler.clone(),
             clock.clone(),
         )
-        .with_metrics(metrics_recorder.clone()),
+        .with_metrics(metrics_recorder.clone())
+        .with_max_parallel_ceiling(service_config.max_parallel),
     );
     // How every verb that advances a session finds what it is running:
     // from the catalogue when the session is bound to a published

@@ -4,11 +4,14 @@ use made_core::entities::{CeremonyCommand, CeremonyDefinition};
 use made_core::error::DomainError;
 use made_core::ports::CeremonyStepHandlerRequest;
 use made_core::value_objects::{
-    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, StepErrorMessage,
-    StepId, StepLease, StepResult,
+    AuditActorKind, CeremonyTranscript, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
+    StepLease, StepResult,
 };
 
-use super::{run_step_output::RunStepOutput, RunCeremonyUseCase};
+use super::{
+    claimed_step::ClaimedStep, executed_step::ExecutedStep, run_step_output::RunStepOutput,
+    RunCeremonyUseCase,
+};
 
 impl RunCeremonyUseCase {
     #[tracing::instrument(
@@ -20,6 +23,7 @@ impl RunCeremonyUseCase {
             state_id = %session.instance.current_state(),
             step_id = %step_id,
             role_id = tracing::field::Empty,
+            state_visit = tracing::field::Empty,
             state_iteration = tracing::field::Empty,
             iteration = tracing::field::Empty,
             attempt = tracing::field::Empty,
@@ -39,8 +43,8 @@ impl RunCeremonyUseCase {
         trace_index: usize,
         transcript: CeremonyTranscript,
     ) -> Result<RunStepOutput, DomainError> {
-        let result = self
-            .run_step_inner(
+        let result = match self
+            .claim_step(
                 definition,
                 session,
                 actor_kind,
@@ -50,9 +54,20 @@ impl RunCeremonyUseCase {
                 trace_index,
                 transcript,
             )
-            .await;
+            .await
+        {
+            Ok(claimed) => match self.execute_claimed_handler(claimed).await {
+                Ok(executed) => {
+                    self.complete_executed_step(definition, executed, actor_kind)
+                        .await
+                }
+                Err(error) => Err(error),
+            },
+            Err(error) => Err(error),
+        };
         match &result {
             Ok(RunStepOutput {
+                state_visit,
                 state_iteration,
                 iteration,
                 attempt,
@@ -60,6 +75,7 @@ impl RunCeremonyUseCase {
                 ..
             }) => {
                 crate::usecases::step_span::record_coordinates(
+                    *state_visit,
                     *state_iteration,
                     *iteration,
                     *attempt,
@@ -72,7 +88,7 @@ impl RunCeremonyUseCase {
     }
 
     #[allow(clippy::too_many_arguments)]
-    async fn run_step_inner(
+    pub(super) async fn claim_step(
         &self,
         definition: &CeremonyDefinition,
         session: LoadedSession,
@@ -82,7 +98,7 @@ impl RunCeremonyUseCase {
         lease_ttl: DurationMs,
         trace_index: usize,
         transcript: CeremonyTranscript,
-    ) -> Result<RunStepOutput, DomainError> {
+    ) -> Result<ClaimedStep, DomainError> {
         let step = definition
             .step(step_id)
             .cloned()
@@ -106,7 +122,7 @@ impl RunCeremonyUseCase {
             step_id: step_id.clone(),
             lease,
             now,
-            max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            max_parallel_ceiling: self.max_parallel_ceiling,
         });
         // Appended before the handler runs, for the reason the step
         // use case appends twice: a crash while it runs must leave a
@@ -154,12 +170,71 @@ impl RunCeremonyUseCase {
         .with_transcript(transcript)
         .with_role(sealed_role.clone())
         .with_bound_specialty(session.instance.bound_specialty(&sealed_role).cloned());
+
+        Ok(ClaimedStep {
+            request,
+            step_id: step_id.clone(),
+            role_id: sealed_role,
+            claim_fence,
+            state_visit,
+            state_iteration,
+            iteration,
+            attempt,
+        })
+    }
+
+    pub(super) async fn execute_claimed_handler(
+        &self,
+        claimed: ClaimedStep,
+    ) -> Result<ExecutedStep, DomainError> {
+        let ClaimedStep {
+            request,
+            step_id,
+            role_id,
+            claim_fence,
+            state_visit,
+            state_iteration,
+            iteration,
+            attempt,
+        } = claimed;
+        let instance_id = request.instance_id().clone();
         let step_result = self.execute_handler(request).await?;
+
+        Ok(ExecutedStep {
+            instance_id,
+            step_id,
+            role_id,
+            claim_fence,
+            state_visit,
+            state_iteration,
+            iteration,
+            attempt,
+            result: step_result,
+        })
+    }
+
+    pub(super) async fn complete_executed_step(
+        &self,
+        definition: &CeremonyDefinition,
+        executed: ExecutedStep,
+        actor_kind: AuditActorKind,
+    ) -> Result<RunStepOutput, DomainError> {
+        let ExecutedStep {
+            instance_id,
+            step_id,
+            role_id,
+            claim_fence,
+            state_visit,
+            state_iteration,
+            iteration,
+            attempt,
+            result: step_result,
+        } = executed;
 
         // Loaded again rather than reusing what the claim left: the
         // handler may have taken a while, and the version that was
         // current then is not the one this append has to expect.
-        let finished_session = self.stream.load(session.instance.id()).await?;
+        let finished_session = self.stream.load(&instance_id).await?;
         let finished_at = self.clock.now();
         let finish = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step_id.clone(),
@@ -179,13 +254,58 @@ impl RunCeremonyUseCase {
 
         Ok(RunStepOutput {
             session,
-            role_id: sealed_role,
+            step_id,
+            role_id,
             state_visit,
             state_iteration,
             iteration,
             attempt,
             result: step_result,
         })
+    }
+
+    #[tracing::instrument(
+        name = "ceremony_step",
+        skip_all,
+        fields(
+            ceremony_id = %claimed.request.instance_id(),
+            ceremony_name = %claimed.request.definition_name(),
+            state_id = %claimed.request.current_state(),
+            step_id = %claimed.step_id,
+            role_id = %claimed.role_id,
+            state_visit = tracing::field::Empty,
+            state_iteration = tracing::field::Empty,
+            iteration = tracing::field::Empty,
+            attempt = tracing::field::Empty,
+            outcome = tracing::field::Empty,
+            step_status = tracing::field::Empty,
+            error_kind = tracing::field::Empty,
+        )
+    )]
+    pub(super) async fn execute_and_complete_claimed_step(
+        &self,
+        definition: &CeremonyDefinition,
+        claimed: ClaimedStep,
+        actor_kind: AuditActorKind,
+    ) -> Result<RunStepOutput, DomainError> {
+        crate::usecases::step_span::record_coordinates(
+            claimed.state_visit,
+            claimed.state_iteration,
+            claimed.iteration,
+            claimed.attempt,
+        );
+        let result = match self.execute_claimed_handler(claimed).await {
+            Ok(executed) => {
+                self.complete_executed_step(definition, executed, actor_kind)
+                    .await
+            }
+            Err(error) => Err(error),
+        };
+        match &result {
+            Ok(output) => crate::usecases::step_span::record_result(&output.result),
+            Err(error) => crate::usecases::step_span::record_error(error),
+        }
+        result
     }
 
     #[tracing::instrument(
@@ -213,8 +333,7 @@ impl RunCeremonyUseCase {
             }
             Err(error) => {
                 crate::usecases::step_span::record_error(&error);
-                let message = StepErrorMessage::new(error.to_string())?;
-                let result = StepResult::failed(message)?;
+                let result = StepResult::from_handler_error(&error)?;
                 crate::usecases::step_span::record_status(&result);
                 Ok(result)
             }

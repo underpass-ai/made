@@ -1,7 +1,8 @@
 use crate::{embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION};
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::{
-    CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
+    CeremonyTracingSubscriber,
 };
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
@@ -207,6 +208,10 @@ impl EmbeddedMade {
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
             Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
+            Arc::new(CeremonyFanoutMetricsSubscriber::new(
+                events.clone(),
+                metrics_recorder.clone(),
+            )),
             Arc::new(CeremonyTracingSubscriber::new()),
             Arc::new(CeremonyStructuredLogSubscriber::new()),
         ];
