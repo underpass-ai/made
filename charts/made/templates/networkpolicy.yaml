@@ -46,8 +46,18 @@ spec:
         - port: 53
           protocol: TCP
     {{- if .Values.messaging.nats.enabled }}
+    {{- if .Values.messaging.nats.embedded.enabled }}
+    - to:
+        - podSelector:
+            matchLabels:
+              {{- include "made.natsSelectorLabels" . | nindent 14 }}
+      ports:
+        - port: 4222
+          protocol: TCP
+    {{- else }}
     {{- with .Values.networkPolicy.egress.nats }}
     - {{- toYaml . | nindent 6 }}
+    {{- end }}
     {{- end }}
     {{- end }}
     {{- if .Values.persistence.postgres.enabled }}

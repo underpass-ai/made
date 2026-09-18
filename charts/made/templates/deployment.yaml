@@ -60,7 +60,7 @@ spec:
       {{- fail "MADE_JUDGE_ENABLED is set but providerEnv lacks MADE_VLLM_ENDPOINT/MADE_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
       {{- end }}
       {{- end }}
-      {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+      {{- if or .Values.persistence.ceremonies.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
       volumes:
         {{- if .Values.persistence.ceremonies.enabled }}
         - name: ceremonies
@@ -95,7 +95,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if or .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+          {{- if or .Values.persistence.ceremonies.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
           volumeMounts:
             {{- if .Values.persistence.ceremonies.enabled }}
             - name: ceremonies

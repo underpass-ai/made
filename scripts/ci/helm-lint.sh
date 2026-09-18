@@ -145,6 +145,8 @@ done
 # that service.
 
 EMBEDDED_NATS_OUT="${TMP_DIR}/made-helm-embedded-nats.yaml"
+EMBEDDED_NATS_POLICY_OUT="${TMP_DIR}/made-helm-embedded-nats-policy.yaml"
+EMBEDDED_NATS_POLICY_DOC="${TMP_DIR}/made-helm-embedded-nats-networkpolicy.yaml"
 
 helm template made "${CHART_PATH}" \
   -f "${EMBEDDED_NATS_VALUES}" \
@@ -167,6 +169,60 @@ embedded_nats_markers=(
 for marker in "${embedded_nats_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${EMBEDDED_NATS_OUT}"; then
     echo "embedded NATS chart manifest missing required marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+# The embedded bus has release-derived labels (`made-nats` for release
+# `made`). Its NetworkPolicy peer must use the same helper rather than the
+# external-NATS default selector, or a conforming CNI blocks the connection.
+helm template made "${CHART_PATH}" \
+  -f "${EMBEDDED_NATS_VALUES}" \
+  --set image.tag=v0 \
+  --set networkPolicy.enabled=true \
+  --set 'networkPolicy.ingressFrom[0].podSelector.matchLabels.app=caller' \
+  > "${EMBEDDED_NATS_POLICY_OUT}"
+
+awk '
+  /^# Source: made\/templates\/networkpolicy.yaml$/ { capture = 1; next }
+  capture && /^---$/ { exit }
+  capture { print }
+' "${EMBEDDED_NATS_POLICY_OUT}" > "${EMBEDDED_NATS_POLICY_DOC}"
+
+embedded_nats_policy_markers=(
+  'app.kubernetes.io/name: made-nats'
+  'app.kubernetes.io/instance: made'
+  'app.kubernetes.io/component: nats'
+  'port: 4222'
+)
+for marker in "${embedded_nats_policy_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${EMBEDDED_NATS_POLICY_DOC}"; then
+    echo "embedded NATS NetworkPolicy missing peer marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+# Ceremony persistence owns a volume independently of /tmp and TLS. Exercise
+# the combination that previously created a PVC and store env var but omitted
+# both the Deployment volume and its mount.
+CEREMONY_STORE_OUT="${TMP_DIR}/made-helm-ceremony-store.yaml"
+helm template made "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set persistence.ceremonies.enabled=true \
+  --set tmpVolume.enabled=false \
+  > "${CEREMONY_STORE_OUT}"
+
+ceremony_store_markers=(
+  'kind: PersistentVolumeClaim'
+  'name: ceremonies'
+  'claimName: made-ceremonies'
+  'mountPath: "/var/lib/made"'
+  'name: MADE_CEREMONY_STORE_PATH'
+  'value: "/var/lib/made/ceremonies.sqlite3"'
+)
+for marker in "${ceremony_store_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${CEREMONY_STORE_OUT}"; then
+    echo "ceremony-store chart manifest missing required marker: ${marker}" >&2
     exit 1
   fi
 done
