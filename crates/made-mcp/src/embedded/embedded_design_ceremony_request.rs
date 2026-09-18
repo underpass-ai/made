@@ -1,8 +1,8 @@
 use made_app::usecases::{CeremonyDesignDocument, CeremonyPatternPreset, DesignedCeremony};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxParallel,
-    OutputName, StepAttempt, StepTimeout,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxBounces,
+    MaxParallel, MaxTransitions, OutputName, StepAttempt, StepTimeout,
 };
 use made_embedded::EmbeddedMade;
 use serde::Deserialize;
@@ -62,6 +62,10 @@ pub(super) struct EmbeddedDesignCeremonyRequest {
     backoff_seconds: Option<u64>,
     #[serde(default)]
     max_parallel: Option<u8>,
+    #[serde(default)]
+    max_transitions: Option<u32>,
+    #[serde(default)]
+    max_bounces: Option<u32>,
 }
 
 impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
@@ -108,7 +112,7 @@ impl EmbeddedDesignCeremonyRequest {
             .map(FinalApprovalIntent::into_domain)
             .transpose()?;
 
-        let document = CeremonyDesignDocument::new(
+        let mut document = CeremonyDesignDocument::new(
             CeremonyName::new(self.name)?,
             self.version.map(CeremonyVersion::new).transpose()?,
             CeremonyDescription::new(self.objective)?,
@@ -132,6 +136,12 @@ impl EmbeddedDesignCeremonyRequest {
             Some(value) => MaxParallel::new(value)?,
             None => MaxParallel::default(),
         });
+        if let Some(limit) = self.max_transitions {
+            document = document.with_max_transitions(MaxTransitions::new(limit)?);
+        }
+        if let Some(limit) = self.max_bounces {
+            document = document.with_max_bounces(MaxBounces::new(limit)?);
+        }
         let pattern = self
             .pattern
             .map(|pattern| CeremonyPatternPreset::parse(&pattern))
@@ -310,6 +320,8 @@ mod tests {
     fn embedded_designs_and_yaml_round_trips_a_concurrent_group() {
         let mut value = intent();
         value["max_parallel"] = json!(2);
+        value["max_transitions"] = json!(12);
+        value["max_bounces"] = json!(3);
         value["stages"] = json!([{
             "id": "parallel_review",
             "group": {
@@ -339,12 +351,16 @@ mod tests {
         let draft = CeremonyDefinitionYaml::parse_draft_str(&yaml).unwrap();
 
         assert!(yaml.contains("max_parallel: 2"), "{yaml}");
+        assert!(yaml.contains("max_transitions: 12"), "{yaml}");
+        assert!(yaml.contains("max_bounces: 3"), "{yaml}");
         assert!(yaml.contains("execution: concurrent"), "{yaml}");
         assert!(yaml.contains("steps_completed:1"), "{yaml}");
         assert!(yaml.contains("max_iterations: 4"), "{yaml}");
         assert!(yaml.contains("step: review"), "{yaml}");
         assert!(yaml.contains("output_field: ready"), "{yaml}");
         assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
+        assert_eq!(draft.max_transitions().unwrap().get(), 12);
+        assert_eq!(draft.max_bounces().unwrap().get(), 3);
         assert!(draft.states().iter().any(|state| {
             state.id() == &StateId::new("PARALLEL_REVIEW").unwrap()
                 && state.execution() == StateExecution::Concurrent

@@ -324,7 +324,9 @@ fn design_intent() -> Value {
             }
         ],
         "final_approval": { "role_id": "EDITOR" },
-        "backoff_seconds": 0
+        "backoff_seconds": 0,
+        "max_transitions": 12,
+        "max_bounces": 3
     })
 }
 
@@ -934,6 +936,13 @@ async fn drive_the_whole_session(arms: &ParityArms) {
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
         assert_same_answer(tool, &over_the_wire, &in_process);
+        if tool == "made_design_ceremony" {
+            let yaml = structured(&in_process)["definition_yaml"]
+                .as_str()
+                .expect("a designed ceremony carries its YAML");
+            assert!(yaml.contains("max_transitions: 12"), "{yaml}");
+            assert!(yaml.contains("max_bounces: 3"), "{yaml}");
+        }
         if tool == "made_generate_ceremony_report" {
             assert_the_report_is_the_committed_document(structured(&in_process));
         }

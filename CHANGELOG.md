@@ -62,6 +62,12 @@ creates the immutable tagged sections.
   context through `ContextWritten`; the proto, both MCP backends, YAML and the
   embedded facade share the same validation and serialization. (#130)
 
+- Ceremony definitions can declare positive `max_transitions` and
+  `max_bounces` budgets across YAML, proto, direct gRPC, both MCP editions and
+  the embedded facade. Cyclic graphs require either cap; transition decisions
+  count sealed total and exact-edge history across replay, snapshots and
+  reopen, refusing exhausted budgets before append. (#131)
+
 - Ceremony states can declare a bounded repeat-until policy that reruns every
   state step under a durable `state_iteration`. Step iteration and retry
   attempt remain independent; replay, snapshots, history, traces, transcripts,

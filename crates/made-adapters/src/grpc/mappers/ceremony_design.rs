@@ -23,9 +23,10 @@ use made_app::usecases::{
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyDescription, CeremonyName, CeremonyVersion, ContextKey, ContextWrites, DurationMs,
-    DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxParallel, NumAgents, OutputName,
-    PriorContext, RoleId, Rounds, StateExecution, StateIteration, StepAttempt, StepHandlerKind,
-    StepId, StepInstructions, StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
+    DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxBounces, MaxParallel,
+    MaxTransitions, NumAgents, OutputName, PriorContext, RoleId, Rounds, StateExecution,
+    StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions, StepIteration,
+    StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -50,7 +51,7 @@ pub fn ceremony_design_document_from_proto(
         .map(final_approval_from_proto)
         .transpose()?;
 
-    let document = CeremonyDesignDocument::new(
+    let mut document = CeremonyDesignDocument::new(
         CeremonyName::new(request.name)?,
         named(request.version, CeremonyVersion::new)?,
         CeremonyDescription::new(request.objective)?,
@@ -74,6 +75,12 @@ pub fn ceremony_design_document_from_proto(
         Some(value) => MaxParallel::new(u8::try_from(value).unwrap_or(u8::MAX))?,
         None => MaxParallel::default(),
     });
+    if let Some(limit) = request.max_transitions {
+        document = document.with_max_transitions(MaxTransitions::new(limit)?);
+    }
+    if let Some(limit) = request.max_bounces {
+        document = document.with_max_bounces(MaxBounces::new(limit)?);
+    }
     let pattern = named(request.pattern, |value| {
         CeremonyPatternPreset::parse(&value)
     })?;
@@ -467,10 +474,14 @@ mod tests {
             backoff_seconds: None,
             max_parallel: Some(2),
             pattern: String::new(),
+            max_transitions: Some(12),
+            max_bounces: Some(3),
         };
 
         let document = ceremony_design_document_from_proto(request).unwrap();
         assert_eq!(document.max_parallel(), MaxParallel::new(2).unwrap());
+        assert_eq!(document.max_transitions().unwrap().get(), 12);
+        assert_eq!(document.max_bounces().unwrap().get(), 3);
         assert!(matches!(
             &document.stage_entries()[0],
             CeremonyDesignStageEntry::Group(group)
@@ -481,6 +492,35 @@ mod tests {
                             && repeat.until().step_id() == &StepId::new("review_2").unwrap()
                             && repeat.until().output_field().as_str() == "ready"
                             && repeat.until().equals() == &serde_json::json!(true))
+        ));
+    }
+
+    #[test]
+    fn direct_grpc_rejects_zero_transition_budgets() {
+        let request = pb::DesignCeremonyRequest {
+            name: "invalid_budget".to_owned(),
+            objective: "Reject zero".to_owned(),
+            max_transitions: Some(0),
+            ..pb::DesignCeremonyRequest::default()
+        };
+        assert!(matches!(
+            ceremony_design_document_from_proto(request),
+            Err(DomainError::MustBeNonZero {
+                field: "max_transitions"
+            })
+        ));
+
+        let request = pb::DesignCeremonyRequest {
+            name: "invalid_budget".to_owned(),
+            objective: "Reject zero".to_owned(),
+            max_bounces: Some(0),
+            ..pb::DesignCeremonyRequest::default()
+        };
+        assert!(matches!(
+            ceremony_design_document_from_proto(request),
+            Err(DomainError::MustBeNonZero {
+                field: "max_bounces"
+            })
         ));
     }
 }

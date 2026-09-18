@@ -1642,6 +1642,11 @@ message DesignCeremonyRequest {
   // Shipped authoring preset. Mutually exclusive with explicit stages.
   // Empty preserves legacy explicit-stage design.
   string pattern = 14;
+  // Optional positive transition budgets. Either one makes a cyclic
+  // definition bounded: max_transitions counts every applied edge;
+  // max_bounces counts applications of each exact from/trigger/to edge.
+  optional uint32 max_transitions = 15;
+  optional uint32 max_bounces = 16;
 }
 
 // What the design decided, beside the document it rendered. Counting

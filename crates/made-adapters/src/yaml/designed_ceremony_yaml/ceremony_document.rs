@@ -24,6 +24,10 @@ pub(super) struct CeremonyDocument {
     pub(super) retry_policies: RetryPoliciesDocument,
     #[serde(skip_serializing_if = "is_default_max_parallel")]
     pub(super) max_parallel: u8,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) max_transitions: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) max_bounces: Option<u32>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)] // serde's skip predicate receives `&T`.

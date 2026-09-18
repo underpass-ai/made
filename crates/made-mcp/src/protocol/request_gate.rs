@@ -563,6 +563,25 @@ mod tests {
     }
 
     #[test]
+    fn design_transition_budgets_are_positive_when_present() {
+        let design = json!({
+            "name": "bounded",
+            "objective": "Bound a cyclic ceremony.",
+            "outputs": ["decision"],
+            "participants": [{"role_id": "FACILITATOR"}],
+            "stages": [{
+                "id": "work",
+                "owner_role_id": "FACILITATOR",
+                "instructions": "Work."
+            }],
+            "max_transitions": 0,
+            "max_bounces": 1
+        });
+        let message = complaint("made_design_ceremony", &design);
+        assert!(message.contains("below the minimum"), "{message}");
+    }
+
+    #[test]
     fn a_free_form_object_takes_whatever_the_caller_puts_in_it() {
         gate(
             "made_start_ceremony",

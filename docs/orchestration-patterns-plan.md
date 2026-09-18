@@ -569,10 +569,12 @@ in §3.5 because none of them belongs to a single pattern.
   target role, with `see_prior` so the receiver gets the whole thread. A
   human seat is a role like any other, reached by the same handoff and
   blocked by a human guard.
-- **Caps.** `max_transitions` declared per definition (the one-shot driver's
-  `states + transitions + 1` ceiling is a safety net, not a policy). Loop
-  detection: the analysis warns on a cycle without a human state; the
-  instance refuses the same edge more than `max_bounces` times.
+- **Caps.** `max_transitions` declared per definition. The one-shot driver's
+  safety ceiling expands to the declared transition budget; it is still a
+  host safety net rather than policy. Loop detection rejects an uncapped cycle
+  and warns when no transition leaving a state in the component requires a
+  human approval guard. The instance refuses the same exact
+  source/trigger/target edge more than `max_bounces` times.
 - **Naming.** The blueprint catalog's "Escalation and Handoff Meeting" is a
   meeting *about* transferring work between systems, not this pattern; the
   catalog gets a cross-reference.

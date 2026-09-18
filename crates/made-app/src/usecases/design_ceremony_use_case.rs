@@ -510,7 +510,7 @@ mod tests {
             CeremonyDesignStageEntry,
         };
         use made_core::value_objects::{
-            MaxParallel, RoleAction, StateExecution, TransitionTrigger,
+            MaxBounces, MaxParallel, MaxTransitions, RoleAction, StateExecution, TransitionTrigger,
         };
 
         let base = document();
@@ -539,11 +539,18 @@ mod tests {
                 CeremonyDesignJoin::AnyStepCompleted,
             ),
         )])
-        .with_max_parallel(MaxParallel::new(2).unwrap());
+        .with_max_parallel(MaxParallel::new(2).unwrap())
+        .with_max_transitions(MaxTransitions::new(12).unwrap())
+        .with_max_bounces(MaxBounces::new(3).unwrap());
 
         let designed = designed(&grouped);
         let draft = designed.definition();
         assert_eq!(draft.max_parallel(), MaxParallel::new(2).unwrap());
+        assert_eq!(
+            draft.max_transitions(),
+            Some(MaxTransitions::new(12).unwrap())
+        );
+        assert_eq!(draft.max_bounces(), Some(MaxBounces::new(3).unwrap()));
         assert_eq!(draft.steps().len(), 2);
         assert!(draft
             .steps()
@@ -567,6 +574,24 @@ mod tests {
             "{:?}",
             draft.analyze().findings()
         );
+    }
+
+    #[test]
+    fn facade_transition_budgets_cannot_represent_zero() {
+        use made_core::value_objects::{MaxBounces, MaxTransitions};
+
+        assert!(matches!(
+            MaxTransitions::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_transitions"
+            })
+        ));
+        assert!(matches!(
+            MaxBounces::new(0),
+            Err(DomainError::MustBeNonZero {
+                field: "max_bounces"
+            })
+        ));
     }
 
     #[test]

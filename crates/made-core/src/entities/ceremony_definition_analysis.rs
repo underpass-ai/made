@@ -12,9 +12,13 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::error::DomainError;
 use crate::value_objects::{
     CeremonyGuard, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-    CeremonyValidationFinding, CeremonyValidationLocus, GuardCondition, GuardName, RoleAction,
-    RoleId, StateExecution, StateId, StepId,
+    CeremonyValidationFinding, CeremonyValidationLocus, GuardCondition, GuardName, MaxBounces,
+    MaxTransitions, RoleAction, RoleId, StateExecution, StateId, StepId,
 };
+
+mod cycles;
+
+use cycles::cyclic_components;
 
 /// The assembled parts of a ceremony state machine, borrowed for
 /// analysis.
@@ -24,6 +28,8 @@ pub(super) struct CeremonyDefinitionParts<'a> {
     pub(super) steps: &'a BTreeMap<StepId, CeremonyStep>,
     pub(super) guards: &'a BTreeMap<GuardName, CeremonyGuard>,
     pub(super) roles: &'a BTreeMap<RoleId, CeremonyRole>,
+    pub(super) max_transitions: Option<MaxTransitions>,
+    pub(super) max_bounces: Option<MaxBounces>,
 }
 
 impl CeremonyDefinitionParts<'_> {
@@ -34,12 +40,71 @@ impl CeremonyDefinitionParts<'_> {
     pub(super) fn collect_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
         self.collect_initial_state_findings(findings);
         self.collect_transition_graph_findings(findings);
+        self.collect_cycle_findings(findings);
         self.collect_step_findings(findings);
         self.collect_state_repeat_findings(findings);
         self.collect_guard_findings(findings);
         self.collect_role_findings(findings);
         self.collect_concurrent_state_findings(findings);
         self.collect_reachability_findings(findings);
+    }
+
+    fn collect_cycle_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {
+        if !self.transition_endpoints_resolve() {
+            return;
+        }
+        let components = cyclic_components(self.states, self.transitions);
+        if components.is_empty() {
+            return;
+        }
+        if self.max_transitions.is_none() && self.max_bounces.is_none() {
+            findings.push(CeremonyValidationFinding::error(
+                CeremonyValidationLocus::Definition,
+                DomainError::InvariantViolated {
+                    reason: "cyclic ceremony definition requires max_transitions or max_bounces",
+                },
+            ));
+        }
+        if !self.transition_guards_resolve() {
+            return;
+        }
+        for component in components {
+            if self.component_has_human_control(&component) {
+                continue;
+            }
+            let first = component
+                .first()
+                .expect("a cyclic component contains at least one state")
+                .clone();
+            findings.push(CeremonyValidationFinding::warning(
+                CeremonyValidationLocus::state(first),
+                DomainError::InvariantViolated {
+                    reason: "cyclic ceremony component has no human-controlled state",
+                },
+            ));
+        }
+    }
+
+    fn transition_guards_resolve(&self) -> bool {
+        self.transitions.iter().all(|transition| {
+            transition
+                .required_guards()
+                .iter()
+                .all(|name| self.guards.contains_key(name))
+        })
+    }
+
+    fn component_has_human_control(&self, component: &BTreeSet<StateId>) -> bool {
+        self.transitions
+            .iter()
+            .filter(|transition| component.contains(transition.from()))
+            .any(|transition| {
+                transition.required_guards().iter().any(|name| {
+                    self.guards.get(name).is_some_and(|guard| {
+                        matches!(guard.condition(), GuardCondition::HumanApproval)
+                    })
+                })
+            })
     }
 
     fn collect_state_repeat_findings(&self, findings: &mut Vec<CeremonyValidationFinding>) {

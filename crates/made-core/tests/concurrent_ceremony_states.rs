@@ -327,6 +327,8 @@ fn a_pre_concurrency_definition_reopens_and_keeps_its_published_binding() {
     let legacy_source = include_str!("fixtures/legacy_definition_pre_concurrency.json");
     let legacy: CeremonyDefinition = serde_json::from_str(legacy_source).unwrap();
     assert_eq!(legacy.max_parallel(), MaxParallel::DEFAULT);
+    assert_eq!(legacy.max_transitions(), None);
+    assert_eq!(legacy.max_bounces(), None);
     assert_eq!(
         legacy.state(&state_id("work")).unwrap().execution(),
         StateExecution::Sequential
@@ -347,6 +349,8 @@ fn a_pre_concurrency_definition_reopens_and_keeps_its_published_binding() {
 
     let persisted = serde_json::to_string(&legacy).unwrap();
     assert!(!persisted.contains("max_parallel"));
+    assert!(!persisted.contains("max_transitions"));
+    assert!(!persisted.contains("max_bounces"));
     assert!(!persisted.contains("execution"));
     let reopened: CeremonyDefinition = serde_json::from_str(&persisted).unwrap();
 

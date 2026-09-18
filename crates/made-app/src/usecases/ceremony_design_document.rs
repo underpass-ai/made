@@ -1,6 +1,6 @@
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxParallel,
-    OutputName, StepAttempt, StepTimeout,
+    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, InputName, MaxBounces,
+    MaxParallel, MaxTransitions, OutputName, StepAttempt, StepTimeout,
 };
 
 use super::ceremony_design_final_approval::CeremonyDesignFinalApproval;
@@ -35,6 +35,8 @@ pub struct CeremonyDesignDocument {
     retry_backoff: Option<DurationMs>,
     pattern: Option<CeremonyPatternPreset>,
     max_parallel: MaxParallel,
+    max_transitions: Option<MaxTransitions>,
+    max_bounces: Option<MaxBounces>,
 }
 
 impl CeremonyDesignDocument {
@@ -74,6 +76,8 @@ impl CeremonyDesignDocument {
             retry_backoff,
             pattern: None,
             max_parallel: MaxParallel::default(),
+            max_transitions: None,
+            max_bounces: None,
         }
     }
 
@@ -151,6 +155,28 @@ impl CeremonyDesignDocument {
     #[must_use]
     pub fn max_parallel(&self) -> MaxParallel {
         self.max_parallel
+    }
+
+    #[must_use]
+    pub const fn with_max_transitions(mut self, max_transitions: MaxTransitions) -> Self {
+        self.max_transitions = Some(max_transitions);
+        self
+    }
+
+    #[must_use]
+    pub const fn max_transitions(&self) -> Option<MaxTransitions> {
+        self.max_transitions
+    }
+
+    #[must_use]
+    pub const fn with_max_bounces(mut self, max_bounces: MaxBounces) -> Self {
+        self.max_bounces = Some(max_bounces);
+        self
+    }
+
+    #[must_use]
+    pub const fn max_bounces(&self) -> Option<MaxBounces> {
+        self.max_bounces
     }
 
     #[must_use]

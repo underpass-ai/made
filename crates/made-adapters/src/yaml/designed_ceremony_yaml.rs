@@ -1,7 +1,9 @@
 use made_app::usecases::DesignedCeremony;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::error::DomainError;
-use made_core::value_objects::{GuardCondition, RepeatUntilCondition, RoleAction};
+use made_core::value_objects::{
+    GuardCondition, MaxBounces, MaxTransitions, RepeatUntilCondition, RoleAction,
+};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -119,6 +121,8 @@ impl DesignedCeremonyYaml {
                 },
             },
             max_parallel: draft.max_parallel().get(),
+            max_transitions: draft.max_transitions().map(MaxTransitions::get),
+            max_bounces: draft.max_bounces().map(MaxBounces::get),
         };
         serde_yaml::to_string(&document).map_err(|_| DomainError::InvalidDocument {
             reason: "ceremony draft could not be rendered as YAML".to_owned(),
@@ -254,8 +258,9 @@ mod tests {
         CeremonyDesignStage, CeremonyParticipantCapability, DesignCeremonyUseCase,
     };
     use made_core::value_objects::{
-        CeremonyDescription, CeremonyName, DurationMs, InputName, OutputName, RoleId, Rounds,
-        StepAttempt, StepId, StepInstructions, StepIteration, StepOutputField, StepTimeout,
+        CeremonyDescription, CeremonyName, DurationMs, InputName, MaxBounces, MaxTransitions,
+        OutputName, RoleId, Rounds, StepAttempt, StepId, StepInstructions, StepIteration,
+        StepOutputField, StepTimeout,
     };
 
     fn intent(seconds: u64) -> CeremonyDesignDocument {
@@ -295,7 +300,11 @@ mod tests {
     fn yaml_round_trip_preserves_definition_including_saturated_durations() {
         for seconds in [300, u64::MAX] {
             let designed = DesignCeremonyUseCase::new()
-                .execute(&intent(seconds))
+                .execute(
+                    &intent(seconds)
+                        .with_max_transitions(MaxTransitions::new(12).unwrap())
+                        .with_max_bounces(MaxBounces::new(3).unwrap()),
+                )
                 .unwrap();
             let yaml = DesignedCeremonyYaml::render(&designed).unwrap();
             let parsed = super::super::CeremonyDefinitionYaml::parse_draft_str(&yaml).unwrap();
@@ -305,6 +314,8 @@ mod tests {
             );
             assert!(yaml.contains("max_iterations: 3"));
             assert!(yaml.contains("output_field: ready"));
+            assert!(yaml.contains("max_transitions: 12"));
+            assert!(yaml.contains("max_bounces: 3"));
             assert!(
                 !yaml.contains("handler_kind:"),
                 "internal serde names must not leak into authoring YAML"

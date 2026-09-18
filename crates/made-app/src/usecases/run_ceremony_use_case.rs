@@ -109,7 +109,7 @@ impl RunCeremonyUseCase {
             Err(error) => return Err(error),
         };
 
-        let max_iterations = definition
+        let max_state_iterations = definition
             .states()
             .values()
             .map(|state| {
@@ -117,8 +117,33 @@ impl RunCeremonyUseCase {
                     .repeat_policy()
                     .map_or(1, |repeat| repeat.max_iterations().get() as usize)
             })
-            .sum::<usize>()
-            .saturating_add(definition.transitions().len())
+            .max()
+            .unwrap_or(1);
+        let total_transition_allowance = definition
+            .max_transitions()
+            .map_or(usize::MAX, |limit| limit.get() as usize);
+        let bounce_transition_allowance = definition.max_bounces().map_or(usize::MAX, |limit| {
+            (limit.get() as usize).saturating_mul(definition.transitions().len())
+        });
+        let bounded_transition_allowance = total_transition_allowance
+            .min(bounce_transition_allowance)
+            .min(
+                if total_transition_allowance == usize::MAX
+                    && bounce_transition_allowance == usize::MAX
+                {
+                    definition.transitions().len()
+                } else {
+                    usize::MAX
+                },
+            );
+        // One pass can either start the next state iteration or apply
+        // one transition. Capped cycles may visit a state repeatedly,
+        // so a graph-size-only ceiling would stop before the declared
+        // budget did. Saturation keeps hostile but valid authoring
+        // values finite on this platform.
+        let max_iterations = bounded_transition_allowance
+            .saturating_add(1)
+            .saturating_mul(max_state_iterations)
             .saturating_add(1);
         let mut step_traces = Vec::new();
         'driver: for _ in 0..max_iterations {
@@ -218,6 +243,15 @@ impl RunCeremonyUseCase {
                         .instance
                         .transition_is_enabled(&definition, transition)
                 })
+                .or_else(|| {
+                    definition
+                        .available_transitions(&state_id)
+                        .find(|transition| {
+                            session
+                                .instance
+                                .transition_requirements_are_satisfied(&definition, transition)
+                        })
+                })
             else {
                 self.metrics
                     .record_ceremony_transition_blocked(&ceremony_name, state_id.as_str());
@@ -260,11 +294,13 @@ mod tests {
     use std::collections::BTreeMap;
     use std::sync::Arc;
 
+    use made_core::entities::CeremonyDefinition;
     use made_core::error::DomainError;
     use made_core::ports::CeremonyDefinitionRepositoryPort;
     use made_core::value_objects::{
-        Attributes, AuditActorKind, AuditEventType, CeremonyContext, StepId, StepOutput,
-        StepResult, StepStatus,
+        Attributes, AuditActorKind, AuditEventType, CeremonyContext, CeremonyName, CeremonyRole,
+        CeremonyState, CeremonyTransition, CeremonyVersion, MaxBounces, MaxTransitions, RoleAction,
+        RoleId, StateId, StepId, StepOutput, StepResult, StepStatus, TransitionTrigger,
     };
     use serde_json::json;
 
@@ -285,6 +321,84 @@ mod tests {
             )]))
             .unwrap(),
         )
+    }
+
+    fn cyclic_definition(
+        max_transitions: Option<MaxTransitions>,
+        max_bounces: Option<MaxBounces>,
+    ) -> CeremonyDefinition {
+        let state = StateId::new("LOOP").unwrap();
+        let again = TransitionTrigger::new("again").unwrap();
+        CeremonyDefinition::new_with_transition_budgets(
+            CeremonyName::new("bounded_driver").unwrap(),
+            CeremonyVersion::v1(),
+            None,
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyState::initial(state.clone())],
+            vec![CeremonyTransition::new(state.clone(), state, again.clone(), Vec::new()).unwrap()],
+            Vec::new(),
+            Vec::new(),
+            vec![CeremonyRole::new(
+                RoleId::new("DRIVER").unwrap(),
+                vec![RoleAction::transition(again)],
+            )
+            .unwrap()],
+            max_transitions,
+            max_bounces,
+        )
+        .unwrap()
+    }
+
+    async fn bounded_driver_refusal(definition: CeremonyDefinition) -> DomainError {
+        let usecase = RunCeremonyUseCase::new(
+            Arc::new(DefinitionRepositoryFake::default()),
+            stream(Arc::new(EventStoreFake::default())),
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(StepOutput::empty()).unwrap(),
+            )),
+            Arc::new(FixedClock::new(now())),
+        );
+        usecase
+            .execute(RunCeremonyInput::new(
+                ceremony_id(),
+                definition,
+                CeremonyContext::empty(),
+                lease_owner(),
+                lease_ttl(),
+                "operator-1",
+                AuditActorKind::Service,
+            ))
+            .await
+            .unwrap_err()
+    }
+
+    #[tokio::test]
+    async fn one_shot_driver_surfaces_total_transition_budget_refusal() {
+        let error = bounded_driver_refusal(cyclic_definition(
+            Some(MaxTransitions::new(1).unwrap()),
+            None,
+        ))
+        .await;
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony transition limit exhausted"
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn one_shot_driver_surfaces_exact_edge_budget_refusal() {
+        let error =
+            bounded_driver_refusal(cyclic_definition(None, Some(MaxBounces::new(1).unwrap())))
+                .await;
+        assert!(matches!(
+            error,
+            DomainError::InvariantViolated {
+                reason: "ceremony transition bounce limit exhausted"
+            }
+        ));
     }
 
     #[tokio::test]
