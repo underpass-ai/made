@@ -28,6 +28,7 @@ mod snapshot_store;
 mod stored_cursor;
 mod stored_event;
 mod stored_snapshot;
+mod stored_snapshot_wire;
 
 #[derive(Debug, Clone)]
 pub struct SqliteCeremonyStore {
