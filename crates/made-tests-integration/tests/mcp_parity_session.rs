@@ -153,7 +153,7 @@ steps:
     role_from: context.next_role
     allowed_roles: [FACILITATOR]
     context_writes:
-      final_summary: summary
+      final_summary: handoff_note
 roles:
   - id: FACILITATOR
     allowed_actions:
@@ -954,10 +954,7 @@ async fn drive_the_whole_session(arms: &ParityArms) {
     assert_eq!(session["current_state"], json!("DONE"), "{session:#}");
     assert_eq!(session["steps"].as_array().map(Vec::len), Some(2));
     assert_eq!(session["context"]["last_step"], "work");
-    assert_eq!(
-        session["context"]["final_summary"],
-        "`handoff` ran in `REVIEW`."
-    );
+    assert_eq!(session["context"]["final_summary"], "the reviewer has it");
     assert!(
         !session["steps"][0]["output"]
             .as_object()

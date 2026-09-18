@@ -298,19 +298,11 @@ fn dynamic_role_binding_impact(
     }
 }
 
-fn context_writes_impact(before: &ContextWrites, after: &ContextWrites) -> CeremonyChangeImpact {
-    // Additional writes preserve every value the old step promised to
-    // publish. Removing a destination or changing its source can leave a
-    // later dynamic claim without the context it was designed to read.
-    if before
-        .entries()
-        .iter()
-        .all(|(destination, source)| after.entries().get(destination) == Some(source))
-    {
-        CeremonyChangeImpact::Carries
-    } else {
-        CeremonyChangeImpact::Strands
-    }
+fn context_writes_impact(_before: &ContextWrites, _after: &ContextWrites) -> CeremonyChangeImpact {
+    // Every changed mapping can strand a running session. Adding a write
+    // makes its source field mandatory for successful completion; removing or
+    // rebinding one changes the context contract later work can depend on.
+    CeremonyChangeImpact::Strands
 }
 
 fn diff_guards(
@@ -814,7 +806,7 @@ mod tests {
 
         assert_step_policy_change(
             &CeremonyDefinitionDiff::between(&baseline(), &writing),
-            CeremonyChangeImpact::Carries,
+            CeremonyChangeImpact::Strands,
             "which successful output fields update ceremony context",
         );
 
