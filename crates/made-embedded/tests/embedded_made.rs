@@ -82,7 +82,7 @@ async fn default_runtime_runs_without_external_services() {
     let embedded = EmbeddedMade::default();
     let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
 
-    let output = embedded.run(input(definition)).await.unwrap();
+    let output = Box::pin(embedded.run(input(definition))).await.unwrap();
 
     assert!(output.instance().is_completed(output.definition()));
     assert_eq!(embedded.version(), VERSION);
@@ -111,7 +111,7 @@ async fn host_callback_is_an_embeddable_step_adapter() {
         .build();
     let definition = CeremonyDefinitionYaml::parse_str(LINEAR_CEREMONY).unwrap();
 
-    let output = embedded.run(input(definition)).await.unwrap();
+    let output = Box::pin(embedded.run(input(definition))).await.unwrap();
 
     assert!(called.load(Ordering::SeqCst));
     assert!(output.instance().is_completed(output.definition()));

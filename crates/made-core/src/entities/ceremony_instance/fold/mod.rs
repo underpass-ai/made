@@ -78,14 +78,14 @@ impl CeremonyInstance {
             CeremonyEvent::CeremonyResumed(event) => self.apply_ceremony_resumed(event),
             CeremonyEvent::CeremonyCancelled(event) => self.apply_ceremony_cancelled(event),
             CeremonyEvent::CeremonyDeadlineExceeded(event) => {
-                self.apply_ceremony_deadline_exceeded(event)
+                self.apply_ceremony_deadline_exceeded(event);
             }
             CeremonyEvent::StateDeadlineExceeded(event) => {
-                self.apply_state_deadline_exceeded(event)
+                self.apply_state_deadline_exceeded(event);
             }
             CeremonyEvent::StepDeadlineExceeded(event) => self.apply_step_deadline_exceeded(event),
             CeremonyEvent::LateStepResultObserved(event) => {
-                self.apply_late_step_result_observed(event)
+                self.apply_late_step_result_observed(event);
             }
         }
     }

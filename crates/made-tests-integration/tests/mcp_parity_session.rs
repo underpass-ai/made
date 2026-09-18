@@ -1148,6 +1148,38 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "title": "  Parity review <both arms>  ",
             }),
         ),
+        // Lifecycle controls run after the golden report so their trace ids
+        // and events cannot perturb the established report fixture.
+        (
+            "made_pause_ceremony",
+            json!({
+                "ceremony_id": PUBLISHED_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "reason": "parity hold",
+            }),
+        ),
+        (
+            "made_enforce_ceremony_deadlines",
+            json!({ "ceremony_id": PUBLISHED_SESSION_ID }),
+        ),
+        (
+            "made_resume_ceremony",
+            json!({
+                "ceremony_id": PUBLISHED_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+            }),
+        ),
+        (
+            "made_cancel_ceremony",
+            json!({
+                "ceremony_id": PUBLISHED_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "reason": "parity cancellation",
+            }),
+        ),
         // Child orchestration runs after the legacy report so exercising the
         // new shared tools cannot perturb its trace ids or sealed hashes.
         (

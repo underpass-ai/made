@@ -9,7 +9,8 @@ use made_embedded::EmbeddedMade;
 use made_mcp::{EmbeddedMadeMcpBackend, MadeMcpServer};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    made_service_client, stream_ceremony_response, StartCeremonyRequest, StreamCeremonyRequest,
+    made_service_client, stream_ceremony_response, CancelCeremonyRequest, PauseCeremonyRequest,
+    ResumeCeremonyRequest, StartCeremonyRequest, StreamCeremonyRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use serde_json::{json, Value};
@@ -107,6 +108,80 @@ async fn grpc_delivers_a_new_record_as_a_stream_frame_before_end() {
         end.frame,
         Some(stream_ceremony_response::Frame::End(_))
     ));
+}
+
+#[tokio::test]
+async fn grpc_stream_pages_lifecycle_events_with_an_exact_resume_cursor() {
+    let fixture = GrpcFixture::start().await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+    let ceremony_id = "lifecycle-progress";
+    grpc_start(&mut client, ceremony_id).await;
+    client
+        .pause_ceremony(PauseCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator".to_owned(),
+            actor_kind: "service".to_owned(),
+            reason: "maintenance".to_owned(),
+        })
+        .await
+        .unwrap();
+    client
+        .resume_ceremony(ResumeCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator".to_owned(),
+            actor_kind: "service".to_owned(),
+        })
+        .await
+        .unwrap();
+    client
+        .cancel_ceremony(CancelCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            actor_id: "operator".to_owned(),
+            actor_kind: "service".to_owned(),
+            reason: "superseded".to_owned(),
+        })
+        .await
+        .unwrap();
+
+    let mut stream = client
+        .stream_ceremony(StreamCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            after_sequence: 1,
+            max_events: 3,
+            wait_timeout_ms: Some(0),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let mut event_types = Vec::new();
+    let resume_after = loop {
+        let frame = stream.message().await.unwrap().unwrap();
+        match frame.frame.unwrap() {
+            stream_ceremony_response::Frame::Record(record) => event_types.push(record.event_type),
+            stream_ceremony_response::Frame::End(end) => break end.resume_after_sequence,
+        }
+    };
+    assert_eq!(
+        event_types,
+        ["ceremony_paused", "ceremony_resumed", "ceremony_cancelled"]
+    );
+    assert_eq!(resume_after, 4);
+
+    let mut resumed = client
+        .stream_ceremony(StreamCeremonyRequest {
+            ceremony_id: ceremony_id.to_owned(),
+            after_sequence: resume_after,
+            max_events: 3,
+            wait_timeout_ms: Some(0),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let end = resumed.message().await.unwrap().unwrap();
+    let Some(stream_ceremony_response::Frame::End(end)) = end.frame else {
+        panic!("the exact cursor must not replay a lifecycle record");
+    };
+    assert_eq!(end.resume_after_sequence, resume_after);
 }
 
 #[tokio::test]

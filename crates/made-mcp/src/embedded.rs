@@ -311,7 +311,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 START_PUBLISHED_CEREMONY_TOOL => {
                     let request = EmbeddedStartPublishedCeremonyRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let ceremony_id = request.execute(&self.made).await?;
+                    let ceremony_id = Box::pin(request.execute(&self.made)).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 RUN_CEREMONY_TOOL => {
@@ -337,7 +337,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 PREPARE_CEREMONY_CHILDREN_TOOL => {
                     let request = EmbeddedPrepareCeremonyChildrenRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    request.execute(&self.made).await.map(tool_success_result)
+                    Box::pin(request.execute(&self.made))
+                        .await
+                        .map(tool_success_result)
                 }
                 ACCEPT_CHILD_COMPLETION_TOOL => {
                     let request = EmbeddedAcceptChildCompletionRequest::try_from(arguments)

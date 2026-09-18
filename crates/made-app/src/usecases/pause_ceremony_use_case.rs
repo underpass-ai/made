@@ -40,7 +40,7 @@ impl PauseCeremonyUseCase {
     ) -> Result<CeremonyInstance, DomainError> {
         let session = self.stream.load(&input.instance_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;
-        let actor = session_facts::party(&input.actor_id, input.actor_kind)?;
+        let actor = session_facts::party(input.actor_id.as_str(), input.actor_kind)?;
         let now = self.clock.now();
         let command = CeremonyCommand::PauseCeremony(PauseCeremony {
             reason: input.reason,

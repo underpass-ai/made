@@ -30,6 +30,10 @@ use made_mcp::protocol::ToolError;
 /// it can fail at runtime.
 fn every_domain_error() -> Vec<DomainError> {
     let all = vec![
+        DomainError::LifecycleRefused {
+            operation: "start_step",
+            phase: made_core::value_objects::CeremonyLifecyclePhase::Paused,
+        },
         DomainError::EmptyField {
             field: "ceremony_id",
         },
@@ -83,7 +87,8 @@ fn every_domain_error() -> Vec<DomainError> {
     // here rather than being quietly left out of the comparison.
     for error in &all {
         match error {
-            DomainError::EmptyField { .. }
+            DomainError::LifecycleRefused { .. }
+            | DomainError::EmptyField { .. }
             | DomainError::FieldTooLong { .. }
             | DomainError::InvalidCharacters { .. }
             | DomainError::OutOfRange { .. }

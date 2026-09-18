@@ -72,6 +72,7 @@ mod authoring_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
+mod ceremony_lifecycle_handlers;
 mod council_handlers;
 mod descriptor_error;
 mod metrics_snapshot_mapper;

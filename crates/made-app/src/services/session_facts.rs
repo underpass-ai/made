@@ -268,21 +268,40 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::HumanDeferralRecorded(recorded) => {
             format!("guard:{}", recorded.deferral.guard_name())
         }
+        CeremonyEvent::ChildSpawnPlanned(_)
+        | CeremonyEvent::ChildSpawnPlanAdopted(_)
+        | CeremonyEvent::ChildCompletionAccepted(_) => child_about(event),
+        CeremonyEvent::CeremonyPaused(_)
+        | CeremonyEvent::CeremonyResumed(_)
+        | CeremonyEvent::CeremonyCancelled(_)
+        | CeremonyEvent::CeremonyDeadlineExceeded(_)
+        | CeremonyEvent::StateDeadlineExceeded(_)
+        | CeremonyEvent::StepDeadlineExceeded(_)
+        | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
+    }
+}
+
+fn child_about(event: &CeremonyEvent) -> String {
+    match event {
         CeremonyEvent::ChildSpawnPlanned(planned) => {
             format!("child_group:{}", planned.plan.group_id())
         }
-        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => {
-            format!(
-                "child_group:{}:fence:{}",
-                adopted.group_id,
-                adopted.claim_fence.as_str()
-            )
-        }
+        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => format!(
+            "child_group:{}:fence:{}",
+            adopted.group_id,
+            adopted.claim_fence.as_str()
+        ),
         CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
             "child_group:{}:child:{}",
             accepted.completion.group_id(),
             accepted.completion.child_id()
         ),
+        _ => unreachable!("only child events are delegated here"),
+    }
+}
+
+fn lifecycle_about(event: &CeremonyEvent) -> String {
+    match event {
         CeremonyEvent::CeremonyPaused(paused) => {
             format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
         }
@@ -303,6 +322,7 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             "late_step_result:{}",
             observed.result.claim_fence().as_str()
         ),
+        _ => unreachable!("only lifecycle events are delegated here"),
     }
 }
 

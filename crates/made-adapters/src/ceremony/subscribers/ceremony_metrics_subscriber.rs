@@ -37,52 +37,11 @@ impl CeremonyMetricsSubscriber {
                     .unwrap_or_else(std::sync::PoisonError::into_inner)
                     .insert(record.ceremony_id().as_str().to_owned(), started.created_at);
             }
-            CeremonyEvent::StepStarted(started) => {
-                self.start_step(
-                    record.ceremony_id().as_str(),
-                    ceremony,
-                    started.step_id.as_str(),
-                    started.iteration.get(),
-                    started.attempt.get(),
-                    started.started_at,
-                );
-            }
-            CeremonyEvent::StepCompleted(completed) => {
-                self.finish_step(
-                    record.ceremony_id().as_str(),
-                    ceremony,
-                    completed.step_id.as_str(),
-                    completed.iteration.get(),
-                    completed.attempt.get(),
-                    completed.finished_at,
-                    StepStatus::Completed,
-                );
-            }
-            CeremonyEvent::StepFailed(failed) => {
-                self.finish_step(
-                    record.ceremony_id().as_str(),
-                    ceremony,
-                    failed.step_id.as_str(),
-                    failed.iteration.get(),
-                    failed.attempt.get(),
-                    failed.finished_at,
-                    failed.result.status(),
-                );
-                self.metrics
-                    .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
-            }
-            CeremonyEvent::StepDeadlineExceeded(exceeded) => {
-                self.finish_step(
-                    record.ceremony_id().as_str(),
-                    ceremony,
-                    exceeded.deadline.step_id().as_str(),
-                    exceeded.deadline.step_iteration().get(),
-                    exceeded.deadline.attempt().get(),
-                    exceeded.observed_at,
-                    exceeded.result.status(),
-                );
-                self.metrics
-                    .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
+            CeremonyEvent::StepStarted(_)
+            | CeremonyEvent::StepCompleted(_)
+            | CeremonyEvent::StepFailed(_)
+            | CeremonyEvent::StepDeadlineExceeded(_) => {
+                self.observe_step_record(record.ceremony_id().as_str(), ceremony, event);
             }
             CeremonyEvent::TransitionApplied(applied) => {
                 self.metrics.record_ceremony_transition_applied(
@@ -138,6 +97,55 @@ impl CeremonyMetricsSubscriber {
             | CeremonyEvent::CeremonyDeadlineExceeded(_)
             | CeremonyEvent::StateDeadlineExceeded(_)
             | CeremonyEvent::LateStepResultObserved(_) => {}
+        }
+    }
+
+    fn observe_step_record(&self, ceremony_id: &str, ceremony: &str, event: &CeremonyEvent) {
+        match event {
+            CeremonyEvent::StepStarted(started) => self.start_step(
+                ceremony_id,
+                ceremony,
+                started.step_id.as_str(),
+                started.iteration.get(),
+                started.attempt.get(),
+                started.started_at,
+            ),
+            CeremonyEvent::StepCompleted(completed) => self.finish_step(
+                ceremony_id,
+                ceremony,
+                completed.step_id.as_str(),
+                completed.iteration.get(),
+                completed.attempt.get(),
+                completed.finished_at,
+                StepStatus::Completed,
+            ),
+            CeremonyEvent::StepFailed(failed) => {
+                self.finish_step(
+                    ceremony_id,
+                    ceremony,
+                    failed.step_id.as_str(),
+                    failed.iteration.get(),
+                    failed.attempt.get(),
+                    failed.finished_at,
+                    failed.result.status(),
+                );
+                self.metrics
+                    .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
+            }
+            CeremonyEvent::StepDeadlineExceeded(exceeded) => {
+                self.finish_step(
+                    ceremony_id,
+                    ceremony,
+                    exceeded.deadline.step_id().as_str(),
+                    exceeded.deadline.step_iteration().get(),
+                    exceeded.deadline.attempt().get(),
+                    exceeded.observed_at,
+                    exceeded.result.status(),
+                );
+                self.metrics
+                    .record_ceremony_outcome(ceremony, CeremonyOutcome::StepFailed);
+            }
+            _ => unreachable!("only step events are delegated here"),
         }
     }
 
