@@ -194,6 +194,15 @@ checkpoint and was not published separately.
 
 ### Fixed
 
+- Publish versioned Helm charts only from release tags; keep development
+  image tags separate. (#138)
+- Align embedded NATS network-policy peers with the rendered pod labels and
+  mount ceremony persistence even when temporary and TLS volumes are disabled.
+  (#139, #140)
+- Make Codex embedded setup copyable, discover the active tool surface instead
+  of listing stale counts, and parameterize release and OCI verification
+  commands. (#141, #142)
+
 - Local plugin builds now resolve Cargo’s configured target directory and fail
   when the built executable is missing, preventing a stale binary from being
   selected from the checkout or `PATH`. (#137)
