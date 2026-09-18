@@ -11,6 +11,8 @@ mod ceremony_schemas;
 mod default_idempotency_key;
 mod default_lease_owner;
 mod default_lease_ttl;
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+mod design_dynamic_fields;
 #[cfg(test)]
 mod editions_matrix_tests;
 mod general_schemas;
@@ -46,6 +48,8 @@ pub(crate) use default_lease_owner::default_lease_owner_id;
 pub(crate) use default_lease_ttl::{
     CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS, RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
+#[cfg(any(feature = "embedded", feature = "grpc"))]
+pub(crate) use design_dynamic_fields::validate_design_dynamic_fields;
 pub(crate) use initialization::initialize_result;
 pub(crate) use request_gate::validate_tool_request;
 pub(crate) use result_envelopes::{

@@ -1,0 +1,35 @@
+{
+  "id": "legacy-active",
+  "definition_name": "legacy_static",
+  "definition_version": "1.0",
+  "current_state": "OPEN",
+  "step_records": {
+    "draft": {
+      "status": "IN_PROGRESS",
+      "iteration": 1,
+      "attempt": 1,
+      "lease": {
+        "owner_id": "legacy-host",
+        "idempotency_key": "legacy-claim-1",
+        "acquired_at": "2026-07-29T09:00:00Z",
+        "expires_at": "2026-07-29T09:01:00Z"
+      },
+      "output": {},
+      "error_message": null
+    }
+  },
+  "step_record_history": {},
+  "interventions": [],
+  "guard_deferrals": [],
+  "guard_approvals": [],
+  "transitions": [],
+  "reasons": [],
+  "participant_bindings": {},
+  "context": {},
+  "recollection": null,
+  "idempotency_keys": ["legacy-claim-1"],
+  "created_at": "2026-07-29T09:00:00Z",
+  "updated_at": "2026-07-29T09:00:00Z",
+  "completed_at": null,
+  "bound_definition": null
+}

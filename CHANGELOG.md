@@ -56,6 +56,12 @@ creates the immutable tagged sections.
 
 ### Added
 
+- Ceremony steps can resolve an allowed role from a top-level context key at
+  claim time and seal that role for completion, replay and audit attribution.
+  Declared successful output fields can be copied atomically into ceremony
+  context through `ContextWritten`; the proto, both MCP backends, YAML and the
+  embedded facade share the same validation and serialization. (#130)
+
 - Ceremony states can declare a bounded repeat-until policy that reruns every
   state step under a durable `state_iteration`. Step iteration and retry
   attempt remain independent; replay, snapshots, history, traces, transcripts,

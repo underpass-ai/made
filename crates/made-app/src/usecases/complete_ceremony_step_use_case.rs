@@ -89,9 +89,10 @@ mod tests {
 
     use super::*;
     use crate::usecases::ceremony_test_support::{
-        ceremony_id, definition, definition_resolver, idempotency_key, lease_owner, now,
-        repeating_definition, role_id, started_instance, step_id, stream, stream_conflicting_once,
-        stream_over, stream_overtaken_once, DefinitionRepositoryFake, EventStoreFake, FixedClock,
+        ceremony_id, context_writing_definition, definition, definition_resolver, idempotency_key,
+        lease_owner, now, repeating_definition, role_id, started_instance, step_id, stream,
+        stream_conflicting_once, stream_over, stream_overtaken_once, DefinitionRepositoryFake,
+        EventStoreFake, FixedClock,
     };
 
     fn readiness_output(ready: bool) -> StepOutput {
@@ -237,6 +238,114 @@ mod tests {
         };
         assert_eq!(completed.finished_by, winner);
         assert_eq!(ending.actor().role_id(), Some(&winner));
+    }
+
+    #[tokio::test]
+    async fn context_write_completion_retries_as_one_adjacent_event_batch() {
+        let definition = context_writing_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step_as(
+                &definition,
+                &role_id(),
+                &step_id(),
+                StepLease::new(
+                    lease_owner(),
+                    idempotency_key("write-lease"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream_conflicting_once(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+        let output = StepOutput::new(
+            Attributes::new(BTreeMap::from([(
+                "summary".to_owned(),
+                serde_json::json!("accepted"),
+            )]))
+            .unwrap(),
+        );
+
+        usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(output).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .unwrap();
+
+        assert_eq!(
+            instances
+                .facts()
+                .await
+                .iter()
+                .map(|fact| fact.event.event_type())
+                .collect::<Vec<_>>(),
+            [
+                AuditEventType::StepCompleted,
+                AuditEventType::ContextWritten
+            ]
+        );
+    }
+
+    #[tokio::test]
+    async fn missing_context_write_source_appends_neither_completion_event() {
+        let definition = context_writing_definition();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(definition.clone()));
+        let instances = Arc::new(EventStoreFake::default());
+        let mut instance = started_instance(&definition);
+        instance
+            .start_step_as(
+                &definition,
+                &role_id(),
+                &step_id(),
+                StepLease::new(
+                    lease_owner(),
+                    idempotency_key("missing-source"),
+                    now(),
+                    now() + time::Duration::seconds(60),
+                )
+                .unwrap(),
+                now(),
+            )
+            .unwrap();
+        instances.save(&instance).await.unwrap();
+        let usecase = CompleteCeremonyStepUseCase::new(
+            definition_resolver(definitions),
+            stream(instances.clone()),
+            Arc::new(FixedClock::new(now())),
+        );
+
+        assert!(usecase
+            .execute(CompleteCeremonyStepInput::new(
+                ceremony_id(),
+                step_id(),
+                StepResult::completed(StepOutput::empty()).unwrap(),
+                AuditActorKind::Agent,
+            ))
+            .await
+            .is_err());
+        assert!(instances.facts().await.is_empty());
+        assert_eq!(
+            instances
+                .saved(&ceremony_id())
+                .await
+                .step_record(&step_id())
+                .unwrap()
+                .status(),
+            StepStatus::InProgress
+        );
     }
 
     #[tokio::test]

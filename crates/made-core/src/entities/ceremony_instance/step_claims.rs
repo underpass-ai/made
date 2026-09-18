@@ -5,6 +5,49 @@ use crate::error::DomainError;
 use crate::value_objects::{MaxParallel, StateExecution, StepAttempt, StepId, StepStatus};
 
 impl CeremonyInstance {
+    pub(super) fn resolved_step_is_claimable_at(
+        &self,
+        step_id: &StepId,
+        definition: &CeremonyDefinition,
+        now: OffsetDateTime,
+        host_ceiling: MaxParallel,
+    ) -> Result<bool, DomainError> {
+        self.require_definition(definition)?;
+        let state = definition
+            .state(&self.current_state)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_instance.current_state",
+            })?;
+        let steps = definition
+            .steps_for_state(&self.current_state)
+            .collect::<Vec<_>>();
+        if state.execution() == StateExecution::Sequential {
+            let first = steps.into_iter().find(|step| {
+                self.step_records
+                    .get(step.id())
+                    .is_some_and(|record| !record.status().is_success())
+            });
+            if first.is_none_or(|step| step.id() != step_id) {
+                return Ok(false);
+            }
+        } else {
+            let capacity =
+                usize::from(definition.max_parallel().effective_with(host_ceiling).get());
+            let live = steps
+                .iter()
+                .filter(|step| {
+                    self.step_records
+                        .get(step.id())
+                        .is_some_and(|record| record.has_live_lease_at(now))
+                })
+                .count();
+            if live >= capacity {
+                return Ok(false);
+            }
+        }
+        self.step_is_ready_without_role_at(step_id, definition, now)
+    }
+
     /// Steps a caller may claim from the current state at one observed instant.
     ///
     /// Concurrent results contain every eligible alternative while capacity
@@ -71,6 +114,18 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         now: OffsetDateTime,
     ) -> Result<bool, DomainError> {
+        if self.resolve_step_role(definition, step_id, None).is_err() {
+            return Ok(false);
+        }
+        self.step_is_ready_without_role_at(step_id, definition, now)
+    }
+
+    fn step_is_ready_without_role_at(
+        &self,
+        step_id: &StepId,
+        definition: &CeremonyDefinition,
+        now: OffsetDateTime,
+    ) -> Result<bool, DomainError> {
         let step = definition.step(step_id).ok_or(DomainError::NotFound {
             what: "ceremony_instance.step",
         })?;
@@ -81,9 +136,6 @@ impl CeremonyInstance {
                 what: "ceremony_instance.step_record",
             })?;
         if !record.can_be_started_at(now) {
-            return Ok(false);
-        }
-        if self.resolve_step_role(definition, step_id, None).is_err() {
             return Ok(false);
         }
         let attempt = if matches!(record.status(), StepStatus::Failed | StepStatus::InProgress) {

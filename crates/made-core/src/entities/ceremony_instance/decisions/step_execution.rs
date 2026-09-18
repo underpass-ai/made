@@ -63,9 +63,12 @@ impl CeremonyInstance {
                 .steps_for_state(&self.current_state)
                 .any(|candidate| candidate.dynamic_role_binding().is_some());
         let sealed_role = (!dynamic && mixed_concurrent_state).then(|| started_by.clone());
-        let claimable =
-            self.claimable_step_ids_at(definition, command.now, command.max_parallel_ceiling)?;
-        if !claimable.contains(&&command.step_id) {
+        if !self.resolved_step_is_claimable_at(
+            &command.step_id,
+            definition,
+            command.now,
+            command.max_parallel_ceiling,
+        )? {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony step is not claimable at the observed time and capacity",
             });

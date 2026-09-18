@@ -2,7 +2,8 @@ use crate::entities::CeremonyDefinition;
 
 use super::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyInputDefinition,
-    CeremonyValidationLocus, InputRequirement, StateId, TransitionTrigger,
+    CeremonyValidationLocus, ContextWrites, DynamicRoleBinding, InputRequirement, StateId,
+    TransitionTrigger,
 };
 
 fn is_required(input: &CeremonyInputDefinition) -> bool {
@@ -227,6 +228,24 @@ fn diff_steps(
                 "how the work is asked for",
             );
         }
+        if now.dynamic_role_binding() != old.dynamic_role_binding() {
+            record(
+                changes,
+                CeremonyChangeKind::Altered,
+                locus.clone(),
+                dynamic_role_binding_impact(old.dynamic_role_binding(), now.dynamic_role_binding()),
+                "how the role that may claim the step is resolved",
+            );
+        }
+        if now.context_writes() != old.context_writes() {
+            record(
+                changes,
+                CeremonyChangeKind::Altered,
+                locus.clone(),
+                context_writes_impact(old.context_writes(), now.context_writes()),
+                "which successful output fields update ceremony context",
+            );
+        }
         if now.retry_policy() != old.retry_policy()
             || now.timeout() != old.timeout()
             || now.repeat_policy() != old.repeat_policy()
@@ -253,6 +272,44 @@ fn diff_steps(
                 "work a session may already have moved past",
             );
         }
+    }
+}
+
+fn dynamic_role_binding_impact(
+    before: Option<&DynamicRoleBinding>,
+    after: Option<&DynamicRoleBinding>,
+) -> CeremonyChangeImpact {
+    match (before, after) {
+        // Adding a selector can make an already-open step depend on
+        // context its session never supplied. Removing one restores the
+        // statically assigned role.
+        (None, Some(_)) => CeremonyChangeImpact::Strands,
+        (Some(_), None) => CeremonyChangeImpact::Carries,
+        (Some(before), Some(after))
+            if before.context_key() == after.context_key()
+                && before.allowed_roles().is_subset(after.allowed_roles()) =>
+        {
+            CeremonyChangeImpact::Carries
+        }
+        // A different selector or any removed allowed role can take away
+        // the only claim path a running session had.
+        (Some(_), Some(_)) => CeremonyChangeImpact::Strands,
+        (None, None) => CeremonyChangeImpact::Carries,
+    }
+}
+
+fn context_writes_impact(before: &ContextWrites, after: &ContextWrites) -> CeremonyChangeImpact {
+    // Additional writes preserve every value the old step promised to
+    // publish. Removing a destination or changing its source can leave a
+    // later dynamic claim without the context it was designed to read.
+    if before
+        .entries()
+        .iter()
+        .all(|(destination, source)| after.entries().get(destination) == Some(source))
+    {
+        CeremonyChangeImpact::Carries
+    } else {
+        CeremonyChangeImpact::Strands
     }
 }
 
@@ -425,14 +482,14 @@ fn diff_shape(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::BTreeSet;
+    use std::collections::{BTreeMap, BTreeSet};
 
     use super::*;
     use crate::value_objects::{
         CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-        CeremonyVersion, GuardCondition, GuardName, RepeatUntilCondition, RetryPolicy, RoleAction,
-        RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField,
-        StepRepeatPolicy,
+        CeremonyVersion, ContextKey, GuardCondition, GuardName, RepeatUntilCondition, RetryPolicy,
+        RoleAction, RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration,
+        StepOutputField, StepRepeatPolicy,
     };
 
     fn state(id: &str) -> StateId {
@@ -528,6 +585,52 @@ mod tests {
 
     fn baseline() -> CeremonyDefinition {
         Draft::baseline().build()
+    }
+
+    fn dynamic_binding_for(key: &str, roles: &[&str]) -> DynamicRoleBinding {
+        DynamicRoleBinding::new(
+            ContextKey::new(key).unwrap(),
+            roles.iter().map(|role_id| RoleId::new(*role_id).unwrap()),
+        )
+        .unwrap()
+    }
+
+    fn dynamic_binding(key: &str) -> DynamicRoleBinding {
+        dynamic_binding_for(key, &["FACILITATOR"])
+    }
+
+    fn definition_with_dynamic_roles(allowed_roles: &[&str]) -> CeremonyDefinition {
+        let mut draft = Draft::baseline();
+        draft.roles.push(role(
+            "REVIEWER",
+            BTreeSet::from([RoleAction::step(step_id("work"))]),
+        ));
+        draft.steps = vec![step("work", "OPEN", "noop")
+            .with_dynamic_role_binding(dynamic_binding_for("next_role", allowed_roles))];
+        draft.build()
+    }
+
+    fn context_writes(destination: &str, source: &str) -> ContextWrites {
+        ContextWrites::new(BTreeMap::from([(
+            ContextKey::new(destination).unwrap(),
+            StepOutputField::new(source).unwrap(),
+        )]))
+    }
+
+    fn assert_step_policy_change(
+        diff: &CeremonyDefinitionDiff,
+        impact: CeremonyChangeImpact,
+        detail: &'static str,
+    ) {
+        assert_eq!(diff.changes().len(), 1, "{:?}", diff.changes());
+        let change = &diff.changes()[0];
+        assert_eq!(change.kind(), CeremonyChangeKind::Altered);
+        assert_eq!(
+            change.locus(),
+            &CeremonyValidationLocus::step(step_id("work"))
+        );
+        assert_eq!(change.impact(), impact);
+        assert_eq!(change.detail(), detail);
     }
 
     #[test]
@@ -652,6 +755,83 @@ mod tests {
         assert_eq!(
             diff.changes()[0].detail(),
             "how long it may take, how often it may be retried, or when repetition stops"
+        );
+    }
+
+    #[test]
+    fn adding_changing_and_removing_dynamic_role_binding_are_material_step_changes() {
+        let mut bound = Draft::baseline();
+        bound.steps =
+            vec![step("work", "OPEN", "noop")
+                .with_dynamic_role_binding(dynamic_binding("next_role"))];
+        let bound = bound.build();
+
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&baseline(), &bound),
+            CeremonyChangeImpact::Strands,
+            "how the role that may claim the step is resolved",
+        );
+
+        let mut changed = Draft::baseline();
+        changed.steps = vec![step("work", "OPEN", "noop")
+            .with_dynamic_role_binding(dynamic_binding("fallback_role"))];
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&bound, &changed.build()),
+            CeremonyChangeImpact::Strands,
+            "how the role that may claim the step is resolved",
+        );
+
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&bound, &baseline()),
+            CeremonyChangeImpact::Carries,
+            "how the role that may claim the step is resolved",
+        );
+    }
+
+    #[test]
+    fn widening_a_dynamic_role_allow_list_carries_and_narrowing_it_strands() {
+        let narrow = definition_with_dynamic_roles(&["FACILITATOR"]);
+        let wide = definition_with_dynamic_roles(&["FACILITATOR", "REVIEWER"]);
+
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&narrow, &wide),
+            CeremonyChangeImpact::Carries,
+            "how the role that may claim the step is resolved",
+        );
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&wide, &narrow),
+            CeremonyChangeImpact::Strands,
+            "how the role that may claim the step is resolved",
+        );
+    }
+
+    #[test]
+    fn adding_changing_and_removing_context_writes_are_material_step_changes() {
+        let mut writing = Draft::baseline();
+        writing.steps = vec![step("work", "OPEN", "noop")
+            .with_context_writes(context_writes("next_role", "reviewer"))];
+        let writing = writing.build();
+
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&baseline(), &writing),
+            CeremonyChangeImpact::Carries,
+            "which successful output fields update ceremony context",
+        );
+
+        let mut changed = Draft::baseline();
+        changed.steps =
+            vec![step("work", "OPEN", "noop")
+                .with_context_writes(context_writes("next_role", "editor"))];
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&writing, &changed.build()),
+            CeremonyChangeImpact::Strands,
+            "which successful output fields update ceremony context",
+        );
+
+        assert_step_policy_change(
+            &CeremonyDefinitionDiff::between(&writing, &baseline()),
+            CeremonyChangeImpact::Strands,
+            "which successful output fields update ceremony context",
         );
     }
 

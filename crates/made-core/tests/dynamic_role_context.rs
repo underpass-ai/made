@@ -1,15 +1,15 @@
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use made_core::entities::ceremony_commands::ApplyStepResult;
-use made_core::entities::ceremony_events::StepStarted;
+use made_core::entities::ceremony_events::{CeremonyInstanceStarted, ContextWritten, StepStarted};
 use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     Attributes, CeremonyContext, CeremonyGuard, CeremonyId, CeremonyName, CeremonyRole,
-    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey, ContextWrites,
-    DurationMs, DynamicRoleBinding, GuardCondition, GuardName, IdempotencyKey, LeaseOwnerId,
-    MaxParallel, RetryPolicy, RoleAction, RoleId, StateExecution, StateId, StepAttempt,
-    StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
+    CeremonyState, CeremonyStep, CeremonyTransition, CeremonyVersion, ContextKey, ContextPatch,
+    ContextWrites, DurationMs, DynamicRoleBinding, GuardCondition, GuardName, IdempotencyKey,
+    LeaseOwnerId, MaxParallel, RetryPolicy, RoleAction, RoleId, StateExecution, StateId,
+    StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepLease, StepOutput,
     StepOutputField, StepResult, TransitionTrigger,
 };
 use time::{Duration, OffsetDateTime};
@@ -52,7 +52,7 @@ fn definition() -> CeremonyDefinition {
     let dynamic_peer = step("dynamic_peer");
     let dynamic_binding = DynamicRoleBinding::new(
         ContextKey::new("next_role").unwrap(),
-        [role("B"), role("C"), role("D"), role("X")],
+        [role("A"), role("B"), role("C"), role("D"), role("X")],
     )
     .unwrap();
     let writes = ContextWrites::new(BTreeMap::from([(
@@ -99,6 +99,10 @@ fn definition() -> CeremonyDefinition {
                 RoleAction::step(dynamic.clone())
             }];
             if id != "A" {
+                actions.push(RoleAction::step(dynamic_peer.clone()));
+            }
+            if id == "A" {
+                actions.push(RoleAction::step(dynamic.clone()));
                 actions.push(RoleAction::step(dynamic_peer.clone()));
             }
             if id == "X" {
@@ -445,6 +449,68 @@ fn a_dynamic_claim_blocks_a_static_peer_claimed_by_a_non_default_role() {
 }
 
 #[test]
+fn an_explicit_free_static_role_is_not_overridden_by_the_default_claim_projection() {
+    let definition = definition();
+    let now = OffsetDateTime::UNIX_EPOCH;
+    let mut instance = CeremonyInstance::start(
+        CeremonyId::new("explicit-static-role").unwrap(),
+        &definition,
+        context(&[("next_role", serde_json::json!("A"))]),
+        now,
+    )
+    .unwrap();
+    instance
+        .start_step_as(
+            &definition,
+            &role("A"),
+            &step("dynamic"),
+            lease("dynamic-a", now),
+            now,
+        )
+        .unwrap();
+    instance
+        .start_step_as(
+            &definition,
+            &role("X"),
+            &step("writer"),
+            lease("writer-x", now),
+            now,
+        )
+        .expect("X is authorized and free even though default owner A is reserved");
+    assert_eq!(
+        instance
+            .step_record(&step("writer"))
+            .unwrap()
+            .claimed_role(),
+        Some(&role("X"))
+    );
+    let output = StepOutput::new(
+        Attributes::new(BTreeMap::from([(
+            "assigned".to_owned(),
+            serde_json::json!("X"),
+        )]))
+        .unwrap(),
+    );
+    instance
+        .apply_step_result(
+            &definition,
+            &step("writer"),
+            StepResult::completed(output).unwrap(),
+            now,
+        )
+        .unwrap();
+    assert!(instance
+        .start_step_as(
+            &definition,
+            &role("X"),
+            &step("dynamic_peer"),
+            lease("dynamic-x", now),
+            now,
+        )
+        .is_err());
+}
+
+#[test]
 fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
     let definition = two_state_definition();
     let now = OffsetDateTime::UNIX_EPOCH;
@@ -528,4 +594,68 @@ fn legacy_step_records_omit_the_new_claimed_role_field() {
     let decoded: made_core::value_objects::StepExecutionRecord =
         serde_json::from_value(encoded).unwrap();
     assert!(decoded.claimed_role().is_none());
+}
+
+#[test]
+fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
+    let snapshot: CeremonyInstance = serde_json::from_str(include_str!(
+        "fixtures/legacy_in_progress_instance_pre_p5.json"
+    ))
+    .unwrap();
+    let at = time::macros::datetime!(2026-07-29 09:00:00 UTC);
+    let events = [
+        CeremonyEvent::CeremonyInstanceStarted(CeremonyInstanceStarted {
+            ceremony_id: CeremonyId::new("legacy-active").unwrap(),
+            definition_name: CeremonyName::new("legacy_static").unwrap(),
+            definition_version: CeremonyVersion::v1(),
+            initial_state: StateId::new("OPEN").unwrap(),
+            step_ids: BTreeSet::from([step("draft")]),
+            context: CeremonyContext::empty(),
+            bound_definition: None,
+            created_at: at,
+        }),
+        CeremonyEvent::StepStarted(StepStarted {
+            step_id: step("draft"),
+            state_iteration: None,
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::FIRST,
+            lease: StepLease::new(
+                LeaseOwnerId::new("legacy-host").unwrap(),
+                IdempotencyKey::new("legacy-claim-1").unwrap(),
+                at,
+                at + Duration::minutes(1),
+            )
+            .unwrap(),
+            started_by: role("AUTHOR"),
+            role_from: None,
+            sealed_role: None,
+            started_at: at,
+        }),
+    ];
+
+    let folded = CeremonyInstance::rehydrate(&events).unwrap();
+    assert_eq!(folded, snapshot);
+    assert_eq!(
+        serde_json::to_value(folded).unwrap(),
+        serde_json::to_value(snapshot).unwrap()
+    );
+}
+
+#[test]
+fn same_destination_context_writes_follow_stream_order() {
+    let mut instance = opened();
+    let key = ContextKey::new("next_role").unwrap();
+    for value in ["C", "D"] {
+        instance.apply(&CeremonyEvent::ContextWritten(ContextWritten {
+            step_id: step("writer"),
+            state_iteration: made_core::value_objects::StateIteration::FIRST,
+            iteration: StepIteration::FIRST,
+            attempt: StepAttempt::FIRST,
+            patch: ContextPatch::new(BTreeMap::from([(key.clone(), serde_json::json!(value))]))
+                .unwrap(),
+            written_at: OffsetDateTime::UNIX_EPOCH,
+        }));
+    }
+
+    assert_eq!(instance.context().get(&key), Some(&serde_json::json!("D")));
 }

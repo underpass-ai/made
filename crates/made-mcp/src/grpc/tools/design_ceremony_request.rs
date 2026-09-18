@@ -17,6 +17,7 @@ use super::super::json_to_proto as j2p;
 pub(super) fn build_design_ceremony_request(
     args: &Value,
 ) -> Result<pb::DesignCeremonyRequest, String> {
+    crate::protocol::validate_design_dynamic_fields(args)?;
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     Ok(pb::DesignCeremonyRequest {
         name: j2p::require_str(obj, "name")?.to_owned(),

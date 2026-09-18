@@ -7,13 +7,22 @@
 //! bytes it was pinned with, so a payload cannot change shape without
 //! bumping its version.
 
-use made_core::entities::{AuditChain, AuditRecord, CeremonyEvent, CeremonyEventReader};
-use made_core::value_objects::{AuditEventType, EventId, EventSchemaVersion, StateIteration};
+use made_core::entities::ceremony_events::InstanceImported;
+use made_core::entities::{
+    AuditChain, AuditFact, AuditRecord, CeremonyEvent, CeremonyEventReader, CeremonyInstance,
+};
+use made_core::value_objects::{
+    AuditActor, AuditEventType, AuditRecordHash, CeremonyRevision, EventId, EventSchemaVersion,
+    StateIteration,
+};
+use time::macros::datetime;
 
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
 const PRE_P2_EVENT_CHAIN: &str =
     include_str!("fixtures/audit_record_v2_event_schema_v1_chain.json");
+const PRE_P5_IN_PROGRESS_SNAPSHOT: &str =
+    include_str!("fixtures/legacy_in_progress_instance_pre_p5.json");
 
 const EVERY_EVENT_TYPE: [AuditEventType; 21] = [
     AuditEventType::CeremonyDefinitionValidated,
@@ -238,4 +247,50 @@ fn a_legacy_imported_snapshot_defaults_every_state_coordinate_to_one() {
         stored,
         "reopening the legacy snapshot must not synthesize coordinates"
     );
+}
+
+#[test]
+fn an_imported_pre_p5_in_progress_snapshot_keeps_its_payload_and_sealed_hash() {
+    let literal: serde_json::Value = serde_json::from_str(PRE_P5_IN_PROGRESS_SNAPSHOT).unwrap();
+    let snapshot: CeremonyInstance = serde_json::from_value(literal.clone()).unwrap();
+    let ceremony_id = snapshot.id().clone();
+    let definition_name = snapshot.definition_name().clone();
+    let definition_version = snapshot.definition_version().clone();
+    let event = CeremonyEvent::InstanceImported(InstanceImported {
+        ceremony_id: ceremony_id.clone(),
+        definition_name: definition_name.clone(),
+        definition_version: definition_version.clone(),
+        snapshot: Box::new(snapshot),
+        legacy_journal_head_hash: Some(AuditRecordHash::from_bytes([9; 32])),
+        legacy_revision: CeremonyRevision::INITIAL,
+        imported_at: datetime!(2026-07-29 09:10:00 UTC),
+    });
+    let encoded_event = serde_json::to_value(&event).unwrap();
+    assert_eq!(encoded_event["snapshot"], literal);
+    assert!(encoded_event["snapshot"]["step_records"]["draft"]
+        .get("claimed_role")
+        .is_none());
+
+    let record = AuditRecord::first(AuditFact {
+        event_id: EventId::new("legacy-active:instance-imported:1").unwrap(),
+        ceremony_id,
+        definition_name,
+        definition_version,
+        occurred_at: datetime!(2026-07-29 09:10:00 UTC),
+        actor: AuditActor::engine("made-migration").unwrap(),
+        correlation_id: None,
+        causation_id: None,
+        trace: None,
+        event,
+    })
+    .unwrap();
+    assert_eq!(
+        record.record_hash().to_string(),
+        "281d21d6680d4a7443dc29136fd4025c6525236cc5304292aeb6070456b7e210"
+    );
+    assert!(record.digest_is_intact().unwrap());
+    assert!(AuditChain::verify(std::slice::from_ref(&record)).is_intact());
+    let round_trip: AuditRecord =
+        serde_json::from_value(serde_json::to_value(&record).unwrap()).unwrap();
+    assert_eq!(round_trip, record);
 }

@@ -3,8 +3,9 @@
 Status: Accepted (2026-09-17)
 
 Implementation: bounded state repetition is implemented by P2 (#128); output and
-exhausted-repeat guards are implemented by P3 (#116). Role binding, context
-writes, and transition budgets remain planned for phase 3a P4–P5.
+exhausted-repeat guards are implemented by P3 (#116). Role binding and context
+writes are implemented by P5 (#130); transition budgets remain in the separate
+P4 slice.
 Extends ADR-010; its step repeat contract remains unchanged except for an
 explicitly guarded exhaustion exit.
 

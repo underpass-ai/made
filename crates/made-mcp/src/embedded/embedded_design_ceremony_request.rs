@@ -68,6 +68,7 @@ impl TryFrom<&Value> for EmbeddedDesignCeremonyRequest {
     type Error = String;
 
     fn try_from(value: &Value) -> Result<Self, Self::Error> {
+        crate::protocol::validate_design_dynamic_fields(value)?;
         let object = value
             .as_object()
             .ok_or_else(|| "tools/call.arguments must be an object".to_owned())?;
