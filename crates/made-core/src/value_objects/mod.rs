@@ -5,6 +5,7 @@
 //! construction and cannot be mutated afterwards.
 
 mod agent_kind;
+mod artifact;
 mod attributes;
 mod audit;
 mod ceremony;
@@ -21,6 +22,7 @@ mod evidence_body;
 mod evidence_excerpt;
 mod evidence_grounding_rule;
 mod evidence_reference;
+mod execution;
 mod execution_id;
 mod execution_outcome;
 mod execution_status;
@@ -61,6 +63,10 @@ mod validation_mode;
 mod validation_passed;
 
 pub use agent_kind::AgentKind;
+pub use artifact::{
+    ArtifactDigest, ArtifactId, ArtifactImportRef, ArtifactMediaType, ArtifactProvenance,
+    ArtifactRef, ArtifactSizeBytes, ArtifactSourceKind,
+};
 pub use attributes::Attributes;
 pub use audit::{
     AuditActor, AuditActorId, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
@@ -108,6 +114,12 @@ pub use evidence_body::EvidenceBody;
 pub use evidence_excerpt::EvidenceExcerpt;
 pub use evidence_grounding_rule::EvidenceGroundingRule;
 pub use evidence_reference::EvidenceReference;
+pub use execution::{
+    ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionOperationId,
+    ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLink, ExecutionReceiptLinkKind,
+    ExecutionRecoveryCapability, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    ExecutionRequestBytes, ExecutionRequestDigest, ExternalOperationId, MAX_EXECUTION_ARTIFACTS,
+};
 pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;
 pub use execution_status::ExecutionStatus;
