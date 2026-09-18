@@ -320,7 +320,7 @@ async fn real_nats_readiness_wake_and_periodic_catch_up_retry_durable_events() {
         CeremonyEventConsumer::new("children-proof.nats").unwrap(),
     ));
     let subjects = NatsSubjects::new("proof", "proof.trigger.>").unwrap();
-    let task = NatsCeremonyRecoverySubscriber::new(client.clone(), subjects.clone(), recover)
+    let task = NatsCeremonyRecoverySubscriber::new(client.clone(), &subjects, recover)
         .spawn()
         .await
         .expect("readiness round trip should finish before spawn returns");
