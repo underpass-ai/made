@@ -43,10 +43,9 @@ impl RunCeremonyUseCase {
         let ceremony_id = session.instance.id().clone();
 
         loop {
-            let now = self.clock.now();
             let claimable = session.instance.claimable_step_ids_at(
                 definition,
-                now,
+                self.clock.now(),
                 self.max_parallel_ceiling,
             )?;
             if claimable.is_empty() {
