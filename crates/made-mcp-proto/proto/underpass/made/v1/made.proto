@@ -1582,6 +1582,20 @@ message CeremonyDesignStage {
   repeated string allowed_roles = 15;
   map<string, string> context_writes = 16;
   CeremonyDesignAggregation aggregate = 17;
+  // Reusable authoring fragment expanded into ordinary definition data.
+  CeremonyDesignPatternStage pattern_stage = 18;
+}
+
+message CeremonyDesignPatternStage {
+  // sequential | concurrent | broadcast_collect | group_chat |
+  // maker_checker | handoff | magentic
+  string kind = 1;
+  repeated string roles = 2;
+  string instructions = 3;
+  string manager_role_id = 4;
+  optional uint32 max_iterations = 5;
+  string fallback_role_id = 6;
+  CeremonyDesignGroupJoin join = 7;
 }
 
 // A leaf inside a grouped state. It cannot recursively contain a group or

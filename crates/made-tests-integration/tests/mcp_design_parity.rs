@@ -13,6 +13,7 @@
 
 use std::collections::BTreeMap;
 
+use made_adapters::mermaid::CeremonyConversationDiagram;
 use made_adapters::yaml::{CeremonyDefinitionYaml, DesignedCeremonyYaml};
 use made_app::usecases::{
     CeremonyDesignDocument, CeremonyDesignGroup, CeremonyDesignGroupStep, CeremonyDesignJoin,
@@ -146,6 +147,34 @@ fn concurrent_intent() -> Value {
                 "join": {"condition": "steps_completed", "count": 1}
             }
         }]
+    })
+}
+
+fn composed_pattern_intent() -> Value {
+    json!({
+        "name": "incident_review",
+        "objective": "Review an incident with independent analysis and a bounded write-up.",
+        "outputs": ["report"],
+        "participants": [
+            {"role_id": "LEAD"}, {"role_id": "OPS"},
+            {"role_id": "SECURITY"}, {"role_id": "HUMAN"}
+        ],
+        "max_parallel": 2,
+        "stages": [
+            {"id": "intake", "pattern": {
+                "kind": "sequential", "roles": ["LEAD"],
+                "instructions": "Normalize the incident timeline."
+            }},
+            {"id": "analysis", "pattern": {
+                "kind": "broadcast_collect", "roles": ["OPS", "SECURITY"],
+                "manager_role_id": "LEAD", "instructions": "Analyze the incident independently."
+            }},
+            {"id": "writeup", "pattern": {
+                "kind": "maker_checker", "roles": ["LEAD", "SECURITY"],
+                "fallback_role_id": "HUMAN", "max_iterations": 2,
+                "instructions": "Write a corrective-action report."
+            }}
+        ]
     })
 }
 
@@ -665,6 +694,44 @@ async fn concurrent_design_is_identical_on_proto_both_mcp_arms_and_the_facade() 
 }
 
 #[tokio::test]
+async fn composed_incident_review_is_identical_on_both_mcp_editions() {
+    let fixture = GrpcFixture::start().await;
+    let remote = GrpcMadeMcpBackend::new(
+        format!("http://{}", fixture.addr),
+        MadeMcpGrpcTlsConfig::disabled(),
+    );
+    let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
+    let arguments = composed_pattern_intent();
+    let over_the_wire = structured(
+        &remote
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("gRPC designs composed patterns"),
+    );
+    let in_process = structured(
+        &embedded
+            .call_tool("made_design_ceremony", &arguments)
+            .await
+            .expect("embedded designs composed patterns"),
+    );
+    assert_eq!(over_the_wire, in_process);
+    assert_eq!(over_the_wire["publishable"], true);
+    let yaml = over_the_wire["definition_yaml"].as_str().unwrap();
+    assert!(yaml.contains("x-pattern: broadcast_collect"), "{yaml}");
+    assert!(yaml.contains("execution: concurrent"), "{yaml}");
+    assert!(yaml.contains("WRITEUP_FALLBACK"), "{yaml}");
+    assert_eq!(
+        yaml,
+        include_str!("../../../tests/e2e/ceremonies/incident_review.yaml")
+    );
+    let definition = CeremonyDefinitionYaml::parse_str(yaml).expect("composed YAML parses");
+    let diagram = CeremonyConversationDiagram::render(&definition);
+    assert!(diagram.contains("Pattern broadcast_collect"), "{diagram}");
+    assert!(diagram.contains("par analysis_review_1"), "{diagram}");
+    assert!(diagram.contains("and analysis_review_2"), "{diagram}");
+}
+
+#[tokio::test]
 async fn aggregation_design_is_identical_on_proto_both_mcp_arms_and_the_facade() {
     let fixture = GrpcFixture::start().await;
     let remote = GrpcMadeMcpBackend::new(
@@ -673,7 +740,6 @@ async fn aggregation_design_is_identical_on_proto_both_mcp_arms_and_the_facade()
     );
     let embedded = EmbeddedMadeMcpBackend::new(EmbeddedMade::default());
     let arguments = aggregation_intent();
-
     let over_the_wire = structured(
         &remote
             .call_tool("made_design_ceremony", &arguments)

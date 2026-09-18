@@ -3,6 +3,8 @@ mod group_repeat_intent;
 mod group_repeat_until_intent;
 mod group_stage_intent;
 mod join_intent;
+mod pattern_intent;
+mod pattern_stage_intent;
 
 use made_app::usecases::CeremonyDesignStageEntry;
 use made_core::error::DomainError;
@@ -10,11 +12,13 @@ use serde::{de::Error as _, Deserialize, Deserializer};
 use serde_json::Value;
 
 use self::group_stage_intent::GroupStageIntent;
+use self::pattern_stage_intent::PatternStageIntent;
 use super::StageIntent;
 
 #[derive(Clone, Debug)]
 pub(super) enum StageEntryIntent {
     Group(GroupStageIntent),
+    Pattern(PatternStageIntent),
     Leaf(StageIntent),
 }
 
@@ -25,6 +29,13 @@ impl<'de> Deserialize<'de> for StageEntryIntent {
     {
         let value = Value::deserialize(deserializer)?;
         if value
+            .as_object()
+            .is_some_and(|object| object.contains_key("pattern"))
+        {
+            serde_json::from_value(value)
+                .map(Self::Pattern)
+                .map_err(D::Error::custom)
+        } else if value
             .as_object()
             .is_some_and(|object| object.contains_key("group"))
         {
@@ -44,6 +55,7 @@ impl StageEntryIntent {
         match self {
             Self::Leaf(stage) => stage.into_domain().map(CeremonyDesignStageEntry::Leaf),
             Self::Group(stage) => stage.into_domain().map(CeremonyDesignStageEntry::Group),
+            Self::Pattern(stage) => stage.into_domain().map(CeremonyDesignStageEntry::Pattern),
         }
     }
 }

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{CeremonyStateKind, StateExecution, StateId, StateRepeatPolicy};
+use crate::value_objects::Attributes;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyState {
@@ -10,6 +11,8 @@ pub struct CeremonyState {
     execution: StateExecution,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     repeat: Option<StateRepeatPolicy>,
+    #[serde(default, skip_serializing_if = "Attributes::is_empty")]
+    annotations: Attributes,
 }
 
 impl CeremonyState {
@@ -20,6 +23,7 @@ impl CeremonyState {
             kind,
             execution: StateExecution::Sequential,
             repeat: None,
+            annotations: Attributes::empty(),
         }
     }
 
@@ -68,6 +72,19 @@ impl CeremonyState {
     #[must_use]
     pub fn repeat_policy(&self) -> Option<&StateRepeatPolicy> {
         self.repeat.as_ref()
+    }
+
+    /// Opaque authoring and rendering metadata. The state machine never
+    /// interprets these values when deciding or folding commands.
+    #[must_use]
+    pub fn with_annotations(mut self, annotations: Attributes) -> Self {
+        self.annotations = annotations;
+        self
+    }
+
+    #[must_use]
+    pub fn annotations(&self) -> &Attributes {
+        &self.annotations
     }
 
     #[must_use]

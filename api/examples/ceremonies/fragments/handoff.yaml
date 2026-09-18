@@ -1,0 +1,218 @@
+version: '1.0'
+name: handoff
+description: Canonical handoff coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_OPS
+  initial: true
+  x-pattern: handoff
+- id: COORDINATION_SECURITY
+  x-pattern: handoff
+- id: COORDINATION_HUMAN
+  x-pattern: handoff
+- id: COORDINATION_RECORD
+  x-pattern: handoff
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_HUMAN
+  to: COORDINATION_RECORD
+  trigger: coordination_human_completed
+  guards:
+  - coordination_human_completed
+- from: COORDINATION_RECORD
+  to: COMPLETED
+  trigger: coordination_record_completed
+  guards:
+  - coordination_record_completed
+- from: COORDINATION_OPS
+  to: COORDINATION_RECORD
+  trigger: coordination_ops_resolved
+  guards:
+  - coordination_ops_resolved_completed
+  - coordination_ops_resolved_output_0
+- from: COORDINATION_OPS
+  to: COORDINATION_OPS
+  trigger: coordination_ops_to_ops
+  guards:
+  - coordination_ops_to_ops_completed
+  - coordination_ops_to_ops_output_0
+- from: COORDINATION_OPS
+  to: COORDINATION_SECURITY
+  trigger: coordination_ops_to_security
+  guards:
+  - coordination_ops_to_security_completed
+  - coordination_ops_to_security_output_0
+- from: COORDINATION_OPS
+  to: COORDINATION_HUMAN
+  trigger: coordination_ops_to_human
+  guards:
+  - coordination_ops_to_human_completed
+  - coordination_ops_to_human_human
+  - coordination_ops_to_human_output_0
+- from: COORDINATION_SECURITY
+  to: COORDINATION_RECORD
+  trigger: coordination_security_resolved
+  guards:
+  - coordination_security_resolved_completed
+  - coordination_security_resolved_output_0
+- from: COORDINATION_SECURITY
+  to: COORDINATION_OPS
+  trigger: coordination_security_to_ops
+  guards:
+  - coordination_security_to_ops_completed
+  - coordination_security_to_ops_output_0
+- from: COORDINATION_SECURITY
+  to: COORDINATION_SECURITY
+  trigger: coordination_security_to_security
+  guards:
+  - coordination_security_to_security_completed
+  - coordination_security_to_security_output_0
+- from: COORDINATION_SECURITY
+  to: COORDINATION_HUMAN
+  trigger: coordination_security_to_human
+  guards:
+  - coordination_security_to_human_completed
+  - coordination_security_to_human_human
+  - coordination_security_to_human_output_0
+steps:
+- id: coordination_ops
+  state: COORDINATION_OPS
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - handoff_to
+    - resolved
+    prompt: Resolve the work or return resolved=false and handoff_to with the next role.
+    see_prior: true
+- id: coordination_security
+  state: COORDINATION_SECURITY
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - handoff_to
+    - resolved
+    prompt: Resolve the work or return resolved=false and handoff_to with the next role.
+    see_prior: true
+- id: coordination_human
+  state: COORDINATION_HUMAN
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Review the bounded handoff chain and decide its exit.
+    see_prior: true
+- id: coordination_record
+  state: COORDINATION_RECORD
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Record the resolved or human-approved handoff outcome.
+    see_prior: true
+guards:
+  coordination_human_completed:
+    type: automated
+    check: step_status:coordination_human:COMPLETED
+  coordination_ops_completed:
+    type: automated
+    check: step_status:coordination_ops:COMPLETED
+  coordination_ops_resolved_completed:
+    type: automated
+    check: step_status:coordination_ops:COMPLETED
+  coordination_ops_resolved_output_0:
+    type: automated
+    check: output_field:coordination_ops:resolved=true
+  coordination_ops_to_human_completed:
+    type: automated
+    check: step_status:coordination_ops:COMPLETED
+  coordination_ops_to_human_human:
+    type: human
+    check: manual_approval
+  coordination_ops_to_human_output_0:
+    type: automated
+    check: output_field:coordination_ops:handoff_to="HUMAN"
+  coordination_ops_to_ops_completed:
+    type: automated
+    check: step_status:coordination_ops:COMPLETED
+  coordination_ops_to_ops_output_0:
+    type: automated
+    check: output_field:coordination_ops:handoff_to="OPS"
+  coordination_ops_to_security_completed:
+    type: automated
+    check: step_status:coordination_ops:COMPLETED
+  coordination_ops_to_security_output_0:
+    type: automated
+    check: output_field:coordination_ops:handoff_to="SECURITY"
+  coordination_record_completed:
+    type: automated
+    check: step_status:coordination_record:COMPLETED
+  coordination_security_completed:
+    type: automated
+    check: step_status:coordination_security:COMPLETED
+  coordination_security_resolved_completed:
+    type: automated
+    check: step_status:coordination_security:COMPLETED
+  coordination_security_resolved_output_0:
+    type: automated
+    check: output_field:coordination_security:resolved=true
+  coordination_security_to_human_completed:
+    type: automated
+    check: step_status:coordination_security:COMPLETED
+  coordination_security_to_human_human:
+    type: human
+    check: manual_approval
+  coordination_security_to_human_output_0:
+    type: automated
+    check: output_field:coordination_security:handoff_to="HUMAN"
+  coordination_security_to_ops_completed:
+    type: automated
+    check: step_status:coordination_security:COMPLETED
+  coordination_security_to_ops_output_0:
+    type: automated
+    check: output_field:coordination_security:handoff_to="OPS"
+  coordination_security_to_security_completed:
+    type: automated
+    check: step_status:coordination_security:COMPLETED
+  coordination_security_to_security_output_0:
+    type: automated
+    check: output_field:coordination_security:handoff_to="SECURITY"
+roles:
+- id: LEAD
+  allowed_actions:
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_ops
+  - coordination_ops_resolved
+  - coordination_ops_to_human
+  - coordination_ops_to_ops
+  - coordination_ops_to_security
+  - coordination_record
+  - coordination_record_completed
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_security
+  - coordination_security_resolved
+  - coordination_security_to_human
+  - coordination_security_to_ops
+  - coordination_security_to_security
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - coordination_human
+  - coordination_human_completed
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
+max_bounces: 2

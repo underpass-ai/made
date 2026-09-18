@@ -60,8 +60,10 @@ engine wiring, not that external work happened.
 
 Ceremonies can declare sequential or concurrent work, role eligibility,
 human guards, retry policies, bounded repetition, transition budgets and
-context writes. Hosts schedule the workers; MADE does not automatically
-spawn agents or implement every multi-agent orchestration pattern.
+context writes. The `run_ceremony` driver claims eligible siblings and invokes
+host-provided handlers with bounded concurrency. Hosts may also fan work out to
+their own workers through the claim and completion APIs. MADE does not create
+agents for the host.
 
 ## Pick your path
 

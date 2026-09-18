@@ -13,6 +13,14 @@ even though the new catalogue identity is `made`.
   MCP backends and `EmbeddedMade`. Requests bound replay and waiting, return an
   explicit resume cursor/end reason, catch up with external store writers and
   cancel producers on client drop. (#163)
+- Add composable `stages[].pattern` authoring for broadcast/collect, managed
+  group chat, maker-checker, bounded handoff and magentic task-ledger flows.
+  Ship executable fragments, cross-edition design parity and Mermaid pattern
+  regions with concurrent fork/join rendering. (#159)
+- Add an explicit application opt-in for bounded parallel initial proposals,
+  sharing one call pool across simultaneous councils. Record experiment 003
+  with a controlled provider-capacity fixture; retain sequential defaults. (#161)
+
 - Add typed `synthesize` and deterministic strict-majority `vote` aggregation
   to the first step after an all-siblings concurrent join. YAML, design,
   protobuf, both MCP backends and the embedded facade share one schema;
