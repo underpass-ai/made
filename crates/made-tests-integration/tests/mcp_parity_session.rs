@@ -965,6 +965,19 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
         ),
+        (
+            "made_stream_ceremony",
+            json!({ "ceremony_id": SESSION_ID }),
+        ),
+        (
+            "made_stream_ceremony",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "after_sequence": 2,
+                "max_events": 3,
+                "wait_timeout_ms": 0,
+            }),
+        ),
         // The named global feed is the same durable contract on both
         // surfaces: a read replays, and only the next call's explicit
         // acknowledgement advances it.
