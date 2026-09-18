@@ -16,8 +16,9 @@ source "${ROOT_DIR}/scripts/ci/testcontainers-host.sh"
 TEST_CRATE="crates/made-tests-integration/Cargo.toml"
 NATS_TEST_A="crates/made-tests-integration/tests/nats_messaging_roundtrip.rs"
 NATS_TEST_B="crates/made-tests-integration/tests/nats_trigger_subscriber.rs"
+NATS_TEST_C="crates/made-tests-integration/tests/children_recovery_nats.rs"
 
-if [ ! -f "${TEST_CRATE}" ] || [ ! -f "${NATS_TEST_A}" ] || [ ! -f "${NATS_TEST_B}" ]; then
+if [ ! -f "${TEST_CRATE}" ] || [ ! -f "${NATS_TEST_A}" ] || [ ! -f "${NATS_TEST_B}" ] || [ ! -f "${NATS_TEST_C}" ]; then
   echo "::warning::NATS integration suite not present; skipping"
   exit 0
 fi
@@ -31,5 +32,6 @@ RUST_TEST_THREADS=1 cargo test \
   --features container-tests \
   --test nats_messaging_roundtrip \
   --test nats_trigger_subscriber \
+  --test children_recovery_nats \
   --locked \
   -- --test-threads=1
