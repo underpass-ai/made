@@ -445,10 +445,12 @@ mod tests {
 
     #[test]
     fn direct_grpc_rejects_zero_transition_budgets() {
-        let mut request = pb::DesignCeremonyRequest::default();
-        request.name = "invalid_budget".to_owned();
-        request.objective = "Reject zero".to_owned();
-        request.max_transitions = Some(0);
+        let request = pb::DesignCeremonyRequest {
+            name: "invalid_budget".to_owned(),
+            objective: "Reject zero".to_owned(),
+            max_transitions: Some(0),
+            ..pb::DesignCeremonyRequest::default()
+        };
         assert!(matches!(
             ceremony_design_document_from_proto(request),
             Err(DomainError::MustBeNonZero {
@@ -456,10 +458,12 @@ mod tests {
             })
         ));
 
-        let mut request = pb::DesignCeremonyRequest::default();
-        request.name = "invalid_budget".to_owned();
-        request.objective = "Reject zero".to_owned();
-        request.max_bounces = Some(0);
+        let request = pb::DesignCeremonyRequest {
+            name: "invalid_budget".to_owned(),
+            objective: "Reject zero".to_owned(),
+            max_bounces: Some(0),
+            ..pb::DesignCeremonyRequest::default()
+        };
         assert!(matches!(
             ceremony_design_document_from_proto(request),
             Err(DomainError::MustBeNonZero {

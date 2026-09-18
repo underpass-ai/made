@@ -1,7 +1,9 @@
 use made_app::usecases::DesignedCeremony;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::error::DomainError;
-use made_core::value_objects::{GuardCondition, RepeatUntilCondition, RoleAction};
+use made_core::value_objects::{
+    GuardCondition, MaxBounces, MaxTransitions, RepeatUntilCondition, RoleAction,
+};
 use serde_json::json;
 use std::collections::BTreeMap;
 
@@ -119,8 +121,8 @@ impl DesignedCeremonyYaml {
                 },
             },
             max_parallel: draft.max_parallel().get(),
-            max_transitions: draft.max_transitions().map(|limit| limit.get()),
-            max_bounces: draft.max_bounces().map(|limit| limit.get()),
+            max_transitions: draft.max_transitions().map(MaxTransitions::get),
+            max_bounces: draft.max_bounces().map(MaxBounces::get),
         };
         serde_yaml::to_string(&document).map_err(|_| DomainError::InvalidDocument {
             reason: "ceremony draft could not be rendered as YAML".to_owned(),
