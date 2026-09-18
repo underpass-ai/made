@@ -72,6 +72,9 @@ const MEMORY_SECOND_ID: &str = "parity-memory-second";
 /// The scope both of them declare.
 const MEMORY_SCOPE: &str = "team:parity";
 const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
+const CHILD_PARENT_ID: &str = "parity-child-parent";
+const CHILD_PLACEHOLDER: &str = "$parity-child-0";
+const TERMINAL_PLACEHOLDER: &str = "$parity-child-terminal";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
@@ -418,6 +421,65 @@ roles:
     allowed_actions: [c]
 "#;
 
+const CHILD_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_child"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+    guards: [work_done]
+steps:
+  - id: work
+    state: OPEN
+    handler: parity_step
+guards:
+  work_done:
+    type: automated
+    check: "step_status:work:COMPLETED"
+roles:
+  - id: CHILD
+    allowed_actions: [work, finish]
+"#;
+
+const CHILD_PARENT_CEREMONY: &str = r#"
+version: "1.0"
+name: "parity_child_parent"
+states:
+  - id: OPEN
+    initial: true
+  - id: DONE
+    terminal: true
+transitions:
+  - from: OPEN
+    to: DONE
+    trigger: finish
+    guards: [child_done]
+steps:
+  - id: delegate
+    state: OPEN
+    handler: must_not_run
+    spawn:
+      children:
+        - ceremony: parity_child
+          version: "1.0"
+          inputs: {}
+      max_children: 1
+      max_depth: 2
+guards:
+  child_done:
+    type: automated
+    check: "children_completed:delegate:all"
+roles:
+  - id: PARENT
+    allowed_actions: [delegate, finish]
+"#;
+
 /// The intent `made_design_ceremony` is asked to turn into a ceremony.
 ///
 /// Rich for the same reason the definition above is: two stages, a
@@ -479,6 +541,8 @@ struct ParityArms {
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
     claims: std::sync::Mutex<std::collections::BTreeMap<(String, String), Value>>,
+    children: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
+    terminals: std::sync::Mutex<BTreeMap<String, String>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -562,11 +626,36 @@ impl ParityArms {
             over_the_wire,
             in_process,
             claims: std::sync::Mutex::new(std::collections::BTreeMap::new()),
+            children: std::sync::Mutex::new(BTreeMap::new()),
+            terminals: std::sync::Mutex::new(BTreeMap::new()),
         }
     }
 
     /// Test-host cache of identities returned by successful claims. Never a store read.
     fn completing(&self, tool: &str, mut arguments: Value) -> Value {
+        let child_id = || {
+            self.children
+                .lock()
+                .unwrap()
+                .get(CHILD_PARENT_ID)
+                .and_then(|children| children.first())
+                .expect("the scripted child preparation returned a child")
+                .clone()
+        };
+        if arguments.get("ceremony_id") == Some(&json!(CHILD_PLACEHOLDER)) {
+            arguments["ceremony_id"] = json!(child_id());
+        }
+        if arguments.get("child_id") == Some(&json!(CHILD_PLACEHOLDER)) {
+            arguments["child_id"] = json!(child_id());
+        }
+        if arguments.get("terminal_event_id") == Some(&json!(TERMINAL_PLACEHOLDER)) {
+            arguments["terminal_event_id"] = json!(self
+                .terminals
+                .lock()
+                .unwrap()
+                .get(&child_id())
+                .expect("the scripted child history returned its terminal"));
+        }
         if tool == "made_complete_ceremony_step" && arguments.get("claim_fence").is_none() {
             let key = (
                 arguments["ceremony_id"].as_str().unwrap().to_owned(),
@@ -598,6 +687,36 @@ impl ParityArms {
                 ),
                 fence,
             );
+        }
+        if tool == "made_prepare_ceremony_children" && !failed(&wire) && !failed(&local) {
+            let wire_ids = structured(&wire)["child_ids"].clone();
+            assert_eq!(wire_ids, structured(&local)["child_ids"]);
+            let child_ids = wire_ids
+                .as_array()
+                .expect("prepared children are an array")
+                .iter()
+                .map(|id| id.as_str().expect("child id is a string").to_owned())
+                .collect();
+            self.children.lock().unwrap().insert(
+                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                child_ids,
+            );
+        }
+        if tool == "made_read_ceremony_events" && !failed(&wire) && !failed(&local) {
+            let terminal = structured(&wire)["records"]
+                .as_array()
+                .and_then(|records| {
+                    records
+                        .iter()
+                        .find(|record| record["event_type"] == "ceremony_completed")
+                })
+                .and_then(|record| record["event_id"].as_str());
+            if let Some(terminal) = terminal {
+                self.terminals.lock().unwrap().insert(
+                    arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                    terminal.to_owned(),
+                );
+            }
         }
         (wire, local)
     }
@@ -1009,6 +1128,77 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({
                 "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
                 "title": "  Parity review <both arms>  ",
+            }),
+        ),
+        // Child orchestration runs after the legacy report so exercising the
+        // new shared tools cannot perturb its trace ids or sealed hashes.
+        (
+            "made_publish_ceremony_definition",
+            json!({ "definition_yaml": CHILD_CEREMONY }),
+        ),
+        (
+            "made_publish_ceremony_definition",
+            json!({ "definition_yaml": CHILD_PARENT_CEREMONY }),
+        ),
+        (
+            "made_start_published_ceremony",
+            json!({
+                "ceremony": "parity_child_parent",
+                "version": "1.0",
+                "ceremony_id": CHILD_PARENT_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "context": {},
+            }),
+        ),
+        (
+            "made_prepare_ceremony_children",
+            json!({
+                "ceremony_id": CHILD_PARENT_ID,
+                "step_id": "delegate",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parity-child-spawn-1",
+                "lease_ttl_ms": 60_000,
+            }),
+        ),
+        (
+            "made_run_ceremony_step",
+            json!({
+                "ceremony_id": CHILD_PLACEHOLDER,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-host",
+                "idempotency_key": "parity-child-work-1",
+                "lease_ttl_ms": 60_000,
+            }),
+        ),
+        (
+            "made_apply_ceremony_transition",
+            json!({
+                "ceremony_id": CHILD_PLACEHOLDER,
+                "trigger": "finish",
+                "actor_kind": "agent",
+            }),
+        ),
+        (
+            "made_read_ceremony_events",
+            json!({ "ceremony_id": CHILD_PLACEHOLDER, "from_version": 0, "limit": 200 }),
+        ),
+        (
+            "made_accept_child_completion",
+            json!({
+                "child_id": CHILD_PLACEHOLDER,
+                "terminal_event_id": TERMINAL_PLACEHOLDER,
+            }),
+        ),
+        ("made_recover_ceremony_children", json!({ "limit": 1000 })),
+        (
+            "made_apply_ceremony_transition",
+            json!({
+                "ceremony_id": CHILD_PARENT_ID,
+                "trigger": "finish",
+                "actor_kind": "agent",
             }),
         ),
         // How the engine that served all of the above is doing, asked
