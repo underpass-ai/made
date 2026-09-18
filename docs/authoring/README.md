@@ -207,10 +207,13 @@ stable completion locator.
 
 `made_run_ceremony_step` and `made_run_ceremony` route spawn steps through this
 protocol, including steps in concurrent states. They do not invoke the step's
-ordinary handler for a spawn. Hosts driving claims directly call
-`made_prepare_ceremony_children` with the accepted claim fence. Recovery uses
-`made_recover_ceremony_children`; broker notifications only wake that work,
-while the durable global event cursor decides what remains pending.
+ordinary handler for a spawn. MCP hosts call `made_prepare_ceremony_children`,
+and gRPC hosts call `PrepareCeremonyChildren`, with the actor plus optional
+lease owner, idempotency key and TTL; either operation claims and executes the
+spawn. The lower-level Rust facade `prepare_children` instead receives an
+already accepted claim fence. Recovery uses `made_recover_ceremony_children`;
+broker notifications only wake that work, while the durable global event
+cursor decides what remains pending.
 
 ## Aggregate concurrent outputs
 
