@@ -194,6 +194,10 @@ checkpoint and was not published separately.
 
 ### Fixed
 
+- Local plugin builds now resolve Cargo’s configured target directory and fail
+  when the built executable is missing, preventing a stale binary from being
+  selected from the checkout or `PATH`. (#137)
+
 - The orchestration plan now distinguishes the 18 emitted ceremony events
   from the 21 audit catalogue entries and uses their implemented names.
   (#130, fixes #135)
