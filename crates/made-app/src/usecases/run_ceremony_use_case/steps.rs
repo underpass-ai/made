@@ -16,24 +16,6 @@ use super::{
 };
 
 impl RunCeremonyUseCase {
-    #[tracing::instrument(
-        name = "ceremony_step",
-        skip_all,
-        fields(
-            ceremony_id = %session.instance.id(),
-            ceremony_name = %session.instance.definition_name(),
-            state_id = %session.instance.current_state(),
-            step_id = %step_id,
-            role_id = tracing::field::Empty,
-            state_visit = tracing::field::Empty,
-            state_iteration = tracing::field::Empty,
-            iteration = tracing::field::Empty,
-            attempt = tracing::field::Empty,
-            outcome = tracing::field::Empty,
-            step_status = tracing::field::Empty,
-            error_kind = tracing::field::Empty,
-        )
-    )]
     pub(super) async fn run_step(
         &self,
         definition: &CeremonyDefinition,
@@ -45,7 +27,7 @@ impl RunCeremonyUseCase {
         trace_index: usize,
         transcript: CeremonyTranscript,
     ) -> Result<RunStepOutput, DomainError> {
-        let result = match self
+        let claimed = self
             .claim_step(
                 definition,
                 session,
@@ -56,34 +38,9 @@ impl RunCeremonyUseCase {
                 trace_index,
                 transcript,
             )
+            .await?;
+        self.execute_and_complete_claimed_step(definition, claimed, actor_kind)
             .await
-        {
-            Ok(claimed) => {
-                self.execute_and_complete_claimed_step(definition, claimed, actor_kind)
-                    .await
-            }
-            Err(error) => Err(error),
-        };
-        match &result {
-            Ok(RunStepOutput {
-                state_visit,
-                state_iteration,
-                iteration,
-                attempt,
-                result: step_result,
-                ..
-            }) => {
-                crate::usecases::step_span::record_coordinates(
-                    *state_visit,
-                    *state_iteration,
-                    *iteration,
-                    *attempt,
-                );
-                crate::usecases::step_span::record_result(step_result);
-            }
-            Err(error) => crate::usecases::step_span::record_error(error),
-        }
-        result
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -153,7 +110,6 @@ impl RunCeremonyUseCase {
             .claimed_role()
             .cloned()
             .map_or_else(|| definition.role_id_for_step(step_id), Ok)?;
-        tracing::Span::current().record("role_id", sealed_role.as_str());
 
         let request = CeremonyStepHandlerRequest::new(
             session.instance.id().clone(),
