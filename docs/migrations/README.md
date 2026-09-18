@@ -85,7 +85,7 @@ or response field.
 `steps_completed:n` definitions now round-trip through published-definition
 serialization, SQLite reopening, direct gRPC and both MCP backends. Earlier
 code could analyze a counted join successfully but fail when serializing it
-for publication. The corrected scalar representation removes that failure;
+for publication. The corrected tagged object representation removes that failure;
 the guard still counts successful work in the state being left. The
 [two-check example](../authoring/examples/two-checks.yaml) intentionally uses
 `steps_completed:2` so the full publication path exercises this contract.

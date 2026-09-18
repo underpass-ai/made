@@ -33,9 +33,11 @@ The bundled default handler may be a no-op.
 A claim has an exact execution identity and lease. If another worker takes
 over expired work, the old worker must not append its result to that new
 claim. The opaque SHA-256 fence binds the accepted claim's execution
-coordinates, including `state_visit`. The claim response's instance, stream
-version and audit identity describe that same accepted claim, even if another
-worker replaces it before the response arrives. Missing or malformed fences are invalid requests; a valid but
+coordinates, including `state_visit`. The response's instance and audit identity
+describe that claim at its accepted stream version, even if another worker
+replaces it before the response arrives. Rust also exposes that version through
+`StartCeremonyStepOutput::version()`; RPC and MCP do not return it as a separate
+field. Missing or malformed fences are invalid requests; a valid but
 wrong or superseded fence is refused. Refusal appends no event and changes
 neither output/context nor the replacement lease.
 
