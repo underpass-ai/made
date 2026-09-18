@@ -14,6 +14,13 @@ operator command.
 
 ## Unreleased
 
+### Fixed
+
+- Ceremony report selections, guard reconsideration conditions and intervention
+  recipients now enforce the same 100-item cap and uniqueness after trimming
+  on direct RPC, MCP over either backend, and the embedded facade. Empty report
+  selections and conditions are refused; omitted or empty recipients address
+  the whole table. Historical journal payloads remain readable. (#100)
 - Warn during definition analysis when global completion guards wait for
   downstream work that they prevent from starting; preserve global guard
   execution semantics and allow valid cyclic/revisit definitions. (#143)

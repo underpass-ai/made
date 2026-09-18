@@ -47,3 +47,19 @@ pub(super) fn string_schema(description: &str) -> Value {
         "description": description,
     })
 }
+
+#[cfg(all(test, feature = "embedded"))]
+mod tests {
+    use super::MAX_ID_LIST_ITEMS;
+    use made_app::usecases::CeremonyReportIds;
+    use made_core::value_objects::{InterventionRoleIds, ReconsiderationConditions};
+
+    #[test]
+    fn list_schemas_publish_the_limits_enforced_by_the_shared_values() {
+        // grpc-only has no domain dependency. Pin its schema constant in the
+        // embedded/default build instead of pulling the engine into that binary.
+        assert_eq!(MAX_ID_LIST_ITEMS, CeremonyReportIds::MAX_ITEMS);
+        assert_eq!(MAX_ID_LIST_ITEMS, ReconsiderationConditions::MAX_ITEMS);
+        assert_eq!(MAX_ID_LIST_ITEMS, InterventionRoleIds::MAX_ITEMS);
+    }
+}

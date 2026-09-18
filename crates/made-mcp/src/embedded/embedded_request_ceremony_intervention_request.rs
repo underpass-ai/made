@@ -55,8 +55,8 @@ impl TryFrom<&Value> for EmbeddedRequestCeremonyInterventionRequest {
         let intervention_id = optional_string(object, "intervention_id")?
             .unwrap_or_else(|| Uuid::new_v4().to_string());
         let target = match optional_role_ids(object, "target_role_ids")? {
-            Some(role_ids) => CeremonyInterventionTarget::roles(role_ids),
-            None => Ok(CeremonyInterventionTarget::table()),
+            Some(role_ids) if !role_ids.is_empty() => CeremonyInterventionTarget::roles(role_ids),
+            _ => Ok(CeremonyInterventionTarget::table()),
         }
         .map_err(|error| error.to_string())?;
 

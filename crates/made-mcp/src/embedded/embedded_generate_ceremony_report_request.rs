@@ -1,4 +1,4 @@
-use made_app::usecases::{GenerateCeremonyReportInput, ReportTitle};
+use made_app::usecases::{CeremonyReportIds, GenerateCeremonyReportInput, ReportTitle};
 use made_core::value_objects::CeremonyId;
 use serde_json::Value;
 
@@ -6,18 +6,17 @@ use super::embedded_request_fields::required_strings;
 
 /// Validated request for a deterministic, read-only ceremony report.
 ///
-/// Shape only: what a report *is* — the sessions it reads, the
-/// document it renders, and what it refuses to report on — belongs to
-/// `GenerateCeremonyReportUseCase`, which both editions call.
+/// Mapping builds the shared list and title values before the use case reads
+/// any session; this adapter does not decide their validation rules.
 #[derive(Debug)]
 pub(super) struct EmbeddedGenerateCeremonyReportRequest {
-    ceremony_ids: Vec<CeremonyId>,
+    ceremony_ids: CeremonyReportIds,
     title: Option<ReportTitle>,
 }
 
 impl EmbeddedGenerateCeremonyReportRequest {
     pub(super) fn into_input(self) -> GenerateCeremonyReportInput {
-        GenerateCeremonyReportInput::new(self.ceremony_ids, self.title)
+        GenerateCeremonyReportInput::from_ids(self.ceremony_ids, self.title)
     }
 }
 
@@ -36,6 +35,8 @@ impl TryFrom<&Value> for EmbeddedGenerateCeremonyReportRequest {
                     .map_err(|error| format!("invalid ceremony_ids[{index}]: {error}"))
             })
             .collect::<Result<Vec<_>, String>>()?;
+        let ceremony_ids =
+            CeremonyReportIds::new(ceremony_ids).map_err(|error| error.to_string())?;
         // Built here rather than trimmed here: the trim rule and the
         // blank rule are the value object's, so this arm and the gRPC
         // server apply one rule instead of two.
