@@ -32,5 +32,7 @@ mod agent_registry;
 pub use agent_registry::SqliteAgentRegistry;
 
 mod council_journal;
-mod stored_council_cursor;
 pub use council_journal::SqliteCouncilJournal;
+
+mod council_snapshot;
+pub use council_snapshot::SqliteCouncilSnapshot;

@@ -165,3 +165,6 @@ pub use council_journal_page_limit::CouncilJournalPageLimit;
 
 mod council_journal_lease;
 pub use council_journal_lease::CouncilJournalLease;
+
+mod council_snapshot_source;
+pub use council_snapshot_source::CouncilSnapshotSource;

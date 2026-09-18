@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::entities::{Council, Deliberation, Statistics};
+use crate::entities::{Council, CouncilSnapshotProvenance, Deliberation, Statistics};
 use crate::events::{
     DeliberationCompletedEvent, PhaseChangedEvent, TaskCompletedEvent, TaskDispatchedEvent,
     TaskFailedEvent,
@@ -13,6 +13,7 @@ use crate::value_objects::{AgentId, EventId, OutputContract, OutputContractId, S
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "fact", rename_all = "snake_case")]
 pub enum CouncilJournalEvent {
+    SnapshotImported(CouncilSnapshotProvenance),
     CouncilRegistered(Council),
     CouncilReplaced(Council),
     CouncilDeleted(Specialty),

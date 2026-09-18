@@ -27,3 +27,6 @@ pub use loaded_session::LoadedSession;
 pub use retry_attempts::RetryAttempts;
 pub use session_memory_recorder::SessionMemoryRecorder;
 pub use session_stream::SessionStream;
+
+mod council_journal_service;
+pub use council_journal_service::CouncilJournalService;

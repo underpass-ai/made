@@ -7,8 +7,8 @@ use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
-    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
-    InMemoryMessaging, InMemoryStatistics,
+    InMemoryContractRegistry, InMemoryCouncilJournal, InMemoryCouncilRegistry,
+    InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
@@ -73,6 +73,7 @@ pub struct EmbeddedMadeBuilder {
     scoring: Option<Arc<dyn ScoringPort>>,
     executor: Option<Arc<dyn ExecutorPort>>,
     messaging: Option<Arc<dyn MessagingPort>>,
+    council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     progress_settings: Option<CeremonyProgressSettings>,
 }
 
@@ -334,6 +335,16 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    /// Durable council consumption uses an independent journal and cursor namespace.
+    #[must_use]
+    pub fn with_council_journal(
+        mut self,
+        journal: Arc<dyn made_core::ports::CouncilJournalPort>,
+    ) -> Self {
+        self.council_journal = Some(journal);
+        self
+    }
+
     #[must_use]
     pub fn with_messaging(mut self, adapter: Arc<dyn MessagingPort>) -> Self {
         self.messaging = Some(adapter);
@@ -487,8 +498,20 @@ impl EmbeddedMadeBuilder {
         let contracts = self.contracts.take().unwrap_or_else(|| {
             Arc::new(InMemoryContractRegistry::new()) as Arc<dyn ContractRegistryPort>
         });
+        let journal = self
+            .council_journal
+            .take()
+            .unwrap_or_else(|| Arc::new(InMemoryCouncilJournal::new()));
+        let messaging = self.messaging.take().unwrap_or_else(|| {
+            Arc::new(
+                made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
+                    journal.clone(),
+                ),
+            )
+        });
         Arc::new(EmbeddedCouncilServices::new(
             clock,
+            journal,
             councils,
             agent_registry,
             agent_resolver,
@@ -507,9 +530,7 @@ impl EmbeddedMadeBuilder {
             self.executor
                 .take()
                 .unwrap_or_else(|| Arc::new(UnconfiguredExecutor) as Arc<dyn ExecutorPort>),
-            self.messaging
-                .take()
-                .unwrap_or_else(|| Arc::new(InMemoryMessaging::new()) as Arc<dyn MessagingPort>),
+            messaging,
             statistics,
             metrics,
         ))

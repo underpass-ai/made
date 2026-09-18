@@ -276,3 +276,6 @@ mod accept_child_completion_use_case;
 pub use accept_child_completion_input::AcceptChildCompletionInput;
 pub use accept_child_completion_output::AcceptChildCompletionOutput;
 pub use accept_child_completion_use_case::AcceptChildCompletionUseCase;
+
+mod publish_council_events_use_case;
+pub use publish_council_events_use_case::PublishCouncilEventsUseCase;

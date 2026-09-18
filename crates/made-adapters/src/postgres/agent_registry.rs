@@ -14,6 +14,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use made_core::entities::CouncilJournalEvent;
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentDescriptor, AgentFactoryPort, AgentPort, AgentRegistryPort, AgentResolverPort,
@@ -45,6 +46,7 @@ impl PostgresAgentRegistry {
 
     /// Persist validated provider construction options; credentials remain host-side.
     pub async fn insert_descriptor(&self, descriptor: &AgentDescriptor) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         crate::persisted_agent_descriptor::validate(descriptor)?;
         let attributes: JsonValue = serde_json::to_value(&descriptor.attributes)
             .map_err(|e| serde_to_domain(&e, "insert_descriptor"))?;
@@ -59,13 +61,20 @@ impl PostgresAgentRegistry {
         .bind(descriptor.specialty.as_str())
         .bind(descriptor.kind.as_str())
         .bind(&attributes)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "insert_descriptor"))?;
         if result.rows_affected() == 0 {
             return Err(DomainError::AlreadyExists { what: "agent" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::AgentRegistered(descriptor.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn load_descriptor(&self, id: &AgentId) -> Result<Option<AgentDescriptor>, DomainError> {
@@ -105,15 +114,23 @@ impl AgentRegistryPort for PostgresAgentRegistry {
     }
 
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM agents WHERE agent_id = $1")
             .bind(id.as_str())
-            .execute(self.pool.inner())
+            .execute(&mut *tx)
             .await
             .map_err(|e| sqlx_to_domain(e, "unregister"))?;
         if result.rows_affected() == 0 {
             return Err(DomainError::NotFound { what: "agent" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::AgentUnregistered(id.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 }
 

@@ -32,6 +32,7 @@ use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod council_journal;
 mod councils;
 mod definitions;
 mod execution;
@@ -171,9 +172,7 @@ impl EmbeddedMade {
         let councils = SqliteCouncilStore::over(store);
         let journal = Arc::new(SqliteCouncilJournal::new(councils.clone()));
         Ok(Self::builder()
-            .with_messaging(Arc::new(
-                made_adapters::council_journal_messaging::CouncilJournalMessaging::new(journal),
-            ))
+            .with_council_journal(journal)
             .with_agent_factory(factory.clone())
             .with_agent_registry(Arc::new(SqliteAgentRegistry::new(
                 councils.clone(),

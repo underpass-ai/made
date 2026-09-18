@@ -1,8 +1,8 @@
 use super::ceremony_store::{decode, encode};
 use super::council_store::append;
-use super::stored_council_cursor::StoredCouncilCursor;
 use super::SqliteCouncilStore;
 use crate::engine::{Key, ReadTx, Table};
+use crate::stored_council_cursor::StoredCouncilCursor;
 use async_trait::async_trait;
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;

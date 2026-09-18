@@ -76,3 +76,6 @@ mod council_journal_event;
 mod council_journal_record;
 pub use council_journal_event::CouncilJournalEvent;
 pub use council_journal_record::CouncilJournalRecord;
+
+mod council_snapshot_provenance;
+pub use council_snapshot_provenance::CouncilSnapshotProvenance;

@@ -91,3 +91,8 @@ pub mod agents;
 mod persisted_agent_descriptor;
 
 pub mod council_journal_messaging;
+
+mod stored_council_cursor;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub mod council_data_snapshot;
