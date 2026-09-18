@@ -21,6 +21,13 @@ operator command.
   on direct RPC, MCP over either backend, and the embedded facade. Empty report
   selections and conditions are refused; omitted or empty recipients address
   the whole table. Historical journal payloads remain readable. (#100)
+- Warn during definition analysis when global completion guards wait for
+  downstream work that they prevent from starting; preserve global guard
+  execution semantics and allow valid cyclic/revisit definitions. (#143)
+
+- Give MADE its own `made` marketplace identity so its catalogue can
+  coexist with KMP's `underpass`; document migration and expose the official
+  website on the plugin card. (#39)
 
 ## [0.5.0] - 2026-09-18
 

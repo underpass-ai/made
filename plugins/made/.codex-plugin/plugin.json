@@ -6,6 +6,7 @@
     "name": "Underpass AI"
   },
   "repository": "https://github.com/underpass-ai/made",
+  "homepage": "https://underpassai.com/",
   "license": "Apache-2.0",
   "keywords": [
     "ceremonies",
@@ -19,6 +20,7 @@
     "shortDescription": "Discover, run and report on local ceremonies",
     "longDescription": "Discover the installed MADE surface, get user or agent guidance, and design, validate, publish, run, inspect and report on ceremonies through a local MCP stdio process without requiring a deployed service.",
     "developerName": "Underpass AI",
+    "websiteURL": "https://underpassai.com/",
     "category": "Developer Tools",
     "capabilities": [
       "Interactive"

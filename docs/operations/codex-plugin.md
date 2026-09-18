@@ -77,11 +77,11 @@ an evidence-bearing completion.
 ## Installation boundary
 
 The repo-local bundle is installed only after levels 1–5 pass. The public path
-uses the co-located `underpass` marketplace:
+uses the co-located `made` marketplace:
 
 ```text
 codex plugin marketplace add underpass-ai/made --ref marketplace
-codex plugin add made@underpass
+codex plugin add made@made
 ```
 
 Run `made-setup` next. It selects the supported target, downloads the
@@ -91,3 +91,49 @@ rejects a digest mismatch, and installs atomically into that plugin's ignored
 clean plugin tree with Cargo absent from `PATH`, then initializes the MCP
 server through the normal launcher. Codex loads new plugin skills and MCP tools
 at the start of a new thread, so the final functional check happens there.
+
+### Coexistence and migration from `underpass`
+
+MADE owns `made`; KMP retains `underpass`. Marketplace identity is
+the catalogue's top-level `name`, not the Git repository name. Codex refuses
+to register a different source under an existing name. The former MADE and
+KMP catalogues both declared `underpass`, so registering either first blocked
+the other. Changing registration order did not combine their plugin lists.
+
+The rename ships after 0.5.0. The immutable 0.5.0 tag and its marketplace
+snapshot still use the old name until a later release advances `marketplace`.
+To test a checkout containing this repair before that release, register its
+absolute root with `codex plugin marketplace add /absolute/path/to/made`
+and use `made@made`.
+
+For an existing installation, inspect the source before changing anything:
+
+```text
+codex plugin marketplace list --json
+codex plugin list --marketplace underpass --available --json
+```
+
+- If `underpass` points to KMP, retain it and add MADE's distinct catalogue.
+- If it points to MADE, register the repaired catalogue first. If the old
+  `made@underpass` plugin is installed, remove that plugin before installing
+  `made@made` to avoid two MADE MCP registrations. Then remove the
+  old `underpass` marketplace registration only after checking it still
+  points to MADE. KMP can subsequently register `underpass`.
+- A manually registered MADE MCP server is separate from a plugin install.
+  Choose one active registration when switching; catalogue discovery itself
+  does not require installing another server.
+
+Plugin cache removal does not migrate ceremony data. Preserve the configured
+`MADE_MCP_STORE_PATH` and the existing SQLite store. Run `made-setup` for the
+new plugin cache, then start a new task. Check `tools/list` and
+`made_discover_capabilities`: the installed manifest version and the running
+binary version are separate facts.
+
+Refresh the new catalogue with `codex plugin marketplace upgrade made`.
+In the app's plugin directory, select the repository marketplace and look
+for MADE, its MCP server and skills, and `https://underpassai.com/`.
+Underpass maintains these repository catalogues and advances the stable
+branch only after release assets exist. Registering a repository does not
+submit it to OpenAI's public curated directory; that is a separate publisher
+submission and review process. See the
+[official marketplace documentation](https://developers.openai.com/plugins/build/plugins).
