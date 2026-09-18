@@ -11,6 +11,9 @@
 //! raw `[0.0, 1.0]` value. Conversion from the domain's millisecond
 //! durations happens here so the port stays domain-typed.
 
+use super::metric_registration::{
+    metrics_error, register_counter, register_gauge, register_histogram,
+};
 use made_core::entities::MetricsSnapshot;
 use made_core::error::DomainError;
 use made_core::ports::{MetricsRecorderPort, MetricsSnapshotPort};
@@ -18,9 +21,7 @@ use made_core::value_objects::{
     CeremonyOutcome, DeliberationOutcome, Discrimination, DurationMs, LlmErrorKind, Score,
     ScoringMode, Specialty, StepStatus, TokenUsage,
 };
-use prometheus::{
-    HistogramOpts, HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Opts, Registry,
-};
+use prometheus::{HistogramVec, IntCounterVec, IntGauge, IntGaugeVec, Registry};
 
 /// Latency buckets (seconds) sized for serialized vLLM deliberations,
 /// which run from a second or two up into minutes.
@@ -553,66 +554,6 @@ impl MetricsRecorderPort for PrometheusMetricsRecorder {
         self.judge_scoring_mode_total
             .with_label_values(&[mode.as_label()])
             .inc();
-    }
-}
-
-/// Define a labelled histogram, register it on `registry`, and return
-/// the handle. Definition and registration are paired so a metric can
-/// never be defined but left unregistered (it would then be invisible at
-/// `/metrics`).
-fn register_histogram(
-    registry: &Registry,
-    name: &str,
-    help: &str,
-    buckets: &[f64],
-    labels: &[&str],
-) -> Result<HistogramVec, DomainError> {
-    let metric = HistogramVec::new(
-        HistogramOpts::new(name, help).buckets(buckets.to_vec()),
-        labels,
-    )
-    .map_err(|err| metrics_error(&err))?;
-    registry
-        .register(Box::new(metric.clone()))
-        .map_err(|err| metrics_error(&err))?;
-    Ok(metric)
-}
-
-/// Define and register a labelled counter; see [`register_histogram`].
-fn register_counter(
-    registry: &Registry,
-    name: &str,
-    help: &str,
-    labels: &[&str],
-) -> Result<IntCounterVec, DomainError> {
-    let metric =
-        IntCounterVec::new(Opts::new(name, help), labels).map_err(|err| metrics_error(&err))?;
-    registry
-        .register(Box::new(metric.clone()))
-        .map_err(|err| metrics_error(&err))?;
-    Ok(metric)
-}
-
-/// Define and register a labelled gauge; see [`register_histogram`].
-fn register_gauge(
-    registry: &Registry,
-    name: &str,
-    help: &str,
-    labels: &[&str],
-) -> Result<IntGaugeVec, DomainError> {
-    let metric =
-        IntGaugeVec::new(Opts::new(name, help), labels).map_err(|err| metrics_error(&err))?;
-    registry
-        .register(Box::new(metric.clone()))
-        .map_err(|err| metrics_error(&err))?;
-    Ok(metric)
-}
-
-/// Map a Prometheus setup failure to a fail-fast wiring error.
-fn metrics_error(err: &prometheus::Error) -> DomainError {
-    tracing::error!(error = %err, "prometheus metrics setup failed");
-    DomainError::InvariantViolated {
-        reason: "prometheus metrics setup failed",
     }
 }
 
