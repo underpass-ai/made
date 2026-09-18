@@ -15,7 +15,7 @@ use crate::value_objects::{
     CeremonyDescription, CeremonyGuard, CeremonyInputDefinition, CeremonyName,
     CeremonyOutputDefinition, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
     CeremonyValidationFinding, CeremonyValidationLocus, CeremonyValidationReport, CeremonyVersion,
-    MaxParallel,
+    MaxBounces, MaxParallel, MaxTransitions,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -34,6 +34,8 @@ pub struct CeremonyDefinitionDraft {
     guards: Vec<CeremonyGuard>,
     roles: Vec<CeremonyRole>,
     max_parallel: MaxParallel,
+    max_transitions: Option<MaxTransitions>,
+    max_bounces: Option<MaxBounces>,
 }
 
 impl CeremonyDefinitionDraft {
@@ -67,6 +69,8 @@ impl CeremonyDefinitionDraft {
             guards: guards.into_iter().collect(),
             roles: roles.into_iter().collect(),
             max_parallel: MaxParallel::default(),
+            max_transitions: None,
+            max_bounces: None,
         }
     }
 
@@ -79,6 +83,28 @@ impl CeremonyDefinitionDraft {
     #[must_use]
     pub fn max_parallel(&self) -> MaxParallel {
         self.max_parallel
+    }
+
+    #[must_use]
+    pub const fn with_max_transitions(mut self, max_transitions: MaxTransitions) -> Self {
+        self.max_transitions = Some(max_transitions);
+        self
+    }
+
+    #[must_use]
+    pub const fn with_max_bounces(mut self, max_bounces: MaxBounces) -> Self {
+        self.max_bounces = Some(max_bounces);
+        self
+    }
+
+    #[must_use]
+    pub const fn max_transitions(&self) -> Option<MaxTransitions> {
+        self.max_transitions
+    }
+
+    #[must_use]
+    pub const fn max_bounces(&self) -> Option<MaxBounces> {
+        self.max_bounces
     }
 
     #[must_use]
@@ -196,6 +222,8 @@ impl CeremonyDefinitionDraft {
             steps: &steps,
             guards: &guards,
             roles: &roles,
+            max_transitions: self.max_transitions,
+            max_bounces: self.max_bounces,
         }
         .collect_findings(&mut findings);
 
@@ -207,7 +235,7 @@ impl CeremonyDefinitionDraft {
     /// Publication goes through [`CeremonyDefinition::new`] so there is
     /// exactly one place where the invariants are enforced.
     pub fn publish(self) -> Result<CeremonyDefinition, DomainError> {
-        CeremonyDefinition::new(
+        CeremonyDefinition::new_with_transition_budgets(
             self.name,
             self.version,
             self.description,
@@ -218,6 +246,8 @@ impl CeremonyDefinitionDraft {
             self.steps,
             self.guards,
             self.roles,
+            self.max_transitions,
+            self.max_bounces,
         )
         .map(|definition| definition.with_max_parallel(self.max_parallel))
     }

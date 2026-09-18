@@ -109,7 +109,7 @@ impl RunCeremonyUseCase {
             Err(error) => return Err(error),
         };
 
-        let max_iterations = definition
+        let max_state_iterations = definition
             .states()
             .values()
             .map(|state| {
@@ -117,8 +117,33 @@ impl RunCeremonyUseCase {
                     .repeat_policy()
                     .map_or(1, |repeat| repeat.max_iterations().get() as usize)
             })
-            .sum::<usize>()
-            .saturating_add(definition.transitions().len())
+            .max()
+            .unwrap_or(1);
+        let total_transition_allowance = definition
+            .max_transitions()
+            .map_or(usize::MAX, |limit| limit.get() as usize);
+        let bounce_transition_allowance = definition.max_bounces().map_or(usize::MAX, |limit| {
+            (limit.get() as usize).saturating_mul(definition.transitions().len())
+        });
+        let bounded_transition_allowance = total_transition_allowance
+            .min(bounce_transition_allowance)
+            .min(
+                if total_transition_allowance == usize::MAX
+                    && bounce_transition_allowance == usize::MAX
+                {
+                    definition.transitions().len()
+                } else {
+                    usize::MAX
+                },
+            );
+        // One pass can either start the next state iteration or apply
+        // one transition. Capped cycles may visit a state repeatedly,
+        // so a graph-size-only ceiling would stop before the declared
+        // budget did. Saturation keeps hostile but valid authoring
+        // values finite on this platform.
+        let max_iterations = bounded_transition_allowance
+            .saturating_add(1)
+            .saturating_mul(max_state_iterations)
             .saturating_add(1);
         let mut step_traces = Vec::new();
         'driver: for _ in 0..max_iterations {

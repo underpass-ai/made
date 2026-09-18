@@ -129,6 +129,23 @@ retry_policies:
     }
 
     #[test]
+    fn parses_optional_transition_budgets_and_rejects_zero() {
+        let yaml = MULTI_STEP.replace(
+            "name: \"e2e_multi_step\"",
+            "name: \"e2e_multi_step\"\nmax_transitions: 12\nmax_bounces: 3",
+        );
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        assert_eq!(definition.max_transitions().unwrap().get(), 12);
+        assert_eq!(definition.max_bounces().unwrap().get(), 3);
+
+        let zero = MULTI_STEP.replace(
+            "name: \"e2e_multi_step\"",
+            "name: \"e2e_multi_step\"\nmax_transitions: 0",
+        );
+        assert!(CeremonyDefinitionYaml::parse_str(&zero).is_err());
+    }
+
+    #[test]
     fn automated_step_status_guard_is_typed() {
         let definition = CeremonyDefinitionYaml::parse_str(MULTI_STEP).unwrap();
         let guard = definition

@@ -35,6 +35,7 @@ impl CeremonyInstance {
                 from: "ceremony_instance.current_state",
                 to: "transition_trigger",
             })?;
+        self.require_transition_budget(definition, transition)?;
         if self.has_live_step_leases_at(definition, command.now) {
             return Err(DomainError::InvariantViolated {
                 reason: "ceremony cannot transition while a step lease is active",

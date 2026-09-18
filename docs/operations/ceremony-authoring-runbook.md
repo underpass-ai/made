@@ -51,6 +51,25 @@ rewriting the stored definition. Live clients should fan out over every id in
 lease always blocks the transition, including an early `any_step_completed`
 join; an expired lease does not.
 
+Definitions with a cycle must declare at least one positive transition budget:
+
+```yaml
+max_transitions: 20  # total applied transitions in one instance
+max_bounces: 3       # applications of each exact from/trigger/to edge
+```
+
+Either field is enough to make the graph bounded; when both are present, both
+limits apply. Counts come from sealed `TransitionApplied` history, so replay,
+snapshots and SQLite reopen keep the same remaining budget. Starting another
+state iteration through `repeat` consumes no transition. A component avoids the
+no-human-control warning when an outgoing transition from any member state,
+including an exit edge, requires a human approval guard.
+
+A transition back to an earlier state currently sees that state's existing
+step records. Completed work is not reset or rerun on the visit; definitions
+that need fresh work per visit should wait for the durable visit contract in
+[#129](https://github.com/underpass-ai/made/issues/129).
+
 What it will not do is the rest of the part this runbook is about. Its outer
 topology remains ordered, so branching, alternative terminal
 outcomes and anything a stage needs that the intent contract cannot say are

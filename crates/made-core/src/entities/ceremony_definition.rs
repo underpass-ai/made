@@ -13,8 +13,8 @@ use crate::value_objects::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyDescription, CeremonyGuard,
     CeremonyInputDefinition, CeremonyName, CeremonyOutputDefinition, CeremonyRole, CeremonyState,
     CeremonyStep, CeremonyTransition, CeremonyValidationReport, CeremonyVersion, GuardName,
-    InputName, MaxParallel, OutputName, RoleAction, RoleId, StateId, StepExecutionRecord, StepId,
-    TransitionTrigger,
+    InputName, MaxBounces, MaxParallel, MaxTransitions, OutputName, RoleAction, RoleId, StateId,
+    StepExecutionRecord, StepId, TransitionTrigger,
 };
 
 use super::ceremony_definition_analysis::CeremonyDefinitionParts;
@@ -41,6 +41,10 @@ pub struct CeremonyDefinition {
     roles: BTreeMap<RoleId, CeremonyRole>,
     #[serde(default, skip_serializing_if = "MaxParallel::is_default")]
     max_parallel: MaxParallel,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_transitions: Option<MaxTransitions>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    max_bounces: Option<MaxBounces>,
 }
 
 impl CeremonyDefinition {
@@ -55,6 +59,41 @@ impl CeremonyDefinition {
         steps: impl IntoIterator<Item = CeremonyStep>,
         guards: impl IntoIterator<Item = CeremonyGuard>,
         roles: impl IntoIterator<Item = CeremonyRole>,
+    ) -> Result<Self, DomainError> {
+        Self::new_with_transition_budgets(
+            name,
+            version,
+            description,
+            inputs,
+            outputs,
+            states,
+            transitions,
+            steps,
+            guards,
+            roles,
+            None,
+            None,
+        )
+    }
+
+    /// Construct with transition budgets installed before structural validation.
+    ///
+    /// A cyclic graph cannot be constructed uncapped and repaired afterward:
+    /// the missing bound is itself a blocking definition defect.
+    #[allow(clippy::too_many_arguments)]
+    pub fn new_with_transition_budgets(
+        name: CeremonyName,
+        version: CeremonyVersion,
+        description: Option<CeremonyDescription>,
+        inputs: impl IntoIterator<Item = CeremonyInputDefinition>,
+        outputs: impl IntoIterator<Item = CeremonyOutputDefinition>,
+        states: impl IntoIterator<Item = CeremonyState>,
+        transitions: impl IntoIterator<Item = CeremonyTransition>,
+        steps: impl IntoIterator<Item = CeremonyStep>,
+        guards: impl IntoIterator<Item = CeremonyGuard>,
+        roles: impl IntoIterator<Item = CeremonyRole>,
+        max_transitions: Option<MaxTransitions>,
+        max_bounces: Option<MaxBounces>,
     ) -> Result<Self, DomainError> {
         let inputs = collect_inputs(inputs)?;
         let outputs = collect_outputs(outputs)?;
@@ -77,6 +116,8 @@ impl CeremonyDefinition {
             guards,
             roles,
             max_parallel: MaxParallel::default(),
+            max_transitions,
+            max_bounces,
         };
         definition.validate()?;
         Ok(definition)
@@ -153,6 +194,16 @@ impl CeremonyDefinition {
     #[must_use]
     pub fn max_parallel(&self) -> MaxParallel {
         self.max_parallel
+    }
+
+    #[must_use]
+    pub const fn max_transitions(&self) -> Option<MaxTransitions> {
+        self.max_transitions
+    }
+
+    #[must_use]
+    pub const fn max_bounces(&self) -> Option<MaxBounces> {
+        self.max_bounces
     }
 
     #[must_use]
@@ -330,6 +381,8 @@ impl CeremonyDefinition {
             steps: &self.steps,
             guards: &self.guards,
             roles: &self.roles,
+            max_transitions: self.max_transitions,
+            max_bounces: self.max_bounces,
         }
     }
 
@@ -395,7 +448,19 @@ mod tests {
         guards: Vec<CeremonyGuard>,
         roles: Vec<CeremonyRole>,
     ) -> Result<CeremonyDefinition, DomainError> {
-        CeremonyDefinition::new(
+        definition_with_budgets(states, transitions, steps, guards, roles, None, None)
+    }
+
+    fn definition_with_budgets(
+        states: Vec<CeremonyState>,
+        transitions: Vec<CeremonyTransition>,
+        steps: Vec<CeremonyStep>,
+        guards: Vec<CeremonyGuard>,
+        roles: Vec<CeremonyRole>,
+        max_transitions: Option<MaxTransitions>,
+        max_bounces: Option<MaxBounces>,
+    ) -> Result<CeremonyDefinition, DomainError> {
+        CeremonyDefinition::new_with_transition_budgets(
             name(),
             CeremonyVersion::v1(),
             None,
@@ -406,6 +471,8 @@ mod tests {
             steps,
             guards,
             roles,
+            max_transitions,
+            max_bounces,
         )
     }
 
@@ -805,7 +872,7 @@ mod tests {
             Vec::new(),
         )
         .unwrap();
-        let definition = definition(
+        let definition = definition_with_budgets(
             vec![
                 CeremonyState::initial(state_id("open")),
                 CeremonyState::terminal(state_id("closed")),
@@ -814,6 +881,8 @@ mod tests {
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            None,
+            Some(MaxBounces::new(1).unwrap()),
         )
         .unwrap();
 
@@ -1038,7 +1107,7 @@ mod tests {
 
     #[test]
     fn a_state_that_cannot_reach_a_terminal_is_warned_about() {
-        let definition = definition(
+        let definition = definition_with_budgets(
             vec![
                 CeremonyState::initial(state_id("drafting")),
                 CeremonyState::intermediate(state_id("stuck")),
@@ -1070,17 +1139,23 @@ mod tests {
             Vec::new(),
             Vec::new(),
             Vec::new(),
+            None,
+            Some(MaxBounces::new(1).unwrap()),
         )
         .unwrap();
 
         let report = definition.analyze();
         let warnings = report.warnings().collect::<Vec<_>>();
 
-        assert_eq!(warnings.len(), 1);
-        assert_eq!(
-            warnings[0].locus(),
-            &CeremonyValidationLocus::state(state_id("stuck"))
-        );
+        assert!(warnings.iter().any(|warning| {
+            warning.locus() == &CeremonyValidationLocus::state(state_id("stuck"))
+                && matches!(
+                    warning.defect(),
+                    DomainError::InvariantViolated {
+                        reason: "no terminal state is reachable from this ceremony state"
+                    }
+                )
+        }));
     }
 
     #[test]
