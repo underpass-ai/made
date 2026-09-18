@@ -14,6 +14,7 @@ mod contract_registry;
 mod council_registry;
 mod deliberation_repository;
 mod forgetful_memory;
+mod messaging;
 mod session_memory;
 mod statistics;
 
@@ -26,5 +27,6 @@ pub use contract_registry::InMemoryContractRegistry;
 pub use council_registry::InMemoryCouncilRegistry;
 pub use deliberation_repository::InMemoryDeliberationRepository;
 pub use forgetful_memory::ForgetfulMemory;
+pub use messaging::InMemoryMessaging;
 pub use session_memory::InProcessSessionMemory;
 pub use statistics::InMemoryStatistics;

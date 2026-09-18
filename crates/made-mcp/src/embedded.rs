@@ -14,7 +14,12 @@ mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
 mod embedded_collect_ceremony_evidence_request;
 mod embedded_complete_ceremony_step_request;
+mod embedded_council_context;
+mod embedded_council_dispatch;
+mod embedded_council_presenter;
+mod embedded_council_requests;
 mod embedded_defer_ceremony_guard_request;
+mod embedded_deliberation_observer;
 mod embedded_design_ceremony_request;
 mod embedded_diff_ceremony_definitions_request;
 mod embedded_generate_ceremony_report_request;
@@ -159,6 +164,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
+        if embedded_council_dispatch::handles(name) {
+            return true;
+        }
         matches!(
             name,
             RUN_CEREMONY_TOOL
@@ -198,6 +206,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     #[allow(clippy::too_many_lines)]
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
+            if embedded_council_dispatch::handles(name) {
+                return embedded_council_dispatch::dispatch(&self.made, name, arguments).await;
+            }
             match name {
                 DESIGN_CEREMONY_TOOL => {
                     let designed = EmbeddedDesignCeremonyRequest::try_from(arguments)
