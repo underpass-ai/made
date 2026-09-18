@@ -6,3 +6,9 @@ pub enum BudgetMeasurement<T> {
     Estimated(T),
     Unknown,
 }
+
+impl<T> Default for BudgetMeasurement<T> {
+    fn default() -> Self {
+        Self::Unknown
+    }
+}

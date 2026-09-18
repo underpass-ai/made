@@ -1,6 +1,6 @@
 use super::{
-    BudgetOperationId, BudgetQuantities, BudgetReconciliationId, BudgetReservationId,
-    MeasuredBudgetQuantities,
+    BudgetOperationId, BudgetQuantities, BudgetReconciliationId, BudgetReservationEstimate,
+    BudgetReservationId, MeasuredBudgetQuantities,
 };
 use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
@@ -10,6 +10,7 @@ pub struct BudgetReservation {
     id: BudgetReservationId,
     operation_id: BudgetOperationId,
     quantities: BudgetQuantities,
+    estimate: BudgetReservationEstimate,
     #[serde(with = "time::serde::rfc3339")]
     reserved_at: OffsetDateTime,
     reconciliation: Option<(BudgetReconciliationId, MeasuredBudgetQuantities)>,
@@ -20,12 +21,14 @@ impl BudgetReservation {
         id: BudgetReservationId,
         operation_id: BudgetOperationId,
         quantities: BudgetQuantities,
+        estimate: BudgetReservationEstimate,
         reserved_at: OffsetDateTime,
     ) -> Self {
         Self {
             id,
             operation_id,
             quantities,
+            estimate,
             reserved_at,
             reconciliation: None,
         }
@@ -41,6 +44,10 @@ impl BudgetReservation {
     #[must_use]
     pub const fn quantities(&self) -> BudgetQuantities {
         self.quantities
+    }
+    #[must_use]
+    pub const fn estimate(&self) -> BudgetReservationEstimate {
+        self.estimate
     }
     #[must_use]
     pub const fn reserved_at(&self) -> OffsetDateTime {

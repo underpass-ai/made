@@ -1,6 +1,8 @@
 use time::OffsetDateTime;
 
-use crate::value_objects::{ArtifactRef, ExternalOperationId, StepClaimFence, StepResult};
+use crate::value_objects::{
+    ArtifactRef, ExternalOperationId, MeasuredBudgetQuantities, StepClaimFence, StepResult,
+};
 
 /// Terminal observation returned by an execution connector.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -9,12 +11,13 @@ pub struct CeremonyExecutionObservation {
     external_operation_id: Option<ExternalOperationId>,
     result: StepResult,
     artifacts: Vec<ArtifactRef>,
+    budget_measurement: MeasuredBudgetQuantities,
     observed_at: OffsetDateTime,
 }
 
 impl CeremonyExecutionObservation {
     #[must_use]
-    pub const fn new(
+    pub fn new(
         producer_claim_fence: StepClaimFence,
         external_operation_id: Option<ExternalOperationId>,
         result: StepResult,
@@ -26,8 +29,15 @@ impl CeremonyExecutionObservation {
             external_operation_id,
             result,
             artifacts,
+            budget_measurement: MeasuredBudgetQuantities::default(),
             observed_at,
         }
+    }
+
+    #[must_use]
+    pub fn with_budget_measurement(mut self, measured: MeasuredBudgetQuantities) -> Self {
+        self.budget_measurement = measured;
+        self
     }
 
     #[must_use]
@@ -56,6 +66,11 @@ impl CeremonyExecutionObservation {
     }
 
     #[must_use]
+    pub const fn budget_measurement(&self) -> MeasuredBudgetQuantities {
+        self.budget_measurement
+    }
+
+    #[must_use]
     pub fn into_parts(
         self,
     ) -> (
@@ -63,6 +78,7 @@ impl CeremonyExecutionObservation {
         Option<ExternalOperationId>,
         StepResult,
         Vec<ArtifactRef>,
+        MeasuredBudgetQuantities,
         OffsetDateTime,
     ) {
         (
@@ -70,6 +86,7 @@ impl CeremonyExecutionObservation {
             self.external_operation_id,
             self.result,
             self.artifacts,
+            self.budget_measurement,
             self.observed_at,
         )
     }

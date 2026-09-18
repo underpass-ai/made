@@ -16,6 +16,7 @@ pub struct CompleteExecutionReceiptUseCase {
     stream: Arc<SessionStream>,
     receipts: Arc<dyn ExecutionReceiptStorePort>,
     clock: Arc<dyn ClockPort>,
+    budgets: Option<crate::budgets::BudgetLedgerService>,
 }
 
 impl std::fmt::Debug for CompleteExecutionReceiptUseCase {
@@ -39,7 +40,14 @@ impl CompleteExecutionReceiptUseCase {
             stream,
             receipts,
             clock,
+            budgets: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_budget_ledger(mut self, budgets: crate::budgets::BudgetLedgerService) -> Self {
+        self.budgets = Some(budgets);
+        self
     }
 
     pub async fn execute(
@@ -88,6 +96,29 @@ impl CompleteExecutionReceiptUseCase {
             link_kind,
         )?;
         let session = self.stream.load(&input.ceremony_id).await?;
+        if let Some(account_id) = session.instance.budget_account_id() {
+            let expected = made_core::value_objects::BudgetReservationId::for_operation(
+                account_id,
+                &made_core::value_objects::BudgetOperationId::for_execution(receipt.operation_id()),
+            );
+            let stored = session
+                .instance
+                .step_record(&input.step_id)
+                .and_then(made_core::value_objects::StepExecutionRecord::budget_reservation_id);
+            if stored != Some(&expected) {
+                return Err(DomainError::InvariantViolated {
+                    reason: "execution receipt does not match the step claim budget reservation",
+                });
+            }
+            self.budgets
+                .as_ref()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "budgeted receipt completion requires a budget ledger",
+                })?
+                .reconcile_receipt(account_id, &receipt)
+                .await
+                .map_err(budget_error)?;
+        }
         let definition = self.definitions.execute(&session.instance).await?;
         let now = self.clock.now();
         let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
@@ -108,5 +139,29 @@ impl CompleteExecutionReceiptUseCase {
             })
             .await
             .map(|session| session.instance)
+    }
+}
+
+fn budget_error(error: made_core::BudgetError) -> DomainError {
+    match error {
+        made_core::BudgetError::Persistence(error) => error,
+        made_core::BudgetError::LedgerNotOpen => DomainError::NotFound {
+            what: "budget_ledger",
+        },
+        made_core::BudgetError::ReservationNotFound(_) => DomainError::NotFound {
+            what: "budget_reservation",
+        },
+        made_core::BudgetError::ReservationConflict(_) => DomainError::Conflict {
+            what: "budget_reservation",
+        },
+        made_core::BudgetError::ReconciliationConflict(_) => DomainError::Conflict {
+            what: "budget_reconciliation",
+        },
+        made_core::BudgetError::Exhausted { .. } => DomainError::InvariantViolated {
+            reason: "budget reconciliation cannot reject already observed execution",
+        },
+        made_core::BudgetError::MissingReservationEstimate(_) => DomainError::InvariantViolated {
+            reason: "receipt reconciliation does not prepare a budget reservation",
+        },
     }
 }

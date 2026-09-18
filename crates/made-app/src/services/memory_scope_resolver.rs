@@ -128,6 +128,7 @@ mod tests {
             context: context(json!("team:alpha")),
             bound_definition: None,
             lineage: None,
+            budget_account_id: None,
             ceremony_deadline: None,
             state_deadline: None,
             created_at: OffsetDateTime::UNIX_EPOCH,

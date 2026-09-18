@@ -79,6 +79,7 @@ impl RunCeremonyUseCase {
             lease,
             now,
             max_parallel_ceiling: self.max_parallel_ceiling,
+            budget_reservation_id: None,
         });
         // Appended before the handler runs, for the reason the step
         // use case appends twice: a crash while it runs must leave a

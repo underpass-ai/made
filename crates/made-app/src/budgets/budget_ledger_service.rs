@@ -7,8 +7,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     BudgetAccountId, BudgetBalance, BudgetLedgerVersion, BudgetLimits, BudgetOperationId,
-    BudgetPageLimit, BudgetQuantities, BudgetReconciliationId, BudgetReservationId,
-    MeasuredBudgetQuantities,
+    BudgetPageLimit, BudgetReconciliationId, BudgetReservationEstimate, BudgetReservationId,
+    ExecutionReceipt, MeasuredBudgetQuantities,
 };
 use made_core::BudgetError;
 
@@ -68,7 +68,7 @@ impl BudgetLedgerService {
         &self,
         account: &BudgetAccountId,
         operation: BudgetOperationId,
-        quantities: BudgetQuantities,
+        estimate: BudgetReservationEstimate,
     ) -> Result<BudgetMutationOutcome, BudgetError> {
         for _ in 0..MAX_CONFLICT_RETRIES {
             let snapshot = self
@@ -79,7 +79,7 @@ impl BudgetLedgerService {
             let Some(event) =
                 snapshot
                     .ledger
-                    .decide_reserve(operation.clone(), quantities, self.clock.now())?
+                    .decide_reserve(operation.clone(), estimate, self.clock.now())?
             else {
                 return Ok(BudgetMutationOutcome::Existing {
                     version: snapshot.version,
@@ -142,6 +142,21 @@ impl BudgetLedgerService {
             .ok_or(BudgetError::LedgerNotOpen)?
             .ledger
             .balance()
+    }
+
+    pub async fn reconcile_receipt(
+        &self,
+        account: &BudgetAccountId,
+        receipt: &ExecutionReceipt,
+    ) -> Result<BudgetMutationOutcome, BudgetError> {
+        let operation = BudgetOperationId::for_execution(receipt.operation_id());
+        self.reconcile(
+            account,
+            BudgetReservationId::for_operation(account, &operation),
+            BudgetReconciliationId::for_receipt(receipt.receipt_id()),
+            receipt.budget_measurement(),
+        )
+        .await
     }
 
     pub async fn pending(

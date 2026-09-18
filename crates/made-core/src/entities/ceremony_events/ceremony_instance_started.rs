@@ -4,8 +4,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::value_objects::{
-    CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage,
-    CeremonyName, CeremonyVersion, StateDeadline, StateId, StepId,
+    BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId,
+    CeremonyLineage, CeremonyName, CeremonyVersion, StateDeadline, StateId, StepId,
 };
 
 /// A ceremony was opened.
@@ -30,6 +30,9 @@ pub struct CeremonyInstanceStarted {
     /// Durable parent identity for a spawned ceremony. Never sourced from context.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lineage: Option<CeremonyLineage>,
+    /// Shared root ledger for this ceremony tree. Children inherit this exact account.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub budget_account_id: Option<BudgetAccountId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ceremony_deadline: Option<CeremonyDeadline>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

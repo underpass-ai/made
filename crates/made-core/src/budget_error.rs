@@ -20,6 +20,8 @@ pub enum BudgetError {
     ReservationConflict(BudgetReservationId),
     #[error("budget reconciliation conflicts with stored observation: {0:?}")]
     ReconciliationConflict(BudgetReconciliationId),
+    #[error("budget reservation needs an estimate for limited dimension {0:?}")]
+    MissingReservationEstimate(BudgetDimension),
     #[error("budget persistence failed: {0}")]
     Persistence(DomainError),
 }

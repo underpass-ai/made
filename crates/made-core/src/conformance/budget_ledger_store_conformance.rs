@@ -1,12 +1,13 @@
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use crate::entities::{BudgetLedger, BudgetLedgerEvent};
 use crate::ports::{BudgetAppendOutcome, BudgetLedgerStorePort};
 use crate::value_objects::{
     BudgetAccountId, BudgetLedgerVersion, BudgetLimits, BudgetMeasurement, BudgetOperationId,
-    BudgetPageLimit, BudgetQuantities, BudgetReconciliationId, BudgetReservationId,
-    BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
-    ToolCallCount,
+    BudgetPageLimit, BudgetQuantities, BudgetReconciliationId, BudgetReservationEstimate,
+    BudgetReservationId, BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration,
+    ExecutionOperationId, MeasuredBudgetQuantities, ToolCallCount,
 };
 
 use super::ConformanceFailure;
@@ -69,17 +70,13 @@ impl BudgetLedgerStoreConformance {
         .await?;
         let ledger = call(PROPERTY, store.load(&account).await)?.unwrap().ledger;
         let left = ledger
-            .decide_reserve(
-                operation("left")?,
-                quantities(60),
-                OffsetDateTime::UNIX_EPOCH,
-            )
+            .decide_reserve(operation("left")?, estimate(60), OffsetDateTime::UNIX_EPOCH)
             .map_err(|error| failure(PROPERTY, error.to_string()))?
             .unwrap();
         let right = ledger
             .decide_reserve(
                 operation("right")?,
-                quantities(60),
+                estimate(60),
                 OffsetDateTime::UNIX_EPOCH,
             )
             .map_err(|error| failure(PROPERTY, error.to_string()))?
@@ -125,7 +122,7 @@ impl BudgetLedgerStoreConformance {
         let reservation_id = BudgetReservationId::for_operation(&account, &operation);
         let reserve = BudgetLedger::rehydrate(&[open_event(account.clone())])
             .map_err(|error| failure(PROPERTY, error.to_string()))?
-            .decide_reserve(operation, quantities(20), OffsetDateTime::UNIX_EPOCH)
+            .decide_reserve(operation, estimate(20), OffsetDateTime::UNIX_EPOCH)
             .map_err(|error| failure(PROPERTY, error.to_string()))?
             .unwrap();
         append(
@@ -219,12 +216,22 @@ fn quantities(tokens: u64) -> BudgetQuantities {
         ToolCallCount::new(10),
     )
 }
+fn estimate(tokens: u64) -> BudgetReservationEstimate {
+    BudgetReservationEstimate::new(
+        BudgetMeasurement::Estimated(ExecutionDuration::from_micros(1_000)),
+        BudgetMeasurement::Estimated(BudgetTokenCount::new(tokens)),
+        BudgetMeasurement::Estimated(CostMicros::new(100)),
+        BudgetMeasurement::Estimated(ToolCallCount::new(10)),
+    )
+}
 fn account(property: &'static str) -> Result<BudgetAccountId, ConformanceFailure> {
     BudgetAccountId::new(format!("budget-conformance-{property}"))
         .map_err(|error| failure(property, error.to_string()))
 }
 fn operation(suffix: &str) -> Result<BudgetOperationId, ConformanceFailure> {
-    BudgetOperationId::new(format!("budget-conformance-{suffix}"))
+    let encoded = format!("{:x}", Sha256::digest(suffix.as_bytes()));
+    ExecutionOperationId::new(encoded)
+        .map(|operation| BudgetOperationId::for_execution(&operation))
         .map_err(|error| failure("fixture", error.to_string()))
 }
 fn call<T>(

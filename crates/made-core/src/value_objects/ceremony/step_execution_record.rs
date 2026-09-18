@@ -6,6 +6,7 @@ use super::{
     RoleId, StateIteration, StateVisit, StepAttempt, StepErrorMessage, StepIteration, StepLease,
     StepOutput, StepResult, StepStatus,
 };
+use crate::value_objects::BudgetReservationId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepExecutionRecord {
@@ -22,6 +23,8 @@ pub struct StepExecutionRecord {
     error_message: Option<StepErrorMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     claimed_role: Option<RoleId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budget_reservation_id: Option<BudgetReservationId>,
 }
 
 impl StepExecutionRecord {
@@ -37,6 +40,7 @@ impl StepExecutionRecord {
             output: StepOutput::empty(),
             error_message: None,
             claimed_role: None,
+            budget_reservation_id: None,
         }
     }
 
@@ -117,6 +121,11 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
+    pub fn budget_reservation_id(&self) -> Option<&BudgetReservationId> {
+        self.budget_reservation_id.as_ref()
+    }
+
+    #[must_use]
     pub fn can_be_started_at(&self, now: OffsetDateTime) -> bool {
         if self.status.is_executable() {
             return true;
@@ -154,7 +163,14 @@ impl StepExecutionRecord {
             output: self.output,
             error_message: None,
             claimed_role,
+            budget_reservation_id: self.budget_reservation_id,
         }
+    }
+
+    #[must_use]
+    pub fn with_budget_reservation(mut self, reservation_id: Option<BudgetReservationId>) -> Self {
+        self.budget_reservation_id = reservation_id;
+        self
     }
 
     #[must_use]
@@ -170,6 +186,7 @@ impl StepExecutionRecord {
             output,
             error_message,
             claimed_role: self.claimed_role,
+            budget_reservation_id: self.budget_reservation_id,
         }
     }
 }

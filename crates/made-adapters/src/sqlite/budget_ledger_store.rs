@@ -225,8 +225,9 @@ mod tests {
     use made_app::budgets::{BudgetLedgerService, BudgetMutationOutcome};
     use made_core::value_objects::{
         BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetQuantities,
-        BudgetReconciliationId, BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration,
-        MeasuredBudgetQuantities, ToolCallCount,
+        BudgetReconciliationId, BudgetReservationEstimate, BudgetTokenCount, CeremonyId,
+        CostMicros, CurrencyCode, ExecutionDuration, ExecutionOperationId,
+        MeasuredBudgetQuantities, StateIteration, StateVisit, StepId, StepIteration, ToolCallCount,
     };
     use made_core::BudgetError;
 
@@ -247,13 +248,24 @@ mod tests {
         .unwrap()
     }
 
-    fn request(tokens: u64) -> BudgetQuantities {
-        BudgetQuantities::new(
-            ExecutionDuration::from_micros(10),
-            BudgetTokenCount::new(tokens),
-            CostMicros::new(10),
-            ToolCallCount::new(1),
+    fn request(tokens: u64) -> BudgetReservationEstimate {
+        BudgetReservationEstimate::new(
+            BudgetMeasurement::Estimated(ExecutionDuration::from_micros(10)),
+            BudgetMeasurement::Estimated(BudgetTokenCount::new(tokens)),
+            BudgetMeasurement::Estimated(CostMicros::new(10)),
+            BudgetMeasurement::Estimated(ToolCallCount::new(1)),
         )
+    }
+
+    fn operation(label: &str) -> BudgetOperationId {
+        let execution = ExecutionOperationId::for_step(
+            &CeremonyId::new(label).unwrap(),
+            &StepId::new("work").unwrap(),
+            StateVisit::FIRST,
+            StateIteration::FIRST,
+            StepIteration::FIRST,
+        );
+        BudgetOperationId::for_execution(&execution)
     }
 
     fn service(path: &Path) -> BudgetLedgerService {
@@ -272,16 +284,8 @@ mod tests {
         first.open(account.clone(), limits(100)).await.unwrap();
         let second = service(&path);
 
-        let left = first.reserve(
-            &account,
-            BudgetOperationId::new("parent-operation").unwrap(),
-            request(60),
-        );
-        let right = second.reserve(
-            &account,
-            BudgetOperationId::new("child-operation").unwrap(),
-            request(60),
-        );
+        let left = first.reserve(&account, operation("parent-operation"), request(60));
+        let right = second.reserve(&account, operation("child-operation"), request(60));
         let (left, right) = tokio::join!(left, right);
         let outcomes = [left, right];
         assert_eq!(outcomes.iter().filter(|item| item.is_ok()).count(), 1);
@@ -306,7 +310,7 @@ mod tests {
         let first = service(&path);
         first.open(account.clone(), limits(100)).await.unwrap();
         let second = service(&path);
-        let operation = BudgetOperationId::new("same-operation").unwrap();
+        let operation = operation("same-operation");
 
         let (left, right) = tokio::join!(
             first.reserve(&account, operation.clone(), request(60)),

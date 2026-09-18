@@ -5,8 +5,8 @@ use super::BudgetLedgerEvent;
 use crate::value_objects::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,
     BudgetMeasurement, BudgetOperationId, BudgetQuantities, BudgetReconciliationId,
-    BudgetReservation, BudgetReservationId, BudgetTokenCount, CostMicros, ExecutionDuration,
-    MeasuredBudgetQuantities, ToolCallCount,
+    BudgetReservation, BudgetReservationEstimate, BudgetReservationId, BudgetTokenCount,
+    CostMicros, ExecutionDuration, MeasuredBudgetQuantities, ToolCallCount,
 };
 use crate::BudgetError;
 
@@ -72,14 +72,17 @@ impl BudgetLedger {
     pub fn decide_reserve(
         &self,
         operation_id: BudgetOperationId,
-        quantities: BudgetQuantities,
+        estimate: BudgetReservationEstimate,
         reserved_at: OffsetDateTime,
     ) -> Result<Option<BudgetLedgerEvent>, BudgetError> {
         let account_id = self.account_id.clone().ok_or(BudgetError::LedgerNotOpen)?;
         let reservation_id = BudgetReservationId::for_operation(&account_id, &operation_id);
+        let quantities =
+            estimate.quantities(self.limits.as_ref().ok_or(BudgetError::LedgerNotOpen)?)?;
         if let Some(existing) = self.reservations.get(&reservation_id) {
             return if existing.operation_id() == &operation_id
                 && existing.quantities() == quantities
+                && existing.estimate() == estimate
             {
                 Ok(None)
             } else {
@@ -92,6 +95,7 @@ impl BudgetLedger {
             reservation_id,
             operation_id,
             quantities,
+            estimate,
             reserved_at,
         }))
     }
@@ -156,6 +160,7 @@ impl BudgetLedger {
                 reservation_id,
                 operation_id,
                 quantities,
+                estimate,
                 reserved_at,
                 ..
             } => {
@@ -177,9 +182,20 @@ impl BudgetLedger {
                     ));
                 }
                 self.ensure_capacity(quantities)?;
+                let expected_quantities =
+                    estimate.quantities(self.limits.as_ref().ok_or(BudgetError::LedgerNotOpen)?)?;
+                if quantities != expected_quantities {
+                    return Err(BudgetError::ReservationConflict(reservation_id));
+                }
                 self.reservations.insert(
                     reservation_id.clone(),
-                    BudgetReservation::new(reservation_id, operation_id, quantities, reserved_at),
+                    BudgetReservation::new(
+                        reservation_id,
+                        operation_id,
+                        quantities,
+                        estimate,
+                        reserved_at,
+                    ),
                 );
             }
             BudgetLedgerEvent::Reconciled {

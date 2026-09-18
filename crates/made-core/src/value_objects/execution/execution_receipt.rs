@@ -8,6 +8,7 @@ use super::{
 use crate::error::DomainError;
 use crate::value_objects::artifact::{ArtifactRef, ArtifactSourceKind};
 use crate::value_objects::ceremony::{StepClaimFence, StepResult};
+use crate::value_objects::MeasuredBudgetQuantities;
 
 pub const MAX_EXECUTION_ARTIFACTS: usize = 100;
 
@@ -25,6 +26,8 @@ pub struct ExecutionReceipt {
     source_kind: ArtifactSourceKind,
     result: StepResult,
     artifacts: Vec<ArtifactRef>,
+    #[serde(default, skip_serializing_if = "MeasuredBudgetQuantities::is_unknown")]
+    budget_measurement: MeasuredBudgetQuantities,
     #[serde(with = "time::serde::rfc3339")]
     observed_at: OffsetDateTime,
 }
@@ -80,8 +83,15 @@ impl ExecutionReceipt {
             source_kind,
             result,
             artifacts,
+            budget_measurement: MeasuredBudgetQuantities::default(),
             observed_at,
         })
+    }
+
+    #[must_use]
+    pub fn with_budget_measurement(mut self, measured: MeasuredBudgetQuantities) -> Self {
+        self.budget_measurement = measured;
+        self
     }
 
     #[must_use]
@@ -132,6 +142,11 @@ impl ExecutionReceipt {
     #[must_use]
     pub fn artifacts(&self) -> &[ArtifactRef] {
         &self.artifacts
+    }
+
+    #[must_use]
+    pub const fn budget_measurement(&self) -> MeasuredBudgetQuantities {
+        self.budget_measurement
     }
 
     #[must_use]

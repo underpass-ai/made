@@ -3,7 +3,7 @@ use time::OffsetDateTime;
 
 use crate::value_objects::{
     BudgetAccountId, BudgetLimits, BudgetOperationId, BudgetQuantities, BudgetReconciliationId,
-    BudgetReservationId, MeasuredBudgetQuantities,
+    BudgetReservationEstimate, BudgetReservationId, MeasuredBudgetQuantities,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -20,6 +20,7 @@ pub enum BudgetLedgerEvent {
         reservation_id: BudgetReservationId,
         operation_id: BudgetOperationId,
         quantities: BudgetQuantities,
+        estimate: BudgetReservationEstimate,
         #[serde(with = "time::serde::rfc3339")]
         reserved_at: OffsetDateTime,
     },

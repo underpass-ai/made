@@ -79,8 +79,9 @@ pub use audit::{
 pub use budget::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,
     BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
-    BudgetReconciliationId, BudgetReservation, BudgetReservationId, BudgetTokenCount, CostMicros,
-    CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities, ToolCallCount,
+    BudgetReconciliationId, BudgetReservation, BudgetReservationEstimate, BudgetReservationId,
+    BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
+    ToolCallCount,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,

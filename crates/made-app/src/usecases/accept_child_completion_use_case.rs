@@ -125,14 +125,27 @@ impl AcceptChildCompletionUseCase {
                 reason: "sealed child publication digest changed",
             });
         }
-        let expected = made_core::entities::CeremonyInstance::decide_start_bound_child(
-            planned.child_id().clone(),
-            &published,
-            planned.context().clone(),
-            planned.lineage().clone(),
-            planned.recollection().cloned(),
-            planned.opened_at(),
-        )?;
+        let expected = match planned.budget_account_id().cloned() {
+            Some(account_id) => {
+                made_core::entities::CeremonyInstance::decide_start_bound_budgeted_child(
+                    planned.child_id().clone(),
+                    &published,
+                    planned.context().clone(),
+                    planned.lineage().clone(),
+                    account_id,
+                    planned.recollection().cloned(),
+                    planned.opened_at(),
+                )?
+            }
+            None => made_core::entities::CeremonyInstance::decide_start_bound_child(
+                planned.child_id().clone(),
+                &published,
+                planned.context().clone(),
+                planned.lineage().clone(),
+                planned.recollection().cloned(),
+                planned.opened_at(),
+            )?,
+        };
         if records.len() < expected.len()
             || records
                 .iter()

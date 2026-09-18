@@ -1,19 +1,21 @@
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 use super::{BudgetLedger, BudgetLedgerEvent};
 use crate::value_objects::{
     BudgetAccountId, BudgetDimension, BudgetLimits, BudgetMeasurement, BudgetOperationId,
-    BudgetQuantities, BudgetReconciliationId, BudgetReservationId, BudgetTokenCount, CostMicros,
-    ExecutionDuration, MeasuredBudgetQuantities, ToolCallCount,
+    BudgetQuantities, BudgetReconciliationId, BudgetReservationEstimate, BudgetReservationId,
+    BudgetTokenCount, CostMicros, ExecutionDuration, ExecutionOperationId,
+    MeasuredBudgetQuantities, ToolCallCount,
 };
 use crate::BudgetError;
 
-fn quantities(tokens: u64) -> BudgetQuantities {
-    BudgetQuantities::new(
-        ExecutionDuration::from_micros(100),
-        BudgetTokenCount::new(tokens),
-        CostMicros::new(10),
-        ToolCallCount::new(1),
+fn estimate(tokens: u64) -> BudgetReservationEstimate {
+    BudgetReservationEstimate::new(
+        BudgetMeasurement::Estimated(ExecutionDuration::from_micros(100)),
+        BudgetMeasurement::Estimated(BudgetTokenCount::new(tokens)),
+        BudgetMeasurement::Estimated(CostMicros::new(10)),
+        BudgetMeasurement::Estimated(ToolCallCount::new(1)),
     )
 }
 fn limits() -> BudgetLimits {
@@ -31,6 +33,10 @@ fn limits() -> BudgetLimits {
 fn account() -> BudgetAccountId {
     BudgetAccountId::new("root").unwrap()
 }
+fn budget_operation(label: &str) -> Result<BudgetOperationId, crate::DomainError> {
+    let encoded = format!("{:x}", Sha256::digest(label.as_bytes()));
+    ExecutionOperationId::new(encoded).map(|id| BudgetOperationId::for_execution(&id))
+}
 fn open() -> BudgetLedger {
     BudgetLedger::rehydrate(&[BudgetLedgerEvent::Opened {
         account_id: account(),
@@ -45,8 +51,8 @@ fn two_operations_cannot_reserve_past_the_shared_limit() {
     let mut ledger = open();
     let event = ledger
         .decide_reserve(
-            BudgetOperationId::new("parent").unwrap(),
-            quantities(60),
+            budget_operation("parent").unwrap(),
+            estimate(60),
             OffsetDateTime::UNIX_EPOCH,
         )
         .unwrap()
@@ -54,8 +60,8 @@ fn two_operations_cannot_reserve_past_the_shared_limit() {
     ledger.apply(event).unwrap();
     let error = ledger
         .decide_reserve(
-            BudgetOperationId::new("child").unwrap(),
-            quantities(60),
+            budget_operation("child").unwrap(),
+            estimate(60),
             OffsetDateTime::UNIX_EPOCH,
         )
         .unwrap_err();
@@ -71,19 +77,15 @@ fn two_operations_cannot_reserve_past_the_shared_limit() {
 #[test]
 fn retry_returns_existing_without_an_event() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("same-operation").unwrap();
+    let operation = budget_operation("same-operation").unwrap();
     let event = ledger
-        .decide_reserve(
-            operation.clone(),
-            quantities(25),
-            OffsetDateTime::UNIX_EPOCH,
-        )
+        .decide_reserve(operation.clone(), estimate(25), OffsetDateTime::UNIX_EPOCH)
         .unwrap()
         .unwrap();
     ledger.apply(event).unwrap();
     assert_eq!(
         ledger
-            .decide_reserve(operation, quantities(25), OffsetDateTime::UNIX_EPOCH)
+            .decide_reserve(operation, estimate(25), OffsetDateTime::UNIX_EPOCH)
             .unwrap(),
         None
     );
@@ -93,12 +95,12 @@ fn retry_returns_existing_without_an_event() {
 #[test]
 fn unknown_stays_charged_and_observed_overrun_is_honest() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("effect").unwrap();
+    let operation = budget_operation("effect").unwrap();
     let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
     ledger
         .apply(
             ledger
-                .decide_reserve(operation, quantities(80), OffsetDateTime::UNIX_EPOCH)
+                .decide_reserve(operation, estimate(80), OffsetDateTime::UNIX_EPOCH)
                 .unwrap()
                 .unwrap(),
         )
@@ -133,12 +135,12 @@ fn unknown_stays_charged_and_observed_overrun_is_honest() {
 #[test]
 fn a_reconciliation_replay_is_idempotent_but_a_change_conflicts() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("effect").unwrap();
+    let operation = budget_operation("effect").unwrap();
     let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
     ledger
         .apply(
             ledger
-                .decide_reserve(operation, quantities(20), OffsetDateTime::UNIX_EPOCH)
+                .decide_reserve(operation, estimate(20), OffsetDateTime::UNIX_EPOCH)
                 .unwrap()
                 .unwrap(),
         )
@@ -189,10 +191,10 @@ fn a_reconciliation_replay_is_idempotent_but_a_change_conflicts() {
 #[test]
 fn reconciliation_can_advance_knowledge_without_changing_its_receipt_identity() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("later-observed").unwrap();
+    let operation = budget_operation("later-observed").unwrap();
     let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
     let event = ledger
-        .decide_reserve(operation, quantities(20), OffsetDateTime::UNIX_EPOCH)
+        .decide_reserve(operation, estimate(20), OffsetDateTime::UNIX_EPOCH)
         .unwrap()
         .unwrap();
     ledger.apply(event).unwrap();
@@ -231,10 +233,10 @@ fn reconciliation_can_advance_knowledge_without_changing_its_receipt_identity() 
 #[test]
 fn applying_a_duplicate_reservation_does_not_replace_reconciled_state() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("duplicate-event").unwrap();
+    let operation = budget_operation("duplicate-event").unwrap();
     let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
     let reserved = ledger
-        .decide_reserve(operation, quantities(20), OffsetDateTime::UNIX_EPOCH)
+        .decide_reserve(operation, estimate(20), OffsetDateTime::UNIX_EPOCH)
         .unwrap()
         .unwrap();
     ledger.apply(reserved.clone()).unwrap();
@@ -270,10 +272,10 @@ fn applying_a_duplicate_reservation_does_not_replace_reconciled_state() {
 #[test]
 fn any_overrun_blocks_admission_even_when_the_request_uses_another_dimension() {
     let mut ledger = open();
-    let operation = BudgetOperationId::new("overrun").unwrap();
+    let operation = budget_operation("overrun").unwrap();
     let reservation_id = BudgetReservationId::for_operation(&account(), &operation);
     let reserved = ledger
-        .decide_reserve(operation, quantities(80), OffsetDateTime::UNIX_EPOCH)
+        .decide_reserve(operation, estimate(80), OffsetDateTime::UNIX_EPOCH)
         .unwrap()
         .unwrap();
     ledger.apply(reserved).unwrap();
@@ -293,15 +295,15 @@ fn any_overrun_blocks_admission_even_when_the_request_uses_another_dimension() {
         .unwrap();
     ledger.apply(reconciled).unwrap();
 
-    let other_dimension_only = BudgetQuantities::new(
-        ExecutionDuration::from_micros(1),
-        BudgetTokenCount::new(0),
-        CostMicros::new(0),
-        ToolCallCount::new(0),
+    let other_dimension_only = BudgetReservationEstimate::new(
+        BudgetMeasurement::Estimated(ExecutionDuration::from_micros(1)),
+        BudgetMeasurement::Estimated(BudgetTokenCount::new(0)),
+        BudgetMeasurement::Estimated(CostMicros::new(0)),
+        BudgetMeasurement::Estimated(ToolCallCount::new(0)),
     );
     assert!(matches!(
         ledger.decide_reserve(
-            BudgetOperationId::new("after-overrun").unwrap(),
+            budget_operation("after-overrun").unwrap(),
             other_dimension_only,
             OffsetDateTime::UNIX_EPOCH
         ),
@@ -310,4 +312,27 @@ fn any_overrun_blocks_admission_even_when_the_request_uses_another_dimension() {
             ..
         })
     ));
+}
+
+#[test]
+fn unknown_limited_dimension_is_rejected_before_a_reservation_event_exists() {
+    let ledger = open();
+    let incomplete = BudgetReservationEstimate::new(
+        BudgetMeasurement::Estimated(ExecutionDuration::from_micros(10)),
+        BudgetMeasurement::Unknown,
+        BudgetMeasurement::Estimated(CostMicros::new(1)),
+        BudgetMeasurement::Estimated(ToolCallCount::new(1)),
+    );
+
+    assert!(matches!(
+        ledger.decide_reserve(
+            budget_operation("unknown-tokens").unwrap(),
+            incomplete,
+            OffsetDateTime::UNIX_EPOCH
+        ),
+        Err(BudgetError::MissingReservationEstimate(
+            BudgetDimension::Tokens
+        ))
+    ));
+    assert_eq!(ledger.reservations().count(), 0);
 }

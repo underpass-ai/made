@@ -210,6 +210,7 @@ mod tests {
             role_from: None,
             sealed_role: Some(winner.clone()),
             deadline: None,
+            budget_reservation_id: None,
             started_at: won_at,
         });
         let overtaking_fact = session_facts::fact(

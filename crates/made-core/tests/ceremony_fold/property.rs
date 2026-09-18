@@ -175,6 +175,7 @@ impl Generator {
             lease: lease(&format!("lease-{key}"), now),
             now,
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         })
     }
 

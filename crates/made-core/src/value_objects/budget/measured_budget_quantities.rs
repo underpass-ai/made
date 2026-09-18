@@ -1,7 +1,7 @@
 use super::{BudgetMeasurement, BudgetTokenCount, CostMicros, ExecutionDuration, ToolCallCount};
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct MeasuredBudgetQuantities {
     duration: BudgetMeasurement<ExecutionDuration>,
     tokens: BudgetMeasurement<BudgetTokenCount>,
@@ -50,6 +50,14 @@ impl MeasuredBudgetQuantities {
         ];
         comparisons.iter().all(|order| !order.is_lt())
             && comparisons.iter().any(|order| order.is_gt())
+    }
+
+    #[must_use]
+    pub const fn is_unknown(&self) -> bool {
+        matches!(self.duration, BudgetMeasurement::Unknown)
+            && matches!(self.tokens, BudgetMeasurement::Unknown)
+            && matches!(self.cost, BudgetMeasurement::Unknown)
+            && matches!(self.tool_calls, BudgetMeasurement::Unknown)
     }
 }
 
