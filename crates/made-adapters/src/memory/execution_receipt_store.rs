@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -7,22 +5,17 @@ use made_core::ports::{
     RecordExecutionReceiptOutcome,
 };
 use made_core::value_objects::{
-    ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionIntent, ExecutionOperationId, ExecutionReceipt, ExecutionRecoveryCursor,
+    ExecutionRecoveryPageLimit, StepClaimFence,
 };
 use tokio::sync::Mutex;
+
+use super::execution_receipt_store_state::ExecutionReceiptStoreState;
 
 /// Ephemeral receipt store with the same atomic root semantics as durable adapters.
 #[derive(Debug, Default)]
 pub struct InMemoryExecutionReceiptStore {
-    state: Mutex<State>,
-}
-
-#[derive(Debug, Default)]
-struct State {
-    operations: BTreeMap<String, ExecutionOperation>,
-    intents: BTreeMap<(String, String), ExecutionIntent>,
-    receipts: BTreeMap<String, ExecutionReceipt>,
+    state: Mutex<ExecutionReceiptStoreState>,
 }
 
 impl InMemoryExecutionReceiptStore {
@@ -38,6 +31,7 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
         &self,
         intent: ExecutionIntent,
     ) -> Result<RecordExecutionIntentOutcome, DomainError> {
+        intent.validate()?;
         let mut state = self.state.lock().await;
         let operation_id = intent.operation().operation_id().as_str().to_owned();
         let key = (
@@ -107,6 +101,7 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
         &self,
         receipt: ExecutionReceipt,
     ) -> Result<RecordExecutionReceiptOutcome, DomainError> {
+        receipt.validate()?;
         let mut state = self.state.lock().await;
         let operation_id = receipt.operation_id().as_str().to_owned();
         let Some(operation) = state.operations.get(&operation_id) else {
@@ -114,14 +109,22 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
                 what: "execution_operation",
             });
         };
-        if operation.request_digest() != receipt.request_digest()
-            || !state.intents.contains_key(&(
-                operation_id.clone(),
-                receipt.producer_claim_fence().as_str().to_owned(),
-            ))
-        {
+        let producer_key = (
+            operation_id.clone(),
+            receipt.producer_claim_fence().as_str().to_owned(),
+        );
+        let Some(producer_intent) = state.intents.get(&producer_key) else {
             return Err(DomainError::InvariantViolated {
                 reason: "execution receipt does not match a recorded intent",
+            });
+        };
+        if operation.request_digest() != receipt.request_digest()
+            || producer_intent.connector_id() != receipt.connector_id()
+            || producer_intent.recovery_capability() != receipt.recovery_capability()
+            || producer_intent.source_kind() != receipt.source_kind()
+        {
+            return Err(DomainError::InvariantViolated {
+                reason: "execution receipt does not match its producer intent contract",
             });
         }
         match state.receipts.get(&operation_id) {
@@ -201,8 +204,31 @@ mod tests {
             operation,
             fence,
             ExecutionConnectorId::new("test.no-op").unwrap(),
+            ExecutionRecoveryCapability::IdempotentByOperationId,
             ArtifactSourceKind::NoOp,
             AuditActorKind::Engine,
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    fn receipt(
+        operation: &ExecutionOperation,
+        accepted_fence: StepClaimFence,
+        connector: &str,
+        capability: ExecutionRecoveryCapability,
+        source_kind: ArtifactSourceKind,
+    ) -> ExecutionReceipt {
+        ExecutionReceipt::new(
+            operation.operation_id().clone(),
+            operation.request_digest().clone(),
+            accepted_fence,
+            ExecutionConnectorId::new(connector).unwrap(),
+            None,
+            capability,
+            source_kind,
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            Vec::new(),
             OffsetDateTime::UNIX_EPOCH,
         )
         .unwrap()
@@ -298,6 +324,56 @@ mod tests {
         )
         .unwrap();
         assert!(store.record_receipt(foreign).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn mismatched_receipt_contracts_are_rejected_without_mutation() {
+        let store = InMemoryExecutionReceiptStore::new();
+        let operation = operation("work", b"request");
+        let accepted_fence = fence('1');
+        store
+            .record_intent(intent(operation.clone(), accepted_fence.clone()))
+            .await
+            .unwrap();
+
+        for mismatched in [
+            receipt(
+                &operation,
+                accepted_fence.clone(),
+                "other.connector",
+                ExecutionRecoveryCapability::IdempotentByOperationId,
+                ArtifactSourceKind::NoOp,
+            ),
+            receipt(
+                &operation,
+                accepted_fence.clone(),
+                "test.no-op",
+                ExecutionRecoveryCapability::ReconciliationRequired,
+                ArtifactSourceKind::NoOp,
+            ),
+            receipt(
+                &operation,
+                accepted_fence.clone(),
+                "test.no-op",
+                ExecutionRecoveryCapability::IdempotentByOperationId,
+                ArtifactSourceKind::Fixture,
+            ),
+        ] {
+            assert!(store.record_receipt(mismatched).await.is_err());
+            assert_eq!(store.receipt(operation.operation_id()).await.unwrap(), None);
+        }
+
+        let accepted = receipt(
+            &operation,
+            accepted_fence,
+            "test.no-op",
+            ExecutionRecoveryCapability::IdempotentByOperationId,
+            ArtifactSourceKind::NoOp,
+        );
+        assert_eq!(
+            store.record_receipt(accepted).await.unwrap(),
+            RecordExecutionReceiptOutcome::Recorded
+        );
     }
 
     #[tokio::test]

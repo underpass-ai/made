@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::{ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes};
+use crate::error::DomainError;
 
 /// Verifiable artifact metadata. It never contains storage coordinates or bytes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,5 +54,10 @@ impl ArtifactRef {
     #[must_use]
     pub const fn provenance(&self) -> &ArtifactProvenance {
         &self.provenance
+    }
+
+    /// Re-check nested provenance after deserialization.
+    pub fn validate(&self) -> Result<(), DomainError> {
+        self.provenance.validate()
     }
 }
