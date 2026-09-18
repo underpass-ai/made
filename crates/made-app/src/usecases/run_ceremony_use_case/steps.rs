@@ -133,6 +133,7 @@ impl RunCeremonyUseCase {
             record.iteration(),
             record.attempt(),
         );
+        let claim_fence = session.instance.step_claim_fence(step_id)?;
         let sealed_role = record
             .claimed_role()
             .cloned()
@@ -163,6 +164,7 @@ impl RunCeremonyUseCase {
         let finish = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step_id.clone(),
             result: step_result.clone(),
+            claim_fence,
             now: finished_at,
         });
         let finish_actor_kind = actor_kind;

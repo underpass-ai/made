@@ -6,10 +6,11 @@ use made_core::entities::ceremony_commands::StartStep;
 use made_core::entities::CeremonyCommand;
 use made_core::error::DomainError;
 use made_core::ports::ClockPort;
-use made_core::value_objects::{MaxParallel, StepAttempt, StepLease};
+use made_core::value_objects::{MaxParallel, StepLease};
 
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use super::start_ceremony_step_input::StartCeremonyStepInput;
+use super::StartCeremonyStepOutput;
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
 pub struct StartCeremonyStepUseCase {
@@ -51,7 +52,10 @@ impl StartCeremonyStepUseCase {
         skip_all,
         fields(ceremony_id = %input.instance_id, step_id = %input.step_id)
     )]
-    pub async fn execute(&self, input: StartCeremonyStepInput) -> Result<StepAttempt, DomainError> {
+    pub async fn execute(
+        &self,
+        input: StartCeremonyStepInput,
+    ) -> Result<StartCeremonyStepOutput, DomainError> {
         let session = self.stream.load(&input.instance_id).await?;
         // Resolved from the instance, never from the request: a session
         // bound to a published version must be advanced by the very
@@ -87,13 +91,20 @@ impl StartCeremonyStepUseCase {
                 session_facts::facts(&session.instance, events, &actor, now)
             })
             .await?;
-        Ok(session
+        let attempt = session
             .instance
             .step_record(&input.step_id)
             .ok_or(DomainError::NotFound {
                 what: "ceremony_step",
             })?
-            .attempt())
+            .attempt();
+        let claim_fence = session.instance.step_claim_fence(&input.step_id)?;
+        Ok(StartCeremonyStepOutput::new(
+            session.instance,
+            attempt,
+            claim_fence,
+            session.version,
+        ))
     }
 }
 
@@ -152,7 +163,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(attempt, StepAttempt::FIRST);
+        assert_eq!(
+            attempt.attempt(),
+            made_core::value_objects::StepAttempt::FIRST
+        );
         let saved = instances.saved(&ceremony_id()).await;
         let record = saved.step_record(&step_id()).unwrap();
         assert_eq!(record.status(), StepStatus::InProgress);
@@ -247,7 +261,10 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(attempt, StepAttempt::new(2).unwrap());
+        assert_eq!(
+            attempt.attempt(),
+            made_core::value_objects::StepAttempt::new(2).unwrap()
+        );
     }
 
     /// Claiming a step without running it still leaves a record.

@@ -193,7 +193,7 @@ async fn state_visit_child_process() {
 }
 
 async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, ready: bool) {
-    engine
+    let claimed = engine
         .start_step(StartCeremonyStepInput::new(
             id(),
             role(),
@@ -205,8 +205,7 @@ async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, rea
         ))
         .await
         .unwrap();
-    let claimed = engine.instance(&id()).await.unwrap();
-    let record = claimed.step_record(&step(name)).unwrap();
+    let record = claimed.instance().step_record(&step(name)).unwrap();
     assert_eq!(
         (
             record.state_visit().get(),
@@ -229,6 +228,7 @@ async fn work(engine: &EmbeddedMade, name: &str, visit: u32, iteration: u32, rea
             step(name),
             StepResult::completed(output).unwrap(),
             AuditActorKind::Agent,
+            claimed.claim_fence().clone(),
         ))
         .await
         .unwrap();

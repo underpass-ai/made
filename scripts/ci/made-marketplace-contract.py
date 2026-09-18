@@ -102,8 +102,10 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Codex defaultPrompt must contain at most three prompts")
 
     codex = load_json(".agents/plugins/marketplace.json")
-    if codex.get("name") != "underpass":
-        fail("Codex marketplace name must be underpass")
+    if codex.get("name") != "made":
+        fail("Codex marketplace name must be made (distinct from KMP)")
+    if codex_manifest.get("interface", {}).get("websiteURL") != "https://underpassai.com/":
+        fail("Codex plugin card must link to https://underpassai.com/")
     codex_plugins = codex.get("plugins")
     if not isinstance(codex_plugins, list) or len(codex_plugins) != 1:
         fail("Codex marketplace must contain exactly one plugin")
@@ -121,8 +123,8 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Codex marketplace category must be Developer Tools")
 
     claude = load_json(".claude-plugin/marketplace.json")
-    if claude.get("name") != "underpass":
-        fail("Claude marketplace name must be underpass")
+    if claude.get("name") != "made":
+        fail("Claude marketplace name must be made (distinct from KMP)")
     claude_plugins = claude.get("plugins")
     if not isinstance(claude_plugins, list) or len(claude_plugins) != 1:
         fail("Claude marketplace must contain exactly one plugin")
@@ -191,6 +193,31 @@ def self_test() -> None:
     import tempfile
     from unittest.mock import patch
 
+    # A future metadata edit must not restore the known catalogue collision or
+    # hide the official site. Exercise the same gate used for packaging.
+    original_loader = load_json
+    for path, field, message in (
+        (".agents/plugins/marketplace.json", "name", "distinct from KMP"),
+        (".claude-plugin/marketplace.json", "name", "distinct from KMP"),
+        ("plugins/made/.codex-plugin/plugin.json", "websiteURL", "must link"),
+    ):
+        def broken_metadata(relative: str) -> dict:
+            value = original_loader(relative)
+            if relative == path:
+                if field == "name":
+                    value["name"] = "underpass"
+                else:
+                    value["interface"].pop("websiteURL", None)
+            return value
+
+        with patch.dict(globals(), load_json=broken_metadata):
+            try:
+                verify()
+            except SystemExit as error:
+                assert message in str(error), error
+            else:
+                raise AssertionError(f"accepted broken marketplace metadata: {path}")
+
     # Real Git objects distinguish annotated tags, lightweight tags and branches.
     (ROOT / "tmp").mkdir(exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="marketplace-contract-", dir=ROOT / "tmp") as scratch:
@@ -223,7 +250,7 @@ def self_test() -> None:
             git("commit", "--allow-empty", "-m", "development")
             verify_release_tag("v1.2.3", False)
             expect_failure(True, "not HEAD")
-    print("MADE marketplace tag self-test passed: 7 release/branch cases")
+    print("MADE marketplace self-test passed: 3 discovery and 7 release/branch cases")
 
 
 def main() -> None:
@@ -250,7 +277,7 @@ def main() -> None:
         print("\n".join(expected_assets(version)))
     else:
         print(
-            f"MADE marketplace contract passed: made@underpass {version}, "
+            f"MADE marketplace contract passed: made@made {version}, "
             f"co-located plugin tree, {len(expected_assets(version))} release assets"
         )
 

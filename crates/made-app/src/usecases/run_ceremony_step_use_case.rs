@@ -114,6 +114,7 @@ impl RunCeremonyStepUseCase {
                 what: "ceremony_step",
             })?;
         let attempt = record.attempt();
+        let claim_fence = instance.step_claim_fence(&input.step_id)?;
         let fallback_role = requested_role_id
             .clone()
             .map_or_else(|| definition.role_id_for_step(&input.step_id), Ok)?;
@@ -149,6 +150,7 @@ impl RunCeremonyStepUseCase {
         let finish = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: input.step_id.clone(),
             result: result.clone(),
+            claim_fence,
             now: finished_at,
         });
         let finish_actor_kind = input.role_kind;

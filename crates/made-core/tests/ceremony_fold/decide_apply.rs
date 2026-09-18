@@ -282,10 +282,19 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     assert_eq!(
@@ -315,10 +324,19 @@ fn a_final_result_carries_no_next_iteration() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     let [CeremonyEvent::StepCompleted(completed)] = events.as_slice() else {
@@ -338,10 +356,19 @@ fn a_failure_is_its_own_event() {
         &definition,
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: result.clone(),
             now: at(2),
         }),
-        |session| session.apply_step_result(&definition, &step("plan"), result.clone(), at(2)),
+        |session| {
+            session.apply_step_result(
+                &definition,
+                &step("plan"),
+                session.step_claim_fence(&step("plan")).unwrap(),
+                result.clone(),
+                at(2),
+            )
+        },
     );
 
     assert_eq!(
@@ -367,6 +394,7 @@ fn a_move_into_an_intermediate_state_is_one_event() {
         .apply_step_result(
             &definition,
             &step("plan"),
+            instance.step_claim_fence(&step("plan")).unwrap(),
             StepResult::completed(readiness(true)).unwrap(),
             at(2),
         )
@@ -421,6 +449,7 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
         .apply_step_result(
             &definition,
             &step("plan"),
+            instance.step_claim_fence(&step("plan")).unwrap(),
             StepResult::completed(readiness(true)).unwrap(),
             at(1),
         )
@@ -841,6 +870,7 @@ fn deciding_leaves_the_session_untouched() {
     let accepted = instance.decide(
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
+            claim_fence: instance.step_claim_fence(&step("plan")).unwrap(),
             result: StepResult::completed(readiness(true)).unwrap(),
             now: at(2),
         }),

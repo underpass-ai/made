@@ -103,6 +103,7 @@ async fn claim_complete(
         "made_complete_ceremony_step",
         json!({
             "ceremony_id": ID, "step_id": step, "actor_kind": "agent", "status": "completed",
+            "claim_fence": structured(&claimed)["claim_fence"].clone(),
             "output": {"ready": ready, "marker": format!("{visit}-{iteration}")}
         }),
     )

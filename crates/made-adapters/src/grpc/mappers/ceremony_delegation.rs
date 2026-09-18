@@ -16,8 +16,8 @@ use made_app::usecases::{CompleteCeremonyStepInput, StartCeremonyStepInput};
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepErrorMessage, StepId, StepOutput,
-    StepResult, StepStatus,
+    CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepClaimFence, StepErrorMessage, StepId,
+    StepOutput, StepResult, StepStatus,
 };
 use made_proto::v1 as pb;
 use uuid::Uuid;
@@ -107,6 +107,7 @@ pub fn complete_ceremony_step_input_from_proto(
         // Refuses a failure with no reason and a success carrying one.
         StepResult::new(status, output, error)?,
         actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+        StepClaimFence::new(request.claim_fence)?,
     ))
 }
 
@@ -157,6 +158,7 @@ mod tests {
 
     fn complete_request(status: &str) -> pb::CompleteCeremonyStepRequest {
         pb::CompleteCeremonyStepRequest {
+            claim_fence: "a".repeat(64),
             ceremony_id: "ceremony-delegation-1".to_owned(),
             step_id: "open_room".to_owned(),
             actor_kind: "human".to_owned(),

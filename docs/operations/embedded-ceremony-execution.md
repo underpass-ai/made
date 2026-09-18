@@ -128,11 +128,13 @@ durable composition.
 5. Continue with the returned next step, enabled transition, guard or open
    intervention.
 
-Completion currently carries no claim fencing identity. After reclaiming an
-expired lease, the host must prevent the previous worker from submitting a
-late result: the engine cannot distinguish it from the replacement attempt.
-This inherited limitation is tracked in [#127](https://github.com/underpass-ai/made/issues/127);
-parallel claim limits do not resolve it.
+Claim responses return `claim_fence`. Retain it before doing the work and pass
+it unchanged to `made_complete_ceremony_step`. Missing or malformed identities
+are invalid input; a replaced identity is refused without appending or clearing
+the replacement lease. App-owned execution retains the same identity internally
+through reload and retry. Existing event and snapshot bytes need no migration;
+see [ADR-017](../adr/017-step-completion-is-fenced-to-its-accepted-claim.md) for
+Rust and wire caller migration.
 
 A published instance reloads both its snapshot and immutable definition from
 SQLite. An ad-hoc supplied definition does not make that durability claim; use

@@ -149,8 +149,8 @@ Human guard approval is never inferred by the server; the client must obtain
 the person's decision
 before it invokes the approval tool. Dynamic interventions likewise coordinate
 the live agenda without bypassing host permissions or ceremony guards. Omitting
-`target_role_ids` addresses the whole table; supplying it scopes the request to
-those roles. Responses and interventions retain insertion order in the instance.
+`target_role_ids`, or supplying `[]`, addresses the whole table; a nonempty
+list scopes the request to those roles (at most 100, with no duplicates). Responses and interventions retain insertion order in the instance.
 Server-owned execution through `made_run_ceremony_step` is valid only when
 the embedding host configured a real step handler. The bundled default may use
 `NoopCeremonyStepHandler`, whose empty completed result proves wiring rather
@@ -166,7 +166,7 @@ start from a published definition when an instance must rehydrate after a
 process restart.
 
 `made_generate_ceremony_report` accepts a non-empty, duplicate-free
-`ceremony_ids` array and an optional presentation title. Unknown ids fail the
+`ceremony_ids` array of at most 100 entries and an optional presentation title. Unknown ids fail the
 whole request. Its structured result contains the Markdown, selected ids,
 completed/incomplete counts, definition versions and available digests, plus
 `persisted: false`: it never writes a report file. Sections and ordering are

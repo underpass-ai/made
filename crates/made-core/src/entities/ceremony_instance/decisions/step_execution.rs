@@ -139,6 +139,8 @@ impl CeremonyInstance {
             });
         }
 
+        self.require_step_claim_fence(&command.step_id, &command.claim_fence)?;
+
         let iteration = record.iteration();
         let attempt = record.attempt();
         let result = command.result.clone();

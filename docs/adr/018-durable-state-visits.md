@@ -53,8 +53,9 @@ An absent visit in a historical event remains absent when reserialized.
 
 Bounded cyclic ceremonies rerun destination work. Archives and transcript entries
 retain earlier successful work, while guards evaluate the current records. Host
-completion fencing (#127) must include the visit so stale work cannot finish a
-later claim.
+completion fencing ([ADR-017](017-step-completion-is-fenced-to-its-accepted-claim.md))
+includes the visit so stale work cannot finish a later claim, even with identical
+lease data and other execution coordinates.
 Transition caps still count only actual transitions. A visit identifies an entry
 within this ceremony; it is not a per-state counter or a repetition policy.
 

@@ -1,6 +1,6 @@
 use made_app::services::SessionStream;
-use made_app::usecases::CeremonyInstanceView;
-use made_core::entities::CeremonyInstance;
+use made_app::usecases::{CeremonyInstanceView, StartCeremonyStepOutput};
+use made_core::entities::{AuditRecord, CeremonyInstance};
 use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyId, CeremonyRecordRef, RecalledEntry, RoleId,
     SessionRecollection, StepId,
@@ -22,8 +22,27 @@ impl EmbeddedCeremonyInstancePresenter {
     ) -> Result<Value, ToolError> {
         let records = made.audit_records(ceremony_id).await?;
         let read = SessionStream::fold_records(&records)?;
-        let instance = &read.instance;
-        let head = records.last();
+        Self::render(made, &read.instance, records.last()).await
+    }
+
+    pub(super) async fn present_claim(
+        made: &EmbeddedMade,
+        claim: &StartCeremonyStepOutput,
+    ) -> Result<Value, ToolError> {
+        let records = made.audit_records(claim.instance().id()).await?;
+        let head = records
+            .iter()
+            .find(|record| record.sequence().value() == claim.version().value());
+        let mut value = Self::render(made, claim.instance(), head).await?;
+        value["claim_fence"] = json!(claim.claim_fence().as_str());
+        Ok(value)
+    }
+
+    async fn render(
+        made: &EmbeddedMade,
+        instance: &CeremonyInstance,
+        head: Option<&AuditRecord>,
+    ) -> Result<Value, ToolError> {
         let definition = made.definition_for(instance).await?;
         // Derived once in the application layer and rendered here. The
         // gRPC adapter renders the same view, which is what keeps one

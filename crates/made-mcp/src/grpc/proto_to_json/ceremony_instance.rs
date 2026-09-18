@@ -10,6 +10,15 @@ use serde_json::{json, Value};
 use super::optional_pb_struct_to_json;
 use crate::renderers::CeremonyInstanceListingEntry;
 
+/// Return the fence captured by the claim, alongside that accepted instance.
+pub(crate) fn ceremony_claim_to_json(response: pb::ClaimCeremonyStepResponse) -> Option<Value> {
+    response.instance.map(|instance| {
+        let mut value = ceremony_instance_state_to_json(instance);
+        value["claim_fence"] = json!(response.claim_fence);
+        value
+    })
+}
+
 /// A live working session as the MCP contract carries it.
 ///
 /// This is the shape the in-process backend renders from the domain,

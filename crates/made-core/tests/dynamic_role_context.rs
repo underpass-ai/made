@@ -250,6 +250,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
         .decide(
             &CeremonyCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("writer"),
+                claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
                 result: StepResult::completed(output).unwrap(),
                 now,
             }),
@@ -277,6 +278,7 @@ fn dynamic_claim_seals_role_while_context_changes() {
         .decide(
             &CeremonyCommand::ApplyStepResult(ApplyStepResult {
                 step_id: step("dynamic"),
+                claim_fence: instance.step_claim_fence(&step("dynamic")).unwrap(),
                 result: StepResult::completed(StepOutput::empty()).unwrap(),
                 now,
             }),
@@ -307,6 +309,7 @@ fn context_writes_validate_every_source_before_emitting_any_event() {
     let decision = instance.decide(
         &CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("writer"),
+            claim_fence: instance.step_claim_fence(&step("writer")).unwrap(),
             result: StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         }),
@@ -495,6 +498,7 @@ fn an_explicit_free_static_role_is_not_overridden_by_the_default_claim_projectio
         .apply_step_result(
             &definition,
             &step("writer"),
+            instance.step_claim_fence(&step("writer")).unwrap(),
             StepResult::completed(output).unwrap(),
             now,
         )
@@ -534,6 +538,7 @@ fn a_role_used_in_an_earlier_concurrent_state_is_available_in_the_next_state() {
         .apply_step_result(
             &definition,
             &step("first_step"),
+            instance.step_claim_fence(&step("first_step")).unwrap(),
             StepResult::completed(StepOutput::empty()).unwrap(),
             now,
         )

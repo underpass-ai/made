@@ -188,7 +188,7 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
     json!({
         "type": "object",
         "additionalProperties": false,
-        "required": ["ceremony_id", "step_id", "actor_kind", "status"],
+        "required": ["ceremony_id", "step_id", "actor_kind", "status", "claim_fence"],
         // What `status` is decides whether `error` belongs, and the
         // schema says so rather than only describing it: a failure with
         // no reason is not a report, and a reason attached to a success
@@ -201,6 +201,7 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
         "then": { "required": ["error"] },
         "else": { "not": { "required": ["error"] } },
         "properties": {
+            "claim_fence": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Identity returned by the accepted claim; retain across execution and retries."},
             "ceremony_id": string_schema("Started ceremony instance id."),
             "step_id": string_schema("Previously claimed ceremony step receiving the host's result."),
             "actor_kind": {
