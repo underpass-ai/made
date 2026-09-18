@@ -1159,6 +1159,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "fs2"
+version = "0.4.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9564fc758e15025b46aa6643b1b77d047d1a56a1aea6e01002ac0c7026876213"
+dependencies = [
+ "libc",
+ "winapi",
+]
+
+[[package]]
 name = "futures"
 version = "0.3.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2002,6 +2012,7 @@ dependencies = [
  "async-nats",
  "async-trait",
  "figment",
+ "fs2",
  "futures",
  "jsonschema",
  "made-app",
@@ -2019,6 +2030,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
+ "sha2",
  "sqlx",
  "tempfile",
  "thiserror 1.0.69",
@@ -2050,6 +2062,7 @@ name = "made-app"
 version = "0.6.0"
 dependencies = [
  "async-trait",
+ "base64 0.22.1",
  "criterion",
  "futures",
  "made-core",
@@ -2057,6 +2070,7 @@ dependencies = [
  "opentelemetry",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror 1.0.69",
  "time",
  "tokio",
@@ -2217,6 +2231,8 @@ dependencies = [
  "prost-types 0.13.5",
  "rcgen",
  "serde_json",
+ "sha2",
+ "sqlx",
  "tempfile",
  "testcontainers",
  "time",

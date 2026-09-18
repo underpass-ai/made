@@ -1,0 +1,20 @@
+use async_trait::async_trait;
+
+use super::{CeremonyExecutionObservation, CeremonyExecutionRequest};
+use crate::error::DomainError;
+use crate::value_objects::{ArtifactSourceKind, ExecutionConnectorId, ExecutionRecoveryCapability};
+
+/// Executes or authoritatively recovers a semantic operation for one claim.
+#[async_trait]
+pub trait CeremonyExecutionConnectorPort: Send + Sync {
+    fn connector_id(&self) -> &ExecutionConnectorId;
+
+    fn recovery_capability(&self) -> ExecutionRecoveryCapability;
+
+    fn source_kind(&self) -> ArtifactSourceKind;
+
+    async fn execute_or_recover(
+        &self,
+        request: CeremonyExecutionRequest,
+    ) -> Result<CeremonyExecutionObservation, DomainError>;
+}

@@ -8,6 +8,12 @@ spec:
 {{- if and .Values.persistence.ceremonies.enabled (gt (int .Values.replicaCount) 1) }}
 {{- fail "persistence.ceremonies.enabled=true requires replicaCount=1: the embedded ceremony store takes an exclusive file lock and serves a single process" }}
 {{- end }}
+{{- if and .Values.persistence.artifacts.enabled (gt (int .Values.replicaCount) 1) }}
+{{- fail "persistence.artifacts.enabled=true requires replicaCount=1: use the shared Postgres artifact adapter for replicas" }}
+{{- end }}
+{{- if and .Values.persistence.artifacts.enabled .Values.persistence.postgres.enabled }}
+{{- fail "choose one artifact adapter: persistence.artifacts for local storage or persistence.postgres for shared storage" }}
+{{- end }}
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
@@ -60,12 +66,17 @@ spec:
       {{- fail "MADE_JUDGE_ENABLED is set but providerEnv lacks MADE_VLLM_ENDPOINT/MADE_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
       {{- end }}
       {{- end }}
-      {{- if or .Values.persistence.ceremonies.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+      {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
       volumes:
         {{- if .Values.persistence.ceremonies.enabled }}
         - name: ceremonies
           persistentVolumeClaim:
             claimName: {{ include "made.fullname" . }}-ceremonies
+        {{- end }}
+        {{- if .Values.persistence.artifacts.enabled }}
+        - name: artifacts
+          persistentVolumeClaim:
+            claimName: {{ include "made.fullname" . }}-artifacts
         {{- end }}
         {{- if .Values.tmpVolume.enabled }}
         - name: tmp
@@ -95,11 +106,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if or .Values.persistence.ceremonies.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+          {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
           volumeMounts:
             {{- if .Values.persistence.ceremonies.enabled }}
             - name: ceremonies
               mountPath: {{ .Values.persistence.ceremonies.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.persistence.artifacts.enabled }}
+            - name: artifacts
+              mountPath: {{ .Values.persistence.artifacts.mountPath | quote }}
             {{- end }}
             {{- if .Values.tmpVolume.enabled }}
             - name: tmp
@@ -198,6 +213,10 @@ spec:
             {{- if .Values.persistence.ceremonies.enabled }}
             - name: MADE_CEREMONY_STORE_PATH
               value: {{ printf "%s/ceremonies.sqlite3" .Values.persistence.ceremonies.mountPath | quote }}
+            {{- end }}
+            {{- if .Values.persistence.artifacts.enabled }}
+            - name: MADE_ARTIFACT_STORE_PATH
+              value: {{ .Values.persistence.artifacts.mountPath | quote }}
             {{- end }}
             {{- if .Values.persistence.postgres.enabled }}
             {{- if and .Values.persistence.postgres.urlFromSecret.name .Values.persistence.postgres.urlFromSecret.key }}

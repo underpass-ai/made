@@ -1,5 +1,6 @@
 use crate::{embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION};
 use made_adapters::agents::DispatchingAgentFactory;
+use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::ceremony::{
     CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
     CeremonyTracingSubscriber,
@@ -11,6 +12,7 @@ use made_adapters::sqlite::{
     SqliteDeliberationRepository,
 };
 use made_api::ApiError;
+use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
@@ -22,12 +24,15 @@ use made_app::usecases::{
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
-    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
-    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, StatisticsPort,
+    ArtifactChunkPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError, ArtifactTombstone,
+    ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
+    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
+    MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
+    ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
-use made_core::value_objects::{CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{ArtifactId, ArtifactRef, CeremonyEventConsumer, CeremonyId};
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
@@ -77,6 +82,7 @@ pub struct EmbeddedMade {
     /// another append to move again.
     event_publisher: Option<Arc<PublishCeremonyEventsUseCase>>,
     event_publisher_consumer: CeremonyEventConsumer,
+    artifacts: Option<Arc<ArtifactService>>,
 }
 
 impl EmbeddedMade {
@@ -88,10 +94,11 @@ impl EmbeddedMade {
     ///
     /// Open the canonical durable SQLite store.
     pub fn open(path: impl AsRef<std::path::Path>) -> Result<Self, ApiError> {
+        let path = path.as_ref();
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
-        Self::over(store)
+        Self::over(store, open_artifact_store(path)?)
     }
 
     /// Open durable SQLite and publish its global feed after each append.
@@ -99,6 +106,7 @@ impl EmbeddedMade {
         path: impl AsRef<std::path::Path>,
         transport: Arc<dyn CeremonyEventTransportPort>,
     ) -> Result<Self, ApiError> {
+        let path = path.as_ref();
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
@@ -107,6 +115,7 @@ impl EmbeddedMade {
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
+            .with_artifact_store(Arc::new(open_artifact_store(path)?))
             .with_event_transport(transport)
             .build())
     }
@@ -120,6 +129,7 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
+        let path = path.as_ref();
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
@@ -128,6 +138,7 @@ impl EmbeddedMade {
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
+            .with_artifact_store(Arc::new(open_artifact_store(path)?))
             .with_observability(metrics)
             .build())
     }
@@ -142,6 +153,7 @@ impl EmbeddedMade {
     where
         M: MetricsRecorderPort + MetricsSnapshotPort + 'static,
     {
+        let path = path.as_ref();
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
@@ -150,17 +162,19 @@ impl EmbeddedMade {
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
+            .with_artifact_store(Arc::new(open_artifact_store(path)?))
             .with_observability(metrics)
             .with_event_transport(transport)
             .build())
     }
 
-    fn over(store: SqliteCeremonyStore) -> Result<Self, ApiError> {
+    fn over(store: SqliteCeremonyStore, artifacts: LocalArtifactStore) -> Result<Self, ApiError> {
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
+            .with_artifact_store(Arc::new(artifacts))
             .build())
     }
 
@@ -205,6 +219,7 @@ impl EmbeddedMade {
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
         event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
         progress_settings: CeremonyProgressSettings,
+        artifacts: Option<Arc<ArtifactService>>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -267,6 +282,7 @@ impl EmbeddedMade {
             memory_reader,
             event_publisher,
             event_publisher_consumer,
+            artifacts,
         }
     }
 
@@ -341,6 +357,80 @@ impl EmbeddedMade {
             .execute()
             .await
     }
+
+    pub async fn begin_artifact_upload(
+        &self,
+        request: BeginArtifactUpload,
+    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
+        self.artifact_service()?.begin_upload(request).await
+    }
+
+    pub async fn put_artifact_chunk(
+        &self,
+        request: PutArtifactChunk,
+    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
+        self.artifact_service()?.put_chunk(request).await
+    }
+
+    pub async fn commit_artifact_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
+        self.artifact_service()?.commit_upload(upload_id).await
+    }
+
+    pub async fn abort_artifact_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<(), ArtifactStoreError> {
+        self.artifact_service()?.abort_upload(upload_id).await
+    }
+
+    pub async fn get_artifact(
+        &self,
+        artifact_id: &ArtifactId,
+    ) -> Result<ArtifactRecord, ArtifactStoreError> {
+        self.artifact_service()?.get(artifact_id).await
+    }
+
+    pub async fn list_artifacts(
+        &self,
+        cursor: Option<&ArtifactCursor>,
+        limit: ArtifactPageLimit,
+    ) -> Result<ArtifactListing, ArtifactStoreError> {
+        self.artifact_service()?.list_page(cursor, limit).await
+    }
+
+    pub async fn read_artifact_chunk(
+        &self,
+        request: ReadArtifactChunk,
+    ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
+        self.artifact_service()?.read_chunk(request).await
+    }
+
+    /// The host must authorize retention before calling this method.
+    pub async fn tombstone_artifact(
+        &self,
+        command: TombstoneArtifact,
+    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
+        self.artifact_service()?.tombstone(command).await
+    }
+
+    fn artifact_service(&self) -> Result<&ArtifactService, ArtifactStoreError> {
+        self.artifacts
+            .as_deref()
+            .ok_or(ArtifactStoreError::StorageUnavailable)
+    }
+}
+
+fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, ApiError> {
+    let mut root = path.as_os_str().to_owned();
+    root.push(".artifacts");
+    LocalArtifactStore::open(std::path::PathBuf::from(root)).map_err(|error| {
+        ApiError::Unavailable {
+            reason: format!("the durable local artifact store did not open: {error}"),
+        }
+    })
 }
 
 impl Default for EmbeddedMade {

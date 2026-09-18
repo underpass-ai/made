@@ -222,6 +222,17 @@ service MadeService {
   // same state report the same bytes whichever engine served the call.
   rpc GenerateCeremonyReport(GenerateCeremonyReportRequest) returns (GenerateCeremonyReportResponse);
 
+  // Bounded artifact transfer. Metadata is safe to list; blob bytes cross the
+  // API only through the chunk verbs and are never embedded in ArtifactRef.
+  rpc BeginArtifactUpload(BeginArtifactUploadRequest) returns (BeginArtifactUploadResponse);
+  rpc PutArtifactChunk(PutArtifactChunkRequest) returns (PutArtifactChunkResponse);
+  rpc CommitArtifactUpload(CommitArtifactUploadRequest) returns (CommitArtifactUploadResponse);
+  rpc AbortArtifactUpload(AbortArtifactUploadRequest) returns (AbortArtifactUploadResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc ReadArtifactChunk(ReadArtifactChunkRequest) returns (ReadArtifactChunkResponse);
+  rpc TombstoneArtifact(TombstoneArtifactRequest) returns (TombstoneArtifactResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -2096,4 +2107,130 @@ message VerifyCeremonyJournalResponse {
   uint64 first_broken_sequence = 5;
   // Why, in words. Empty when the journal is intact.
   string reason = 6;
+}
+
+enum ArtifactSourceKind {
+  ARTIFACT_SOURCE_KIND_UNSPECIFIED = 0;
+  ARTIFACT_SOURCE_KIND_EXTERNAL_EXECUTION = 1;
+  ARTIFACT_SOURCE_KIND_FIXTURE = 2;
+  ARTIFACT_SOURCE_KIND_NO_OP = 3;
+  ARTIFACT_SOURCE_KIND_GENERATED_REPORT = 4;
+  ARTIFACT_SOURCE_KIND_IMPORTED = 5;
+}
+
+message ArtifactProvenance {
+  ArtifactSourceKind source_kind = 1;
+  optional string execution_receipt_id = 2;
+  optional string operation_id = 3;
+  optional string accepted_claim_fence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  optional string import_ref = 6;
+}
+
+message ArtifactReference {
+  string artifact_id = 1;
+  string digest = 2;
+  uint64 size_bytes = 3;
+  string media_type = 4;
+  ArtifactProvenance provenance = 5;
+}
+
+message ArtifactTombstoneRecord {
+  string actor = 1;
+  string policy = 2;
+  google.protobuf.Timestamp retired_at = 3;
+  string digest = 4;
+}
+
+message ArtifactRecord {
+  ArtifactReference artifact = 1;
+  optional ArtifactTombstoneRecord tombstone = 2;
+}
+
+message ArtifactUploadStatus {
+  string upload_id = 1;
+  uint64 next_offset = 2;
+  uint32 chunk_limit = 3;
+}
+
+message BeginArtifactUploadRequest {
+  optional string requested_artifact_id = 1;
+  string expected_digest = 2;
+  uint64 size_bytes = 3;
+  string media_type = 4;
+  ArtifactProvenance provenance = 5;
+  string idempotency_key = 6;
+}
+
+message BeginArtifactUploadResponse {
+  ArtifactUploadStatus upload = 1;
+}
+
+message PutArtifactChunkRequest {
+  string upload_id = 1;
+  uint64 offset = 2;
+  bytes bytes = 3;
+  string chunk_digest = 4;
+}
+
+message PutArtifactChunkResponse {
+  ArtifactUploadStatus upload = 1;
+}
+
+message CommitArtifactUploadRequest {
+  string upload_id = 1;
+}
+
+message CommitArtifactUploadResponse {
+  ArtifactReference artifact = 1;
+}
+
+message AbortArtifactUploadRequest {
+  string upload_id = 1;
+}
+
+message AbortArtifactUploadResponse {}
+
+message GetArtifactRequest {
+  string artifact_id = 1;
+}
+
+message GetArtifactResponse {
+  ArtifactRecord record = 1;
+}
+
+message ListArtifactsRequest {
+  optional string cursor = 1;
+  // Zero takes the default, 50. Maximum 100.
+  uint32 limit = 2;
+}
+
+message ListArtifactsResponse {
+  repeated ArtifactRecord artifacts = 1;
+  optional string next_cursor = 2;
+}
+
+message ReadArtifactChunkRequest {
+  string artifact_id = 1;
+  uint64 offset = 2;
+  // Zero takes the default, 64 KiB. Maximum 1 MiB.
+  uint32 max_bytes = 3;
+}
+
+message ReadArtifactChunkResponse {
+  bytes bytes = 1;
+  uint64 next_offset = 2;
+  string chunk_digest = 3;
+  bool eof = 4;
+}
+
+message TombstoneArtifactRequest {
+  string artifact_id = 1;
+  string actor = 2;
+  string policy = 3;
+  google.protobuf.Timestamp retired_at = 4;
+}
+
+message TombstoneArtifactResponse {
+  ArtifactTombstoneRecord tombstone = 1;
 }

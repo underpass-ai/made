@@ -18,18 +18,19 @@ use made_adapters::validators::{
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
+use made_app::artifacts::ArtifactService;
 use made_app::usecases::CeremonyProgressSettings;
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceRequest,
-    CeremonyEvidenceSourcePort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutorPort, MemoryReaderPort, MemoryWriterPort, MessagingPort,
-    MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ArtifactStorePort,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
+    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort,
+    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MemoryReaderPort,
+    MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
+    NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -75,6 +76,7 @@ pub struct EmbeddedMadeBuilder {
     messaging: Option<Arc<dyn MessagingPort>>,
     council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     progress_settings: Option<CeremonyProgressSettings>,
+    artifact_store: Option<Arc<dyn ArtifactStorePort>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -218,6 +220,13 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_progress_settings(mut self, settings: CeremonyProgressSettings) -> Self {
         self.progress_settings = Some(settings);
+        self
+    }
+
+    /// Use the host's durable artifact store through the bounded public service.
+    #[must_use]
+    pub fn with_artifact_store(mut self, adapter: Arc<dyn ArtifactStorePort>) -> Self {
+        self.artifact_store = Some(adapter);
         self
     }
 
@@ -449,6 +458,11 @@ impl EmbeddedMadeBuilder {
         });
         let council_services =
             self.compose_councils(clock.clone(), statistics.clone(), metrics.clone());
+        let artifacts = self
+            .artifact_store
+            .take()
+            .map(ArtifactService::new)
+            .map(Arc::new);
 
         EmbeddedMade::new(
             definitions,
@@ -469,6 +483,7 @@ impl EmbeddedMadeBuilder {
             self.subscriber.take(),
             self.event_transport.take(),
             self.progress_settings.unwrap_or_default(),
+            artifacts,
         )
     }
 

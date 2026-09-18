@@ -58,6 +58,7 @@ use ceremony_lifecycle::CeremonyLifecycleControls;
 use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
 use persistence::wire_persistence;
 
+mod artifact_storage;
 mod ceremony_lifecycle;
 mod ceremony_persistence;
 mod messaging;
@@ -94,18 +95,9 @@ fn wire_scoring(
     }
 }
 
-/// Wire the full application.
-///
-/// - Reads [`made_adapters::config::ServiceConfig`] from the environment.
-/// - Builds the in-memory registries plus the configured execution
-///   backend. `noop` remains the default; richer executors are
-///   selected explicitly by deployment configuration.
-/// - When `nats_enabled`, connects to NATS and wires both the
-///   outbound `NatsMessaging` and the inbound `NatsTriggerSubscriber`.
-///   Otherwise uses [`NoopMessaging`].
-/// - Optionally seeds demo councils if `MADE_SEED_SPECIALTIES` is
-///   set, so an empty deployment is immediately exercisable against
-///   the AsyncAPI / gRPC contract.
+/// Wire configured adapters and in-memory defaults into the runnable application.
+/// Explicit environment settings select richer persistence, messaging, execution,
+/// and seed adapters; omitted integrations retain their documented defaults.
 #[allow(clippy::too_many_lines)]
 pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
@@ -164,6 +156,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         statistics,
         pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
+    let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
 
     // The contract registry is in-memory only today: contracts are
     // small, stable, and seeded from `MADE_CONTRACT_DIR` so the
@@ -493,7 +486,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_events.clone(),
     ));
 
-    let grpc_service = made_adapters::grpc::MadeGrpcService::builder()
+    let mut grpc_builder = made_adapters::grpc::MadeGrpcService::builder()
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .create_council(create_council)
@@ -545,8 +538,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .clock(clock.clone())
-        .max_parallel_ceiling(service_config.max_parallel)
-        .build()?;
+        .max_parallel_ceiling(service_config.max_parallel);
+    if let Some(artifacts) = artifacts {
+        grpc_builder = grpc_builder.artifacts(artifacts);
+    }
+    let grpc_service = grpc_builder.build()?;
 
     let health_state = crate::health::HealthState::new(
         nats_client,
@@ -602,13 +598,7 @@ mod tests {
     use made_proto::runtime_v1 as runtime_pb;
     use tonic::{transport::Server, Request, Response, Status};
 
-    // Shared across every test in this module so concurrent MADE_*
-    // env mutations cannot race each other. Previously each test held
-    // its own per-fn static, which serialised the test against itself
-    // but did nothing across tests — under cargo's default parallel
-    // runner the two `compose_builds_application_*` tests then
-    // clobbered each other's vars, producing flaky NATS DNS lookups
-    // in CI.
+    // One lock prevents concurrent tests racing over process-wide MADE_* variables.
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[tokio::test]
