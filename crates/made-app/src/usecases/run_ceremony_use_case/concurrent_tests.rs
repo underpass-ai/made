@@ -23,6 +23,109 @@ use crate::usecases::ceremony_test_support::{
     EventStoreFake, FixedClock,
 };
 
+struct SnapshotReadFault {
+    store: Arc<EventStoreFake>,
+    failed: std::sync::atomic::AtomicBool,
+}
+
+#[async_trait]
+impl made_core::ports::CeremonySnapshotStorePort for SnapshotReadFault {
+    async fn save(&self, snapshot: made_core::ports::CeremonySnapshot) -> Result<(), DomainError> {
+        made_core::ports::CeremonySnapshotStorePort::save(self.store.as_ref(), snapshot).await
+    }
+
+    async fn latest(
+        &self,
+        id: &made_core::value_objects::CeremonyId,
+    ) -> Result<Option<made_core::ports::CeremonySnapshot>, DomainError> {
+        let snapshot = self.store.latest(id).await?;
+        let active = snapshot.as_ref().map_or(0, |snapshot| {
+            snapshot
+                .instance
+                .step_records()
+                .values()
+                .filter(|record| record.has_live_lease_at(now()))
+                .count()
+        });
+        if active == 2 && !self.failed.swap(true, Ordering::SeqCst) {
+            return Err(DomainError::InvariantViolated {
+                reason: "injected post-claim read failure",
+            });
+        }
+        Ok(snapshot)
+    }
+
+    async fn forget(&self, id: &made_core::value_objects::CeremonyId) -> Result<(), DomainError> {
+        self.store.forget(id).await
+    }
+}
+
+#[tokio::test]
+async fn reload_failure_after_claim_drains_every_accepted_sibling() {
+    let definition = concurrent_definition(3, GuardCondition::AllStepsCompleted);
+    let store = Arc::new(EventStoreFake::default());
+    let stream = Arc::new(crate::services::SessionStream::new(
+        store.clone(),
+        Arc::new(SnapshotReadFault {
+            store: store.clone(),
+            failed: false.into(),
+        }),
+        Arc::new(made_core::ports::NoopCeremonyEventSubscriber),
+    ));
+    let handler = GatedHandler::new(0, []);
+    let usecase = RunCeremonyUseCase::new(
+        Arc::new(DefinitionRepositoryFake::new(definition.clone())),
+        stream.clone(),
+        handler.clone(),
+        Arc::new(FixedClock::new(now())),
+    );
+    let error = usecase
+        .execute(RunCeremonyInput::new(
+            ceremony_id(),
+            definition,
+            CeremonyContext::empty(),
+            lease_owner(),
+            lease_ttl(),
+            "driver-test",
+            AuditActorKind::Agent,
+        ))
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        DomainError::InvariantViolated {
+            reason: "injected post-claim read failure"
+        }
+    ));
+    assert_eq!(handler.calls.lock().await.len(), 2);
+    let records = stream.records(&ceremony_id()).await.unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record.event(), Some(CeremonyEvent::StepStarted(_))))
+            .count(),
+        2
+    );
+    assert_eq!(
+        records
+            .iter()
+            .filter(|record| matches!(record.event(), Some(CeremonyEvent::StepCompleted(_))))
+            .count(),
+        2
+    );
+    assert!(!records
+        .iter()
+        .any(|record| matches!(record.event(), Some(CeremonyEvent::TransitionApplied(_)))));
+    assert!(stream
+        .load(&ceremony_id())
+        .await
+        .unwrap()
+        .instance
+        .step_records()
+        .values()
+        .all(|record| !record.has_live_lease_at(now())));
+}
+
 struct GatedHandler {
     barrier: Arc<Barrier>,
     gated_calls: usize,
