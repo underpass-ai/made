@@ -48,7 +48,7 @@ fn intent() -> Value {
         "objective":"Delegate published reviews and wait for explicit child joins.",
         "required_inputs":["artifact_0","artifact_1","artifact_2"],
         "outputs":["decision"],
-        "participants":[{"role_id":"PARENT"}],
+        "participants":[{"role_id":"PARENT"},{"role_id":"OTHER"}],
         "stages":[
             {
                 "id":"delegate_all", "owner_role_id":"PARENT", "instructions":"Delegate all.",
@@ -69,7 +69,7 @@ fn intent() -> Value {
                             "id":"group_spawn", "owner_role_id":"PARENT",
                             "instructions":"Delegate from a group step.", "spawn":spawn(1, 2, 2)
                         },
-                        {"id":"group_work","owner_role_id":"PARENT","instructions":"Work beside it."}
+                        {"id":"group_work","owner_role_id":"OTHER","instructions":"Work beside it."}
                     ],
                     "join":{"condition":"all_steps_completed"}
                 }
@@ -144,7 +144,7 @@ fn document() -> CeremonyDesignDocument {
     );
     let group_work = CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
         StepId::new("group_work").unwrap(),
-        RoleId::new("PARENT").unwrap(),
+        RoleId::new("OTHER").unwrap(),
         StepInstructions::new("Work beside it.").unwrap(),
         None,
         None,
@@ -163,10 +163,10 @@ fn document() -> CeremonyDesignDocument {
             .collect(),
         Vec::new(),
         vec![OutputName::new("decision").unwrap()],
-        vec![CeremonyDesignParticipant::new(
-            RoleId::new("PARENT").unwrap(),
-            [],
-        )],
+        ["PARENT", "OTHER"]
+            .into_iter()
+            .map(|role| CeremonyDesignParticipant::new(RoleId::new(role).unwrap(), []))
+            .collect(),
         Vec::new(),
         None,
         None,
@@ -247,10 +247,13 @@ fn proto_request() -> DesignCeremonyRequest {
             "artifact_2".into(),
         ],
         outputs: vec!["decision".into()],
-        participants: vec![ProtoParticipant {
-            role_id: "PARENT".into(),
-            capabilities: Vec::new(),
-        }],
+        participants: ["PARENT", "OTHER"]
+            .into_iter()
+            .map(|role| ProtoParticipant {
+                role_id: role.into(),
+                capabilities: Vec::new(),
+            })
+            .collect(),
         stages: vec![
             proto_leaf(
                 "delegate_all",
@@ -278,7 +281,7 @@ fn proto_request() -> DesignCeremonyRequest {
                         },
                         ProtoGroupStep {
                             id: "group_work".into(),
-                            owner_role_id: "PARENT".into(),
+                            owner_role_id: "OTHER".into(),
                             instructions: "Work beside it.".into(),
                             ..Default::default()
                         },

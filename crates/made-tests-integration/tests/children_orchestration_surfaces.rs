@@ -367,6 +367,7 @@ async fn facade_sqlite_competing_planners_adopt_the_one_sealed_plan() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // one durable two-writer scenario through completion and reopen
 async fn facade_sqlite_competing_writers_reopen_one_all_join_without_duplicates() {
     let directory = scratch();
     let path = directory.path().join("children.sqlite3");
@@ -597,7 +598,7 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
             actor_id: "operator".into(),
             actor_kind: "service".into(),
             context: Some(prost_types::Struct {
-                fields: Default::default(),
+                fields: std::collections::BTreeMap::default(),
             }),
         })
         .await
