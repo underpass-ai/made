@@ -14,6 +14,10 @@ operator command.
 
 ## Unreleased
 
+- Give MADE its own `underpass-made` marketplace identity so its catalogue can
+  coexist with KMP's `underpass`; document migration and expose the official
+  website on the plugin card. (#39)
+
 ## [0.5.0] - 2026-09-18
 
 This release combines the event-stream and durable-memory foundation from

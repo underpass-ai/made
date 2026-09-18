@@ -6,11 +6,18 @@ database.
 
 ## Installation
 
+The `underpass-made` catalogue name ships after 0.5.0 and coexists with KMP's
+`underpass`. Before the next release advances the stable branch, test from a
+checkout containing the fix with `codex plugin marketplace add /absolute/path/to/made`.
+For existing `underpass` registrations, follow the
+[source-aware migration steps](../../docs/operations/codex-plugin.md#coexistence-and-migration-from-underpass)
+before installing a second MADE server.
+
 **Claude Code** — from this repository's stable marketplace branch:
 
 ```text
 /plugin marketplace add underpass-ai/made@marketplace
-/plugin install made@underpass
+/plugin install made@underpass-made
 /made:setup
 ```
 
@@ -18,7 +25,7 @@ database.
 
 ```text
 codex plugin marketplace add underpass-ai/made --ref marketplace
-codex plugin add made@underpass
+codex plugin add made@underpass-made
 ```
 
 Then ask Codex to run `made-setup`. Setup downloads the `made-mcp` executable
@@ -27,10 +34,10 @@ published SHA-256 checksum, and installs it into the plugin's ignored `bin/`
 directory. No Rust toolchain is required. Start a new host thread after first
 setup or an update so the MCP server and skills reload together.
 
-To update Claude Code, run `/plugin marketplace update underpass`,
-`/plugin update made@underpass`, and `/made:setup`. For Codex, run
-`codex plugin marketplace upgrade underpass`, reinstall with
-`codex plugin add made@underpass`, then run `made-setup`. The marketplace and
+To update Claude Code, run `/plugin marketplace update underpass-made`,
+`/plugin update made@underpass-made`, and `/made:setup`. For Codex, run
+`codex plugin marketplace upgrade underpass-made`, reinstall with
+`codex plugin add made@underpass-made`, then run `made-setup`. The marketplace and
 engine therefore move to the same immutable release before the new thread
 starts.
 
