@@ -10,12 +10,13 @@ use made_core::value_objects::{
     StepHandlerConfig, StepHandlerKind, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
     StepStatus, StepTimeout, TransitionTrigger,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::{
-    approval_guard_name, approval_trigger, completion_guard, exit_guard_name, num_agents,
-    CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS,
-    DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
+    approval_guard_name, approval_trigger, completion_guard, exit_guard_name,
+    stage_config::stage_config, CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE,
+    DEFAULT_BACKOFF_SECONDS, DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS,
+    DEFAULT_VERSION,
 };
 use crate::usecases::{
     CeremonyDesignExitGuard, CeremonyDesignGroupStep, CeremonyDesignJoin, CeremonyDesignStageEntry,
@@ -241,7 +242,10 @@ pub(super) fn build_definition(
                 state_ids[index].clone(),
                 handler,
                 StepHandlerConfig::new(Attributes::new(stage_config(
-                    document, entry, stage, index,
+                    document,
+                    entry_id(entry),
+                    stage,
+                    index,
                 ))?),
                 retry,
                 Some(timeout),
@@ -364,76 +368,4 @@ fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
             .collect(),
         CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
-}
-
-fn stage_config(
-    document: &CeremonyDesignDocument,
-    entry: &CeremonyDesignStageEntry,
-    stage: &CeremonyDesignStage,
-    index: usize,
-) -> BTreeMap<String, Value> {
-    let mut config = BTreeMap::from([
-        ("num_agents".to_owned(), json!(num_agents(stage))),
-        ("prompt".to_owned(), json!(stage.instructions().trim())),
-        (
-            // Earlier stages are context by default for everything
-            // after the first, which has nothing to see.
-            "see_prior".to_owned(),
-            json!(stage.prior_context().map_or(
-                index > 0,
-                made_core::value_objects::PriorContext::is_visible
-            )),
-        ),
-    ]);
-    if stage.review_rounds().get() > 0 {
-        config.insert("rounds".to_owned(), json!(stage.review_rounds().get()));
-    }
-    let projected = projected_winner_fields(document, entry, stage);
-    if !projected.is_empty() {
-        config.insert("project_winner_fields".to_owned(), json!(projected));
-    }
-    config
-}
-
-fn projected_winner_fields(
-    document: &CeremonyDesignDocument,
-    entry: &CeremonyDesignStageEntry,
-    stage: &CeremonyDesignStage,
-) -> Vec<String> {
-    if document.state_pattern(entry_id(entry)).is_none() {
-        return Vec::new();
-    }
-    let from_context = stage
-        .context_writes()
-        .entries()
-        .values()
-        .map(|field| field.as_str().to_owned());
-    let from_exit_guards = document.stages().iter().flat_map(|candidate| {
-        candidate
-            .exit_guards()
-            .iter()
-            .filter_map(|guard| match guard {
-                CeremonyDesignExitGuard::OutputField(guard) if guard.step_id() == stage.id() => {
-                    Some(guard.output_field().as_str().to_owned())
-                }
-                _ => None,
-            })
-    });
-    let from_routes = document.routes().iter().flat_map(|route| {
-        route
-            .guards()
-            .iter()
-            .filter_map(|(_, condition)| match condition {
-                GuardCondition::OutputField(guard) if guard.step_id() == stage.id() => {
-                    Some(guard.output_field().as_str().to_owned())
-                }
-                _ => None,
-            })
-    });
-    from_context
-        .chain(from_exit_guards)
-        .chain(from_routes)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
 }

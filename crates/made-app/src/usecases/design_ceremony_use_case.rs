@@ -28,6 +28,7 @@ mod definition;
 mod pattern;
 mod pattern_stage;
 mod pattern_stage_routes;
+mod stage_config;
 mod validation;
 
 use definition::build_definition;
