@@ -6,12 +6,15 @@
 //! live. An adapter that answered them itself would be a second copy
 //! of the engine's authorization rules, drifting quietly.
 
-use made_app::usecases::{ApplyCeremonyTransitionInput, RunCeremonyStepInput, StartCeremonyInput};
+use made_app::usecases::{
+    ApplyCeremonyTransitionInput, CancelCeremonyInput, EnforceCeremonyDeadlinesInput,
+    PauseCeremonyInput, ResumeCeremonyInput, RunCeremonyStepInput, StartCeremonyInput,
+};
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs, IdempotencyKey,
-    LeaseOwnerId, StepId, TransitionTrigger,
+    LeaseOwnerId, LifecycleReason, StepId, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 use uuid::Uuid;
@@ -125,6 +128,46 @@ pub fn apply_ceremony_transition_input_from_proto(
         role_kind,
         trigger,
     ))
+}
+
+pub fn pause_ceremony_input_from_proto(
+    request: pb::PauseCeremonyRequest,
+) -> Result<PauseCeremonyInput, DomainError> {
+    Ok(PauseCeremonyInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+        LifecycleReason::new(request.reason)?,
+    ))
+}
+
+pub fn resume_ceremony_input_from_proto(
+    request: pb::ResumeCeremonyRequest,
+) -> Result<ResumeCeremonyInput, DomainError> {
+    Ok(ResumeCeremonyInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+    ))
+}
+
+pub fn cancel_ceremony_input_from_proto(
+    request: pb::CancelCeremonyRequest,
+) -> Result<CancelCeremonyInput, DomainError> {
+    Ok(CancelCeremonyInput::new(
+        CeremonyId::new(request.ceremony_id)?,
+        request.actor_id,
+        actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+        LifecycleReason::new(request.reason)?,
+    ))
+}
+
+pub fn enforce_ceremony_deadlines_input_from_proto(
+    request: pb::EnforceCeremonyDeadlinesRequest,
+) -> Result<EnforceCeremonyDeadlinesInput, DomainError> {
+    Ok(EnforceCeremonyDeadlinesInput::new(CeremonyId::new(
+        request.ceremony_id,
+    )?))
 }
 
 #[cfg(test)]

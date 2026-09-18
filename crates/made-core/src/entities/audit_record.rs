@@ -382,6 +382,8 @@ mod tests {
                     context: CeremonyContext::empty(),
                     bound_definition: None,
                     lineage: None,
+                    ceremony_deadline: None,
+                    state_deadline: None,
                     created_at: AT,
                 })
             }
@@ -401,6 +403,7 @@ mod tests {
                 started_by: author,
                 role_from: None,
                 sealed_role: None,
+                deadline: None,
                 started_at: AT,
             }),
             AuditEventType::StepCompleted => CeremonyEvent::StepCompleted(StepCompleted {

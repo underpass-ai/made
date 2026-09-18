@@ -119,6 +119,8 @@ fn starting_is_the_fold_of_the_opening_event() {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            ceremony_deadline: None,
+            state_deadline: None,
             created_at: OPENED_AT,
         }
     );
@@ -216,6 +218,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
             started_by: role("facilitator"),
             role_from: None,
             sealed_role: None,
+            deadline: None,
             started_at: at(1),
         })]
     );
@@ -424,7 +427,8 @@ fn a_move_into_an_intermediate_state_is_one_event() {
         vec![CeremonyEvent::TransitionApplied(TransitionApplied {
             destination: Some(made_core::entities::ceremony_events::StateVisitEntry {
                 state_visit: StateVisit::new(2).unwrap(),
-                step_ids: vec![step("check")]
+                step_ids: vec![step("check")],
+                deadline: None,
             }),
             transition: CeremonyTransitionRecord::record_at(
                 trigger("submit"),
@@ -482,7 +486,8 @@ fn a_move_into_a_terminal_state_also_completes_the_ceremony() {
             CeremonyEvent::TransitionApplied(TransitionApplied {
                 destination: Some(made_core::entities::ceremony_events::StateVisitEntry {
                     state_visit: StateVisit::new(2).unwrap(),
-                    step_ids: vec![]
+                    step_ids: vec![],
+                    deadline: None,
                 }),
                 transition: CeremonyTransitionRecord::record_at(
                     trigger("abandon"),

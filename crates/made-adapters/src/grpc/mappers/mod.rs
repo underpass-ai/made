@@ -62,7 +62,9 @@ pub use ceremony_instance::{
 };
 pub use ceremony_instance_children::child_completion_state_from;
 pub use ceremony_lifecycle::{
-    apply_ceremony_transition_input_from_proto, run_ceremony_step_input_from_proto,
+    apply_ceremony_transition_input_from_proto, cancel_ceremony_input_from_proto,
+    enforce_ceremony_deadlines_input_from_proto, pause_ceremony_input_from_proto,
+    resume_ceremony_input_from_proto, run_ceremony_step_input_from_proto,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, StartCeremonyFromYaml,
 };
 pub use ceremony_progress::stream_ceremony_response_from;

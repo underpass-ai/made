@@ -16,11 +16,14 @@ use super::proto_to_json as p2j;
 use super::streaming;
 
 mod ceremony_history_requests;
+mod ceremony_read_dispatch;
 mod ceremony_requests;
 mod children_dispatch;
 mod design_ceremony_request;
 mod general_dispatch;
 mod general_requests;
+mod lifecycle_dispatch;
+mod lifecycle_requests;
 mod request_error;
 
 use request_error::bad_request;
@@ -56,38 +59,14 @@ pub(crate) async fn dispatch(
     if children_dispatch::handles(name) {
         return children_dispatch::dispatch(&mut client, name, arguments).await;
     }
+    if lifecycle_dispatch::handles(name) {
+        return lifecycle_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if ceremony_read_dispatch::handles(name) {
+        return ceremony_read_dispatch::dispatch(&mut client, name, arguments).await;
+    }
 
     match name {
-        // The read side of a working session. The response is the
-        // same shape the in-process backend renders, which is the
-        // whole point: one tool, either backend, one answer.
-        "made_get_ceremony_instance" => {
-            let obj =
-                j2p::require_object(arguments, "tools/call.arguments").map_err(bad_request)?;
-            let request = pb::GetCeremonyInstanceRequest {
-                ceremony_id: j2p::require_str(obj, "ceremony_id")
-                    .map_err(bad_request)?
-                    .to_owned(),
-            };
-            let response = client.get_ceremony_instance(request).await?;
-            let pb::GetCeremonyInstanceResponse { instance } = response.into_inner();
-            instance
-                .map(p2j::ceremony_instance_state_to_json)
-                .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
-        }
-
-        "made_list_ceremony_instances" => {
-            let response = client
-                .list_ceremony_instances(pb::ListCeremonyInstancesRequest {})
-                .await?;
-            let pb::ListCeremonyInstancesResponse { instances } = response.into_inner();
-            let entries = instances
-                .into_iter()
-                .map(p2j::ceremony_instance_listing_entry)
-                .collect::<Vec<_>>();
-            Ok(crate::renderers::CeremonyInstanceListing::new(entries).to_json())
-        }
-
         // Every move answers with the session, so one converter serves
         // them all — the same shape the in-process backend renders.
         "made_start_ceremony" => {

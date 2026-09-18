@@ -6,6 +6,26 @@ durable visits and strict list validation are absent from v0.5.0.
 Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
+## Pause, resume, cancel and deadlines
+
+`made_pause_ceremony` stops new claims, transitions and child plans. Claims and
+child plans already sealed before the pause may finish opening and adoption;
+their exact fenced completions remain valid. `made_resume_ceremony` reopens
+admission without shifting a deadline or lease. `made_cancel_ceremony` is
+irreversible and does not implicitly cancel children or external work.
+
+Definitions may declare ceremony, state and step timeouts. Their absolute
+deadlines are sealed when the ceremony starts, a state is entered or a step is
+claimed. A driver calls `made_enforce_ceremony_deadlines`; replay never reads
+the wall clock. Ceremony and state expiry end the instance. Step expiry retires
+that attempt and permits a retry. A result carrying the exact retired fence is
+recorded once as a late observation and cannot change output, context or
+terminality; a foreign fence is refused without an append.
+
+The lifecycle phase is independent of the definition state. A ceremony can be
+paused in any nonterminal state, and historical completed sessions still read
+as completed even though their old snapshots contain no lifecycle field.
+
 ## Claim → work → complete
 
 1. Inspect the instance and choose a claimable step.

@@ -2,12 +2,15 @@ use made_app::usecases::StartCeremonyStepOutput;
 use made_app::usecases::{
     AcceptChildCompletionInput, AcceptChildCompletionOutput, AcceptChildCompletionUseCase,
     ApplyCeremonyTransitionInput, ApplyCeremonyTransitionUseCase, BindCeremonyParticipantsInput,
-    BindCeremonyParticipantsUseCase, CompleteCeremonyStepInput, CompleteCeremonyStepUseCase,
+    BindCeremonyParticipantsUseCase, CancelCeremonyInput, CancelCeremonyUseCase,
+    CompleteCeremonyStepInput, CompleteCeremonyStepUseCase, EnforceCeremonyDeadlinesInput,
+    EnforceCeremonyDeadlinesUseCase, PauseCeremonyInput, PauseCeremonyUseCase,
     PrepareCeremonyChildrenInput, PrepareCeremonyChildrenOutput, PrepareCeremonyChildrenUseCase,
-    RecoverCeremonyChildrenRound, RecoverCeremonyChildrenUseCase, RunCeremonyInput,
-    RunCeremonyOutput, RunCeremonyStepInput, RunCeremonyStepOutput, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, StartCeremonyInput, StartCeremonyStepInput, StartCeremonyStepUseCase,
-    StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    RecoverCeremonyChildrenRound, RecoverCeremonyChildrenUseCase, ResumeCeremonyInput,
+    ResumeCeremonyUseCase, RunCeremonyInput, RunCeremonyOutput, RunCeremonyStepInput,
+    RunCeremonyStepOutput, RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyInput,
+    StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
@@ -169,6 +172,58 @@ impl EmbeddedMade {
         input: ApplyCeremonyTransitionInput,
     ) -> Result<CeremonyInstance, DomainError> {
         ApplyCeremonyTransitionUseCase::new(
+            self.resolve_definition(),
+            self.stream.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn pause_ceremony(
+        &self,
+        input: PauseCeremonyInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        PauseCeremonyUseCase::new(
+            self.resolve_definition(),
+            self.stream.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn resume_ceremony(
+        &self,
+        input: ResumeCeremonyInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        ResumeCeremonyUseCase::new(
+            self.resolve_definition(),
+            self.stream.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn cancel_ceremony(
+        &self,
+        input: CancelCeremonyInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        CancelCeremonyUseCase::new(
+            self.resolve_definition(),
+            self.stream.clone(),
+            self.clock.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
+    pub async fn enforce_ceremony_deadlines(
+        &self,
+        input: EnforceCeremonyDeadlinesInput,
+    ) -> Result<CeremonyInstance, DomainError> {
+        EnforceCeremonyDeadlinesUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),

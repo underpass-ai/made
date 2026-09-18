@@ -14,7 +14,7 @@ pub(super) struct EmbeddedPrepareCeremonyChildrenRequest {
 impl EmbeddedPrepareCeremonyChildrenRequest {
     pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<Value, ToolError> {
         let step_id = self.run.step_id().clone();
-        let output = self.run.execute_output(made).await?;
+        let output = Box::pin(self.run.execute_output(made)).await?;
         let record = output
             .instance()
             .step_record(&step_id)
