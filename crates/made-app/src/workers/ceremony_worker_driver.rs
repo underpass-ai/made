@@ -5,9 +5,9 @@ use made_core::error::DomainError;
 use made_core::value_objects::ExecutionRecoveryCursor;
 
 use super::{
-    CeremonyDeadlineEnforcementPort, CeremonyWorkerBatchOutcome, CeremonyWorkerPolicy,
-    CeremonyWorkerStopToken, ExecuteCeremonyOperationInput, ExecutionRecoveryInspectorPort,
-    ExecutionRecoveryItem, RecoverableCeremonyWorkerPort,
+    CeremonyDeadlineEnforcementPort, CeremonyWorkerBatchOutcome, CeremonyWorkerItemFailure,
+    CeremonyWorkerPolicy, CeremonyWorkerStopToken, ExecuteCeremonyOperationInput,
+    ExecutionRecoveryInspectorPort, ExecutionRecoveryItem, RecoverableCeremonyWorkerPort,
 };
 
 /// Bounded host loop that drains every admitted chunk before observing stop.
@@ -68,6 +68,7 @@ impl CeremonyWorkerDriver {
         claims: Vec<ExecuteCeremonyOperationInput>,
     ) -> Result<CeremonyWorkerBatchOutcome, DomainError> {
         let mut outcomes = Vec::with_capacity(claims.len());
+        let mut failures = Vec::new();
         for chunk in claims.chunks(usize::from(self.policy.max_parallel().get())) {
             if self.stop.is_requested() {
                 break;
@@ -88,16 +89,24 @@ impl CeremonyWorkerDriver {
                     admitted.push(claim.clone());
                 }
             }
-            let drained = join_all(
-                admitted
-                    .into_iter()
-                    .map(|claim| self.worker.execute_claim(claim)),
-            )
+            let drained = join_all(admitted.into_iter().map(|claim| async {
+                let ceremony_id = claim.handler_request.instance_id().clone();
+                let step_id = claim.handler_request.step_id().clone();
+                (ceremony_id, step_id, self.worker.execute_claim(claim).await)
+            }))
             .await;
-            outcomes.extend(drained.into_iter().collect::<Result<Vec<_>, _>>()?);
+            for (ceremony_id, step_id, result) in drained {
+                match result {
+                    Ok(outcome) => outcomes.push(outcome),
+                    Err(error) => {
+                        failures.push(CeremonyWorkerItemFailure::new(ceremony_id, step_id, error));
+                    }
+                }
+            }
         }
         Ok(CeremonyWorkerBatchOutcome::new(
             outcomes,
+            failures,
             None,
             self.stop.is_requested(),
         ))
@@ -108,7 +117,12 @@ impl CeremonyWorkerDriver {
         after: Option<&ExecutionRecoveryCursor>,
     ) -> Result<CeremonyWorkerBatchOutcome, DomainError> {
         if self.stop.is_requested() {
-            return Ok(CeremonyWorkerBatchOutcome::new(Vec::new(), None, true));
+            return Ok(CeremonyWorkerBatchOutcome::new(
+                Vec::new(),
+                Vec::new(),
+                None,
+                true,
+            ));
         }
         let inspect_recovery =
             self.inspect_recovery
@@ -121,6 +135,7 @@ impl CeremonyWorkerDriver {
             .await?;
         let (items, next_cursor) = page.into_parts();
         let mut outcomes = Vec::with_capacity(items.len());
+        let mut failures = Vec::new();
         for chunk in items.chunks(usize::from(self.policy.max_parallel().get())) {
             if self.stop.is_requested() {
                 break;
@@ -145,13 +160,25 @@ impl CeremonyWorkerDriver {
                     current_claim_fence,
                 ));
             }
-            let drained =
-                join_all(enforced.into_iter().map(|item| self.worker.recover(item))).await;
-            outcomes.extend(drained.into_iter().collect::<Result<Vec<_>, _>>()?);
+            let drained = join_all(enforced.into_iter().map(|item| async {
+                let ceremony_id = item.operation().ceremony_id().clone();
+                let step_id = item.operation().step_id().clone();
+                (ceremony_id, step_id, self.worker.recover(item).await)
+            }))
+            .await;
+            for (ceremony_id, step_id, result) in drained {
+                match result {
+                    Ok(outcome) => outcomes.push(outcome),
+                    Err(error) => {
+                        failures.push(CeremonyWorkerItemFailure::new(ceremony_id, step_id, error));
+                    }
+                }
+            }
         }
         let stopped = self.stop.is_requested();
         Ok(CeremonyWorkerBatchOutcome::new(
             outcomes,
+            failures,
             if stopped { None } else { next_cursor },
             stopped,
         ))
@@ -229,6 +256,41 @@ mod tests {
         recovered: Arc<Mutex<Vec<ExecutionOperationId>>>,
         stop: CeremonyWorkerStopToken,
         stop_on_first: bool,
+    }
+
+    #[derive(Debug)]
+    struct PartlyFailingWorker;
+
+    #[async_trait]
+    impl RecoverableCeremonyWorkerPort for PartlyFailingWorker {
+        async fn execute_claim(
+            &self,
+            input: ExecuteCeremonyOperationInput,
+        ) -> Result<crate::workers::RecoverableCeremonyWorkerOutcome, DomainError> {
+            if input.handler_request.instance_id().as_str() == "ceremony-1" {
+                return Err(DomainError::InvariantViolated {
+                    reason: "injected item failure",
+                });
+            }
+            Ok(
+                crate::workers::RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
+                    ExecutionOperationId::for_step(
+                        input.handler_request.instance_id(),
+                        input.handler_request.step_id(),
+                        input.state_visit,
+                        input.state_iteration,
+                        input.step_iteration,
+                    ),
+                ),
+            )
+        }
+
+        async fn recover(
+            &self,
+            _item: ExecutionRecoveryItem,
+        ) -> Result<crate::workers::RecoverableCeremonyWorkerOutcome, DomainError> {
+            unreachable!("this test only executes fresh claims")
+        }
     }
 
     #[async_trait]
@@ -468,5 +530,37 @@ mod tests {
         operation_ids.sort();
         operation_ids.dedup();
         assert_eq!(operation_ids.len(), 3);
+    }
+
+    #[tokio::test]
+    async fn one_item_failure_keeps_the_successful_sibling_outcome() {
+        let claims = vec![claim(1), claim(2)];
+        let deadlines = Arc::new(DeadlineGate {
+            current: claims
+                .iter()
+                .map(|claim| {
+                    (
+                        claim.handler_request.instance_id().clone(),
+                        claim.claim_fence.clone(),
+                    )
+                })
+                .collect(),
+            calls: AtomicUsize::new(0),
+        });
+        let driver = CeremonyWorkerDriver::for_claims(
+            deadlines,
+            Arc::new(PartlyFailingWorker),
+            CeremonyWorkerPolicy::new(
+                MaxParallel::new(2).unwrap(),
+                ExecutionRecoveryPageLimit::new(2).unwrap(),
+            ),
+            CeremonyWorkerStopToken::new(),
+        );
+
+        let outcome = driver.execute_claims(claims).await.unwrap();
+
+        assert_eq!(outcome.outcomes().len(), 1);
+        assert_eq!(outcome.failures().len(), 1);
+        assert_eq!(outcome.failures()[0].ceremony_id().as_str(), "ceremony-1");
     }
 }

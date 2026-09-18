@@ -196,7 +196,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 20);
+    assert_eq!(pinned, 21);
 }
 
 #[test]
