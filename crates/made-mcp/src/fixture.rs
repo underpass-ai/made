@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
+mod artifact_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
 
@@ -94,6 +95,14 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
                 "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
                 "made_generate_ceremony_report" => ceremony_report_fixture(),
+                "made_begin_artifact_upload" => artifact_fixtures::upload(),
+                "made_put_artifact_chunk" => artifact_fixtures::upload(),
+                "made_commit_artifact_upload" => artifact_fixtures::reference(),
+                "made_abort_artifact_upload" => json!({ "aborted": true }),
+                "made_get_artifact" => artifact_fixtures::record(),
+                "made_list_artifacts" => artifact_fixtures::listing(),
+                "made_read_artifact_chunk" => artifact_fixtures::chunk(),
+                "made_tombstone_artifact" => artifact_fixtures::tombstone(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),
