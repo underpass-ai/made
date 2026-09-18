@@ -191,6 +191,7 @@ mod tests {
         let winner = RoleId::new("replacement").unwrap();
         let won_at = now() + time::Duration::seconds(61);
         let reclaim = CeremonyEvent::StepStarted(StepStarted {
+            state_visit: None,
             step_id: step_id(),
             state_iteration: Some(StateIteration::FIRST),
             iteration: StepIteration::FIRST,

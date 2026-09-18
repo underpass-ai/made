@@ -135,6 +135,7 @@ pub(crate) fn ceremony_transcript_to_json(response: pb::GetCeremonyTranscriptRes
             .map(|entry| json!({
                 "step_id": entry.step_id,
                 "state_iteration": entry.state_iteration,
+                "state_visit": entry.state_visit,
                 "role_id": entry.role_id,
                 "output": entry
                     .output
@@ -247,6 +248,7 @@ mod tests {
                 role_id: "WRITER".to_owned(),
                 output: None,
                 state_iteration: 1,
+                state_visit: 1,
             }],
         });
 

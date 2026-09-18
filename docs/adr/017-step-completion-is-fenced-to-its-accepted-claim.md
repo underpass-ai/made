@@ -13,8 +13,8 @@ completion, incremental app execution and the one-shot driver (#127).
 
 `StepClaimFence` is a domain-owned, canonical 64-character lowercase SHA-256
 value. Its domain-separated, length-delimited input binds the ceremony id,
-step id, execution coordinates, lease owner, idempotency key and acquisition
-and expiry instants. It is a concurrency identity, not an authorization token.
+step id, state visit, state iteration, step iteration, retry attempt, lease
+owner, idempotency key and acquisition and expiry instants. It is a concurrency identity, not an authorization token.
 
 The accepted claim returns its fence before work starts. The aggregate requires
 that same typed value on `ApplyStepResult` and checks it against the current

@@ -27,6 +27,7 @@ impl EventSchemaVersion {
     pub const V1: Self = Self(1);
     pub const V2: Self = Self(2);
     pub const V3: Self = Self(3);
+    pub const V4: Self = Self(4);
 
     pub fn new(value: u32) -> Result<Self, DomainError> {
         if value == 0 {

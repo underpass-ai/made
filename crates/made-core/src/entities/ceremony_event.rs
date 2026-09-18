@@ -85,7 +85,9 @@ impl CeremonyEvent {
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
             Self::StepStarted(event) => {
-                if event.role_from.is_some() || event.sealed_role.is_some() {
+                if event.state_visit.is_some() {
+                    EventSchemaVersion::V4
+                } else if event.role_from.is_some() || event.sealed_role.is_some() {
                     EventSchemaVersion::V3
                 } else {
                     event
@@ -93,23 +95,41 @@ impl CeremonyEvent {
                         .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2)
                 }
             }
-            Self::StepCompleted(event) => event
-                .state_iteration
-                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
-            Self::StepFailed(event) => event
-                .state_iteration
-                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::StepCompleted(event) => {
+                if event.state_visit.is_some() {
+                    EventSchemaVersion::V3
+                } else {
+                    event
+                        .state_iteration
+                        .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2)
+                }
+            }
+            Self::StepFailed(event) => {
+                if event.state_visit.is_some() {
+                    EventSchemaVersion::V3
+                } else {
+                    event
+                        .state_iteration
+                        .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2)
+                }
+            }
             Self::TransitionApplied(event) => {
-                if event.transition.has_explicit_state_iteration() {
+                if event.destination.is_some() || event.transition.has_explicit_state_visit() {
+                    EventSchemaVersion::V3
+                } else if event.transition.has_explicit_state_iteration() {
                     EventSchemaVersion::V2
                 } else {
                     EventSchemaVersion::V1
                 }
             }
+            Self::StateIterationStarted(event) => event
+                .state_visit
+                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::ContextWritten(event) => event
+                .state_visit
+                .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
             Self::CeremonyInstanceStarted(_)
             | Self::ParticipantsBound(_)
-            | Self::StateIterationStarted(_)
-            | Self::ContextWritten(_)
             | Self::InterventionRequested(_)
             | Self::InterventionResponded(_)
             | Self::InterventionClosed(_)

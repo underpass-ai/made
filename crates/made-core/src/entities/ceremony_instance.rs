@@ -31,8 +31,8 @@ use crate::value_objects::{
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyName,
     CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyRecordRef,
     CeremonyTransitionRecord, CeremonyVersion, GuardName, IdempotencyKey, MemoryConfidence,
-    RoleAction, RoleId, SessionRecollection, Specialty, StateId, StateIteration, StepAttempt,
-    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
+    RoleAction, RoleId, SessionRecollection, Specialty, StateId, StateIteration, StateVisit,
+    StepAttempt, StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
 };
 
 mod decisions;
@@ -56,13 +56,15 @@ pub struct CeremonyInstance {
     current_state: StateId,
     #[serde(default, skip_serializing_if = "StateIteration::is_first")]
     current_state_iteration: StateIteration,
+    #[serde(default, skip_serializing_if = "StateVisit::is_first")]
+    current_state_visit: StateVisit,
     step_records: BTreeMap<StepId, StepExecutionRecord>,
-    /// Finished semantic iterations preceding each step's current record.
+    /// Prior executed records, including repeated work and superseded visits.
     ///
-    /// Technical retries remain represented by their attempt number and the
-    /// audit journal. Semantic repetition needs its own durable history: one
-    /// successful iteration must not overwrite the output that made MADE run
-    /// the next one.
+    /// Retries within one visit remain represented by their attempt number and
+    /// the audit journal. A new visit archives every executed destination record,
+    /// including failed or expired work; repetition archives successful work.
+    /// Neither operation overwrites the result that preceded the current record.
     #[serde(default)]
     step_record_history: BTreeMap<StepId, Vec<StepExecutionRecord>>,
     #[serde(default)]
@@ -210,6 +212,11 @@ impl CeremonyInstance {
     #[must_use]
     pub fn current_state(&self) -> &StateId {
         &self.current_state
+    }
+
+    #[must_use]
+    pub fn current_state_visit(&self) -> StateVisit {
+        self.current_state_visit
     }
 
     #[must_use]

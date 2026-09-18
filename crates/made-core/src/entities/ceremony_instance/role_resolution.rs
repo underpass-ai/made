@@ -90,6 +90,7 @@ impl CeremonyInstance {
         for (other_id, record) in &self.step_records {
             if other_id != step_id
                 && record.state_iteration() == current
+                && record.state_visit() == self.current_state_visit
                 && definition
                     .step(other_id)
                     .is_some_and(|step| step.state_id() == &self.current_state)
@@ -103,6 +104,7 @@ impl CeremonyInstance {
             }
             for record in history {
                 if record.state_iteration() == current
+                    && record.state_visit() == self.current_state_visit
                     && definition
                         .step(other_id)
                         .is_some_and(|step| step.state_id() == &self.current_state)

@@ -111,6 +111,7 @@ mod tests {
         AuditFact {
             event_id: EventId::new(event_id).unwrap(),
             event: CeremonyEvent::StepCompleted(StepCompleted {
+                state_visit: None,
                 step_id: StepId::new("draft").unwrap(),
                 state_iteration: None,
                 iteration: StepIteration::FIRST,

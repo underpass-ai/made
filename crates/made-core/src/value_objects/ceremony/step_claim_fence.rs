@@ -42,6 +42,7 @@ impl StepClaimFence {
         for part in [
             instance_id.as_str().to_owned(),
             step_id.as_str().to_owned(),
+            record.state_visit().get().to_string(),
             record.state_iteration().get().to_string(),
             record.iteration().get().to_string(),
             record.attempt().get().to_string(),
@@ -61,8 +62,8 @@ impl StepClaimFence {
 mod tests {
     use super::*;
     use crate::value_objects::{
-        DurationMs, IdempotencyKey, LeaseOwnerId, StateIteration, StepAttempt, StepIteration,
-        StepLease,
+        DurationMs, IdempotencyKey, LeaseOwnerId, StateIteration, StateVisit, StepAttempt,
+        StepIteration, StepLease,
     };
     use time::OffsetDateTime;
 
@@ -101,6 +102,20 @@ mod tests {
         let original = fence("instance", "step", &record("claim"));
         assert_eq!(StepClaimFence::new(original.as_str()).unwrap(), original);
     }
+    #[test]
+    fn fence_changes_when_only_the_state_visit_changes() {
+        let first = record("same-key");
+        let reentered = first.clone().with_state_visit(StateVisit::new(3).unwrap());
+        assert_eq!(first.lease(), reentered.lease());
+        assert_eq!(first.state_iteration(), reentered.state_iteration());
+        assert_eq!(first.iteration(), reentered.iteration());
+        assert_eq!(first.attempt(), reentered.attempt());
+        assert_ne!(
+            fence("instance", "step", &first),
+            fence("instance", "step", &reentered)
+        );
+    }
+
     #[test]
     fn fence_binds_scope_coordinates_and_complete_lease_without_ambiguous_concatenation() {
         let original_record = record("claim");

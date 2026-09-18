@@ -207,7 +207,7 @@ fn an_outgoing_human_guard_controls_the_component_but_an_unrelated_guard_does_no
 }
 
 #[test]
-fn capped_revisit_preserves_the_existing_completed_step_record() {
+fn capped_revisit_archives_completed_work_and_reopens_the_destination() {
     let work = StepId::new("work").unwrap();
     let next = transition("A", "B", "next", Vec::new());
     let back = transition("B", "A", "back", Vec::new());
@@ -246,6 +246,7 @@ fn capped_revisit_preserves_the_existing_completed_step_record() {
     .unwrap();
     let (mut instance, mut events) = start(&definition);
     instance.apply(&CeremonyEvent::StepCompleted(StepCompleted {
+        state_visit: None,
         step_id: work.clone(),
         state_iteration: Some(StateIteration::FIRST),
         iteration: made_core::value_objects::StepIteration::FIRST,
@@ -260,11 +261,52 @@ fn capped_revisit_preserves_the_existing_completed_step_record() {
         StepStatus::Completed
     );
 
+    let mut legacy = instance.clone();
     apply(&mut instance, &definition, "next", &mut events).unwrap();
     apply(&mut instance, &definition, "back", &mut events).unwrap();
+    for event in &events[1..] {
+        let mut raw = serde_json::to_value(event).unwrap();
+        raw.as_object_mut().unwrap().remove("destination");
+        raw["transition"]
+            .as_object_mut()
+            .unwrap()
+            .remove("state_visit");
+        let historical = made_core::entities::CeremonyEventReader::read(
+            made_core::value_objects::AuditEventType::TransitionApplied,
+            made_core::value_objects::EventSchemaVersion::V2,
+            raw.clone(),
+        )
+        .unwrap();
+        assert_eq!(serde_json::to_value(&historical).unwrap(), raw);
+        legacy.apply(&historical);
+    }
+    assert_eq!(legacy.current_state_visit().get(), 1);
+    assert_eq!(
+        legacy.step_record(&work).unwrap().status(),
+        StepStatus::Completed
+    );
+    assert!(legacy.step_record_history(&work).is_empty());
+    let legacy_bytes = serde_json::to_value(&legacy).unwrap();
+    assert!(legacy_bytes.get("current_state_visit").is_none());
+    assert!(legacy_bytes["step_records"]["work"]
+        .get("state_visit")
+        .is_none());
+    assert_eq!(
+        serde_json::from_value::<CeremonyInstance>(legacy_bytes).unwrap(),
+        legacy
+    );
 
     let record = instance.step_record(&work).unwrap();
-    assert_eq!(record.status(), StepStatus::Completed);
+    assert_eq!(record.status(), StepStatus::Pending);
     assert_eq!(record.state_iteration(), StateIteration::FIRST);
-    assert!(instance.step_record_history(&work).is_empty());
+    assert_eq!(record.state_visit().get(), 3);
+    assert_eq!(instance.step_record_history(&work).len(), 1);
+    assert_eq!(
+        instance.step_record_history(&work)[0].status(),
+        StepStatus::Completed
+    );
+    assert_eq!(
+        instance.step_record_history(&work)[0].state_visit().get(),
+        1
+    );
 }

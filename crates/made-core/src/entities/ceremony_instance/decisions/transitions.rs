@@ -55,6 +55,13 @@ impl CeremonyInstance {
         let to_state = transition.to().clone();
         self.require_interventions_resolved_before_entering(definition, &to_state)?;
         let mut events = vec![CeremonyEvent::TransitionApplied(TransitionApplied {
+            destination: Some(crate::entities::ceremony_events::StateVisitEntry {
+                state_visit: self.current_state_visit.next()?,
+                step_ids: definition
+                    .steps_for_state(&to_state)
+                    .map(|step| step.id().clone())
+                    .collect(),
+            }),
             transition: CeremonyTransitionRecord::record_at(
                 command.trigger.clone(),
                 self.current_state.clone(),
@@ -62,7 +69,8 @@ impl CeremonyInstance {
                 to_state.clone(),
                 command.role_id.clone(),
                 command.now,
-            ),
+            )
+            .with_state_visit(self.current_state_visit),
         })];
         if definition.is_terminal_state(&to_state) {
             events.push(CeremonyEvent::CeremonyCompleted(CeremonyCompleted {
