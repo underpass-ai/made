@@ -184,10 +184,7 @@ mod tests {
 
     use async_trait::async_trait;
     use made_core::entities::AuditFact;
-    use made_core::ports::{
-        AppendOutcome, CeremonyEventCursorPort, CeremonyEventSubscriberPort,
-        NoopCeremonyEventSubscriber,
-    };
+    use made_core::ports::{AppendOutcome, CeremonyEventCursorPort, NoopCeremonyEventSubscriber};
     use made_core::value_objects::{
         AuditActorKind, CeremonyEventCursorAttempt, CeremonyEventQuarantineReason, GlobalPosition,
         IdempotencyKey, LeaseOwnerId, QuarantinedCeremonyEvent, StreamVersion,
@@ -491,107 +488,59 @@ mod tests {
         assert!(cursor.position(recover.consumer()).await.unwrap().is_some());
     }
 
-    #[tokio::test]
-    async fn an_adoption_wake_recovers_after_a_crash_before_the_first_child_open() {
-        let definition = child_spawning_definition();
-        let definitions = Arc::new(
-            crate::usecases::ceremony_test_support::DefinitionRepositoryFake::new(
-                definition.clone(),
-            ),
-        );
-        let publications = Arc::new(PublicationsFake::default());
-        publications.seed(review_child_definition()).await;
-        let store = Arc::new(EventStoreFake::default());
-        store.save(&started_instance(&definition)).await.unwrap();
-        let crashing_events = Arc::new(FailFirstChildOpening {
-            store: store.clone(),
-            parent_id: ceremony_id(),
-            failures_remaining: AtomicUsize::new(1),
-        });
-        let crashing_stream = Arc::new(SessionStream::new(
-            crashing_events,
-            store.clone(),
-            Arc::new(NoopCeremonyEventSubscriber) as Arc<dyn CeremonyEventSubscriberPort>,
-        ));
-        let resolver = resolver_with(definitions.clone(), publications.clone());
-        let crashing_prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
-            resolver.clone(),
-            publications.clone(),
-            crashing_stream.clone(),
-            Arc::new(FixedClock::new(now())),
-            a_memory(),
-        ));
-        let runner = RunCeremonyStepUseCase::new(
-            resolver.clone(),
-            crashing_stream,
-            Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
-                reason: "spawn handler must not run",
-            })),
-            Arc::new(FixedClock::new(now())),
-        )
-        .with_child_orchestrator(crashing_prepare);
-
-        let first_error = runner
-            .execute(RunCeremonyStepInput::new(
-                ceremony_id(),
-                role_id(),
-                AuditActorKind::Agent,
-                step_id(),
-                LeaseOwnerId::new("crashed-worker").unwrap(),
-                IdempotencyKey::new("crash-after-plan").unwrap(),
-                lease_ttl(),
-            ))
-            .await
-            .unwrap_err();
-        assert!(first_error.to_string().contains("before child opening"));
-
-        let later = now() + time::Duration::seconds(120);
-        let reclaimed_stream = Arc::new(SessionStream::new(
+    async fn fail_before_first_child_open(
+        store: Arc<EventStoreFake>,
+        resolver: Arc<crate::usecases::ResolveCeremonyDefinitionUseCase>,
+        publications: Arc<PublicationsFake>,
+        at: time::OffsetDateTime,
+        worker: &str,
+        idempotency_key: &str,
+    ) -> DomainError {
+        let stream = Arc::new(SessionStream::new(
             Arc::new(FailFirstChildOpening {
                 store: store.clone(),
                 parent_id: ceremony_id(),
                 failures_remaining: AtomicUsize::new(1),
             }),
-            store.clone(),
+            store,
             Arc::new(NoopCeremonyEventSubscriber),
         ));
-        let reclaimed_prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
             resolver.clone(),
-            publications.clone(),
-            reclaimed_stream.clone(),
-            Arc::new(FixedClock::new(later)),
+            publications,
+            stream.clone(),
+            Arc::new(FixedClock::new(at)),
             a_memory(),
         ));
-        let reclaimed_runner = RunCeremonyStepUseCase::new(
-            resolver.clone(),
-            reclaimed_stream,
+        RunCeremonyStepUseCase::new(
+            resolver,
+            stream,
             Arc::new(StepHandlerFake::failing(DomainError::InvariantViolated {
                 reason: "spawn handler must not run",
             })),
-            Arc::new(FixedClock::new(later)),
+            Arc::new(FixedClock::new(at)),
         )
-        .with_child_orchestrator(reclaimed_prepare);
-        let adoption_error = reclaimed_runner
-            .execute(RunCeremonyStepInput::new(
-                ceremony_id(),
-                role_id(),
-                AuditActorKind::Agent,
-                step_id(),
-                LeaseOwnerId::new("replacement-worker").unwrap(),
-                IdempotencyKey::new("crash-after-adoption").unwrap(),
-                lease_ttl(),
-            ))
-            .await
-            .unwrap_err();
-        assert!(
-            adoption_error.to_string().contains("before child opening"),
-            "unexpected reclaim failure: {adoption_error}"
-        );
-        let before = store.saved(&ceremony_id()).await;
-        let group = before.child_groups().values().next().unwrap();
-        let child_id = group.plan().children()[0].child_id().clone();
-        assert!(!store.exists(&child_id).await);
+        .with_child_orchestrator(prepare)
+        .execute(RunCeremonyStepInput::new(
+            ceremony_id(),
+            role_id(),
+            AuditActorKind::Agent,
+            step_id(),
+            LeaseOwnerId::new(worker).unwrap(),
+            IdempotencyKey::new(idempotency_key).unwrap(),
+            lease_ttl(),
+        ))
+        .await
+        .unwrap_err()
+    }
 
+    async fn recover_adopted_plan(
+        store: Arc<EventStoreFake>,
+        resolver: Arc<crate::usecases::ResolveCeremonyDefinitionUseCase>,
+        publications: Arc<PublicationsFake>,
+        at: time::OffsetDateTime,
+        child_id: &made_core::value_objects::CeremonyId,
+    ) {
         let plan_position = store
             .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
             .await
@@ -608,7 +557,7 @@ mod tests {
         let consumer = CeremonyEventConsumer::new("children-test").unwrap();
         let cursor = Arc::new(TestCursor::default());
         cursor.acknowledge(&consumer, plan_position).await.unwrap();
-        let restarted_stream = Arc::new(SessionStream::new(
+        let stream = Arc::new(SessionStream::new(
             store.clone(),
             store.clone(),
             Arc::new(NoopCeremonyEventSubscriber),
@@ -616,27 +565,23 @@ mod tests {
         let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
             resolver.clone(),
             publications.clone(),
-            restarted_stream.clone(),
-            Arc::new(FixedClock::new(later)),
+            stream.clone(),
+            Arc::new(FixedClock::new(at)),
             a_memory(),
         ));
         let accept = Arc::new(AcceptChildCompletionUseCase::new(
             resolver,
             publications,
-            restarted_stream,
-            Arc::new(FixedClock::new(later)),
+            stream.clone(),
+            Arc::new(FixedClock::new(at)),
         ));
         let recover = RecoverCeremonyChildrenUseCase::new(
             store.clone(),
             cursor,
-            Arc::new(SessionStream::new(
-                store.clone(),
-                store.clone(),
-                Arc::new(NoopCeremonyEventSubscriber),
-            )),
+            stream,
             prepare,
             accept,
-            Arc::new(FixedClock::new(later)),
+            Arc::new(FixedClock::new(at)),
             consumer,
         );
 
@@ -645,12 +590,62 @@ mod tests {
             .await
             .unwrap();
         assert!(round.recovered_plans >= 1, "the adoption wake was ignored");
-        assert!(store.exists(&child_id).await);
-        let after = store.saved(&ceremony_id()).await;
+        assert!(store.exists(child_id).await);
         assert_eq!(
-            after.step_record(&step_id()).unwrap().status(),
+            store
+                .saved(&ceremony_id())
+                .await
+                .step_record(&step_id())
+                .unwrap()
+                .status(),
             made_core::value_objects::StepStatus::Completed
         );
+    }
+
+    #[tokio::test]
+    async fn an_adoption_wake_recovers_after_a_crash_before_the_first_child_open() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(
+            crate::usecases::ceremony_test_support::DefinitionRepositoryFake::new(
+                definition.clone(),
+            ),
+        );
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(review_child_definition()).await;
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&started_instance(&definition)).await.unwrap();
+        let resolver = resolver_with(definitions.clone(), publications.clone());
+        let first_error = fail_before_first_child_open(
+            store.clone(),
+            resolver.clone(),
+            publications.clone(),
+            now(),
+            "crashed-worker",
+            "crash-after-plan",
+        )
+        .await;
+        assert!(first_error.to_string().contains("before child opening"));
+
+        let later = now() + time::Duration::seconds(120);
+        let adoption_error = fail_before_first_child_open(
+            store.clone(),
+            resolver.clone(),
+            publications.clone(),
+            later,
+            "replacement-worker",
+            "crash-after-adoption",
+        )
+        .await;
+        assert!(
+            adoption_error.to_string().contains("before child opening"),
+            "unexpected reclaim failure: {adoption_error}"
+        );
+        let before = store.saved(&ceremony_id()).await;
+        let group = before.child_groups().values().next().unwrap();
+        let child_id = group.plan().children()[0].child_id().clone();
+        assert!(!store.exists(&child_id).await);
+
+        recover_adopted_plan(store.clone(), resolver, publications, later, &child_id).await;
         let records = store.records(&ceremony_id()).await;
         assert_eq!(
             records

@@ -336,81 +336,37 @@ mod tests {
             .clone()
     }
 
-    #[tokio::test]
-    async fn nested_join_any_accepts_a_late_sibling_and_replays_the_terminal_locator() {
-        let root_definition = spawn_definition("root_parent", "middle_child", 1, ChildJoin::All);
-        let middle_definition = spawn_definition("middle_child", "leaf_child", 2, ChildJoin::Any);
-        let leaf_definition = leaf_definition();
-        let root_id = CeremonyId::new("root-parent").unwrap();
-        let definitions = Arc::new(DefinitionRepositoryFake::new(root_definition.clone()));
-        definitions.save(&middle_definition).await.unwrap();
-        definitions.save(&leaf_definition).await.unwrap();
-        let publications = Arc::new(PublicationsFake::default());
-        publications.seed(middle_definition.clone()).await;
-        publications.seed(leaf_definition.clone()).await;
-        let store = Arc::new(EventStoreFake::default());
-        let root = CeremonyInstance::start(
-            root_id.clone(),
-            &root_definition,
-            CeremonyContext::empty(),
-            now(),
-        )
-        .unwrap();
-        store.save(&root).await.unwrap();
-        let session_stream = stream(store.clone());
-        let resolver = resolver_with(definitions, publications.clone());
-        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
-            resolver.clone(),
-            publications.clone(),
-            session_stream.clone(),
-            Arc::new(FixedClock::new(now())),
-            a_memory(),
-        ));
-        let runner = RunCeremonyStepUseCase::new(
-            resolver.clone(),
-            session_stream.clone(),
-            Arc::new(StepHandlerFake::succeeding(
-                StepResult::completed(StepOutput::empty()).unwrap(),
-            )),
-            Arc::new(FixedClock::new(now())),
-        )
-        .with_child_orchestrator(prepare);
+    struct NestedJoinHarness {
+        root_id: CeremonyId,
+        middle_definition: CeremonyDefinition,
+        middle_id: CeremonyId,
+        leaf_ids: Vec<CeremonyId>,
+        store: Arc<EventStoreFake>,
+        resolver: Arc<ResolveCeremonyDefinitionUseCase>,
+        publications: Arc<PublicationsFake>,
+        runner: RunCeremonyStepUseCase,
+        transitions: ApplyCeremonyTransitionUseCase,
+        accept: AcceptChildCompletionUseCase,
+    }
 
-        let root_spawn = runner
+    async fn spawn_children(
+        runner: &RunCeremonyStepUseCase,
+        ceremony_id: CeremonyId,
+        owner: &str,
+        idempotency_key: &str,
+    ) -> Vec<CeremonyId> {
+        runner
             .execute(RunCeremonyStepInput::new(
-                root_id.clone(),
+                ceremony_id,
                 role_id(),
                 AuditActorKind::Service,
                 StepId::new("spawn_children").unwrap(),
-                LeaseOwnerId::new("root-runner").unwrap(),
-                IdempotencyKey::new("root-spawn").unwrap(),
+                LeaseOwnerId::new(owner).unwrap(),
+                IdempotencyKey::new(idempotency_key).unwrap(),
                 lease_ttl(),
             ))
             .await
-            .unwrap();
-        let middle_id = root_spawn
-            .instance()
-            .child_groups()
-            .values()
-            .next()
             .unwrap()
-            .plan()
-            .children()[0]
-            .child_id()
-            .clone();
-        let middle_spawn = runner
-            .execute(RunCeremonyStepInput::new(
-                middle_id.clone(),
-                role_id(),
-                AuditActorKind::Service,
-                StepId::new("spawn_children").unwrap(),
-                LeaseOwnerId::new("middle-runner").unwrap(),
-                IdempotencyKey::new("middle-spawn").unwrap(),
-                lease_ttl(),
-            ))
-            .await
-            .unwrap();
-        let leaf_ids = middle_spawn
             .instance()
             .child_groups()
             .values()
@@ -420,22 +376,88 @@ mod tests {
             .children()
             .iter()
             .map(|child| child.child_id().clone())
-            .collect::<Vec<_>>();
-        let transitions = ApplyCeremonyTransitionUseCase::new(
-            resolver.clone(),
-            session_stream.clone(),
-            Arc::new(FixedClock::new(now())),
-        );
-        let accept = AcceptChildCompletionUseCase::new(
+            .collect()
+    }
+
+    async fn open_nested_join() -> NestedJoinHarness {
+        let root_definition = spawn_definition("root_parent", "middle_child", 1, ChildJoin::All);
+        let middle_definition = spawn_definition("middle_child", "leaf_child", 2, ChildJoin::Any);
+        let leaf_definition = leaf_definition();
+        let root_id = CeremonyId::new("root-parent").unwrap();
+        let definitions = Arc::new(DefinitionRepositoryFake::new(root_definition.clone()));
+        definitions.save(&middle_definition).await.unwrap();
+        definitions.save(&leaf_definition).await.unwrap();
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(middle_definition.clone()).await;
+        publications.seed(leaf_definition).await;
+        let store = Arc::new(EventStoreFake::default());
+        store
+            .save(
+                &CeremonyInstance::start(
+                    root_id.clone(),
+                    &root_definition,
+                    CeremonyContext::empty(),
+                    now(),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+        let stream = stream(store.clone());
+        let resolver = resolver_with(definitions, publications.clone());
+        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
             resolver.clone(),
             publications.clone(),
-            session_stream.clone(),
+            stream.clone(),
             Arc::new(FixedClock::new(now())),
-        );
+            a_memory(),
+        ));
+        let runner = RunCeremonyStepUseCase::new(
+            resolver.clone(),
+            stream.clone(),
+            Arc::new(StepHandlerFake::succeeding(
+                StepResult::completed(StepOutput::empty()).unwrap(),
+            )),
+            Arc::new(FixedClock::new(now())),
+        )
+        .with_child_orchestrator(prepare);
+        let middle_id = spawn_children(&runner, root_id.clone(), "root-runner", "root-spawn")
+            .await
+            .into_iter()
+            .next()
+            .unwrap();
+        let leaf_ids =
+            spawn_children(&runner, middle_id.clone(), "middle-runner", "middle-spawn").await;
+        NestedJoinHarness {
+            root_id,
+            middle_definition,
+            middle_id,
+            leaf_ids,
+            store,
+            resolver: resolver.clone(),
+            publications: publications.clone(),
+            runner,
+            transitions: ApplyCeremonyTransitionUseCase::new(
+                resolver.clone(),
+                stream.clone(),
+                Arc::new(FixedClock::new(now())),
+            ),
+            accept: AcceptChildCompletionUseCase::new(
+                resolver,
+                publications,
+                stream,
+                Arc::new(FixedClock::new(now())),
+            ),
+        }
+    }
 
-        let mut leaf_terminals = Vec::new();
-        for (index, leaf_id) in leaf_ids.iter().enumerate() {
-            runner
+    async fn complete_nested_leaves(
+        harness: &NestedJoinHarness,
+    ) -> Vec<made_core::value_objects::EventId> {
+        let mut terminals = Vec::new();
+        for (index, leaf_id) in harness.leaf_ids.iter().enumerate() {
+            harness
+                .runner
                 .execute(RunCeremonyStepInput::new(
                     leaf_id.clone(),
                     role_id(),
@@ -447,7 +469,8 @@ mod tests {
                 ))
                 .await
                 .unwrap();
-            transitions
+            harness
+                .transitions
                 .execute(ApplyCeremonyTransitionInput::new(
                     leaf_id.clone(),
                     role_id(),
@@ -456,34 +479,44 @@ mod tests {
                 ))
                 .await
                 .unwrap();
-            leaf_terminals.push(terminal_event_id(&store.records(leaf_id).await));
+            terminals.push(terminal_event_id(&harness.store.records(leaf_id).await));
         }
+        terminals
+    }
 
-        accept
+    #[tokio::test]
+    async fn nested_join_any_accepts_a_late_sibling_and_replays_the_terminal_locator() {
+        let harness = open_nested_join().await;
+        let leaf_terminals = complete_nested_leaves(&harness).await;
+
+        harness
+            .accept
             .execute(AcceptChildCompletionInput::new(
-                leaf_ids[0].clone(),
+                harness.leaf_ids[0].clone(),
                 leaf_terminals[0].clone(),
             ))
             .await
             .unwrap();
-        transitions
+        harness
+            .transitions
             .execute(ApplyCeremonyTransitionInput::new(
-                middle_id.clone(),
+                harness.middle_id.clone(),
                 role_id(),
                 AuditActorKind::Service,
                 TransitionTrigger::new("finish").unwrap(),
             ))
             .await
             .unwrap();
-        let middle_terminal = terminal_event_id(&store.records(&middle_id).await);
-        accept
+        let middle_terminal = terminal_event_id(&harness.store.records(&harness.middle_id).await);
+        harness
+            .accept
             .execute(AcceptChildCompletionInput::new(
-                leaf_ids[1].clone(),
+                harness.leaf_ids[1].clone(),
                 leaf_terminals[1].clone(),
             ))
             .await
             .unwrap();
-        let middle_records = store.records(&middle_id).await;
+        let middle_records = harness.store.records(&harness.middle_id).await;
         let terminal_index = middle_records
             .iter()
             .position(|record| record.event_id() == &middle_terminal)
@@ -494,31 +527,31 @@ mod tests {
         ));
         assert!(terminal_index < middle_records.len() - 1);
 
-        store.forget(&middle_id).await.unwrap();
-        store.forget(&root_id).await.unwrap();
-        let restarted_stream = stream(store.clone());
+        harness.store.forget(&harness.middle_id).await.unwrap();
+        harness.store.forget(&harness.root_id).await.unwrap();
+        let restarted_stream = stream(harness.store.clone());
         assert!(restarted_stream
-            .load(&middle_id)
+            .load(&harness.middle_id)
             .await
             .unwrap()
             .instance
-            .is_completed(&middle_definition));
+            .is_completed(&harness.middle_definition));
         let restarted_accept = AcceptChildCompletionUseCase::new(
-            resolver,
-            publications,
+            harness.resolver,
+            harness.publications,
             restarted_stream,
             Arc::new(FixedClock::new(now())),
         );
         for _ in 0..2 {
             restarted_accept
                 .execute(AcceptChildCompletionInput::new(
-                    middle_id.clone(),
+                    harness.middle_id.clone(),
                     middle_terminal.clone(),
                 ))
                 .await
                 .unwrap();
         }
-        let root_records = store.records(&root_id).await;
+        let root_records = harness.store.records(&harness.root_id).await;
         assert_eq!(
             root_records
                 .iter()

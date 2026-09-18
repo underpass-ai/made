@@ -8,7 +8,7 @@ use made_adapters::ceremony::{
     CeremonyTracingSubscriber, DeliberatingCeremonyStepHandler,
 };
 use made_adapters::clock::SystemClock;
-use made_adapters::config::{EnvConfiguration, ServiceConfig};
+use made_adapters::config::EnvConfiguration;
 use made_adapters::memory::{InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry};
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
@@ -94,7 +94,7 @@ fn wire_scoring(
 
 /// Wire the full application.
 ///
-/// - Reads [`ServiceConfig`] from the environment.
+/// - Reads [`made_adapters::config::ServiceConfig`] from the environment.
 /// - Builds the in-memory registries plus the configured execution
 ///   backend. `noop` remains the default; richer executors are
 ///   selected explicitly by deployment configuration.

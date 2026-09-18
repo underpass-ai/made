@@ -5,11 +5,11 @@ const PARENT: &str = include_str!("../../../../tests/e2e/ceremonies/children-par
 pub(crate) struct ChildrenCeremonyDefinitions;
 
 impl ChildrenCeremonyDefinitions {
-    pub(crate) const fn child(self) -> &'static str {
+    pub(crate) const fn child() -> &'static str {
         CHILD
     }
 
-    pub(crate) const fn parent(self) -> &'static str {
+    pub(crate) const fn parent() -> &'static str {
         PARENT
     }
 }
@@ -23,9 +23,10 @@ mod tests {
 
     #[test]
     fn fixtures_parse_with_two_children_and_stub_only_wiring() {
-        let rendered = ChildrenCeremonyDefinitions;
-        let child = CeremonyDefinitionYaml::parse_str(rendered.child()).unwrap();
-        let parent = CeremonyDefinitionYaml::parse_str(rendered.parent()).unwrap();
+        let child =
+            CeremonyDefinitionYaml::parse_str(ChildrenCeremonyDefinitions::child()).unwrap();
+        let parent =
+            CeremonyDefinitionYaml::parse_str(ChildrenCeremonyDefinitions::parent()).unwrap();
 
         let review = child
             .step(&made_core::value_objects::StepId::new("review").unwrap())

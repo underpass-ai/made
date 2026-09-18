@@ -21,9 +21,8 @@ const SPAWN_STEP: &str = "spawn_reviews";
 pub(crate) async fn verify_durable_children_over_public_rpc(
     client: &mut MadeServiceClient<Channel>,
 ) -> Result<()> {
-    let definitions = ChildrenCeremonyDefinitions;
-    publish(client, definitions.child()).await?;
-    publish(client, definitions.parent()).await?;
+    publish(client, ChildrenCeremonyDefinitions::child()).await?;
+    publish(client, ChildrenCeremonyDefinitions::parent()).await?;
 
     let started = client
         .start_published_ceremony(StartPublishedCeremonyRequest {

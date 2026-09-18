@@ -84,7 +84,7 @@ async fn the_report_names_the_contract_the_release_and_every_method() {
 
 #[tokio::test]
 async fn a_consumer_reads_ceremonies_without_a_domain_type_in_sight() {
-    let embedded = engine_with_one_ceremony().await;
+    let embedded = Box::pin(engine_with_one_ceremony()).await;
 
     let ceremonies = embedded.ceremonies().await.unwrap();
     assert_eq!(ceremonies.len(), 1);
@@ -107,7 +107,7 @@ async fn a_consumer_reads_ceremonies_without_a_domain_type_in_sight() {
 
 #[tokio::test]
 async fn one_ceremony_is_fetched_by_the_identity_the_listing_gave() {
-    let embedded = engine_with_one_ceremony().await;
+    let embedded = Box::pin(engine_with_one_ceremony()).await;
 
     let listed = embedded.ceremonies().await.unwrap();
     let fetched = embedded.ceremony(&listed[0].ceremony_id).await.unwrap();
@@ -146,7 +146,7 @@ async fn a_hostile_identity_is_refused_rather_than_looked_up() {
 
 #[tokio::test]
 async fn an_instance_from_an_unpublished_draft_carries_no_digest() {
-    let embedded = engine_with_one_ceremony().await;
+    let embedded = Box::pin(engine_with_one_ceremony()).await;
 
     let ceremonies = embedded.ceremonies().await.unwrap();
     assert!(
