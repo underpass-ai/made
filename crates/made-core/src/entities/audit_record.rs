@@ -385,6 +385,7 @@ mod tests {
                 })
             }
             AuditEventType::StepStarted => CeremonyEvent::StepStarted(StepStarted {
+                state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
                 iteration: StepIteration::FIRST,
@@ -402,6 +403,7 @@ mod tests {
                 started_at: AT,
             }),
             AuditEventType::StepCompleted => CeremonyEvent::StepCompleted(StepCompleted {
+                state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
                 iteration: StepIteration::FIRST,
@@ -412,6 +414,7 @@ mod tests {
                 finished_at: AT,
             }),
             AuditEventType::StepFailed => CeremonyEvent::StepFailed(StepFailed {
+                state_visit: None,
                 step_id,
                 state_iteration: Some(StateIteration::FIRST),
                 iteration: StepIteration::FIRST,

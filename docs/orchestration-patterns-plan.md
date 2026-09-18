@@ -173,9 +173,9 @@ gaps are derived from `parity.tsv`; whole/paged history and its typed page
 limit landed in #108, and reports fold one bounded stream cut in #110. The
 #120 supplies the filled-optional and enum-rotation proof on memory and SQLite.
 Shared domain value objects for list bounds remain explicit follow-up debt in
-#100. Phase 3a also leaves claim/attempt completion fencing in #127 and durable
-state re-entry/reset semantics in #129; phase completion does not claim any of
-those three debts.
+#100. Claim/attempt completion fencing remains in #127. Post-cut hardening
+#129 adds durable state re-entry/reset semantics under ADR-018, with legacy
+fold compatibility and process-restart coverage.
 
 Four surfaces expose the engine: the gRPC contract
 (`crates/made-proto/proto/underpass/made/v1/made.proto`), the MCP server on the
@@ -666,7 +666,7 @@ visible in `DefinitionDiff` with their carry-or-strand impact.
 | Guard `step_repeat_exhausted:<step>` | D2, D4 | #116: exact-transition waiver for that step only. |
 | `role_from: context.<key>` plus an allowed-role list | D1, D3, D4 | #130: claim-time resolution and sealed role identity; does not materialize a pattern. |
 | `context_writes` from step output | D4, D3, D1 | #130: `ContextWritten` is atomic with completion and replay owns context mutation. |
-| `max_transitions` / `max_bounces` | D3, D4, any cyclic graph | #131: counts derive from sealed transitions and unbounded SCCs are rejected; #129 still owns visit/reset semantics. |
+| `max_transitions` / `max_bounces` | D3, D4, any cyclic graph | #131: counts derive from sealed transitions and unbounded SCCs are rejected; #129 supplies sealed destination visits under ADR-018. |
 
 ### 3.6 WS-F — Parity between the local edition and the API
 
@@ -748,7 +748,7 @@ required check between a ready pull request and `main`.
 | 1 | Done 2026-09-18 | F1, F2, F4 (the parity gate, cheap and prerequisite); H3–H5; A1–A4 (events, aggregate, store, use cases); E0–E3 in parallel. | Parity gate green with a non-empty exception file; impact routing and tree proof live; ceremonies are folds over SQLite-stored streams; conflict retry proven; SQLite memory default. |
 | 2 | Done 2026-09-18 | A5–A8 (projections, cursors, migration, ADR); G1–G3 (seam, trace ids, embedded adapters); C2 (NATS publisher, pull tool, file sink); F3 (API catch-up: claim, complete, design, events, transcript). | Pre-stream stores migrate with fold equality against the v0.3.1 fixture; metrics identical across drivers and editions; ceremony events reach NATS and the pull cursor; the exception file has no ceremony rows. The optional/enum parity proof is #120; ADR and documentation closure is #121. |
 | 3a | Done 2026-09-18 | B1+B2 claimable concurrency; the seven §3.5 primitives via #122, #128, #116, #131 and #130; fragment/preset infrastructure and D1 v0 via #114; G4 via #123. | The exact composed tree, full repository gates, four-surface parity and operator evidence are recorded by #130 after merge. This closes the primitive foundation, not the original full Phase 3 pattern criteria. |
-| 4 | Planned; E4, E5 and F6 delivered early | B3–B6; C1 and C3; complete D1–D5 fragments, E2Es and composition; F5; G6; #129 durable state visits before cyclic D3/D4. | `concurrent-review`, `incident_review` and the four complete pattern fragments run E2E in the claimed editions; diagrams show pattern regions; parent/children run over NATS and the pull cursor. |
+| 4 | Planned; E4, E5 and F6 delivered early | B3–B6; C1 and C3; complete D1–D5 fragments, E2Es and composition; F5; G6. Durable state visits for cyclic D3/D4 are supplied by #129. | `concurrent-review`, `incident_review` and the four complete pattern fragments run E2E in the claimed editions; diagrams show pattern regions; parent/children run over NATS and the pull cursor. |
 
 Each slice lands as its own PR, iterated as a draft on the dev loop and
 merged on the full gate, with: the gate named in its table row, a CHANGELOG
@@ -816,10 +816,10 @@ outside this cut. Phase 3a closes claimable concurrency and the seven generic
 definition primitives only. B3–B6, C1, complete D1–D5 and F5 are deferred to
 corte 4; G6 and C3 retain their later streaming/spawn scope.
 
-Three explicit debts remain. #100 owns shared domain value objects for public
-list bounds and uniqueness. #127 owns claim/attempt fencing on completion so a
-stale worker cannot finish a reclaimed step. #129 owns durable state visits:
-P4 bounds the number of transitions but deliberately preserves existing step
-records when a transition returns to a prior state. Until #129 defines a
-sealed reset/re-entry event and compatibility contract, capped cycles are not
-evidence that full handoff or magentic patterns execute correctly.
+#100 and #127 remain explicit debts. #100 owns shared domain value objects for
+public list bounds and uniqueness. #127 owns claim/attempt fencing on completion
+so a stale worker cannot finish a reclaimed step. #129 implements durable state
+visits under ADR-018: new transitions seal the
+destination reset, archive old work and reopen steps, while historical events
+retain their earlier fold. This prerequisite does not implement the complete
+handoff or magentic patterns.

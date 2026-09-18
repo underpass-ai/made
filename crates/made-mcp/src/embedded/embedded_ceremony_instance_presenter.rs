@@ -86,6 +86,7 @@ impl EmbeddedCeremonyInstancePresenter {
                 .map(CeremonyDefinitionDigest::to_hex),
             "current_state": instance.current_state().as_str(),
             "current_state_iteration": instance.current_state_iteration().get(),
+            "current_state_visit": instance.current_state_visit().get(),
             "state_repeat_max_iterations": definition.state(instance.current_state())
                 .and_then(|state| state.repeat_policy()).map(|policy| policy.max_iterations().get()),
             "state_repeat_condition_satisfied": instance.state_repeat_condition_is_satisfied(&definition),
@@ -146,6 +147,7 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                 "error": step.record().error_message().map(ToString::to_string),
                 "iteration": step.record().iteration().get(),
                 "state_iteration": step.record().state_iteration().get(),
+                "state_visit": step.record().state_visit().get(),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
                 "repeat_max_iterations": step

@@ -46,6 +46,7 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
         "bound_definition_digest": empty_as_null(state.bound_definition_digest),
         "current_state": state.current_state,
         "current_state_iteration": state.current_state_iteration,
+        "current_state_visit": state.current_state_visit,
         "state_repeat_max_iterations": if state.state_repeat_max_iterations == 0 { Value::Null } else { json!(state.state_repeat_max_iterations) },
         "state_repeat_condition_satisfied": state.state_repeat_condition_satisfied,
         "state_repeat_limit_reached": state.state_repeat_limit_reached,
@@ -155,6 +156,7 @@ fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
         "error": empty_as_null(step.error),
         "iteration": step.iteration,
         "state_iteration": step.state_iteration,
+        "state_visit": step.state_visit,
         "repeat_condition_satisfied": step.repeat_condition_satisfied,
         "repeat_limit_reached": step.repeat_limit_reached,
         "repeat_max_iterations": if step.repeat_max_iterations == 0 {

@@ -29,6 +29,7 @@ impl EmbeddedRunCeremonyPresenter {
                     // two different traces depending on the backend.
                     "iteration": trace.iteration().get(),
                     "state_iteration": trace.state_iteration().get(),
+                    "state_visit": trace.state_visit().get(),
                     "output": trace
                         .output()
                         .attributes()

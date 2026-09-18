@@ -79,6 +79,7 @@ pub fn run_ceremony_response_from(output: &RunCeremonyOutput) -> pb::RunCeremony
                     .unwrap_or_default()
                     .to_owned(),
                 iteration: trace.iteration().get(),
+                state_visit: trace.state_visit().get(),
                 state_iteration: trace.state_iteration().get(),
             })
             .collect(),

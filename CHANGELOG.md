@@ -14,6 +14,14 @@ operator command.
 
 ## Unreleased
 
+### Fixed
+
+- State transitions now open durable visits and rerun destination steps, while
+  preserving prior work with its visit and repetition coordinates. New sealed
+  transition payloads describe the reset; legacy events and snapshot hashes keep
+  their historical behavior. Rust, gRPC and both MCP editions expose visits;
+  cyclic work is checked across process restart and every snapshot cut. (#129)
+
 ## [0.5.0] - 2026-09-18
 
 This release combines the event-stream and durable-memory foundation from

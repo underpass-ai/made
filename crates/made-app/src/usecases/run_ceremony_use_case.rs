@@ -157,6 +157,7 @@ impl RunCeremonyUseCase {
 
             let state_id = session.instance.current_state().clone();
             let state_iteration = session.instance.current_state_iteration();
+            let state_visit = session.instance.current_state_visit();
             let step_ids = definition
                 .steps_for_state(&state_id)
                 .map(|step| step.id().clone())
@@ -195,16 +196,19 @@ impl RunCeremonyUseCase {
                         )
                         .await?;
                     session = moved_on;
-                    step_traces.push(CeremonyStepTrace::for_coordinates(
-                        state_id.clone(),
-                        executed_state_iteration,
-                        step_id.clone(),
-                        role_id,
-                        iteration,
-                        attempt,
-                        step_result.status(),
-                        step_result.output().clone(),
-                    ));
+                    step_traces.push(
+                        CeremonyStepTrace::for_coordinates(
+                            state_id.clone(),
+                            executed_state_iteration,
+                            step_id.clone(),
+                            role_id,
+                            iteration,
+                            attempt,
+                            step_result.status(),
+                            step_result.output().clone(),
+                        )
+                        .with_state_visit(state_visit),
+                    );
                     if !step_result.is_success() {
                         return Err(DomainError::InvariantViolated {
                             reason: "ceremony step did not complete successfully",
@@ -744,6 +748,7 @@ mod tests {
         let store = Arc::new(EventStoreFake::default());
         store.save(&instance).await.unwrap();
         let context_changed = CeremonyEvent::ContextWritten(ContextWritten {
+            state_visit: None,
             step_id: step_id(),
             state_iteration: StateIteration::FIRST,
             iteration: StepIteration::FIRST,
@@ -788,13 +793,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(sealed_role, winning_role);
-        assert_eq!(
-            moved_on
-                .instance
-                .step_record(&step_id())
-                .and_then(|record| record.claimed_role()),
-            Some(&winning_role)
-        );
+        let claimed = moved_on.instance.step_record(&step_id()).unwrap();
+        assert_eq!(claimed.claimed_role(), Some(&winning_role));
         let trace = CeremonyStepTrace::for_coordinates(
             StateId::new("REVIEWING").unwrap(),
             state_iteration,

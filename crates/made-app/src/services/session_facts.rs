@@ -15,9 +15,9 @@
 //!
 //! What a fact is about is read off the event itself, and for the two
 //! kinds numbered by position, off the session the event was decided
-//! against. Every derivation below is the one the journal used before
-//! sessions were folded from their streams, so the same fact keeps the
-//! same id.
+//! against. Legacy payloads retain their former derivation; new visit-bearing
+//! payloads add the visit coordinate so re-entering a state creates new facts
+//! without changing the identity of a historical event.
 
 use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
@@ -205,33 +205,43 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         }
         CeremonyEvent::StepStarted(started) => step_about(
             &started.step_id,
+            started.state_visit,
             started.state_iteration().get(),
             started.iteration.get(),
             started.attempt.get(),
         ),
         CeremonyEvent::StepCompleted(completed) => step_about(
             &completed.step_id,
+            completed.state_visit,
             completed.state_iteration().get(),
             completed.iteration.get(),
             completed.attempt.get(),
         ),
         CeremonyEvent::StepFailed(failed) => step_about(
             &failed.step_id,
+            failed.state_visit,
             failed.state_iteration().get(),
             failed.iteration.get(),
             failed.attempt.get(),
         ),
         CeremonyEvent::ContextWritten(written) => step_about(
             &written.step_id,
+            written.state_visit,
             written.state_iteration.get(),
             written.iteration.get(),
             written.attempt.get(),
         ),
-        CeremonyEvent::StateIterationStarted(started) => format!(
-            "state:{}:iteration:{}",
-            started.state_id,
-            started.state_iteration.get()
-        ),
+        CeremonyEvent::StateIterationStarted(started) => {
+            let visit = started
+                .state_visit
+                .map(|visit| format!(":visit:{}", visit.get()))
+                .unwrap_or_default();
+            format!(
+                "state:{}{visit}:iteration:{}",
+                started.state_id,
+                started.state_iteration.get()
+            )
+        }
         CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
         }
@@ -262,11 +272,13 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
 
 fn step_about(
     step_id: &made_core::value_objects::StepId,
+    state_visit: Option<made_core::value_objects::StateVisit>,
     state_iteration: u32,
     iteration: u32,
     attempt: u32,
 ) -> String {
-    format!(
-        "step:{step_id}:state_iteration:{state_iteration}:iteration:{iteration}:attempt:{attempt}"
-    )
+    let visit = state_visit
+        .map(|visit| format!(":visit:{}", visit.get()))
+        .unwrap_or_default();
+    format!("step:{step_id}{visit}:state_iteration:{state_iteration}:iteration:{iteration}:attempt:{attempt}")
 }

@@ -741,6 +741,8 @@ message CeremonyStepExecution {
   uint32 iteration = 7;
   // Whole-state iteration. Starts at one and is independent of step repeat.
   uint32 state_iteration = 8;
+  // Durable state entry, independent of within-state repetition.
+  uint32 state_visit = 9;
 }
 
 message RunCeremonyResponse {
@@ -784,6 +786,7 @@ message CeremonyStepState {
   uint32 repeat_max_iterations = 10;
   // Whole-state iteration containing this record.
   uint32 state_iteration = 11;
+  uint32 state_visit = 12;
 }
 
 // A guard on an outgoing transition.
@@ -948,6 +951,7 @@ message CeremonyInstanceState {
   uint32 state_repeat_max_iterations = 25;
   bool state_repeat_condition_satisfied = 26;
   bool state_repeat_limit_reached = 27;
+  uint32 current_state_visit = 28;
 }
 
 // What a session was told when it opened, bounded and in order:
@@ -1790,6 +1794,7 @@ message CeremonyTranscriptEntry {
   // produced none.
   google.protobuf.Struct output = 3;
   uint32 state_iteration = 4;
+  uint32 state_visit = 5;
 }
 
 message GetCeremonyTranscriptRequest {

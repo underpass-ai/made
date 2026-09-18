@@ -217,6 +217,7 @@ fn repeated_state_events(
             4,
         ),
         CeremonyEvent::StateIterationStarted(StateIterationStarted {
+            state_visit: None,
             state_id,
             state_iteration: second_state_iteration,
             step_ids: vec![step_id.clone()],
@@ -263,6 +264,7 @@ fn started(
     ordinal: i64,
 ) -> CeremonyEvent {
     CeremonyEvent::StepStarted(StepStarted {
+        state_visit: None,
         step_id: step_id.clone(),
         state_iteration: Some(state_iteration),
         iteration,
@@ -290,6 +292,7 @@ fn completed(
     ordinal: i64,
 ) -> CeremonyEvent {
     CeremonyEvent::StepCompleted(StepCompleted {
+        state_visit: None,
         step_id: step_id.clone(),
         state_iteration: Some(state_iteration),
         iteration,

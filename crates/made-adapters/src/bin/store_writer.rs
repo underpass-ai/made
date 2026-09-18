@@ -62,6 +62,7 @@ fn fact_for(ceremony_id: &CeremonyId, ordinal: u64) -> AuditFact {
     AuditFact {
         event_id: EventId::new(format!("{}-{ordinal}", ceremony_id.as_str())).unwrap(),
         event: CeremonyEvent::StepCompleted(StepCompleted {
+            state_visit: None,
             step_id: StepId::new("conformance_step").unwrap(),
             state_iteration: None,
             iteration: StepIteration::FIRST,

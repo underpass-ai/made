@@ -155,7 +155,7 @@ fn alternate_static_role_is_sealed_and_cannot_claim_two_concurrent_steps() {
     )
     .unwrap();
     assert_eq!(started(&events).sealed_role, Some(role("SHARED_X")));
-    assert_eq!(events[0].schema_version(), EventSchemaVersion::V3);
+    assert_eq!(events[0].schema_version(), EventSchemaVersion::V4);
     instance.apply(&events[0]);
 
     let error = start(
@@ -180,7 +180,7 @@ fn canonical_unmarked_claim_reserves_its_role_against_an_alternate_claim() {
     let mut instance = instance(&definition);
     let events = start(&instance, &definition, "step_a", None, "canonical-a").unwrap();
     assert_eq!(started(&events).sealed_role, None);
-    assert_eq!(events[0].schema_version(), EventSchemaVersion::V2);
+    assert_eq!(events[0].schema_version(), EventSchemaVersion::V4);
     instance.apply(&events[0]);
 
     assert!(start(
@@ -194,7 +194,7 @@ fn canonical_unmarked_claim_reserves_its_role_against_an_alternate_claim() {
 }
 
 #[test]
-fn canonical_static_claims_keep_the_legacy_v2_shape() {
+fn canonical_static_claims_add_a_visit_without_a_role_seal() {
     let definition = definition(false);
     let mut instance = instance(&definition);
     for (step_id, key, expected) in [
@@ -204,7 +204,7 @@ fn canonical_static_claims_keep_the_legacy_v2_shape() {
         let events = start(&instance, &definition, step_id, None, key).unwrap();
         assert_eq!(started(&events).started_by, role(expected));
         assert_eq!(started(&events).sealed_role, None);
-        assert_eq!(events[0].schema_version(), EventSchemaVersion::V2);
+        assert_eq!(events[0].schema_version(), EventSchemaVersion::V4);
         instance.apply(&events[0]);
     }
 }

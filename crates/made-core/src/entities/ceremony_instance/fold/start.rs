@@ -2,8 +2,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::entities::ceremony_events::CeremonyInstanceStarted;
 use crate::entities::CeremonyInstance;
-use crate::value_objects::StateIteration;
 use crate::value_objects::StepExecutionRecord;
+use crate::value_objects::{StateIteration, StateVisit};
 
 impl CeremonyInstance {
     /// Open the session the event describes: its initial state, one
@@ -18,6 +18,7 @@ impl CeremonyInstance {
             definition_version: started.definition_version.clone(),
             current_state: started.initial_state.clone(),
             current_state_iteration: StateIteration::FIRST,
+            current_state_visit: StateVisit::FIRST,
             step_records: started
                 .step_ids
                 .iter()

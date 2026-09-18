@@ -65,10 +65,14 @@ state iteration through `repeat` consumes no transition. A component avoids the
 no-human-control warning when an outgoing transition from any member state,
 including an exit edge, requires a human approval guard.
 
-A transition back to an earlier state currently sees that state's existing
-step records. Completed work is not reset or rerun on the visit; definitions
-that need fresh work per visit should wait for the durable visit contract in
-[#129](https://github.com/underpass-ai/made/issues/129).
+Every new transition opens a durable `state_visit` and resets the destination
+steps to pending at state iteration 1, step iteration 1 and attempt 1. Earlier
+executed records and outputs stay in history with their original coordinates.
+Within-state `repeat` advances `state_iteration` inside the same visit. The
+initial visit is 1; transitions advance it, including terminal entry. Historical
+transition events without a sealed destination reset retain their previous fold;
+they are not retroactively interpreted as fresh work. See
+[ADR-018](../adr/018-durable-state-visits.md).
 
 What it will not do is the rest of the part this runbook is about. Its outer
 topology remains ordered, so branching, alternative terminal

@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    RoleId, StateIteration, StepAttempt, StepErrorMessage, StepIteration, StepLease, StepOutput,
-    StepResult, StepStatus,
+    RoleId, StateIteration, StateVisit, StepAttempt, StepErrorMessage, StepIteration, StepLease,
+    StepOutput, StepResult, StepStatus,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -12,6 +12,8 @@ pub struct StepExecutionRecord {
     status: StepStatus,
     #[serde(default, skip_serializing_if = "StateIteration::is_first")]
     state_iteration: StateIteration,
+    #[serde(default, skip_serializing_if = "StateVisit::is_first")]
+    state_visit: StateVisit,
     #[serde(default)]
     iteration: StepIteration,
     attempt: StepAttempt,
@@ -27,6 +29,7 @@ impl StepExecutionRecord {
     pub fn pending() -> Self {
         Self {
             status: StepStatus::Pending,
+            state_visit: StateVisit::FIRST,
             state_iteration: StateIteration::FIRST,
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
@@ -60,6 +63,17 @@ impl StepExecutionRecord {
             iteration,
             ..Self::pending()
         }
+    }
+
+    #[must_use]
+    pub fn state_visit(&self) -> StateVisit {
+        self.state_visit
+    }
+
+    #[must_use]
+    pub fn with_state_visit(mut self, state_visit: StateVisit) -> Self {
+        self.state_visit = state_visit;
+        self
     }
 
     #[must_use]
@@ -133,6 +147,7 @@ impl StepExecutionRecord {
         Self {
             status: StepStatus::InProgress,
             state_iteration: self.state_iteration,
+            state_visit: self.state_visit,
             iteration: self.iteration,
             attempt,
             lease: Some(lease),
@@ -148,6 +163,7 @@ impl StepExecutionRecord {
         Self {
             status,
             state_iteration: self.state_iteration,
+            state_visit: self.state_visit,
             iteration: self.iteration,
             attempt: self.attempt,
             lease: None,

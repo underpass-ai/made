@@ -43,3 +43,5 @@ much as the decision itself.
   join guards and bounded parallelism
 - [ADR-016](016-bounded-definition-primitives.md): state repetition, output
   guards, role binding, context writes, cycle budgets and fragment location
+- [ADR-018](018-durable-state-visits.md): sealed state entries rerun destination
+  work while preserving historical visits and legacy event folds
