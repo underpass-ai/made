@@ -1,9 +1,10 @@
 # Release process
 
 A release cuts versioned container images + a Helm chart to
-`ghcr.io/underpass-ai/*`. All artefacts are driven by
-`.github/workflows/publish-distribution.yml`, which triggers on any
-`v*` tag pushed to the repository.
+`ghcr.io/underpass-ai/*`. Pushing a `v*` tag triggers
+`.github/workflows/publish-distribution.yml` for images, the chart and crates,
+and `.github/workflows/plugin-package.yml` for the GitHub Release and its
+checksummed executables and plugin bundles.
 
 ## Versioning
 
@@ -14,13 +15,18 @@ Semver. These version sources stay in lockstep:
 - both plugin manifests → `version`
 - `.claude-plugin/marketplace.json` → immutable `vX.Y.Z` source ref
 
-`scripts/release.sh version <X.Y.Z>` (or `just version 0.2.0`)
-rewrites both in one pass and is idempotent.
+`scripts/release.sh version <X.Y.Z>` (or `just version X.Y.Z`)
+updates these files and the workspace lockfile in one pass and is idempotent.
 
 ## Checklist
 
 Run through this before tagging. Each item has a `just` recipe that
-mirrors the CI gate.
+mirrors the CI gate. Choose the intended new version once; replace the
+placeholder before running the commands:
+
+```bash
+export VERSION=X.Y.Z
+```
 
 1. **Sync main** — you must release off main:
    ```bash
@@ -28,7 +34,7 @@ mirrors the CI gate.
    ```
 2. **Bump versions** (see script above):
    ```bash
-   just version 0.2.0
+   just version "$VERSION"
    git diff                 # review
    ```
 3. **Fast gates** green locally:
@@ -67,14 +73,14 @@ mirrors the CI gate.
    ```
 6. **Commit the version bump** and open a PR:
    ```bash
-   git commit -am "chore: v0.2.0"
+   git commit -am "chore: v${VERSION}"
    gh pr create --fill
    # wait for CI green; merge
    ```
 7. **Tag and push** (only from merged main):
    ```bash
    git checkout main && git pull --ff-only
-   just release 0.2.0
+   just release "$VERSION"
    ```
 8. **Wait for publication to finish.** `just release` does not return until
    the complete checksummed plugin asset set is public and `marketplace`
@@ -86,9 +92,9 @@ mirrors the CI gate.
 
 After step 8, the release artefacts are live:
 
-- `ghcr.io/underpass-ai/made:v0.2.0`
-- `ghcr.io/underpass-ai/made-e2e-runner:v0.2.0`
-- `oci://ghcr.io/underpass-ai/charts/made:0.2.0`
+- `ghcr.io/underpass-ai/made:vX.Y.Z`
+- `ghcr.io/underpass-ai/made-e2e-runner:vX.Y.Z`
+- `oci://ghcr.io/underpass-ai/charts/made:X.Y.Z`
 - the plugin bundles, attached to the GitHub Release for linux-x86_64,
   linux-arm64, macos-arm64 and windows-x86_64
 - standalone `made-mcp-vX.Y.Z-<target>` executables and SHA-256 files for
@@ -125,24 +131,25 @@ Two operational notes about that step:
 6. Waits for the exact release asset set to become public.
 7. Fast-forwards `marketplace` to the released commit without force.
 
-The script does **not** push the tag without every gate passing —
-the actual gates are your local `just check && just integration &&
-make e2e-compose && make e2e-kubernetes` (step 5 of the checklist).
-Automating them on tag push would delay the signal; running them
-beforehand is fast and deterministic.
+Run the checklist before invoking the helper. It checks versions and Git
+state, but does not run or attest the local gates itself. The local checks
+and the PR’s successful full CI are required evidence before the tag push.
 
 ## Hotfix flow
 
 Same checklist, from a hotfix branch off the tag you want to fix:
 
 ```bash
-git checkout -b hotfix/v0.2.1 v0.2.0
+export BASE_TAG=vX.Y.Z
+export VERSION=X.Y.N  # choose the next patch version
+
+git checkout -b "hotfix/v${VERSION}" "$BASE_TAG"
 # ... fix ...
-just version 0.2.1
-git commit -am "chore: v0.2.1"
+just version "$VERSION"
+git commit -am "chore: v${VERSION}"
 gh pr create --fill
-# merge; then from main:
-just release 0.2.1
+# run the checklist and merge; then from synchronized main:
+just release "$VERSION"
 ```
 
 ## Rolling back

@@ -14,22 +14,24 @@ operator command.
 
 ## Unreleased
 
-Phase 3a additions target **0.5.0**. The phase 2 **0.4.0** baseline includes
-the documentation closure in #121 and publication review repairs in #126.
-Its highlights remain recorded separately here until the release procedure
-creates the immutable tagged sections.
+## [0.5.0] - 2026-09-18
 
-### 0.5.0 release-candidate summary
+This release combines the event-stream and durable-memory foundation from
+phase 2 with the phase 3a ceremony primitives. Version 0.4.0 was a planning
+checkpoint and was not published separately.
 
-Phase 3a completes the primitive foundation for claimable concurrency:
-concurrent states and typed joins, bounded state repetition, output and
-exhaustion guards, transition budgets and cycle analysis, dynamic role
-binding, atomic context writes, fragment/preset infrastructure, and
-step/provider/judge tracing. #130 records the final composed candidate and
-verification evidence. Entries remain under `Unreleased`; Tirso owns the
-version bump, tag and release publication.
+### Highlights
 
-### 0.4.0 highlights
+- Local embedded ceremony engine with SQLite event history, session memory,
+  durable cursors and stream-derived reports and telemetry.
+- Concurrent states, typed joins, bounded state repetition, output/exhaustion
+  guards and transition budgets.
+- Allowed dynamic roles, atomic context writes, reusable fragments and
+  step/provider/judge tracing.
+- A rebuilt README focused on embedded use, with Kubernetes deployment
+  documented as an additional option. (#136)
+
+### Event-stream foundation
 
 - Ceremony event streams are now the source of truth: commands decide sealed
   events, instances fold them, SQLite stores them with a global order, and
@@ -59,7 +61,7 @@ version bump, tag and release publication.
   all four result labels. That Phase 2 expansion kept the original report
   golden unchanged; the later P2/P5 scenarios add their new event contracts.
 
-### Remaining 0.4.0 debt
+### Remaining foundation debt
 
 - Shared domain value objects for the list bounds now enforced at MCP ingress
   remain tracked in #100. Whole/paged history, its typed page limit and one-cut
@@ -191,6 +193,19 @@ version bump, tag and release publication.
   implementation (#90).
 
 ### Fixed
+
+- Publish versioned Helm charts only from release tags; keep development
+  image tags separate. (#138)
+- Align embedded NATS network-policy peers with the rendered pod labels and
+  mount ceremony persistence even when temporary and TLS volumes are disabled.
+  (#139, #140)
+- Make Codex embedded setup copyable, discover the active tool surface instead
+  of listing stale counts, and parameterize release and OCI verification
+  commands. (#141, #142)
+
+- Local plugin builds now resolve Cargo’s configured target directory and fail
+  when the built executable is missing, preventing a stale binary from being
+  selected from the checkout or `PATH`. (#137)
 
 - The orchestration plan now distinguishes the 18 emitted ceremony events
   from the 21 audit catalogue entries and uses their implemented names.

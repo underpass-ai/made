@@ -120,7 +120,7 @@ Before applying changes, operators can render the minimal manifest
 without touching a cluster:
 
 ```bash
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.minimal.yaml \
   --set image.tag=sha-COMMIT
 ```
@@ -219,7 +219,7 @@ Expected result:
 ### Render check
 
 ```bash
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.embedded-nats.yaml \
   --set image.tag=sha-COMMIT
 ```
@@ -347,13 +347,13 @@ client for hardened transport checks.
 ### Render checks
 
 ```bash
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.embedded-nats.yaml \
   --set image.tag=sha-COMMIT \
   --set tls.mode=server \
   --set tls.existingSecret=made-grpc-tls
 
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.embedded-nats.yaml \
   --set image.tag=sha-COMMIT \
   --set tls.mode=mutual \
@@ -852,22 +852,22 @@ Secrets by reference, and run a post-deploy smoke.
 
 ### Current checkout verification
 
-This checkout has no public `v*` tag yet, so a published OCI chart
-cannot honestly be verified from the repository state alone. The local
-chart/package and rendered Secret references are verifiable now.
+A checkout proves the local chart, package and rendered Secret references.
+Verify a published OCI version separately using the post-release commands
+below after its tag workflow succeeds.
 
-Commands run against this checkout on 2026-05-18:
+To inspect the current checkout:
 
 ```bash
 mkdir -p /tmp/made-operator-verify
 
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.postgres-secret.yaml \
   -f charts/made/values.provider-env-secrets.yaml \
   --set image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111 \
   > /tmp/made-operator-verify/pinned-secretrefs.yaml
 
-helm template MADE charts/made \
+helm template made charts/made \
   -f charts/made/values.postgres-secret.yaml \
   -f charts/made/values.provider-env-secrets.yaml \
   --set image.digest=sha256:1111111111111111111111111111111111111111111111111111111111111111 \
@@ -889,8 +889,8 @@ Expected rendered markers:
   `envFrom.secretRef.name=made-provider-env`;
 - mTLS render mounts `secretName: "made-grpc-mtls"` and sets
   `MADE_GRPC_TLS_MODE=mutual`;
-- `helm package` produces `made-0.1.0.tgz` from the current
-  chart metadata.
+- `helm package` produces `made-X.Y.Z.tgz`, where `X.Y.Z` is the
+  `version` in `charts/made/Chart.yaml`.
 
 ### Post-release OCI verification
 
@@ -900,8 +900,8 @@ chart version before installing:
 
 ```bash
 export NAMESPACE=made-system
-export RELEASE_NAME=MADE
-export CHART_VERSION=0.2.0
+export RELEASE_NAME=made
+export CHART_VERSION=X.Y.Z  # matching successfully published release
 export IMAGE_DIGEST=sha256:REPLACE_ME
 
 helm show chart \
@@ -972,7 +972,7 @@ profile.
 
    ```bash
    export NAMESPACE=made-system
-   export RELEASE_NAME=MADE
+   export RELEASE_NAME=made
    export VALUES_FILE=charts/made/values.embedded-nats.yaml
    export IMAGE_DIGEST=sha256:REPLACE_ME
    ```
@@ -1006,7 +1006,7 @@ profile.
 4. Upgrade from a published OCI chart after a release:
 
    ```bash
-   export CHART_VERSION=0.2.0
+   export CHART_VERSION=X.Y.Z  # matching successfully published release
 
    helm -n "$NAMESPACE" upgrade --install "$RELEASE_NAME" \
      oci://ghcr.io/underpass-ai/charts/made \
