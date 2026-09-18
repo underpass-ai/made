@@ -7,7 +7,7 @@ MADE is agnostic and independently usable. In Underpass
 platform research it is often discussed alongside these planes, but it
 does not require KMP, PIR, or any downstream product to run:
 
-- **[Underpass KMP](../README.md#the-underpass-platform)** — Kernel
+- **[Underpass KMP](https://github.com/underpass-ai/kmp)** — Kernel
   Memory Plane / Kernel Memory Protocol. Memory + context plane.
   Lives in the sibling repo `kmp`; one possible producer
   of caller-supplied `ExternalContextBundle`s.
