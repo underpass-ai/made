@@ -246,21 +246,10 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::TransitionApplied(_) | CeremonyEvent::CeremonyCompleted(_) => {
             format!("transition:{}", instance.transitions().len() + 1)
         }
-        CeremonyEvent::InterventionRequested(requested) => {
-            format!("intervention:{}", requested.intervention.id())
-        }
-        CeremonyEvent::InterventionResponded(responded) => format!(
-            "intervention:{}:{}",
-            responded.intervention_id,
-            responded.response.role_id()
-        ),
-        CeremonyEvent::InterventionClosed(closed) => {
-            format!("intervention:{}", closed.intervention_id)
-        }
-        CeremonyEvent::EvidenceCollected(collected) => format!(
-            "intervention:{}:source:{}",
-            collected.intervention_id, collected.source_id
-        ),
+        event @ (CeremonyEvent::InterventionRequested(_)
+        | CeremonyEvent::InterventionResponded(_)
+        | CeremonyEvent::InterventionClosed(_)
+        | CeremonyEvent::EvidenceCollected(_)) => intervention_about(event),
         CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
         CeremonyEvent::HumanApprovalRecorded(recorded) => {
             format!("guard:{}", recorded.approval.guard_name())
@@ -268,21 +257,9 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::HumanDeferralRecorded(recorded) => {
             format!("guard:{}", recorded.deferral.guard_name())
         }
-        CeremonyEvent::ChildSpawnPlanned(planned) => {
-            format!("child_group:{}", planned.plan.group_id())
-        }
-        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => {
-            format!(
-                "child_group:{}:fence:{}",
-                adopted.group_id,
-                adopted.claim_fence.as_str()
-            )
-        }
-        CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
-            "child_group:{}:child:{}",
-            accepted.completion.group_id(),
-            accepted.completion.child_id()
-        ),
+        event @ (CeremonyEvent::ChildSpawnPlanned(_)
+        | CeremonyEvent::ChildSpawnPlanAdopted(_)
+        | CeremonyEvent::ChildCompletionAccepted(_)) => child_about(event),
         CeremonyEvent::CeremonyPaused(paused) => {
             format!("pause:{}", paused.paused_at.unix_timestamp_nanos())
         }
@@ -306,6 +283,46 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         CeremonyEvent::ExecutionReceiptLinked(linked) => {
             format!("execution_receipt:{}", linked.link.receipt_id())
         }
+    }
+}
+
+fn intervention_about(event: &CeremonyEvent) -> String {
+    match event {
+        CeremonyEvent::InterventionRequested(requested) => {
+            format!("intervention:{}", requested.intervention.id())
+        }
+        CeremonyEvent::InterventionResponded(responded) => format!(
+            "intervention:{}:{}",
+            responded.intervention_id,
+            responded.response.role_id()
+        ),
+        CeremonyEvent::InterventionClosed(closed) => {
+            format!("intervention:{}", closed.intervention_id)
+        }
+        CeremonyEvent::EvidenceCollected(collected) => format!(
+            "intervention:{}:source:{}",
+            collected.intervention_id, collected.source_id
+        ),
+        _ => unreachable!("caller filters intervention events"),
+    }
+}
+
+fn child_about(event: &CeremonyEvent) -> String {
+    match event {
+        CeremonyEvent::ChildSpawnPlanned(planned) => {
+            format!("child_group:{}", planned.plan.group_id())
+        }
+        CeremonyEvent::ChildSpawnPlanAdopted(adopted) => format!(
+            "child_group:{}:fence:{}",
+            adopted.group_id,
+            adopted.claim_fence.as_str()
+        ),
+        CeremonyEvent::ChildCompletionAccepted(accepted) => format!(
+            "child_group:{}:child:{}",
+            accepted.completion.group_id(),
+            accepted.completion.child_id()
+        ),
+        _ => unreachable!("caller filters child events"),
     }
 }
 

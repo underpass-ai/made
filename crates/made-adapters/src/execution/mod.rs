@@ -1,3 +1,6 @@
 mod ceremony_step_handler_connector;
+mod durable_fixture_effect;
+mod durable_fixture_execution_connector;
 
 pub use ceremony_step_handler_connector::CeremonyStepHandlerConnector;
+pub use durable_fixture_execution_connector::DurableFixtureExecutionConnector;

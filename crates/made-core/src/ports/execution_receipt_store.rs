@@ -21,6 +21,11 @@ pub trait ExecutionReceiptStorePort: Send + Sync {
         claim_fence: &StepClaimFence,
     ) -> Result<Option<ExecutionIntent>, DomainError>;
 
+    async fn intents(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Vec<ExecutionIntent>, DomainError>;
+
     async fn operation(
         &self,
         operation_id: &ExecutionOperationId,

@@ -44,8 +44,20 @@ impl InspectExecutionRecoveryUseCase {
             {
                 continue;
             }
+            let intents = self.receipts.intents(operation.operation_id()).await?;
+            if intents.is_empty() {
+                return Err(DomainError::InvariantViolated {
+                    reason: "execution operation has no durable intent",
+                });
+            }
             let receipt = self.receipts.receipt(operation.operation_id()).await?;
-            items.push(ExecutionRecoveryItem::new(operation, receipt));
+            let current_claim_fence = session.instance.step_claim_fence(operation.step_id()).ok();
+            items.push(ExecutionRecoveryItem::new(
+                operation,
+                intents,
+                receipt,
+                current_claim_fence,
+            ));
         }
         Ok(ExecutionRecoveryItemsPage::new(items, next_cursor))
     }

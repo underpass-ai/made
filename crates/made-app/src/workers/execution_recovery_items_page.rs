@@ -27,4 +27,9 @@ impl ExecutionRecoveryItemsPage {
     pub const fn next_cursor(&self) -> Option<&ExecutionRecoveryCursor> {
         self.next_cursor.as_ref()
     }
+
+    #[must_use]
+    pub fn into_parts(self) -> (Vec<ExecutionRecoveryItem>, Option<ExecutionRecoveryCursor>) {
+        (self.items, self.next_cursor)
+    }
 }

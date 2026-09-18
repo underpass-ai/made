@@ -81,6 +81,15 @@ pub(super) fn execution_intent(
     key
 }
 
+/// Inclusive byte range containing every intent for one operation.
+pub(super) fn execution_intent_range(operation_id: &ExecutionOperationId) -> (Vec<u8>, Vec<u8>) {
+    let mut start = operation_id.as_str().as_bytes().to_vec();
+    start.push(SEPARATOR);
+    let mut end = start.clone();
+    end.push(u8::MAX);
+    (start, end)
+}
+
 /// Key for a published definition: the name length-prefixed, then the
 /// version.
 ///

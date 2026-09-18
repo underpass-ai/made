@@ -16,7 +16,7 @@ use made_core::value_objects::{
 };
 
 use crate::engine::{Key, ReadTx, Table};
-use crate::sqlite::keys::execution_intent;
+use crate::sqlite::keys::{execution_intent, execution_intent_range};
 
 use super::{decode, encode, SqliteCeremonyStore};
 
@@ -153,6 +153,31 @@ impl ExecutionReceiptStorePort for SqliteCeremonyStore {
         self.blocking("read execution receipt", move |engine| {
             let tx = engine.begin_read()?;
             receipt(tx.as_ref(), &operation_id)
+        })
+        .await
+    }
+
+    async fn intents(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Vec<ExecutionIntent>, DomainError> {
+        let operation_id = operation_id.clone();
+        self.blocking("read execution intents", move |engine| {
+            let tx = engine.begin_read()?;
+            let (start, end) = execution_intent_range(&operation_id);
+            tx.scan_bytes_range(Table::ExecutionIntents, &start, &end)?
+                .into_iter()
+                .map(|(_, bytes)| {
+                    let stored: ExecutionIntent = decode(&bytes, "decode execution intent")?;
+                    stored.validate()?;
+                    if stored.operation().operation_id() != &operation_id {
+                        return Err(DomainError::InvariantViolated {
+                            reason: "sqlite: execution intent range contains another operation",
+                        });
+                    }
+                    Ok(stored)
+                })
+                .collect()
         })
         .await
     }

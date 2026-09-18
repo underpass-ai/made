@@ -97,6 +97,22 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
             .cloned())
     }
 
+    async fn intents(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Vec<ExecutionIntent>, DomainError> {
+        let operation_id = operation_id.as_str();
+        Ok(self
+            .state
+            .lock()
+            .await
+            .intents
+            .iter()
+            .filter(|((candidate, _), _)| candidate == operation_id)
+            .map(|(_, intent)| intent.clone())
+            .collect())
+    }
+
     async fn operation(
         &self,
         operation_id: &ExecutionOperationId,

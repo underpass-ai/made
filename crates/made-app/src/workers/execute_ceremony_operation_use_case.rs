@@ -9,6 +9,7 @@ use made_core::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability,
 };
 
+use super::execution_receipt_from_observation::execution_receipt_from_observation;
 use super::ExecuteCeremonyOperationInput;
 
 /// Persist intent, execute or recover once, then persist an immutable receipt.
@@ -67,33 +68,30 @@ impl ExecuteCeremonyOperationUseCase {
             .store
             .intent(operation.operation_id(), &input.claim_fence)
             .await?;
-        let (intent, recorded) = match existing_intent {
-            Some(intent) => {
-                if intent.operation() != &operation
-                    || intent.connector_id() != self.connector.connector_id()
-                    || intent.recovery_capability() != self.connector.recovery_capability()
-                    || intent.source_kind() != self.connector.source_kind()
-                    || intent.actor_kind() != input.actor_kind
-                {
-                    return Err(DomainError::Conflict {
-                        what: "execution_intent",
-                    });
-                }
-                (intent, RecordExecutionIntentOutcome::AlreadyRecorded)
+        let (intent, recorded) = if let Some(intent) = existing_intent {
+            if intent.operation() != &operation
+                || intent.connector_id() != self.connector.connector_id()
+                || intent.recovery_capability() != self.connector.recovery_capability()
+                || intent.source_kind() != self.connector.source_kind()
+                || intent.actor_kind() != input.actor_kind
+            {
+                return Err(DomainError::Conflict {
+                    what: "execution_intent",
+                });
             }
-            None => {
-                let intent = ExecutionIntent::new(
-                    operation,
-                    input.claim_fence,
-                    self.connector.connector_id().clone(),
-                    self.connector.recovery_capability(),
-                    self.connector.source_kind(),
-                    input.actor_kind,
-                    self.clock.now(),
-                )?;
-                let recorded = self.store.record_intent(intent.clone()).await?;
-                (intent, recorded)
-            }
+            (intent, RecordExecutionIntentOutcome::AlreadyRecorded)
+        } else {
+            let intent = ExecutionIntent::new(
+                operation,
+                input.claim_fence,
+                self.connector.connector_id().clone(),
+                self.connector.recovery_capability(),
+                self.connector.source_kind(),
+                input.actor_kind,
+                self.clock.now(),
+            )?;
+            let recorded = self.store.record_intent(intent.clone()).await?;
+            (intent, recorded)
         };
         if let Some(receipt) = self
             .store
@@ -118,37 +116,13 @@ impl ExecuteCeremonyOperationUseCase {
                 input.handler_request,
             )?)
             .await?;
-        let producer_intent = self
-            .store
-            .intent(
-                intent.operation().operation_id(),
-                observation.producer_claim_fence(),
-            )
-            .await?
-            .ok_or(DomainError::InvariantViolated {
-                reason: "execution observation names an unknown producer claim fence",
-            })?;
-        if producer_intent.connector_id() != self.connector.connector_id()
-            || producer_intent.recovery_capability() != self.connector.recovery_capability()
-            || producer_intent.source_kind() != self.connector.source_kind()
-        {
-            return Err(DomainError::InvariantViolated {
-                reason: "execution observation does not match the producer connector contract",
-            });
-        }
-        let (_, external_operation_id, result, artifacts, observed_at) = observation.into_parts();
-        let receipt = ExecutionReceipt::new(
-            intent.operation().operation_id().clone(),
-            intent.operation().request_digest().clone(),
-            producer_intent.claim_fence().clone(),
-            producer_intent.connector_id().clone(),
-            external_operation_id,
-            producer_intent.recovery_capability(),
-            producer_intent.source_kind(),
-            result,
-            artifacts,
-            observed_at,
-        )?;
+        let receipt = execution_receipt_from_observation(
+            self.store.as_ref(),
+            self.connector.as_ref(),
+            &intent,
+            observation,
+        )
+        .await?;
         self.store.record_receipt(receipt.clone()).await?;
         Ok(receipt)
     }
