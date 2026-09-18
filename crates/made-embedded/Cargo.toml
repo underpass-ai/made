@@ -9,6 +9,12 @@ repository.workspace = true
 readme = "README.md"
 description = "In-process composition and host adapters for MADE."
 
+[features]
+default = []
+agent-vllm = ["made-adapters/agent-vllm"]
+agent-anthropic = ["made-adapters/agent-anthropic"]
+agent-openai = ["made-adapters/agent-openai"]
+
 [lints]
 workspace = true
 

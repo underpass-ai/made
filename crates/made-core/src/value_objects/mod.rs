@@ -79,7 +79,7 @@ pub use ceremony::{
     CeremonyInterventionTarget, CeremonyLineage, CeremonyName, CeremonyOutputDefinition,
     CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind, CeremonyReasonRationale,
     CeremonyRecordRef, CeremonyRevision, CeremonyRole, CeremonyState, CeremonyStateKind,
-    CeremonyStep, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
+    CeremonyStep, CeremonyStepAggregation, CeremonyStepContribution, CeremonyTranscript, CeremonyTransition,
     CeremonyTransitionRecord, CeremonyValidationFinding, CeremonyValidationLocus,
     CeremonyValidationReport, CeremonyValidationSeverity, CeremonyVersion, ChildCeremonyId,
     ChildCompletionRef, ChildDepth, ChildDepthBudget, ChildGroupId, ChildGroupState, ChildJoin,

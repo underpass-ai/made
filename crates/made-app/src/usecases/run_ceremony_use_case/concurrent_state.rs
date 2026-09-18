@@ -43,10 +43,9 @@ impl RunCeremonyUseCase {
         let ceremony_id = session.instance.id().clone();
 
         loop {
-            let now = self.clock.now();
             let claimable = session.instance.claimable_step_ids_at(
                 definition,
-                now,
+                self.clock.now(),
                 self.max_parallel_ceiling,
             )?;
             if claimable.is_empty() {
@@ -81,8 +80,14 @@ impl RunCeremonyUseCase {
                     .await
                 {
                     Ok(claim) => {
-                        session = self.stream.load(&ceremony_id).await?;
                         claimed.push(claim);
+                        match self.stream.load(&ceremony_id).await {
+                            Ok(reloaded) => session = reloaded,
+                            Err(error) => {
+                                claim_error = Some(error);
+                                break;
+                            }
+                        }
                     }
                     Err(error) => {
                         claim_error = Some(error);

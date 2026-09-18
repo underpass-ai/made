@@ -1,4 +1,6 @@
 interface:
   display_name: "Design Ceremony"
   short_description: "Design a validated ceremony draft"
-  default_prompt: "Design a MADE ceremony from my intent, validate it, and explain the draft before publication."
+  icon_small: "./assets/made-cuatro-voces.png"
+  icon_large: "./assets/made-cuatro-voces.png"
+  default_prompt: "Use $design-ceremony to design and validate a MADE ceremony draft."

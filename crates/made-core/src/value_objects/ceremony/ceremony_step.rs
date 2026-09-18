@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use super::{
-    CeremonyChildSpawn, ContextWrites, DynamicRoleBinding, RetryPolicy, StateId, StepHandlerConfig,
-    StepHandlerKind, StepId, StepRepeatPolicy, StepTimeout,
+    CeremonyChildSpawn, CeremonyStepAggregation, ContextWrites, DynamicRoleBinding, RetryPolicy,
+    StateId, StepHandlerConfig, StepHandlerKind, StepId, StepRepeatPolicy, StepTimeout,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -21,6 +21,8 @@ pub struct CeremonyStep {
     context_writes: ContextWrites,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     spawn: Option<CeremonyChildSpawn>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    aggregation: Option<CeremonyStepAggregation>,
 }
 
 impl CeremonyStep {
@@ -44,6 +46,7 @@ impl CeremonyStep {
             dynamic_role_binding: None,
             context_writes: ContextWrites::default(),
             spawn: None,
+            aggregation: None,
         }
     }
 
@@ -68,6 +71,12 @@ impl CeremonyStep {
     #[must_use]
     pub fn with_spawn(mut self, spawn: CeremonyChildSpawn) -> Self {
         self.spawn = Some(spawn);
+        self
+    }
+
+    #[must_use]
+    pub fn with_aggregation(mut self, aggregation: CeremonyStepAggregation) -> Self {
+        self.aggregation = Some(aggregation);
         self
     }
 
@@ -119,5 +128,10 @@ impl CeremonyStep {
     #[must_use]
     pub fn spawn(&self) -> Option<&CeremonyChildSpawn> {
         self.spawn.as_ref()
+    }
+
+    #[must_use]
+    pub fn aggregation(&self) -> Option<&CeremonyStepAggregation> {
+        self.aggregation.as_ref()
     }
 }

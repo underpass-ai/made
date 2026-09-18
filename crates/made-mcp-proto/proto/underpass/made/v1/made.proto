@@ -1533,6 +1533,20 @@ message CeremonyDesignExitGuard {
   }
 }
 
+message CeremonyDesignSynthesizeAggregation {}
+
+message CeremonyDesignVoteAggregation {
+  string output_field = 1;
+}
+
+// How the first step after a concurrent state consumes every sibling output.
+message CeremonyDesignAggregation {
+  oneof strategy {
+    CeremonyDesignSynthesizeAggregation synthesize = 1;
+    CeremonyDesignVoteAggregation vote = 2;
+  }
+}
+
 // One stage of the working session, in the author's terms.
 // Declaration order is execution order.
 message CeremonyDesignStage {
@@ -1566,6 +1580,7 @@ message CeremonyDesignStage {
   string role_from = 14;
   repeated string allowed_roles = 15;
   map<string, string> context_writes = 16;
+  CeremonyDesignAggregation aggregate = 17;
 }
 
 // A leaf inside a grouped state. It cannot recursively contain a group or
@@ -1582,6 +1597,7 @@ message CeremonyDesignGroupStep {
   string role_from = 9;
   repeated string allowed_roles = 10;
   map<string, string> context_writes = 11;
+  CeremonyDesignAggregation aggregate = 12;
 }
 
 message CeremonyDesignGroupJoin {
