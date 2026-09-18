@@ -92,6 +92,7 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .iter()
             .map(|id| id.as_str().to_owned())
             .collect(),
+        current_state_visit: instance.current_state_visit().get(),
         current_state_iteration: instance.current_state_iteration().get(),
         state_repeat_max_iterations: view
             .definition()
@@ -200,6 +201,7 @@ fn step_state_from(step: &CeremonyStepView<'_>) -> pb::CeremonyStepState {
             .repeat_policy()
             .map(|policy| policy.max_iterations().get())
             .unwrap_or_default(),
+        state_visit: step.record().state_visit().get(),
         state_iteration: step.record().state_iteration().get(),
     }
 }

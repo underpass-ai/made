@@ -16,6 +16,11 @@ operator command.
 
 ### Fixed
 
+- State transitions now open durable visits and rerun destination steps, while
+  preserving prior work with its visit and repetition coordinates. New sealed
+  transition payloads describe the reset; legacy events and snapshot hashes keep
+  their historical behavior. Rust, gRPC and both MCP editions expose visits;
+  cyclic work is checked across process restart and every snapshot cut. (#129)
 - Fence step completion to the accepted claim so a late worker cannot finish
   or clear a replacement worker's lease. Claim replies return `claim_fence`
   and completion requires it on proto, both MCP editions and the typed Rust

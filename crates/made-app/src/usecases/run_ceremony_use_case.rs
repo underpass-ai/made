@@ -18,7 +18,13 @@ use super::ceremony_step_trace::CeremonyStepTrace;
 use super::run_ceremony_input::RunCeremonyInput;
 use super::run_ceremony_output::RunCeremonyOutput;
 
+mod run_step_output;
 mod steps;
+
+use run_step_output::RunStepOutput;
+
+#[cfg(test)]
+mod claim_visit_tests;
 
 /// Drives a declarative ceremony through its steps and transitions.
 pub struct RunCeremonyUseCase {
@@ -175,14 +181,15 @@ impl RunCeremonyUseCase {
                     let transcript = ceremony_transcript_projection::transcript(
                         &self.stream.records(&id).await?,
                     );
-                    let (
-                        moved_on,
+                    let RunStepOutput {
+                        session: moved_on,
                         role_id,
-                        executed_state_iteration,
+                        state_visit: executed_state_visit,
+                        state_iteration: executed_state_iteration,
                         iteration,
                         attempt,
-                        step_result,
-                    ) = self
+                        result: step_result,
+                    } = self
                         .run_step(
                             &definition,
                             session,
@@ -195,16 +202,19 @@ impl RunCeremonyUseCase {
                         )
                         .await?;
                     session = moved_on;
-                    step_traces.push(CeremonyStepTrace::for_coordinates(
-                        state_id.clone(),
-                        executed_state_iteration,
-                        step_id.clone(),
-                        role_id,
-                        iteration,
-                        attempt,
-                        step_result.status(),
-                        step_result.output().clone(),
-                    ));
+                    step_traces.push(
+                        CeremonyStepTrace::for_coordinates(
+                            state_id.clone(),
+                            executed_state_iteration,
+                            step_id.clone(),
+                            role_id,
+                            iteration,
+                            attempt,
+                            step_result.status(),
+                            step_result.output().clone(),
+                        )
+                        .with_state_visit(executed_state_visit),
+                    );
                     if !step_result.is_success() {
                         return Err(DomainError::InvariantViolated {
                             reason: "ceremony step did not complete successfully",
@@ -744,6 +754,7 @@ mod tests {
         let store = Arc::new(EventStoreFake::default());
         store.save(&instance).await.unwrap();
         let context_changed = CeremonyEvent::ContextWritten(ContextWritten {
+            state_visit: None,
             step_id: step_id(),
             state_iteration: StateIteration::FIRST,
             iteration: StepIteration::FIRST,
@@ -773,7 +784,7 @@ mod tests {
         );
         let loaded = usecase.stream.load(&ceremony_id()).await.unwrap();
 
-        let (moved_on, sealed_role, state_iteration, iteration, attempt, result) = usecase
+        let outcome = usecase
             .run_step(
                 &definition,
                 loaded,
@@ -787,24 +798,20 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(sealed_role, winning_role);
-        assert_eq!(
-            moved_on
-                .instance
-                .step_record(&step_id())
-                .and_then(|record| record.claimed_role()),
-            Some(&winning_role)
-        );
+        assert_eq!(outcome.role_id, winning_role);
+        let claimed = outcome.session.instance.step_record(&step_id()).unwrap();
+        assert_eq!(claimed.claimed_role(), Some(&winning_role));
         let trace = CeremonyStepTrace::for_coordinates(
             StateId::new("REVIEWING").unwrap(),
-            state_iteration,
+            outcome.state_iteration,
             step_id(),
-            sealed_role,
-            iteration,
-            attempt,
-            result.status(),
-            result.output().clone(),
-        );
+            outcome.role_id,
+            outcome.iteration,
+            outcome.attempt,
+            outcome.result.status(),
+            outcome.result.output().clone(),
+        )
+        .with_state_visit(outcome.state_visit);
         assert_eq!(trace.role_id(), &winning_role);
 
         let requests = handler.requests().await;

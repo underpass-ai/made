@@ -131,6 +131,7 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
             created_at: at(0),
         }),
         CeremonyEvent::TransitionApplied(TransitionApplied {
+            destination: None,
             transition: CeremonyTransitionRecord::record_at(
                 trigger("next"),
                 state("A"),
@@ -141,6 +142,7 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
             ),
         }),
         CeremonyEvent::TransitionApplied(TransitionApplied {
+            destination: None,
             transition: CeremonyTransitionRecord::record_at(
                 trigger("back"),
                 state("B"),

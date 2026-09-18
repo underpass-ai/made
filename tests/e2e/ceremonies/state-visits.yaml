@@ -1,0 +1,29 @@
+version: "1.0"
+name: durable_visits
+max_transitions: 3
+max_bounces: 1
+states:
+  - id: A
+    initial: true
+    repeat:
+      max_iterations: 2
+      until: {step: a, output_field: ready, equals: true}
+  - id: B
+  - id: DONE
+    terminal: true
+transitions:
+  - {from: A, to: B, trigger: next, guards: [a_done]}
+  - {from: B, to: A, trigger: back, guards: [b_done]}
+  - {from: A, to: DONE, trigger: finish, guards: [a_done]}
+guards:
+  a_done: {type: automated, check: "step_status:a:COMPLETED"}
+  b_done: {type: automated, check: "step_status:b:COMPLETED"}
+steps:
+  - id: a
+    state: A
+    handler: noop
+    context_writes: {last_marker: marker}
+  - {id: b, state: B, handler: noop}
+roles:
+  - id: DRIVER
+    allowed_actions: [a, b, next, back, finish]

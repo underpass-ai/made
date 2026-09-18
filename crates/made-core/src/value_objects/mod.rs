@@ -86,10 +86,10 @@ pub use ceremony::{
     MaxBounces, MaxParallel, MaxTransitions, OutputFieldGuardCondition, OutputName, PriorContext,
     ReasonAsserter, ReconsiderationConditions, RepeatUntilCondition, RetryPolicy, RoleAction,
     RoleId, StateExecution, StateId, StateIteration, StateRepeatPolicy, StateRepeatUntilCondition,
-    StepAttempt, StepClaimFence, StepErrorMessage, StepExecutionRecord, StepHandlerConfig,
-    StepHandlerKind, StepId, StepInstructions, StepIteration, StepLease, StepOutput,
-    StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus,
-    StepTimeout, TransitionTrigger,
+    StateVisit, StepAttempt, StepClaimFence, StepErrorMessage, StepExecutionRecord,
+    StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration, StepLease,
+    StepOutput, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult,
+    StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;

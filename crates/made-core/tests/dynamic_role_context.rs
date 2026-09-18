@@ -568,6 +568,7 @@ fn ordinary_static_step_started_events_keep_the_legacy_record_shape() {
     let now = OffsetDateTime::UNIX_EPOCH;
     let mut instance = opened();
     let event = CeremonyEvent::StepStarted(StepStarted {
+        state_visit: None,
         step_id: step("writer"),
         state_iteration: Some(made_core::value_objects::StateIteration::FIRST),
         iteration: StepIteration::FIRST,
@@ -620,6 +621,7 @@ fn a_literal_pre_p5_in_progress_snapshot_equals_its_full_legacy_fold() {
             created_at: at,
         }),
         CeremonyEvent::StepStarted(StepStarted {
+            state_visit: None,
             step_id: step("draft"),
             state_iteration: None,
             iteration: StepIteration::FIRST,
@@ -652,6 +654,7 @@ fn same_destination_context_writes_follow_stream_order() {
     let key = ContextKey::new("next_role").unwrap();
     for value in ["C", "D"] {
         instance.apply(&CeremonyEvent::ContextWritten(ContextWritten {
+            state_visit: None,
             step_id: step("writer"),
             state_iteration: made_core::value_objects::StateIteration::FIRST,
             iteration: StepIteration::FIRST,

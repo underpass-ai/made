@@ -119,17 +119,17 @@ one of its states, including an edge that exits the component, requires a
 Changing a definition to add or lower a cap may strand a running instance;
 removing or raising one does not.
 
-Returning to a state currently preserves that state's existing step records;
-it does not create a new durable state visit or rerun completed steps. Cyclic
-definitions that require fresh work on every visit therefore await the durable
-visit/reset contract tracked in [#129](https://github.com/underpass-ai/made/issues/129).
+[ADR-018](018-durable-state-visits.md) now defines state re-entry: new
+transitions seal a destination visit and exact reset set, archive earlier work,
+and reopen destination steps. Historical transitions without that payload retain
+the original behavior and do not rerun completed work.
 
 P4 (#131) implements both typed caps from sealed transition history and
 rejects an unbounded strongly connected component. Refusal occurs before an
 append; replay, snapshots, imported history and process restart derive the
 same counts. A state-iteration boundary consumes no transition budget. The
-caps do not define state re-entry semantics: durable state visits remain
-tracked in #129 before cyclic D3/D4 patterns can be claimed.
+caps remain independent of the durable visit semantics implemented by #129.
+State repetition stays within one visit and consumes no transition budget.
 
 ### Fragments and scope
 
@@ -157,5 +157,5 @@ foundation and claimable concurrency as of 2026-09-18. They do not complete
 Phase 3 as a whole. Automated concurrent drivers (B3–B6), aggregation,
 in-ceremony `broadcast_collect` (C1), complete D1–D5 pattern fragments/E2Es,
 local-edition councils (F5) and composition remain deferred to corte 4. #127
-still tracks completion fencing, and #129 must define durable state visits
-before cyclic D3/D4 patterns rely on re-entry.
+still tracks completion fencing. #129 supplies durable state visits under
+ADR-018; complete cyclic D3/D4 pattern implementations remain deferred.

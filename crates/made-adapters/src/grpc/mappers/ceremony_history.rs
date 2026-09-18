@@ -131,6 +131,7 @@ pub fn get_ceremony_transcript_response_from(
                 step_id: contribution.step_id().as_str().to_owned(),
                 role_id: contribution.role_id().as_str().to_owned(),
                 output: Some(attributes_to_struct(contribution.output().attributes())),
+                state_visit: contribution.state_visit().get(),
                 state_iteration: contribution.state_iteration().get(),
             })
             .collect(),

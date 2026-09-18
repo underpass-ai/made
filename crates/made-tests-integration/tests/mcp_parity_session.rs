@@ -40,6 +40,8 @@ mod dynamic_roles;
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
 mod state_repeat;
+#[path = "mcp_parity_session/state_visits.rs"]
+mod state_visits;
 
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`
@@ -344,7 +346,7 @@ fn design_intent() -> Value {
 /// is built: a client meets `tools/call`, not a Rust trait.
 struct ParityArms {
     /// Dropping it stops the in-process server.
-    _fixture: GrpcFixture,
+    fixture: GrpcFixture,
     /// Dropping it removes the durable store's directory, on the pass
     /// that has one.
     _store_dir: Option<tempfile::TempDir>,
@@ -417,7 +419,7 @@ impl ParityArms {
                 .build(),
         ));
         Self {
-            _fixture: fixture,
+            fixture,
             _store_dir: store_dir,
             over_the_wire,
             in_process,
@@ -427,7 +429,7 @@ impl ParityArms {
 
     /// Test-host cache of identities returned by successful claims. Never a store read.
     fn completing(&self, tool: &str, mut arguments: Value) -> Value {
-        if tool == "made_complete_ceremony_step" {
+        if tool == "made_complete_ceremony_step" && arguments.get("claim_fence").is_none() {
             let key = (
                 arguments["ceremony_id"].as_str().unwrap().to_owned(),
                 arguments["step_id"].as_str().unwrap().to_owned(),
