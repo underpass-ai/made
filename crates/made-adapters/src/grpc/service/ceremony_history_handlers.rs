@@ -1,27 +1,63 @@
 //! Reading what a session left behind, reporting on it, and checking
 //! the chain that seals it.
 //!
-//! Four reads, no writes. They resolve nothing about the session
+//! Read-only operations. They resolve nothing about the session
 //! beyond what the use cases resolve, because a stream and a
 //! transcript are facts about a ceremony rather than views of its
 //! current state.
 
+use futures::StreamExt;
 use made_app::usecases::{
     GenerateCeremonyReportInput, PullCeremonyEventsInput, ReadCeremonyEventsInput, ReportTitle,
+    StreamCeremonyInput,
 };
 use made_core::value_objects::{
-    CeremonyEventConsumer, CeremonyEventPageLimit, GlobalPosition, StreamVersion,
+    CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyProgressWait, GlobalPosition,
+    StreamVersion,
 };
 
 use super::{
     domain_error_to_status, generate_ceremony_report_response_from,
     get_ceremony_transcript_response_from, link_span_to_metadata, pb,
     pull_ceremony_events_response_from, read_ceremony_events_response_from,
-    verify_ceremony_journal_response_from, CeremonyId, GrpcResult, MadeGrpcService, Request,
-    Response,
+    stream_ceremony_response_from, verify_ceremony_journal_response_from, CeremonyId, GrpcResult,
+    MadeGrpcService, Request, Response,
 };
 
 impl MadeGrpcService {
+    #[tracing::instrument(name = "rpc.stream_ceremony", skip_all)]
+    pub(super) async fn handle_stream_ceremony(
+        &self,
+        request: Request<pb::StreamCeremonyRequest>,
+    ) -> GrpcResult<<Self as pb::made_service_server::MadeService>::StreamCeremonyStream> {
+        link_span_to_metadata(&request);
+        let request = request.into_inner();
+        let ceremony_id = CeremonyId::new(request.ceremony_id).map_err(domain_error_to_status)?;
+        let max_events = if request.max_events == 0 {
+            CeremonyEventPageLimit::DEFAULT
+        } else {
+            CeremonyEventPageLimit::new(request.max_events as usize)
+                .map_err(domain_error_to_status)?
+        };
+        let wait_timeout = CeremonyProgressWait::from_millis(
+            request
+                .wait_timeout_ms
+                .unwrap_or(CeremonyProgressWait::DEFAULT.millis()),
+        )
+        .map_err(domain_error_to_status)?;
+        let stream = self
+            .stream_ceremony
+            .execute(StreamCeremonyInput::new(
+                ceremony_id,
+                StreamVersion::new(request.after_sequence),
+                max_events,
+                wait_timeout,
+            ))
+            .await
+            .map_err(domain_error_to_status)?;
+        Ok(Response::new(Box::pin(stream.map(progress_frame_to_grpc))))
+    }
+
     #[tracing::instrument(name = "rpc.pull_ceremony_events", skip_all)]
     pub(super) async fn handle_pull_ceremony_events(
         &self,
@@ -164,4 +200,14 @@ impl MadeGrpcService {
             &report,
         )))
     }
+}
+
+// Tonic fixes a server-stream item's error to `Status`; the generated trait
+// leaves no smaller error representation at this boundary.
+#[allow(clippy::result_large_err)]
+fn progress_frame_to_grpc(
+    item: Result<made_app::usecases::CeremonyProgressFrame, made_core::error::DomainError>,
+) -> Result<pb::StreamCeremonyResponse, tonic::Status> {
+    item.and_then(stream_ceremony_response_from)
+        .map_err(domain_error_to_status)
 }

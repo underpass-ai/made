@@ -8,10 +8,11 @@
 //! none of them writes.
 
 use made_app::usecases::{
-    CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, GenerateCeremonyReportInput,
-    GenerateCeremonyReportUseCase, GetCeremonyTranscriptUseCase, PullCeremonyEventsInput,
-    PullCeremonyEventsOutput, PullCeremonyEventsUseCase, ReadCeremonyEventsInput,
-    ReadCeremonyEventsUseCase, ReadWholeCeremonyEventsUseCase, VerifyCeremonyJournalUseCase,
+    CeremonyEventPage, CeremonyJournalVerdict, CeremonyProgressStream, CeremonyReport,
+    GenerateCeremonyReportInput, GenerateCeremonyReportUseCase, GetCeremonyTranscriptUseCase,
+    PullCeremonyEventsInput, PullCeremonyEventsOutput, PullCeremonyEventsUseCase,
+    ReadCeremonyEventsInput, ReadCeremonyEventsUseCase, ReadWholeCeremonyEventsUseCase,
+    StreamCeremonyInput, VerifyCeremonyJournalUseCase,
 };
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
@@ -23,6 +24,14 @@ use made_core::value_objects::{
 use super::EmbeddedMade;
 
 impl EmbeddedMade {
+    /// Replay and follow one ceremony's sealed records within caller bounds.
+    pub async fn stream_ceremony(
+        &self,
+        input: StreamCeremonyInput,
+    ) -> Result<CeremonyProgressStream, DomainError> {
+        self.progress_stream.execute(input).await
+    }
+
     /// Every sealed record of one session's stream, in stream order.
     ///
     /// Kept beside the paged read below because a chain is verified

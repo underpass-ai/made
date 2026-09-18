@@ -166,3 +166,40 @@ automatically for server-owned `run_step`.
 The embedded dependency boundary excludes gRPC, NATS and Postgres clients.
 `made-adapters` is used with default features disabled; adding a transport
 adapter is an explicit host composition choice.
+
+## Follow ceremony progress
+
+`EmbeddedMade::stream_ceremony` returns sealed `AuditRecord` frames followed
+by one typed `End` frame. Keep the end frame's `resume_after_sequence` and pass
+it back as the next input cursor. A zero wait performs replay only:
+
+```rust,no_run
+use futures::StreamExt;
+use made_app::usecases::{CeremonyProgressFrame, StreamCeremonyInput};
+use made_core::value_objects::{
+    CeremonyEventPageLimit, CeremonyId, CeremonyProgressWait, StreamVersion,
+};
+
+# async fn follow(engine: &made_embedded::EmbeddedMade) -> Result<(), Box<dyn std::error::Error>> {
+let mut progress = engine.stream_ceremony(StreamCeremonyInput::new(
+    CeremonyId::new("review-1")?,
+    StreamVersion::EMPTY,
+    CeremonyEventPageLimit::DEFAULT,
+    CeremonyProgressWait::IMMEDIATE,
+)).await?;
+while let Some(frame) = progress.next().await {
+    match frame? {
+        CeremonyProgressFrame::Record(record) => println!("{}", record.sequence().value()),
+        CeremonyProgressFrame::End(end) => {
+            println!("resume after {}", end.resume_after_sequence().value());
+            break;
+        }
+    }
+}
+# Ok(())
+# }
+```
+
+The facade uses a bounded channel and awaited backpressure. Dropping the stream
+cancels its producer. Its 250 ms cross-process catch-up interval is a polling
+setting, not a delivery deadline.

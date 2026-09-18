@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Stream resumable ceremony progress as sealed event records over gRPC, both
+  MCP backends and `EmbeddedMade`. Requests bound replay and waiting, return an
+  explicit resume cursor/end reason, catch up with external store writers and
+  cancel producers on client drop. (#163)
 - Add typed `synthesize` and deterministic strict-majority `vote` aggregation
   to the first step after an all-siblings concurrent join. YAML, design,
   protobuf, both MCP backends and the embedded facade share one schema;

@@ -1,4 +1,4 @@
-//! Canned answers for the four reads of what a session left behind.
+//! Canned answers for the reads of what a session left behind.
 //!
 //! The record's shape is the one thing worth getting exactly right
 //! here: it is the serde form of a stored `AuditRecord`, digest bytes
@@ -52,6 +52,16 @@ pub(super) fn pull_ceremony_events_fixture() -> Value {
     let mut record = page["records"][0].take();
     record["global_position"] = json!(1);
     json!({ "records": [record], "acknowledged_through": null })
+}
+
+pub(super) fn stream_ceremony_fixture() -> Value {
+    let page = read_ceremony_events_fixture();
+    json!({
+        "records": page["records"].clone(),
+        "resume_after_sequence": 1,
+        "head_sequence": 1,
+        "end_reason": "event_limit",
+    })
 }
 
 /// The one-record fixture stream, whole: a fixture that answered

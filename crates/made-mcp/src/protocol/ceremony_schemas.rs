@@ -16,7 +16,7 @@ mod ceremony_participation_schemas;
 pub(crate) use ceremony_history_schemas::REPORT_IS_PERSISTED;
 pub(super) use ceremony_history_schemas::{
     ceremony_report_schema, get_ceremony_transcript_schema, pull_ceremony_events_schema,
-    read_ceremony_events_schema, verify_ceremony_journal_schema,
+    read_ceremony_events_schema, stream_ceremony_schema, verify_ceremony_journal_schema,
 };
 pub(super) use ceremony_participation_schemas::{
     ceremony_reason_schema, close_ceremony_intervention_schema, collect_ceremony_evidence_schema,

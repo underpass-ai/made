@@ -18,6 +18,7 @@ use made_adapters::validators::{
     ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
+use made_app::usecases::CeremonyProgressSettings;
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -72,6 +73,7 @@ pub struct EmbeddedMadeBuilder {
     scoring: Option<Arc<dyn ScoringPort>>,
     executor: Option<Arc<dyn ExecutorPort>>,
     messaging: Option<Arc<dyn MessagingPort>>,
+    progress_settings: Option<CeremonyProgressSettings>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -209,6 +211,12 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_max_parallel_ceiling(mut self, ceiling: MaxParallel) -> Self {
         self.max_parallel_ceiling = Some(ceiling);
+        self
+    }
+
+    #[must_use]
+    pub fn with_progress_settings(mut self, settings: CeremonyProgressSettings) -> Self {
+        self.progress_settings = Some(settings);
         self
     }
 
@@ -449,6 +457,7 @@ impl EmbeddedMadeBuilder {
             memory_reader,
             self.subscriber.take(),
             self.event_transport.take(),
+            self.progress_settings.unwrap_or_default(),
         )
     }
 

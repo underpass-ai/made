@@ -17,6 +17,7 @@ made-core = { workspace = true }
 async-trait = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
+tokio-stream = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }
 opentelemetry = { workspace = true }

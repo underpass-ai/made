@@ -204,6 +204,7 @@ service MadeService {
   // thing and arrives as additive fields. The transcript is the other
   // half: what the seats actually contributed, in order.
   rpc ReadCeremonyEvents(ReadCeremonyEventsRequest) returns (ReadCeremonyEventsResponse);
+  rpc StreamCeremony(StreamCeremonyRequest) returns (stream StreamCeremonyResponse);
   // Named global feed. Reading does not commit; acknowledge_through does.
   rpc PullCeremonyEvents(PullCeremonyEventsRequest) returns (PullCeremonyEventsResponse);
   rpc GetCeremonyTranscript(GetCeremonyTranscriptRequest) returns (GetCeremonyTranscriptResponse);
@@ -1806,6 +1807,37 @@ message ReadCeremonyEventsResponse {
   // How far the stream goes, so a caller can tell "there is more"
   // from "you are caught up" without asking again.
   uint64 head_version = 3;
+}
+
+message StreamCeremonyRequest {
+  string ceremony_id = 1;
+  // Last per-ceremony sequence already processed. Zero starts at the first.
+  uint64 after_sequence = 2;
+  // Zero takes the default, 200. Maximum 1000.
+  uint32 max_events = 3;
+  // Absent takes 1000 ms. Present zero performs replay without waiting.
+  optional uint32 wait_timeout_ms = 4;
+}
+
+message StreamCeremonyResponse {
+  oneof frame {
+    CeremonyEventRecord record = 1;
+    StreamCeremonyEnd end = 2;
+  }
+}
+
+message StreamCeremonyEnd {
+  // Send this value back as after_sequence to resume without duplicates.
+  uint64 resume_after_sequence = 1;
+  uint64 head_sequence = 2;
+  StreamCeremonyEndReason reason = 3;
+}
+
+enum StreamCeremonyEndReason {
+  STREAM_CEREMONY_END_REASON_UNSPECIFIED = 0;
+  STREAM_CEREMONY_END_REASON_TERMINAL = 1;
+  STREAM_CEREMONY_END_REASON_EVENT_LIMIT = 2;
+  STREAM_CEREMONY_END_REASON_WAIT_ELAPSED = 3;
 }
 
 // One thing a seat contributed while running a step.

@@ -351,13 +351,18 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 9] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 10] = [
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
     ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
     ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),
     ("get_ceremony_transcript", "transcript", "named after what it answers with"),
     ("get_status", "status", "named after what it answers with"),
     ("get_metrics", "metrics", "named after what it answers with"),
+    (
+        "stream_ceremony",
+        "stream_ceremony",
+        "keeps ceremony in the name because the embedded facade also streams council deliberations",
+    ),
     (
         "generate_ceremony_report",
         "report",

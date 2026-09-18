@@ -14,7 +14,8 @@ use made_app::usecases::{
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
@@ -53,6 +54,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
+    pub(super) stream_ceremony: Option<Arc<StreamCeremonyUseCase>>,
     pub(super) pull_ceremony_events: Option<Arc<PullCeremonyEventsUseCase>>,
     pub(super) verify_ceremony_journal: Option<Arc<VerifyCeremonyJournalUseCase>>,
     pub(super) get_ceremony_transcript: Option<Arc<GetCeremonyTranscriptUseCase>>,
@@ -200,6 +202,7 @@ impl MadeGrpcServiceBuilder {
         ReadCeremonyEventsUseCase,
         read_ceremony_events
     );
+    setter!(stream_ceremony, StreamCeremonyUseCase, stream_ceremony);
     setter!(
         pull_ceremony_events,
         PullCeremonyEventsUseCase,
@@ -363,6 +366,7 @@ impl MadeGrpcServiceBuilder {
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
             read_ceremony_events: required!(self, read_ceremony_events),
+            stream_ceremony: required!(self, stream_ceremony),
             pull_ceremony_events: required!(self, pull_ceremony_events),
             verify_ceremony_journal: required!(self, verify_ceremony_journal),
             get_ceremony_transcript: required!(self, get_ceremony_transcript),

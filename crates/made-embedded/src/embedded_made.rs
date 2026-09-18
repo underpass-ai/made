@@ -4,14 +4,16 @@ use made_adapters::ceremony::{
     CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
     CeremonyTracingSubscriber,
 };
+use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_api::ApiError;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    GetCeremonyInstanceUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase, ServiceMetrics, ServiceStatus,
+    CeremonyProgressSettings, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase,
+    ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
@@ -40,6 +42,7 @@ pub struct EmbeddedMade {
     /// The streams themselves, for the one read that wants records
     /// rather than the session they fold to.
     events: Arc<dyn CeremonyEventStorePort>,
+    progress_stream: Arc<StreamCeremonyUseCase>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
@@ -181,6 +184,7 @@ impl EmbeddedMade {
         memory_reader: Arc<dyn MemoryReaderPort>,
         subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
         event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
+        progress_settings: CeremonyProgressSettings,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -205,8 +209,15 @@ impl EmbeddedMade {
                 event_publisher_consumer.clone(),
             )) as Arc<dyn CeremonyEventSubscriberPort>
         });
+        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
+        let progress_stream = Arc::new(StreamCeremonyUseCase::with_settings(
+            events.clone(),
+            progress_notifier.clone(),
+            progress_settings,
+        ));
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
+            progress_notifier,
             Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
             Arc::new(CeremonyFanoutMetricsSubscriber::new(
                 events.clone(),
@@ -221,6 +232,7 @@ impl EmbeddedMade {
         Self {
             definitions,
             publications,
+            progress_stream,
             stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
             cursors,
