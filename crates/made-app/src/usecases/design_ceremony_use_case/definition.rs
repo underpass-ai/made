@@ -249,7 +249,7 @@ pub(super) fn build_definition(
                 .cloned()
                 .map(CeremonyInputDefinition::optional),
         );
-    Ok(CeremonyDefinitionDraft::new(
+    let mut draft = CeremonyDefinitionDraft::new(
         document.name().clone(),
         document
             .version()
@@ -268,7 +268,14 @@ pub(super) fn build_definition(
         guards,
         roles,
     )
-    .with_max_parallel(document.max_parallel()))
+    .with_max_parallel(document.max_parallel());
+    if let Some(limit) = document.max_transitions() {
+        draft = draft.with_max_transitions(limit);
+    }
+    if let Some(limit) = document.max_bounces() {
+        draft = draft.with_max_bounces(limit);
+    }
+    Ok(draft)
 }
 
 fn entry_id(entry: &CeremonyDesignStageEntry) -> &made_core::value_objects::StepId {

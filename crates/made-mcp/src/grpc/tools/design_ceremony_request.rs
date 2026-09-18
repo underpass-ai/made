@@ -35,6 +35,8 @@ pub(super) fn build_design_ceremony_request(
         backoff_seconds: j2p::optional_present_u64(obj, "backoff_seconds")?,
         max_parallel: j2p::optional_present_u32(obj, "max_parallel")?,
         pattern: optional_pattern(obj)?,
+        max_transitions: j2p::optional_present_u32(obj, "max_transitions")?,
+        max_bounces: j2p::optional_present_u32(obj, "max_bounces")?,
     })
 }
 
@@ -369,6 +371,8 @@ mod tests {
     fn grouped_concurrency_crosses_the_mcp_grpc_boundary_without_defaulting() {
         let mut value = intent();
         value["max_parallel"] = json!(2);
+        value["max_transitions"] = json!(12);
+        value["max_bounces"] = json!(3);
         value["stages"] = json!([{
             "id": "parallel_review",
             "group": {
@@ -388,6 +392,8 @@ mod tests {
         let request = build_design_ceremony_request(&value).unwrap();
         let group = request.stages[0].group.as_ref().unwrap();
         assert_eq!(request.max_parallel, Some(2));
+        assert_eq!(request.max_transitions, Some(12));
+        assert_eq!(request.max_bounces, Some(3));
         assert_eq!(group.execution, "concurrent");
         assert_eq!(group.steps.len(), 2);
         assert_eq!(group.join.as_ref().unwrap().condition, "steps_completed");

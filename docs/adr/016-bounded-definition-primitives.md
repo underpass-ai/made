@@ -3,8 +3,9 @@
 Status: Accepted (2026-09-17)
 
 Implementation: bounded state repetition is implemented by P2 (#128); output and
-exhausted-repeat guards are implemented by P3 (#116). Role binding, context
-writes, and transition budgets remain planned for phase 3a P4–P5.
+exhausted-repeat guards are implemented by P3 (#116), and transition budgets
+and cycle analysis are implemented by P4 (#94). Role binding and context writes
+remain planned for phase 3a P5.
 Extends ADR-010; its step repeat contract remains unchanged except for an
 explicitly guarded exhaustion exit.
 
@@ -90,6 +91,17 @@ would exceed a cap is refused before append. Analysis rejects a cyclic graph
 without a declared cap and warns when a cyclic graph contains no human state.
 A bounded state repeat has its own iteration budget and does not consume a
 transition merely by starting the next state iteration.
+
+For cycle analysis, a component is human-controlled when any transition out of
+one of its states, including an edge that exits the component, requires a
+`HumanApproval` guard. Either positive cap is sufficient to admit a cycle.
+Changing a definition to add or lower a cap may strand a running instance;
+removing or raising one does not.
+
+Returning to a state currently preserves that state's existing step records;
+it does not create a new durable state visit or rerun completed steps. Cyclic
+definitions that require fresh work on every visit therefore await the durable
+visit/reset contract tracked in [#129](https://github.com/underpass-ai/made/issues/129).
 
 ### Fragments and scope
 

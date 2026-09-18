@@ -15,11 +15,68 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
         transition: &CeremonyTransition,
     ) -> bool {
+        self.transition_budget_allows(definition, transition)
+            && self.transition_requirements_are_satisfied(definition, transition)
+    }
+
+    /// Whether every transition requirement other than its declared
+    /// history budget is satisfied. A driver uses this only after no
+    /// budget-enabled edge exists, so the aggregate can issue the same
+    /// stable cap refusal as an explicit transition command.
+    #[must_use]
+    pub fn transition_requirements_are_satisfied(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
         self.state_repeat_permits_transition(definition)
             && definition.guards_are_satisfied(transition, &self.step_records, &self.context)
             && self
                 .require_interventions_resolved_before_entering(definition, transition.to())
                 .is_ok()
+    }
+
+    pub(super) fn require_transition_budget(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> Result<(), DomainError> {
+        if definition.max_transitions().is_some_and(|limit| {
+            u64::try_from(self.transitions.len()).unwrap_or(u64::MAX) >= u64::from(limit.get())
+        }) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony transition limit exhausted",
+            });
+        }
+        if definition.max_bounces().is_some_and(|limit| {
+            u64::try_from(self.exact_edge_count(transition)).unwrap_or(u64::MAX)
+                >= u64::from(limit.get())
+        }) {
+            return Err(DomainError::InvariantViolated {
+                reason: "ceremony transition bounce limit exhausted",
+            });
+        }
+        Ok(())
+    }
+
+    fn transition_budget_allows(
+        &self,
+        definition: &CeremonyDefinition,
+        transition: &CeremonyTransition,
+    ) -> bool {
+        self.require_transition_budget(definition, transition)
+            .is_ok()
+    }
+
+    fn exact_edge_count(&self, transition: &CeremonyTransition) -> usize {
+        self.transitions
+            .iter()
+            .filter(|record| {
+                record.from_state() == transition.from()
+                    && record.trigger() == transition.trigger()
+                    && record.to_state() == transition.to()
+            })
+            .count()
     }
 
     #[must_use]

@@ -76,6 +76,14 @@ pub(in crate::protocol) fn ceremony_design_schema() -> Value {
             "max_parallel": {
                 "type": "integer", "minimum": 1, "maximum": 8,
                 "description": "Definition-level claim capacity. Defaults to three; the host may enforce a lower runtime ceiling."
+            },
+            "max_transitions": {
+                "type": "integer", "minimum": 1,
+                "description": "Maximum total transition applications. Either transition budget makes a cyclic definition bounded."
+            },
+            "max_bounces": {
+                "type": "integer", "minimum": 1,
+                "description": "Maximum applications of each exact from/trigger/to edge. Either transition budget makes a cyclic definition bounded."
             }
         }
     })

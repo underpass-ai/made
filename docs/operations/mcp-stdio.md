@@ -70,6 +70,8 @@ fields represent both forms as the same empty list.
         { "role_id": "DATABASE_SPECIALIST" },
         { "role_id": "QUEUE_SPECIALIST" }
       ],
+      "max_transitions": 12,
+      "max_bounces": 3,
       "pattern": "roundtable_fixed_order"
     }
   }
@@ -78,7 +80,10 @@ fields represent both forms as the same empty list.
 
 The response is an unpublished, analysed draft. Supply its
 `structuredContent.definition_yaml` unchanged to `made_run_ceremony`. The
-preset creates one sequential turn per participant in declaration order. The
+optional positive `max_transitions` and `max_bounces` fields cross embedded and
+gRPC-backed MCP unchanged and are rendered into that YAML. Either one permits a
+cyclic definition; both limits apply when both are present. The preset creates
+one sequential turn per participant in declaration order. The
 first turn has `see_prior: false`; each later turn has `see_prior: true` and
 therefore receives the complete transcript produced before it. The preset
 does not aggregate contributions or select speakers dynamically.

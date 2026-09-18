@@ -2,7 +2,8 @@ use crate::entities::CeremonyDefinition;
 
 use super::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyDefinitionChange, CeremonyInputDefinition,
-    CeremonyValidationLocus, InputRequirement, StateId, TransitionTrigger,
+    CeremonyValidationLocus, InputRequirement, MaxBounces, MaxTransitions, StateId,
+    TransitionTrigger,
 };
 
 fn is_required(input: &CeremonyInputDefinition) -> bool {
@@ -30,6 +31,7 @@ impl CeremonyDefinitionDiff {
         diff_steps(before, after, &mut changes);
         diff_guards(before, after, &mut changes);
         diff_roles(before, after, &mut changes);
+        diff_transition_budgets(before, after, &mut changes);
         diff_shape(before, after, &mut changes);
         Self { changes }
     }
@@ -59,6 +61,48 @@ impl CeremonyDefinitionDiff {
             .filter(|change| change.impact().strands())
             .count()
     }
+}
+
+fn diff_transition_budgets(
+    before: &CeremonyDefinition,
+    after: &CeremonyDefinition,
+    changes: &mut Vec<CeremonyDefinitionChange>,
+) {
+    diff_transition_budget(
+        before.max_transitions().map(MaxTransitions::get),
+        after.max_transitions().map(MaxTransitions::get),
+        changes,
+        "the total number of transitions a running session may apply",
+    );
+    diff_transition_budget(
+        before.max_bounces().map(MaxBounces::get),
+        after.max_bounces().map(MaxBounces::get),
+        changes,
+        "the number of times a running session may apply one exact edge",
+    );
+}
+
+fn diff_transition_budget(
+    before: Option<u32>,
+    after: Option<u32>,
+    changes: &mut Vec<CeremonyDefinitionChange>,
+    detail: &'static str,
+) {
+    if before == after {
+        return;
+    }
+    let impact = match (before, after) {
+        (None, Some(_)) => CeremonyChangeImpact::Strands,
+        (Some(old), Some(new)) if new < old => CeremonyChangeImpact::Strands,
+        _ => CeremonyChangeImpact::Carries,
+    };
+    record(
+        changes,
+        CeremonyChangeKind::Altered,
+        CeremonyValidationLocus::Definition,
+        impact,
+        detail,
+    );
 }
 
 fn record(
@@ -430,9 +474,9 @@ mod tests {
     use super::*;
     use crate::value_objects::{
         CeremonyGuard, CeremonyName, CeremonyRole, CeremonyState, CeremonyStep, CeremonyTransition,
-        CeremonyVersion, GuardCondition, GuardName, RepeatUntilCondition, RetryPolicy, RoleAction,
-        RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutputField,
-        StepRepeatPolicy,
+        CeremonyVersion, GuardCondition, GuardName, MaxBounces, MaxTransitions,
+        RepeatUntilCondition, RetryPolicy, RoleAction, RoleId, StepHandlerConfig, StepHandlerKind,
+        StepId, StepIteration, StepOutputField, StepRepeatPolicy,
     };
 
     fn state(id: &str) -> StateId {
@@ -510,7 +554,15 @@ mod tests {
         }
 
         fn build(self) -> CeremonyDefinition {
-            CeremonyDefinition::new(
+            self.build_with_budgets(None, None)
+        }
+
+        fn build_with_budgets(
+            self,
+            max_transitions: Option<MaxTransitions>,
+            max_bounces: Option<MaxBounces>,
+        ) -> CeremonyDefinition {
+            CeremonyDefinition::new_with_transition_budgets(
                 CeremonyName::new("diffed_ceremony").unwrap(),
                 CeremonyVersion::v1(),
                 None,
@@ -521,6 +573,8 @@ mod tests {
                 self.steps,
                 self.guards,
                 self.roles,
+                max_transitions,
+                max_bounces,
             )
             .unwrap()
         }
@@ -536,6 +590,50 @@ mod tests {
 
         assert!(diff.is_identical());
         assert!(!diff.strands_running_sessions());
+    }
+
+    #[test]
+    fn adding_or_lowering_a_transition_budget_can_strand_a_running_session() {
+        let baseline = baseline();
+        let capped = Draft::baseline().build_with_budgets(
+            Some(MaxTransitions::new(10).unwrap()),
+            Some(MaxBounces::new(4).unwrap()),
+        );
+        let added = CeremonyDefinitionDiff::between(&baseline, &capped);
+        assert_eq!(added.strand_count(), 2);
+        assert!(added.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Strands
+        }));
+
+        let lowered = Draft::baseline().build_with_budgets(
+            Some(MaxTransitions::new(5).unwrap()),
+            Some(MaxBounces::new(2).unwrap()),
+        );
+        let tightening = CeremonyDefinitionDiff::between(&capped, &lowered);
+        assert_eq!(tightening.strand_count(), 2);
+        assert!(tightening.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Strands
+        }));
+
+        let raising = CeremonyDefinitionDiff::between(&lowered, &capped);
+        assert!(!raising.strands_running_sessions());
+        assert!(raising.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Carries
+        }));
+
+        let removing = CeremonyDefinitionDiff::between(&capped, &baseline);
+        assert!(!removing.strands_running_sessions());
+        assert!(removing.changes().iter().all(|change| {
+            change.kind() == CeremonyChangeKind::Altered
+                && change.locus() == &CeremonyValidationLocus::Definition
+                && change.impact() == CeremonyChangeImpact::Carries
+        }));
     }
 
     #[test]

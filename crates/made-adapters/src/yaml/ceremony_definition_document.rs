@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use made_core::entities::CeremonyDefinitionDraft;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyOutputDefinition, CeremonyVersion, MaxParallel,
-    OutputName,
+    CeremonyDescription, CeremonyName, CeremonyOutputDefinition, CeremonyVersion, MaxBounces,
+    MaxParallel, MaxTransitions, OutputName,
 };
 use serde::Deserialize;
 use serde_json::Value;
@@ -44,6 +44,10 @@ pub(super) struct CeremonyDefinitionDocument {
     retry_policies: RetryPoliciesDocument,
     #[serde(default = "default_max_parallel")]
     max_parallel: u8,
+    #[serde(default)]
+    max_transitions: Option<u32>,
+    #[serde(default)]
+    max_bounces: Option<u32>,
 }
 
 impl CeremonyDefinitionDocument {
@@ -85,7 +89,7 @@ impl CeremonyDefinitionDocument {
             .map(|role| role.into_domain(&step_ids, &transition_triggers))
             .collect::<Result<Vec<_>, _>>()?;
 
-        Ok(CeremonyDefinitionDraft::new(
+        let mut draft = CeremonyDefinitionDraft::new(
             CeremonyName::new(self.name)?,
             CeremonyVersion::new(self.version)?,
             self.description.map(CeremonyDescription::new).transpose()?,
@@ -103,7 +107,14 @@ impl CeremonyDefinitionDocument {
             guards,
             roles,
         )
-        .with_max_parallel(MaxParallel::new(self.max_parallel)?))
+        .with_max_parallel(MaxParallel::new(self.max_parallel)?);
+        if let Some(limit) = self.max_transitions {
+            draft = draft.with_max_transitions(MaxTransitions::new(limit)?);
+        }
+        if let Some(limit) = self.max_bounces {
+            draft = draft.with_max_bounces(MaxBounces::new(limit)?);
+        }
+        Ok(draft)
     }
 }
 
