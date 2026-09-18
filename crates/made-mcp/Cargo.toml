@@ -58,6 +58,7 @@ testcontainers = { version = "0.28", optional = true }
 default = ["embedded", "grpc"]
 
 embedded = [
+    "dep:futures",
     "dep:made-adapters",
     "dep:made-app",
     "dep:made-core",
