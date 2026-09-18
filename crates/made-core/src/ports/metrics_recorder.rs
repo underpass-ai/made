@@ -119,6 +119,24 @@ pub trait MetricsRecorderPort: Send + Sync {
     /// Record that a worker claimed a ceremony step from the stream.
     fn record_ceremony_step_claimed(&self, _ceremony: &str, _step: &str) {}
 
+    /// Peak live claims within a completed state visit/iteration, from sealed facts.
+    fn observe_ceremony_claim_peak_width(
+        &self,
+        _ceremony: &str,
+        _state: &str,
+        _width: crate::value_objects::MaxParallel,
+    ) {
+    }
+
+    /// A typed failure of a step; never inferred from an error message.
+    fn record_ceremony_classified_step_failure(
+        &self,
+        _ceremony: &str,
+        _step: &str,
+        _kind: crate::value_objects::StepFailureKind,
+    ) {
+    }
+
     /// Record the attempt number assigned to a step claim.
     fn record_ceremony_step_attempt(&self, _ceremony: &str, _step: &str, _attempt: u32) {}
 
