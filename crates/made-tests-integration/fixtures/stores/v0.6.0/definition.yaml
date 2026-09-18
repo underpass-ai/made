@@ -1,0 +1,13 @@
+version: "1.0"
+name: upgrade_v060
+states:
+  - {id: WORKING, initial: true}
+  - {id: CLOSED, terminal: true}
+transitions:
+  - {from: WORKING, to: CLOSED, trigger: finish, guards: [done]}
+guards:
+  done: {type: automated, check: "step_status:work:COMPLETED"}
+steps:
+  - {id: work, state: WORKING, handler: noop}
+roles:
+  - {id: WORKER, allowed_actions: [work, finish]}
