@@ -15,8 +15,8 @@ mod metrics;
 mod primitives;
 
 pub(crate) use ceremony_history::{
-    ceremony_report_to_json, ceremony_transcript_to_json, pull_ceremony_events_to_json,
-    read_ceremony_events_to_json, verify_ceremony_journal_to_json,
+    ceremony_event_record_view, ceremony_report_to_json, ceremony_transcript_to_json,
+    pull_ceremony_events_to_json, read_ceremony_events_to_json, verify_ceremony_journal_to_json,
 };
 pub(crate) use ceremony_instance::{
     ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,

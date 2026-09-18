@@ -1,9 +1,13 @@
-//! Request mappers for the four reads of what a session left behind.
+//! Request mappers for the reads of what a session left behind.
 
 use made_mcp_proto::v1 as pb;
+use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::Value;
+use tonic::codegen::{Body, Bytes, StdError};
 
 use super::super::json_to_proto as j2p;
+use super::super::streaming;
+use crate::protocol::ToolError;
 
 pub(super) fn build_read_ceremony_events_request(
     args: &Value,
@@ -16,6 +20,39 @@ pub(super) fn build_read_ceremony_events_request(
         from_version: j2p::optional_u64(obj, "from_version")?,
         limit: j2p::optional_u32(obj, "limit")?,
     })
+}
+
+pub(super) fn build_stream_ceremony_request(
+    args: &Value,
+) -> Result<pb::StreamCeremonyRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    let wait_timeout_ms = obj
+        .contains_key("wait_timeout_ms")
+        .then(|| j2p::optional_u32(obj, "wait_timeout_ms"))
+        .transpose()?;
+    Ok(pb::StreamCeremonyRequest {
+        ceremony_id: j2p::require_str(obj, "ceremony_id")?.to_owned(),
+        after_sequence: j2p::optional_u64(obj, "after_sequence")?,
+        max_events: j2p::optional_u32(obj, "max_events")?,
+        wait_timeout_ms,
+    })
+}
+
+pub(super) async fn stream_ceremony<T>(
+    client: &mut MadeServiceClient<T>,
+    arguments: &Value,
+) -> Result<Value, ToolError>
+where
+    T: tonic::client::GrpcService<tonic::body::BoxBody>,
+    T::Error: Into<StdError>,
+    T::ResponseBody: Body<Data = Bytes> + Send + 'static,
+    <T::ResponseBody as Body>::Error: Into<StdError> + Send,
+{
+    let request = build_stream_ceremony_request(arguments).map_err(ToolError::invalid_request)?;
+    let response = client.stream_ceremony(request).await?;
+    streaming::collect_ceremony_progress(response.into_inner())
+        .await
+        .map_err(ToolError::refused)
 }
 
 pub(super) fn build_pull_ceremony_events_request(

@@ -6,8 +6,10 @@
 //! rebuilds exactly this JSON from the proto record, and the parity
 //! session compares the two field for field.
 
+use futures::StreamExt;
 use made_app::usecases::{
-    CeremonyEventPage, CeremonyJournalVerdict, CeremonyReport, PullCeremonyEventsOutput,
+    CeremonyEventPage, CeremonyJournalVerdict, CeremonyProgressFrame, CeremonyProgressStream,
+    CeremonyReport, PullCeremonyEventsOutput,
 };
 use made_core::entities::AuditRecord;
 use made_core::value_objects::CeremonyTranscript;
@@ -30,6 +32,35 @@ pub(super) fn present_ceremony_events(page: &CeremonyEventPage) -> Result<Value,
         page.head_version().value(),
     )
     .to_json())
+}
+
+pub(super) async fn collect_ceremony_progress(
+    mut stream: CeremonyProgressStream,
+) -> Result<Value, ToolError> {
+    let mut records = Vec::new();
+    let mut ending = None;
+    while let Some(item) = stream.next().await {
+        match item? {
+            CeremonyProgressFrame::Record(record) if ending.is_none() => {
+                records.push(audit_record_view(&record)?.to_json());
+            }
+            CeremonyProgressFrame::End(end) if ending.is_none() => ending = Some(end),
+            _ => {
+                return Err(ToolError::refused(
+                    "progress stream emitted a frame after its end",
+                ))
+            }
+        }
+    }
+    let end = ending.ok_or_else(|| {
+        ToolError::refused("progress stream closed without its required end frame")
+    })?;
+    Ok(json!({
+        "records": records,
+        "resume_after_sequence": end.resume_after_sequence().value(),
+        "head_sequence": end.head_sequence().value(),
+        "end_reason": end.reason().as_str(),
+    }))
 }
 
 pub(super) fn present_pulled_ceremony_events(

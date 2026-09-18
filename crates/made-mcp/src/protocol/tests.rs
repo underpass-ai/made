@@ -54,7 +54,7 @@ fn incremental_ceremony_tools_are_unique_catalog_extensions() {
     let all_names = catalog_tool_names();
     let unique_names = all_names.iter().collect::<std::collections::BTreeSet<_>>();
 
-    assert_eq!(all_names.len(), 45);
+    assert_eq!(all_names.len(), 46);
     assert_eq!(unique_names.len(), all_names.len());
     assert!(all_names.contains(&VALIDATE_CEREMONY_DRAFT_TOOL.to_owned()));
     assert!(all_names.contains(&PUBLISH_CEREMONY_DEFINITION_TOOL.to_owned()));
@@ -74,6 +74,7 @@ fn incremental_ceremony_tools_are_unique_catalog_extensions() {
     assert!(all_names.contains(&COMPLETE_CEREMONY_STEP_TOOL.to_owned()));
     assert!(all_names.contains(&GENERATE_CEREMONY_REPORT_TOOL.to_owned()));
     assert!(all_names.contains(&READ_CEREMONY_EVENTS_TOOL.to_owned()));
+    assert!(all_names.contains(&STREAM_CEREMONY_TOOL.to_owned()));
     assert!(all_names.contains(&GET_CEREMONY_TRANSCRIPT_TOOL.to_owned()));
     assert!(all_names.contains(&DISCOVER_CAPABILITIES_TOOL.to_owned()));
     assert!(all_names.contains(&GET_HELP_TOOL.to_owned()));
@@ -89,6 +90,7 @@ fn incremental_ceremony_tools_are_unique_catalog_extensions() {
         COMPLETE_CEREMONY_STEP_TOOL,
         DESIGN_CEREMONY_TOOL,
         READ_CEREMONY_EVENTS_TOOL,
+        STREAM_CEREMONY_TOOL,
         GET_CEREMONY_TRANSCRIPT_TOOL,
         GENERATE_CEREMONY_REPORT_TOOL,
     ] {

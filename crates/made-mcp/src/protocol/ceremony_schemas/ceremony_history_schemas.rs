@@ -85,6 +85,34 @@ pub(crate) fn read_ceremony_events_schema() -> Value {
     })
 }
 
+pub(crate) fn stream_ceremony_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id"],
+        "properties": {
+            "ceremony_id": string_schema("Started ceremony instance id. An unknown id is not found rather than watched."),
+            "after_sequence": {
+                "type": "integer",
+                "minimum": 0,
+                "description": "Last per-ceremony sequence already processed. Delivery starts strictly after it. Send resume_after_sequence from the previous answer to resume without duplicates."
+            },
+            "max_events": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": EVENT_PAGE_LIMIT_CAP,
+                "description": format!("Maximum records collected by this finite tool call. Omitted or 0 takes {DEFAULT_EVENT_PAGE_LIMIT}.")
+            },
+            "wait_timeout_ms": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 30000,
+                "description": "How long to wait for sealed events after replay. Omitted takes 1000 ms; 0 performs replay without waiting. Delivery to a slow client can finish after this wait has elapsed."
+            }
+        }
+    })
+}
+
 pub(crate) fn pull_ceremony_events_schema() -> Value {
     json!({
         "type": "object",

@@ -33,6 +33,7 @@ use made_adapters::memory::{
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
+use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::scoring::UniformScoring;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
@@ -53,7 +54,8 @@ use made_app::usecases::{
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
@@ -141,10 +143,12 @@ impl GrpcFixture {
         let metrics = Arc::new(
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
+        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
             Arc::new(CeremonyEventFanout::new(vec![
+                progress_notifier.clone(),
                 Arc::new(SessionMemoryRecorder::new(
                     memory_writer,
                     ceremony_store.clone(),
@@ -359,6 +363,10 @@ impl GrpcFixture {
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
             )))
+            .stream_ceremony(Arc::new(StreamCeremonyUseCase::new(
+                ceremony_store.clone(),
+                progress_notifier,
+            )))
             .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
                 Arc::new(InMemoryCeremonyEventCursor::new()),
@@ -467,10 +475,12 @@ impl GrpcFixture {
         let metrics = Arc::new(
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
+        let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
         let ceremony_stream = Arc::new(SessionStream::new(
             ceremony_store.clone(),
             ceremony_store.clone(),
             Arc::new(CeremonyEventFanout::new(vec![
+                progress_notifier.clone(),
                 Arc::new(SessionMemoryRecorder::new(
                     memory_writer,
                     ceremony_store.clone(),
@@ -681,6 +691,10 @@ impl GrpcFixture {
             // runs.
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
+            )))
+            .stream_ceremony(Arc::new(StreamCeremonyUseCase::new(
+                ceremony_store.clone(),
+                progress_notifier,
             )))
             .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
                 ceremony_store.clone(),

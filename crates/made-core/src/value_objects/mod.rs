@@ -66,8 +66,8 @@ pub use audit::{
     AuditActor, AuditActorId, AuditActorKind, AuditChainDefect, AuditChainVerdict, AuditEventType,
     AuditRecordHash, AuditSequence, CeremonyEventConsumer, CeremonyEventCursorAttempt,
     CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
-    CeremonyEventQuarantineReason, EventSchemaVersion, GlobalPosition, QuarantinedCeremonyEvent,
-    StreamVersion,
+    CeremonyEventQuarantineReason, CeremonyProgressWait, EventSchemaVersion, GlobalPosition,
+    QuarantinedCeremonyEvent, StreamVersion,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyContext, CeremonyDefinitionChange,

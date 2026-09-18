@@ -75,14 +75,12 @@ const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
-/// It was empty until status joined the shared set, and it is still
-/// empty for every other tool: with the same step handler, the same
-/// evidence source and the same frozen clock on both arms, every
-/// field of every shared tool's answer is equal, timestamps included.
-/// What keeps it that way is that the script names the things a
-/// client can name — the ceremony id, the intervention id, the
-/// idempotency key, the lease owner. Left out, each would be minted
-/// per engine and land here with a reason.
+/// The shared handler, evidence source and frozen clock make domain
+/// output and timestamps deterministic. Independently minted identities
+/// and wall-clock measurements still differ between executions. Only
+/// those exact paths are listed below; their surrounding results remain
+/// compared. The script explicitly supplies every identity clients can
+/// name, including ceremony, intervention, idempotency key and lease owner.
 ///
 /// An entry is `(tool, path, reason)`. The tool is part of the key
 /// because a path excused everywhere is a hole: `.content[].text` is
@@ -182,6 +180,16 @@ const NORMALISED: &[(&str, &str, &str)] = &[
         "made_process_trigger_event",
         ".content[].text.ack.dispatched_task_ids[]",
         "the text projection mirrors the independently minted task id",
+    ),
+    (
+        "made_run_council_decision",
+        ".structuredContent.duration_ms",
+        "the use case measures each execution with std::time::Instant, outside the frozen domain clock",
+    ),
+    (
+        "made_run_council_decision",
+        ".content[].text.duration_ms",
+        "the text projection mirrors the independently measured elapsed duration",
     ),
     (
         "made_run_council_decision",
@@ -964,6 +972,16 @@ fn session_script() -> Vec<(&'static str, Value)> {
         (
             "made_read_ceremony_events",
             json!({ "ceremony_id": SESSION_ID, "from_version": 2, "limit": 3 }),
+        ),
+        ("made_stream_ceremony", json!({ "ceremony_id": SESSION_ID })),
+        (
+            "made_stream_ceremony",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "after_sequence": 2,
+                "max_events": 3,
+                "wait_timeout_ms": 0,
+            }),
         ),
         // The named global feed is the same durable contract on both
         // surfaces: a read replays, and only the next call's explicit
@@ -1824,6 +1842,12 @@ fn normalise(value: &Value, path: &str, tool: &str) -> Value {
         .iter()
         .any(|(normalised_tool, normalised, _)| *normalised_tool == tool && *normalised == path)
     {
+        if tool == "made_run_council_decision" && path.ends_with(".duration_ms") {
+            assert!(
+                value.as_u64().is_some(),
+                "council duration must remain unsigned milliseconds"
+            );
+        }
         return json!("<normalised>");
     }
     match value {
@@ -1894,6 +1918,33 @@ fn compare(over_the_wire: &Value, in_process: &Value, path: &str, into: &mut Vec
         }
         _ => {}
     }
+}
+
+#[test]
+fn council_elapsed_time_can_differ_without_hiding_decision_content() {
+    let answer = |duration, passed| {
+        let body = json!({"duration_ms": duration, "validation": {"passed": passed}});
+        json!({"structuredContent": body, "content": [{"text": body.to_string()}]})
+    };
+    let first = normalise(&answer(0, true), "", "made_run_council_decision");
+    assert_eq!(
+        first,
+        normalise(&answer(7, true), "", "made_run_council_decision")
+    );
+    assert_ne!(
+        first,
+        normalise(&answer(7, false), "", "made_run_council_decision")
+    );
+}
+
+#[test]
+#[should_panic(expected = "council duration must remain unsigned milliseconds")]
+fn council_elapsed_time_normalisation_refuses_a_broken_wire_type() {
+    normalise(
+        &json!("7"),
+        ".structuredContent.duration_ms",
+        "made_run_council_decision",
+    );
 }
 
 /// Every normalised path carries a reason, names a tool the session
@@ -2074,6 +2125,45 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
              no scope: {answer:#}"
         );
     }
+}
+
+#[tokio::test]
+async fn bounded_progress_collection_matches_over_grpc_and_the_embedded_facade() {
+    let arms = ParityArms::start().await;
+    let ceremony_id = "progress-parity";
+    let (wire, local) = arms
+        .call(
+            2_100,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": PUBLISHED_CEREMONY,
+                "actor_id": "operator",
+                "actor_kind": "service"
+            }),
+        )
+        .await;
+    assert_same_answer("made_start_ceremony", &wire, &local);
+
+    let (wire, local) = arms
+        .call(
+            2_101,
+            "made_stream_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "after_sequence": 0,
+                "max_events": 1,
+                "wait_timeout_ms": 0
+            }),
+        )
+        .await;
+    assert_same_answer("made_stream_ceremony", &wire, &local);
+    let answer = structured(&wire);
+    assert_eq!(answer["records"].as_array().unwrap().len(), 1);
+    assert_eq!(answer["records"][0]["sequence"], json!(1));
+    assert_eq!(answer["resume_after_sequence"], json!(1));
+    assert_eq!(answer["head_sequence"], json!(1));
+    assert_eq!(answer["end_reason"], json!("event_limit"));
 }
 
 /// The clock is frozen and both arms read it, so a timestamp is a

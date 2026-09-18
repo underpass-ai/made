@@ -13,6 +13,10 @@
 //! current span becomes a fresh root — that is honest default
 //! behaviour for self-originated work.
 
+use std::future::Future;
+use std::pin::Pin;
+
+use made_app::services::CeremonyTraceScope;
 use made_core::value_objects::TraceContext;
 use tonic::Request;
 
@@ -27,6 +31,22 @@ pub(super) fn trace_context_from_metadata<T>(request: &Request<T>) -> Option<Tra
         .get("traceparent")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| TraceContext::parse(value).ok())
+}
+
+pub(super) fn run_with_ceremony_trace<'a, F>(
+    trace: Option<TraceContext>,
+    future: F,
+) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'a>>
+where
+    F: Future + Send + 'a,
+    F::Output: 'a,
+{
+    Box::pin(async move {
+        match trace {
+            Some(trace) => CeremonyTraceScope::run(trace, future).await,
+            None => future.await,
+        }
+    })
 }
 
 #[cfg(feature = "otel")]

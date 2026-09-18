@@ -19,6 +19,7 @@ mod ceremony_history;
 mod ceremony_human_verbs;
 mod ceremony_instance;
 mod ceremony_lifecycle;
+mod ceremony_progress;
 mod context;
 mod council;
 mod deliberation;
@@ -62,6 +63,7 @@ pub use ceremony_lifecycle::{
     apply_ceremony_transition_input_from_proto, run_ceremony_step_input_from_proto,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto, StartCeremonyFromYaml,
 };
+pub use ceremony_progress::stream_ceremony_response_from;
 pub(super) use council::council_summary_from;
 pub(super) use deliberation::{deliberate_response_from, orchestrate_response_from};
 pub(super) use event::trigger_event_from_proto;
