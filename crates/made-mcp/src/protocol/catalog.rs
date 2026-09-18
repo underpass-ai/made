@@ -10,7 +10,7 @@ use super::ceremony_schemas::{
     read_ceremony_events_schema, recover_ceremony_children_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
     run_ceremony_schema, run_ceremony_step_schema, start_ceremony_schema,
-    start_published_ceremony_schema, verify_ceremony_journal_schema,
+    start_published_ceremony_schema, stream_ceremony_schema, verify_ceremony_journal_schema,
 };
 use super::general_schemas::{
     agent_summary_schema, empty_object_schema, help_schema, output_contract_schema,
@@ -28,8 +28,8 @@ use super::tool_names::{
     PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL,
     READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
-    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
-    VERIFY_CEREMONY_JOURNAL_TOOL,
+    START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 mod council_catalog;
@@ -242,6 +242,11 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             READ_CEREMONY_EVENTS_TOOL,
             "Read one page of a ceremony's event stream: the sealed records, in order, with their payloads and hash chain. Read-only, and what comes back can be verified as a chain without trusting this server.",
             read_ceremony_events_schema(),
+        ),
+        tool_def(
+            STREAM_CEREMONY_TOOL,
+            "Replay and briefly follow one ceremony's sealed event stream, returning a resume cursor and an explicit terminal, event-limit, or wait-elapsed reason.",
+            stream_ceremony_schema(),
         ),
         tool_def(
             PULL_CEREMONY_EVENTS_TOOL,

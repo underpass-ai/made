@@ -247,9 +247,12 @@ async fn mcp_lists_full_tool_catalog_and_calls_read_endpoints() {
         assert!(name.starts_with("made_"), "tool name not prefixed: {name}");
     }
 
-    // tools/call for the 4 simplest read-only RPCs. Each should
-    // come back as a well-formed JSON-RPC envelope with a `result`
-    // object.
+    assert_simple_read_tools(&mut mcp).await;
+}
+
+async fn assert_simple_read_tools(mcp: &mut McpStdio) {
+    // Each read should come back as a well-formed JSON-RPC envelope with a
+    // result object.
     let simple_tools = [
         "made_list_councils",
         "made_list_contracts",

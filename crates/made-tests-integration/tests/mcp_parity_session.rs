@@ -2076,6 +2076,45 @@ async fn a_session_in_a_shared_scope_is_told_what_the_last_one_decided() {
     }
 }
 
+#[tokio::test]
+async fn bounded_progress_collection_matches_over_grpc_and_the_embedded_facade() {
+    let arms = ParityArms::start().await;
+    let ceremony_id = "progress-parity";
+    let (wire, local) = arms
+        .call(
+            2_100,
+            "made_start_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "definition_yaml": PUBLISHED_CEREMONY,
+                "actor_id": "operator",
+                "actor_kind": "service"
+            }),
+        )
+        .await;
+    assert_same_answer("made_start_ceremony", &wire, &local);
+
+    let (wire, local) = arms
+        .call(
+            2_101,
+            "made_stream_ceremony",
+            &json!({
+                "ceremony_id": ceremony_id,
+                "after_sequence": 0,
+                "max_events": 1,
+                "wait_timeout_ms": 0
+            }),
+        )
+        .await;
+    assert_same_answer("made_stream_ceremony", &wire, &local);
+    let answer = structured(&wire);
+    assert_eq!(answer["records"].as_array().unwrap().len(), 1);
+    assert_eq!(answer["records"][0]["sequence"], json!(1));
+    assert_eq!(answer["resume_after_sequence"], json!(1));
+    assert_eq!(answer["head_sequence"], json!(1));
+    assert_eq!(answer["end_reason"], json!("event_limit"));
+}
+
 /// The clock is frozen and both arms read it, so a timestamp is a
 /// compared field rather than a normalised one.
 #[tokio::test]

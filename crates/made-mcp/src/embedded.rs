@@ -38,6 +38,7 @@ mod embedded_run_ceremony_step_request;
 mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
+mod embedded_stream_ceremony_request;
 
 use made_app::services::CeremonyTraceScope;
 use made_app::usecases::CeremonyDraftView;
@@ -59,7 +60,7 @@ use crate::protocol::{
     PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL,
     REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    STREAM_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
@@ -72,8 +73,8 @@ use self::embedded_ceremony_draft_presenter::{
 };
 use self::embedded_ceremony_draft_request::EmbeddedCeremonyDraftRequest;
 use self::embedded_ceremony_history_presenter::{
-    present_ceremony_events, present_ceremony_journal_verdict, present_ceremony_report,
-    present_ceremony_transcript, present_pulled_ceremony_events,
+    collect_ceremony_progress, present_ceremony_events, present_ceremony_journal_verdict,
+    present_ceremony_report, present_ceremony_transcript, present_pulled_ceremony_events,
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
@@ -104,6 +105,7 @@ use self::embedded_service_observability_presenter::{
 };
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
+use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
 
 /// What this backend calls itself. Shared with the default lease owner
 /// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
@@ -217,6 +219,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | DIFF_CEREMONY_DEFINITIONS_TOOL
                 | BIND_CEREMONY_PARTICIPANTS_TOOL
                 | READ_CEREMONY_EVENTS_TOOL
+                | STREAM_CEREMONY_TOOL
                 | PULL_CEREMONY_EVENTS_TOOL
                 | VERIFY_CEREMONY_JOURNAL_TOOL
                 | GET_CEREMONY_TRANSCRIPT_TOOL
@@ -391,6 +394,15 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         )
                         .await?;
                     present_ceremony_events(&page).map(tool_success_result)
+                }
+                STREAM_CEREMONY_TOOL => {
+                    let request = EmbeddedStreamCeremonyRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let input = request.into_input().map_err(ToolError::invalid_request)?;
+                    let stream = self.made.stream_ceremony(input).await?;
+                    collect_ceremony_progress(stream)
+                        .await
+                        .map(tool_success_result)
                 }
                 PULL_CEREMONY_EVENTS_TOOL => {
                     let request = EmbeddedPullCeremonyEventsRequest::try_from(arguments)

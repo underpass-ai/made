@@ -49,6 +49,7 @@ pub mod memory;
 pub mod mermaid;
 pub mod metrics;
 pub mod noop;
+pub mod progress;
 #[cfg(feature = "runtime-grpc")]
 pub mod runtime;
 pub mod scoring;

@@ -20,7 +20,7 @@ use crate::renderers::{
 };
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
-    read_ceremony_events_fixture, verify_ceremony_journal_fixture,
+    read_ceremony_events_fixture, stream_ceremony_fixture, verify_ceremony_journal_fixture,
 };
 
 /// Backend that returns canned JSON for every tool. The shapes are
@@ -80,6 +80,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
                 "made_design_ceremony" => design_ceremony_fixture(),
                 "made_read_ceremony_events" => read_ceremony_events_fixture(),
+                "made_stream_ceremony" => stream_ceremony_fixture(),
                 "made_pull_ceremony_events" => pull_ceremony_events_fixture(),
                 "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
                 "made_get_ceremony_transcript" => ceremony_transcript_fixture(),

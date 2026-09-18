@@ -128,6 +128,28 @@ external idempotency where necessary.
 
 `made_read_ceremony_events` pages a session's sealed stream; `from_version`
 is the position already read and `next_version` is the next cursor to send.
+`made_stream_ceremony` replays after `after_sequence` and then follows the
+same sealed store for a bounded wait. It returns the last sequence actually
+delivered as `resume_after_sequence`; send that value unchanged on the next
+call. `max_events` defaults to 200 and is limited to 1000.
+`wait_timeout_ms` defaults to 1000, accepts 0 for replay only and is limited to
+30000. Completion says `terminal`, `event_limit` or `wait_elapsed` explicitly.
+
+The gRPC RPC is a real server stream. MCP collects that bounded stream into one
+finite tool response because stdio has no reliable live-progress channel. A
+250 ms poll discovers writes made through another process; this is a polling
+interval, not a maximum delivery-latency promise. Store work, scheduler load
+and a slow consumer can add delay. The wait timeout bounds how long the
+producer waits for more events after replay. Frames already read are delivered
+with backpressure, so a slow client can make the call last beyond the timeout
+rather than losing them.
+
+`CeremonyCompleted` ends the current follow request as soon as that record is
+delivered. A later request from its cursor can still read facts accepted after
+completion, such as a late child completion. The journal remains terminal even
+when its latest record has another type; terminality is derived from sealed
+history, not from the head record alone.
+
 `made_pull_ceremony_events` reads the global feed, and consumer acknowledgement
 tracks delivery progress. Those are different cursor domains.
 

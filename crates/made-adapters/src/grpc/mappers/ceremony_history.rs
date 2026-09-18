@@ -55,7 +55,7 @@ pub fn pull_ceremony_events_response_from(
 }
 
 /// One sealed record.
-fn ceremony_event_record_from(
+pub(super) fn ceremony_event_record_from(
     record: &AuditRecord,
 ) -> Result<pb::CeremonyEventRecord, DomainError> {
     let event = match record.event() {

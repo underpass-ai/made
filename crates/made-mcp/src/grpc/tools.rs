@@ -296,6 +296,10 @@ pub(crate) async fn dispatch(
             Ok(p2j::read_ceremony_events_to_json(response.into_inner()))
         }
 
+        "made_stream_ceremony" => {
+            ceremony_history_requests::stream_ceremony(&mut client, arguments).await
+        }
+
         "made_pull_ceremony_events" => {
             let request = ceremony_history_requests::build_pull_ceremony_events_request(arguments)
                 .map_err(bad_request)?;
@@ -420,6 +424,7 @@ pub(crate) async fn dispatch(
 use ceremony_history_requests::{
     build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
     build_pull_ceremony_events_request, build_read_ceremony_events_request,
+    build_stream_ceremony_request,
 };
 #[cfg(test)]
 use ceremony_requests::{

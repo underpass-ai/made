@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Stream resumable ceremony progress as sealed event records over gRPC, both
+  MCP backends and `EmbeddedMade`. Requests bound replay and waiting, return an
+  explicit resume cursor/end reason, catch up with external store writers and
+  cancel producers on client drop. (#163)
 - Add composable `stages[].pattern` authoring for broadcast/collect, managed
   group chat, maker-checker, bounded handoff and magentic task-ledger flows.
   Ship executable fragments, cross-edition design parity and Mermaid pattern

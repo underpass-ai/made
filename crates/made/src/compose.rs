@@ -19,6 +19,7 @@ use made_adapters::postgres::{
     PostgresAgentRegistry, PostgresConfig, PostgresCouncilRegistry, PostgresDeliberationRepository,
     PostgresPool, PostgresStatistics,
 };
+use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
 use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
 use made_adapters::validators::{
@@ -43,7 +44,8 @@ use made_app::usecases::{
     RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -215,8 +217,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
             publisher_consumer,
         )) as Arc<dyn CeremonyEventSubscriberPort>
     });
+    let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
     let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
         session_memory,
+        progress_notifier.clone(),
         Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
         Arc::new(CeremonyFanoutMetricsSubscriber::new(
             ceremony_events.clone(),
@@ -458,6 +462,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
     // its stream into the one projection both editions render
     // (ADR-006, ADR-012).
     let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
+    let stream_ceremony = Arc::new(StreamCeremonyUseCase::new(
+        ceremony_events.clone(),
+        progress_notifier,
+    ));
     let pull_ceremony_events = Arc::new(PullCeremonyEventsUseCase::new(
         ceremony_events.clone(),
         ceremony_cursors.clone(),
@@ -498,6 +506,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .close_ceremony_intervention(close_ceremony_intervention)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .read_ceremony_events(read_ceremony_events)
+        .stream_ceremony(stream_ceremony)
         .pull_ceremony_events(pull_ceremony_events)
         .verify_ceremony_journal(verify_ceremony_journal)
         .get_ceremony_transcript(get_ceremony_transcript)

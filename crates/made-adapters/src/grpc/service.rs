@@ -1,12 +1,11 @@
 //! gRPC service handler — thin translation from proto RPCs onto
 //! use cases in [`made_app`].
 
-use std::future::Future;
 use std::pin::Pin;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_app::services::{AutoDispatchService, CeremonyTraceScope};
+use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CeremonyDraftView,
@@ -21,12 +20,13 @@ use made_app::usecases::{
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
     RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
-    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId, TraceContext,
+    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -50,13 +50,15 @@ use super::mappers::{
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
-    start_ceremony_from_proto, start_published_ceremony_input_from_proto, task_from_proto,
-    trigger_event_from_proto, unrehydratable_ceremony_instance_state_from,
-    validate_ceremony_draft_response_from, verify_ceremony_journal_response_from,
-    StartCeremonyFromYaml,
+    start_ceremony_from_proto, start_published_ceremony_input_from_proto,
+    stream_ceremony_response_from, task_from_proto, trigger_event_from_proto,
+    unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
+    verify_ceremony_journal_response_from, StartCeremonyFromYaml,
 };
 use super::status::domain_error_to_status;
-use super::tracecontext::{link_span_to_metadata, trace_context_from_metadata};
+use super::tracecontext::{
+    link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
+};
 use super::MadeGrpcServiceBuilder;
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
@@ -111,6 +113,7 @@ pub struct MadeGrpcService {
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
+    pub(super) stream_ceremony: Arc<StreamCeremonyUseCase>,
     pub(super) pull_ceremony_events: Arc<PullCeremonyEventsUseCase>,
     pub(super) verify_ceremony_journal: Arc<VerifyCeremonyJournalUseCase>,
     pub(super) get_ceremony_transcript: Arc<GetCeremonyTranscriptUseCase>,
@@ -254,24 +257,14 @@ impl MadeGrpcService {
 
 type GrpcResult<T> = std::result::Result<Response<T>, Status>;
 
-fn run_with_ceremony_trace<'a, F>(
-    trace: Option<TraceContext>,
-    future: F,
-) -> Pin<Box<dyn Future<Output = F::Output> + Send + 'a>>
-where
-    F: Future + Send + 'a,
-    F::Output: 'a,
-{
-    Box::pin(async move {
-        match trace {
-            Some(trace) => CeremonyTraceScope::run(trace, future).await,
-            None => future.await,
-        }
-    })
-}
-
 #[async_trait]
 impl MadeService for MadeGrpcService {
+    type StreamCeremonyStream = Pin<
+        Box<
+            dyn futures::Stream<Item = std::result::Result<pb::StreamCeremonyResponse, Status>>
+                + Send,
+        >,
+    >;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,
     >;
@@ -536,6 +529,13 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::ReadCeremonyEventsRequest>,
     ) -> GrpcResult<pb::ReadCeremonyEventsResponse> {
         self.handle_read_ceremony_events(request).await
+    }
+
+    async fn stream_ceremony(
+        &self,
+        request: Request<pb::StreamCeremonyRequest>,
+    ) -> GrpcResult<Self::StreamCeremonyStream> {
+        self.handle_stream_ceremony(request).await
     }
 
     async fn pull_ceremony_events(
