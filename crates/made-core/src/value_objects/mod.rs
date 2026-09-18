@@ -87,9 +87,9 @@ pub use ceremony::{
     ReasonAsserter, ReconsiderationConditions, RepeatUntilCondition, RetryPolicy, RoleAction,
     RoleId, StateExecution, StateId, StateIteration, StateRepeatPolicy, StateRepeatUntilCondition,
     StateVisit, StepAttempt, StepClaimFence, StepErrorMessage, StepExecutionRecord,
-    StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration, StepLease,
-    StepOutput, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult,
-    StepStatus, StepTimeout, TransitionTrigger,
+    StepFailureKind, StepHandlerConfig, StepHandlerKind, StepId, StepInstructions, StepIteration,
+    StepLease, StepOutput, StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
+    StepResult, StepStatus, StepTimeout, TransitionTrigger,
 };
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;

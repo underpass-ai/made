@@ -1,3 +1,8 @@
+mod ceremony_fanout_metrics_subscriber;
+#[cfg(test)]
+mod ceremony_fanout_metrics_tests;
+mod ceremony_fanout_projection;
+pub use ceremony_fanout_metrics_subscriber::CeremonyFanoutMetricsSubscriber;
 mod ceremony_metrics_subscriber;
 mod ceremony_structured_log_subscriber;
 mod ceremony_tracing_subscriber;
