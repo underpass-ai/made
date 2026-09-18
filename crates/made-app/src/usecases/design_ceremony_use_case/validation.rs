@@ -176,6 +176,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
         .map(|entry| match entry {
             CeremonyDesignStageEntry::Leaf(stage) => stage.id().as_str().to_owned(),
             CeremonyDesignStageEntry::Group(group) => group.id().as_str().to_owned(),
+            CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
         })
         .collect::<Vec<_>>();
     reject_duplicates(entry_ids.iter().cloned(), "stages.id")?;
@@ -241,6 +242,7 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                 .steps()
                 .iter()
                 .any(|step| stage_has_role(step.step(), role_id)),
+            CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
         });
         let owns_approval = document
             .final_approval()

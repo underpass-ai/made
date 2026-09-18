@@ -13,6 +13,8 @@ pub(super) struct StateDocument {
     pub(super) execution: StateExecution,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(super) repeat: Option<StateRepeatDocument>,
+    #[serde(rename = "x-pattern", skip_serializing_if = "Option::is_none")]
+    pub(super) pattern: Option<String>,
 }
 
 #[allow(clippy::trivially_copy_pass_by_ref)]

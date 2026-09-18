@@ -10,7 +10,7 @@ pub(super) fn materialize(
     let Some(pattern) = document.pattern() else {
         return Ok(document.clone());
     };
-    if !document.stages().is_empty() {
+    if !document.stage_entries().is_empty() {
         return Err(invalid(
             "fields `pattern` and `stages` are mutually exclusive",
         ));

@@ -6,7 +6,7 @@ use made_core::value_objects::{
 };
 use serde_json::Value;
 
-use super::CeremonyStepConfig;
+use super::{CeremonyStepConfig, ProjectedWinnerFields};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeliberationStepConfig {
@@ -16,6 +16,7 @@ pub struct DeliberationStepConfig {
     num_agents: Option<NumAgents>,
     see_prior: bool,
     output_contract: Option<OutputContract>,
+    projected_winner_fields: ProjectedWinnerFields,
 }
 
 impl DeliberationStepConfig {
@@ -70,6 +71,7 @@ impl DeliberationStepConfig {
             num_agents: config.num_agents()?,
             see_prior: config.see_prior_steps()?,
             output_contract,
+            projected_winner_fields: config.projected_winner_fields()?,
         })
     }
 
@@ -105,6 +107,11 @@ impl DeliberationStepConfig {
     #[must_use]
     pub fn output_contract(&self) -> Option<&OutputContract> {
         self.output_contract.as_ref()
+    }
+
+    #[must_use]
+    pub(crate) const fn projected_winner_fields(&self) -> &ProjectedWinnerFields {
+        &self.projected_winner_fields
     }
 }
 

@@ -9,9 +9,9 @@ then the work that must produce it.
 
 Save this as [two-checks.yaml](examples/two-checks.yaml). Two independent
 inspections become claimable in `CHECKING`; the join counts completed work
-in that source state. `max_parallel` permits both claims, but the host still
-schedules and performs them. The handler names identify host integrations,
-not bundled workers.
+in that source state. `max_parallel` permits the `run_ceremony` driver to claim
+and execute both handlers concurrently. The handler names identify host
+integrations, not bundled workers or automatically created agents.
 
 ```yaml
 version: "1.0"
@@ -91,6 +91,40 @@ produces linear stages; branching outcomes need explicit YAML. The
 in declaration order, passing prior contributions forward. It does not
 select speakers dynamically or aggregate their answers.
 
+Compose coordination shapes per stage with a `pattern` object. Every pattern
+declares its roles and instructions; bounded patterns also declare
+`max_iterations` and a `fallback_role_id`. `broadcast_collect`, `group_chat`
+and `magentic` additionally declare `manager_role_id`.
+
+```json
+{
+  "id": "analysis",
+  "pattern": {
+    "kind": "broadcast_collect",
+    "roles": ["OPERATIONS", "SECURITY", "PRODUCT"],
+    "manager_role_id": "INCIDENT_LEAD",
+    "instructions": "Analyze the same incident timeline independently."
+  }
+}
+```
+
+Available kinds are `sequential`, `concurrent`, `broadcast_collect`,
+`group_chat`, `maker_checker`, `handoff` and `magentic`. The designer expands
+them into ordinary states, steps, guards and transitions. Its `x-pattern`
+state annotation exists for renderers and reports and never changes runtime
+semantics. See the executable [incident review](../../tests/e2e/ceremonies/incident_review.yaml),
+[concurrent review](../../tests/e2e/ceremonies/concurrent-review.yaml), and
+[fragment catalog](../../api/examples/ceremonies/fragments/README.md).
+
+Pattern stages that branch on, or write context from, a deliberation result
+declare the required top-level JSON fields in
+`config.project_winner_fields`. The deliberating handler copies only those
+fields into the step output while retaining `winner_content`, `task_id`,
+`winner_proposal_id` and `candidates_total`. Without this opt-in, its output
+keeps the historical four-field shape. The configured names must be unique,
+non-empty and must not collide with those metadata names; invalid JSON,
+non-object JSON and missing declared fields fail the step.
+
 Validate the draft with `made_validate_ceremony_draft`; use
 `made_explain_ceremony_draft` for a readable account of the same analysis.
 A publishable draft is still a draft. `made_publish_ceremony_definition`
@@ -107,9 +141,12 @@ lives in [ceremony fragments](../../api/examples/ceremonies/fragments/README.md)
 
 Sequential states expose the next work in order. Concurrent states expose
 claimable work under a declared `max_parallel` and a runtime ceiling; effective
-capacity is the lower limit. A host schedules the workers and claims each
-step before running it. Inspect ready steps and enabled transitions after
-every mutation instead of inferring them from an earlier snapshot.
+capacity is the lower limit. The `run_ceremony` driver claims ready siblings
+before it invokes their host-provided handlers and drains every accepted claim
+before evaluating the next transition. A host may instead use the claim and
+completion APIs to schedule its own workers. Inspect ready steps and enabled
+transitions after every mutation instead of inferring them from an earlier
+snapshot.
 
 Choose a join that matches the source state's work: `any_step_completed` permits an accepted
 completion, while `steps_completed:n` requires the declared count. They are
@@ -287,11 +324,14 @@ true. Council output JSON Schema examples are documented
 
 ## Boundaries and roadmap
 
-Current primitives are building blocks. Automatic agent spawning,
-complete group-chat/speaker
-selection and the full orchestration pattern catalogue are not implemented
-by declaring concurrency. Embedded council execution and configuration are
-also not exposed. The earlier roadmap labels B3–B6, C1/C3, full D1–D5 and F5
-remain future work; their
+The source tree's Unreleased surface includes the bounded concurrent driver,
+typed aggregation, runtime observability, the stage-pattern catalogue described
+above and embedded council configuration and execution. MADE invokes configured
+handlers and councils; it does not create host subagents. A host can fan work
+out to its own subagents through those handlers or can drive the durable
+claim/complete protocol directly.
+
+The published 0.6.0 package predates those Unreleased additions. C3 and G6 from
+the earlier roadmap remain future work; the
 [historical plan](../history/pre-rebuild-2026-09-18/docs/orchestration-patterns-plan.md)
 is context, not a current API promise.

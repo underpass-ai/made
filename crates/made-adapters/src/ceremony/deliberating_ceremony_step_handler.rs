@@ -63,7 +63,8 @@ impl CeremonyStepHandlerPort for DeliberatingCeremonyStepHandler {
             &output.winner_proposal_id,
             winner.proposal().content(),
             ranked.len(),
-        ))?))
+            config.projected_winner_fields(),
+        )?)?))
     }
 }
 
@@ -322,8 +323,9 @@ fn output_attributes(
     winner_proposal_id: &made_core::value_objects::ProposalId,
     winner_content: &str,
     candidates_total: usize,
-) -> BTreeMap<String, Value> {
-    BTreeMap::from([
+    projected_fields: &super::ProjectedWinnerFields,
+) -> Result<BTreeMap<String, Value>, DomainError> {
+    let mut attributes = BTreeMap::from([
         (
             "task_id".to_owned(),
             json!(format!(
@@ -342,7 +344,26 @@ fn output_attributes(
             "candidates_total".to_owned(),
             json!(u64::try_from(candidates_total).unwrap_or(u64::MAX)),
         ),
-    ])
+    ]);
+    if projected_fields.is_empty() {
+        return Ok(attributes);
+    }
+    let parsed: Value =
+        serde_json::from_str(winner_content).map_err(|_| DomainError::InvalidDocument {
+            reason: "project_winner_fields requires winner content to be valid JSON".to_owned(),
+        })?;
+    let object = parsed.as_object().ok_or(DomainError::InvalidDocument {
+        reason: "project_winner_fields requires winner content to be a JSON object".to_owned(),
+    })?;
+    for field in projected_fields.iter() {
+        let value = object
+            .get(field.as_str())
+            .ok_or_else(|| DomainError::InvalidDocument {
+                reason: format!("winner content is missing projected field `{field}`"),
+            })?;
+        attributes.insert(field.as_str().to_owned(), value.clone());
+    }
+    Ok(attributes)
 }
 
 #[cfg(test)]
@@ -356,9 +377,9 @@ mod tests {
     use made_core::value_objects::{
         AgentId, Attributes, CeremonyContext, CeremonyId, CeremonyInterventionContent,
         CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
-        CeremonyStepContribution, CeremonyTranscript, CeremonyVersion, CouncilId, RoleId,
-        Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId, StepOutput,
-        StepStatus,
+        CeremonyStepContribution, CeremonyTranscript, CeremonyVersion, CouncilId, ProposalId,
+        RoleId, Specialty, StateId, StepAttempt, StepHandlerConfig, StepHandlerKind, StepId,
+        StepOutput, StepStatus,
     };
     use serde_json::json;
 
@@ -374,6 +395,52 @@ mod tests {
     };
 
     use super::*;
+
+    #[test]
+    fn winner_projection_is_opt_in_and_preserves_structured_values() {
+        let request = request_with_prompt();
+        let proposal = ProposalId::new("proposal-1").unwrap();
+        let default = output_attributes(
+            &request,
+            &proposal,
+            "plain legacy winner",
+            1,
+            &super::super::ProjectedWinnerFields::default(),
+        )
+        .unwrap();
+        assert_eq!(default.len(), 4);
+
+        let projected = super::super::ProjectedWinnerFields::new(vec![
+            "approved".to_owned(),
+            "details".to_owned(),
+        ])
+        .unwrap();
+        let output = output_attributes(
+            &request,
+            &proposal,
+            r#"{"approved":true,"details":null}"#,
+            1,
+            &projected,
+        )
+        .unwrap();
+        assert_eq!(output["approved"], json!(true));
+        assert_eq!(output["details"], Value::Null);
+        assert_eq!(
+            output["winner_content"],
+            json!(r#"{"approved":true,"details":null}"#)
+        );
+    }
+
+    #[test]
+    fn winner_projection_fails_closed_on_invalid_or_missing_content() {
+        let request = request_with_prompt();
+        let proposal = ProposalId::new("proposal-1").unwrap();
+        let projected =
+            super::super::ProjectedWinnerFields::new(vec!["approved".to_owned()]).unwrap();
+        for content in ["not-json", "[]", r#"{"other":true}"#] {
+            assert!(output_attributes(&request, &proposal, content, 1, &projected).is_err());
+        }
+    }
 
     /// The point of seating: the work goes to whoever this session
     /// seated, not to whoever the document names in general. Only the

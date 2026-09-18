@@ -10,12 +10,13 @@ use made_core::value_objects::{
     StepHandlerConfig, StepHandlerKind, StepRepeatExhaustedGuardCondition, StepRepeatPolicy,
     StepStatus, StepTimeout, TransitionTrigger,
 };
-use serde_json::{json, Value};
+use serde_json::json;
 
 use super::{
-    approval_guard_name, approval_trigger, completion_guard, exit_guard_name, num_agents,
-    CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE, DEFAULT_BACKOFF_SECONDS,
-    DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS, DEFAULT_VERSION,
+    approval_guard_name, approval_trigger, completion_guard, exit_guard_name,
+    stage_config::stage_config, CeremonyDesignDocument, CeremonyDesignStage, COMPLETED_STATE,
+    DEFAULT_BACKOFF_SECONDS, DEFAULT_HANDLER, DEFAULT_MAX_ATTEMPTS, DEFAULT_STEP_TIMEOUT_SECONDS,
+    DEFAULT_VERSION,
 };
 use crate::usecases::{
     CeremonyDesignExitGuard, CeremonyDesignGroupStep, CeremonyDesignJoin, CeremonyDesignStageEntry,
@@ -60,6 +61,17 @@ pub(super) fn build_definition(
                 CeremonyState::intermediate(id.clone())
             };
             let state = state.with_execution(entry_execution(&document.stage_entries()[index]));
+            let state = document
+                .state_pattern(entry_id(&document.stage_entries()[index]))
+                .map_or(state.clone(), |pattern| {
+                    state.with_annotations(
+                        Attributes::new(BTreeMap::from([(
+                            "x-pattern".to_owned(),
+                            json!(pattern.id()),
+                        )]))
+                        .expect("one fixed nonblank annotation"),
+                    )
+                });
             match &document.stage_entries()[index] {
                 CeremonyDesignStageEntry::Group(group) => {
                     group.repeat().map_or(state.clone(), |repeat| {
@@ -74,6 +86,7 @@ pub(super) fn build_definition(
                     })
                 }
                 CeremonyDesignStageEntry::Leaf(_) => state,
+                CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
             }
         })
         .collect::<Vec<_>>();
@@ -140,6 +153,7 @@ pub(super) fn build_definition(
                     required_guards.push(completion.clone());
                 }
             },
+            CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
         }
         if let CeremonyDesignStageEntry::Leaf(stage) = entry {
             for (guard_index, guard) in stage.exit_guards().iter().enumerate() {
@@ -179,6 +193,9 @@ pub(super) fn build_definition(
                     match entry {
                         CeremonyDesignStageEntry::Group(_) => first_owner,
                         CeremonyDesignStageEntry::Leaf(_) => approval.role_id(),
+                        CeremonyDesignStageEntry::Pattern(_) => {
+                            unreachable!("patterns are materialized")
+                        }
                     },
                 )
             }
@@ -199,16 +216,22 @@ pub(super) fn build_definition(
                     .insert(RoleAction::step(stage.id().clone()));
             }
         }
-        actions
-            .get_mut(owner)
-            .expect("validated transition owner")
-            .insert(RoleAction::transition(trigger.clone()));
-        transitions.push(CeremonyTransition::new(
-            state_ids[index].clone(),
-            state_ids.get(index + 1).unwrap_or(&terminal).clone(),
-            trigger,
-            required_guards,
-        )?);
+        if !document
+            .routes()
+            .iter()
+            .any(|route| route.from() == entry_id(entry))
+        {
+            actions
+                .get_mut(owner)
+                .expect("validated transition owner")
+                .insert(RoleAction::transition(trigger.clone()));
+            transitions.push(CeremonyTransition::new(
+                state_ids[index].clone(),
+                state_ids.get(index + 1).unwrap_or(&terminal).clone(),
+                trigger,
+                required_guards,
+            )?);
+        }
         for stage in entry_stages {
             let handler = stage
                 .handler()
@@ -218,7 +241,12 @@ pub(super) fn build_definition(
                 stage.id().clone(),
                 state_ids[index].clone(),
                 handler,
-                StepHandlerConfig::new(Attributes::new(stage_config(stage, index))?),
+                StepHandlerConfig::new(Attributes::new(stage_config(
+                    document,
+                    entry_id(entry),
+                    stage,
+                    index,
+                ))?),
                 retry,
                 Some(timeout),
             );
@@ -240,6 +268,26 @@ pub(super) fn build_definition(
             }
             steps.push(step);
         }
+    }
+    for route in document.routes() {
+        let required_guards = route
+            .guards()
+            .iter()
+            .map(|(name, condition)| {
+                guards.push(CeremonyGuard::new(name.clone(), condition.clone()));
+                name.clone()
+            })
+            .collect::<Vec<_>>();
+        actions
+            .get_mut(route.owner())
+            .expect("validated pattern route owner")
+            .insert(RoleAction::transition(route.trigger().clone()));
+        transitions.push(CeremonyTransition::new(
+            StateId::new(route.from().as_str().to_ascii_uppercase())?,
+            StateId::new(route.to().as_str().to_ascii_uppercase())?,
+            route.trigger().clone(),
+            required_guards,
+        )?);
     }
     let roles = document
         .participants()
@@ -298,6 +346,7 @@ fn entry_id(entry: &CeremonyDesignStageEntry) -> &made_core::value_objects::Step
     match entry {
         CeremonyDesignStageEntry::Leaf(stage) => stage.id(),
         CeremonyDesignStageEntry::Group(group) => group.id(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
 }
 
@@ -305,6 +354,7 @@ fn entry_execution(entry: &CeremonyDesignStageEntry) -> StateExecution {
     match entry {
         CeremonyDesignStageEntry::Leaf(_) => StateExecution::Sequential,
         CeremonyDesignStageEntry::Group(group) => group.execution(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
 }
 
@@ -316,25 +366,6 @@ fn entry_steps(entry: &CeremonyDesignStageEntry) -> Vec<&CeremonyDesignStage> {
             .iter()
             .map(CeremonyDesignGroupStep::step)
             .collect(),
+        CeremonyDesignStageEntry::Pattern(_) => unreachable!("patterns are materialized"),
     }
-}
-
-fn stage_config(stage: &CeremonyDesignStage, index: usize) -> BTreeMap<String, Value> {
-    let mut config = BTreeMap::from([
-        ("num_agents".to_owned(), json!(num_agents(stage))),
-        ("prompt".to_owned(), json!(stage.instructions().trim())),
-        (
-            // Earlier stages are context by default for everything
-            // after the first, which has nothing to see.
-            "see_prior".to_owned(),
-            json!(stage.prior_context().map_or(
-                index > 0,
-                made_core::value_objects::PriorContext::is_visible
-            )),
-        ),
-    ]);
-    if stage.review_rounds().get() > 0 {
-        config.insert("rounds".to_owned(), json!(stage.review_rounds().get()));
-    }
-    config
 }

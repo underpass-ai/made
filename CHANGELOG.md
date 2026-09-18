@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add composable `stages[].pattern` authoring for broadcast/collect, managed
+  group chat, maker-checker, bounded handoff and magentic task-ledger flows.
+  Ship executable fragments, cross-edition design parity and Mermaid pattern
+  regions with concurrent fork/join rendering. (#159)
 - Add an explicit application opt-in for bounded parallel initial proposals,
   sharing one call pool across simultaneous councils. Record experiment 003
   with a controlled provider-capacity fixture; retain sequential defaults. (#161)

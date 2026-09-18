@@ -1,0 +1,177 @@
+version: '1.0'
+name: maker_checker
+description: Canonical maker_checker coordination fragment.
+inputs:
+  required: []
+  optional: []
+outputs:
+  result:
+    type: object
+states:
+- id: COORDINATION_ITERATION_1
+  initial: true
+  x-pattern: maker_checker
+- id: COORDINATION_ITERATION_2
+  x-pattern: maker_checker
+- id: COORDINATION_FALLBACK
+  x-pattern: maker_checker
+- id: COORDINATION_DELIVER
+  x-pattern: maker_checker
+- id: COMPLETED
+  terminal: true
+transitions:
+- from: COORDINATION_FALLBACK
+  to: COORDINATION_DELIVER
+  trigger: coordination_fallback_completed
+  guards:
+  - coordination_fallback_completed
+- from: COORDINATION_DELIVER
+  to: COMPLETED
+  trigger: coordination_deliver_completed
+  guards:
+  - coordination_deliver_completed
+- from: COORDINATION_ITERATION_1
+  to: COORDINATION_DELIVER
+  trigger: coordination_iteration_1_approved
+  guards:
+  - coordination_iteration_1_approved_completed
+  - coordination_iteration_1_approved_output_0
+- from: COORDINATION_ITERATION_1
+  to: COORDINATION_ITERATION_2
+  trigger: coordination_iteration_1_revise
+  guards:
+  - coordination_iteration_1_revise_completed
+  - coordination_iteration_1_revise_output_0
+- from: COORDINATION_ITERATION_2
+  to: COORDINATION_DELIVER
+  trigger: coordination_iteration_2_approved
+  guards:
+  - coordination_iteration_2_approved_completed
+  - coordination_iteration_2_approved_output_0
+- from: COORDINATION_ITERATION_2
+  to: COORDINATION_FALLBACK
+  trigger: coordination_iteration_2_revise
+  guards:
+  - coordination_iteration_2_revise_completed
+  - coordination_iteration_2_revise_output_0
+steps:
+- id: coordination_make_1
+  state: COORDINATION_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the maker_checker coordination fragment.
+    see_prior: true
+- id: coordination_check_1
+  state: COORDINATION_ITERATION_1
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - approved
+    prompt: Check the result and return approved plus findings.
+    see_prior: true
+- id: coordination_make_2
+  state: COORDINATION_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Execute the maker_checker coordination fragment.
+    see_prior: true
+- id: coordination_check_2
+  state: COORDINATION_ITERATION_2
+  handler: host_callback
+  config:
+    num_agents: 1
+    project_winner_fields:
+    - approved
+    prompt: Check the result and return approved plus findings.
+    see_prior: true
+- id: coordination_fallback
+  state: COORDINATION_FALLBACK
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Escalate work that reached the declared maker-checker cap.
+    see_prior: true
+- id: coordination_deliver
+  state: COORDINATION_DELIVER
+  handler: host_callback
+  config:
+    num_agents: 1
+    prompt: Deliver the checked result, retaining any findings.
+    see_prior: true
+guards:
+  coordination_deliver_completed:
+    type: automated
+    check: step_status:coordination_deliver:COMPLETED
+  coordination_fallback_completed:
+    type: automated
+    check: step_status:coordination_fallback:COMPLETED
+  coordination_iteration_1_approved_completed:
+    type: automated
+    check: step_status:coordination_check_1:COMPLETED
+  coordination_iteration_1_approved_output_0:
+    type: automated
+    check: output_field:coordination_check_1:approved=true
+  coordination_iteration_1_coordination_check_1_completed:
+    type: automated
+    check: step_status:coordination_check_1:COMPLETED
+  coordination_iteration_1_coordination_make_1_completed:
+    type: automated
+    check: step_status:coordination_make_1:COMPLETED
+  coordination_iteration_1_revise_completed:
+    type: automated
+    check: step_status:coordination_check_1:COMPLETED
+  coordination_iteration_1_revise_output_0:
+    type: automated
+    check: output_field:coordination_check_1:approved=false
+  coordination_iteration_2_approved_completed:
+    type: automated
+    check: step_status:coordination_check_2:COMPLETED
+  coordination_iteration_2_approved_output_0:
+    type: automated
+    check: output_field:coordination_check_2:approved=true
+  coordination_iteration_2_coordination_check_2_completed:
+    type: automated
+    check: step_status:coordination_check_2:COMPLETED
+  coordination_iteration_2_coordination_make_2_completed:
+    type: automated
+    check: step_status:coordination_make_2:COMPLETED
+  coordination_iteration_2_revise_completed:
+    type: automated
+    check: step_status:coordination_check_2:COMPLETED
+  coordination_iteration_2_revise_output_0:
+    type: automated
+    check: output_field:coordination_check_2:approved=false
+roles:
+- id: LEAD
+  allowed_actions:
+  - request_intervention
+- id: OPS
+  allowed_actions:
+  - coordination_deliver
+  - coordination_deliver_completed
+  - coordination_make_1
+  - coordination_make_2
+  - request_intervention
+- id: SECURITY
+  allowed_actions:
+  - coordination_check_1
+  - coordination_check_2
+  - coordination_iteration_1_approved
+  - coordination_iteration_1_revise
+  - coordination_iteration_2_approved
+  - coordination_iteration_2_revise
+  - respond_to_intervention
+- id: HUMAN
+  allowed_actions:
+  - coordination_fallback
+  - coordination_fallback_completed
+  - respond_to_intervention
+timeouts:
+  step_default: 300
+retry_policies:
+  default:
+    max_attempts: 2
+    backoff_seconds: 1
