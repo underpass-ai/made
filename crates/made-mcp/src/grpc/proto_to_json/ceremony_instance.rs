@@ -96,7 +96,7 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
         // what stops "recalled nothing" reading as "recalled an empty
         // scope".
         "recollection": state.recollection.map(recollection_to_json),
-        "lineage": state.lineage.map(lineage_to_json),
+        "lineage": state.lineage.as_ref().map(lineage_to_json),
         "child_groups": state
             .child_groups
             .into_iter()
@@ -121,7 +121,7 @@ pub(crate) fn ceremony_instance_state_to_json(state: pb::CeremonyInstanceState) 
     })
 }
 
-pub(crate) fn child_completion_to_json(completion: pb::ChildCompletionState) -> Value {
+pub(crate) fn child_completion_to_json(completion: &pb::ChildCompletionState) -> Value {
     json!({
         "group_id": completion.group_id,
         "child_id": completion.child_id,
@@ -140,7 +140,7 @@ fn bytes_to_hex(bytes: &[u8]) -> String {
     encoded
 }
 
-fn lineage_to_json(lineage: pb::CeremonyLineageState) -> Value {
+fn lineage_to_json(lineage: &pb::CeremonyLineageState) -> Value {
     json!({
         "root_id": lineage.root_id,
         "parent_id": lineage.parent_id,
@@ -169,11 +169,11 @@ fn child_group_to_json(group: pb::CeremonyChildGroupState) -> Value {
             "version": child.version,
             "definition_digest": child.definition_digest,
             "context": optional_pb_struct_to_json(child.context),
-            "lineage": child.lineage.map(lineage_to_json),
+            "lineage": child.lineage.as_ref().map(lineage_to_json),
             "recollection": child.recollection.map(recollection_to_json),
             "opened_at": child.opened_at,
         })).collect::<Vec<_>>(),
-        "completions": group.completions.into_iter().map(child_completion_to_json).collect::<Vec<_>>(),
+        "completions": group.completions.iter().map(child_completion_to_json).collect::<Vec<_>>(),
     })
 }
 

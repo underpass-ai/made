@@ -443,6 +443,44 @@ mod tests {
     }
 
     #[test]
+    fn child_spawn_and_join_cross_the_mcp_grpc_boundary_without_defaulting() {
+        let mut value = intent();
+        value["stages"][0]["spawn"] = json!({
+            "children": [{
+                "ceremony": "specialist_review",
+                "version": "2.0",
+                "inputs": {"brief": "review_brief"}
+            }],
+            "max_children": 3,
+            "max_depth": 4
+        });
+        value["stages"][0]["exit_guards"] = json!([{
+            "kind": "children_completed",
+            "step": "compose",
+            "join": "quorum",
+            "count": 1
+        }]);
+
+        let request = build_design_ceremony_request(&value).unwrap();
+        let spawn = request.stages[0].spawn.as_ref().unwrap();
+        assert_eq!(spawn.max_children, 3);
+        assert_eq!(spawn.max_depth, 4);
+        assert_eq!(spawn.children.len(), 1);
+        assert_eq!(spawn.children[0].ceremony, "specialist_review");
+        assert_eq!(spawn.children[0].version, "2.0");
+        assert_eq!(spawn.children[0].inputs["brief"], "review_brief");
+        assert!(matches!(
+            request.stages[0].exit_guards[0].guard.as_ref(),
+            Some(pb::ceremony_design_exit_guard::Guard::ChildrenCompleted(condition))
+                if condition.step_id == "compose"
+                    && matches!(
+                        condition.join,
+                        Some(pb::children_completed_condition::Join::Quorum(1))
+                    )
+        ));
+    }
+
+    #[test]
     fn exit_guards_cross_the_wire_with_explicit_null_presence() {
         let mut value = intent();
         value["stages"][0]["exit_guards"] = json!([

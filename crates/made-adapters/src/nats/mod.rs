@@ -12,6 +12,7 @@
 //! [`TriggerEvent`]: made_core::events::TriggerEvent
 
 mod ceremony_event_transport;
+mod ceremony_recovery_cursor;
 mod ceremony_recovery_subscriber;
 mod config;
 mod messaging;

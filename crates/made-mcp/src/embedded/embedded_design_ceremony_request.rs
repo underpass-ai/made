@@ -8,6 +8,8 @@ use made_embedded::EmbeddedMade;
 use serde::Deserialize;
 use serde_json::Value;
 
+mod child_spawn_intent;
+mod child_spec_intent;
 mod exit_guard_intent;
 mod final_approval_intent;
 mod output_field_guard_intent;
@@ -17,6 +19,8 @@ mod stage_entry_intent;
 mod stage_intent;
 mod step_repeat_exhausted_guard_intent;
 
+use child_spawn_intent::ChildSpawnIntent;
+use child_spec_intent::ChildSpecIntent;
 use exit_guard_intent::ExitGuardIntent;
 use final_approval_intent::FinalApprovalIntent;
 use output_field_guard_intent::OutputFieldGuardIntent;
@@ -165,7 +169,7 @@ mod tests {
     use made_adapters::yaml::CeremonyDefinitionYaml;
     use made_core::entities::CeremonyDefinitionDraft;
     use made_core::value_objects::{
-        GuardCondition, GuardName, MaxParallel, StateExecution, StateId, StepId,
+        ChildJoin, GuardCondition, GuardName, MaxParallel, StateExecution, StateId, StepId,
     };
     use serde_json::json;
 
@@ -374,6 +378,110 @@ mod tests {
         assert!(draft.guards().iter().any(|guard| {
             matches!(guard.condition(), GuardCondition::StepsCompleted(count) if count.get() == 1)
         }));
+    }
+
+    #[test]
+    fn embedded_design_preserves_group_child_spawn_and_every_child_join() {
+        let mut value = intent();
+        value["stages"] = json!([
+            {
+                "id": "parallel_work",
+                "group": {
+                    "execution": "concurrent",
+                    "steps": [
+                        {
+                            "id": "compose",
+                            "owner_role_id": "WORKER",
+                            "instructions": "Open the specialist children.",
+                            "spawn": {
+                                "children": [{
+                                    "ceremony": "specialist_review",
+                                    "version": "2.0",
+                                    "inputs": {"brief": "review_brief"}
+                                }],
+                                "max_children": 3,
+                                "max_depth": 4
+                            }
+                        },
+                        {
+                            "id": "observe",
+                            "owner_role_id": "ARTIST",
+                            "instructions": "Observe the child work."
+                        }
+                    ]
+                }
+            },
+            {
+                "id": "review",
+                "owner_role_id": "ARTIST",
+                "instructions": "Review the child results.",
+                "exit_guards": [
+                    {"kind": "children_completed", "step": "compose", "join": "all"},
+                    {"kind": "children_completed", "step": "compose", "join": "any"},
+                    {
+                        "kind": "children_completed",
+                        "step": "compose",
+                        "join": "quorum",
+                        "count": 1
+                    }
+                ]
+            }
+        ]);
+
+        let designed = design(&value).unwrap();
+        let yaml = made_adapters::yaml::DesignedCeremonyYaml::render(&designed).unwrap();
+        let draft = parsed(&designed);
+        let compose = draft
+            .steps()
+            .iter()
+            .find(|step| step.id() == &StepId::new("compose").unwrap())
+            .unwrap();
+        let spawn = compose.spawn().unwrap();
+
+        assert_eq!(spawn.max_children().get(), 3);
+        assert_eq!(spawn.max_depth().get(), 4);
+        assert_eq!(spawn.children()[0].ceremony().as_str(), "specialist_review");
+        assert_eq!(spawn.children()[0].version().as_str(), "2.0");
+        assert_eq!(
+            spawn.children()[0]
+                .inputs()
+                .values()
+                .next()
+                .unwrap()
+                .as_str(),
+            "review_brief"
+        );
+        assert!(yaml.contains("children_completed:compose:all"), "{yaml}");
+        assert!(yaml.contains("children_completed:compose:any"), "{yaml}");
+        assert!(
+            yaml.contains("children_completed:compose:quorum:1"),
+            "{yaml}"
+        );
+        assert!(draft.guards().iter().any(|guard| matches!(
+            guard.condition(),
+            GuardCondition::ChildrenCompleted(condition)
+                if condition.join() == ChildJoin::Quorum {
+                    count: made_core::value_objects::ChildQuorum::new(1).unwrap()
+                }
+        )));
+    }
+
+    #[test]
+    fn embedded_child_join_rejects_count_outside_quorum() {
+        let mut value = intent();
+        value["stages"][0]["exit_guards"] = json!([{
+            "kind": "children_completed",
+            "step": "compose",
+            "join": "all",
+            "count": 1
+        }]);
+
+        let error = design(&value).unwrap_err().to_string();
+
+        assert!(
+            error.contains("invalid children_completed join or count"),
+            "{error}"
+        );
     }
 
     #[test]

@@ -2,39 +2,20 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_nats::Client;
-use async_trait::async_trait;
 use futures::{Stream, StreamExt};
-use made_app::usecases::{RecoverCeremonyChildrenRound, RecoverCeremonyChildrenUseCase};
+use made_app::usecases::RecoverCeremonyChildrenUseCase;
 use made_core::error::DomainError;
 use made_core::value_objects::CeremonyEventPageLimit;
 use tokio::task::JoinHandle;
 use tracing::{info, warn};
 
-use super::NatsSubjects;
+use super::{ceremony_recovery_cursor::RecoveryCursor, NatsSubjects};
 
 const READINESS_DEADLINE: Duration = Duration::from_secs(5);
 const READINESS_MARKER: &[u8] = b"made-children-recovery-ready";
 /// Bounds recovery latency when a best-effort NATS wake is lost or arrives
 /// while another process owns the durable cursor lease.
 const CATCH_UP_INTERVAL: Duration = Duration::from_secs(1);
-
-#[async_trait]
-trait RecoveryCursor: Send + Sync {
-    async fn recover(
-        &self,
-        limit: CeremonyEventPageLimit,
-    ) -> Result<RecoverCeremonyChildrenRound, DomainError>;
-}
-
-#[async_trait]
-impl RecoveryCursor for RecoverCeremonyChildrenUseCase {
-    async fn recover(
-        &self,
-        limit: CeremonyEventPageLimit,
-    ) -> Result<RecoverCeremonyChildrenRound, DomainError> {
-        self.execute(limit).await
-    }
-}
 
 /// Wakes the durable child recovery cursor when ceremony events arrive.
 ///
@@ -52,7 +33,7 @@ impl NatsCeremonyRecoverySubscriber {
     #[must_use]
     pub fn new(
         client: Client,
-        subjects: NatsSubjects,
+        subjects: &NatsSubjects,
         recover: Arc<RecoverCeremonyChildrenUseCase>,
     ) -> Self {
         Self {
@@ -174,7 +155,9 @@ async fn drain(recover: &dyn RecoveryCursor) {
 mod tests {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
+    use async_trait::async_trait;
     use futures::stream;
+    use made_app::usecases::RecoverCeremonyChildrenRound;
 
     use super::*;
 

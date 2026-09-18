@@ -75,21 +75,21 @@ impl CeremonyLineage {
     }
 }
 
-#[derive(Deserialize)]
-struct UncheckedCeremonyLineage {
-    root_id: CeremonyId,
-    parent_id: CeremonyId,
-    group_id: ChildGroupId,
-    position: ChildPosition,
-    depth: ChildDepth,
-    remaining_depth: ChildDepthBudget,
-}
-
 impl<'de> Deserialize<'de> for CeremonyLineage {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
     {
+        #[derive(Deserialize)]
+        struct UncheckedCeremonyLineage {
+            root_id: CeremonyId,
+            parent_id: CeremonyId,
+            group_id: ChildGroupId,
+            position: ChildPosition,
+            depth: ChildDepth,
+            remaining_depth: ChildDepthBudget,
+        }
+
         let raw = UncheckedCeremonyLineage::deserialize(deserializer)?;
         Self::new(
             raw.root_id,

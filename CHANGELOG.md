@@ -9,6 +9,11 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Add durable child-ceremony spawning with sealed publications, projected
+  inputs, deterministic lineage and bounded depth. Parent steps open every
+  planned child before completing; `children_completed` joins accept only
+  verified terminal records, and cursor recovery resumes crashes across
+  embedded, gRPC and both MCP backends. (#160)
 - Add typed `synthesize` and deterministic strict-majority `vote` aggregation
   to the first step after an all-siblings concurrent join. YAML, design,
   protobuf, both MCP backends and the embedded facade share one schema;

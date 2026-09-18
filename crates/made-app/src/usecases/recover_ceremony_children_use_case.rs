@@ -13,6 +13,9 @@ use super::{
 };
 use crate::services::SessionStream;
 
+mod recovery_effect;
+use recovery_effect::RecoveryEffect;
+
 const LEASE_DURATION: DurationMs = DurationMs::from_millis(30_000);
 
 /// Drains the durable global feed for child plans and completed children.
@@ -68,13 +71,15 @@ impl RecoverCeremonyChildrenUseCase {
                 round.busy = true;
                 break;
             };
-            let Some(positioned) = self
-                .events
-                .read_all(lease.next_position(), one)
-                .await?
-                .into_iter()
-                .next()
-            else {
+            let page = match self.events.read_all(lease.next_position(), one).await {
+                Ok(page) => page,
+                Err(error) => {
+                    self.release_after_error(&lease, "read global ceremony events")
+                        .await;
+                    return Err(error);
+                }
+            };
+            let Some(positioned) = page.into_iter().next() else {
                 self.cursors.release(&lease).await?;
                 break;
             };
@@ -85,9 +90,13 @@ impl RecoverCeremonyChildrenUseCase {
                 Ok(RecoveryEffect::CompletionAccepted) => round.accepted_completions += 1,
                 Ok(RecoveryEffect::Skipped) => round.skipped += 1,
                 Err(error) => {
-                    self.cursors
-                        .mark_failed(&lease, positioned.position)
-                        .await?;
+                    if let Err(cursor_error) =
+                        self.cursors.mark_failed(&lease, positioned.position).await
+                    {
+                        self.release_after_error(&lease, "mark ceremony recovery failed")
+                            .await;
+                        return Err(cursor_error);
+                    }
                     round.failed += 1;
                     tracing::warn!(
                         position = positioned.position.value(),
@@ -97,11 +106,27 @@ impl RecoverCeremonyChildrenUseCase {
                     break;
                 }
             }
-            self.cursors
+            if let Err(error) = self
+                .cursors
                 .acknowledge_lease(&lease, positioned.position)
-                .await?;
+                .await
+            {
+                self.release_after_error(&lease, "acknowledge ceremony recovery")
+                    .await;
+                return Err(error);
+            }
         }
         Ok(round)
+    }
+
+    async fn release_after_error(
+        &self,
+        lease: &made_core::value_objects::CeremonyEventCursorLease,
+        operation: &'static str,
+    ) {
+        if let Err(error) = self.cursors.release(lease).await {
+            tracing::warn!(%error, operation, "child ceremony recovery could not release its cursor lease");
+        }
     }
 
     async fn process(
@@ -153,12 +178,6 @@ impl std::fmt::Debug for RecoverCeremonyChildrenUseCase {
     }
 }
 
-enum RecoveryEffect {
-    PlanRecovered,
-    CompletionAccepted,
-    Skipped,
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
@@ -186,6 +205,11 @@ mod tests {
     struct FailFirstChildOpening {
         store: Arc<EventStoreFake>,
         parent_id: made_core::value_objects::CeremonyId,
+        failures_remaining: AtomicUsize,
+    }
+
+    struct FailFirstGlobalRead {
+        store: Arc<EventStoreFake>,
         failures_remaining: AtomicUsize,
     }
 
@@ -226,6 +250,57 @@ mod tests {
             from: GlobalPosition,
             limit: CeremonyEventPageLimit,
         ) -> Result<Vec<made_core::ports::PositionedRecord>, DomainError> {
+            self.store.read_all(from, limit).await
+        }
+
+        async fn head(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+        ) -> Result<StreamVersion, DomainError> {
+            self.store.head(stream).await
+        }
+
+        async fn streams(&self) -> Result<Vec<made_core::value_objects::CeremonyId>, DomainError> {
+            self.store.streams().await
+        }
+    }
+
+    #[async_trait]
+    impl CeremonyEventStorePort for FailFirstGlobalRead {
+        async fn append(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+            expected: StreamVersion,
+            facts: Vec<AuditFact>,
+        ) -> Result<AppendOutcome, DomainError> {
+            self.store.append(stream, expected, facts).await
+        }
+
+        async fn read(
+            &self,
+            stream: &made_core::value_objects::CeremonyId,
+            after: StreamVersion,
+            limit: CeremonyEventPageLimit,
+        ) -> Result<Vec<made_core::entities::AuditRecord>, DomainError> {
+            self.store.read(stream, after, limit).await
+        }
+
+        async fn read_all(
+            &self,
+            from: GlobalPosition,
+            limit: CeremonyEventPageLimit,
+        ) -> Result<Vec<made_core::ports::PositionedRecord>, DomainError> {
+            if self
+                .failures_remaining
+                .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |remaining| {
+                    remaining.checked_sub(1)
+                })
+                .is_ok()
+            {
+                return Err(DomainError::InvariantViolated {
+                    reason: "injected transient global read failure",
+                });
+            }
             self.store.read_all(from, limit).await
         }
 
@@ -354,6 +429,66 @@ mod tests {
         ) -> Result<Vec<QuarantinedCeremonyEvent>, DomainError> {
             Ok(Vec::new())
         }
+    }
+
+    #[tokio::test]
+    async fn a_transient_feed_read_releases_the_lease_for_the_next_tick() {
+        let definition = child_spawning_definition();
+        let definitions = Arc::new(
+            crate::usecases::ceremony_test_support::DefinitionRepositoryFake::new(
+                definition.clone(),
+            ),
+        );
+        let publications = Arc::new(PublicationsFake::default());
+        publications.seed(review_child_definition()).await;
+        let store = Arc::new(EventStoreFake::default());
+        store.save(&started_instance(&definition)).await.unwrap();
+        let stream = Arc::new(SessionStream::new(
+            store.clone(),
+            store.clone(),
+            Arc::new(NoopCeremonyEventSubscriber),
+        ));
+        let resolver = resolver_with(definitions, publications.clone());
+        let prepare = Arc::new(PrepareCeremonyChildrenUseCase::new(
+            resolver.clone(),
+            publications.clone(),
+            stream.clone(),
+            Arc::new(FixedClock::new(now())),
+            a_memory(),
+        ));
+        let accept = Arc::new(AcceptChildCompletionUseCase::new(
+            resolver,
+            publications,
+            stream.clone(),
+            Arc::new(FixedClock::new(now())),
+        ));
+        let cursor = Arc::new(TestCursor::default());
+        let recover = RecoverCeremonyChildrenUseCase::new(
+            Arc::new(FailFirstGlobalRead {
+                store,
+                failures_remaining: AtomicUsize::new(1),
+            }),
+            cursor.clone(),
+            stream,
+            prepare,
+            accept,
+            Arc::new(FixedClock::new(now())),
+            CeremonyEventConsumer::new("children-transient-read").unwrap(),
+        );
+
+        let first = recover
+            .execute(CeremonyEventPageLimit::new(1).unwrap())
+            .await
+            .unwrap_err();
+        assert!(first.to_string().contains("transient global read"));
+
+        let second = recover
+            .execute(CeremonyEventPageLimit::new(1).unwrap())
+            .await
+            .unwrap();
+        assert!(!second.busy);
+        assert_eq!(second.skipped, 1);
+        assert!(cursor.position(recover.consumer()).await.unwrap().is_some());
     }
 
     #[tokio::test]

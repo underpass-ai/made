@@ -1,4 +1,3 @@
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use made_core::entities::ceremony_commands::{
@@ -10,9 +9,17 @@ use made_core::entities::{
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionPublicationPort, ClockPort, MemoryReaderPort};
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyLineage, ChildCeremonyId,
-    ChildDepth, ChildDepthBudget, ChildGroupId, ChildPosition, ChildSpawnCoordinates,
-    ChildSpawnPlan, PlannedChild, StepOutput, StepResult, StepStatus,
+    AuditActorKind, CeremonyId, CeremonyLineage, ChildCeremonyId, ChildDepth, ChildDepthBudget,
+    ChildGroupId, ChildPosition, ChildSpawnCoordinates, ChildSpawnPlan, PlannedChild, StepStatus,
+};
+
+mod support;
+#[cfg(test)]
+mod tests;
+
+use support::{
+    completed_spawn_is_same, project_context, same_spawn_request_is_sealed, spawn_result,
+    verify_chain,
 };
 
 use super::{
@@ -62,41 +69,57 @@ impl PrepareCeremonyChildrenUseCase {
     ) -> Result<PrepareCeremonyChildrenOutput, DomainError> {
         let loaded = self.stream.load(&input.instance_id).await?;
         let definition = self.definitions.execute(&loaded.instance).await?;
-        let existing_plan = self.current_plan(&loaded.instance, &input.step_id);
-        let plan = match &existing_plan {
-            Some(plan) => plan.clone(),
-            None => {
-                self.build_plan(&loaded.instance, &definition, &input)
-                    .await?
+        let existing_plan = Self::current_plan(&loaded.instance, &input.step_id);
+        if let Some(plan) = &existing_plan {
+            if loaded
+                .instance
+                .step_record(&input.step_id)
+                .is_some_and(|record| record.status() == StepStatus::Completed)
+            {
+                return self
+                    .verify_completed_spawn(loaded.instance, plan.clone(), &input.step_id)
+                    .await;
             }
-        };
-        if loaded
-            .instance
-            .step_record(&input.step_id)
-            .is_some_and(|record| record.status() == StepStatus::Completed)
-        {
-            return self
-                .verify_completed_spawn(loaded.instance, plan, &input.step_id)
-                .await;
         }
-        let actor = self.step_actor(&loaded.instance, &definition, &input)?;
+        let actor = Self::step_actor(&loaded.instance, &definition, &input)?;
         let planned_at = self.clock.now();
-        let planned = if existing_plan.is_some() {
-            loaded
+        let (planned, plan) = if let Some(plan) = existing_plan {
+            (loaded, plan)
         } else {
-            self.stream
+            let candidate = self
+                .build_plan(&loaded.instance, &definition, &input)
+                .await?;
+            let planned = self
+                .stream
                 .execute(loaded, ConflictPolicy::retry(), |session| {
+                    if same_spawn_request_is_sealed(
+                        &session.instance,
+                        &candidate,
+                        &input.step_id,
+                        &input.claim_fence,
+                    )? {
+                        return Ok(Vec::new());
+                    }
                     let command = CeremonyCommand::PlanCeremonyChildren(PlanCeremonyChildren {
-                        plan: plan.clone(),
+                        plan: candidate.clone(),
                         now: planned_at,
                     });
                     let events = session.instance.decide(&command, &definition)?;
                     session_facts::facts(&session.instance, events, &actor, planned_at)
                 })
-                .await?
+                .await?;
+            let plan = planned
+                .instance
+                .child_group(candidate.group_id())
+                .ok_or(DomainError::NotFound {
+                    what: "child_spawn_group",
+                })?
+                .plan()
+                .clone();
+            (planned, plan)
         };
         let adopted = self
-            .adopt_if_needed(planned, &definition, &input, &actor)
+            .adopt_if_needed(planned, &definition, &input, &plan, &actor)
             .await?;
         let sealed_plan = adopted
             .instance
@@ -177,7 +200,7 @@ impl PrepareCeremonyChildrenUseCase {
             return Ok(None);
         }
 
-        let actor = self.step_actor_for_kind(
+        let actor = Self::step_actor_for_kind(
             &current.instance,
             &definition,
             &step_id,
@@ -190,6 +213,7 @@ impl PrepareCeremonyChildrenUseCase {
             .collect::<Vec<_>>();
         let result = spawn_result(group_id, &child_ids)?;
         let completed_at = self.clock.now();
+        let completion_step_id = step_id.clone();
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id,
             result: result.clone(),
@@ -199,6 +223,10 @@ impl PrepareCeremonyChildrenUseCase {
         let completed = self
             .stream
             .execute(current, ConflictPolicy::retry(), |session| {
+                if completed_spawn_is_same(&session.instance, &plan, &completion_step_id, &result)?
+                {
+                    return Ok(Vec::new());
+                }
                 let events = session.instance.decide(&command, &definition)?;
                 session_facts::facts(&session.instance, events, &actor, completed_at)
             })
@@ -212,7 +240,6 @@ impl PrepareCeremonyChildrenUseCase {
     }
 
     fn current_plan(
-        &self,
         instance: &CeremonyInstance,
         step_id: &made_core::value_objects::StepId,
     ) -> Option<ChildSpawnPlan> {
@@ -262,7 +289,7 @@ impl PrepareCeremonyChildrenUseCase {
         let group_id = ChildGroupId::derive(parent.id(), &coordinates);
         let inherited = parent.lineage().map_or_else(
             || ChildDepthBudget::from(made_core::value_objects::MaxChildDepth::SERVER_MAX),
-            |lineage| lineage.remaining_depth(),
+            CeremonyLineage::remaining_depth,
         );
         let remaining = inherited.for_child(spawn.max_depth())?;
         let depth = parent
@@ -336,16 +363,14 @@ impl PrepareCeremonyChildrenUseCase {
     }
 
     fn step_actor(
-        &self,
         instance: &CeremonyInstance,
         definition: &made_core::entities::CeremonyDefinition,
         input: &PrepareCeremonyChildrenInput,
     ) -> Result<made_core::value_objects::AuditActor, DomainError> {
-        self.step_actor_for_kind(instance, definition, &input.step_id, input.actor_kind)
+        Self::step_actor_for_kind(instance, definition, &input.step_id, input.actor_kind)
     }
 
     fn step_actor_for_kind(
-        &self,
         instance: &CeremonyInstance,
         definition: &made_core::entities::CeremonyDefinition,
         step_id: &made_core::value_objects::StepId,
@@ -366,6 +391,7 @@ impl PrepareCeremonyChildrenUseCase {
         session: crate::services::LoadedSession,
         definition: &made_core::entities::CeremonyDefinition,
         input: &PrepareCeremonyChildrenInput,
+        plan: &ChildSpawnPlan,
         actor: &made_core::value_objects::AuditActor,
     ) -> Result<crate::services::LoadedSession, DomainError> {
         let coordinates = session
@@ -391,6 +417,15 @@ impl PrepareCeremonyChildrenUseCase {
         });
         self.stream
             .execute(session, ConflictPolicy::retry(), |current| {
+                let child_ids = plan
+                    .children()
+                    .iter()
+                    .map(|child| child.child_id().clone())
+                    .collect::<Vec<_>>();
+                let result = spawn_result(plan.group_id(), &child_ids)?;
+                if completed_spawn_is_same(&current.instance, plan, &input.step_id, &result)? {
+                    return Ok(Vec::new());
+                }
                 let events = current.instance.decide(&command, definition)?;
                 session_facts::facts(&current.instance, events, actor, adopted_at)
             })
@@ -460,13 +495,7 @@ impl PrepareCeremonyChildrenUseCase {
             .collect::<Vec<_>>();
         let result = spawn_result(plan.group_id(), &child_ids)?;
         let session = self.stream.load(&input.instance_id).await?;
-        if session
-            .instance
-            .step_record(&input.step_id)
-            .is_some_and(|record| {
-                record.status() == StepStatus::Completed && record.output() == result.output()
-            })
-        {
+        if completed_spawn_is_same(&session.instance, &plan, &input.step_id, &result)? {
             return Ok(PrepareCeremonyChildrenOutput::new(
                 session.instance,
                 plan.group_id().clone(),
@@ -474,8 +503,9 @@ impl PrepareCeremonyChildrenUseCase {
                 result,
             ));
         }
-        let actor = self.step_actor(&session.instance, &definition, &input)?;
+        let actor = Self::step_actor(&session.instance, &definition, &input)?;
         let completed_at = self.clock.now();
+        let completion_step_id = input.step_id.clone();
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: input.step_id,
             result: result.clone(),
@@ -485,6 +515,10 @@ impl PrepareCeremonyChildrenUseCase {
         let completed = self
             .stream
             .execute(session, ConflictPolicy::retry(), |current| {
+                if completed_spawn_is_same(&current.instance, &plan, &completion_step_id, &result)?
+                {
+                    return Ok(Vec::new());
+                }
                 let events = current.instance.decide(&command, &definition)?;
                 session_facts::facts(&current.instance, events, &actor, completed_at)
             })
@@ -512,12 +546,9 @@ impl PrepareCeremonyChildrenUseCase {
             .map(|child| child.child_id().clone())
             .collect::<Vec<_>>();
         let result = spawn_result(plan.group_id(), &child_ids)?;
-        let record = instance.step_record(step_id).ok_or(DomainError::NotFound {
-            what: "ceremony_step_record",
-        })?;
-        if record.output() != result.output() {
+        if !completed_spawn_is_same(&instance, &plan, step_id, &result)? {
             return Err(DomainError::InvariantViolated {
-                reason: "completed child spawn output differs from its sealed plan",
+                reason: "completed child spawn is not the sealed plan result",
             });
         }
         Ok(PrepareCeremonyChildrenOutput::new(
@@ -527,47 +558,4 @@ impl PrepareCeremonyChildrenUseCase {
             result,
         ))
     }
-}
-
-fn project_context(
-    parent: &CeremonyContext,
-    inputs: &BTreeMap<made_core::value_objects::InputName, made_core::value_objects::ContextKey>,
-) -> Result<CeremonyContext, DomainError> {
-    let mut projected = BTreeMap::new();
-    for (input, source) in inputs {
-        let value = parent
-            .get(source)
-            .cloned()
-            .ok_or(DomainError::InvalidDocument {
-                reason: format!("missing parent context input: {}", source.as_str()),
-            })?;
-        projected.insert(input.as_str().to_owned(), value);
-    }
-    Ok(CeremonyContext::new(Attributes::new(projected)?))
-}
-
-fn spawn_result(
-    group_id: &ChildGroupId,
-    child_ids: &[CeremonyId],
-) -> Result<StepResult, DomainError> {
-    let output = Attributes::new(BTreeMap::from([
-        (
-            "child_group_id".to_owned(),
-            serde_json::json!(group_id.as_str()),
-        ),
-        (
-            "child_ids".to_owned(),
-            serde_json::json!(child_ids.iter().map(CeremonyId::as_str).collect::<Vec<_>>()),
-        ),
-    ]))?;
-    StepResult::completed(StepOutput::new(output))
-}
-
-fn verify_chain(records: &[made_core::entities::AuditRecord]) -> Result<(), DomainError> {
-    if !made_core::entities::AuditChain::verify(records).is_intact() {
-        return Err(DomainError::InvariantViolated {
-            reason: "child ceremony journal is not intact",
-        });
-    }
-    Ok(())
 }
