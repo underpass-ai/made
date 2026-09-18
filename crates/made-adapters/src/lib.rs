@@ -96,3 +96,6 @@ mod stored_council_cursor;
 
 #[cfg(any(feature = "sqlite", feature = "postgres"))]
 pub mod council_data_snapshot;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod council_snapshot_validation;

@@ -44,10 +44,7 @@ impl CouncilDataSnapshot {
         unique(self.agents.iter().map(|v| v.id.as_str()))?;
         unique(self.contracts.iter().map(|v| v.contract_id().as_str()))?;
         unique(self.deliberations.iter().map(|v| v.task_id().as_str()))?;
-        for agent in &self.agents {
-            crate::persisted_agent_descriptor::validate(agent)?;
-        }
-        Ok(())
+        crate::council_snapshot_validation::validate(self)
     }
     pub(crate) fn canonicalized(mut self) -> Self {
         self.councils

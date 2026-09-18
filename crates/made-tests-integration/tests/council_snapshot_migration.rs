@@ -135,3 +135,30 @@ async fn conflicting_or_secret_snapshots_leave_data_and_provenance_unchanged() {
         vec![expected]
     );
 }
+
+#[test]
+fn import_validation_rejects_invalid_legacy_deserialized_values() {
+    let original = snapshot("validation-fixture");
+    let mutations = [
+        ("/councils/0/agents", serde_json::json!([])),
+        ("/agents/0/id", serde_json::json!("")),
+        ("/councils/0/specialty", serde_json::json!("  research  ")),
+        ("/deliberations/0/rounds_budget", serde_json::json!(999)),
+        (
+            "/contracts/0/fields",
+            serde_json::json!({"": {"required": true}}),
+        ),
+        (
+            "/deliberations/0/ranking",
+            serde_json::json!(["missing-proposal"]),
+        ),
+    ];
+    for (pointer, bad) in mutations {
+        let mut value = serde_json::to_value(&original).unwrap();
+        *value.pointer_mut(pointer).unwrap() = bad;
+        assert!(
+            CouncilDataSnapshot::decode(&serde_json::to_vec(&value).unwrap()).is_err(),
+            "accepted invalid {pointer}"
+        );
+    }
+}
