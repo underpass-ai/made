@@ -83,6 +83,9 @@ impl CeremonyInstance {
         if !record.can_be_started_at(now) {
             return Ok(false);
         }
+        if self.resolve_step_role(definition, step_id, None).is_err() {
+            return Ok(false);
+        }
         let attempt = if matches!(record.status(), StepStatus::Failed | StepStatus::InProgress) {
             record.attempt().next()?
         } else {

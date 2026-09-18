@@ -10,6 +10,7 @@
 use crate::entities::{CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
+mod context;
 mod guard_decisions;
 mod import;
 mod interventions;
@@ -41,6 +42,7 @@ impl CeremonyInstance {
             CeremonyEvent::StepStarted(started) => self.apply_step_started(started),
             CeremonyEvent::StepCompleted(completed) => self.apply_step_completed(completed),
             CeremonyEvent::StepFailed(failed) => self.apply_step_failed(failed),
+            CeremonyEvent::ContextWritten(written) => self.apply_context_written(written),
             CeremonyEvent::StateIterationStarted(started) => {
                 self.apply_state_iteration_started(started);
             }

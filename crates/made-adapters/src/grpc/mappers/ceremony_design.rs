@@ -22,10 +22,10 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyDescription, CeremonyName, CeremonyVersion, DurationMs, GuardName, InputName,
-    JoinStepCount, MaxParallel, NumAgents, OutputName, PriorContext, RoleId, Rounds,
-    StateExecution, StateIteration, StepAttempt, StepHandlerKind, StepId, StepInstructions,
-    StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
+    CeremonyDescription, CeremonyName, CeremonyVersion, ContextKey, ContextWrites, DurationMs,
+    DynamicRoleBinding, GuardName, InputName, JoinStepCount, MaxParallel, NumAgents, OutputName,
+    PriorContext, RoleId, Rounds, StateExecution, StateIteration, StepAttempt, StepHandlerKind,
+    StepId, StepInstructions, StepIteration, StepOutputField, StepTimeout, TransitionTrigger,
 };
 use made_proto::v1 as pb;
 
@@ -121,7 +121,10 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
         .into_iter()
         .map(exit_guard_from_proto)
         .collect::<Result<Vec<_>, _>>()?;
-    Ok(CeremonyDesignStage::new(
+    let role_from = stage.role_from.clone();
+    let allowed_roles = stage.allowed_roles.clone();
+    let context_writes = stage.context_writes.clone();
+    let designed = CeremonyDesignStage::new(
         StepId::new(stage.id)?,
         RoleId::new(stage.owner_role_id)?,
         StepInstructions::new(stage.instructions)?,
@@ -134,7 +137,8 @@ fn stage_from_proto(stage: pb::CeremonyDesignStage) -> Result<CeremonyDesignStag
         Rounds::new(u32::try_from(stage.review_rounds).unwrap_or(u32::MAX))?,
         stage.repeat.map(repeat_from_proto).transpose()?,
     )
-    .with_exit_guards(exit_guards))
+    .with_exit_guards(exit_guards);
+    apply_dynamic_fields(designed, role_from, allowed_roles, context_writes)
 }
 
 fn stage_entry_from_proto(
@@ -149,6 +153,9 @@ fn stage_entry_from_proto(
             || stage.review_rounds != 0
             || stage.repeat.is_some()
             || !stage.exit_guards.is_empty()
+            || !stage.role_from.is_empty()
+            || !stage.allowed_roles.is_empty()
+            || !stage.context_writes.is_empty()
         {
             return Err(DomainError::InvalidDocument {
                 reason: format!("group stage `{}` cannot also declare leaf fields", stage.id),
@@ -222,7 +229,7 @@ fn group_repeat_from_proto(
 fn group_step_from_proto(
     step: pb::CeremonyDesignGroupStep,
 ) -> Result<CeremonyDesignGroupStep, DomainError> {
-    Ok(CeremonyDesignGroupStep::new(CeremonyDesignStage::new(
+    let designed = CeremonyDesignStage::new(
         StepId::new(step.id)?,
         RoleId::new(step.owner_role_id)?,
         StepInstructions::new(step.instructions)?,
@@ -233,7 +240,45 @@ fn group_step_from_proto(
             .transpose()?,
         Rounds::new(u32::try_from(step.review_rounds).unwrap_or(u32::MAX))?,
         step.repeat.map(repeat_from_proto).transpose()?,
-    )))
+    );
+    Ok(CeremonyDesignGroupStep::new(apply_dynamic_fields(
+        designed,
+        step.role_from,
+        step.allowed_roles,
+        step.context_writes,
+    )?))
+}
+
+fn apply_dynamic_fields(
+    mut stage: CeremonyDesignStage,
+    role_from: String,
+    allowed_roles: Vec<String>,
+    context_writes: std::collections::HashMap<String, String>,
+) -> Result<CeremonyDesignStage, DomainError> {
+    match (role_from.is_empty(), allowed_roles.is_empty()) {
+        (true, true) => {}
+        (false, false) => {
+            stage = stage.with_dynamic_role_binding(DynamicRoleBinding::new(
+                ContextKey::from_role_from(&role_from)?,
+                allowed_roles
+                    .into_iter()
+                    .map(RoleId::new)
+                    .collect::<Result<Vec<_>, _>>()?,
+            )?);
+        }
+        _ => {
+            return Err(DomainError::InvalidDocument {
+                reason: "role_from and allowed_roles must be declared together".to_owned(),
+            });
+        }
+    }
+    let writes = context_writes
+        .into_iter()
+        .map(|(destination, source)| {
+            Ok((ContextKey::new(destination)?, StepOutputField::new(source)?))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>, DomainError>>()?;
+    Ok(stage.with_context_writes(ContextWrites::new(writes)))
 }
 
 fn exit_guard_from_proto(
@@ -377,6 +422,9 @@ mod tests {
                 num_agents: None,
                 review_rounds: 0,
                 repeat: None,
+                role_from: String::new(),
+                allowed_roles: Vec::new(),
+                context_writes: std::collections::HashMap::new(),
                 group: Some(pb::CeremonyDesignGroup {
                     execution: "concurrent".to_owned(),
                     steps: ["A", "B"]
@@ -391,6 +439,9 @@ mod tests {
                             num_agents: None,
                             review_rounds: 0,
                             repeat: None,
+                            role_from: String::new(),
+                            allowed_roles: Vec::new(),
+                            context_writes: std::collections::HashMap::new(),
                         })
                         .collect(),
                     join: Some(pb::CeremonyDesignGroupJoin {

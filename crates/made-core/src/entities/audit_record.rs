@@ -397,6 +397,7 @@ mod tests {
                 )
                 .unwrap(),
                 started_by: author,
+                role_from: None,
                 started_at: AT,
             }),
             AuditEventType::StepCompleted => CeremonyEvent::StepCompleted(StepCompleted {

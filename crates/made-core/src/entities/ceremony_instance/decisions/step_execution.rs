@@ -1,10 +1,10 @@
 use crate::entities::ceremony_commands::{ApplyStepResult, StartStep};
 use crate::entities::ceremony_events::{
-    StateIterationStarted, StepCompleted, StepFailed, StepStarted,
+    ContextWritten, StateIterationStarted, StepCompleted, StepFailed, StepStarted,
 };
 use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
-use crate::value_objects::{RoleAction, StepAttempt, StepExecutionRecord, StepStatus};
+use crate::value_objects::{StepAttempt, StepExecutionRecord, StepStatus};
 
 impl CeremonyInstance {
     /// A step may be taken when its state is current, its lease is
@@ -18,13 +18,6 @@ impl CeremonyInstance {
         command: &StartStep,
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
-        if let Some(role_id) = command.role_id.as_ref() {
-            self.require_role(
-                definition,
-                role_id,
-                &RoleAction::step(command.step_id.clone()),
-            )?;
-        }
         self.require_definition(definition)?;
         if self.is_terminal(definition) {
             return Err(DomainError::InvariantViolated {
@@ -76,10 +69,8 @@ impl CeremonyInstance {
                 what: "ceremony_instance.idempotency_key",
             });
         }
-        let started_by = match command.role_id.clone() {
-            Some(role_id) => role_id,
-            None => definition.role_id_for_step(&command.step_id)?,
-        };
+        let (started_by, dynamic) =
+            self.resolve_step_role(definition, &command.step_id, command.role_id.as_ref())?;
 
         Ok(vec![CeremonyEvent::StepStarted(StepStarted {
             step_id: command.step_id.clone(),
@@ -88,6 +79,12 @@ impl CeremonyInstance {
             attempt,
             lease: command.lease.clone(),
             started_by,
+            role_from: dynamic.then(|| {
+                step.dynamic_role_binding()
+                    .expect("a dynamically resolved step has a binding")
+                    .context_key()
+                    .clone()
+            }),
             started_at: command.now,
         })])
     }
@@ -130,7 +127,11 @@ impl CeremonyInstance {
         let attempt = record.attempt();
         let result = command.result.clone();
         if !result.is_success() {
-            let finished_by = definition.role_id_for_step(&command.step_id)?;
+            let finished_by = record
+                .claimed_role()
+                .cloned()
+                .map(Ok)
+                .unwrap_or_else(|| definition.role_id_for_step(&command.step_id))?;
             return Ok(vec![CeremonyEvent::StepFailed(StepFailed {
                 step_id: command.step_id.clone(),
                 state_iteration: Some(self.current_state_iteration),
@@ -148,7 +149,12 @@ impl CeremonyInstance {
             .filter(|policy| policy.permits_another_iteration(iteration))
             .map(|_| iteration.next())
             .transpose()?;
-        let finished_by = definition.role_id_for_step(&command.step_id)?;
+        let finished_by = record
+            .claimed_role()
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| definition.role_id_for_step(&command.step_id))?;
+        let patch = step.context_writes().resolve(result.output())?;
         let completed = CeremonyEvent::StepCompleted(StepCompleted {
             step_id: command.step_id.clone(),
             state_iteration: Some(self.current_state_iteration),
@@ -159,9 +165,19 @@ impl CeremonyInstance {
             finished_by,
             finished_at: command.now,
         });
-        let mut events = vec![completed.clone()];
+        let mut events = vec![completed];
+        if let Some(patch) = patch {
+            events.push(CeremonyEvent::ContextWritten(ContextWritten {
+                step_id: command.step_id.clone(),
+                state_iteration: self.current_state_iteration,
+                iteration,
+                attempt,
+                patch,
+                written_at: command.now,
+            }));
+        }
         let mut projected = self.clone();
-        projected.apply(&completed);
+        projected.apply_all(&events);
         if projected.state_work_is_complete(definition) {
             if let Some(policy) = definition
                 .state(&self.current_state)

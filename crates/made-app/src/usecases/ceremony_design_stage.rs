@@ -1,5 +1,6 @@
 use made_core::value_objects::{
-    NumAgents, PriorContext, RoleId, Rounds, StepHandlerKind, StepId, StepInstructions,
+    ContextWrites, DynamicRoleBinding, NumAgents, PriorContext, RoleId, Rounds, StepHandlerKind,
+    StepId, StepInstructions,
 };
 
 use super::ceremony_design_repeat::CeremonyDesignRepeat;
@@ -29,6 +30,8 @@ pub struct CeremonyDesignStage {
     review_rounds: Rounds,
     repeat: Option<CeremonyDesignRepeat>,
     exit_guards: Vec<CeremonyDesignExitGuard>,
+    dynamic_role_binding: Option<DynamicRoleBinding>,
+    context_writes: ContextWrites,
 }
 
 impl CeremonyDesignStage {
@@ -53,7 +56,21 @@ impl CeremonyDesignStage {
             review_rounds,
             repeat,
             exit_guards: Vec::new(),
+            dynamic_role_binding: None,
+            context_writes: ContextWrites::default(),
         }
+    }
+
+    #[must_use]
+    pub fn with_dynamic_role_binding(mut self, binding: DynamicRoleBinding) -> Self {
+        self.dynamic_role_binding = Some(binding);
+        self
+    }
+
+    #[must_use]
+    pub fn with_context_writes(mut self, writes: ContextWrites) -> Self {
+        self.context_writes = writes;
+        self
     }
 
     #[must_use]
@@ -105,5 +122,15 @@ impl CeremonyDesignStage {
     #[must_use]
     pub fn exit_guards(&self) -> &[CeremonyDesignExitGuard] {
         &self.exit_guards
+    }
+
+    #[must_use]
+    pub fn dynamic_role_binding(&self) -> Option<&DynamicRoleBinding> {
+        self.dynamic_role_binding.as_ref()
+    }
+
+    #[must_use]
+    pub fn context_writes(&self) -> &ContextWrites {
+        &self.context_writes
     }
 }

@@ -54,9 +54,15 @@ impl CompleteCeremonyStepUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
-        // The seat is the definition's to say, as it is everywhere a
-        // step is run. Only what filled it had to be declared.
-        let finished_by = definition.role_id_for_step(&input.step_id)?;
+        // Dynamic claims seal their seat in the in-progress record.
+        // Completion never resolves it again from mutable context.
+        let finished_by = session
+            .instance
+            .step_record(&input.step_id)
+            .and_then(|record| record.claimed_role())
+            .cloned()
+            .map(Ok)
+            .unwrap_or_else(|| definition.role_id_for_step(&input.step_id))?;
         let actor = session_facts::seat(&finished_by, input.actor_kind)?;
         let now = self.clock.now();
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {

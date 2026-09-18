@@ -4,7 +4,7 @@ use serde_json::Value;
 use crate::error::DomainError;
 use crate::value_objects::Attributes;
 
-use super::GuardName;
+use super::{ContextKey, ContextPatch, GuardName};
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(transparent)]
@@ -25,6 +25,19 @@ impl CeremonyContext {
         let mut entries = self.0.into_inner();
         entries.insert(guard_name.as_str().to_owned(), Value::Bool(true));
         Ok(Self(Attributes::new(entries)?))
+    }
+
+    pub fn with_patch(self, patch: &ContextPatch) -> Result<Self, DomainError> {
+        let mut entries = self.0.into_inner();
+        for (key, value) in patch.entries() {
+            entries.insert(key.as_str().to_owned(), value.clone());
+        }
+        Ok(Self(Attributes::new(entries)?))
+    }
+
+    #[must_use]
+    pub fn get(&self, key: &ContextKey) -> Option<&Value> {
+        self.0.get(key.as_str())
     }
 
     #[must_use]

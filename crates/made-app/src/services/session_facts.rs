@@ -179,6 +179,12 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             failed.iteration.get(),
             failed.attempt.get(),
         ),
+        CeremonyEvent::ContextWritten(written) => step_about(
+            &written.step_id,
+            written.state_iteration.get(),
+            written.iteration.get(),
+            written.attempt.get(),
+        ),
         CeremonyEvent::StateIterationStarted(started) => format!(
             "state:{}:iteration:{}",
             started.state_id,

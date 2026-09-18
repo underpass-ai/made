@@ -1,0 +1,11 @@
+{
+  "type": "context_written",
+  "step_id": "draft",
+  "state_iteration": 1,
+  "iteration": 1,
+  "attempt": 1,
+  "patch": {
+    "approved_draft": "v1 text"
+  },
+  "written_at": "2026-07-29T09:05:00Z"
+}

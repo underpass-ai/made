@@ -71,7 +71,7 @@ fn in_progress() -> StepExecutionRecord {
         DurationMs::from_millis(60_000),
     )
     .unwrap();
-    StepExecutionRecord::pending().with_started(lease, StepAttempt::FIRST)
+    StepExecutionRecord::pending().with_started(lease, StepAttempt::FIRST, None)
 }
 
 fn transition(from: &str, to: &str, guards: &[&str]) -> CeremonyTransition {

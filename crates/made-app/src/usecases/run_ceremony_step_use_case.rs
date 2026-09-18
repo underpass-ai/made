@@ -112,6 +112,10 @@ impl RunCeremonyStepUseCase {
                 what: "ceremony_step",
             })?;
         let attempt = record.attempt();
+        let sealed_role = record
+            .claimed_role()
+            .cloned()
+            .unwrap_or_else(|| input.role_id.clone());
         super::step_span::record_coordinates(record.state_iteration(), record.iteration(), attempt);
 
         // What was said so far, folded from the stream: every step
@@ -131,8 +135,8 @@ impl RunCeremonyStepUseCase {
         )
         .with_transcript(transcript)
         .with_interventions(instance.interventions().to_vec())
-        .with_role(input.role_id.clone())
-        .with_bound_specialty(instance.bound_specialty(&input.role_id).cloned());
+        .with_role(sealed_role.clone())
+        .with_bound_specialty(instance.bound_specialty(&sealed_role).cloned());
         let result = self.execute_handler(request).await?;
 
         // Loaded again rather than reusing what the claim left: the
@@ -145,11 +149,12 @@ impl RunCeremonyStepUseCase {
             result: result.clone(),
             now: finished_at,
         });
+        let finish_actor = session_facts::seat(&sealed_role, input.role_kind)?;
         let refreshed = self
             .stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&finish, &definition)?;
-                session_facts::facts(&session.instance, events, &actor, finished_at)
+                session_facts::facts(&session.instance, events, &finish_actor, finished_at)
             })
             .await?
             .instance;

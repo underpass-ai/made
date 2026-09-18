@@ -15,13 +15,14 @@ const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
 const PRE_P2_EVENT_CHAIN: &str =
     include_str!("fixtures/audit_record_v2_event_schema_v1_chain.json");
 
-const EVERY_EVENT_TYPE: [AuditEventType; 20] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 21] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
     AuditEventType::StepStarted,
     AuditEventType::StepCompleted,
     AuditEventType::StepFailed,
+    AuditEventType::ContextWritten,
     AuditEventType::StateIterationStarted,
     AuditEventType::TransitionApplied,
     AuditEventType::InterventionRequested,
@@ -60,6 +61,9 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         AuditEventType::StepFailed => {
             Some(include_str!("fixtures/ceremony_events/v1/step_failed.json"))
         }
+        AuditEventType::ContextWritten => Some(include_str!(
+            "fixtures/ceremony_events/v1/context_written.json"
+        )),
         AuditEventType::TransitionApplied => Some(include_str!(
             "fixtures/ceremony_events/v1/transition_applied.json"
         )),
@@ -160,7 +164,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 16);
+    assert_eq!(pinned, 17);
 }
 
 #[test]

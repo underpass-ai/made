@@ -275,6 +275,7 @@ fn started(
         )
         .unwrap(),
         started_by: role_id.clone(),
+        role_from: None,
         started_at: at(ordinal),
     })
 }

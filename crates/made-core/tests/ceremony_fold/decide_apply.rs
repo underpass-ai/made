@@ -212,6 +212,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
             attempt: StepAttempt::FIRST,
             lease: lease("plan-1", at(1)),
             started_by: role("facilitator"),
+            role_from: None,
             started_at: at(1),
         })]
     );

@@ -69,6 +69,16 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                 stage.owner_role_id()
             )));
         }
+        if let Some(binding) = stage.dynamic_role_binding() {
+            for role_id in binding.allowed_roles() {
+                if !participant_set.contains(role_id.as_str()) {
+                    return Err(invalid(format!(
+                        "stage `{}` names unknown allowed role `{role_id}`",
+                        stage.id()
+                    )));
+                }
+            }
+        }
         if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
             return Err(invalid(format!(
                 "stage `{}` requests review rounds with fewer than two agents",
@@ -109,6 +119,16 @@ pub(super) fn validate(document: &CeremonyDesignDocument) -> Result<(), DomainEr
                     stage.id(),
                     stage.owner_role_id()
                 )));
+            }
+            if let Some(binding) = stage.dynamic_role_binding() {
+                for role_id in binding.allowed_roles() {
+                    if !participant_set.contains(role_id.as_str()) {
+                        return Err(invalid(format!(
+                            "group step `{}` names unknown allowed role `{role_id}`",
+                            stage.id()
+                        )));
+                    }
+                }
             }
             if stage.review_rounds().get() > 0 && num_agents(stage) < 2 {
                 return Err(invalid(format!(

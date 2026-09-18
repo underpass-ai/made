@@ -197,6 +197,27 @@ fn steps(draft: &CeremonyDefinitionDraft) -> Vec<StepDocument> {
                     },
                 }
             }),
+            role_from: step
+                .dynamic_role_binding()
+                .map(|binding| binding.context_key().role_from()),
+            allowed_roles: step
+                .dynamic_role_binding()
+                .map(|binding| {
+                    binding
+                        .allowed_roles()
+                        .iter()
+                        .map(|role| role.as_str().to_owned())
+                        .collect()
+                })
+                .unwrap_or_default(),
+            context_writes: step
+                .context_writes()
+                .entries()
+                .iter()
+                .map(|(destination, source)| {
+                    (destination.as_str().to_owned(), source.as_str().to_owned())
+                })
+                .collect(),
         })
         .collect()
 }

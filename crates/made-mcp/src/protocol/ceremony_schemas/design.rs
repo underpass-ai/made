@@ -90,6 +90,10 @@ fn leaf_stage_schema() -> Value {
         "type": "object",
         "additionalProperties": false,
         "required": ["id", "owner_role_id", "instructions"],
+        "dependentRequired": {
+            "role_from": ["allowed_roles"],
+            "allowed_roles": ["role_from"]
+        },
         "properties": {
             "id": string_schema("Lower_snake_case step identity. Declaration order is execution order."),
             "owner_role_id": string_schema("Participant role allowed to run this stage."),
@@ -115,6 +119,21 @@ fn leaf_stage_schema() -> Value {
                 "uniqueItems": true,
                 "items": exit_guard_schema(),
                 "description": "Additional conditions conjoined with stage completion and any final human approval."
+            },
+            "role_from": {
+                "type": "string", "pattern": "^context\\..+$",
+                "description": "Top-level ceremony-context role selector resolved and sealed at claim time."
+            },
+            "allowed_roles": {
+                "type": "array", "minItems": 1, "uniqueItems": true,
+                "items": { "type": "string", "minLength": 1 },
+                "description": "Roles the dynamic selector may resolve to."
+            },
+            "context_writes": {
+                "type": "object",
+                "propertyNames": { "minLength": 1 },
+                "additionalProperties": { "type": "string", "minLength": 1 },
+                "description": "Destination context keys mapped to top-level successful output fields."
             }
         }
     })

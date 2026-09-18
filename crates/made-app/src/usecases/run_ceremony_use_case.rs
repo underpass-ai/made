@@ -145,7 +145,7 @@ impl RunCeremonyUseCase {
                     {
                         break;
                     }
-                    let role_id = definition.role_id_for_step(&step_id)?;
+                    let role_id = session.instance.resolved_step_role(&definition, &step_id)?;
                     let actor = session_facts::seat(&role_id, actor_kind)?;
                     // What was said so far, folded from the stream the
                     // steps before this one sealed.

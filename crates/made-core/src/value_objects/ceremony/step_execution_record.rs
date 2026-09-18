@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    StateIteration, StepAttempt, StepErrorMessage, StepIteration, StepLease, StepOutput,
+    RoleId, StateIteration, StepAttempt, StepErrorMessage, StepIteration, StepLease, StepOutput,
     StepResult, StepStatus,
 };
 
@@ -18,6 +18,8 @@ pub struct StepExecutionRecord {
     lease: Option<StepLease>,
     output: StepOutput,
     error_message: Option<StepErrorMessage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    claimed_role: Option<RoleId>,
 }
 
 impl StepExecutionRecord {
@@ -31,6 +33,7 @@ impl StepExecutionRecord {
             lease: None,
             output: StepOutput::empty(),
             error_message: None,
+            claimed_role: None,
         }
     }
 
@@ -95,6 +98,11 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
+    pub fn claimed_role(&self) -> Option<&RoleId> {
+        self.claimed_role.as_ref()
+    }
+
+    #[must_use]
     pub fn can_be_started_at(&self, now: OffsetDateTime) -> bool {
         if self.status.is_executable() {
             return true;
@@ -116,7 +124,12 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
-    pub fn with_started(self, lease: StepLease, attempt: StepAttempt) -> Self {
+    pub fn with_started(
+        self,
+        lease: StepLease,
+        attempt: StepAttempt,
+        claimed_role: Option<RoleId>,
+    ) -> Self {
         Self {
             status: StepStatus::InProgress,
             state_iteration: self.state_iteration,
@@ -125,6 +138,7 @@ impl StepExecutionRecord {
             lease: Some(lease),
             output: self.output,
             error_message: None,
+            claimed_role,
         }
     }
 
@@ -139,6 +153,7 @@ impl StepExecutionRecord {
             lease: None,
             output,
             error_message,
+            claimed_role: self.claimed_role,
         }
     }
 }
