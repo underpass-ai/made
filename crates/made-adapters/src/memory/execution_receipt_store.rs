@@ -5,8 +5,8 @@ use made_core::ports::{
     RecordExecutionReceiptOutcome,
 };
 use made_core::value_objects::{
-    ExecutionIntent, ExecutionOperationId, ExecutionReceipt, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
+    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
 };
 use tokio::sync::Mutex;
 
@@ -93,6 +93,19 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
             .lock()
             .await
             .receipts
+            .get(operation_id.as_str())
+            .cloned())
+    }
+
+    async fn operation(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Option<ExecutionOperation>, DomainError> {
+        Ok(self
+            .state
+            .lock()
+            .await
+            .operations
             .get(operation_id.as_str())
             .cloned())
     }

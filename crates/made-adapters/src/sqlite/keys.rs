@@ -7,7 +7,9 @@
 //! convention: identifiers reject control characters, and `0x00` is
 //! one, so no identifier can contain the byte that ends it.
 
-use made_core::value_objects::{CeremonyId, CeremonyName, CeremonyVersion, MemoryScope};
+use made_core::value_objects::{
+    CeremonyId, CeremonyName, CeremonyVersion, ExecutionOperationId, MemoryScope, StepClaimFence,
+};
 
 pub(super) const SEPARATOR: u8 = 0;
 const ORDINAL_BYTES: usize = 8;
@@ -63,6 +65,20 @@ pub(super) fn memory_scope_range(scope: &MemoryScope) -> (Vec<u8>, Vec<u8>) {
     let mut end = start.clone();
     end.push(u8::MAX);
     (start, end)
+}
+
+/// One technical claim of a semantic execution operation.
+pub(super) fn execution_intent(
+    operation_id: &ExecutionOperationId,
+    claim_fence: &StepClaimFence,
+) -> Vec<u8> {
+    let operation = operation_id.as_str().as_bytes();
+    let fence = claim_fence.as_str().as_bytes();
+    let mut key = Vec::with_capacity(operation.len() + 1 + fence.len());
+    key.extend_from_slice(operation);
+    key.push(SEPARATOR);
+    key.extend_from_slice(fence);
+    key
 }
 
 /// Key for a published definition: the name length-prefixed, then the
