@@ -392,7 +392,7 @@ fn two_receipt_adoptions_survive_snapshot_roundtrip_and_tail_replay() {
 }
 
 #[test]
-fn an_adoption_requires_the_immutable_producer_link() {
+fn a_first_adoption_still_rejects_an_operation_from_another_step() {
     let definition = timed_definition_with_alternate();
     let mut instance = CeremonyInstance::start(
         made_core::value_objects::CeremonyId::new("adoption-without-producer").unwrap(),
@@ -405,7 +405,7 @@ fn an_adoption_requires_the_immutable_producer_link() {
     let record = instance.step_record(&step("plan")).unwrap();
     let operation_id = ExecutionOperationId::for_step(
         instance.id(),
-        &step("plan"),
+        &step("check"),
         record.state_visit(),
         record.state_iteration(),
         record.iteration(),
@@ -438,8 +438,8 @@ fn an_adoption_requires_the_immutable_producer_link() {
             }),
             &definition,
         ),
-        Err(DomainError::NotFound {
-            what: "ceremony_instance.execution_receipt_link"
+        Err(DomainError::InvariantViolated {
+            reason: "execution receipt operation does not match the step coordinates"
         })
     ));
 }
@@ -608,6 +608,52 @@ fn late_receipt_with_retry() -> (
         retired,
         current,
     )
+}
+
+#[test]
+fn a_recovered_receipt_can_be_adopted_before_any_direct_link_exists() {
+    let definition = definition();
+    let mut instance = opened(&definition);
+    let producer = claim_plan(&mut instance);
+    let current = start_plan_as(&mut instance, &definition, "facilitator", "recovery", 7);
+    assert_ne!(producer, current);
+    let record = instance.step_record(&step("plan")).unwrap();
+    let operation = ExecutionOperationId::for_step(
+        instance.id(),
+        &step("plan"),
+        record.state_visit(),
+        record.state_iteration(),
+        record.iteration(),
+    );
+    assert!(instance.execution_receipt_link(&operation).is_none());
+    let adoption = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation),
+        operation.clone(),
+        producer,
+        current.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    )
+    .unwrap();
+    let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+        step_id: step("plan"),
+        claim_fence: current,
+        receipt_link: adoption.clone(),
+        result: StepResult::completed(readiness(true)).unwrap(),
+        now: at(8),
+    });
+    let events = instance.decide(&command, &definition).unwrap();
+    assert!(matches!(
+        events.as_slice(),
+        [CeremonyEvent::ExecutionReceiptLinked(linked), CeremonyEvent::StepCompleted(_)]
+            if linked.link == adoption
+    ));
+    apply(&mut instance, &events);
+    assert_eq!(instance.execution_receipt_link(&operation), Some(&adoption));
+    assert!(instance.execution_receipt_adoptions().is_empty());
+    let reopened: CeremonyInstance =
+        serde_json::from_slice(&serde_json::to_vec(&instance).unwrap()).unwrap();
+    assert_eq!(reopened, instance);
+    assert!(reopened.decide(&command, &definition).unwrap().is_empty());
 }
 
 #[test]
