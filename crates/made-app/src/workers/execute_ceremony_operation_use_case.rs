@@ -67,28 +67,26 @@ impl ExecuteCeremonyOperationUseCase {
         cancellation: ExecutionCancellation,
     ) -> Result<ExecuteCeremonyOperationOutcome, DomainError> {
         ensure_authority(&cancellation)?;
-        let semantic_request = input.handler_request.semantic_request_bytes()?;
-        let candidate = ExecutionOperation::new(
-            input.handler_request.instance_id().clone(),
-            input.handler_request.step_id().clone(),
-            input.state_visit,
-            input.state_iteration,
-            input.step_iteration,
-            semantic_request,
-        );
-        let operation = match self.store.operation(candidate.operation_id()).await? {
-            Some(stored) if stored == candidate => stored,
-            Some(_) => {
-                return Err(DomainError::Conflict {
-                    what: "execution_operation",
-                })
-            }
-            None => candidate,
-        };
+        let operation = self.operation(&input).await?;
+        if let Some(outcome) = self.existing_receipt(operation.operation_id()).await? {
+            return Ok(outcome);
+        }
         let existing_intent = self
             .store
             .intent(operation.operation_id(), &input.claim_fence)
             .await?;
+        if existing_intent.is_none()
+            && self
+                .record_prior_non_queryable_ambiguity(operation.operation_id())
+                .await?
+        {
+            if let Some(outcome) = self.existing_receipt(operation.operation_id()).await? {
+                return Ok(outcome);
+            }
+            return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
+                operation.operation_id().clone(),
+            ));
+        }
         let (intent, recorded) = if let Some(intent) = existing_intent {
             if intent.operation() != &operation
                 || intent.connector_id() != self.connector.connector_id()
@@ -114,13 +112,11 @@ impl ExecuteCeremonyOperationUseCase {
             let recorded = self.store.record_intent(intent.clone()).await?;
             (intent, recorded)
         };
-        if let Some(receipt) = self
-            .store
-            .receipt(intent.operation().operation_id())
+        if let Some(outcome) = self
+            .existing_receipt(intent.operation().operation_id())
             .await?
         {
-            verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
-            return Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)));
+            return Ok(outcome);
         }
         if self.reconciliation_required(&intent).await? {
             return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
@@ -131,6 +127,7 @@ impl ExecuteCeremonyOperationUseCase {
             && self.connector.recovery_capability()
                 == ExecutionRecoveryCapability::ReconciliationRequired
         {
+            self.record_retry_ambiguity(&intent, recorded).await?;
             return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
                 intent.operation().operation_id().clone(),
             ));
@@ -165,6 +162,27 @@ impl ExecuteCeremonyOperationUseCase {
         Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)))
     }
 
+    async fn operation(
+        &self,
+        input: &ExecuteCeremonyOperationInput,
+    ) -> Result<ExecutionOperation, DomainError> {
+        let candidate = ExecutionOperation::new(
+            input.handler_request.instance_id().clone(),
+            input.handler_request.step_id().clone(),
+            input.state_visit,
+            input.state_iteration,
+            input.step_iteration,
+            input.handler_request.semantic_request_bytes()?,
+        );
+        match self.store.operation(candidate.operation_id()).await? {
+            Some(stored) if stored == candidate => Ok(stored),
+            Some(_) => Err(DomainError::Conflict {
+                what: "execution_operation",
+            }),
+            None => Ok(candidate),
+        }
+    }
+
     async fn reconciliation_required(&self, intent: &ExecutionIntent) -> Result<bool, DomainError> {
         let Some(requirement) = self
             .store
@@ -179,6 +197,83 @@ impl ExecuteCeremonyOperationUseCase {
             });
         }
         Ok(true)
+    }
+
+    async fn existing_receipt(
+        &self,
+        operation_id: &made_core::value_objects::ExecutionOperationId,
+    ) -> Result<Option<ExecuteCeremonyOperationOutcome>, DomainError> {
+        let Some(receipt) = self.store.receipt(operation_id).await? else {
+            return Ok(None);
+        };
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
+        Ok(Some(ExecuteCeremonyOperationOutcome::Receipt(Box::new(
+            receipt,
+        ))))
+    }
+
+    fn ensure_connector_contract(&self, intent: &ExecutionIntent) -> Result<(), DomainError> {
+        if intent.connector_id() != self.connector.connector_id()
+            || intent.recovery_capability() != self.connector.recovery_capability()
+            || intent.source_kind() != self.connector.source_kind()
+        {
+            return Err(DomainError::Conflict {
+                what: "execution_connector_contract",
+            });
+        }
+        Ok(())
+    }
+
+    async fn record_prior_non_queryable_ambiguity(
+        &self,
+        operation_id: &made_core::value_objects::ExecutionOperationId,
+    ) -> Result<bool, DomainError> {
+        if self.connector.recovery_capability()
+            != ExecutionRecoveryCapability::ReconciliationRequired
+        {
+            return Ok(false);
+        }
+        let prior_intents = self.store.intents(operation_id).await?;
+        for prior_intent in &prior_intents {
+            self.ensure_connector_contract(prior_intent)?;
+            self.record_reconciliation_required(prior_intent, operation_id)
+                .await?;
+        }
+        Ok(!prior_intents.is_empty())
+    }
+
+    async fn record_retry_ambiguity(
+        &self,
+        intent: &ExecutionIntent,
+        recorded: RecordExecutionIntentOutcome,
+    ) -> Result<(), DomainError> {
+        if recorded == RecordExecutionIntentOutcome::AlreadyRecorded {
+            return self
+                .record_reconciliation_required(intent, intent.operation().operation_id())
+                .await;
+        }
+        let prior_intents = self
+            .store
+            .intents(intent.operation().operation_id())
+            .await?;
+        let ambiguous = prior_intents
+            .iter()
+            .filter(|prior| prior.claim_fence() != intent.claim_fence())
+            .collect::<Vec<_>>();
+        if ambiguous.is_empty() {
+            return Err(DomainError::InvariantViolated {
+                reason: "additional execution intent has no prior producer intent",
+            });
+        }
+        for prior_intent in ambiguous {
+            self.ensure_connector_contract(prior_intent)?;
+            self.record_reconciliation_required(
+                prior_intent,
+                prior_intent.operation().operation_id(),
+            )
+            .await?;
+        }
+        Ok(())
     }
 
     async fn record_reconciliation_required(

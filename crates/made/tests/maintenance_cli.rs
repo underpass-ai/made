@@ -369,3 +369,197 @@ async fn queryable_http_ambiguity_requires_marker_grant_and_never_replays_effect
     );
     remote.abort();
 }
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)] // Linear crash-to-authorized-reconciliation acceptance flow.
+async fn non_queryable_crash_is_marked_without_replay_and_reconciled_by_authorized_cli() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use async_trait::async_trait;
+    use made_adapters::sqlite::SqliteCeremonyStore;
+    use made_app::workers::{RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase};
+    use made_core::ports::{
+        ArtifactByteOffset, BeginArtifactUpload, CeremonyExecutionConnectorOutcome,
+        CeremonyExecutionConnectorPort, CeremonyExecutionRequest, ExecutionReceiptStorePort,
+        PutArtifactChunk,
+    };
+    use made_core::value_objects::{
+        ArtifactDigest, ArtifactProvenance, ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind,
+        CeremonyId, ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
+        ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, StateIteration,
+        StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+    };
+    use sha2::{Digest, Sha256};
+
+    #[derive(Debug)]
+    struct NonQueryableConnector {
+        id: ExecutionConnectorId,
+        calls: AtomicUsize,
+    }
+
+    #[async_trait]
+    impl CeremonyExecutionConnectorPort for NonQueryableConnector {
+        fn connector_id(&self) -> &ExecutionConnectorId {
+            &self.id
+        }
+
+        fn recovery_capability(&self) -> ExecutionRecoveryCapability {
+            ExecutionRecoveryCapability::ReconciliationRequired
+        }
+
+        fn source_kind(&self) -> ArtifactSourceKind {
+            ArtifactSourceKind::ExternalExecution
+        }
+
+        async fn execute_or_recover(
+            &self,
+            _request: CeremonyExecutionRequest,
+        ) -> Result<CeremonyExecutionConnectorOutcome, made_core::DomainError> {
+            self.calls.fetch_add(1, Ordering::SeqCst);
+            Err(made_core::DomainError::InvariantViolated {
+                reason: "non-queryable connector must not be replayed during recovery",
+            })
+        }
+    }
+
+    std::fs::create_dir_all("tmp").unwrap();
+    let directory = TempDir::new_in("tmp").unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let policy_store =
+        Arc::new(SqliteAuthorizationPolicyStore::open(root.join("source.sqlite3")).unwrap());
+    let administration = AuthorizationPolicyAdministrationService::new(
+        AuthorizationPolicyId::new("test-policy").unwrap(),
+        policy_store,
+        Arc::new(SystemClock::new()),
+    );
+    let owner = AuthenticatedPrincipal::new(
+        PrincipalId::new("test-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    administration.open(owner.clone(), vec![]).await.unwrap();
+    administration
+        .issue(
+            &owner,
+            AuthorizationGrant::new(
+                AuthorizationGrantId::new("reconcile-non-queryable").unwrap(),
+                owner.id().clone(),
+                [AuthorizationAction::ReconcileExecutionOperation],
+                AuthorizationScope::Global,
+                (OffsetDateTime::UNIX_EPOCH, None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(owner.clone()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    let store = Arc::new(SqliteCeremonyStore::open(root.join("source.sqlite3")).unwrap());
+    let operation = ExecutionOperation::new(
+        CeremonyId::new("non-queryable-crash").unwrap(),
+        StepId::new("external").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+        ExecutionRequestBytes::new(b"possible external effect".to_vec()).unwrap(),
+    );
+    let fence = StepClaimFence::new("7".repeat(64)).unwrap();
+    let connector_id = ExecutionConnectorId::new("manual").unwrap();
+    let intent = ExecutionIntent::new(
+        operation.clone(),
+        fence.clone(),
+        connector_id.clone(),
+        ExecutionRecoveryCapability::ReconciliationRequired,
+        ArtifactSourceKind::ExternalExecution,
+        AuditActorKind::Engine,
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    store.record_intent(intent.clone()).await.unwrap();
+
+    let artifacts = LocalArtifactStore::open(root.join("artifacts")).unwrap();
+    let bytes = b"operator verified the non-queryable effect";
+    let digest = ArtifactDigest::new(format!("sha256:{:x}", Sha256::digest(bytes))).unwrap();
+    let upload = artifacts
+        .begin_upload(BeginArtifactUpload {
+            requested_artifact_id: None,
+            expected_digest: digest.clone(),
+            size_bytes: ArtifactSizeBytes::new(bytes.len() as u64),
+            media_type: ArtifactMediaType::new("text/plain").unwrap(),
+            provenance: ArtifactProvenance::execution(
+                ArtifactSourceKind::ExternalExecution,
+                ExecutionReceiptId::for_operation(operation.operation_id()),
+                operation.operation_id().clone(),
+                fence.clone(),
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .unwrap(),
+            idempotency_key: ArtifactIdempotencyKey::new("non-queryable-proof").unwrap(),
+        })
+        .await
+        .unwrap();
+    artifacts
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            chunk_digest: digest,
+            bytes: bytes.to_vec(),
+        })
+        .await
+        .unwrap();
+    let evidence = artifacts.commit_upload(&upload.upload_id).await.unwrap();
+    let receipt = ExecutionReceipt::new(
+        operation.operation_id().clone(),
+        operation.request_digest().clone(),
+        fence.clone(),
+        connector_id.clone(),
+        None,
+        ExecutionRecoveryCapability::ReconciliationRequired,
+        ArtifactSourceKind::ExternalExecution,
+        StepResult::completed(StepOutput::empty()).unwrap(),
+        vec![evidence],
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    let request = json!({"command":{"operation":"reconcile_execution","receipt":receipt}});
+
+    assert!(!run(&root, "--request", &request).status.success());
+    assert!(store
+        .reconciliation_requirement(operation.operation_id(), &fence)
+        .await
+        .unwrap()
+        .is_none());
+    let connector = Arc::new(NonQueryableConnector {
+        id: connector_id,
+        calls: AtomicUsize::new(0),
+    });
+    assert!(matches!(
+        RecoverExecutionIntentUseCase::new(store.clone(), connector.clone())
+            .execute(&intent)
+            .await
+            .unwrap(),
+        RecoverExecutionIntentOutcome::ReconciliationRequired(_)
+    ));
+    assert_eq!(connector.calls.load(Ordering::SeqCst), 0);
+    let reconciled = run(&root, "--request", &request);
+    assert!(
+        reconciled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&reconciled.stderr)
+    );
+    assert_eq!(
+        store.receipt(operation.operation_id()).await.unwrap(),
+        Some(receipt)
+    );
+    assert_eq!(
+        store.intents(operation.operation_id()).await.unwrap(),
+        vec![intent]
+    );
+    assert!(store
+        .reconciliation_requirement(operation.operation_id(), &fence)
+        .await
+        .unwrap()
+        .is_some());
+}

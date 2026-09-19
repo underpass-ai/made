@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use async_trait::async_trait;
 use made_adapters::memory::InMemoryExecutionReceiptStore;
 use made_app::workers::{
-    ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome, ExecuteCeremonyOperationUseCase,
+    ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome,
+    ExecuteCeremonyOperationUseCase, RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase,
 };
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -294,7 +295,7 @@ async fn reconciliation_required_never_reinvokes_an_ambiguous_intent() {
         FailurePoint::AfterEffect,
         ExecutionRecoveryCapability::ReconciliationRequired,
     ));
-    let worker = usecase(store, connector.clone());
+    let worker = usecase(store.clone(), connector.clone());
 
     assert!(worker.execute(input(1, fence('1'))).await.is_err());
     assert!(matches!(
@@ -304,6 +305,70 @@ async fn reconciliation_required_never_reinvokes_an_ambiguous_intent() {
 
     assert_eq!(connector.calls(), 1);
     assert_eq!(connector.effects(), 1);
+    let operation_id = made_core::value_objects::ExecutionOperationId::for_step(
+        &CeremonyId::new("ceremony").unwrap(),
+        &StepId::new("work").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    );
+    assert!(store
+        .reconciliation_requirement(&operation_id, &fence('1'))
+        .await
+        .unwrap()
+        .is_some());
+    assert!(store
+        .reconciliation_requirement(&operation_id, &fence('2'))
+        .await
+        .unwrap()
+        .is_none());
+    assert_eq!(store.intents(&operation_id).await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn recovery_marks_a_persisted_non_queryable_intent_without_replay() {
+    let store = Arc::new(InMemoryExecutionReceiptStore::new());
+    let connector = Arc::new(FailureInjectingConnector::new(
+        FailurePoint::AfterEffect,
+        ExecutionRecoveryCapability::ReconciliationRequired,
+    ));
+    let worker = usecase(store.clone(), connector.clone());
+
+    assert!(worker.execute(input(1, fence('4'))).await.is_err());
+    let operation_id = made_core::value_objects::ExecutionOperationId::for_step(
+        &CeremonyId::new("ceremony").unwrap(),
+        &StepId::new("work").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    );
+    let intent = store
+        .intent(&operation_id, &fence('4'))
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(store.receipt(&operation_id).await.unwrap().is_none());
+    assert!(store
+        .reconciliation_requirement(&operation_id, &fence('4'))
+        .await
+        .unwrap()
+        .is_none());
+
+    assert!(matches!(
+        RecoverExecutionIntentUseCase::new(store.clone(), connector.clone())
+            .execute(&intent)
+            .await
+            .unwrap(),
+        RecoverExecutionIntentOutcome::ReconciliationRequired(_)
+    ));
+    assert_eq!(connector.calls(), 1, "recovery must not replay the effect");
+    assert_eq!(connector.effects(), 1);
+    assert!(store.receipt(&operation_id).await.unwrap().is_none());
+    assert!(store
+        .reconciliation_requirement(&operation_id, &fence('4'))
+        .await
+        .unwrap()
+        .is_some());
 }
 
 #[tokio::test]

@@ -83,6 +83,11 @@ impl RecoverExecutionIntentUseCase {
             ));
         }
         if intent.recovery_capability() == ExecutionRecoveryCapability::ReconciliationRequired {
+            self.store
+                .record_reconciliation_requirement(ExecutionReconciliationRequirement::from_intent(
+                    intent,
+                ))
+                .await?;
             return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
                 intent.operation().operation_id().clone(),
             ));
