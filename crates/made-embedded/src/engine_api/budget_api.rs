@@ -84,14 +84,14 @@ fn refused(error: &DomainError) -> ApiError {
 }
 
 fn budget_limits(value: BudgetLimitsView) -> Result<BudgetLimits, DomainError> {
-    let maximum = BudgetQuantities::new(
-        ExecutionDuration::from_micros(value.duration_micros.unwrap_or_default()),
-        BudgetTokenCount::new(value.tokens.unwrap_or_default()),
-        CostMicros::new(value.cost_micros.unwrap_or_default()),
-        ToolCallCount::new(value.tool_calls.unwrap_or_default()),
-    );
     let currency = value.currency.map(CurrencyCode::new).transpose()?;
-    BudgetLimits::new(maximum, currency)
+    BudgetLimits::from_optional(
+        value.duration_micros.map(ExecutionDuration::from_micros),
+        value.tokens.map(BudgetTokenCount::new),
+        value.cost_micros.map(CostMicros::new),
+        value.tool_calls.map(ToolCallCount::new),
+        currency,
+    )
 }
 
 fn budget_balance(value: &made_core::value_objects::BudgetBalance) -> BudgetBalanceView {

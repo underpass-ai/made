@@ -2035,6 +2035,18 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
                 }
             }),
         ),
+        (
+            "a zero budget ceiling beside a positive ceiling",
+            "made_start_published_ceremony",
+            json!({
+                "ceremony_id": "zero-budget",
+                "ceremony": "parity_published",
+                "version": "1.0",
+                "actor_id": "operator",
+                "actor_kind": "service",
+                "budget_limits": { "tokens": 0, "tool_calls": 10 }
+            }),
+        ),
     ]
 }
 

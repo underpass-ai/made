@@ -106,6 +106,42 @@ async fn budgeted_admission_requires_a_real_estimate_and_reports_the_reservation
     );
 }
 
+#[tokio::test]
+async fn explicit_zero_ceilings_are_rejected_before_creating_a_ceremony() {
+    let fixture = GrpcFixture::start().await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+    client
+        .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
+            definition_yaml: DEFINITION.to_owned(),
+        })
+        .await
+        .unwrap();
+    for dimension in ["duration", "tokens", "cost", "tool_calls"] {
+        let rejected_id = format!("budget-zero-{dimension}");
+        let mut request = start_request(&rejected_id);
+        let limits = request.budget_limits.as_mut().unwrap();
+        match dimension {
+            "duration" => limits.duration_micros = Some(0),
+            "tokens" => {
+                limits.tokens = Some(0);
+                limits.tool_calls = Some(10);
+            }
+            "cost" => limits.cost_micros = Some(0),
+            "tool_calls" => limits.tool_calls = Some(0),
+            _ => unreachable!(),
+        }
+        let error = client.start_published_ceremony(request).await.unwrap_err();
+        assert_eq!(error.code(), Code::InvalidArgument, "{dimension}");
+        let absent = client
+            .get_ceremony_instance(GetCeremonyInstanceRequest {
+                ceremony_id: rejected_id,
+            })
+            .await
+            .unwrap_err();
+        assert_eq!(absent.code(), Code::NotFound, "{dimension}");
+    }
+}
+
 fn start_request(ceremony_id: &str) -> StartPublishedCeremonyRequest {
     StartPublishedCeremonyRequest {
         ceremony_id: ceremony_id.to_owned(),
