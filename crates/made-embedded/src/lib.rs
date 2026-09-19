@@ -10,7 +10,9 @@
 mod callback_ceremony_evidence_source;
 mod callback_ceremony_step_handler;
 mod embedded_authorization_services;
+mod embedded_authorization_wiring;
 mod embedded_ceremony_projection;
+mod embedded_ceremony_search;
 mod embedded_council_services;
 mod embedded_made;
 mod embedded_made_builder;
