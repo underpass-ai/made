@@ -9,7 +9,9 @@ const PROBE_PATH: &str = "MADE_TEST_SQLITE_LOCK_PROBE_PATH";
 
 #[test]
 fn opening_a_second_adapter_keeps_the_first_adapters_process_lock() {
-    let directory = tempfile::tempdir().unwrap();
+    let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let directory = tempfile::tempdir_in(scratch).unwrap();
     let path = directory.path().join("store.sqlite3");
     let first = SqliteCeremonyStore::open(&path).unwrap();
     let second = SqliteCeremonyStore::open(&path).unwrap();
@@ -40,7 +42,9 @@ fn opening_a_second_adapter_keeps_the_first_adapters_process_lock() {
 #[test]
 #[ignore = "spawned by opening_a_second_adapter_keeps_the_first_adapters_process_lock"]
 fn competing_process_cannot_replace_wal() {
-    let path = std::env::var_os(PROBE_PATH).expect("the parent must select a test database");
+    let Some(path) = std::env::var_os(PROBE_PATH) else {
+        return;
+    };
     let connection = Connection::open(path).unwrap();
     connection
         .busy_timeout(std::time::Duration::from_millis(50))
