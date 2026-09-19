@@ -4,6 +4,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
 use made_adapters::postgres::{PostgresCeremonyStore, PostgresConfig, PostgresPool};
@@ -11,7 +12,6 @@ use made_core::entities::ceremony_events::CeremonyCompleted;
 use made_core::entities::{AuditFact, CeremonyEvent};
 use made_core::ports::{
     AppendOutcome, CeremonyEventCursorPort, CeremonyEventStorePort, ExecutionReceiptStorePort,
-    RecordExecutionIntentOutcome,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyEventPageLimit,
@@ -20,21 +20,25 @@ use made_core::value_objects::{
     GlobalPosition, StateId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
     StepOutput, StepResult, StreamVersion,
 };
+use made_core::DomainError;
 use made_tests_integration::postgres_fixture;
 use sqlx::postgres::PgPoolOptions;
 use testcontainers::core::{CmdWaitFor, ExecCommand};
 use time::OffsetDateTime;
 use tokio::process::{Child, Command};
 
+#[path = "postgres_ceremony_ha/claims.rs"]
+mod claims;
+
 const MODE: &str = "MADE_HA_HELPER_MODE";
 const URL: &str = "MADE_HA_POSTGRES_URL";
 const RESULT: &str = "MADE_HA_RESULT_PATH";
 const SUFFIX: &str = "MADE_HA_SUFFIX";
-const MARKER: &str = "MADE_HA_MARKER_PATH";
+const BLOCK_KEY: i64 = 19_091_905;
 
 #[tokio::test]
 async fn three_process_replicas_fence_append_and_claim() {
-    let (_pool, url, _container) = postgres_fixture::start_with_url().await;
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
     let scratch = scratch();
     let mut append = [
         spawn_helper(&url, "append", "1", scratch.path()),
@@ -46,6 +50,8 @@ async fn three_process_replicas_fence_append_and_claim() {
     assert_eq!(count(&append_results, "appended"), 1, "{append_results:?}");
     assert_eq!(count(&append_results, "conflict"), 2, "{append_results:?}");
 
+    let store = Arc::new(PostgresCeremonyStore::new(pool));
+    claims::start(store.clone(), "ha-process-claim").await;
     let mut claim = [
         spawn_helper(&url, "claim", "1", scratch.path()),
         spawn_helper(&url, "claim", "2", scratch.path()),
@@ -53,20 +59,28 @@ async fn three_process_replicas_fence_append_and_claim() {
     ];
     wait_success(&mut claim).await;
     let claim_results = read_results(scratch.path(), "claim", 3);
-    assert_eq!(count(&claim_results, "first"), 1, "{claim_results:?}");
-    assert_eq!(count(&claim_results, "additional"), 2, "{claim_results:?}");
+    assert_eq!(count(&claim_results, "claimed"), 1, "{claim_results:?}");
+    assert_eq!(count(&claim_results, "refused"), 2, "{claim_results:?}");
+    let records = store
+        .read(
+            &CeremonyId::new("ha-process-claim").unwrap(),
+            StreamVersion::EMPTY,
+            CeremonyEventPageLimit::DEFAULT,
+        )
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 2, "opening plus exactly one real claim");
+    assert!(matches!(
+        records[1].event(),
+        Some(CeremonyEvent::StepStarted(_))
+    ));
 }
 
 #[tokio::test]
 async fn killed_processes_leave_no_partial_append_or_claim() {
     let (pool, url, _container) = postgres_fixture::start_with_url().await;
-    let scratch = scratch();
-    let marker = scratch.path().join("append.marker");
-    let mut append = spawn_holding_helper(&url, "hold_append", &marker);
-    wait_for(&marker).await;
-    append.kill().await.unwrap();
-    append.wait().await.unwrap();
-    let store = PostgresCeremonyStore::new(pool.clone());
+    let store = Arc::new(PostgresCeremonyStore::new(pool.clone()));
+    kill_inside_event_insert(&url, "hold_append", "ha-killed-append", None).await;
     let stream = CeremonyId::new("ha-killed-append").unwrap();
     assert_eq!(store.head(&stream).await.unwrap(), StreamVersion::EMPTY);
     assert!(matches!(
@@ -81,16 +95,59 @@ async fn killed_processes_leave_no_partial_append_or_claim() {
         AppendOutcome::Appended { .. }
     ));
 
-    let marker = scratch.path().join("claim.marker");
-    let mut claim = spawn_holding_helper(&url, "hold_claim", &marker);
-    wait_for(&marker).await;
-    claim.kill().await.unwrap();
-    claim.wait().await.unwrap();
-    let intent = intent(operation("ha-killed-claim"), fence('9'));
+    claims::start(store.clone(), "ha-killed-claim").await;
+    let id = CeremonyId::new("ha-killed-claim").unwrap();
+    let before = store
+        .read(&id, StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    kill_inside_event_insert(&url, "hold_claim", "ha-killed-claim", None).await;
+    assert_eq!(store.head(&id).await.unwrap(), StreamVersion::new(1));
     assert_eq!(
-        store.record_intent(intent).await.unwrap(),
-        RecordExecutionIntentOutcome::RecordedFirst
+        store
+            .read(&id, StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
+            .await
+            .unwrap(),
+        before
     );
+    let accepted = claims::claim(store.clone(), "ha-killed-claim", "survivor")
+        .await
+        .unwrap();
+    assert_eq!(accepted.version(), StreamVersion::new(2));
+    // The global counter and journal also rolled back; no position was lost.
+    let records = store
+        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .map(|record| record.position.value())
+            .collect::<Vec<_>>(),
+        [1, 2, 3]
+    );
+}
+
+#[tokio::test]
+async fn two_live_replicas_recover_the_claim_when_the_third_dies_mid_append() {
+    let (pool, url, _container) = postgres_fixture::start_with_url().await;
+    let store = Arc::new(PostgresCeremonyStore::new(pool));
+    claims::start(store.clone(), "ha-killed-claim").await;
+    let scratch = scratch();
+    kill_inside_event_insert(&url, "hold_claim", "ha-killed-claim", Some(scratch.path())).await;
+    let outcomes = read_results(scratch.path(), "claim_killed", 2);
+    assert_eq!(count(&outcomes, "claimed"), 1, "{outcomes:?}");
+    assert_eq!(count(&outcomes, "refused"), 1, "{outcomes:?}");
+    let records = store
+        .read_all(GlobalPosition::FIRST, CeremonyEventPageLimit::DEFAULT)
+        .await
+        .unwrap();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[1].position.value(), 2);
+    let Some(CeremonyEvent::StepStarted(claim)) = records[1].record.event() else {
+        panic!("the survivor must seal a real claim");
+    };
+    assert_ne!(claim.lease.owner_id().as_str(), "replica-lost");
 }
 
 #[tokio::test]
@@ -219,7 +276,8 @@ async fn replica_process() {
     let url = std::env::var(URL).expect("helper url");
     match mode.as_str() {
         "append" => helper_append(&url).await,
-        "claim" => helper_claim(&url).await,
+        "claim" => helper_claim(&url, "ha-process-claim").await,
+        "claim_killed" => helper_claim(&url, "ha-killed-claim").await,
         "replay" => helper_replay(&url).await,
         "hold_append" => hold_append(&url).await,
         "hold_claim" => hold_claim(&url).await,
@@ -243,18 +301,15 @@ async fn helper_append(url: &str) {
     .await;
 }
 
-async fn helper_claim(url: &str) {
-    let store = connect(url).await;
+async fn helper_claim(url: &str, ceremony: &str) {
+    let store = Arc::new(connect(url).await);
     let suffix = std::env::var(SUFFIX).unwrap();
-    let claim_fence = fence(suffix.chars().next().unwrap());
-    let outcome = store
-        .record_intent(intent(operation("ha-process-claim"), claim_fence))
-        .await
-        .unwrap();
-    let label = match outcome {
-        RecordExecutionIntentOutcome::RecordedFirst => "first",
-        RecordExecutionIntentOutcome::RecordedAdditional => "additional",
-        RecordExecutionIntentOutcome::AlreadyRecorded => "existing",
+    let label = match claims::claim(store, ceremony, &suffix).await {
+        Ok(_) => "claimed",
+        Err(DomainError::InvariantViolated {
+            reason: "step lease is still active",
+        }) => "refused",
+        unexpected => panic!("unexpected claim result: {unexpected:?}"),
     };
     write_result(label).await;
 }
@@ -278,49 +333,116 @@ async fn helper_replay(url: &str) {
 }
 
 async fn hold_append(url: &str) {
-    let pool = PgPoolOptions::new().connect(url).await.unwrap();
-    let mut transaction = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO ceremony_streams(stream_id, version) VALUES ('ha-killed-append', 0)")
-        .execute(&mut *transaction)
+    let store = connect(url).await;
+    let stream = CeremonyId::new("ha-killed-append").unwrap();
+    store
+        .append(&stream, StreamVersion::EMPTY, vec![fact(&stream, "killed")])
         .await
         .unwrap();
-    sqlx::query("UPDATE ceremony_streams SET version = 1 WHERE stream_id = 'ha-killed-append'")
-        .execute(&mut *transaction)
-        .await
-        .unwrap();
-    signal_and_wait().await;
+    panic!("test must kill this process inside the real adapter transaction");
 }
 
 async fn hold_claim(url: &str) {
-    let pool = PgPoolOptions::new().connect(url).await.unwrap();
-    let operation = operation("ha-killed-claim");
-    let intent = intent(operation.clone(), fence('8'));
-    let mut transaction = pool.begin().await.unwrap();
-    sqlx::query("INSERT INTO ceremony_execution_operations(operation_id, payload) VALUES ($1, $2)")
-        .bind(operation.operation_id().as_str())
-        .bind(serde_json::to_vec(&operation).unwrap())
-        .execute(&mut *transaction)
+    claims::claim(Arc::new(connect(url).await), "ha-killed-claim", "lost")
         .await
         .unwrap();
-    sqlx::query(
-        "INSERT INTO ceremony_execution_intents \
-         (operation_id, claim_fence, recorded_at, payload) VALUES ($1, $2, $3, $4)",
-    )
-    .bind(operation.operation_id().as_str())
-    .bind(intent.claim_fence().as_str())
-    .bind(intent.recorded_at())
-    .bind(serde_json::to_vec(&intent).unwrap())
-    .execute(&mut *transaction)
-    .await
-    .unwrap();
-    signal_and_wait().await;
+    panic!("test must kill this process inside the real claim append");
 }
 
-async fn signal_and_wait() {
-    tokio::fs::write(std::env::var(MARKER).unwrap(), b"ready")
+async fn kill_inside_event_insert(url: &str, mode: &str, stream: &str, survivors: Option<&Path>) {
+    let pool = PgPoolOptions::new().connect(url).await.unwrap();
+    // The isolated database's trigger blocks after the production adapter has
+    // inserted a sealed event, before its global head/stream head and commit.
+    sqlx::raw_sql(&format!(
+        "CREATE OR REPLACE FUNCTION ha_block_insert() RETURNS trigger LANGUAGE plpgsql AS $$ \
+         BEGIN IF NEW.stream_id = '{stream}' THEN PERFORM pg_advisory_xact_lock({BLOCK_KEY}); \
+         END IF; RETURN NEW; END $$; \
+         CREATE TRIGGER ha_block_insert AFTER INSERT ON ceremony_events \
+         FOR EACH ROW EXECUTE FUNCTION ha_block_insert();"
+    ))
+    .execute(&pool)
+    .await
+    .unwrap();
+    let mut blocker = pool.acquire().await.unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(BLOCK_KEY)
+        .execute(&mut *blocker)
         .await
         .unwrap();
-    std::future::pending::<()>().await;
+    let mut child = helper_command(url, mode).spawn().unwrap();
+    let pid = tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let pid: Option<i32> = sqlx::query_scalar(
+                "SELECT pid FROM pg_locks WHERE locktype = 'advisory' AND objid = $1::bigint::oid AND NOT granted"
+            ).bind(BLOCK_KEY).fetch_optional(&pool).await.unwrap();
+            if let Some(pid) = pid { break pid; }
+            assert!(child.try_wait().unwrap().is_none(), "helper exited before its adapter blocked");
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    }).await.expect("production insert should wait on the controlled lock");
+    let mut live = survivors.map(|scratch| {
+        [
+            spawn_helper(url, "claim_killed", "1", scratch),
+            spawn_helper(url, "claim_killed", "2", scratch),
+        ]
+    });
+    if live.is_some() {
+        tokio::time::timeout(Duration::from_secs(15), async {
+            loop {
+                let waiting: i64 = sqlx::query_scalar(
+                    "SELECT count(*) FROM pg_stat_activity WHERE wait_event_type = 'Lock' \
+                     AND query LIKE '%ceremony_streams%'",
+                )
+                .fetch_one(&pool)
+                .await
+                .unwrap();
+                if waiting == 2 {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("both live replicas must contend with the uncommitted real claim");
+    }
+    child.kill().await.unwrap();
+    assert!(!child.wait().await.unwrap().success());
+    sqlx::query("SELECT pg_advisory_unlock($1)")
+        .bind(BLOCK_KEY)
+        .execute(&mut *blocker)
+        .await
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(15), async {
+        loop {
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM pg_stat_activity WHERE pid = $1)")
+                    .bind(pid)
+                    .fetch_one(&pool)
+                    .await
+                    .unwrap();
+            if !exists {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .expect("server must retire killed client's uncommitted transaction");
+    if let Some(children) = &mut live {
+        for survivor in children {
+            assert!(
+                tokio::time::timeout(Duration::from_secs(15), survivor.wait())
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .success()
+            );
+        }
+    }
+    sqlx::query("DROP TRIGGER ha_block_insert ON ceremony_events")
+        .execute(&pool)
+        .await
+        .unwrap();
 }
 
 async fn connect(url: &str) -> PostgresCeremonyStore {
@@ -344,19 +466,13 @@ fn spawn_helper(url: &str, mode: &str, suffix: &str, scratch: &Path) -> Child {
         .unwrap()
 }
 
-fn spawn_holding_helper(url: &str, mode: &str, marker: &Path) -> Child {
-    helper_command(url, mode)
-        .env(MARKER, marker)
-        .spawn()
-        .unwrap()
-}
-
 fn helper_command(url: &str, mode: &str) -> Command {
     let mut command = Command::new(std::env::current_exe().unwrap());
     command
         .args(["--ignored", "--exact", "replica_process", "--nocapture"])
         .env(MODE, mode)
         .env(URL, url)
+        .kill_on_drop(true)
         .stdout(Stdio::null())
         .stderr(Stdio::null());
     command
@@ -366,19 +482,6 @@ async fn wait_success(children: &mut [Child; 3]) {
     for child in children {
         assert!(child.wait().await.unwrap().success());
     }
-}
-
-async fn wait_for(path: &Path) {
-    for _ in 0..100 {
-        if path.exists() {
-            return;
-        }
-        tokio::time::sleep(Duration::from_millis(25)).await;
-    }
-    panic!(
-        "helper did not reach transaction failpoint: {}",
-        path.display()
-    );
 }
 
 fn scratch() -> tempfile::TempDir {
