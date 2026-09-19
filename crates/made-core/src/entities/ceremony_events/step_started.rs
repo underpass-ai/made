@@ -2,9 +2,10 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use crate::value_objects::{
-    BudgetReservationId, ContextKey, RoleId, StateIteration, StepAttempt, StepDeadline, StepId,
-    StepIteration, StepLease,
+    BudgetReservationId, CeremonyId, ContextKey, RoleId, StateIteration, StepAttempt,
+    StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepIteration, StepLease,
 };
+use crate::DomainError;
 
 /// A seat took a step to run.
 ///
@@ -40,6 +41,22 @@ pub struct StepStarted {
 }
 
 impl StepStarted {
+    /// Rebuild the immutable fence carried by this accepted claim.
+    pub fn claim_fence(&self, ceremony_id: &CeremonyId) -> Result<StepClaimFence, DomainError> {
+        let record =
+            StepExecutionRecord::pending_coordinates(self.state_iteration(), self.iteration)
+                .with_state_visit(self.state_visit())
+                .with_started(
+                    self.lease.clone(),
+                    self.attempt,
+                    self.role_from
+                        .as_ref()
+                        .map(|_| self.started_by.clone())
+                        .or_else(|| self.sealed_role.clone()),
+                );
+        StepClaimFence::for_record(ceremony_id, &self.step_id, &record)
+    }
+
     #[must_use]
     pub fn state_iteration(&self) -> StateIteration {
         self.state_iteration.unwrap_or(StateIteration::FIRST)

@@ -12,11 +12,16 @@ use made_app::usecases::{
 use made_core::ports::ClockPort;
 use std::sync::Arc;
 
-pub(super) fn wire(
+use made_app::authorization::{
+    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+};
+
+pub(super) fn wire<C: ClockPort + 'static>(
     builder: MadeGrpcServiceBuilder,
     definition: Arc<ResolveCeremonyDefinitionUseCase>,
-    stream: Arc<SessionStream>,
-    clock: Arc<dyn ClockPort>,
+    stream: &Arc<SessionStream>,
+    clock: &Arc<C>,
+    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
 ) -> MadeGrpcServiceBuilder {
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
         definition.clone(),
@@ -65,9 +70,16 @@ pub(super) fn wire(
         clock.clone(),
     ));
     let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
-        definition, stream, clock,
+        definition,
+        stream.clone(),
+        clock.clone(),
     ));
     builder
+        .continue_accepted_step_claim(Arc::new(ContinueAcceptedStepClaimUseCase::new(
+            stream.clone(),
+            continuation,
+            clock.clone(),
+        )))
         .complete_ceremony_step(complete_ceremony_step)
         .apply_ceremony_transition(apply_ceremony_transition)
         .assert_ceremony_reason(assert_ceremony_reason)

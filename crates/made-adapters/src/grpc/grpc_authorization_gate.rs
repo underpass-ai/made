@@ -127,7 +127,7 @@ impl GrpcAuthorizationGate {
             .ok_or(GrpcAuthorizationError::Unconfigured)
     }
 
-    fn request_id<T>(
+    pub(super) fn request_id<T>(
         &self,
         request: &Request<T>,
         action: AuthorizationAction,
@@ -152,7 +152,7 @@ impl GrpcAuthorizationGate {
     }
 }
 
-fn target_digest<T: Message>(request: &T) -> AuthorizationTargetDigest {
+pub(super) fn target_digest<T: Message>(request: &T) -> AuthorizationTargetDigest {
     AuthorizationTargetDigest::for_bytes(&request.encode_to_vec())
 }
 

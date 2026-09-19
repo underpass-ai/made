@@ -1,0 +1,95 @@
+use std::sync::Arc;
+
+use made_core::entities::CeremonyEvent;
+use made_core::ports::ClockPort;
+use made_core::value_objects::{AuthorizationAction, AuthorizedOperation};
+use made_core::DomainError;
+
+use super::{AcceptedStepCompletion, ContinueAcceptedCeremonyWorkUseCase};
+use crate::services::{LoadedSession, SessionStream};
+
+#[derive(Clone)]
+pub struct ContinueAcceptedStepClaimUseCase {
+    stream: Arc<SessionStream>,
+    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    clock: Arc<dyn ClockPort>,
+}
+
+impl ContinueAcceptedStepClaimUseCase {
+    #[must_use]
+    pub fn new(
+        stream: Arc<SessionStream>,
+        continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+        clock: Arc<dyn ClockPort>,
+    ) -> Self {
+        Self {
+            stream,
+            continuation,
+            clock,
+        }
+    }
+
+    pub async fn execute(
+        &self,
+        input: AcceptedStepCompletion,
+    ) -> Result<AuthorizedOperation, DomainError> {
+        let records = self.stream.records(&input.ceremony_id).await?;
+        let session = SessionStream::fold_records(&records)?;
+        require_live_claim(&session, &input, self.clock.now())?;
+        let source = records
+            .iter()
+            .rev()
+            .find(|record| match record.event() {
+                Some(CeremonyEvent::StepStarted(started)) if started.step_id == input.step_id => {
+                    started
+                        .claim_fence(&input.ceremony_id)
+                        .is_ok_and(|fence| fence == input.claim_fence)
+                }
+                _ => false,
+            })
+            .ok_or(DomainError::NotFound {
+                what: "accepted_step_claim_record",
+            })?;
+        self.continuation
+            .execute_for(
+                source,
+                input.request_id,
+                AuthorizationAction::CompleteCeremonyStep,
+                input.target_digest,
+                Some(&input.principal),
+            )
+            .await
+    }
+}
+
+fn require_live_claim(
+    session: &LoadedSession,
+    input: &AcceptedStepCompletion,
+    now: time::OffsetDateTime,
+) -> Result<(), DomainError> {
+    if session.instance.step_claim_fence(&input.step_id)? != input.claim_fence {
+        return Err(DomainError::InvariantViolated {
+            reason: "accepted step completion fence is no longer current",
+        });
+    }
+    let record = session
+        .instance
+        .step_record(&input.step_id)
+        .ok_or(DomainError::NotFound {
+            what: "ceremony_instance.step_record",
+        })?;
+    if !record.has_live_lease_at(now) {
+        return Err(DomainError::InvariantViolated {
+            reason: "accepted step completion lease is no longer live",
+        });
+    }
+    Ok(())
+}
+
+impl std::fmt::Debug for ContinueAcceptedStepClaimUseCase {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("ContinueAcceptedStepClaimUseCase")
+            .finish_non_exhaustive()
+    }
+}

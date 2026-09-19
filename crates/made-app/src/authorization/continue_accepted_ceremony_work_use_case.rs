@@ -3,8 +3,8 @@ use std::sync::Arc;
 use made_core::entities::AuditRecord;
 use made_core::ports::{AuthorizationPolicyAppendOutcome, AuthorizationPolicyStorePort, ClockPort};
 use made_core::value_objects::{
-    AuthorizationAction, AuthorizationDecisionTtl, AuthorizationPolicyId, AuthorizationRequest,
-    AuthorizationRequestId, AuthorizationTargetDigest, AuthorizedOperation,
+    AuthenticatedPrincipal, AuthorizationAction, AuthorizationDecisionTtl, AuthorizationPolicyId,
+    AuthorizationRequest, AuthorizationRequestId, AuthorizationTargetDigest, AuthorizedOperation,
 };
 use made_core::DomainError;
 
@@ -42,6 +42,32 @@ impl ContinueAcceptedCeremonyWorkUseCase {
         source: &AuditRecord,
         request_id: AuthorizationRequestId,
     ) -> Result<AuthorizedOperation, DomainError> {
+        let target = serde_json::to_vec(&(
+            source.ceremony_id(),
+            source.event_id(),
+            source.record_hash(),
+        ))
+        .map_err(|_| DomainError::InvariantViolated {
+            reason: "accepted ceremony recovery target cannot be canonicalized",
+        })?;
+        self.execute_for(
+            source,
+            request_id,
+            AuthorizationAction::RecoverCeremonyChildren,
+            AuthorizationTargetDigest::for_bytes(&target),
+            None,
+        )
+        .await
+    }
+
+    pub async fn execute_for(
+        &self,
+        source: &AuditRecord,
+        request_id: AuthorizationRequestId,
+        action: AuthorizationAction,
+        target_digest: AuthorizationTargetDigest,
+        expected_principal: Option<&AuthenticatedPrincipal>,
+    ) -> Result<AuthorizedOperation, DomainError> {
         let source_evidence =
             source
                 .authorization_evidence()
@@ -60,20 +86,17 @@ impl ContinueAcceptedCeremonyWorkUseCase {
                 reason: "accepted ceremony record evidence does not match its policy decision",
             });
         }
-        let target = serde_json::to_vec(&(
-            source.ceremony_id(),
-            source.event_id(),
-            source.record_hash(),
-        ))
-        .map_err(|_| DomainError::InvariantViolated {
-            reason: "accepted ceremony recovery target cannot be canonicalized",
-        })?;
+        if expected_principal.is_some_and(|expected| accepted.request().principal() != expected) {
+            return Err(DomainError::InvariantViolated {
+                reason: "accepted ceremony work belongs to another authenticated principal",
+            });
+        }
         let request = AuthorizationRequest::new(
             request_id,
             accepted.request().principal().clone(),
-            AuthorizationAction::RecoverCeremonyChildren,
+            action,
             accepted.request().scope().clone(),
-            AuthorizationTargetDigest::for_bytes(&target),
+            target_digest,
         )
         .with_accepted_work(accepted.id().clone());
 
