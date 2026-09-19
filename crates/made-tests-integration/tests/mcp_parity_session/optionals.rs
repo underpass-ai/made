@@ -71,6 +71,15 @@ pub(super) async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: V
             &wire,
             &embedded,
             &arms.opaque_authorization_targets.lock().unwrap(),
+            &arms.artifact_authorizations.lock().unwrap(),
+        );
+    } else if matches!(tool, "made_get_artifact" | "made_list_artifacts") {
+        assert_artifact_fact_answer(
+            tool,
+            &wire,
+            &embedded,
+            &arms.opaque_authorization_targets.lock().unwrap(),
+            &mut arms.artifact_authorizations.lock().unwrap(),
         );
     } else {
         assert_same_answer(tool, &wire, &embedded);
