@@ -8,7 +8,9 @@ use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
 use crate::backend::ToolTraceContext;
-use crate::protocol::ToolError;
+use crate::protocol::{ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
+
+use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
 
 #[derive(Clone)]
 pub(super) struct EmbeddedToolAuthorizer {
@@ -61,12 +63,19 @@ impl EmbeddedToolAuthorizer {
         let scope = self
             .scope_for_tool(made, tool_name, action, arguments)
             .await?;
+        let target_digest = if tool_name == SEARCH_CEREMONY_INSTANCES_TOOL {
+            EmbeddedCeremonySearchRequest::try_from(arguments)
+                .map_err(ToolError::invalid_request)?
+                .authorization_target_digest()
+        } else {
+            ToolTraceContext::authorization_target_digest(tool_name, arguments)
+        };
         self.gate
             .authorize(
                 AuthorizationRequestId::new(trace.authorization_request_id())?,
                 action,
                 scope,
-                ToolTraceContext::authorization_target_digest(tool_name, arguments),
+                target_digest,
                 trace
                     .approval_decision_id()
                     .map(made_core::value_objects::AuthorizationDecisionId::new)

@@ -130,6 +130,7 @@ service MadeService {
   // working session whichever way it reached the engine.
   rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
   rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+  rpc SearchCeremonyInstances(SearchCeremonyInstancesRequest) returns (SearchCeremonyInstancesResponse);
 
   // Advance a ceremony one move at a time. RunCeremony above runs a
   // whole session in a single call, which is right for a ceremony that
@@ -1106,6 +1107,25 @@ message ListCeremonyInstancesRequest {}
 
 message ListCeremonyInstancesResponse {
   repeated CeremonyInstanceState instances = 1;
+}
+
+enum CeremonyLifecycleFilter {
+  CEREMONY_LIFECYCLE_FILTER_UNSPECIFIED = 0;
+  CEREMONY_LIFECYCLE_FILTER_RUNNING = 1;
+  CEREMONY_LIFECYCLE_FILTER_PAUSED = 2;
+  CEREMONY_LIFECYCLE_FILTER_ENDED = 3;
+}
+
+message SearchCeremonyInstancesRequest {
+  string cursor = 1;
+  uint32 limit = 2;
+  string id_prefix = 3;
+  CeremonyLifecycleFilter lifecycle = 4;
+}
+
+message SearchCeremonyInstancesResponse {
+  repeated CeremonyInstanceState instances = 1;
+  string next_cursor = 2;
 }
 
 message StartCeremonyRequest {

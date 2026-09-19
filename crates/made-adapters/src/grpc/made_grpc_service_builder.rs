@@ -9,6 +9,7 @@ use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
 use made_app::services::AutoDispatchService;
+use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
@@ -58,6 +59,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) run_ceremony: Option<Arc<RunCeremonyUseCase>>,
     pub(super) get_ceremony_instance: Option<Arc<GetCeremonyInstanceUseCase>>,
     pub(super) list_ceremony_instances: Option<Arc<ListCeremonyInstancesUseCase>>,
+    pub(super) search_ceremony_instances: Option<Arc<SearchCeremonyInstancesUseCase>>,
     pub(super) resolve_ceremony_definition: Option<Arc<ResolveCeremonyDefinitionUseCase>>,
     pub(super) start_ceremony: Option<Arc<StartCeremonyUseCase>>,
     pub(super) start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
@@ -187,6 +189,11 @@ impl MadeGrpcServiceBuilder {
         list_ceremony_instances,
         ListCeremonyInstancesUseCase,
         list_ceremony_instances
+    );
+    setter!(
+        search_ceremony_instances,
+        SearchCeremonyInstancesUseCase,
+        search_ceremony_instances
     );
     setter!(
         resolve_ceremony_definition,
@@ -460,6 +467,7 @@ impl MadeGrpcServiceBuilder {
             run_ceremony: required!(self, run_ceremony),
             get_ceremony_instance: required!(self, get_ceremony_instance),
             list_ceremony_instances: required!(self, list_ceremony_instances),
+            search_ceremony_instances: required!(self, search_ceremony_instances),
             resolve_ceremony_definition: required!(self, resolve_ceremony_definition),
             start_ceremony: required!(self, start_ceremony),
             start_published_ceremony: required!(self, start_published_ceremony),
