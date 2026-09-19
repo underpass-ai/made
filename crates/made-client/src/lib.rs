@@ -3,6 +3,7 @@
 mod actions;
 mod artifact_export;
 mod artifacts;
+mod authorization;
 mod budgets;
 mod ceremonies;
 mod ceremony_search_page;
