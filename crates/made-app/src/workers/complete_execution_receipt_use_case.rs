@@ -6,7 +6,9 @@ use made_core::error::DomainError;
 use made_core::ports::{ClockPort, ExecutionReceiptStorePort};
 use made_core::value_objects::{ExecutionReceiptLink, ExecutionReceiptLinkKind};
 
+use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::CompleteExecutionReceiptInput;
+use crate::artifacts::ArtifactService;
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 use crate::usecases::ResolveCeremonyDefinitionUseCase;
 
@@ -17,6 +19,7 @@ pub struct CompleteExecutionReceiptUseCase {
     receipts: Arc<dyn ExecutionReceiptStorePort>,
     clock: Arc<dyn ClockPort>,
     budgets: Option<crate::budgets::BudgetLedgerService>,
+    artifacts: Option<Arc<ArtifactService>>,
 }
 
 impl std::fmt::Debug for CompleteExecutionReceiptUseCase {
@@ -41,12 +44,19 @@ impl CompleteExecutionReceiptUseCase {
             receipts,
             clock,
             budgets: None,
+            artifacts: None,
         }
     }
 
     #[must_use]
     pub fn with_budget_ledger(mut self, budgets: crate::budgets::BudgetLedgerService) -> Self {
         self.budgets = Some(budgets);
+        self
+    }
+
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Arc<ArtifactService>) -> Self {
+        self.artifacts = Some(artifacts);
         self
     }
 
@@ -77,8 +87,9 @@ impl CompleteExecutionReceiptUseCase {
                 reason: "execution receipt does not belong to the requested ceremony step",
             });
         }
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
 
-        let link_kind = if receipt.producer_claim_fence() == &input.claim_fence {
+        let actual_link_kind = if receipt.producer_claim_fence() == &input.claim_fence {
             ExecutionReceiptLinkKind::Direct
         } else {
             if !receipt.recovery_capability().supports_automatic_recovery() {
@@ -88,12 +99,17 @@ impl CompleteExecutionReceiptUseCase {
             }
             ExecutionReceiptLinkKind::Adopted
         };
+        if actual_link_kind != input.link_kind {
+            return Err(DomainError::Conflict {
+                what: "execution_receipt_link_kind",
+            });
+        }
         let link = ExecutionReceiptLink::new(
             receipt.receipt_id().clone(),
             receipt.operation_id().clone(),
             receipt.producer_claim_fence().clone(),
             input.claim_fence.clone(),
-            link_kind,
+            actual_link_kind,
         )?;
         let session = self.stream.load(&input.ceremony_id).await?;
         if let Some(account_id) = session.instance.budget_account_id() {

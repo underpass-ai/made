@@ -57,9 +57,18 @@ SQLite service or automatic failover. Published definitions, sealed events,
 snapshots and session memory belong to this store.
 
 `persistence.postgres.enabled=true` selects Postgres-backed council,
-deliberation, agent and statistics repositories. It does not replace the
-SQLite ceremony store. Supply the DSN through `urlFromSecret`; migrations run
-at startup. Back up each configured store consistently before upgrading.
+deliberation, agent, statistics and shared artifact repositories. It does not
+replace the SQLite ceremony store. Artifact metadata and bounded chunks share
+the database transaction boundary, so replicas can resume the same upload.
+Supply the DSN through `urlFromSecret`; migrations run at startup.
+
+`persistence.artifacts.enabled=true` instead mounts the local artifact store
+and sets `MADE_ARTIFACT_STORE_PATH`. The chart restricts this mode to one
+replica and refuses combining it with Postgres. Back up its whole directory,
+including manifests and tombstones, and verify restore before depending on it.
+Backup and restore are host operations and are deliberately absent from the
+remote gRPC and MCP surfaces. Back up each configured store consistently
+before upgrading.
 
 ## Transport and access
 

@@ -21,6 +21,15 @@ event. Upgrade every writer before enabling lifecycle controls, and do not use
 an older binary as a rollback writer. See the [snapshot v2 compatibility
 barrier](snapshots-v2.md) for the exact reader matrix and recovery procedure.
 
+## Unreleased durable councils
+
+Configured local stores now retain councils, agent descriptors, contracts,
+deliberations, statistics and their independent journal/cursors. PostgreSQL
+adds the journal and contract tables without rewriting existing council data.
+Legacy imports record one snapshot provenance fact instead of inventing past
+phase events. See [council durability and migration](councils-durable.md) for
+export/import validation, provider credential handling and consumer recovery.
+
 ## Unreleased classified failures
 
 The Unreleased writer retains a typed handler `NoValidProposal` in the

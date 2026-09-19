@@ -49,8 +49,8 @@ impl RegisterAgentUseCase {
         let kind = descriptor.kind.clone();
         let specialty = descriptor.specialty.clone();
 
-        let agent = self.factory.create(descriptor).await?;
-        self.registry.register(agent).await?;
+        let agent = self.factory.create(descriptor.clone()).await?;
+        self.registry.register_described(descriptor, agent).await?;
 
         info!(
             agent_id = id.as_str(),

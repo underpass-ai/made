@@ -40,6 +40,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod artifacts;
 pub mod ceremony;
 mod ceremony_event_wire;
 pub mod clock;
@@ -87,3 +88,16 @@ pub(crate) mod engine;
 pub mod sqlite;
 
 pub mod agents;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod persisted_agent_descriptor;
+
+pub mod council_journal_messaging;
+
+mod stored_council_cursor;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+pub mod council_data_snapshot;
+
+#[cfg(any(feature = "sqlite", feature = "postgres"))]
+mod council_snapshot_validation;
