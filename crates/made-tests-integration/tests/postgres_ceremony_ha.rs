@@ -7,21 +7,30 @@ use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
 
-use made_adapters::postgres::{PostgresCeremonyStore, PostgresConfig, PostgresPool};
+use made_adapters::postgres::{
+    PostgresArtifactStore, PostgresCeremonyStore, PostgresConfig, PostgresPool,
+};
 use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{AuditFact, CeremonyEvent};
+use made_core::entities::{AuditFact, BudgetLedger, BudgetLedgerEvent, CeremonyEvent};
 use made_core::ports::{
-    AppendOutcome, CeremonyEventCursorPort, CeremonyEventStorePort, ExecutionReceiptStorePort,
+    AppendOutcome, ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey,
+    ArtifactStorePort, BeginArtifactUpload, CeremonyEventCursorPort, CeremonyEventStorePort,
+    ExecutionReceiptStorePort, PutArtifactChunk, ReadArtifactChunk,
 };
 use made_core::value_objects::{
-    ArtifactSourceKind, AuditActor, AuditActorKind, CeremonyEventConsumer, CeremonyEventPageLimit,
-    CeremonyId, CeremonyName, CeremonyVersion, EventId, ExecutionConnectorId, ExecutionIntent,
-    ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability, ExecutionRequestBytes,
-    GlobalPosition, StateId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
-    StepOutput, StepResult, StreamVersion,
+    ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes, ArtifactSourceKind,
+    AuditActor, AuditActorKind, BudgetAccountId, BudgetLedgerVersion, BudgetLimits,
+    BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
+    BudgetReservationEstimate, BudgetTokenCount, CeremonyEventConsumer, CeremonyEventPageLimit,
+    CeremonyId, CeremonyName, CeremonyVersion, CostMicros, EventId, ExecutionConnectorId,
+    ExecutionDuration, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
+    ExecutionRecoveryCapability, ExecutionRequestBytes, GlobalPosition, StateId, StateIteration,
+    StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult, StreamVersion,
+    ToolCallCount,
 };
 use made_core::DomainError;
 use made_tests_integration::postgres_fixture;
+use sha2::{Digest, Sha256};
 use sqlx::postgres::PgPoolOptions;
 use testcontainers::core::{CmdWaitFor, ExecCommand};
 use time::OffsetDateTime;
@@ -35,6 +44,18 @@ const URL: &str = "MADE_HA_POSTGRES_URL";
 const RESULT: &str = "MADE_HA_RESULT_PATH";
 const SUFFIX: &str = "MADE_HA_SUFFIX";
 const BLOCK_KEY: i64 = 19_091_905;
+const ARTIFACT_BYTES: &[u8] = b"ha export artifact";
+
+struct RestoreFixture {
+    stream: CeremonyId,
+    operation: ExecutionOperation,
+    receipt: ExecutionReceipt,
+    artifact: made_core::value_objects::ArtifactRef,
+    account: BudgetAccountId,
+    budget: made_core::ports::BudgetLedgerSnapshot,
+    pending: made_core::ports::BudgetReservationPage,
+    records: Vec<made_core::entities::AuditRecord>,
+}
 
 #[tokio::test]
 async fn three_process_replicas_fence_append_and_claim() {
@@ -186,34 +207,11 @@ async fn rolling_process_restarts_replay_the_journal_without_a_nats_notice() {
 }
 
 #[tokio::test]
-async fn pg_dump_restore_preserves_journal_hashes_and_receipts() {
+async fn pg_dump_restore_preserves_journal_receipts_artifacts_and_budgets() {
     let (pool, url, container) = postgres_fixture::start_with_url().await;
-    let store = PostgresCeremonyStore::new(pool);
-    let stream = CeremonyId::new("ha-export").unwrap();
-    store
-        .append(
-            &stream,
-            StreamVersion::EMPTY,
-            vec![fact(&stream, "exported")],
-        )
-        .await
-        .unwrap();
-    let operation = operation("ha-export");
-    let producer = fence('7');
-    store
-        .record_intent(intent(operation.clone(), producer.clone()))
-        .await
-        .unwrap();
-    let receipt = receipt(&operation, producer);
-    store.record_receipt(receipt.clone()).await.unwrap();
-    let original = store
-        .read(
-            &stream,
-            StreamVersion::EMPTY,
-            CeremonyEventPageLimit::DEFAULT,
-        )
-        .await
-        .unwrap();
+    let store = PostgresCeremonyStore::new(pool.clone());
+    let artifact_store = PostgresArtifactStore::new(pool);
+    let fixture = seed_restore_fixture(&store, &artifact_store).await;
 
     exec_ok(
         &container,
@@ -251,21 +249,180 @@ async fn pg_dump_restore_preserves_journal_hashes_and_receipts() {
     let restored_pool = PostgresPool::connect(&PostgresConfig::from_url(restore_url))
         .await
         .unwrap();
-    let restored = PostgresCeremonyStore::new(restored_pool);
+    let restored = PostgresCeremonyStore::new(restored_pool.clone());
+    let restored_artifacts = PostgresArtifactStore::new(restored_pool);
+    assert_restored(&restored, &restored_artifacts, &fixture).await;
+}
+
+async fn seed_restore_fixture(
+    store: &PostgresCeremonyStore,
+    artifact_store: &PostgresArtifactStore,
+) -> RestoreFixture {
+    let stream = CeremonyId::new("ha-export").unwrap();
+    store
+        .append(
+            &stream,
+            StreamVersion::EMPTY,
+            vec![fact(&stream, "exported")],
+        )
+        .await
+        .unwrap();
+    let operation = operation("ha-export");
+    let producer = fence('7');
+    store
+        .record_intent(intent(operation.clone(), producer.clone()))
+        .await
+        .unwrap();
+    let receipt = receipt(&operation, producer);
+    store.record_receipt(receipt.clone()).await.unwrap();
+    let artifact = seed_artifact(artifact_store).await;
+    let account = BudgetAccountId::new("ha-export-budget").unwrap();
+    let opened = budget_opened(account.clone());
+    made_core::ports::BudgetLedgerStorePort::append(
+        store,
+        &account,
+        BudgetLedgerVersion::EMPTY,
+        vec![opened.clone()],
+    )
+    .await
+    .unwrap();
+    let reserved = BudgetLedger::rehydrate(&[opened])
+        .unwrap()
+        .decide_reserve(
+            BudgetOperationId::for_execution(operation.operation_id()),
+            BudgetReservationEstimate::new(
+                BudgetMeasurement::Unknown,
+                BudgetMeasurement::Estimated(BudgetTokenCount::new(3)),
+                BudgetMeasurement::Unknown,
+                BudgetMeasurement::Unknown,
+            ),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+        .unwrap();
+    made_core::ports::BudgetLedgerStorePort::append(
+        store,
+        &account,
+        BudgetLedgerVersion::new(1),
+        vec![reserved],
+    )
+    .await
+    .unwrap();
+    let budget = made_core::ports::BudgetLedgerStorePort::load(store, &account)
+        .await
+        .unwrap()
+        .unwrap();
+    let pending = made_core::ports::BudgetLedgerStorePort::pending(
+        store,
+        None,
+        BudgetPageLimit::new(10).unwrap(),
+    )
+    .await
+    .unwrap();
+    let records = store
+        .read(
+            &stream,
+            StreamVersion::EMPTY,
+            CeremonyEventPageLimit::DEFAULT,
+        )
+        .await
+        .unwrap();
+    RestoreFixture {
+        stream,
+        operation,
+        receipt,
+        artifact,
+        account,
+        budget,
+        pending,
+        records,
+    }
+}
+
+async fn seed_artifact(
+    artifact_store: &PostgresArtifactStore,
+) -> made_core::value_objects::ArtifactRef {
+    let upload = artifact_store
+        .begin_upload(BeginArtifactUpload {
+            requested_artifact_id: None,
+            expected_digest: artifact_digest(ARTIFACT_BYTES),
+            size_bytes: ArtifactSizeBytes::new(ARTIFACT_BYTES.len() as u64),
+            media_type: ArtifactMediaType::new("application/octet-stream").unwrap(),
+            provenance: ArtifactProvenance::generated_report(OffsetDateTime::UNIX_EPOCH),
+            idempotency_key: ArtifactIdempotencyKey::new("ha-export-artifact").unwrap(),
+        })
+        .await
+        .unwrap();
+    artifact_store
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            bytes: ARTIFACT_BYTES.to_vec(),
+            chunk_digest: artifact_digest(ARTIFACT_BYTES),
+        })
+        .await
+        .unwrap();
+    artifact_store
+        .commit_upload(&upload.upload_id)
+        .await
+        .unwrap()
+}
+
+async fn assert_restored(
+    restored: &PostgresCeremonyStore,
+    restored_artifacts: &PostgresArtifactStore,
+    fixture: &RestoreFixture,
+) {
     assert_eq!(
         restored
             .read(
-                &stream,
+                &fixture.stream,
                 StreamVersion::EMPTY,
                 CeremonyEventPageLimit::DEFAULT
             )
             .await
             .unwrap(),
-        original
+        fixture.records.clone()
     );
     assert_eq!(
-        restored.receipt(operation.operation_id()).await.unwrap(),
-        Some(receipt)
+        restored
+            .receipt(fixture.operation.operation_id())
+            .await
+            .unwrap(),
+        Some(fixture.receipt.clone())
+    );
+    assert_eq!(
+        restored_artifacts
+            .get(fixture.artifact.artifact_id())
+            .await
+            .unwrap()
+            .artifact,
+        fixture.artifact.clone()
+    );
+    let restored_bytes = restored_artifacts
+        .read_chunk(ReadArtifactChunk {
+            artifact_id: fixture.artifact.artifact_id().clone(),
+            offset: ArtifactByteOffset::ZERO,
+            max_bytes: ArtifactChunkLimit::new(1024).unwrap(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(restored_bytes.bytes, ARTIFACT_BYTES);
+    assert_eq!(
+        made_core::ports::BudgetLedgerStorePort::load(restored, &fixture.account)
+            .await
+            .unwrap(),
+        Some(fixture.budget.clone())
+    );
+    assert_eq!(
+        made_core::ports::BudgetLedgerStorePort::pending(
+            restored,
+            None,
+            BudgetPageLimit::new(10).unwrap(),
+        )
+        .await
+        .unwrap(),
+        fixture.pending.clone()
     );
 }
 
@@ -557,6 +714,27 @@ fn operation(ceremony: &str) -> ExecutionOperation {
         StepIteration::FIRST,
         ExecutionRequestBytes::new(b"ha request".to_vec()).unwrap(),
     )
+}
+
+fn artifact_digest(bytes: &[u8]) -> ArtifactDigest {
+    ArtifactDigest::new(format!("sha256:{:x}", Sha256::digest(bytes))).unwrap()
+}
+
+fn budget_opened(account_id: BudgetAccountId) -> BudgetLedgerEvent {
+    BudgetLedgerEvent::Opened {
+        account_id,
+        limits: BudgetLimits::new(
+            BudgetQuantities::new(
+                ExecutionDuration::from_micros(0),
+                BudgetTokenCount::new(100),
+                CostMicros::new(0),
+                ToolCallCount::new(0),
+            ),
+            None,
+        )
+        .unwrap(),
+        opened_at: OffsetDateTime::UNIX_EPOCH,
+    }
 }
 
 fn fence(digit: char) -> StepClaimFence {
