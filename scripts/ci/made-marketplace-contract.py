@@ -177,6 +177,16 @@ def verify(require_release_tag: bool = False) -> str:
     for relative in required:
         if not (ROOT / relative).is_file():
             fail(f"missing {relative}")
+    artwork = subprocess.run(
+        [sys.executable, "scripts/ci/plugin-bundle-assets.py", "plugins/made"],
+        cwd=ROOT,
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        check=False,
+    )
+    if artwork.returncode != 0:
+        fail(f"plugin artwork contract failed:\n{artwork.stdout}")
     setup_index_entry = git_output("ls-files", "-s", "--", required[0])
     if not setup_index_entry or not setup_index_entry.startswith("100755 "):
         fail("POSIX setup adapter must be tracked as executable")
@@ -247,6 +257,7 @@ def self_test() -> None:
     for script in (
         "scripts/ci/publish-crates.sh",
         "scripts/release/advance-marketplace.sh",
+        "tests/plugin/package-made-plugin-assets.sh",
     ):
         result = subprocess.run(
             [bash, script, "--self-test"],
