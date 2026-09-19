@@ -36,6 +36,7 @@ use crate::protocol::{
 pub struct MadeMcpServer {
     backend: Arc<dyn MadeMcpToolBackend>,
     identity: McpServerIdentity,
+    process_session_namespace: String,
 }
 
 impl Default for MadeMcpServer {
@@ -125,6 +126,7 @@ impl MadeMcpServer {
         Self {
             backend: Arc::new(backend),
             identity: McpServerIdentity::default(),
+            process_session_namespace: uuid::Uuid::new_v4().simple().to_string(),
         }
     }
 
@@ -275,7 +277,7 @@ impl MadeMcpServer {
                     .and_then(|meta| meta.get("traceparent"))
                     .and_then(Value::as_str)
             });
-        let trace = ToolTraceContext::from_metadata(supplied_traceparent);
+        let supplied_request_namespace = request_namespace(params, received);
         let start = Instant::now();
 
         // Two things happen to a call before a backend sees it, and
@@ -301,6 +303,19 @@ impl MadeMcpServer {
         // What is recorded is what ran; a call that never ran is
         // recorded as the client wrote it.
         let arguments = accepted.as_ref().unwrap_or(received);
+        let trace = match ToolTraceContext::for_invocation(
+            supplied_traceparent,
+            &self.process_session_namespace,
+            &id,
+            name,
+            arguments,
+            supplied_request_namespace,
+        ) {
+            Ok(trace) => trace,
+            Err(error) => {
+                return jsonrpc_result(id, tool_error_result(&ToolError::invalid_request(error)));
+            }
+        };
         // The two server-owned tools answer about this process and
         // reach no engine, so the only way either can fail is the call
         // itself: an unknown field, a missing one, an audience that is
@@ -393,6 +408,24 @@ where
     ) -> MadeMcpToolFuture<'a> {
         self.as_ref().call_tool_with_trace(name, arguments, trace)
     }
+}
+
+fn request_namespace<'a>(
+    params: &'a serde_json::Map<String, Value>,
+    arguments: &'a Value,
+) -> Option<&'a str> {
+    params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .and_then(|meta| meta.get("made_request_id"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            arguments
+                .get("_meta")
+                .and_then(Value::as_object)
+                .and_then(|meta| meta.get("made_request_id"))
+                .and_then(Value::as_str)
+        })
 }
 
 fn default_backend_name() -> &'static str {

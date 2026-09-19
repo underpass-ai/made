@@ -70,7 +70,7 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
 
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
-            let trace = ToolTraceContext::from_metadata(None);
+            let trace = ToolTraceContext::for_direct_call(name, arguments);
             self.call_tool_with_trace(name, arguments, &trace).await
         })
     }
@@ -91,7 +91,14 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
             // A channel that will not open is the engine out of
             // reach, not the engine refusing: waiting is the remedy.
             let channel = self.channel().await.map_err(ToolError::unavailable)?;
-            let structured = tools::dispatch(channel, name, arguments, trace.traceparent()).await?;
+            let structured = tools::dispatch(
+                channel,
+                name,
+                arguments,
+                trace.traceparent(),
+                trace.authorization_request_id(),
+            )
+            .await?;
             Ok(crate::protocol::tool_success_result(structured))
         })
     }
