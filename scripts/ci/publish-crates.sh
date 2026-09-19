@@ -55,14 +55,15 @@ import json
 import sys
 
 version = sys.argv[1]
+found = False
 for line in sys.stdin:
     try:
         entry = json.loads(line)
     except json.JSONDecodeError:
         continue
     if entry.get("vers") == version:
-        raise SystemExit(0)
-raise SystemExit(1)
+        found = True
+raise SystemExit(0 if found else 1)
 ' "${version}"
 }
 
@@ -80,6 +81,14 @@ if [[ "${1:-}" == "--self-test" ]]; then
   [[ "$(crate_index_path made-core)" == "ma/de/made-core" ]]
   printf '%s\n' '{"name":"made-core","vers":"0.7.0-rc.1"}' \
     | index_body_has_version 0.7.0-rc.1
+  {
+    printf '%s\n' '{"name":"made-core","vers":"0.7.0-rc.1"}'
+    python3 - <<'PY'
+import json
+for patch in range(20_000):
+    print(json.dumps({"name": "made-core", "vers": f"0.6.{patch}"}))
+PY
+  } | index_body_has_version 0.7.0-rc.1
   if printf '%s\n' '{"name":"made-core","vers":"0.7.0"}' \
     | index_body_has_version 0.7.0-rc.1; then
     echo "publish crates self-test accepted the wrong sparse-index version" >&2

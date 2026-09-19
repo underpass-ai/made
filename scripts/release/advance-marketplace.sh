@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-VERSION="${1:?usage: advance-marketplace.sh SEMVER}"
+VERSION="${1:?usage: advance-marketplace.sh SEMVER|--self-test}"
 TAG="v${VERSION}"
 WAIT_SECONDS="${MADE_RELEASE_POLL_SECONDS:-15}"
 WAIT_ATTEMPTS="${MADE_RELEASE_POLL_ATTEMPTS:-180}"
@@ -10,23 +10,6 @@ EXPECTED_PRERELEASE=false
 if [[ "${VERSION}" == *-* ]]; then
   EXPECTED_PRERELEASE=true
 fi
-
-cd "${ROOT_DIR}"
-command -v gh >/dev/null 2>&1 || {
-  echo "error: gh is required to verify public release assets" >&2
-  exit 127
-}
-for command in curl docker helm; do
-  command -v "${command}" >/dev/null 2>&1 || {
-    echo "error: ${command} is required to verify the complete public release" >&2
-    exit 127
-  }
-done
-
-SCRATCH="$(mktemp -d)"
-trap 'rm -rf "${SCRATCH}"' EXIT
-python3 scripts/ci/made-marketplace-contract.py --require-release-tag --print-assets \
-  >"${SCRATCH}/expected.txt"
 
 CRATES=(
   made-core made-api made-proto made-client made-console made-app
@@ -50,24 +33,65 @@ crate_index_path() {
   esac
 }
 
-crate_is_public() {
-  local crate="$1"
-  curl -fsS -H 'Cache-Control: no-cache' \
-    "https://index.crates.io/$(crate_index_path "${crate}")" 2>/dev/null \
-    | python3 -c '
+index_body_has_version() {
+  local version="$1"
+  python3 -c '
 import json
 import sys
 
 version = sys.argv[1]
+found = False
 for line in sys.stdin:
     try:
         if json.loads(line).get("vers") == version:
-            raise SystemExit(0)
+            found = True
     except json.JSONDecodeError:
         pass
-raise SystemExit(1)
-' "${VERSION}"
+raise SystemExit(0 if found else 1)
+' "${version}"
 }
+
+crate_is_public() {
+  local crate="$1"
+  curl -fsS -H 'Cache-Control: no-cache' \
+    "https://index.crates.io/$(crate_index_path "${crate}")" 2>/dev/null \
+    | index_body_has_version "${VERSION}"
+}
+
+if [[ "${VERSION}" == "--self-test" ]]; then
+  {
+    printf '%s\n' '{"name":"made-core","vers":"0.7.0-rc.1"}'
+    python3 - <<'PY'
+import json
+for patch in range(20_000):
+    print(json.dumps({"name": "made-core", "vers": f"0.6.{patch}"}))
+PY
+  } | index_body_has_version 0.7.0-rc.1
+  if printf '%s\n' '{"name":"made-core","vers":"0.7.0"}' \
+    | index_body_has_version 0.7.0-rc.1; then
+    echo "marketplace self-test accepted the wrong sparse-index version" >&2
+    exit 1
+  fi
+  echo "marketplace self-test passed: index input is drained and versions are exact"
+  exit 0
+fi
+
+cd "${ROOT_DIR}"
+command -v gh >/dev/null 2>&1 || {
+  echo "error: gh is required to verify public release assets" >&2
+  exit 127
+}
+for command in curl docker helm; do
+  command -v "${command}" >/dev/null 2>&1 || {
+    echo "error: ${command} is required to verify the complete public release" >&2
+    exit 127
+  }
+done
+
+SCRATCH="$(mktemp -d)"
+trap 'rm -rf "${SCRATCH}"' EXIT
+python3 scripts/ci/made-marketplace-contract.py --require-release-tag --print-assets \
+  >"${SCRATCH}/expected.txt"
 
 manifest_digest() {
   docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' 2>/dev/null \

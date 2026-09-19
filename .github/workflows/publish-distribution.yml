@@ -336,25 +336,38 @@ jobs:
           target_tag="${IMAGE}:${RELEASE_REF}"
           bash scripts/ci/verify-commit-image.sh "${GITHUB_SHA}" "${source_tag}"
 
-          manifest_digest() {
-            docker buildx imagetools inspect "$1" --format '{{json .Manifest}}' \
-              | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])'
-          }
+          # verify-commit-image just pulled this exact source and checked its
+          # full revision label. Reuse that local RepoDigest so a later move of
+          # the sha-* locator cannot change what is promoted.
+          source_ref="$(docker image inspect --format '{{ index .RepoDigests 0 }}' "${source_tag}")"
+          source_digest="${source_ref##*@}"
 
-          source_digest="$(manifest_digest "${source_tag}")"
-          source_ref="${IMAGE}@${source_digest}"
-          if target_digest="$(manifest_digest "${target_tag}" 2>/dev/null)"; then
+          set +e
+          target_probe="$(docker buildx imagetools inspect "${target_tag}" \
+            --format '{{json .Manifest}}' 2>&1)"
+          target_status=$?
+          set -e
+          if [[ ${target_status} -eq 0 ]]; then
+            target_digest="$(python3 -c \
+              'import json,sys; print(json.load(sys.stdin)["digest"])' \
+              <<<"${target_probe}")"
             if [[ "${target_digest}" != "${source_digest}" ]]; then
               echo "error: immutable ${target_tag} already points at ${target_digest}" >&2
               echo "expected verified commit digest ${source_digest}" >&2
               exit 1
             fi
             echo "${target_tag} already promotes ${source_ref}"
-          else
+          elif grep -Eqi 'not found|manifest unknown|404' <<<"${target_probe}"; then
             docker buildx imagetools create --tag "${target_tag}" "${source_ref}"
+          else
+            echo "${target_probe}" >&2
+            echo "error: target registry probe failed; refusing to infer absence" >&2
+            exit 1
           fi
 
-          promoted_digest="$(manifest_digest "${target_tag}")"
+          promoted_digest="$(docker buildx imagetools inspect "${target_tag}" \
+            --format '{{json .Manifest}}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')"
           if [[ "${promoted_digest}" != "${source_digest}" ]]; then
             echo "error: promoted digest ${promoted_digest} differs from ${source_digest}" >&2
             exit 1

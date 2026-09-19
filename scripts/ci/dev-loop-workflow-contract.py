@@ -705,6 +705,11 @@ def validate(sources: dict[str, str]) -> list[str]:
         for proof in (
             'source_tag="${IMAGE}:sha-${GITHUB_SHA:0:7}"',
             'target_tag="${IMAGE}:${RELEASE_REF}"',
+            "source_ref=\"$(docker image inspect --format "
+            "'{{ index .RepoDigests 0 }}' \"${source_tag}\")\"",
+            "target_status=$?",
+            "elif grep -Eqi 'not found|manifest unknown|404'",
+            "error: target registry probe failed; refusing to infer absence",
             'docker buildx imagetools create --tag "${target_tag}" "${source_ref}"',
             'if [[ "${promoted_digest}" != "${source_digest}" ]]',
         ):
@@ -990,6 +995,17 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         PUBLISH_DISTRIBUTION,
         'if [[ "${promoted_digest}" != "${source_digest}" ]]; then',
         'if [[ "${promoted_digest}" == "never" ]]; then',
+    ),
+    "release promotion re-reads its source from a mutable tag": (
+        PUBLISH_DISTRIBUTION,
+        "source_ref=\"$(docker image inspect --format "
+        "'{{ index .RepoDigests 0 }}' \"${source_tag}\")\"",
+        "source_ref=\"$(docker buildx imagetools inspect \"${source_tag}\")\"",
+    ),
+    "release promotion treats registry errors as absence": (
+        PUBLISH_DISTRIBUTION,
+        "elif grep -Eqi 'not found|manifest unknown|404' <<<\"${target_probe}\"; then",
+        "else",
     ),
     "plugin assets become clobberable": (
         PLUGIN_PACKAGE,
