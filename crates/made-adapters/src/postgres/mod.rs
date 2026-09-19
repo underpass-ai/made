@@ -17,6 +17,7 @@ mod budget_ledger_store;
 mod ceremony_definition_publication;
 mod ceremony_event_cursor;
 mod ceremony_event_store;
+mod ceremony_instance_index;
 mod ceremony_snapshot_store;
 mod ceremony_store;
 mod council_registry;

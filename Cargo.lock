@@ -2065,6 +2065,7 @@ dependencies = [
  "base64 0.22.1",
  "criterion",
  "futures",
+ "hmac",
  "made-core",
  "mockall",
  "opentelemetry",

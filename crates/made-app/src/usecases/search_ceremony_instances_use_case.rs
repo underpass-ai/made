@@ -173,7 +173,11 @@ mod tests {
             store.save(&instance).await.unwrap();
             ids.push(id);
         }
-        let cursors = CeremonySearchCursorCodec::new([9; 32]);
+        let cursors = CeremonySearchCursorCodec::new(
+            crate::usecases::CeremonySearchCursorKey::new([9; 32]),
+            crate::usecases::CeremonySearchCursorNamespace::new("test-store", "test-policy")
+                .unwrap(),
+        );
         let usecase = SearchCeremonyInstancesUseCase::new(
             Arc::new(IndexFake { ids }),
             stream(store),
