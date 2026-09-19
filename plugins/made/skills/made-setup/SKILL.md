@@ -80,3 +80,20 @@ infer a host identity, or fall back to an unprotected store. The trusted host
 owner administers authorization. Business actions need explicit grants issued
 through `IssueAuthorizationGrant`; setup must not give the owner implicit
 business permissions or wildcard scopes.
+
+Search also requires persistent cursor configuration in that same MCP launch
+environment. Set `MADE_CEREMONY_STORE_ID` to a stable, non-secret identifier for
+this store and policy. Set `MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` to exactly 32
+cryptographically random bytes encoded as 64 hexadecimal characters. Generate
+the key once, write it directly to the host's private launch configuration,
+and restrict that configuration to its owner. Do not print the key, put it in
+a transcript, commit it, or include it in an installation receipt.
+
+Preserve both values across restarts and package updates. Replicas of the same
+store share the key and store id; separate stores use different identities.
+Losing or deliberately rotating the key invalidates existing search cursors,
+which must then restart from the first page. Do not silently generate a new key
+each time the launcher runs. Report only whether these values are configured,
+then verify discovery and a paginated search with the appropriate explicit
+business grant. Keep native host reload verification separate from a launcher
+started by a shell test.

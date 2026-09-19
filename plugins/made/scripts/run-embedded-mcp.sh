@@ -83,4 +83,11 @@ if [[ -z "${MADE_AUTH_POLICY_ID:-}" || -z "${MADE_AUTH_TRUSTED_HOST_ID:-}" ]]; t
   exit 2
 fi
 
+if [[ -z "${MADE_CEREMONY_STORE_ID:-}" || -z "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" ]]; then
+  echo "MADE plugin: persistent search cursor configuration is missing." >&2
+  echo "MADE plugin: set MADE_CEREMONY_STORE_ID and MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment." >&2
+  echo "MADE plugin: preserve the store id and 32-byte hexadecimal key across restarts and updates; run made-setup for instructions." >&2
+  exit 2
+fi
+
 exec "${BINARY}"

@@ -10,7 +10,8 @@ RESTART_RECOVERY_FIXTURE="${ROOT_DIR}/tests/plugin/made-restart-recovery.jsonl"
 # One state file per run, outside the operator's real state directory: a
 # smoke that inherited the launcher's default would read whatever a
 # previous run or a developer's own Codex session left behind.
-SMOKE_STATE_DIR="$(mktemp -d)"
+mkdir -p "${ROOT_DIR}/tmp"
+SMOKE_STATE_DIR="$(mktemp -d "${ROOT_DIR}/tmp/plugin-smoke.XXXXXX")"
 trap 'rm -rf "${SMOKE_STATE_DIR}"' EXIT
 if command -v cygpath >/dev/null 2>&1; then
   # Native Windows binary: it cannot open an MSYS path.
@@ -40,6 +41,22 @@ if codex != claude:
 EOF
 
 bash scripts/plugin/build-local-made-plugin.sh
+
+CI_BINARY="${PLUGIN_DIR}/bin/made-mcp"
+[[ -x "${CI_BINARY}" ]] || CI_BINARY="${CI_BINARY}.exe"
+source "${ROOT_DIR}/tests/plugin/setup-authorization.sh" "${CI_BINARY}"
+"${PLUGIN_DIR}/scripts/run-embedded-mcp.sh" \
+  <"${ROOT_DIR}/tests/plugin/made-smoke-authorization.jsonl" \
+  >"${SMOKE_STATE_DIR}/authorization.jsonl"
+python3 - "${SMOKE_STATE_DIR}/authorization.jsonl" <<'PY'
+import json
+import pathlib
+import sys
+
+response = json.loads(pathlib.Path(sys.argv[1]).read_text())
+assert not response.get("error"), response
+assert not response["result"].get("isError"), response
+PY
 
 # A legacy default must stop the SQLite-only launcher before it creates a
 # second live store. The message is the supported, release-pinned migration
