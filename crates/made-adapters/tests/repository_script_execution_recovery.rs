@@ -55,6 +55,21 @@ with effect.open("rb") as stored: os.fsync(stored.fileno())
 os._exit(17)
 "#;
 
+const CANCELLATION_SCRIPT: &str = r#"#!/usr/bin/env python3
+import pathlib, subprocess, sys, time
+repository = pathlib.Path(__file__).parent
+marker = repository / "descendant-survived-cancellation"
+child = subprocess.Popen([
+    sys.executable,
+    "-c",
+    "import pathlib, sys, time; time.sleep(0.5); pathlib.Path(sys.argv[1]).write_text('survived')",
+    str(marker),
+])
+(repository / "descendant.pid").write_text(str(child.pid))
+while True:
+    time.sleep(1)
+"#;
+
 fn request() -> CeremonyExecutionRequest {
     let handler = CeremonyStepHandlerRequest::new(
         CeremonyId::new("script-recovery").unwrap(),
@@ -189,5 +204,34 @@ async fn crash_after_effect_stays_ambiguous_and_is_never_reinvoked() {
             .lines()
             .count(),
         1
+    );
+}
+
+#[tokio::test]
+async fn cancellation_kills_and_reaps_the_owned_process_group() {
+    let repository = scratch();
+    let operation_root = scratch();
+    write_script(repository.path(), CANCELLATION_SCRIPT);
+    let connector = connector(repository.path(), operation_root.path());
+    let request = request();
+    let descendant_pid = repository.path().join("descendant.pid");
+    let survived_marker = repository.path().join("descendant-survived-cancellation");
+
+    let execution = tokio::spawn(async move { connector.execute_or_recover(request).await });
+    for _ in 0..100 {
+        if descendant_pid.is_file() {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert!(descendant_pid.is_file(), "descendant did not start");
+
+    execution.abort();
+    let _ = execution.await;
+    tokio::time::sleep(Duration::from_millis(700)).await;
+
+    assert!(
+        !survived_marker.exists(),
+        "descendant process survived cancellation"
     );
 }
