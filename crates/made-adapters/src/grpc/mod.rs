@@ -22,4 +22,4 @@ pub(crate) mod tracecontext;
 
 pub use made_grpc_service_builder::MadeGrpcServiceBuilder;
 pub use service::MadeGrpcService;
-pub use status::domain_error_to_status;
+pub use status::{budget_error_to_status, domain_error_to_status};

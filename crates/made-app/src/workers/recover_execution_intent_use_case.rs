@@ -6,13 +6,16 @@ use made_core::ports::{
 };
 use made_core::value_objects::{ExecutionIntent, ExecutionRecoveryCapability};
 
+use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
 use super::RecoverExecutionIntentOutcome;
+use crate::artifacts::ArtifactService;
 
 /// Recover one persisted intent without relying on process-local request state.
 pub struct RecoverExecutionIntentUseCase {
     store: Arc<dyn ExecutionReceiptStorePort>,
     connector: Arc<dyn CeremonyExecutionConnectorPort>,
+    artifacts: Option<Arc<ArtifactService>>,
 }
 
 impl std::fmt::Debug for RecoverExecutionIntentUseCase {
@@ -30,7 +33,17 @@ impl RecoverExecutionIntentUseCase {
         store: Arc<dyn ExecutionReceiptStorePort>,
         connector: Arc<dyn CeremonyExecutionConnectorPort>,
     ) -> Self {
-        Self { store, connector }
+        Self {
+            store,
+            connector,
+            artifacts: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Arc<ArtifactService>) -> Self {
+        self.artifacts = Some(artifacts);
+        self
     }
 
     pub async fn execute(
@@ -42,6 +55,7 @@ impl RecoverExecutionIntentUseCase {
             .receipt(intent.operation().operation_id())
             .await?
         {
+            verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
             return Ok(RecoverExecutionIntentOutcome::Receipt(Box::new(receipt)));
         }
         if intent.connector_id() != self.connector.connector_id()
@@ -72,6 +86,7 @@ impl RecoverExecutionIntentUseCase {
             observation,
         )
         .await?;
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
         self.store.record_receipt(receipt.clone()).await?;
         Ok(RecoverExecutionIntentOutcome::Receipt(Box::new(receipt)))
     }

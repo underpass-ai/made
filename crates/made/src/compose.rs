@@ -3,174 +3,85 @@
 use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
-    CeremonyTracingSubscriber, DeliberatingCeremonyStepHandler,
-};
+use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::EnvConfiguration;
-use made_adapters::memory::{InMemoryCeremonyDefinitionRepository, InMemoryContractRegistry};
+use made_adapters::memory::InMemoryCeremonyDefinitionRepository;
 use made_adapters::metrics::PrometheusMetricsRecorder;
-use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor};
-use made_adapters::postgres::PostgresPool;
 use made_adapters::progress::CeremonyProgressNotifier;
-use made_adapters::runtime::{ExecutorBackendConfig, RuntimeExecutor};
-use made_adapters::scoring::{JudgeAwareScoring, UniformScoring};
-use made_adapters::validators::{
-    AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
-    ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
-    JsonSchemaValidator, RequiredFieldsValidator,
-};
-use made_app::services::{
-    AutoDispatchService, CeremonyEventFanout, CeremonyEventPublisherSubscriber,
-    SessionMemoryRecorder, SessionStream,
-};
+
+use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
-    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PrepareCeremonyChildrenUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
-    PublishCeremonyEventsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
-    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
-    VerifyCeremonyJournalUseCase,
+    AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
+    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
+    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
+    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    UnregisterAgentUseCase,
 };
-use made_core::error::DomainError;
 use made_core::ports::{
-    AgentFactoryPort, AgentRegistryPort, AgentResolverPort, CeremonyDefinitionRepositoryPort,
-    CeremonyEventSubscriberPort, CeremonyStepHandlerPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MetricsRecorderPort,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
 };
 use tracing::info;
 
 use crate::{Application, ComposeError};
 
-use messaging::{wire_messaging, MessagingWiring};
-
 use ceremony_lifecycle::CeremonyLifecycleControls;
 use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
+use messaging::{wire_messaging, MessagingWiring};
 use persistence::wire_persistence;
+use persistence_handles::Persistence;
 
+mod artifact_storage;
+mod budget_operations;
 mod ceremony_lifecycle;
+mod ceremony_operations;
 mod ceremony_persistence;
+mod ceremony_publisher;
+mod ceremony_queries;
+mod execution_receipts;
+mod executor;
 mod messaging;
 mod persistence;
+mod persistence_handles;
+mod scoring;
+mod validators;
 
-/// Persistent handles selected together so one deployment never splits
-/// its source of truth across storage backends.
-struct Persistence {
-    repository: Arc<dyn DeliberationRepositoryPort>,
-    council_registry: Arc<dyn CouncilRegistryPort>,
-    agent_registry: Arc<dyn AgentRegistryPort>,
-    agent_resolver: Arc<dyn AgentResolverPort>,
-    statistics: Arc<dyn StatisticsPort>,
-    pool: Option<PostgresPool>,
-}
-
-/// Pick the scoring policy and wire the optional LLM judge.
-///
-/// When `judge_from_env` yields a judge it is appended to `validators`,
-/// and `JudgeAwareScoring` makes its verdict rank proposals; otherwise
-/// scoring is uniform. Fails fast when the judge is enabled but
-/// misconfigured.
-fn wire_scoring(
-    validators: &mut Vec<Arc<dyn ValidatorPort>>,
-    metrics: Arc<dyn MetricsRecorderPort>,
-) -> Result<Arc<dyn ScoringPort>, DomainError> {
-    match made_adapters::agents::judge_from_env(metrics.clone())? {
-        Some(judge) => {
-            validators.push(judge);
-            info!("scoring: LLM judge enabled; ranking by judge verdict");
-            Ok(Arc::new(JudgeAwareScoring::new().with_metrics(metrics)))
-        }
-        None => Ok(Arc::new(UniformScoring::new())),
-    }
-}
-
-/// Wire the full application.
-///
-/// - Reads [`made_adapters::config::ServiceConfig`] from the environment.
-/// - Builds the in-memory registries plus the configured execution
-///   backend. `noop` remains the default; richer executors are
-///   selected explicitly by deployment configuration.
-/// - When `nats_enabled`, connects to NATS and wires both the
-///   outbound `NatsMessaging` and the inbound `NatsTriggerSubscriber`.
-///   Otherwise uses [`NoopMessaging`].
-/// - Optionally seeds demo councils if `MADE_SEED_SPECIALTIES` is
-///   set, so an empty deployment is immediately exercisable against
-///   the AsyncAPI / gRPC contract.
+/// Wire configured adapters and in-memory defaults into the runnable application.
+/// Explicit environment settings select richer persistence, messaging, execution,
+/// and seed adapters; omitted integrations retain their documented defaults.
 #[allow(clippy::too_many_lines)]
 pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One Prometheus registry for the whole process, shared between the
-    // use cases that record into it and the health endpoint that renders
-    // it. Fails fast if a metric is malformed (a wiring bug).
+    // One Prometheus registry for use cases and the health endpoint. Fails
+    // fast if a metric is malformed (a wiring bug).
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
-    let mut validators: Vec<Arc<dyn ValidatorPort>> = vec![
-        Arc::new(ContentNonEmptyValidator::new()),
-        Arc::new(JsonObjectOutputValidator::new()),
-        Arc::new(RequiredFieldsValidator::new()),
-        Arc::new(AllowedStringValuesValidator::new()),
-        Arc::new(JsonSchemaValidator::new()),
-        // Evidence grounding: rejects claims citing refs outside the
-        // contract's evidence pack (no-op unless a contract declares a
-        // grounding rule). Runs before the shape-budget guard so orphan
-        // refs are named even when the output is otherwise well-formed.
-        Arc::new(ClaimsEvidenceGroundedValidator::new()),
-        // Semantic support: rejects claims whose *cited* evidence does
-        // not actually support them, judged through the deployment's
-        // evidence-support judge (`MADE_SUPPORT_JUDGE_ENABLED`, vLLM
-        // endpoint/model). No-op unless a contract declares
-        // `evidence.semantic_support`; a contract that demands it with
-        // no judge wired fails its step loudly instead of running the
-        // gate voided.
-        Arc::new(ClaimsEvidenceSupportedValidator::new(
-            made_adapters::agents::support_judge_from_env(metrics_recorder.clone())?,
-        )),
-        // Final shape-budget guard: defends downstream bus consumers
-        // against pathological JSON (deeply nested, huge arrays,
-        // bloated strings). Uses the validator's conservative
-        // defaults; tune with the `with_*` builders when a deploy
-        // needs different bounds.
-        Arc::new(BoundedEventShapeValidator::new()),
-    ];
+    let mut validators = validators::wire(metrics_recorder.clone())?;
     // Choose scoring, and when an LLM judge is configured append it to
     // the validator chain so its verdict drives the ranking.
-    let scoring: Arc<dyn ScoringPort> = wire_scoring(&mut validators, metrics_recorder.clone())?;
-    let executor = wire_executor().await?;
+    let scoring: Arc<dyn ScoringPort> = scoring::wire(&mut validators, metrics_recorder.clone())?;
+    let executor = executor::wire().await?;
     let dispatching_factory =
         DispatchingAgentFactory::from_env()?.with_metrics(metrics_recorder.clone());
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
     let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(dispatching_factory);
 
-    // Pick the persistent backings together so the three registries
-    // and the deliberation repository always live on the same pool
-    // (or all in-memory). Running one Postgres and two in-memory
-    // would split the source of truth across replicas.
+    // Select council repositories and their journal together to keep one source of truth.
     let Persistence {
         repository,
         council_registry,
         agent_registry,
         agent_resolver,
         statistics,
+        contract_registry,
+        council_journal,
         pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
+    let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
 
-    // The contract registry is in-memory only today: contracts are
-    // small, stable, and seeded from `MADE_CONTRACT_DIR` so the
-    // operator's source of truth lives on disk. When Postgres-backed
-    // contracts land it joins `Persistence` above.
-    let contract_registry: Arc<dyn ContractRegistryPort> =
-        Arc::new(InMemoryContractRegistry::new());
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let CeremonyPersistence {
@@ -180,6 +91,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         publications: ceremony_publications,
         memory_writer,
         memory_reader,
+        receipts: execution_receipts,
+        budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config)?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
@@ -188,58 +101,39 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_events.clone(),
     ));
     let MessagingWiring {
-        port: messaging,
+        port: messaging_transport,
         subscriber_factory: nats_subscriber_factory,
         ceremony_recovery_factory,
         nats_client,
         ceremony_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
-    let publisher_consumer = made_core::value_objects::CeremonyEventConsumer::new("nats-publisher")
-        .expect("the NATS publisher consumer name is valid");
-    let publisher_use_case = ceremony_transport.map(|transport| {
-        Arc::new(PublishCeremonyEventsUseCase::new(
-            ceremony_events.clone(),
-            ceremony_cursors.clone(),
-            transport,
+    let council_event_publisher = service_config.nats_enabled.then(|| {
+        Arc::new(made_app::usecases::PublishCouncilEventsUseCase::new(
+            council_journal.clone(),
+            messaging_transport,
             clock.clone(),
         ))
     });
-    if let Some(publisher) = &publisher_use_case {
-        loop {
-            let round = publisher
-                .execute_automatically(
-                    &publisher_consumer,
-                    made_core::value_objects::CeremonyEventPageLimit::DEFAULT,
-                )
-                .await?;
-            if round.busy
-                || round.confirmed()
-                    < made_core::value_objects::CeremonyEventPageLimit::DEFAULT.value()
-            {
-                break;
-            }
-        }
-    }
-    let event_publisher = publisher_use_case.map(|publisher| {
-        Arc::new(CeremonyEventPublisherSubscriber::new(
-            publisher,
-            publisher_consumer,
-        )) as Arc<dyn CeremonyEventSubscriberPort>
-    });
+    let messaging = Arc::new(
+        made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
+            council_journal.clone(),
+        ),
+    );
+    let event_publisher = ceremony_publisher::wire(
+        ceremony_events.clone(),
+        ceremony_cursors.clone(),
+        ceremony_transport,
+        clock.clone(),
+    )
+    .await?;
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-    let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+    let subscribers = ceremony_publisher::subscribers(
         session_memory,
         progress_notifier.clone(),
-        Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
-        Arc::new(CeremonyFanoutMetricsSubscriber::new(
-            ceremony_events.clone(),
-            metrics_recorder.clone(),
-        )),
-        Arc::new(CeremonyTracingSubscriber::new()),
-        Arc::new(CeremonyStructuredLogSubscriber::new()),
-    ];
-    subscribers.extend(event_publisher);
-    let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
+        ceremony_events.clone(),
+        metrics_recorder.clone(),
+        event_publisher,
+    );
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
@@ -277,16 +171,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         deliberate.clone(),
         repository.clone(),
     ));
-    // How every verb that advances a session finds what it is running:
-    // from the catalogue when the session is bound to a published
-    // version, from the repository when it is not.
+    // Resolve bound definitions from the catalog and unbound definitions from the repository.
     let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
     ));
-    // Advancing a session one move at a time. What a step said reaches
-    // the next step through the stream both drivers append to, so it
-    // is there whichever way the run was driven.
+    // Both run modes use the same stream to carry step results forward.
     let start_ceremony = Arc::new(StartCeremonyUseCase::new(
         ceremony_definitions.clone(),
         ceremony_stream.clone(),
@@ -299,6 +189,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         memory_reader.clone(),
     ));
+    let budget_operations = budget_operations::BudgetOperations::new(
+        budget_ledger,
+        ceremony_publications.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+        memory_reader.clone(),
+        resolve_ceremony_definition.clone(),
+        service_config.max_parallel,
+    );
     let prepare_ceremony_children = Arc::new(PrepareCeremonyChildrenUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_publications.clone(),
@@ -332,13 +231,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         made_core::value_objects::CeremonyEventConsumer::new("made.children.recovery.v1")?,
     ));
-    loop {
-        let limit = made_core::value_objects::CeremonyEventPageLimit::DEFAULT;
-        let round = recover_ceremony_children.execute(limit).await?;
-        if round.busy || round.failed > 0 || round.acknowledged() < limit.value() {
-            break;
-        }
-    }
+    ceremony_operations::recover_to_head(&recover_ceremony_children).await?;
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -349,9 +242,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .with_max_parallel_ceiling(service_config.max_parallel)
         .with_child_orchestrator(prepare_ceremony_children),
     );
-    // The delegated-host protocol. Claiming and completing are the
-    // same two use cases the embedded edition has always called; only
-    // the way in is new.
+    // Delegated hosts claim through the same use case as embedded execution.
     let claim_ceremony_step = Arc::new(
         StartCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -360,71 +251,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )
         .with_max_parallel_ceiling(service_config.max_parallel),
     );
-    let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
     let lifecycle = CeremonyLifecycleControls::wire(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
     );
-    let assert_ceremony_reason = Arc::new(AssertCeremonyReasonUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let approve_ceremony_guard = Arc::new(ApproveCeremonyGuardUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let defer_ceremony_guard = Arc::new(DeferCeremonyGuardUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let request_ceremony_intervention = Arc::new(RequestCeremonyInterventionUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
-    // No evidence source ships with the server, so this answers
-    // NOT_FOUND until an operator wires one. Failing plainly beats
-    // a missing method or an invented answer.
-    let collect_ceremony_evidence = Arc::new(CollectCeremonyEvidenceUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        Arc::new(NoopCeremonyEvidenceSource::new()),
-        clock.clone(),
-    ));
-    let publish_ceremony_definition = Arc::new(PublishCeremonyDefinitionUseCase::new(
-        ceremony_publications.clone(),
-    ));
-    let diff_ceremony_definitions = Arc::new(DiffCeremonyDefinitionsUseCase::new(
-        ceremony_publications.clone(),
-    ));
-    let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_stream.clone(),
-        clock.clone(),
-    ));
 
     let create_council = Arc::new(CreateCouncilUseCase::new(
         clock.clone(),
@@ -467,33 +298,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let nats_ceremony_recovery =
         ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
-    let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-    let list_ceremony_instances =
-        Arc::new(ListCeremonyInstancesUseCase::new(ceremony_stream.clone()));
-    // What a session left behind. All three read the stream: the page
-    // hands back records, the transcript folds what the steps said out
-    // of them, and the report composes the session, its definition and
-    // its stream into the one projection both editions render
-    // (ADR-006, ADR-012).
-    let read_ceremony_events = Arc::new(ReadCeremonyEventsUseCase::new(ceremony_events.clone()));
-    let stream_ceremony = Arc::new(StreamCeremonyUseCase::new(
-        ceremony_events.clone(),
-        progress_notifier,
-    ));
-    let pull_ceremony_events = Arc::new(PullCeremonyEventsUseCase::new(
-        ceremony_events.clone(),
-        ceremony_cursors.clone(),
-    ));
-    let verify_ceremony_journal =
-        Arc::new(VerifyCeremonyJournalUseCase::new(ceremony_events.clone()));
-    let get_ceremony_transcript =
-        Arc::new(GetCeremonyTranscriptUseCase::new(ceremony_events.clone()));
-    let generate_ceremony_report = Arc::new(GenerateCeremonyReportUseCase::new(
-        resolve_ceremony_definition.clone(),
-        ceremony_events.clone(),
-    ));
-
-    let grpc_service = made_adapters::grpc::MadeGrpcService::builder()
+    let mut grpc_builder = made_adapters::grpc::MadeGrpcService::builder()
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .create_council(create_council)
@@ -510,31 +315,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .accept_child_completion(accept_child_completion)
         .recover_ceremony_children(recover_ceremony_children)
         .claim_ceremony_step(claim_ceremony_step)
-        .complete_ceremony_step(complete_ceremony_step)
-        .apply_ceremony_transition(apply_ceremony_transition)
         .pause_ceremony(lifecycle.pause)
         .resume_ceremony(lifecycle.resume)
         .cancel_ceremony(lifecycle.cancel)
         .enforce_ceremony_deadlines(lifecycle.enforce_deadlines)
-        .approve_ceremony_guard(approve_ceremony_guard)
-        .defer_ceremony_guard(defer_ceremony_guard)
-        .assert_ceremony_reason(assert_ceremony_reason)
-        .request_ceremony_intervention(request_ceremony_intervention)
-        .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
-        .close_ceremony_intervention(close_ceremony_intervention)
-        .collect_ceremony_evidence(collect_ceremony_evidence)
-        .read_ceremony_events(read_ceremony_events)
-        .stream_ceremony(stream_ceremony)
-        .pull_ceremony_events(pull_ceremony_events)
-        .verify_ceremony_journal(verify_ceremony_journal)
-        .get_ceremony_transcript(get_ceremony_transcript)
-        .generate_ceremony_report(generate_ceremony_report)
-        .publish_ceremony_definition(publish_ceremony_definition)
-        .diff_ceremony_definitions(diff_ceremony_definitions)
-        .bind_ceremony_participants(bind_ceremony_participants)
         .ceremony_definitions(ceremony_definitions.clone())
-        .get_ceremony_instance(get_ceremony_instance)
-        .list_ceremony_instances(list_ceremony_instances)
         .resolve_ceremony_definition(resolve_ceremony_definition.clone())
         .prepare_ceremony_participants(prepare_ceremony_participants)
         .contract_registry(contract_registry.clone())
@@ -544,9 +329,41 @@ pub async fn compose() -> Result<Application, ComposeError> {
         // renders, so `GetStatus` names what is actually recording.
         .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
+        .council_journal(Arc::new(made_app::services::CouncilJournalService::new(
+            council_journal,
+            clock.clone(),
+        )))
         .clock(clock.clone())
-        .max_parallel_ceiling(service_config.max_parallel)
-        .build()?;
+        .max_parallel_ceiling(service_config.max_parallel);
+    grpc_builder = budget_operations.wire(grpc_builder);
+    grpc_builder = ceremony_queries::wire(
+        grpc_builder,
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        ceremony_events,
+        ceremony_cursors,
+        progress_notifier,
+        ceremony_publications,
+    );
+    grpc_builder = execution_receipts::wire(
+        grpc_builder,
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        execution_receipts,
+        clock.clone(),
+        artifacts.clone(),
+        budget_operations.service(),
+    );
+    grpc_builder = ceremony_operations::wire(
+        grpc_builder,
+        resolve_ceremony_definition,
+        ceremony_stream,
+        clock,
+    );
+    if let Some(artifacts) = artifacts {
+        grpc_builder = grpc_builder.artifacts(artifacts);
+    }
+    let grpc_service = grpc_builder.build()?;
 
     let health_state = crate::health::HealthState::new(
         nats_client,
@@ -560,7 +377,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         grpc_port = service_config.grpc_port,
         http_port = service_config.http_port,
         nats_enabled = service_config.nats_enabled,
-        executor_backend = executor_backend_name(),
+        executor_backend = executor::backend_name(),
         agent_kinds = supported_agent_kinds.as_str(),
         trigger_subject = service_config.trigger_subject.as_str(),
         "made wired"
@@ -574,25 +391,11 @@ pub async fn compose() -> Result<Application, ComposeError> {
         contract_registry,
         repository,
         grpc_service,
+        council_event_publisher,
         nats_subscriber,
         nats_ceremony_recovery,
         health_state,
     })
-}
-
-async fn wire_executor() -> Result<Arc<dyn ExecutorPort>, ComposeError> {
-    let executor: Arc<dyn ExecutorPort> = match ExecutorBackendConfig::from_env()? {
-        ExecutorBackendConfig::Noop => Arc::new(NoopExecutor::new()),
-        ExecutorBackendConfig::Runtime(config) => Arc::new(RuntimeExecutor::connect(config).await?),
-    };
-    Ok(executor)
-}
-
-fn executor_backend_name() -> &'static str {
-    match ExecutorBackendConfig::from_env() {
-        Ok(ExecutorBackendConfig::Runtime(_)) => "runtime",
-        _ => "noop",
-    }
 }
 
 #[cfg(test)]
@@ -602,13 +405,7 @@ mod tests {
     use made_proto::runtime_v1 as runtime_pb;
     use tonic::{transport::Server, Request, Response, Status};
 
-    // Shared across every test in this module so concurrent MADE_*
-    // env mutations cannot race each other. Previously each test held
-    // its own per-fn static, which serialised the test against itself
-    // but did nothing across tests — under cargo's default parallel
-    // runner the two `compose_builds_application_*` tests then
-    // clobbered each other's vars, producing flaky NATS DNS lookups
-    // in CI.
+    // One lock prevents concurrent tests racing over process-wide MADE_* variables.
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
     #[tokio::test]

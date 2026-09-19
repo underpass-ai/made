@@ -70,6 +70,7 @@ fn claim(ceremony_id: &str, step_id: &str, key: &str) -> ClaimCeremonyStepReques
         lease_owner_id: "integration-host".to_owned(),
         idempotency_key: key.to_owned(),
         lease_ttl_ms: 60_000,
+        budget_reservation: None,
     }
 }
 

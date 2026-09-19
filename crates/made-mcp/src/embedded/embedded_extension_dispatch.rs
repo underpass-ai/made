@@ -1,0 +1,44 @@
+use made_embedded::EmbeddedMade;
+use serde_json::Value;
+
+use crate::protocol::{tool_success_result, ToolError};
+
+use super::{
+    embedded_artifact_dispatch, embedded_budget_dispatch, embedded_council_dispatch,
+    embedded_council_journal_dispatch,
+};
+
+pub(super) fn handles(name: &str) -> bool {
+    embedded_council_journal_dispatch::handles(name)
+        || embedded_budget_dispatch::handles(name)
+        || embedded_council_dispatch::handles(name)
+        || embedded_artifact_dispatch::handles(name)
+}
+
+pub(super) async fn dispatch(
+    made: &EmbeddedMade,
+    name: &str,
+    arguments: &Value,
+) -> Option<Result<Value, ToolError>> {
+    if embedded_council_journal_dispatch::handles(name) {
+        return Some(
+            embedded_council_journal_dispatch::dispatch(made, name, arguments)
+                .await
+                .map(tool_success_result),
+        );
+    }
+    if embedded_budget_dispatch::handles(name) {
+        return Some(
+            embedded_budget_dispatch::dispatch(made, name, arguments)
+                .await
+                .map(tool_success_result),
+        );
+    }
+    if embedded_council_dispatch::handles(name) {
+        return Some(embedded_council_dispatch::dispatch(made, name, arguments).await);
+    }
+    if embedded_artifact_dispatch::handles(name) {
+        return Some(embedded_artifact_dispatch::dispatch(made, name, arguments).await);
+    }
+    None
+}

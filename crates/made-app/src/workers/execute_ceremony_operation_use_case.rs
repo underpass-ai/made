@@ -7,14 +7,17 @@ use made_core::ports::{
 };
 use made_core::value_objects::{ExecutionIntent, ExecutionOperation, ExecutionRecoveryCapability};
 
+use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
 use super::{ExecuteCeremonyOperationInput, ExecuteCeremonyOperationOutcome};
+use crate::artifacts::ArtifactService;
 
 /// Persist intent, execute or recover once, then persist an immutable receipt.
 pub struct ExecuteCeremonyOperationUseCase {
     store: Arc<dyn ExecutionReceiptStorePort>,
     connector: Arc<dyn CeremonyExecutionConnectorPort>,
     clock: Arc<dyn ClockPort>,
+    artifacts: Option<Arc<ArtifactService>>,
 }
 
 impl std::fmt::Debug for ExecuteCeremonyOperationUseCase {
@@ -37,7 +40,14 @@ impl ExecuteCeremonyOperationUseCase {
             store,
             connector,
             clock,
+            artifacts: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Arc<ArtifactService>) -> Self {
+        self.artifacts = Some(artifacts);
+        self
     }
 
     pub async fn execute(
@@ -96,6 +106,7 @@ impl ExecuteCeremonyOperationUseCase {
             .receipt(intent.operation().operation_id())
             .await?
         {
+            verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
             return Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)));
         }
         if recorded != RecordExecutionIntentOutcome::RecordedFirst
@@ -129,6 +140,7 @@ impl ExecuteCeremonyOperationUseCase {
             observation,
         )
         .await?;
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
         self.store.record_receipt(receipt.clone()).await?;
         Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)))
     }

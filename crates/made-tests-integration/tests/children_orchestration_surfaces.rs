@@ -695,6 +695,7 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
             context: Some(prost_types::Struct {
                 fields: std::collections::BTreeMap::default(),
             }),
+            budget_limits: None,
         })
         .await
         .unwrap();

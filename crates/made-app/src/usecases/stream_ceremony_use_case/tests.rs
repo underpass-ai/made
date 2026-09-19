@@ -3,7 +3,10 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::StreamExt;
-use made_core::entities::ceremony_events::{CeremonyCompleted, CeremonyInstanceStarted};
+use made_core::entities::ceremony_events::{
+    CeremonyCancelled, CeremonyCompleted, CeremonyDeadlineExceeded, CeremonyInstanceStarted,
+    StateDeadlineExceeded, StepDeadlineExceeded,
+};
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -11,8 +14,10 @@ use made_core::ports::{
     CeremonyProgressSubscriptionPort, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuditActor, AuditActorKind, CeremonyEventPageLimit, CeremonyId, CeremonyProgressWait, EventId,
-    GlobalPosition, StateId, StreamVersion,
+    AuditActor, AuditActorKind, CeremonyDeadline, CeremonyEventPageLimit, CeremonyId,
+    CeremonyProgressWait, EventId, GlobalPosition, LifecycleReason, RoleId, StateDeadline, StateId,
+    StateIteration, StateVisit, StepAttempt, StepClaimFence, StepDeadline, StepId, StepIteration,
+    StepResult, StreamVersion,
 };
 
 use super::*;
@@ -299,6 +304,116 @@ async fn terminal_history_remains_terminal_when_late_records_follow_it() {
     };
     assert_eq!(end.reason(), CeremonyProgressEndReason::Terminal);
     assert_eq!(end.resume_after_sequence(), StreamVersion::new(3));
+}
+
+#[tokio::test]
+async fn every_lifecycle_terminal_remains_terminal_when_a_late_record_follows() {
+    for (label, terminal) in lifecycle_terminal_events() {
+        let (store, instance) = one_record_store().await;
+        store
+            .append(
+                &ceremony_id(),
+                StreamVersion::new(1),
+                vec![
+                    fact(&instance, &format!("{label}-terminal"), terminal),
+                    started_fact(&instance, &format!("{label}-late")),
+                ],
+            )
+            .await
+            .unwrap();
+        let notifier = Arc::new(TrackingNotifier::new(false));
+        let usecase = StreamCeremonyUseCase::new(store, notifier);
+
+        let mut suffix = usecase.execute(input(2, 1, 0)).await.unwrap();
+        assert!(matches!(
+            suffix.next().await.unwrap().unwrap(),
+            CeremonyProgressFrame::Record(record) if record.sequence().value() == 3
+        ));
+        let CeremonyProgressFrame::End(end) = suffix.next().await.unwrap().unwrap() else {
+            panic!("{label} late suffix must finish with an end frame");
+        };
+        assert_eq!(
+            end.reason(),
+            CeremonyProgressEndReason::Terminal,
+            "{label} history lost terminality"
+        );
+        assert_eq!(end.resume_after_sequence(), StreamVersion::new(3));
+    }
+}
+
+#[tokio::test]
+async fn a_step_deadline_is_not_a_terminal_history_marker() {
+    let (store, instance) = one_record_store().await;
+    let deadline = StepDeadline::new(
+        StepId::new("draft").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+        StepAttempt::FIRST,
+        StepClaimFence::new("0".repeat(64)).unwrap(),
+        RoleId::new("writer").unwrap(),
+        now(),
+    );
+    store
+        .append(
+            &ceremony_id(),
+            StreamVersion::new(1),
+            vec![
+                fact(
+                    &instance,
+                    "step-deadline",
+                    CeremonyEvent::StepDeadlineExceeded(StepDeadlineExceeded {
+                        deadline,
+                        result: StepResult::timed_out().unwrap(),
+                        observed_at: now(),
+                    }),
+                ),
+                started_fact(&instance, "step-deadline-late"),
+            ],
+        )
+        .await
+        .unwrap();
+    let usecase = StreamCeremonyUseCase::new(store, Arc::new(TrackingNotifier::new(false)));
+
+    let mut suffix = usecase.execute(input(2, 1, 0)).await.unwrap();
+    assert!(matches!(
+        suffix.next().await.unwrap().unwrap(),
+        CeremonyProgressFrame::Record(record) if record.sequence().value() == 3
+    ));
+    let CeremonyProgressFrame::End(end) = suffix.next().await.unwrap().unwrap() else {
+        panic!("step deadline suffix must finish with an end frame");
+    };
+    assert_eq!(end.reason(), CeremonyProgressEndReason::EventLimit);
+}
+
+fn lifecycle_terminal_events() -> Vec<(&'static str, CeremonyEvent)> {
+    vec![
+        (
+            "cancelled",
+            CeremonyEvent::CeremonyCancelled(CeremonyCancelled {
+                reason: LifecycleReason::new("operator cancelled").unwrap(),
+                cancelled_at: now(),
+            }),
+        ),
+        (
+            "ceremony_deadline",
+            CeremonyEvent::CeremonyDeadlineExceeded(CeremonyDeadlineExceeded {
+                deadline: CeremonyDeadline::new(now()),
+                observed_at: now(),
+            }),
+        ),
+        (
+            "state_deadline",
+            CeremonyEvent::StateDeadlineExceeded(StateDeadlineExceeded {
+                deadline: StateDeadline::new(
+                    StateId::new("OPEN").unwrap(),
+                    1.try_into().unwrap(),
+                    now(),
+                ),
+                observed_at: now(),
+            }),
+        ),
+    ]
 }
 
 #[derive(Debug)]

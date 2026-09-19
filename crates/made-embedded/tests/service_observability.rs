@@ -167,7 +167,7 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
     ))
     .await
     .unwrap();
-    step.run_step(RunCeremonyStepInput::new(
+    Box::pin(step.run_step(RunCeremonyStepInput::new(
         ceremony_id.clone(),
         RoleId::new("SYSTEM").unwrap(),
         AuditActorKind::Service,
@@ -175,7 +175,7 @@ async fn one_shot_and_step_drivers_emit_the_same_ceremony_metric_deltas() {
         LeaseOwnerId::new("observability-host").unwrap(),
         IdempotencyKey::new("step-metrics:work:1").unwrap(),
         DurationMs::from_millis(30_000),
-    ))
+    )))
     .await
     .unwrap();
     step.apply_transition(ApplyCeremonyTransitionInput::new(

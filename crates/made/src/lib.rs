@@ -8,6 +8,7 @@
 mod application;
 pub mod compose;
 mod compose_error;
+mod councils;
 pub mod health;
 pub mod runtime;
 pub mod seeding;

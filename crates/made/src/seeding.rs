@@ -13,8 +13,12 @@
 use made_adapters::noop::NoopAgent;
 use made_core::entities::Council;
 use made_core::error::DomainError;
-use made_core::ports::{AgentRegistryPort, ClockPort, ContractRegistryPort, CouncilRegistryPort};
-use made_core::value_objects::{AgentId, CouncilId, OutputContract, Specialty};
+use made_core::ports::{
+    AgentDescriptor, AgentRegistryPort, ClockPort, ContractRegistryPort, CouncilRegistryPort,
+};
+use made_core::value_objects::{
+    AgentId, AgentKind, Attributes, CouncilId, OutputContract, Specialty,
+};
 use std::path::Path;
 use std::sync::Arc;
 use thiserror::Error;
@@ -80,7 +84,13 @@ pub async fn apply_seeding(
         let agent = Arc::new(NoopAgent::new(agent_id.clone(), specialty.clone()));
         // If the agent is already registered (re-seeding) swallow the
         // AlreadyExists error so restarts stay idempotent.
-        match agent_registry.register(agent).await {
+        let descriptor = AgentDescriptor {
+            id: agent_id.clone(),
+            specialty: specialty.clone(),
+            kind: AgentKind::new("noop")?,
+            attributes: Attributes::default(),
+        };
+        match agent_registry.register_described(descriptor, agent).await {
             Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
             Err(err) => return Err(err.into()),
         }

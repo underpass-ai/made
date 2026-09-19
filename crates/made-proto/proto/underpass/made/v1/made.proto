@@ -109,6 +109,13 @@ service MadeService {
   rpc ListContracts(ListContractsRequest) returns (ListContractsResponse);
   rpc DeleteContract(DeleteContractRequest) returns (DeleteContractResponse);
 
+  // Independent council journal: never uses ceremony positions.
+  rpc ReadCouncilEvents(ReadCouncilEventsRequest) returns (ReadCouncilEventsResponse);
+  rpc GetCouncilEventCursor(GetCouncilEventCursorRequest) returns (GetCouncilEventCursorResponse);
+  rpc LeaseCouncilEvents(LeaseCouncilEventsRequest) returns (LeaseCouncilEventsResponse);
+  rpc AcknowledgeCouncilEvents(AcknowledgeCouncilEventsRequest) returns (AcknowledgeCouncilEventsResponse);
+  rpc ReleaseCouncilEvents(ReleaseCouncilEventsRequest) returns (ReleaseCouncilEventsResponse);
+
   // ---- Declarative ceremonies ----------------------------------------
 
   // Execute a declarative ceremony definition supplied as YAML.
@@ -189,6 +196,10 @@ service MadeService {
   // session, like every other move.
   rpc ClaimCeremonyStep(ClaimCeremonyStepRequest) returns (ClaimCeremonyStepResponse);
   rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
+  rpc GetExecutionReceipt(GetExecutionReceiptRequest) returns (GetExecutionReceiptResponse);
+  rpc InspectExecutionRecovery(InspectExecutionRecoveryRequest) returns (InspectExecutionRecoveryResponse);
+  rpc CompleteExecutionReceipt(CompleteExecutionReceiptRequest) returns (CompleteExecutionReceiptResponse);
+  rpc AdoptExecutionReceipt(AdoptExecutionReceiptRequest) returns (AdoptExecutionReceiptResponse);
 
   // Design one. The caller says what the working session is for, who
   // sits at it and what each stage asks; the engine decides the
@@ -221,6 +232,21 @@ service MadeService {
   // it is a use case both editions call, so the same sessions in the
   // same state report the same bytes whichever engine served the call.
   rpc GenerateCeremonyReport(GenerateCeremonyReportRequest) returns (GenerateCeremonyReportResponse);
+
+  // Durable budget ledger shared by one ceremony tree.
+  rpc GetBudgetReport(GetBudgetReportRequest) returns (GetBudgetReportResponse);
+  rpc ListPendingBudgetReservations(ListPendingBudgetReservationsRequest) returns (ListPendingBudgetReservationsResponse);
+
+  // Bounded artifact transfer. Metadata is safe to list; blob bytes cross the
+  // API only through the chunk verbs and are never embedded in ArtifactRef.
+  rpc BeginArtifactUpload(BeginArtifactUploadRequest) returns (BeginArtifactUploadResponse);
+  rpc PutArtifactChunk(PutArtifactChunkRequest) returns (PutArtifactChunkResponse);
+  rpc CommitArtifactUpload(CommitArtifactUploadRequest) returns (CommitArtifactUploadResponse);
+  rpc AbortArtifactUpload(AbortArtifactUploadRequest) returns (AbortArtifactUploadResponse);
+  rpc GetArtifact(GetArtifactRequest) returns (GetArtifactResponse);
+  rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
+  rpc ReadArtifactChunk(ReadArtifactChunkRequest) returns (ReadArtifactChunkResponse);
+  rpc TombstoneArtifact(TombstoneArtifactRequest) returns (TombstoneArtifactResponse);
 
   // ---- Observability --------------------------------------------------
 
@@ -969,6 +995,8 @@ message CeremonyInstanceState {
   string ceremony_deadline_at = 35;
   string state_deadline_at = 36;
   repeated CeremonyStepDeadlineState step_deadlines = 37;
+  // Root-scoped durable budget account. Empty for historical/unbudgeted runs.
+  string budget_account_id = 38;
 }
 
 message CeremonyStepDeadlineState {
@@ -1110,6 +1138,8 @@ message StartPublishedCeremonyRequest {
   // What kind of party that is: "human", "agent", "service" or
   // "engine". Refused when missing or unrecognised.
   string actor_kind = 6;
+  // Present to open a durable budget account for the whole ceremony tree.
+  BudgetLimits budget_limits = 7;
 }
 
 message StartPublishedCeremonyResponse {
@@ -1598,12 +1628,16 @@ message ClaimCeremonyStepRequest {
   string idempotency_key = 5;
   // Zero takes the server default.
   uint64 lease_ttl_ms = 6;
+  // Required when the ceremony has a budget account. Unknown is explicit;
+  // limited dimensions never default to zero.
+  BudgetReservationEstimate budget_reservation = 7;
 }
 
 message ClaimCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
   // Capture this opaque identity before work; return it unchanged to complete.
   string claim_fence = 2;
+  BudgetClaimAdmission budget = 3;
 }
 
 message CompleteCeremonyStepRequest {
@@ -1628,6 +1662,87 @@ message CompleteCeremonyStepRequest {
 }
 
 message CompleteCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+// An immutable terminal observation made by an execution connector. The
+// operation identity survives claim replacement; the producer fence does not
+// change when a later claim explicitly adopts the receipt.
+message ExecutionReceipt {
+  string receipt_id = 1;
+  string operation_id = 2;
+  string request_digest = 3;
+  string producer_claim_fence = 4;
+  string connector_id = 5;
+  optional string external_operation_id = 6;
+  string recovery_capability = 7;
+  ArtifactSourceKind source_kind = 8;
+  string status = 9;
+  google.protobuf.Struct output = 10;
+  optional string error = 11;
+  repeated ArtifactReference artifacts = 12;
+  google.protobuf.Timestamp observed_at = 13;
+}
+
+message ExecutionIntentSummary {
+  string claim_fence = 1;
+  string connector_id = 2;
+  string recovery_capability = 3;
+  ArtifactSourceKind source_kind = 4;
+  string actor_kind = 5;
+  google.protobuf.Timestamp recorded_at = 6;
+}
+
+message ExecutionRecoveryItem {
+  string operation_id = 1;
+  string ceremony_id = 2;
+  string step_id = 3;
+  string request_digest = 4;
+  repeated ExecutionIntentSummary intents = 5;
+  optional ExecutionReceipt receipt = 6;
+  optional string current_claim_fence = 7;
+}
+
+message GetExecutionReceiptRequest {
+  string operation_id = 1;
+}
+
+message GetExecutionReceiptResponse {
+  ExecutionReceipt receipt = 1;
+}
+
+message InspectExecutionRecoveryRequest {
+  optional string after = 1;
+  // Zero uses the bounded server default.
+  uint32 limit = 2;
+}
+
+message InspectExecutionRecoveryResponse {
+  repeated ExecutionRecoveryItem items = 1;
+  optional string next_cursor = 2;
+}
+
+message CompleteExecutionReceiptRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string operation_id = 3;
+  string claim_fence = 4;
+  string actor_kind = 5;
+}
+
+message CompleteExecutionReceiptResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message AdoptExecutionReceiptRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string operation_id = 3;
+  string claim_fence = 4;
+  string actor_kind = 5;
+}
+
+message AdoptExecutionReceiptResponse {
   CeremonyInstanceState instance = 1;
 }
 
@@ -2097,3 +2212,245 @@ message VerifyCeremonyJournalResponse {
   // Why, in words. Empty when the journal is intact.
   string reason = 6;
 }
+
+enum ArtifactSourceKind {
+  ARTIFACT_SOURCE_KIND_UNSPECIFIED = 0;
+  ARTIFACT_SOURCE_KIND_EXTERNAL_EXECUTION = 1;
+  ARTIFACT_SOURCE_KIND_FIXTURE = 2;
+  ARTIFACT_SOURCE_KIND_NO_OP = 3;
+  ARTIFACT_SOURCE_KIND_GENERATED_REPORT = 4;
+  ARTIFACT_SOURCE_KIND_IMPORTED = 5;
+}
+
+message ArtifactProvenance {
+  ArtifactSourceKind source_kind = 1;
+  optional string execution_receipt_id = 2;
+  optional string operation_id = 3;
+  optional string accepted_claim_fence = 4;
+  google.protobuf.Timestamp observed_at = 5;
+  optional string import_ref = 6;
+}
+
+message ArtifactReference {
+  string artifact_id = 1;
+  string digest = 2;
+  uint64 size_bytes = 3;
+  string media_type = 4;
+  ArtifactProvenance provenance = 5;
+}
+
+message ArtifactTombstoneRecord {
+  string actor = 1;
+  string policy = 2;
+  google.protobuf.Timestamp retired_at = 3;
+  string digest = 4;
+}
+
+message ArtifactRecord {
+  ArtifactReference artifact = 1;
+  optional ArtifactTombstoneRecord tombstone = 2;
+}
+
+message ArtifactUploadStatus {
+  string upload_id = 1;
+  uint64 next_offset = 2;
+  uint32 chunk_limit = 3;
+}
+
+message BeginArtifactUploadRequest {
+  optional string requested_artifact_id = 1;
+  string expected_digest = 2;
+  uint64 size_bytes = 3;
+  string media_type = 4;
+  ArtifactProvenance provenance = 5;
+  string idempotency_key = 6;
+}
+
+message BeginArtifactUploadResponse {
+  ArtifactUploadStatus upload = 1;
+}
+
+message PutArtifactChunkRequest {
+  string upload_id = 1;
+  uint64 offset = 2;
+  bytes bytes = 3;
+  string chunk_digest = 4;
+}
+
+message PutArtifactChunkResponse {
+  ArtifactUploadStatus upload = 1;
+}
+
+message CommitArtifactUploadRequest {
+  string upload_id = 1;
+}
+
+message CommitArtifactUploadResponse {
+  ArtifactReference artifact = 1;
+}
+
+message AbortArtifactUploadRequest {
+  string upload_id = 1;
+}
+
+message AbortArtifactUploadResponse {}
+
+message GetArtifactRequest {
+  string artifact_id = 1;
+}
+
+message GetArtifactResponse {
+  ArtifactRecord record = 1;
+}
+
+message ListArtifactsRequest {
+  optional string cursor = 1;
+  // Zero takes the default, 50. Maximum 100.
+  uint32 limit = 2;
+}
+
+message ListArtifactsResponse {
+  repeated ArtifactRecord artifacts = 1;
+  optional string next_cursor = 2;
+}
+
+message ReadArtifactChunkRequest {
+  string artifact_id = 1;
+  uint64 offset = 2;
+  // Zero takes the default, 64 KiB. Maximum 1 MiB.
+  uint32 max_bytes = 3;
+}
+
+message ReadArtifactChunkResponse {
+  bytes bytes = 1;
+  uint64 next_offset = 2;
+  string chunk_digest = 3;
+  bool eof = 4;
+}
+
+message TombstoneArtifactRequest {
+  string artifact_id = 1;
+  string actor = 2;
+  string policy = 3;
+  google.protobuf.Timestamp retired_at = 4;
+}
+
+message TombstoneArtifactResponse {
+  ArtifactTombstoneRecord tombstone = 1;
+}
+
+message BudgetQuantities {
+  uint64 duration_micros = 1;
+  uint64 tokens = 2;
+  uint64 cost_micros = 3;
+  uint64 tool_calls = 4;
+}
+
+message BudgetLimits {
+  optional uint64 duration_micros = 1;
+  optional uint64 tokens = 2;
+  optional uint64 cost_micros = 3;
+  optional uint64 tool_calls = 4;
+  string currency = 5;
+}
+
+message BudgetMeasurement {
+  // "observed", "estimated" or "unknown". Unknown never invents a quantity.
+  string quality = 1;
+  optional uint64 amount = 2;
+}
+
+message BudgetReservationEstimate {
+  BudgetMeasurement duration = 1;
+  BudgetMeasurement tokens = 2;
+  BudgetMeasurement cost = 3;
+  BudgetMeasurement tool_calls = 4;
+}
+
+message BudgetBalance {
+  BudgetLimits limits = 1;
+  BudgetQuantities reserved = 2;
+  BudgetQuantities observed = 3;
+  BudgetQuantities estimated = 4;
+  BudgetQuantities unconfirmed = 5;
+  BudgetQuantities overrun = 6;
+  BudgetQuantities available = 7;
+}
+
+message BudgetClaimAdmission {
+  string account_id = 1;
+  string operation_id = 2;
+  string reservation_id = 3;
+}
+
+message BudgetReservationRecord {
+  string reservation_id = 1;
+  string operation_id = 2;
+  BudgetQuantities quantities = 3;
+  BudgetReservationEstimate estimate = 4;
+  string reserved_at = 5;
+  bool reconciled = 6;
+}
+
+message GetBudgetReportRequest {
+  string ceremony_id = 1;
+}
+
+message GetBudgetReportResponse {
+  string account_id = 1;
+  BudgetBalance balance = 2;
+}
+
+message ListPendingBudgetReservationsRequest {
+  string after_reservation_id = 1;
+  uint32 limit = 2;
+}
+
+message ListPendingBudgetReservationsResponse {
+  repeated BudgetReservationRecord reservations = 1;
+  string next_cursor = 2;
+}
+
+// Council records preserve their typed event's canonical JSON representation.
+message CouncilJournalRecord {
+  uint64 position = 1;
+  string event_json = 2;
+}
+message CouncilJournalLease {
+  string consumer = 1;
+  string lease_id = 2;
+  optional uint64 acknowledged_through = 3;
+  // RFC3339; returned unchanged when acknowledging or releasing.
+  string expires_at = 4;
+}
+message ReadCouncilEventsRequest {
+  optional uint64 after = 1;
+  // Zero uses 200. Maximum 1000.
+  uint32 limit = 2;
+}
+message ReadCouncilEventsResponse {
+  repeated CouncilJournalRecord records = 1;
+  optional uint64 next_after = 2;
+}
+message GetCouncilEventCursorRequest {
+  string consumer = 1;
+}
+message GetCouncilEventCursorResponse {
+  optional uint64 acknowledged_through = 1;
+}
+message LeaseCouncilEventsRequest {
+  string consumer = 1;
+  uint64 duration_ms = 2;
+}
+message LeaseCouncilEventsResponse {
+  optional CouncilJournalLease lease = 1;
+}
+message AcknowledgeCouncilEventsRequest {
+  CouncilJournalLease lease = 1;
+  uint64 through = 2;
+}
+message AcknowledgeCouncilEventsResponse {}
+message ReleaseCouncilEventsRequest {
+  CouncilJournalLease lease = 1;
+}
+message ReleaseCouncilEventsResponse {}

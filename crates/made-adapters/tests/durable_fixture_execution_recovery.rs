@@ -5,6 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::clock::SystemClock;
 use made_adapters::execution::{
     DurableFixtureExecutionConnector, RepositoryScriptExecutionConnector,
@@ -14,28 +15,33 @@ use made_adapters::memory::{
 };
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::yaml::FileSystemCeremonyDefinitionSource;
+use made_app::artifacts::ArtifactService;
 use made_app::services::SessionStream;
 use made_app::usecases::{
     MountCeremonyDefinitionsUseCase, ResolveCeremonyDefinitionUseCase, StartCeremonyInput,
     StartCeremonyStepInput, StartCeremonyStepUseCase, StartCeremonyUseCase,
 };
 use made_app::workers::{
-    CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
+    CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
     ExecuteCeremonyOperationUseCase, InspectExecutionRecoveryUseCase,
     RecoverExecutionIntentOutcome, RecoverExecutionIntentUseCase, RecoverableCeremonyWorker,
     RecoverableCeremonyWorkerOutcome,
 };
 use made_core::ports::{
+    ArtifactByteOffset, ArtifactIdempotencyKey, ArtifactStorePort, BeginArtifactUpload,
     CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
-    ExecutionReceiptStorePort, NoopCeremonyEventSubscriber,
+    ExecutionReceiptStorePort, NoopCeremonyEventSubscriber, PutArtifactChunk,
 };
 use made_core::value_objects::{
+    ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactRef, ArtifactSizeBytes,
     ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
-    ExecutionOperation, ExecutionRecoveryCapability, ExecutionRecoveryPageLimit,
-    ExecutionRequestBytes, IdempotencyKey, LeaseOwnerId, RoleId, StateIteration, StateVisit,
+    ExecutionOperation, ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLinkKind,
+    ExecutionRecoveryCapability, ExecutionRecoveryPageLimit, ExecutionRequestBytes,
+    ExternalOperationId, IdempotencyKey, LeaseOwnerId, RoleId, StateIteration, StateVisit,
     StepClaimFence, StepHandlerConfig, StepHandlerKind, StepId, StepIteration, StepOutput,
     StepResult, StepStatus,
 };
+use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
 
 const DEFINITION: &str = r#"
@@ -68,6 +74,10 @@ retry_policies:
 fn scratch() -> tempfile::TempDir {
     std::fs::create_dir_all("tmp").unwrap();
     tempfile::tempdir_in("tmp").unwrap()
+}
+
+fn artifact_digest(bytes: &[u8]) -> ArtifactDigest {
+    ArtifactDigest::new(format!("sha256:{:x}", Sha256::digest(bytes))).unwrap()
 }
 
 struct FailAfterEffectConnector {
@@ -449,4 +459,153 @@ async fn the_reopened_driver_queries_real_work_then_links_and_completes() {
         1
     );
     assert!(repository.join("materialized-request.json").is_file());
+}
+
+#[cfg(unix)]
+async fn record_mismatched_artifact_receipt(
+    store: &SqliteCeremonyStore,
+    artifact_root: &std::path::Path,
+    operation: &ExecutionOperation,
+    intent: &ExecutionIntent,
+) -> Arc<ArtifactService> {
+    let receipt_id = ExecutionReceiptId::for_operation(operation.operation_id());
+    let provenance = ArtifactProvenance::execution(
+        ArtifactSourceKind::ExternalExecution,
+        receipt_id,
+        operation.operation_id().clone(),
+        intent.claim_fence().clone(),
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    let bytes = b"authoritative artifact bytes";
+    let artifact_store = Arc::new(LocalArtifactStore::open(artifact_root).unwrap());
+    let upload = artifact_store
+        .begin_upload(BeginArtifactUpload {
+            requested_artifact_id: None,
+            expected_digest: artifact_digest(bytes),
+            size_bytes: ArtifactSizeBytes::new(bytes.len() as u64),
+            media_type: ArtifactMediaType::new("application/octet-stream").unwrap(),
+            provenance: provenance.clone(),
+            idempotency_key: ArtifactIdempotencyKey::new("artifact-receipt-mismatch").unwrap(),
+        })
+        .await
+        .unwrap();
+    artifact_store
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            bytes: bytes.to_vec(),
+            chunk_digest: artifact_digest(bytes),
+        })
+        .await
+        .unwrap();
+    let committed = artifact_store
+        .commit_upload(&upload.upload_id)
+        .await
+        .unwrap();
+    let forged = ArtifactRef::new(
+        committed.artifact_id().clone(),
+        artifact_digest(b"different bytes"),
+        committed.size_bytes(),
+        committed.media_type().clone(),
+        provenance,
+    );
+    let receipt = ExecutionReceipt::new(
+        operation.operation_id().clone(),
+        operation.request_digest().clone(),
+        intent.claim_fence().clone(),
+        intent.connector_id().clone(),
+        Some(ExternalOperationId::new("artifact-receipt-mismatch").unwrap()),
+        intent.recovery_capability(),
+        intent.source_kind(),
+        StepResult::completed(StepOutput::empty()).unwrap(),
+        vec![forged],
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    store.record_receipt(receipt).await.unwrap();
+    Arc::new(ArtifactService::new(artifact_store))
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_receipt_with_mismatched_artifact_metadata_cannot_mutate_the_ceremony_journal() {
+    let directory = scratch();
+    let database = directory.path().join("artifact-receipt.sqlite3");
+    let operation_root = directory.path().join("driver-operations");
+    let repository = directory.path().join("authorized-repository");
+    std::fs::create_dir_all(&repository).unwrap();
+    write_repository_worker(&repository);
+    let definitions_dir = directory.path().join("definitions");
+    std::fs::create_dir_all(&definitions_dir).unwrap();
+    std::fs::write(definitions_dir.join("durable_worker.yaml"), DEFINITION).unwrap();
+    let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    MountCeremonyDefinitionsUseCase::new(
+        Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_dir).unwrap()),
+        definitions.clone(),
+    )
+    .execute()
+    .await
+    .unwrap();
+    let clock = Arc::new(SystemClock::new());
+    let ceremony_id = CeremonyId::new("artifact-receipt-mismatch").unwrap();
+    let step_id = StepId::new("work").unwrap();
+    leave_real_effect_without_receipt(
+        &database,
+        &repository,
+        &operation_root,
+        definitions.clone(),
+        clock.clone(),
+        &ceremony_id,
+        &step_id,
+    )
+    .await;
+
+    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+    let stream = Arc::new(SessionStream::new(
+        store.clone(),
+        store.clone(),
+        Arc::new(NoopCeremonyEventSubscriber),
+    ));
+    let page = InspectExecutionRecoveryUseCase::new(stream.clone(), store.clone())
+        .execute(None, ExecutionRecoveryPageLimit::new(10).unwrap())
+        .await
+        .unwrap();
+    let item = page.items().first().unwrap();
+    let operation = item.operation();
+    let intent = item.intents().first().unwrap();
+    let artifacts = record_mismatched_artifact_receipt(
+        store.as_ref(),
+        &directory.path().join("artifacts"),
+        operation,
+        intent,
+    )
+    .await;
+    let before = stream.load(&ceremony_id).await.unwrap().version;
+    let resolver = Arc::new(ResolveCeremonyDefinitionUseCase::new(
+        definitions,
+        Arc::new(InMemoryCeremonyDefinitionPublications::new()),
+    ));
+    let result = CompleteExecutionReceiptUseCase::new(resolver, stream.clone(), store, clock)
+        .with_artifacts(artifacts)
+        .execute(CompleteExecutionReceiptInput {
+            ceremony_id: ceremony_id.clone(),
+            step_id,
+            operation_id: operation.operation_id().clone(),
+            claim_fence: intent.claim_fence().clone(),
+            link_kind: ExecutionReceiptLinkKind::Direct,
+            actor_kind: AuditActorKind::Agent,
+        })
+        .await;
+
+    assert!(matches!(
+        result,
+        Err(made_core::DomainError::InvariantViolated { .. })
+    ));
+    let after = stream.load(&ceremony_id).await.unwrap();
+    assert_eq!(after.version, before);
+    assert!(after
+        .instance
+        .execution_receipt_link(operation.operation_id())
+        .is_none());
 }

@@ -1,6 +1,5 @@
-//! Generated gRPC trait surface forwarding requests into focused handlers.
-
 use std::pin::Pin;
+use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use made_proto::v1 as pb;
@@ -10,10 +9,94 @@ use super::{
     run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
-type RpcResultStream<T> = Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send>>;
+/// Boxed server stream used by the generated gRPC associated type.
+pub struct RpcResultStream<T>(Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send>>);
+
+impl<T> std::fmt::Debug for RpcResultStream<T> {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("RpcResultStream").finish()
+    }
+}
+
+impl<T> RpcResultStream<T> {
+    pub(super) fn new(
+        stream: impl futures::Stream<Item = Result<T, Status>> + Send + 'static,
+    ) -> Self {
+        Self(Box::pin(stream))
+    }
+}
+
+impl<T> futures::Stream for RpcResultStream<T> {
+    type Item = Result<T, Status>;
+
+    fn poll_next(self: Pin<&mut Self>, context: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        self.get_mut().0.as_mut().poll_next(context)
+    }
+}
 
 #[async_trait]
 impl MadeService for MadeGrpcService {
+    async fn get_execution_receipt(
+        &self,
+        request: Request<pb::GetExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::GetExecutionReceiptResponse> {
+        self.handle_get_execution_receipt(request).await
+    }
+
+    async fn inspect_execution_recovery(
+        &self,
+        request: Request<pb::InspectExecutionRecoveryRequest>,
+    ) -> GrpcResult<pb::InspectExecutionRecoveryResponse> {
+        self.handle_inspect_execution_recovery(request).await
+    }
+
+    async fn complete_execution_receipt(
+        &self,
+        request: Request<pb::CompleteExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request)).await
+    }
+
+    async fn adopt_execution_receipt(
+        &self,
+        request: Request<pb::AdoptExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request)).await
+    }
+
+    async fn read_council_events(
+        &self,
+        request: Request<pb::ReadCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReadCouncilEventsResponse> {
+        self.handle_read_council_events(request).await
+    }
+    async fn get_council_event_cursor(
+        &self,
+        request: Request<pb::GetCouncilEventCursorRequest>,
+    ) -> GrpcResult<pb::GetCouncilEventCursorResponse> {
+        self.handle_get_council_event_cursor(request).await
+    }
+    async fn lease_council_events(
+        &self,
+        request: Request<pb::LeaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::LeaseCouncilEventsResponse> {
+        self.handle_lease_council_events(request).await
+    }
+    async fn acknowledge_council_events(
+        &self,
+        request: Request<pb::AcknowledgeCouncilEventsRequest>,
+    ) -> GrpcResult<pb::AcknowledgeCouncilEventsResponse> {
+        self.handle_acknowledge_council_events(request).await
+    }
+    async fn release_council_events(
+        &self,
+        request: Request<pb::ReleaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReleaseCouncilEventsResponse> {
+        self.handle_release_council_events(request).await
+    }
+
     type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,
@@ -346,6 +429,76 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::GenerateCeremonyReportRequest>,
     ) -> GrpcResult<pb::GenerateCeremonyReportResponse> {
         self.handle_generate_ceremony_report(request).await
+    }
+
+    async fn get_budget_report(
+        &self,
+        request: Request<pb::GetBudgetReportRequest>,
+    ) -> GrpcResult<pb::GetBudgetReportResponse> {
+        self.handle_get_budget_report(request).await
+    }
+
+    async fn list_pending_budget_reservations(
+        &self,
+        request: Request<pb::ListPendingBudgetReservationsRequest>,
+    ) -> GrpcResult<pb::ListPendingBudgetReservationsResponse> {
+        self.handle_list_pending_budget_reservations(request).await
+    }
+
+    async fn begin_artifact_upload(
+        &self,
+        request: Request<pb::BeginArtifactUploadRequest>,
+    ) -> GrpcResult<pb::BeginArtifactUploadResponse> {
+        self.handle_begin_artifact_upload(request).await
+    }
+
+    async fn put_artifact_chunk(
+        &self,
+        request: Request<pb::PutArtifactChunkRequest>,
+    ) -> GrpcResult<pb::PutArtifactChunkResponse> {
+        self.handle_put_artifact_chunk(request).await
+    }
+
+    async fn commit_artifact_upload(
+        &self,
+        request: Request<pb::CommitArtifactUploadRequest>,
+    ) -> GrpcResult<pb::CommitArtifactUploadResponse> {
+        self.handle_commit_artifact_upload(request).await
+    }
+
+    async fn abort_artifact_upload(
+        &self,
+        request: Request<pb::AbortArtifactUploadRequest>,
+    ) -> GrpcResult<pb::AbortArtifactUploadResponse> {
+        self.handle_abort_artifact_upload(request).await
+    }
+
+    async fn get_artifact(
+        &self,
+        request: Request<pb::GetArtifactRequest>,
+    ) -> GrpcResult<pb::GetArtifactResponse> {
+        self.handle_get_artifact(request).await
+    }
+
+    async fn list_artifacts(
+        &self,
+        request: Request<pb::ListArtifactsRequest>,
+    ) -> GrpcResult<pb::ListArtifactsResponse> {
+        self.handle_list_artifacts(request).await
+    }
+
+    async fn read_artifact_chunk(
+        &self,
+        request: Request<pb::ReadArtifactChunkRequest>,
+    ) -> GrpcResult<pb::ReadArtifactChunkResponse> {
+        self.handle_read_artifact_chunk(request).await
+    }
+
+    async fn tombstone_artifact(
+        &self,
+        request: Request<pb::TombstoneArtifactRequest>,
+    ) -> GrpcResult<pb::TombstoneArtifactResponse> {
+        self.handle_tombstone_artifact(request).await
     }
 
     async fn publish_ceremony_definition(

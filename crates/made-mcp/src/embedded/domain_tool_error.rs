@@ -8,6 +8,8 @@
 //! the other.
 
 use made_core::error::DomainError;
+use made_core::ports::ArtifactStoreError;
+use made_core::BudgetError;
 
 use crate::protocol::ToolError;
 
@@ -50,6 +52,48 @@ impl From<DomainError> for ToolError {
             | DomainError::NoValidProposal { .. }
             | DomainError::LifecycleRefused { .. }
             | DomainError::UnreadableCeremonyEvent { .. } => Self::refused(message),
+        }
+    }
+}
+
+impl From<ArtifactStoreError> for ToolError {
+    fn from(error: ArtifactStoreError) -> Self {
+        let message = error.to_string();
+        match error {
+            ArtifactStoreError::Invalid(error) => error.into(),
+            ArtifactStoreError::NotFound => Self::not_found(message),
+            ArtifactStoreError::UnexpectedOffset { .. }
+            | ArtifactStoreError::UploadCommitted
+            | ArtifactStoreError::UploadAborted
+            | ArtifactStoreError::IdempotencyConflict => Self::conflict(message),
+            ArtifactStoreError::StorageUnavailable => Self::unavailable(message),
+            ArtifactStoreError::ArtifactTooLarge { .. }
+            | ArtifactStoreError::ChunkTooLarge { .. }
+            | ArtifactStoreError::ChunkDigestMismatch
+            | ArtifactStoreError::Incomplete { .. }
+            | ArtifactStoreError::FinalDigestMismatch
+            | ArtifactStoreError::Tombstoned
+            | ArtifactStoreError::AccessDenied
+            | ArtifactStoreError::InvalidBackup
+            | ArtifactStoreError::InvalidCursor => Self::refused(message),
+        }
+    }
+}
+
+impl From<BudgetError> for ToolError {
+    fn from(error: BudgetError) -> Self {
+        let message = error.to_string();
+        match error {
+            BudgetError::Persistence(error) => error.into(),
+            BudgetError::LedgerNotOpen | BudgetError::ReservationNotFound(_) => {
+                Self::not_found(message)
+            }
+            BudgetError::ReservationConflict(_) | BudgetError::ReconciliationConflict(_) => {
+                Self::conflict(message)
+            }
+            BudgetError::Exhausted { .. } | BudgetError::MissingReservationEstimate(_) => {
+                Self::refused(message)
+            }
         }
     }
 }

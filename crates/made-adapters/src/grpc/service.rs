@@ -3,6 +3,10 @@
 
 use std::sync::Arc;
 
+use made_app::artifacts::ArtifactService;
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+};
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
@@ -22,6 +26,9 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
     VerifyCeremonyJournalUseCase,
 };
+use made_app::workers::{
+    CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
+};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
@@ -33,29 +40,38 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    assert_ceremony_reason_input_from_proto, bind_ceremony_participants_input_from_proto,
+    adopt_execution_receipt_input_from_proto, apply_ceremony_transition_input_from_proto,
+    approve_ceremony_guard_input_from_proto, artifact_chunk_to_proto,
+    artifact_page_limit_from_proto, artifact_record_to_proto, artifact_ref_to_proto,
+    artifact_tombstone_to_proto, artifact_upload_status_to_proto,
+    assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
+    bind_ceremony_participants_input_from_proto, budget_balance_to_proto, budget_limits_from_proto,
+    budget_reservation_estimate_from_proto, budget_reservation_to_proto,
     cancel_ceremony_input_from_proto, ceremony_definition_source_from_proto,
     ceremony_design_document_from_proto, ceremony_instance_state_from, child_completion_state_from,
     claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
-    council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
-    design_ceremony_response_from, diff_ceremony_definitions_response_from,
-    enforce_ceremony_deadlines_input_from_proto, explain_ceremony_draft_response_from,
-    generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
-    orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
-    pause_ceremony_input_from_proto, publish_ceremony_definition_response_from,
-    pull_ceremony_events_response_from, read_ceremony_events_response_from,
-    request_ceremony_intervention_input_from_proto,
+    complete_execution_receipt_input_from_proto, council_summary_from,
+    defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
+    diff_ceremony_definitions_response_from, enforce_ceremony_deadlines_input_from_proto,
+    execution_receipt_to_proto, execution_recovery_cursor_from_proto,
+    execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
+    explain_ceremony_draft_response_from, generate_ceremony_report_response_from,
+    get_ceremony_transcript_response_from, orchestrate_response_from, output_contract_from_proto,
+    output_contract_to_proto, pause_ceremony_input_from_proto,
+    publish_ceremony_definition_response_from, pull_ceremony_events_response_from,
+    put_artifact_chunk_from_proto, read_artifact_chunk_from_proto,
+    read_ceremony_events_response_from, request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, resume_ceremony_input_from_proto,
     run_ceremony_input_from_proto, run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
     start_ceremony_from_proto, start_published_ceremony_input_from_proto,
-    stream_ceremony_response_from, task_from_proto, trigger_event_from_proto,
-    unrehydratable_ceremony_instance_state_from, validate_ceremony_draft_response_from,
-    verify_ceremony_journal_response_from, StartCeremonyFromYaml,
+    stream_ceremony_response_from, task_from_proto, tombstone_artifact_from_proto,
+    trigger_event_from_proto, unrehydratable_ceremony_instance_state_from,
+    validate_ceremony_draft_response_from, verify_ceremony_journal_response_from,
+    StartCeremonyFromYaml,
 };
-use super::status::domain_error_to_status;
+use super::status::{artifact_error_to_status, budget_error_to_status, domain_error_to_status};
 use super::tracecontext::{
     link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
 };
@@ -68,13 +84,17 @@ use metrics_snapshot_mapper::metric_family_to_proto;
 use register_agent_descriptor::descriptor_from_register_request;
 use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
+mod artifact_handlers;
 mod authoring_handlers;
+mod budget_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
 mod ceremony_lifecycle_handlers;
 mod council_handlers;
+mod council_journal_handlers;
 mod descriptor_error;
+mod execution_receipt_handlers;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod rpc;
@@ -84,6 +104,7 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
     pub(super) deliberate: Arc<DeliberateUseCase>,
@@ -101,11 +122,16 @@ pub struct MadeGrpcService {
     pub(super) resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
+    pub(super) start_budgeted_ceremony: Option<Arc<StartBudgetedCeremonyUseCase>>,
     pub(super) run_ceremony_step: Arc<RunCeremonyStepUseCase>,
     pub(super) accept_child_completion: Arc<AcceptChildCompletionUseCase>,
     pub(super) recover_ceremony_children: Arc<RecoverCeremonyChildrenUseCase>,
     pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
+    pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
     pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
+    pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
+    pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
+    pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,
     pub(super) apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
     pub(super) pause_ceremony: Arc<PauseCeremonyUseCase>,
     pub(super) resume_ceremony: Arc<ResumeCeremonyUseCase>,
@@ -138,6 +164,8 @@ pub struct MadeGrpcService {
     /// answer the in-process edition cannot give (ADR-014).
     pub(super) get_service_status: Arc<GetServiceStatusUseCase>,
     pub(super) get_service_metrics: Arc<GetServiceMetricsUseCase>,
+    pub(super) artifacts: Option<Arc<ArtifactService>>,
+    pub(super) budgets: Option<Arc<BudgetLedgerService>>,
 }
 
 impl std::fmt::Debug for MadeGrpcService {
@@ -150,6 +178,10 @@ impl MadeGrpcService {
     #[must_use]
     pub fn builder() -> MadeGrpcServiceBuilder {
         MadeGrpcServiceBuilder::default()
+    }
+
+    fn artifact_service(&self) -> Option<&ArtifactService> {
+        self.artifacts.as_deref()
     }
 
     /// Resolve an instance's definition and derive the view every

@@ -140,7 +140,7 @@ pub(super) fn council_tool_catalog() -> Vec<Value> {
         ),
         tool_def(
             "made_register_contract",
-            "Register an `OutputContract` in the in-memory contract registry.",
+            "Register an `OutputContract` in the configured contract registry.",
             json!({
                 "type": "object",
                 "additionalProperties": false,

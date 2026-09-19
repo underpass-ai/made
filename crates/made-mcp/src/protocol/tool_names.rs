@@ -6,6 +6,10 @@ pub(crate) const ACCEPT_CHILD_COMPLETION_TOOL: &str = "made_accept_child_complet
 pub(crate) const RECOVER_CEREMONY_CHILDREN_TOOL: &str = "made_recover_ceremony_children";
 pub(crate) const CLAIM_CEREMONY_STEP_TOOL: &str = "made_claim_ceremony_step";
 pub(crate) const COMPLETE_CEREMONY_STEP_TOOL: &str = "made_complete_ceremony_step";
+pub(crate) const GET_EXECUTION_RECEIPT_TOOL: &str = "made_get_execution_receipt";
+pub(crate) const INSPECT_EXECUTION_RECOVERY_TOOL: &str = "made_inspect_execution_recovery";
+pub(crate) const COMPLETE_EXECUTION_RECEIPT_TOOL: &str = "made_complete_execution_receipt";
+pub(crate) const ADOPT_EXECUTION_RECEIPT_TOOL: &str = "made_adopt_execution_receipt";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "made_approve_ceremony_guard";
 pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "made_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "made_apply_ceremony_transition";
@@ -28,6 +32,17 @@ pub(crate) const PULL_CEREMONY_EVENTS_TOOL: &str = "made_pull_ceremony_events";
 pub(crate) const GET_CEREMONY_TRANSCRIPT_TOOL: &str = "made_get_ceremony_transcript";
 pub(crate) const VERIFY_CEREMONY_JOURNAL_TOOL: &str = "made_verify_ceremony_journal";
 pub(crate) const GENERATE_CEREMONY_REPORT_TOOL: &str = "made_generate_ceremony_report";
+pub(crate) const GET_BUDGET_REPORT_TOOL: &str = "made_get_budget_report";
+pub(crate) const LIST_PENDING_BUDGET_RESERVATIONS_TOOL: &str =
+    "made_list_pending_budget_reservations";
+pub(crate) const BEGIN_ARTIFACT_UPLOAD_TOOL: &str = "made_begin_artifact_upload";
+pub(crate) const PUT_ARTIFACT_CHUNK_TOOL: &str = "made_put_artifact_chunk";
+pub(crate) const COMMIT_ARTIFACT_UPLOAD_TOOL: &str = "made_commit_artifact_upload";
+pub(crate) const ABORT_ARTIFACT_UPLOAD_TOOL: &str = "made_abort_artifact_upload";
+pub(crate) const GET_ARTIFACT_TOOL: &str = "made_get_artifact";
+pub(crate) const LIST_ARTIFACTS_TOOL: &str = "made_list_artifacts";
+pub(crate) const READ_ARTIFACT_CHUNK_TOOL: &str = "made_read_artifact_chunk";
+pub(crate) const TOMBSTONE_ARTIFACT_TOOL: &str = "made_tombstone_artifact";
 pub(crate) const DISCOVER_CAPABILITIES_TOOL: &str = "made_discover_capabilities";
 pub(crate) const GET_HELP_TOOL: &str = "made_get_help";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "made_validate_ceremony_draft";
@@ -39,7 +54,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 51] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 70] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -54,6 +69,11 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 51] = [
     "made_register_contract",
     "made_list_contracts",
     "made_delete_contract",
+    "made_read_council_events",
+    "made_get_council_event_cursor",
+    "made_lease_council_events",
+    "made_acknowledge_council_events",
+    "made_release_council_events",
     RUN_CEREMONY_TOOL,
     GET_CEREMONY_INSTANCE_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL,
@@ -82,12 +102,26 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 51] = [
     BIND_CEREMONY_PARTICIPANTS_TOOL,
     CLAIM_CEREMONY_STEP_TOOL,
     COMPLETE_CEREMONY_STEP_TOOL,
+    GET_EXECUTION_RECEIPT_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL,
+    ADOPT_EXECUTION_RECEIPT_TOOL,
     DESIGN_CEREMONY_TOOL,
     READ_CEREMONY_EVENTS_TOOL,
     STREAM_CEREMONY_TOOL,
     PULL_CEREMONY_EVENTS_TOOL,
     GET_CEREMONY_TRANSCRIPT_TOOL,
     GENERATE_CEREMONY_REPORT_TOOL,
+    GET_BUDGET_REPORT_TOOL,
+    LIST_PENDING_BUDGET_RESERVATIONS_TOOL,
+    BEGIN_ARTIFACT_UPLOAD_TOOL,
+    PUT_ARTIFACT_CHUNK_TOOL,
+    COMMIT_ARTIFACT_UPLOAD_TOOL,
+    ABORT_ARTIFACT_UPLOAD_TOOL,
+    GET_ARTIFACT_TOOL,
+    LIST_ARTIFACTS_TOOL,
+    READ_ARTIFACT_CHUNK_TOOL,
+    TOMBSTONE_ARTIFACT_TOOL,
     GET_STATUS_TOOL,
     GET_METRICS_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,

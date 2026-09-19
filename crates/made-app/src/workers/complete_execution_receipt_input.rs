@@ -1,5 +1,6 @@
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, ExecutionOperationId, StepClaimFence, StepId,
+    AuditActorKind, CeremonyId, ExecutionOperationId, ExecutionReceiptLinkKind, StepClaimFence,
+    StepId,
 };
 
 /// A current claim asking to consume one persisted terminal receipt.
@@ -9,5 +10,6 @@ pub struct CompleteExecutionReceiptInput {
     pub step_id: StepId,
     pub operation_id: ExecutionOperationId,
     pub claim_fence: StepClaimFence,
+    pub link_kind: ExecutionReceiptLinkKind,
     pub actor_kind: AuditActorKind,
 }

@@ -1,3 +1,4 @@
+use made_app::budgets::StartBudgetedCeremonyInput;
 use made_app::usecases::StartCeremonyInput;
 use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion,
@@ -27,20 +28,25 @@ pub(super) struct EmbeddedStartPublishedCeremonyRequest {
     context: CeremonyContext,
     actor_id: String,
     actor_kind: AuditActorKind,
+    limits: Option<made_core::value_objects::BudgetLimits>,
 }
 
 impl EmbeddedStartPublishedCeremonyRequest {
     pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
-        let instance = made
-            .start_published(StartCeremonyInput::new(
-                self.ceremony_id,
-                self.definition_name,
-                self.definition_version,
-                self.context,
-                self.actor_id,
-                self.actor_kind,
-            ))
-            .await?;
+        let input = StartCeremonyInput::new(
+            self.ceremony_id,
+            self.definition_name,
+            self.definition_version,
+            self.context,
+            self.actor_id,
+            self.actor_kind,
+        );
+        let instance = if let Some(limits) = self.limits {
+            made.start_budgeted_published(StartBudgetedCeremonyInput::new(input, limits))
+                .await?
+        } else {
+            made.start_published(input).await?
+        };
         Ok(instance.id().clone())
     }
 }
@@ -67,6 +73,7 @@ impl TryFrom<&Value> for EmbeddedStartPublishedCeremonyRequest {
             context,
             actor_id: required_string(object, "actor_id")?,
             actor_kind: required_actor_kind(object, "actor_kind")?,
+            limits: super::embedded_budget_fields::limits(object)?,
         })
     }
 }

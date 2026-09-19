@@ -33,6 +33,14 @@ pub(crate) enum Table {
     ExecutionIntents,
     /// The immutable terminal receipt of each semantic operation.
     ExecutionReceipts,
+    Councils,
+    CouncilAgents,
+    CouncilContracts,
+    CouncilDeliberations,
+    CouncilStatistics,
+    CouncilJournal,
+    CouncilJournalIds,
+    CouncilJournalCursors,
 }
 
 impl Table {
@@ -42,7 +50,14 @@ impl Table {
             | Table::Meta
             | Table::EventCursors
             | Table::ExecutionOperations
-            | Table::ExecutionReceipts => KeyShape::Str,
+            | Table::ExecutionReceipts
+            | Table::Councils
+            | Table::CouncilAgents
+            | Table::CouncilContracts
+            | Table::CouncilDeliberations
+            | Table::CouncilStatistics
+            | Table::CouncilJournalIds
+            | Table::CouncilJournalCursors => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
@@ -50,7 +65,8 @@ impl Table {
             | Table::Snapshots
             | Table::EventCursorQuarantine
             | Table::MemoryWrites
-            | Table::ExecutionIntents => KeyShape::Bytes,
+            | Table::ExecutionIntents
+            | Table::CouncilJournal => KeyShape::Bytes,
         }
     }
 }
@@ -71,6 +87,14 @@ impl fmt::Display for Table {
             Table::ExecutionOperations => "execution_operations",
             Table::ExecutionIntents => "execution_intents",
             Table::ExecutionReceipts => "execution_receipts",
+            Table::Councils => "council_registry",
+            Table::CouncilAgents => "council_agents",
+            Table::CouncilContracts => "council_contracts",
+            Table::CouncilDeliberations => "council_deliberations",
+            Table::CouncilStatistics => "council_statistics",
+            Table::CouncilJournal => "council_journal",
+            Table::CouncilJournalIds => "council_journal_ids",
+            Table::CouncilJournalCursors => "council_journal_cursors",
         })
     }
 }

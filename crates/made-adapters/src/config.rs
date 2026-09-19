@@ -35,6 +35,7 @@ use defaults::Defaults;
 /// | `MADE_PUBLISH_PREFIX`          | `made`              |
 /// | `MADE_POSTGRES_URL`            | (unset)               |
 /// | `MADE_CEREMONY_STORE_PATH`     | (unset)               |
+/// | `MADE_ARTIFACT_STORE_PATH`     | (unset)               |
 /// | `MADE_MEMORY`                  | automatic             |
 /// | `MADE_MAX_PARALLEL`            | `8`                   |
 /// | `MADE_GRPC_TLS_MODE`           | `none`                |
@@ -78,6 +79,7 @@ impl EnvConfiguration {
         };
 
         let ceremony_store_path = nonempty(&loaded.ceremony_store_path);
+        let artifact_store_path = nonempty(&loaded.artifact_store_path);
         let memory = parse_memory(&loaded.memory)?;
 
         let grpc_tls = build_grpc_tls(
@@ -96,6 +98,7 @@ impl EnvConfiguration {
             publish_prefix: loaded.publish_prefix,
             postgres_url,
             ceremony_store_path,
+            artifact_store_path,
             memory,
             grpc_tls,
             max_parallel: MaxParallel::new(loaded.max_parallel)?,
@@ -197,6 +200,7 @@ mod tests {
         assert_eq!(cfg.trigger_subject, "made.trigger.>");
         assert_eq!(cfg.publish_prefix, "made");
         assert_eq!(cfg.memory, MemorySelection::Automatic);
+        assert_eq!(cfg.artifact_store_path, None);
         assert_eq!(cfg.max_parallel, MaxParallel::SERVER_MAX);
     }
 
@@ -251,11 +255,16 @@ mod tests {
         std::env::set_var("MADE_GRPC_PORT", "50099");
         std::env::set_var("MADE_NATS_ENABLED", "false");
         std::env::set_var("MADE_PUBLISH_PREFIX", "made.prod");
+        std::env::set_var("MADE_ARTIFACT_STORE_PATH", "/var/lib/made-artifacts");
 
         let cfg = EnvConfiguration::new().load().unwrap();
         assert_eq!(cfg.grpc_port, 50099);
         assert!(!cfg.nats_enabled);
         assert_eq!(cfg.publish_prefix, "made.prod");
+        assert_eq!(
+            cfg.artifact_store_path.as_deref(),
+            Some("/var/lib/made-artifacts")
+        );
 
         clear_env();
     }

@@ -2,16 +2,17 @@ use serde_json::{json, Value};
 
 use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
-use super::default_lease_ttl::{
-    lease_ttl_rule, CLAIM_CEREMONY_STEP_LEASE_TTL_MS, RUN_CEREMONY_LEASE_TTL_MS,
-    RUN_CEREMONY_STEP_LEASE_TTL_MS,
-};
+use super::default_lease_ttl::{lease_ttl_rule, RUN_CEREMONY_STEP_LEASE_TTL_MS};
 use super::schema_primitives::{attributes_schema, string_schema, MAX_ID_LIST_ITEMS};
 use super::struct_numbers::STRUCT_NUMBER_RULE;
 
+mod budgeted_execution_schemas;
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
 
+pub(super) use budgeted_execution_schemas::{
+    claim_ceremony_step_schema, run_ceremony_schema, start_published_ceremony_schema,
+};
 #[cfg(any(feature = "embedded", feature = "grpc"))]
 pub(crate) use ceremony_history_schemas::REPORT_IS_PERSISTED;
 pub(super) use ceremony_history_schemas::{
@@ -22,26 +23,6 @@ pub(super) use ceremony_participation_schemas::{
     ceremony_reason_schema, close_ceremony_intervention_schema, collect_ceremony_evidence_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
 };
-
-pub(super) fn start_published_ceremony_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["ceremony", "version", "actor_id", "actor_kind"],
-        "properties": {
-            "actor_id": string_schema("Who is opening it, in whatever terms you identify callers by. Not a role from the definition: at the start its roles are not filled yet, and whoever opens a session may be a participant, an operator, or a scheduler that never takes part."),
-            "actor_kind": {
-                "type": "string",
-                "enum": ["human", "agent", "service", "engine"],
-                "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
-            },
-            "ceremony": string_schema("Name of the published ceremony to run."),
-            "version": string_schema("Published version to bind this instance to."),
-            "ceremony_id": string_schema("Identifier for the new instance. Generated when omitted."),
-            "context": attributes_schema("Opening context for the working session.")
-        }
-    })
-}
 
 /// Either a published version, named, or a document supplied for the
 /// occasion. Both at once has no sensible reading, and the schema says
@@ -91,31 +72,6 @@ pub(super) fn ceremony_draft_schema() -> Value {
 mod design;
 
 pub(super) use design::ceremony_design_schema;
-
-pub(super) fn run_ceremony_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["definition_yaml", "actor_id", "actor_kind"],
-        "properties": {
-            "ceremony_id": string_schema("Optional stable ceremony instance id. The server mints one when omitted."),
-            "definition_yaml": string_schema("Declarative ceremony YAML definition."),
-            "actor_id": string_schema("Who is opening it, in whatever terms you identify callers by. Not a role from the definition: at the start its roles are not filled yet, and whoever opens a session may be a participant, an operator, or a scheduler that never takes part."),
-            "actor_kind": {
-                "type": "string",
-                "enum": ["human", "agent", "service", "engine"],
-                "description": "What kind of party that is. Refused when missing or unrecognised, like every other actor kind."
-            },
-            "context": attributes_schema("Opaque initial ceremony context forwarded to guards and handlers."),
-            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "lease_ttl_ms": {
-                "type": "integer",
-                "minimum": 0,
-                "description": lease_ttl_rule(RUN_CEREMONY_LEASE_TTL_MS)
-            }
-        }
-    })
-}
 
 pub(super) fn start_ceremony_schema() -> Value {
     json!({
@@ -190,30 +146,6 @@ pub(super) fn recover_ceremony_children_schema() -> Value {
     })
 }
 
-pub(super) fn claim_ceremony_step_schema() -> Value {
-    json!({
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["ceremony_id", "step_id", "actor_kind"],
-        "properties": {
-            "ceremony_id": string_schema("Started ceremony instance id."),
-            "step_id": string_schema("Next declared step that the host will execute outside the ceremony engine."),
-            "actor_kind": {
-                "type": "string",
-                "enum": ["human", "agent", "service", "engine"],
-                "description": "What kind of party fills the step's declared seat. The engine records this declaration and never infers it."
-            },
-            "lease_owner_id": string_schema(DEFAULT_LEASE_OWNER_RULE),
-            "idempotency_key": string_schema(DEFAULT_IDEMPOTENCY_KEY_RULE),
-            "lease_ttl_ms": {
-                "type": "integer",
-                "minimum": 0,
-                "description": lease_ttl_rule(CLAIM_CEREMONY_STEP_LEASE_TTL_MS)
-            }
-        }
-    })
-}
-
 pub(super) fn complete_ceremony_step_schema() -> Value {
     json!({
         "type": "object",
@@ -246,6 +178,43 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
             },
             "output": attributes_schema("Structured host output, including evidence and artifact references. Omitted output is empty."),
             "error": string_schema("Required only for failed results and forbidden otherwise.")
+        }
+    })
+}
+
+pub(super) fn get_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."}
+        }
+    })
+}
+
+pub(super) fn inspect_execution_recovery_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "after": string_schema("Opaque cursor returned by the preceding recovery page."),
+            "limit": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "Maximum operation roots to inspect. Zero or omission uses the bounded default."}
+        }
+    })
+}
+
+pub(super) fn apply_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "step_id", "operation_id", "claim_fence", "actor_kind"],
+        "properties": {
+            "ceremony_id": string_schema("Ceremony that owns the operation."),
+            "step_id": string_schema("Claimed step receiving the terminal observation."),
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."},
+            "claim_fence": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Current accepted claim fence. Completion requires the producer fence; adoption requires a distinct current fence."},
+            "actor_kind": {"type": "string", "enum": ["human", "agent", "service", "engine"], "description": "Kind of participant consuming the receipt."}
         }
     })
 }

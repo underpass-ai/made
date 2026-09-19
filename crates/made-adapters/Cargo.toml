@@ -28,11 +28,11 @@ runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
 # Other registries (councils, agents, statistics) remain in-memory
 # in this slice; they will grow their own persistent backings in
 # later slices.
-postgres = ["dep:sqlx"]
+postgres = ["dep:sqlx", "dep:url"]
 
 # Canonical embedded persistence: WAL-mode SQLite, shared safely by several
 # agent hosts.
-sqlite = ["dep:rusqlite"]
+sqlite = ["dep:rusqlite", "dep:url"]
 
 # OpenTelemetry integration. Pulls in the bridge crates the gRPC
 # interceptor needs to extract W3C tracecontext from request
@@ -61,6 +61,7 @@ made-core = { workspace = true }
 made-app = { workspace = true }
 made-proto = { workspace = true, optional = true }
 async-trait = { workspace = true }
+fs2 = { workspace = true }
 thiserror = { workspace = true }
 anyhow = { workspace = true }
 tokio = { workspace = true }
@@ -75,6 +76,7 @@ serde_yaml = { workspace = true }
 figment = { workspace = true }
 time = { workspace = true }
 uuid = { workspace = true }
+sha2 = { workspace = true }
 jsonschema = { workspace = true }
 prometheus = { workspace = true }
 
@@ -110,3 +112,7 @@ tracing-opentelemetry = { workspace = true }
 name = "store_writer"
 path = "src/bin/store_writer.rs"
 required-features = ["sqlite"]
+
+[[bin]]
+name = "artifact_store_writer"
+path = "src/bin/artifact_store_writer.rs"

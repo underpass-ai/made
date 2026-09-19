@@ -24,6 +24,7 @@ mod authorization_decision_page;
 mod authorization_policy_append_outcome;
 mod authorization_policy_snapshot;
 mod authorization_policy_store;
+mod artifact;
 mod budget_append_outcome;
 mod budget_ledger_snapshot;
 mod budget_ledger_store;
@@ -92,6 +93,14 @@ pub use authorization_decision_page::AuthorizationDecisionPage;
 pub use authorization_policy_append_outcome::AuthorizationPolicyAppendOutcome;
 pub use authorization_policy_snapshot::AuthorizationPolicySnapshot;
 pub use authorization_policy_store::AuthorizationPolicyStorePort;
+pub use artifact::{
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
+    ArtifactPage, ArtifactPageLimit, ArtifactReadCompletion, ArtifactRecord,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
+    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
+    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES, ARTIFACT_MAX_PAGE_ITEMS,
+};
 pub use budget_append_outcome::BudgetAppendOutcome;
 pub use budget_ledger_snapshot::BudgetLedgerSnapshot;
 pub use budget_ledger_store::BudgetLedgerStorePort;
@@ -150,3 +159,6 @@ pub use scoring::ScoringPort;
 pub use statistics::StatisticsPort;
 pub use subscription_handler::SubscriptionHandler;
 pub use validator::ValidatorPort;
+
+mod council_journal;
+pub use council_journal::CouncilJournalPort;

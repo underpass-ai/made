@@ -9,6 +9,8 @@ use crate::protocol::{
     RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
 
+mod budget;
+
 /// The runner the caller named, or the one this layer applies.
 ///
 /// Absent means "you choose"; blank is refused, as the tool's schema
@@ -94,6 +96,10 @@ pub(super) fn build_start_published_ceremony_request(
         ceremony: j2p::require_str(obj, "ceremony")?.to_owned(),
         version: j2p::require_str(obj, "version")?.to_owned(),
         context: j2p::optional_pb_struct(obj, "context")?,
+        budget_limits: obj
+            .get("budget_limits")
+            .map(budget::limits_from_json)
+            .transpose()?,
     })
 }
 
@@ -164,6 +170,10 @@ pub(super) fn build_claim_ceremony_step_request(
         lease_owner_id: lease_owner_id(obj)?,
         idempotency_key: idempotency_key(obj),
         lease_ttl_ms: lease_ttl_ms(obj, CLAIM_CEREMONY_STEP_LEASE_TTL_MS)?,
+        budget_reservation: obj
+            .get("budget_reservation")
+            .map(budget::reservation_from_json)
+            .transpose()?,
     })
 }
 

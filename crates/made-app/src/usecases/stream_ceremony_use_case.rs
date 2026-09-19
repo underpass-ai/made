@@ -360,7 +360,13 @@ async fn history_is_terminal(
 }
 
 fn is_terminal_record(record: &AuditRecord) -> bool {
-    record.event_type().as_str() == "ceremony_completed"
+    matches!(
+        record.event_type().as_str(),
+        "ceremony_completed"
+            | "ceremony_cancelled"
+            | "ceremony_deadline_exceeded"
+            | "state_deadline_exceeded"
+    )
 }
 
 #[cfg(test)]

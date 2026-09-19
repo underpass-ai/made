@@ -26,7 +26,7 @@ use made_adapters::ceremony::{
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
+    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
     InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
     InMemoryStatistics,
@@ -38,6 +38,10 @@ use made_adapters::scoring::UniformScoring;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
+};
+use made_app::artifacts::ArtifactService;
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
 use made_app::services::{
     AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
@@ -128,7 +132,12 @@ impl GrpcFixture {
         ];
         let scoring = Arc::new(UniformScoring::new());
         let executor = Arc::new(NoopExecutor::new());
-        let messaging = Arc::new(NoopMessaging::new());
+        let council_journal = wiring.council_journal();
+        let messaging = Arc::new(
+            made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
+                council_journal.clone(),
+            ),
+        );
         let statistics = Arc::new(InMemoryStatistics::new());
         let repository = Arc::new(InMemoryDeliberationRepository::new());
         let council_registry: Arc<dyn CouncilRegistryPort> =
@@ -164,6 +173,8 @@ impl GrpcFixture {
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let budgets =
+            BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
         let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
@@ -249,6 +260,13 @@ impl GrpcFixture {
             clock.clone(),
             memory_reader.clone(),
         ));
+        let start_budgeted_ceremony = Arc::new(StartBudgetedCeremonyUseCase::new(
+            ceremony_publications.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+            memory_reader.clone(),
+            budgets.clone(),
+        ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
                 resolve_ceremony_definition.clone(),
@@ -266,6 +284,12 @@ impl GrpcFixture {
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+        ));
+        let budgeted_step_claim = Arc::new(BudgetedStepClaimUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+            budgets.clone(),
         ));
         let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -376,7 +400,7 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-        let svc = MadeGrpcService::builder()
+        let mut service_builder = MadeGrpcService::builder()
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -389,10 +413,13 @@ impl GrpcFixture {
             .run_ceremony(run_ceremony)
             .start_ceremony(start_ceremony)
             .start_published_ceremony(start_published_ceremony)
+            .start_budgeted_ceremony(start_budgeted_ceremony)
             .run_ceremony_step(run_ceremony_step)
             .accept_child_completion(accept_child_completion)
             .recover_ceremony_children(recover_ceremony_children)
             .claim_ceremony_step(claim_ceremony_step)
+            .budgeted_step_claim(budgeted_step_claim)
+            .budgets(Arc::new(budgets.clone()))
             .complete_ceremony_step(complete_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
             .pause_ceremony(pause_ceremony)
@@ -446,7 +473,39 @@ impl GrpcFixture {
             .statistics(statistics.clone())
             .observability(metrics)
             .service_version("made-tests")
-            .clock(wiring.clock())
+            .council_journal(Arc::new(made_app::services::CouncilJournalService::new(
+                council_journal,
+                wiring.clock(),
+            )))
+            .clock(wiring.clock());
+        let receipts = wiring.execution_receipts();
+        let complete_receipt = made_app::workers::CompleteExecutionReceiptUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            receipts.clone(),
+            wiring.clock(),
+        );
+        let complete_receipt = if let Some(store) = wiring.artifact_store() {
+            complete_receipt.with_artifacts(Arc::new(ArtifactService::new(store)))
+        } else {
+            complete_receipt
+        }
+        .with_budget_ledger(budgets);
+        service_builder = service_builder
+            .get_execution_receipt(Arc::new(
+                made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),
+            ))
+            .inspect_execution_recovery(Arc::new(
+                made_app::workers::InspectExecutionRecoveryUseCase::new(
+                    ceremony_stream.clone(),
+                    receipts,
+                ),
+            ))
+            .complete_execution_receipt(Arc::new(complete_receipt));
+        if let Some(store) = wiring.artifact_store() {
+            service_builder = service_builder.artifacts(Arc::new(ArtifactService::new(store)));
+        }
+        let svc = service_builder
             .build()
             .expect("grpc service wiring should succeed");
 

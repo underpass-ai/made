@@ -6,6 +6,25 @@ durable visits and strict list validation are absent from v0.5.0.
 Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
+## Durable artifacts
+
+Use the artifact transfer operations for outputs too large or durable to embed
+in step JSON. Begin with exact digest, size, MIME type, provenance and an
+idempotency key; upload independently digested chunks at the returned offset;
+then commit. A retry resumes at `next_offset`. Read content in bounded chunks
+and page metadata with the returned opaque cursor. Receipts link typed
+`ArtifactRef` values and never storage paths or bytes.
+
+The local adapter uses an explicit `MADE_ARTIFACT_STORE_PATH` and survives
+restart on one host. A configured `MADE_POSTGRES_URL` selects the shared
+transactional adapter suitable for replicas. The service leaves artifact
+tools unavailable when neither is configured. Default chunks are 64 KiB,
+the hard chunk limit is 1 MiB, the artifact limit is 1 GiB, and list pages
+default to 50 with a maximum of 100. Tombstoning retains digest, actor, policy
+and time for audit while denying content reads. The caller supplies actor and
+provenance assertions; host authentication and authorization remain the trust
+boundary until the principal policy layer is added.
+
 ## Pause, resume, cancel and deadlines
 
 `made_pause_ceremony` stops new claims, transitions and child plans. Claims and
