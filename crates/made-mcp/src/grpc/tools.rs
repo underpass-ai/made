@@ -16,6 +16,9 @@ use super::streaming;
 
 mod artifact_dispatch;
 mod artifact_requests;
+mod authorization_dispatch;
+mod authorization_presenter;
+mod authorization_requests;
 mod budget_dispatch;
 mod ceremony_history_requests;
 mod ceremony_read_dispatch;
@@ -51,6 +54,9 @@ pub(crate) async fn dispatch(
     request_id: &str,
 ) -> Result<Value, ToolError> {
     let mut client = request_metadata_client::build(channel, traceparent, request_id)?;
+    if authorization_dispatch::handles(name) {
+        return authorization_dispatch::dispatch(&mut client, name, arguments).await;
+    }
     if council_journal_dispatch::handles(name) {
         return council_journal_dispatch::dispatch(&mut client, name, arguments).await;
     }
