@@ -610,7 +610,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         while !artifact_writer_stop.load(Ordering::Acquire) {
             let bytes = format!("concurrent-postgres-artifact-{sequence}").into_bytes();
             let concurrent = upload(&artifact_writer_store, &bytes).await;
-            if sequence % 2 == 0 {
+            if sequence.is_multiple_of(2) {
                 artifact_writer_store
                     .tombstone(TombstoneArtifact {
                         artifact_id: concurrent.artifact_id().clone(),

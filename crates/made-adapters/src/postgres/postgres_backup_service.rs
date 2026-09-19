@@ -5,6 +5,7 @@ use std::process::Command;
 use made_core::ports::{
     ArtifactIdempotencyKey, ArtifactRecord, ArtifactStoreError, ArtifactStorePort,
 };
+use made_core::value_objects::ArtifactDigest;
 
 use crate::artifacts::hashing::{digest_bytes, digest_reader};
 use crate::artifacts::local_artifact_io::{read_json, sync_directory, write_json_atomic};
@@ -97,26 +98,9 @@ impl PostgresBackupService {
             }
             owner
         } else {
-            let protected = self.artifacts.protect_snapshot(key.clone()).await?;
-            let (captured, snapshot_id, transaction_snapshot, artifact_records) =
-                self.capture_snapshot().await?;
-            if protected.records != artifact_records
-                || existing_owner
-                    .as_ref()
-                    .is_some_and(|owner| owner.artifact_records != artifact_records)
-            {
-                // A concurrent artifact mutation occurred between the durable
-                // pin and the exported MVCC snapshot. Keep the pin and fail
-                // closed; retrying can safely recapture the same destination.
-                return Err(ArtifactStoreError::IdempotencyConflict);
-            }
-            let owner = PostgresBackupOwner {
-                protection_key: key.clone(),
-                source_identity: source_identity.clone(),
-                snapshot_id,
-                transaction_snapshot,
-                artifact_records,
-            };
+            let (owner, captured) = self
+                .begin_backup_capture(&key, &source_identity, existing_owner.as_ref())
+                .await?;
             write_json_atomic(&owner_path, &owner)?;
             transaction = Some(captured);
             owner
@@ -168,6 +152,36 @@ impl PostgresBackupService {
         Ok(manifest)
     }
 
+    async fn begin_backup_capture<'a>(
+        &'a self,
+        key: &ArtifactIdempotencyKey,
+        source_identity: &ArtifactDigest,
+        existing_owner: Option<&PostgresBackupOwner>,
+    ) -> Result<(PostgresBackupOwner, Transaction<'a, Postgres>), ArtifactStoreError> {
+        let (captured, snapshot_id, transaction_snapshot, artifact_records) =
+            self.capture_snapshot().await?;
+        // The exported transaction is already holding the exact MVCC versions
+        // that pg_dump will import. Persist a durable pin for those records
+        // after exporting, while PostgreSQL retains deleted row versions.
+        let protected = self
+            .artifacts
+            .protect_restore(key.clone(), artifact_records.clone())
+            .await?;
+        if protected.records != artifact_records
+            || existing_owner.is_some_and(|owner| owner.artifact_records != artifact_records)
+        {
+            return Err(ArtifactStoreError::IdempotencyConflict);
+        }
+        let owner = PostgresBackupOwner {
+            protection_key: key.clone(),
+            source_identity: source_identity.clone(),
+            snapshot_id,
+            transaction_snapshot,
+            artifact_records,
+        };
+        Ok((owner, captured))
+    }
+
     async fn capture_snapshot(
         &self,
     ) -> Result<
@@ -212,6 +226,7 @@ impl PostgresBackupService {
                 .map_err(|_| ArtifactStoreError::StorageUnavailable)
             })
             .collect::<Result<Vec<ArtifactRecord>, _>>()?;
+        PostgresArtifactStore::validate_protected_content(&mut transaction, &records).await?;
         Ok((transaction, snapshot_id, transaction_snapshot, records))
     }
 
@@ -273,9 +288,10 @@ impl PostgresBackupService {
                 .arg(isolated_database_url)
                 .arg(source.as_ref().join(ARCHIVE_FILE)),
         )?;
-        // The archive contains the backup protection as it existed at its own
-        // MVCC boundary. It is no longer needed once restore succeeds.
-        target.release_snapshot(&manifest.protection_key).await
+        // The source-only backup pin is persisted after the exported snapshot,
+        // so it is deliberately absent from the archive. Live protections that
+        // did exist at the captured boundary (for example receipt pins) remain.
+        Ok(())
     }
 }
 

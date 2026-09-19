@@ -99,7 +99,7 @@ impl PostgresArtifactStore {
         Ok(records)
     }
 
-    async fn validate_protected_content(
+    pub(super) async fn validate_protected_content(
         tx: &mut Transaction<'_, Postgres>,
         records: &[ArtifactRecord],
     ) -> Result<(), ArtifactStoreError> {
