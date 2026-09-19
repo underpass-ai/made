@@ -25,6 +25,7 @@
 //! sets either: it does not know the head, and letting it guess would
 //! be worse than leaving the fields empty.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
@@ -48,7 +49,7 @@ pub struct SessionStream {
     events: Arc<dyn CeremonyEventStorePort>,
     snapshots: Arc<dyn CeremonySnapshotStorePort>,
     subscriber: Arc<dyn CeremonyEventSubscriberPort>,
-    authorization_required: bool,
+    authorization_required: AtomicBool,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -68,7 +69,7 @@ impl SessionStream {
             events,
             snapshots,
             subscriber,
-            authorization_required: false,
+            authorization_required: AtomicBool::new(false),
         }
     }
 
@@ -83,8 +84,14 @@ impl SessionStream {
             events,
             snapshots,
             subscriber,
-            authorization_required: true,
+            authorization_required: AtomicBool::new(true),
         }
+    }
+
+    /// Turn an already-composed embedded stream into a protected runtime
+    /// boundary before it is shared with callers.
+    pub fn require_authorization(&self) {
+        self.authorization_required.store(true, Ordering::Release);
     }
 
     /// The sealed records of one stream, in order.
@@ -354,7 +361,9 @@ impl SessionStream {
         version: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
-        if let Some(operation) = Self::active_authorization(self.authorization_required)? {
+        if let Some(operation) =
+            Self::active_authorization(self.authorization_required.load(Ordering::Acquire))?
+        {
             return self
                 .events
                 .append_authorized(ceremony_id, version, facts, operation.evidence().clone())
