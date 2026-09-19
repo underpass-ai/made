@@ -15,6 +15,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod authorization;
 pub mod budgets;
 pub mod services;
 pub mod usecases;
