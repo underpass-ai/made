@@ -104,15 +104,12 @@ impl StdioMcp {
             .await
             .expect("stdio response timed out")
             .unwrap();
-        let line = match line {
-            Some(line) => line,
-            None => {
-                let mut stderr = String::new();
-                if let Some(mut stream) = self.child.stderr.take() {
-                    stream.read_to_string(&mut stderr).await.unwrap();
-                }
-                panic!("made-mcp closed stdout: {stderr}");
+        let Some(line) = line else {
+            let mut stderr = String::new();
+            if let Some(mut stream) = self.child.stderr.take() {
+                stream.read_to_string(&mut stderr).await.unwrap();
             }
+            panic!("made-mcp closed stdout: {stderr}");
         };
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["result"]["isError"], false, "{name}: {response}");
