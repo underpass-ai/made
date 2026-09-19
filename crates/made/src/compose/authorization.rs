@@ -19,12 +19,25 @@ const PRINCIPALS_PATH_ENV: &str = "MADE_AUTH_MTLS_PRINCIPALS_PATH";
 
 pub(super) struct AuthorizationWiring {
     pub(super) gate: Arc<GrpcAuthorizationGate>,
+    authorize: Arc<AuthorizeOperationUseCase>,
     pub(super) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(super) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
 }
 
 impl AuthorizationWiring {
+    pub(super) fn protect_memory(
+        &self,
+        reader: Arc<dyn made_core::ports::MemoryReaderPort>,
+        stream: Arc<made_app::services::SessionStream>,
+    ) -> Arc<dyn made_core::ports::MemoryReaderPort> {
+        Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
+            reader,
+            self.authorize.clone(),
+            stream,
+        ))
+    }
+
     pub(super) fn apply(
         self,
         builder: made_adapters::grpc::MadeGrpcServiceBuilder,
@@ -66,7 +79,11 @@ pub(super) async fn wire(
         AuthorizationDecisionTtl::from_seconds(60)?,
     ));
     Ok(AuthorizationWiring {
-        gate: Arc::new(GrpcAuthorizationGate::mutual_tls(authorize, principals)),
+        gate: Arc::new(GrpcAuthorizationGate::mutual_tls(
+            authorize.clone(),
+            principals,
+        )),
+        authorize,
         administration: Arc::new(AuthorizationPolicyAdministrationService::new(
             policy_id.clone(),
             store.clone(),

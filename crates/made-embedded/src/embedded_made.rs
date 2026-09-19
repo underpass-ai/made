@@ -341,6 +341,17 @@ impl EmbeddedMade {
         policy_id: AuthorizationPolicyId,
         store: Arc<dyn AuthorizationPolicyStorePort>,
     ) -> Self {
+        self.memory_reader = Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
+            self.memory_reader.clone(),
+            Arc::new(made_app::authorization::AuthorizeOperationUseCase::new(
+                policy_id.clone(),
+                store.clone(),
+                self.clock.clone(),
+                made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
+                    .expect("fixed authorization TTL is valid"),
+            )),
+            self.stream.clone(),
+        ));
         self.authorization = Some(EmbeddedAuthorizationServices::new(
             ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
             ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
