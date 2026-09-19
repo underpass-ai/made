@@ -11,7 +11,8 @@ impl MadeClient {
     ) -> Result<ArtifactRecord, MadeClientError> {
         let response = self
             .rpc()
-            .get_artifact(self.request(
+            .get_artifact(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/GetArtifact",
                 GetArtifactRequest {
                     artifact_id: artifact_id.into(),
@@ -31,7 +32,8 @@ impl MadeClient {
         limit: u32,
     ) -> Result<ListArtifactsResponse, MadeClientError> {
         self.rpc()
-            .list_artifacts(self.request(
+            .list_artifacts(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/ListArtifacts",
                 ListArtifactsRequest { cursor, limit },
             ))

@@ -8,13 +8,13 @@ use tonic::metadata::MetadataValue;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic::Request;
 
-use crate::{ClientConfig, MadeClientError};
+use crate::{ClientConfig, MadeClientError, RequestContext};
 
 /// Cloneable reference client backed exclusively by MADE's public gRPC API.
 #[derive(Clone, Debug)]
 pub struct MadeClient {
     channel: Channel,
-    invocation_id: String,
+    request_context: Option<RequestContext>,
 }
 
 impl MadeClient {
@@ -23,10 +23,6 @@ impl MadeClient {
     }
 
     pub async fn connect_with_config(config: ClientConfig) -> Result<Self, MadeClientError> {
-        let invocation_id = config.invocation_id().trim();
-        if invocation_id.is_empty() || invocation_id.len() > 256 {
-            return Err(MadeClientError::InvalidInvocationId);
-        }
         let mut endpoint = Endpoint::from_shared(config.endpoint().to_owned())
             .map_err(|error| MadeClientError::InvalidEndpoint(error.to_string()))?;
         if config.uses_tls() {
@@ -52,7 +48,7 @@ impl MadeClient {
                 Ok(channel) => {
                     return Ok(Self {
                         channel,
-                        invocation_id: invocation_id.to_owned(),
+                        request_context: config.request_context().cloned(),
                     });
                 }
                 Err(error) => last_error = Some(error.to_string()),
@@ -72,12 +68,20 @@ impl MadeClient {
         MadeServiceClient::new(self.channel.clone())
     }
 
-    pub(crate) fn request<T>(&self, method: &'static str, payload: T) -> Request<T>
+    pub(crate) fn context(&self) -> RequestContext {
+        self.request_context.clone().unwrap_or_default()
+    }
+
+    pub(crate) fn request<T>(
+        context: &RequestContext,
+        method: &'static str,
+        payload: T,
+    ) -> Request<T>
     where
         T: Message,
     {
         let payload_bytes = payload.encode_to_vec();
-        let request_id = derived_request_id(&self.invocation_id, method, &payload_bytes);
+        let request_id = derived_request_id(context.id(), method, &payload_bytes);
         let mut request = Request::new(payload);
         request
             .metadata_mut()
@@ -86,8 +90,8 @@ impl MadeClient {
     }
 
     #[must_use]
-    pub fn invocation_id(&self) -> &str {
-        &self.invocation_id
+    pub fn request_context(&self) -> RequestContext {
+        self.context()
     }
 }
 

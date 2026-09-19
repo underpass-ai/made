@@ -12,7 +12,8 @@ impl MadeClient {
         ceremony_id: impl Into<String>,
     ) -> Result<GetBudgetReportResponse, MadeClientError> {
         self.rpc()
-            .get_budget_report(self.request(
+            .get_budget_report(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/GetBudgetReport",
                 GetBudgetReportRequest {
                     ceremony_id: ceremony_id.into(),
@@ -30,7 +31,8 @@ impl MadeClient {
         limit: u32,
     ) -> Result<ListPendingBudgetReservationsResponse, MadeClientError> {
         self.rpc()
-            .list_pending_budget_reservations(self.request(
+            .list_pending_budget_reservations(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/ListPendingBudgetReservations",
                 ListPendingBudgetReservationsRequest {
                     after_reservation_id: after_reservation_id.into(),

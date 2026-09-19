@@ -13,7 +13,8 @@ impl MadeClient {
         title: impl Into<String>,
     ) -> Result<GenerateCeremonyReportResponse, MadeClientError> {
         self.rpc()
-            .generate_ceremony_report(self.request(
+            .generate_ceremony_report(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/GenerateCeremonyReport",
                 GenerateCeremonyReportRequest {
                     ceremony_ids,

@@ -14,7 +14,8 @@ impl MadeClient {
     ) -> Result<ProgressBatch, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
-            .stream_ceremony(self.request(
+            .stream_ceremony(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/StreamCeremony",
                 StreamCeremonyRequest {
                     ceremony_id: checkpoint.ceremony_id().to_owned(),

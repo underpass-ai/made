@@ -12,7 +12,11 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .pause_ceremony(self.request("/underpass.made.v1.MadeService/PauseCeremony", request))
+            .pause_ceremony(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/PauseCeremony",
+                request,
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -25,7 +29,11 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .resume_ceremony(self.request("/underpass.made.v1.MadeService/ResumeCeremony", request))
+            .resume_ceremony(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/ResumeCeremony",
+                request,
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -38,7 +46,11 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .cancel_ceremony(self.request("/underpass.made.v1.MadeService/CancelCeremony", request))
+            .cancel_ceremony(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/CancelCeremony",
+                request,
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -51,7 +63,8 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .enforce_ceremony_deadlines(self.request(
+            .enforce_ceremony_deadlines(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/EnforceCeremonyDeadlines",
                 EnforceCeremonyDeadlinesRequest {
                     ceremony_id: ceremony_id.into(),
@@ -69,7 +82,8 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .approve_ceremony_guard(self.request(
+            .approve_ceremony_guard(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/ApproveCeremonyGuard",
                 request,
             ))

@@ -64,7 +64,8 @@ impl MadeClient {
         loop {
             let response = self
                 .rpc()
-                .read_artifact_chunk(self.request(
+                .read_artifact_chunk(Self::request(
+                    &self.context(),
                     "/underpass.made.v1.MadeService/ReadArtifactChunk",
                     ReadArtifactChunkRequest {
                         artifact_id: artifact_id.to_owned(),

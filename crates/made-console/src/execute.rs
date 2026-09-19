@@ -5,7 +5,7 @@ use made_client::v1::{
     ApproveCeremonyGuardRequest, CancelCeremonyRequest, PauseCeremonyRequest,
     ResumeCeremonyRequest, StreamCeremonyEndReason,
 };
-use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint};
+use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint, RequestContext};
 use serde_json::json;
 
 use crate::{render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat};
@@ -68,7 +68,9 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
 async fn connect_client(args: &Args) -> Result<MadeClient, MadeClientError> {
     let mut config = ClientConfig::new(args.endpoint.clone());
     if let Some(request_namespace) = &args.request_namespace {
-        config = config.with_invocation_id(request_namespace.clone());
+        config = config.with_request_context(RequestContext::from_id(request_namespace.clone())?);
+    } else {
+        config = config.with_request_context(RequestContext::new());
     }
     if let Some(path) = &args.tls_ca_certificate {
         config = config.with_ca_certificate_pem(read_pem(path).await?);

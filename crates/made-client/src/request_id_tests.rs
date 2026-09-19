@@ -9,7 +9,7 @@ use tonic::codegen::{http, Body, BoxFuture, Service, StdError};
 use tonic::server::NamedService;
 use tonic::transport::Server;
 
-use crate::{ClientConfig, MadeClient};
+use crate::{ClientConfig, MadeClient, RequestContext};
 
 #[derive(Clone, Debug)]
 struct CaptureService {
@@ -75,7 +75,7 @@ impl tonic::server::UnaryService<GetBudgetReportRequest> for CaptureBudgetReques
 }
 
 #[tokio::test]
-async fn distinct_payloads_get_distinct_ids_and_retry_reuses_the_id() {
+async fn default_calls_are_fresh_and_explicit_retry_context_is_stable() {
     let requests = Arc::new(Mutex::new(Vec::new()));
     let service = CaptureService {
         requests: Arc::clone(&requests),
@@ -91,22 +91,30 @@ async fn distinct_payloads_get_distinct_ids_and_retry_reuses_the_id() {
             }),
     );
 
-    let client = MadeClient::connect_with_config(
-        ClientConfig::new(format!("http://{address}")).with_invocation_id("invocation-7"),
-    )
-    .await
-    .unwrap();
+    let endpoint = format!("http://{address}");
+    let client = MadeClient::connect(endpoint.clone()).await.unwrap();
     client.get_budget_report("ceremony-a").await.unwrap();
-    client.get_budget_report("ceremony-b").await.unwrap();
     client.get_budget_report("ceremony-a").await.unwrap();
 
+    let context = RequestContext::from_id("invocation-7").unwrap();
+    let retry_client =
+        MadeClient::connect_with_config(ClientConfig::new(endpoint).with_request_context(context))
+            .await
+            .unwrap();
+    retry_client.get_budget_report("ceremony-a").await.unwrap();
+    retry_client.get_budget_report("ceremony-b").await.unwrap();
+    retry_client.get_budget_report("ceremony-a").await.unwrap();
+
     let captured = requests.lock().unwrap().clone();
-    assert_eq!(captured.len(), 3);
+    assert_eq!(captured.len(), 5);
     assert_eq!(captured[0].0, "ceremony-a");
-    assert_eq!(captured[1].0, "ceremony-b");
+    assert_eq!(captured[1].0, "ceremony-a");
     assert_eq!(captured[2].0, "ceremony-a");
+    assert_eq!(captured[3].0, "ceremony-b");
+    assert_eq!(captured[4].0, "ceremony-a");
     assert_ne!(captured[0].1, captured[1].1);
-    assert_eq!(captured[0].1, captured[2].1);
+    assert_ne!(captured[2].1, captured[3].1);
+    assert_eq!(captured[2].1, captured[4].1);
     assert!(captured.iter().all(|(_, id)| id.len() <= 256));
 
     shutdown_tx.send(()).unwrap();

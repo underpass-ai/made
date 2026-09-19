@@ -1,10 +1,12 @@
 use std::time::Duration;
 
+use crate::RequestContext;
+
 /// Bounded connection policy for the public MADE endpoint.
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     endpoint: String,
-    invocation_id: String,
+    request_context: Option<RequestContext>,
     connect_attempts: u32,
     initial_backoff: Duration,
     maximum_backoff: Duration,
@@ -17,7 +19,7 @@ impl ClientConfig {
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
-            invocation_id: uuid::Uuid::new_v4().to_string(),
+            request_context: None,
             connect_attempts: 5,
             initial_backoff: Duration::from_millis(100),
             maximum_backoff: Duration::from_secs(2),
@@ -29,8 +31,8 @@ impl ClientConfig {
 
     /// Reuse one caller-generated namespace when reconstructing a logical invocation.
     #[must_use]
-    pub fn with_invocation_id(mut self, invocation_id: impl Into<String>) -> Self {
-        self.invocation_id = invocation_id.into();
+    pub fn with_request_context(mut self, request_context: RequestContext) -> Self {
+        self.request_context = Some(request_context);
         self
     }
 
@@ -76,8 +78,8 @@ impl ClientConfig {
         &self.endpoint
     }
 
-    pub(crate) fn invocation_id(&self) -> &str {
-        &self.invocation_id
+    pub(crate) fn request_context(&self) -> Option<&RequestContext> {
+        self.request_context.as_ref()
     }
 
     pub(crate) fn connect_attempts(&self) -> u32 {

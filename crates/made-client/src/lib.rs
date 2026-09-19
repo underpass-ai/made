@@ -14,6 +14,7 @@ mod progress;
 mod progress_batch;
 mod progress_checkpoint;
 mod reports;
+mod request_context;
 
 pub use ceremony_tree::CeremonyTree;
 pub use ceremony_tree_node::CeremonyTreeNode;
@@ -22,6 +23,7 @@ pub use made_client::MadeClient;
 pub use made_client_error::MadeClientError;
 pub use progress_batch::ProgressBatch;
 pub use progress_checkpoint::ProgressCheckpoint;
+pub use request_context::RequestContext;
 
 pub use made_proto::v1;
 

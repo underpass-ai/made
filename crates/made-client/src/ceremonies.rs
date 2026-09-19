@@ -12,7 +12,8 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
-            .get_ceremony_instance(self.request(
+            .get_ceremony_instance(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/GetCeremonyInstance",
                 GetCeremonyInstanceRequest {
                     ceremony_id: ceremony_id.into(),
@@ -31,7 +32,8 @@ impl MadeClient {
     pub async fn list_ceremonies(&self) -> Result<Vec<CeremonyInstanceState>, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
-            .list_ceremony_instances(self.request(
+            .list_ceremony_instances(Self::request(
+                &self.context(),
                 "/underpass.made.v1.MadeService/ListCeremonyInstances",
                 ListCeremonyInstancesRequest {},
             ))

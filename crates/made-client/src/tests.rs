@@ -1,14 +1,13 @@
 use made_proto::v1::{CeremonyInstanceState, CeremonyLineageState};
 
-use crate::{CeremonyTree, ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint};
+use crate::{CeremonyTree, MadeClientError, ProgressCheckpoint, RequestContext};
 
 #[tokio::test]
-async fn empty_invocation_id_is_rejected_before_connecting() {
-    let result = MadeClient::connect_with_config(
-        ClientConfig::new("http://127.0.0.1:1").with_invocation_id("   "),
-    )
-    .await;
-    assert!(matches!(result, Err(MadeClientError::InvalidInvocationId)));
+async fn empty_invocation_id_is_rejected() {
+    assert!(matches!(
+        RequestContext::from_id("   "),
+        Err(MadeClientError::InvalidInvocationId)
+    ));
 }
 
 #[tokio::test]
