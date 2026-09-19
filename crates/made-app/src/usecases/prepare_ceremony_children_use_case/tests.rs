@@ -2,14 +2,19 @@ use std::sync::atomic::{AtomicI64, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
+use made_core::entities::ceremony_commands::StartStep;
+use made_core::entities::{
+    AuditFact, AuditRecord, CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance,
+    PublishedCeremonyDefinition,
+};
 use made_core::error::DomainError;
 use made_core::ports::{
     AppendOutcome, CeremonyEventStorePort, ClockPort, NoopCeremonyEventSubscriber, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuditActorKind, AuditEventType, CeremonyEventPageLimit, CeremonyId, GlobalPosition,
-    IdempotencyKey, LeaseOwnerId, StreamVersion,
+    AuditActorKind, AuditEventType, BudgetAccountId, BudgetOperationId, BudgetReservationId,
+    CeremonyContext, CeremonyEventPageLimit, CeremonyId, ExecutionOperationId, GlobalPosition,
+    IdempotencyKey, LeaseOwnerId, MaxParallel, StepLease, StreamVersion,
 };
 use time::OffsetDateTime;
 use tokio::sync::Barrier;
@@ -91,6 +96,53 @@ impl ClockPort for AdvancingClock {
     fn now(&self) -> OffsetDateTime {
         self.base + time::Duration::seconds(self.seconds.fetch_add(1, Ordering::SeqCst))
     }
+}
+
+fn budgeted_claimed_parent(
+    definition: &CeremonyDefinition,
+) -> (CeremonyInstance, made_core::value_objects::StepClaimFence) {
+    let published = PublishedCeremonyDefinition::seal(definition.clone()).unwrap();
+    let account_id = BudgetAccountId::for_root(&ceremony_id()).unwrap();
+    let mut events = CeremonyInstance::decide_start_bound_budgeted(
+        ceremony_id(),
+        &published,
+        CeremonyContext::empty(),
+        account_id.clone(),
+        None,
+        now(),
+    )
+    .unwrap();
+    let pending = CeremonyInstance::rehydrate(events.iter()).unwrap();
+    let record = pending.step_record(&step_id()).unwrap();
+    let operation_id = ExecutionOperationId::for_step(
+        pending.id(),
+        &step_id(),
+        pending.current_state_visit(),
+        pending.current_state_iteration(),
+        record.iteration(),
+    );
+    let reservation_id = BudgetReservationId::for_operation(
+        &account_id,
+        &BudgetOperationId::for_execution(&operation_id),
+    );
+    let command = CeremonyCommand::StartStep(StartStep {
+        role_id: Some(role_id()),
+        step_id: step_id(),
+        lease: StepLease::acquire(
+            LeaseOwnerId::new("budgeted-parent").unwrap(),
+            IdempotencyKey::new("budgeted-parent-claim").unwrap(),
+            now(),
+            lease_ttl(),
+        )
+        .unwrap(),
+        now: now(),
+        max_parallel_ceiling: MaxParallel::SERVER_MAX,
+        budget_reservation_id: Some(reservation_id),
+    });
+    events.extend(pending.decide(&command, definition).unwrap());
+    let parent = CeremonyInstance::rehydrate(events.iter()).unwrap();
+    let fence = parent.step_claim_fence(&step_id()).unwrap();
+    (parent, fence)
 }
 
 #[tokio::test]
@@ -250,4 +302,45 @@ async fn concurrent_prepare_adopts_the_winning_plan_when_candidates_differ() {
         1
     );
     assert_eq!(store.records(&first.child_ids()[0]).await.len(), 1);
+}
+
+#[tokio::test]
+async fn a_spawned_child_inherits_the_exact_root_budget_account() {
+    let definition = child_spawning_definition();
+    let definitions = Arc::new(
+        crate::usecases::ceremony_test_support::DefinitionRepositoryFake::new(definition.clone()),
+    );
+    let publications = Arc::new(PublicationsFake::default());
+    publications.seed(definition.clone()).await;
+    publications.seed(review_child_definition()).await;
+    let (parent, claim_fence) = budgeted_claimed_parent(&definition);
+    let account_id = parent.budget_account_id().cloned().unwrap();
+    let store = Arc::new(EventStoreFake::default());
+    store.save(&parent).await.unwrap();
+    let stream = Arc::new(SessionStream::new(
+        store.clone(),
+        store.clone(),
+        Arc::new(NoopCeremonyEventSubscriber),
+    ));
+    let prepare = PrepareCeremonyChildrenUseCase::new(
+        resolver_with(definitions, publications.clone()),
+        publications,
+        stream,
+        Arc::new(FixedClock::new(now())),
+        a_memory(),
+    );
+
+    let output = prepare
+        .execute(PrepareCeremonyChildrenInput::new(
+            ceremony_id(),
+            step_id(),
+            claim_fence,
+            AuditActorKind::Agent,
+        ))
+        .await
+        .unwrap();
+    let child = store.saved(&output.child_ids()[0]).await;
+
+    assert_eq!(child.budget_account_id(), Some(&account_id));
+    assert_eq!(child.lineage().unwrap().root_id(), parent.id());
 }
