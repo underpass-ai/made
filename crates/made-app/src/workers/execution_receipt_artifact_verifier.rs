@@ -14,6 +14,6 @@ pub(super) async fn verify_receipt_artifacts(
         .ok_or(DomainError::InvariantViolated {
             reason: "execution receipt carries artifacts but no artifact store is configured",
         })?
-        .verify_execution_receipt(receipt)
+        .protect_execution_receipt(receipt)
         .await
 }

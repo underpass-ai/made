@@ -12,7 +12,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    StepClaimFence,
 };
 
 use crate::engine::{Key, ReadTx, Table};
@@ -74,6 +75,26 @@ fn receipt(
         if stored.operation_id() != operation_id {
             return Err(DomainError::InvariantViolated {
                 reason: "sqlite: execution receipt key does not match its value",
+            });
+        }
+    }
+    Ok(stored)
+}
+
+fn reconciliation_requirement(
+    tx: &dyn ReadTx,
+    operation_id: &ExecutionOperationId,
+    claim_fence: &StepClaimFence,
+) -> Result<Option<ExecutionReconciliationRequirement>, DomainError> {
+    let key = execution_intent(operation_id, claim_fence);
+    let stored: Option<ExecutionReconciliationRequirement> = tx
+        .get(Table::ExecutionReconciliationRequirements, Key::Bytes(&key))?
+        .map(|bytes| decode(&bytes, "decode execution reconciliation requirement"))
+        .transpose()?;
+    if let Some(stored) = &stored {
+        if stored.operation_id() != operation_id || stored.producer_claim_fence() != claim_fence {
+            return Err(DomainError::InvariantViolated {
+                reason: "sqlite: execution reconciliation requirement key does not match its value",
             });
         }
     }
@@ -153,6 +174,63 @@ impl ExecutionReceiptStorePort for SqliteCeremonyStore {
         self.blocking("read execution receipt", move |engine| {
             let tx = engine.begin_read()?;
             receipt(tx.as_ref(), &operation_id)
+        })
+        .await
+    }
+
+    async fn record_reconciliation_requirement(
+        &self,
+        requirement: ExecutionReconciliationRequirement,
+    ) -> Result<(), DomainError> {
+        self.blocking(
+            "record execution reconciliation requirement",
+            move |engine| {
+                let mut tx = engine.begin_write()?;
+                let operation_id = requirement.operation_id();
+                let claim_fence = requirement.producer_claim_fence();
+                let Some(producer_intent) = intent(tx.as_ref(), operation_id, claim_fence)? else {
+                    return Err(DomainError::NotFound {
+                        what: "execution_intent",
+                    });
+                };
+                if !requirement.matches_intent(&producer_intent) {
+                    return Err(DomainError::Conflict {
+                        what: "execution_reconciliation_requirement",
+                    });
+                }
+                if let Some(stored) =
+                    reconciliation_requirement(tx.as_ref(), operation_id, claim_fence)?
+                {
+                    return if stored == requirement {
+                        Ok(())
+                    } else {
+                        Err(DomainError::Conflict {
+                            what: "execution_reconciliation_requirement",
+                        })
+                    };
+                }
+                let key = execution_intent(operation_id, claim_fence);
+                tx.insert(
+                    Table::ExecutionReconciliationRequirements,
+                    Key::Bytes(&key),
+                    &encode(&requirement, "encode execution reconciliation requirement")?,
+                )?;
+                tx.commit()
+            },
+        )
+        .await
+    }
+
+    async fn reconciliation_requirement(
+        &self,
+        operation_id: &ExecutionOperationId,
+        claim_fence: &StepClaimFence,
+    ) -> Result<Option<ExecutionReconciliationRequirement>, DomainError> {
+        let operation_id = operation_id.clone();
+        let claim_fence = claim_fence.clone();
+        self.blocking("read execution reconciliation requirement", move |engine| {
+            let tx = engine.begin_read()?;
+            reconciliation_requirement(tx.as_ref(), &operation_id, &claim_fence)
         })
         .await
     }
@@ -298,9 +376,9 @@ mod tests {
     };
     use made_core::value_objects::{
         ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
-        ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability,
-        ExecutionRecoveryPageLimit, ExecutionRequestBytes, StateIteration, StateVisit,
-        StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
+        ExecutionOperation, ExecutionReceipt, ExecutionReconciliationRequirement,
+        ExecutionRecoveryCapability, ExecutionRecoveryPageLimit, ExecutionRequestBytes,
+        StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
     };
     use time::OffsetDateTime;
 
@@ -401,6 +479,34 @@ mod tests {
             .await
             .unwrap()
             .is_some());
+    }
+
+    #[tokio::test]
+    async fn connector_reported_ambiguity_is_idempotent_and_survives_reopen() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("reconciliation.sqlite3");
+        let left = SqliteCeremonyStore::open(&path).unwrap();
+        let right = SqliteCeremonyStore::open(&path).unwrap();
+        let intent = intent(operation("ambiguous", b"request"), fence('4'));
+        left.record_intent(intent.clone()).await.unwrap();
+        let requirement = ExecutionReconciliationRequirement::from_intent(&intent);
+
+        let (left_result, right_result) = tokio::join!(
+            left.record_reconciliation_requirement(requirement.clone()),
+            right.record_reconciliation_requirement(requirement.clone()),
+        );
+        left_result.unwrap();
+        right_result.unwrap();
+        drop((left, right));
+
+        let reopened = SqliteCeremonyStore::open(path).unwrap();
+        assert_eq!(
+            reopened
+                .reconciliation_requirement(intent.operation().operation_id(), intent.claim_fence())
+                .await
+                .unwrap(),
+            Some(requirement)
+        );
     }
 
     #[tokio::test]

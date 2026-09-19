@@ -1,54 +1,11 @@
-//! Deterministic provider adapter used by contract tests and local fixtures.
-
-use super::operation::{
-    FinishClassification, FinishReason, Observed, ProviderContractError,
-    ProviderErrorClassification, ProviderIdentity, ProviderModel, ProviderName,
-    ProviderOperationAdapter, ProviderOperationObservation, ProviderOperationRequest,
-    ProviderSecret, Usage,
+use super::super::operation::{
+    FinishClassification, Observed, ProviderContractError, ProviderIdentity, ProviderModel,
+    ProviderName, ProviderOperationAdapter, ProviderOperationObservation, ProviderOperationRequest,
+    ProviderSecret,
 };
-use made_core::value_objects::DurationMs;
+use super::FakeProviderResponse;
 
-/// A fixed response returned by [`FakeProviderAdapter`].
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FakeProviderResponse {
-    /// Successful provider declaration.
-    Success {
-        latency: DurationMs,
-        usage: Observed<Usage>,
-        finish: FinishReason,
-    },
-    /// Classified provider failure, still represented as an observation.
-    Error {
-        latency: DurationMs,
-        usage: Observed<Usage>,
-        error: ProviderErrorClassification,
-    },
-}
-
-impl FakeProviderResponse {
-    /// Build a success with fixture-declared usage.
-    #[must_use]
-    pub const fn success(latency_ms: u64, usage: Usage, finish: FinishReason) -> Self {
-        Self::Success {
-            latency: DurationMs::from_millis(latency_ms),
-            usage: Observed::declared_by_fixture(usage),
-            finish,
-        }
-    }
-
-    /// Build an error with fixture-declared usage.
-    #[must_use]
-    pub const fn error(latency_ms: u64, usage: Usage, error: ProviderErrorClassification) -> Self {
-        Self::Error {
-            latency: DurationMs::from_millis(latency_ms),
-            usage: Observed::declared_by_fixture(usage),
-            error,
-        }
-    }
-}
-
-/// A deterministic adapter that validates configured provider/model identity
-/// and returns a fixed observation without making a network call or sleeping.
+/// A deterministic adapter that validates configured provider/model identity and returns a fixed observation.
 #[derive(Debug, Clone)]
 pub struct FakeProviderAdapter {
     provider: ProviderName,
@@ -58,7 +15,6 @@ pub struct FakeProviderAdapter {
 }
 
 impl FakeProviderAdapter {
-    /// Configure the provider/model profile and fixed response.
     pub fn new(
         provider: impl Into<String>,
         model: impl Into<String>,
@@ -71,8 +27,6 @@ impl FakeProviderAdapter {
             secret: None,
         })
     }
-
-    /// Attach a credential solely to exercise safe adapter debug output.
     #[must_use]
     pub fn with_secret(mut self, secret: ProviderSecret) -> Self {
         self.secret = Some(secret);
@@ -98,7 +52,6 @@ impl ProviderOperationAdapter for FakeProviderAdapter {
                 actual: request.identity().clone(),
             });
         }
-
         let observation = match &self.response {
             FakeProviderResponse::Success {
                 latency,
@@ -124,6 +77,3 @@ impl ProviderOperationAdapter for FakeProviderAdapter {
         Ok(observation)
     }
 }
-
-/// Name emphasizing that the fake is deterministic, not externally authoritative.
-pub type DeterministicProviderAdapter = FakeProviderAdapter;

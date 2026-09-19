@@ -3,9 +3,12 @@ use std::sync::Arc;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
-    ClockPort, ExecutionReceiptStorePort, RecordExecutionIntentOutcome,
+    ClockPort, ExecutionCancellation, ExecutionReceiptStorePort, RecordExecutionIntentOutcome,
 };
-use made_core::value_objects::{ExecutionIntent, ExecutionOperation, ExecutionRecoveryCapability};
+use made_core::value_objects::{
+    ExecutionIntent, ExecutionOperation, ExecutionReconciliationRequirement,
+    ExecutionRecoveryCapability,
+};
 
 use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
@@ -54,6 +57,16 @@ impl ExecuteCeremonyOperationUseCase {
         &self,
         input: ExecuteCeremonyOperationInput,
     ) -> Result<ExecuteCeremonyOperationOutcome, DomainError> {
+        self.execute_cancellable(input, ExecutionCancellation::new())
+            .await
+    }
+
+    pub async fn execute_cancellable(
+        &self,
+        input: ExecuteCeremonyOperationInput,
+        cancellation: ExecutionCancellation,
+    ) -> Result<ExecuteCeremonyOperationOutcome, DomainError> {
+        ensure_authority(&cancellation)?;
         let semantic_request = input.handler_request.semantic_request_bytes()?;
         let candidate = ExecutionOperation::new(
             input.handler_request.instance_id().clone(),
@@ -109,6 +122,11 @@ impl ExecuteCeremonyOperationUseCase {
             verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
             return Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)));
         }
+        if self.reconciliation_required(&intent).await? {
+            return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
+                intent.operation().operation_id().clone(),
+            ));
+        }
         if recorded != RecordExecutionIntentOutcome::RecordedFirst
             && self.connector.recovery_capability()
                 == ExecutionRecoveryCapability::ReconciliationRequired
@@ -120,14 +138,16 @@ impl ExecuteCeremonyOperationUseCase {
 
         let connector_outcome = self
             .connector
-            .execute_or_recover(CeremonyExecutionRequest::new(
-                intent.clone(),
-                input.handler_request,
-            )?)
+            .execute_cancellable(
+                CeremonyExecutionRequest::new(intent.clone(), input.handler_request)?,
+                cancellation,
+            )
             .await?;
         let observation = match connector_outcome {
             CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
             CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+                self.record_reconciliation_required(&intent, &operation_id)
+                    .await?;
                 return Ok(ExecuteCeremonyOperationOutcome::ReconciliationRequired(
                     operation_id,
                 ));
@@ -144,4 +164,46 @@ impl ExecuteCeremonyOperationUseCase {
         self.store.record_receipt(receipt.clone()).await?;
         Ok(ExecuteCeremonyOperationOutcome::Receipt(Box::new(receipt)))
     }
+
+    async fn reconciliation_required(&self, intent: &ExecutionIntent) -> Result<bool, DomainError> {
+        let Some(requirement) = self
+            .store
+            .reconciliation_requirement(intent.operation().operation_id(), intent.claim_fence())
+            .await?
+        else {
+            return Ok(false);
+        };
+        if !requirement.matches_intent(intent) {
+            return Err(DomainError::InvariantViolated {
+                reason: "execution reconciliation requirement does not match its intent",
+            });
+        }
+        Ok(true)
+    }
+
+    async fn record_reconciliation_required(
+        &self,
+        intent: &ExecutionIntent,
+        operation_id: &made_core::value_objects::ExecutionOperationId,
+    ) -> Result<(), DomainError> {
+        if operation_id != intent.operation().operation_id() {
+            return Err(DomainError::Conflict {
+                what: "execution_reconciliation_requirement",
+            });
+        }
+        self.store
+            .record_reconciliation_requirement(ExecutionReconciliationRequirement::from_intent(
+                intent,
+            ))
+            .await
+    }
+}
+
+fn ensure_authority(cancellation: &ExecutionCancellation) -> Result<(), DomainError> {
+    if cancellation.is_cancelled() {
+        return Err(DomainError::InvariantViolated {
+            reason: "execution authority was cancelled",
+        });
+    }
+    Ok(())
 }

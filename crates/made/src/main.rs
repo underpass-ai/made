@@ -5,8 +5,13 @@ mod authorization_bootstrap;
 #[tokio::main]
 async fn main() -> Result<()> {
     let mut arguments = std::env::args().skip(1);
-    if arguments.next().as_deref() == Some("bootstrap-authorization") {
-        return authorization_bootstrap::run(arguments.collect()).await;
+    match arguments.next().as_deref() {
+        Some("bootstrap-authorization") => {
+            return authorization_bootstrap::run(arguments.collect()).await
+        }
+        Some("maintenance") => return made::maintenance::run(arguments.collect()).await,
+        Some(unexpected) => anyhow::bail!("unknown command `{unexpected}`"),
+        None => {}
     }
     // Keep the guard alive through the process lifetime. Dropping it
     // on shutdown flushes the OTLP exporter (under the `otel`

@@ -6,11 +6,13 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    StepClaimFence,
 };
 use sqlx::Row;
 
 use super::ceremony_store::{decode, encode, sqlx_error};
+use super::execution_reconciliation_store::PostgresExecutionReconciliationStore;
 use super::PostgresCeremonyStore;
 
 fn decode_operation(
@@ -184,6 +186,25 @@ impl ExecutionReceiptStorePort for PostgresCeremonyStore {
             decode_receipt(operation_id, &payload)
         })
         .transpose()
+    }
+
+    async fn record_reconciliation_requirement(
+        &self,
+        requirement: ExecutionReconciliationRequirement,
+    ) -> Result<(), DomainError> {
+        PostgresExecutionReconciliationStore::new(self)
+            .record(requirement)
+            .await
+    }
+
+    async fn reconciliation_requirement(
+        &self,
+        operation_id: &ExecutionOperationId,
+        claim_fence: &StepClaimFence,
+    ) -> Result<Option<ExecutionReconciliationRequirement>, DomainError> {
+        PostgresExecutionReconciliationStore::new(self)
+            .get(operation_id, claim_fence)
+            .await
     }
 
     async fn intents(

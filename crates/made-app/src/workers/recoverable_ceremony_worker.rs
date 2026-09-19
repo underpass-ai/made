@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::error::DomainError;
+use made_core::ports::ExecutionCancellation;
 use made_core::value_objects::ExecutionReceiptLinkKind;
 
 use super::{
@@ -44,11 +45,24 @@ impl RecoverableCeremonyWorker {
         &self,
         input: ExecuteCeremonyOperationInput,
     ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        self.execute_claim_cancellable(input, ExecutionCancellation::new())
+            .await
+    }
+
+    pub async fn execute_claim_cancellable(
+        &self,
+        input: ExecuteCeremonyOperationInput,
+        cancellation: ExecutionCancellation,
+    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
         let ceremony_id = input.handler_request.instance_id().clone();
         let step_id = input.handler_request.step_id().clone();
         let claim_fence = input.claim_fence.clone();
         let actor_kind = input.actor_kind;
-        let receipt = match self.execute_operation.execute(input).await? {
+        let receipt = match self
+            .execute_operation
+            .execute_cancellable(input, cancellation)
+            .await?
+        {
             ExecuteCeremonyOperationOutcome::Receipt(receipt) => *receipt,
             ExecuteCeremonyOperationOutcome::ReconciliationRequired(operation_id) => {
                 return Ok(RecoverableCeremonyWorkerOutcome::ReconciliationRequired(
@@ -135,10 +149,30 @@ impl RecoverableCeremonyWorkerPort for RecoverableCeremonyWorker {
         RecoverableCeremonyWorker::execute_claim(self, input).await
     }
 
+    async fn execute_claim_cancellable(
+        &self,
+        input: ExecuteCeremonyOperationInput,
+        cancellation: ExecutionCancellation,
+    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        RecoverableCeremonyWorker::execute_claim_cancellable(self, input, cancellation).await
+    }
+
     async fn recover(
         &self,
         item: ExecutionRecoveryItem,
     ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
         RecoverableCeremonyWorker::recover(self, item).await
+    }
+
+    async fn recover_cancellable(
+        &self,
+        item: ExecutionRecoveryItem,
+        cancellation: ExecutionCancellation,
+    ) -> Result<RecoverableCeremonyWorkerOutcome, DomainError> {
+        Box::pin(cancellation.run(RecoverableCeremonyWorker::recover(self, item)))
+            .await
+            .ok_or(DomainError::InvariantViolated {
+                reason: "worker recovery authority was cancelled",
+            })?
     }
 }

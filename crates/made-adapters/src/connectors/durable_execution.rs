@@ -5,16 +5,10 @@ use made_core::value_objects::{
 };
 
 use super::{
-    ConnectorError, ConnectorKind, ReceiptFilesystemConnector, ReceiptTransportConnector,
-    RepositoryScriptConnector, SafeExecutionReceipt, ScriptInvocation, ScriptResolution,
+    ConnectorError, ConnectorKind, DurableExecutionResult, ReceiptFilesystemConnector,
+    ReceiptTransportConnector, RepositoryScriptConnector, SafeExecutionReceipt, ScriptInvocation,
+    ScriptResolution,
 };
-
-/// Result of a durable connector attempt.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum DurableExecutionResult {
-    Receipt(SafeExecutionReceipt),
-    ReconciliationRequired,
-}
 
 /// Connects one repository/script executor to durable receipt storage and a
 /// receipt transport.  Construction validates every advertised capability.
@@ -124,7 +118,7 @@ where
             intent,
             self.id.clone(),
             self.recovery_capability,
-            observation,
+            &observation,
         )?;
         self.filesystem.store(&receipt).await?;
         self.transport.publish(&receipt).await?;

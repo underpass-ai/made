@@ -57,4 +57,8 @@ impl BudgetOperations {
     pub(super) fn service(&self) -> BudgetLedgerService {
         self.service.clone()
     }
+
+    pub(super) fn claim(&self) -> Arc<BudgetedStepClaimUseCase> {
+        self.claim.clone()
+    }
 }

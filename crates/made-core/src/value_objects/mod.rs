@@ -140,8 +140,9 @@ pub use evidence_reference::EvidenceReference;
 pub use execution::{
     ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionOperationId,
     ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLink, ExecutionReceiptLinkKind,
-    ExecutionRecoveryCapability, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
-    ExecutionRequestBytes, ExecutionRequestDigest, ExternalOperationId, MAX_EXECUTION_ARTIFACTS,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCapability, ExecutionRecoveryCursor,
+    ExecutionRecoveryPageLimit, ExecutionRequestBytes, ExecutionRequestDigest, ExternalOperationId,
+    MAX_EXECUTION_ARTIFACTS,
 };
 pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;

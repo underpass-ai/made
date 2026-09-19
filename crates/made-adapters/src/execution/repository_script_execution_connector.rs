@@ -8,13 +8,13 @@ use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort,
-    CeremonyExecutionObservation, CeremonyExecutionRequest,
+    CeremonyExecutionObservation, CeremonyExecutionRequest, ExecutionCancellation,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
     ExternalOperationId,
 };
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use uuid::Uuid;
 
 use super::repository_script_execution_result::RepositoryScriptExecutionResult;
@@ -197,9 +197,15 @@ impl RepositoryScriptExecutionConnector {
     async fn execute_once(
         &self,
         intent: &ExecutionIntent,
+        cancellation: ExecutionCancellation,
     ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
         if let Some(observation) = self.query(intent).await? {
             return Self::observed_with_identity(intent, observation);
+        }
+        if cancellation.is_cancelled() {
+            return Err(DomainError::InvariantViolated {
+                reason: "execution authority was cancelled",
+            });
         }
         let request_path = self.request_path(intent);
         let request_bytes = intent.operation().request().as_bytes().to_vec();
@@ -228,6 +234,8 @@ impl RepositoryScriptExecutionConnector {
         let mut command = Command::new(&self.executable);
         command
             .current_dir(&self.repository_root)
+            .env_clear()
+            .env("PATH", "/usr/bin:/bin")
             .arg(intent.operation().operation_id().as_str())
             .arg(intent.operation().request_digest().as_str())
             .arg(intent.claim_fence().as_str())
@@ -237,9 +245,28 @@ impl RepositoryScriptExecutionConnector {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        let Ok(Ok(status)) = tokio::time::timeout(self.timeout, command.status()).await else {
-            return Ok(Self::reconciliation_required(intent));
+        configure_process_group(&mut command);
+        let mut child = command
+            .spawn()
+            .map_err(|_| DomainError::InvariantViolated {
+                reason: "repository script connector cannot start its executable",
+            })?;
+        let status = tokio::select! {
+            status = child.wait() => Some(status),
+            () = tokio::time::sleep(self.timeout) => None,
+            () = cancellation.cancelled() => None,
         };
+        let Some(status) = status else {
+            terminate_child(&mut child);
+            let _ = child.wait().await;
+            return match self.query(intent).await? {
+                Some(observation) => Self::observed_with_identity(intent, observation),
+                None => Ok(Self::reconciliation_required(intent)),
+            };
+        };
+        let status = status.map_err(|_| DomainError::InvariantViolated {
+            reason: "repository script connector cannot await its executable",
+        })?;
         if !status.success() {
             return Ok(Self::reconciliation_required(intent));
         }
@@ -281,6 +308,42 @@ impl RepositoryScriptExecutionConnector {
     }
 }
 
+#[cfg(unix)]
+fn configure_process_group(command: &mut Command) {
+    command.process_group(0);
+}
+
+#[cfg(not(unix))]
+fn configure_process_group(_command: &mut Command) {}
+
+fn terminate_child(child: &mut Child) {
+    let Some(pid) = child.id() else {
+        return;
+    };
+    #[cfg(unix)]
+    if kill_process_group(pid) {
+        return;
+    }
+    let _ = child.start_kill();
+}
+
+#[cfg(unix)]
+fn kill_process_group(pid: u32) -> bool {
+    let Some(kill_binary) = ["/bin/kill", "/usr/bin/kill"]
+        .iter()
+        .map(Path::new)
+        .find(|path| path.is_file())
+    else {
+        return false;
+    };
+    std::process::Command::new(kill_binary)
+        .arg("-KILL")
+        .arg("--")
+        .arg(format!("-{pid}"))
+        .status()
+        .is_ok_and(|status| status.success())
+}
+
 #[async_trait]
 impl CeremonyExecutionConnectorPort for RepositoryScriptExecutionConnector {
     fn connector_id(&self) -> &ExecutionConnectorId {
@@ -299,7 +362,16 @@ impl CeremonyExecutionConnectorPort for RepositoryScriptExecutionConnector {
         &self,
         request: CeremonyExecutionRequest,
     ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
-        self.execute_once(request.intent()).await
+        self.execute_once(request.intent(), ExecutionCancellation::new())
+            .await
+    }
+
+    async fn execute_cancellable(
+        &self,
+        request: CeremonyExecutionRequest,
+        cancellation: ExecutionCancellation,
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        self.execute_once(request.intent(), cancellation).await
     }
 
     async fn recover_intent(

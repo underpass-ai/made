@@ -61,6 +61,7 @@ mod deliberation_repository;
 mod domain_event;
 mod draft_request;
 mod evidence_support_judge;
+mod execution_cancellation;
 mod execution_receipt_store;
 mod execution_recovery_page;
 mod executor;
@@ -94,11 +95,12 @@ pub use agent_resolver::AgentResolverPort;
 pub use append_outcome::AppendOutcome;
 pub use artifact::{
     ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
-    ArtifactPage, ArtifactPageLimit, ArtifactReadCompletion, ArtifactRecord,
-    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
-    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
-    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
-    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES, ARTIFACT_MAX_PAGE_ITEMS,
+    ArtifactPage, ArtifactPageLimit, ArtifactProtectionStatus, ArtifactReadCompletion,
+    ArtifactRecord, ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactSnapshot,
+    ArtifactStoreError, ArtifactStorePort, ArtifactTombstone, ArtifactUploadId,
+    ArtifactUploadStatus, BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk,
+    TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES, ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
+    ARTIFACT_MAX_PAGE_ITEMS,
 };
 pub use authorization_decision_page::AuthorizationDecisionPage;
 pub use authorization_policy_append_outcome::AuthorizationPolicyAppendOutcome;
@@ -141,6 +143,7 @@ pub use deliberation_repository::DeliberationRepositoryPort;
 pub use domain_event::DomainEvent;
 pub use draft_request::DraftRequest;
 pub use evidence_support_judge::EvidenceSupportJudgePort;
+pub use execution_cancellation::ExecutionCancellation;
 pub use execution_receipt_store::ExecutionReceiptStorePort;
 pub use execution_recovery_page::ExecutionRecoveryPage;
 pub use executor::ExecutorPort;

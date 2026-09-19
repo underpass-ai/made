@@ -8,7 +8,7 @@ use std::time::Duration;
 use made_adapters::execution::RepositoryScriptExecutionConnector;
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, CeremonyExecutionRequest,
-    CeremonyStepHandlerRequest,
+    CeremonyStepHandlerRequest, ExecutionCancellation,
 };
 use made_core::value_objects::{
     ArtifactSourceKind, Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
@@ -54,6 +54,12 @@ effect.write_bytes(pathlib.Path(request_path).read_bytes())
 with effect.open("rb") as stored: os.fsync(stored.fileno())
 os._exit(17)
 "#;
+
+const DESCENDANT_SCRIPT: &str = r"#!/bin/sh
+sleep 120 &
+echo $! > child.pid
+wait
+";
 
 fn request() -> CeremonyExecutionRequest {
     let handler = CeremonyStepHandlerRequest::new(
@@ -189,5 +195,47 @@ async fn crash_after_effect_stays_ambiguous_and_is_never_reinvoked() {
             .lines()
             .count(),
         1
+    );
+}
+
+#[tokio::test]
+async fn cancellation_kills_and_reaps_the_owned_process_group() {
+    let repository = scratch();
+    let operation_root = scratch();
+    write_script(repository.path(), DESCENDANT_SCRIPT);
+    let cancellation = ExecutionCancellation::new();
+    let trigger = cancellation.clone();
+    let repository_path = repository.path().canonicalize().unwrap();
+    let connector = connector(repository.path(), operation_root.path());
+    let cancel = tokio::spawn(async move {
+        let child_path = repository_path.join("child.pid");
+        for _ in 0..100 {
+            if child_path.is_file() {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+        assert!(child_path.is_file());
+        trigger.cancel();
+    });
+    let outcome = tokio::time::timeout(
+        Duration::from_secs(5),
+        connector.execute_cancellable(request(), cancellation),
+    )
+    .await
+    .expect("cancellation must terminate the owned process group");
+    cancel.await.unwrap();
+    assert!(matches!(
+        outcome.unwrap(),
+        CeremonyExecutionConnectorOutcome::ReconciliationRequired(_)
+    ));
+    let child = fs::read_to_string(repository.path().join("child.pid")).unwrap();
+    let status = std::process::Command::new("/bin/kill")
+        .args(["-0", child.trim()])
+        .status()
+        .unwrap();
+    assert!(
+        !status.success(),
+        "descendant process survived cancellation"
     );
 }

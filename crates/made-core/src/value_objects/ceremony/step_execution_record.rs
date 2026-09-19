@@ -19,6 +19,12 @@ pub struct StepExecutionRecord {
     iteration: StepIteration,
     attempt: StepAttempt,
     lease: Option<StepLease>,
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "time::serde::rfc3339::option"
+    )]
+    renewed_expires_at: Option<OffsetDateTime>,
     output: StepOutput,
     error_message: Option<StepErrorMessage>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -37,6 +43,7 @@ impl StepExecutionRecord {
             iteration: StepIteration::FIRST,
             attempt: StepAttempt::FIRST,
             lease: None,
+            renewed_expires_at: None,
             output: StepOutput::empty(),
             error_message: None,
             claimed_role: None,
@@ -106,6 +113,16 @@ impl StepExecutionRecord {
     }
 
     #[must_use]
+    pub fn effective_lease_expires_at(&self) -> Option<OffsetDateTime> {
+        self.renewed_expires_at
+            .or_else(|| self.lease.as_ref().map(StepLease::expires_at))
+    }
+
+    pub(crate) fn renew_lease_until(&mut self, expires_at: OffsetDateTime) {
+        self.renewed_expires_at = Some(expires_at);
+    }
+
+    #[must_use]
     pub fn output(&self) -> &StepOutput {
         &self.output
     }
@@ -132,18 +149,16 @@ impl StepExecutionRecord {
         }
         self.status == StepStatus::InProgress
             && self
-                .lease
-                .as_ref()
-                .is_some_and(|lease| lease.is_expired_at(now))
+                .effective_lease_expires_at()
+                .is_some_and(|expiry| now >= expiry)
     }
 
     #[must_use]
     pub fn has_live_lease_at(&self, now: OffsetDateTime) -> bool {
         self.status == StepStatus::InProgress
             && self
-                .lease
-                .as_ref()
-                .is_some_and(|lease| !lease.is_expired_at(now))
+                .effective_lease_expires_at()
+                .is_some_and(|expiry| now < expiry)
     }
 
     #[must_use]
@@ -160,6 +175,7 @@ impl StepExecutionRecord {
             iteration: self.iteration,
             attempt,
             lease: Some(lease),
+            renewed_expires_at: None,
             output: self.output,
             error_message: None,
             claimed_role,
@@ -183,6 +199,7 @@ impl StepExecutionRecord {
             iteration: self.iteration,
             attempt: self.attempt,
             lease: None,
+            renewed_expires_at: None,
             output,
             error_message,
             claimed_role: self.claimed_role,

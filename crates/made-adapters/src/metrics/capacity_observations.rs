@@ -1,5 +1,9 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
+mod capacity_snapshot;
+
+pub use capacity_snapshot::CapacitySnapshot;
+
 /// Bounded counters for the operational dimensions that C6 adds. There are
 /// deliberately no caller-provided labels, so a ceremony/root/provider cannot
 /// create unbounded metric cardinality.
@@ -14,19 +18,6 @@ pub struct CapacityObservations {
     reconciliation: AtomicU64,
     provider_fallback: AtomicU64,
     unknown_usage: AtomicU64,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CapacitySnapshot {
-    pub admission_wait_millis: u64,
-    pub admission_wait_samples: u64,
-    pub admission_rejected: u64,
-    pub active_capacity: u64,
-    pub backpressure: u64,
-    pub recovery: u64,
-    pub reconciliation: u64,
-    pub provider_fallback: u64,
-    pub unknown_usage: u64,
 }
 
 impl CapacityObservations {

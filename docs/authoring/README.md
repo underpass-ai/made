@@ -5,6 +5,9 @@ transitions and guards. A session is one execution of that definition with
 its own context and event stream. Define the decision or artifact first,
 then the work that must produce it.
 
+Use the [business vocabulary](business-lexicon.md) to distinguish the
+Integrator's responsibility from contributors, reviewers, the host and engine.
+
 ## A complete definition
 
 Save this as [two-checks.yaml](examples/two-checks.yaml). Two independent

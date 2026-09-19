@@ -1,52 +1,16 @@
 use std::sync::Arc;
 
-use made_core::ports::ArtifactTombstone;
 use made_core::ports::{
-    ArtifactPageLimit, ArtifactRecord, ArtifactRetentionActor, ArtifactRetentionPolicy,
-    ArtifactStoreError, ArtifactStorePort, TombstoneArtifact,
+    ArtifactPageLimit, ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError,
+    ArtifactStorePort, TombstoneArtifact,
 };
 use made_core::value_objects::{
-    ArtifactId, AuthorizationEvidence, DurationMs, IdempotencyKey, LeaseOwnerId, StepLease,
+    AuthorizationEvidence, DurationMs, IdempotencyKey, LeaseOwnerId, StepLease,
 };
-use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
-/// A reviewed retention selection. Nothing is retired by constructing it.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArtifactRetentionPlan {
-    pub version: u32,
-    pub observed_before: OffsetDateTime,
-    pub retired_at: OffsetDateTime,
-    pub actor: ArtifactRetentionActor,
-    pub policy: ArtifactRetentionPolicy,
-    pub lease: StepLease,
-    pub records: Vec<ArtifactRecord>,
-}
-
-/// Audit result for either a dry-run or an explicit retention apply.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ArtifactRetentionReport {
-    pub dry_run: bool,
-    pub planned: Vec<ArtifactId>,
-    pub applied: Vec<ArtifactTombstone>,
-    pub already_retired: Vec<ArtifactId>,
-}
-
-impl ArtifactRetentionReport {
-    pub(super) fn dry_run(plan: &ArtifactRetentionPlan) -> Self {
-        Self {
-            dry_run: true,
-            planned: plan
-                .records
-                .iter()
-                .map(|record| record.artifact.artifact_id().clone())
-                .collect(),
-            applied: Vec::new(),
-            already_retired: Vec::new(),
-        }
-    }
-}
-
+pub use super::artifact_retention_plan::ArtifactRetentionPlan;
+pub use super::artifact_retention_report::ArtifactRetentionReport;
 /// Retention planner over the existing artifact store boundary.
 #[derive(Debug)]
 pub struct ArtifactRetentionService<S> {

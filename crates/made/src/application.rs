@@ -19,6 +19,7 @@ pub struct Application {
     pub council_event_publisher: Option<Arc<made_app::usecases::PublishCouncilEventsUseCase>>,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
     pub nats_ceremony_recovery: Option<NatsCeremonyRecoverySubscriber>,
+    pub worker_daemon: Option<Arc<crate::workers::CeremonyWorkerDaemon>>,
     pub health_state: crate::health::HealthState,
 }
 

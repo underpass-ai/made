@@ -46,3 +46,6 @@ pub use respond_to_intervention::RespondToIntervention;
 pub use respond_to_intervention_with_evidence::RespondToInterventionWithEvidence;
 pub use resume_ceremony::ResumeCeremony;
 pub use start_step::StartStep;
+
+mod renew_step_lease;
+pub use renew_step_lease::RenewStepLease;

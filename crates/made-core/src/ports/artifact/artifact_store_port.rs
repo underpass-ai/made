@@ -11,6 +11,37 @@ use super::{
 /// Durable, bounded artifact transfer and metadata boundary.
 #[async_trait]
 pub trait ArtifactStorePort: Send + Sync {
+    /// Atomically select and protect the immutable store-side backup snapshot.
+    /// Unsupported stores fail closed rather than offer an unsafe backup.
+    async fn protect_snapshot(
+        &self,
+        _key: super::ArtifactIdempotencyKey,
+    ) -> Result<super::ArtifactSnapshot, ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
+    /// Protect exact references before publishing a receipt or restoring metadata.
+    async fn protect_references(
+        &self,
+        _key: super::ArtifactIdempotencyKey,
+        _ids: Vec<ArtifactId>,
+    ) -> Result<super::ArtifactSnapshot, ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
+    /// Administrative release after verified copy or explicit abandonment only.
+    async fn release_snapshot(
+        &self,
+        _key: &super::ArtifactIdempotencyKey,
+    ) -> Result<(), ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
+    /// Pin expected restore content before uploads/metadata become visible.
+    async fn protect_restore(
+        &self,
+        _key: super::ArtifactIdempotencyKey,
+        _records: Vec<ArtifactRecord>,
+    ) -> Result<super::ArtifactSnapshot, ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
     async fn begin_upload(
         &self,
         request: BeginArtifactUpload,
@@ -52,6 +83,25 @@ pub trait ArtifactStorePort: Send + Sync {
         &self,
         request: ReadArtifactChunk,
     ) -> Result<ArtifactChunkPage, ArtifactStoreError>;
+    /// Verify digest and size of immutable bytes when present. Returns `false`
+    /// only for retired metadata after authorized GC; corruption is an error.
+    async fn backup_content_available(
+        &self,
+        _artifact_id: &ArtifactId,
+    ) -> Result<bool, ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
+    /// Recreate a retired metadata record whose content was already collected.
+    async fn restore_retired_metadata(
+        &self,
+        _record: ArtifactRecord,
+    ) -> Result<(), ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
+    /// Durable protections that must survive a full store restore.
+    async fn active_protections(&self) -> Result<Vec<super::ArtifactSnapshot>, ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
     async fn tombstone(
         &self,
         command: TombstoneArtifact,

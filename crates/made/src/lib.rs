@@ -10,9 +10,11 @@ pub mod compose;
 mod compose_error;
 mod councils;
 pub mod health;
+pub mod maintenance;
 pub mod runtime;
 pub mod seeding;
 pub mod telemetry;
+pub mod workers;
 
 pub use application::Application;
 pub use compose::compose;

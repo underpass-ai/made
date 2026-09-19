@@ -1,6 +1,6 @@
 use time::macros::datetime;
 
-use crate::entities::ceremony_commands::StartStep;
+use crate::entities::ceremony_commands::{RenewStepLease, StartStep};
 use crate::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 use crate::value_objects::{
@@ -141,6 +141,115 @@ fn started(events: &[CeremonyEvent]) -> &crate::entities::ceremony_events::StepS
         panic!("a start decision emits StepStarted");
     };
     started
+}
+
+#[test]
+fn renewal_extends_effective_expiry_without_replacing_claim_identity() {
+    let definition = definition(false);
+    let mut instance = instance(&definition);
+    let events = start(&instance, &definition, "step_a", None, "renewal-key").unwrap();
+    instance.apply(&events[0]);
+    let step_id = step("step_a");
+    let before = instance.step_record(&step_id).unwrap().clone();
+    let fence = instance.step_claim_fence(&step_id).unwrap();
+    let expected = before.effective_lease_expires_at().unwrap();
+    let expires_at = datetime!(2026-09-18 12:02:00 UTC);
+
+    let renewed = instance
+        .decide(
+            &CeremonyCommand::RenewStepLease(RenewStepLease {
+                step_id: step_id.clone(),
+                claim_fence: fence.clone(),
+                lease_owner_id: LeaseOwnerId::new("runner").unwrap(),
+                expected_expires_at: expected,
+                expires_at,
+                now: datetime!(2026-09-18 12:00:30 UTC),
+            }),
+            &definition,
+        )
+        .unwrap();
+    assert!(matches!(
+        renewed.as_slice(),
+        [CeremonyEvent::StepLeaseRenewed(_)]
+    ));
+    instance.apply(&renewed[0]);
+
+    let after = instance.step_record(&step_id).unwrap();
+    assert_eq!(after.effective_lease_expires_at(), Some(expires_at));
+    assert_eq!(after.attempt(), before.attempt());
+    assert_eq!(after.lease(), before.lease());
+    assert_eq!(instance.step_claim_fence(&step_id).unwrap(), fence);
+}
+
+#[test]
+fn renewal_at_existing_deadline_is_a_valid_authority_noop() {
+    let definition = definition(false);
+    let mut instance = instance(&definition);
+    let events = start(&instance, &definition, "step_a", None, "renewal-noop").unwrap();
+    instance.apply(&events[0]);
+    let step_id = step("step_a");
+    let fence = instance.step_claim_fence(&step_id).unwrap();
+    let expected = instance
+        .step_record(&step_id)
+        .unwrap()
+        .effective_lease_expires_at()
+        .unwrap();
+
+    let renewed = instance
+        .decide(
+            &CeremonyCommand::RenewStepLease(RenewStepLease {
+                step_id,
+                claim_fence: fence,
+                lease_owner_id: LeaseOwnerId::new("runner").unwrap(),
+                expected_expires_at: expected,
+                expires_at: expected,
+                now: datetime!(2026-09-18 12:00:30 UTC),
+            }),
+            &definition,
+        )
+        .unwrap();
+
+    assert!(renewed.is_empty());
+}
+
+#[test]
+fn renewal_rejects_wrong_or_expired_owner() {
+    let definition = definition(false);
+    let mut instance = instance(&definition);
+    let events = start(&instance, &definition, "step_a", None, "renewal-owner").unwrap();
+    instance.apply(&events[0]);
+    let step_id = step("step_a");
+    let fence = instance.step_claim_fence(&step_id).unwrap();
+    let expected = instance
+        .step_record(&step_id)
+        .unwrap()
+        .effective_lease_expires_at()
+        .unwrap();
+    let command = |owner: &str, now| {
+        CeremonyCommand::RenewStepLease(RenewStepLease {
+            step_id: step_id.clone(),
+            claim_fence: fence.clone(),
+            lease_owner_id: LeaseOwnerId::new(owner).unwrap(),
+            expected_expires_at: expected,
+            expires_at: datetime!(2026-09-18 12:02:00 UTC),
+            now,
+        })
+    };
+
+    assert!(matches!(
+        instance.decide(
+            &command("other", datetime!(2026-09-18 12:00:30 UTC)),
+            &definition
+        ),
+        Err(DomainError::InvariantViolated { .. })
+    ));
+    assert!(matches!(
+        instance.decide(
+            &command("runner", datetime!(2026-09-18 12:01:00 UTC)),
+            &definition
+        ),
+        Err(DomainError::InvariantViolated { .. })
+    ));
 }
 
 #[test]

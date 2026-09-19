@@ -227,7 +227,7 @@ async fn json_receipt_store_round_trips_without_request_bytes() {
         &request,
         ExecutionConnectorId::new("repo.script.v1").unwrap(),
         ExecutionRecoveryCapability::QueryableByOperationId,
-        ScriptObservation::new(
+        &ScriptObservation::new(
             request.claim_fence().clone(),
             None,
             ReceiptStatus::Failed,

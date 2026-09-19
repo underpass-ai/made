@@ -1,4 +1,13 @@
-use std::sync::Arc;
+use super::ceremony_work_candidate::CeremonyWorkCandidate;
+use super::ceremony_worker_claim_error::CeremonyWorkerClaimError;
+use super::{
+    CeremonyWorkerAdmissionObserver, CeremonyWorkerAdmissionPolicy, CeremonyWorkerAdmissionReason,
+    CeremonyWorkerEligibility, CeremonyWorkerRootPolicyPort, CeremonyWorkerScheduleRequest,
+    CeremonyWorkerScheduler, WorkerAuthorizationError, WorkerAuthorizationPort,
+    WorkerAuthorizationTarget, WorkerCapacityPort, WorkerCapacityRequest,
+};
+use made_core::value_objects::{ExecutionConnectorId, ExecutionOperationId, StepLease};
+use std::sync::{Arc, Mutex};
 
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -13,6 +22,7 @@ use super::{
     ExecuteCeremonyOperationInput,
 };
 use crate::budgets::{BudgetedStepClaimInput, BudgetedStepClaimUseCase};
+use crate::services::AuthorizationOperationScope;
 use crate::services::{ceremony_transcript_projection, SessionStream};
 use crate::usecases::{
     CeremonyInstanceView, EnforceCeremonyDeadlinesInput, EnforceCeremonyDeadlinesUseCase,
@@ -31,6 +41,11 @@ pub struct ClaimCeremonyWorkUseCase {
     budget_planner: Option<Arc<dyn BudgetReservationPlannerPort>>,
     clock: Arc<dyn ClockPort>,
     policy: CeremonyWorkerPolicy,
+    scheduler: Mutex<CeremonyWorkerScheduler>,
+    capacity: Option<(Arc<dyn WorkerCapacityPort>, ExecutionConnectorId)>,
+    authorization: Option<Arc<dyn WorkerAuthorizationPort>>,
+    admission: CeremonyWorkerAdmissionPolicy,
+    root_policy: Option<Arc<dyn CeremonyWorkerRootPolicyPort>>,
 }
 
 impl std::fmt::Debug for ClaimCeremonyWorkUseCase {
@@ -53,6 +68,17 @@ impl ClaimCeremonyWorkUseCase {
         clock: Arc<dyn ClockPort>,
         policy: CeremonyWorkerPolicy,
     ) -> Self {
+        let admission = CeremonyWorkerAdmissionPolicy::new(
+            super::CeremonyWorkerSchedulerPolicy::new(
+                policy.max_parallel(),
+                super::CeremonyWorkerCapacity::new(1).expect("one is valid capacity"),
+                super::CeremonyWorkerPolicyVersion::new(1).expect("one is valid version"),
+            ),
+            super::CeremonyWorkerPriority::DEFAULT,
+            super::CeremonyWorkerWeight::new(1).expect("one is valid weight"),
+            super::CeremonyWorkerCost::new(1).expect("one is valid cost"),
+            super::CeremonyWorkerCapacity::new(1).expect("one is valid capacity"),
+        );
         Self {
             index,
             stream,
@@ -63,6 +89,11 @@ impl ClaimCeremonyWorkUseCase {
             budget_planner: None,
             clock,
             policy,
+            scheduler: Mutex::new(CeremonyWorkerScheduler::new(admission.scheduler())),
+            capacity: None,
+            authorization: None,
+            admission,
+            root_policy: None,
         }
     }
 
@@ -74,6 +105,47 @@ impl ClaimCeremonyWorkUseCase {
     ) -> Self {
         self.budgeted_step = Some(budgeted_step);
         self.budget_planner = Some(planner);
+        self
+    }
+
+    #[must_use]
+    pub fn with_shared_capacity(
+        mut self,
+        capacity: Arc<dyn WorkerCapacityPort>,
+        connector: ExecutionConnectorId,
+    ) -> Self {
+        self.capacity = Some((capacity, connector));
+        self
+    }
+
+    #[must_use]
+    pub fn with_authorization(mut self, authorization: Arc<dyn WorkerAuthorizationPort>) -> Self {
+        self.authorization = Some(authorization);
+        self
+    }
+
+    #[must_use]
+    pub fn with_admission_policy(mut self, admission: CeremonyWorkerAdmissionPolicy) -> Self {
+        self.scheduler = Mutex::new(CeremonyWorkerScheduler::new(admission.scheduler()));
+        self.admission = admission;
+        self
+    }
+
+    #[must_use]
+    pub fn with_admission_observer(
+        mut self,
+        observer: Arc<dyn CeremonyWorkerAdmissionObserver>,
+    ) -> Self {
+        self.scheduler = Mutex::new(CeremonyWorkerScheduler::with_observer(
+            self.admission.scheduler(),
+            observer,
+        ));
+        self
+    }
+
+    #[must_use]
+    pub fn with_root_policy(mut self, policy: Arc<dyn CeremonyWorkerRootPolicyPort>) -> Self {
+        self.root_policy = Some(policy);
         self
     }
 
@@ -90,24 +162,290 @@ impl ClaimCeremonyWorkUseCase {
             .then(|| page.ids().last().cloned())
             .flatten();
         let mut claims = Vec::new();
-        let mut failures = Vec::new();
-        for ceremony_id in page.ids() {
-            match self.claim_one(ceremony_id, &input).await {
+        let (candidates, mut failures) = Box::pin(self.discover_candidates(page.ids())).await;
+        let requests = candidates.iter().map(|candidate| {
+            let policy = self.root_policy.as_ref().map_or_else(
+                || self.admission.root_policy(),
+                |policy| policy.policy_for(&candidate.root),
+            );
+            CeremonyWorkerScheduleRequest::new(
+                candidate.root.clone(),
+                candidate.operation.clone(),
+                policy.priority(),
+                policy.weight(),
+                policy.cost(),
+                policy.requested_capacity(),
+                CeremonyWorkerEligibility::Ready,
+            )
+        });
+        let schedule = self
+            .scheduler
+            .lock()
+            .map_err(|_| DomainError::InvariantViolated {
+                reason: "worker scheduler state is unavailable",
+            })?
+            .refresh(requests);
+        for decision in schedule.admitted() {
+            let candidate = candidates
+                .iter()
+                .find(|candidate| &candidate.operation == decision.request().operation_id())
+                .expect("selected candidate came from discovery");
+            match self
+                .admit_candidate(candidate, decision.request(), &input)
+                .await
+            {
                 Ok(Some(claim)) => claims.push(claim),
+                Ok(None) => {}
+                Err(error) => failures.push(CeremonyWorkClaimFailure::new(
+                    candidate.ceremony.clone(),
+                    error.into_domain(),
+                )),
+            }
+        }
+        Ok(CeremonyWorkClaimsPage::new(claims, failures, next_cursor))
+    }
+
+    async fn admit_candidate(
+        &self,
+        candidate: &CeremonyWorkCandidate,
+        request: &CeremonyWorkerScheduleRequest,
+        input: &ClaimCeremonyWorkInput,
+    ) -> Result<Option<ExecuteCeremonyOperationInput>, CeremonyWorkerClaimError> {
+        if !self.reserve_capacity(candidate, input).await? {
+            self.observe(request.clone(), CeremonyWorkerAdmissionReason::Capacity)?;
+            return Ok(None);
+        }
+        let result = Box::pin(self.claim_authorized(candidate, input)).await;
+        match result {
+            Ok(Some(claim)) => {
+                if let Some((capacity, _)) = &self.capacity {
+                    capacity
+                        .bind(
+                            &candidate.operation,
+                            input.lease_owner_id(),
+                            &claim.claim_fence,
+                        )
+                        .await?;
+                }
+                Ok(Some(claim))
+            }
+            result => {
+                if let Some((capacity, _)) = &self.capacity {
+                    capacity
+                        .release(&candidate.operation, input.lease_owner_id())
+                        .await?;
+                }
+                if let Err(error) = &result {
+                    let reason = match error {
+                        CeremonyWorkerClaimError::Permission(_) => {
+                            Some(CeremonyWorkerAdmissionReason::Permission)
+                        }
+                        CeremonyWorkerClaimError::Budget(_) => {
+                            Some(CeremonyWorkerAdmissionReason::Budget)
+                        }
+                        CeremonyWorkerClaimError::Failure(_) => None,
+                    };
+                    if let Some(reason) = reason {
+                        self.observe(request.clone(), reason)?;
+                    }
+                }
+                result
+            }
+        }
+    }
+
+    async fn reserve_capacity(
+        &self,
+        candidate: &CeremonyWorkCandidate,
+        input: &ClaimCeremonyWorkInput,
+    ) -> Result<bool, DomainError> {
+        let Some((capacity, connector)) = &self.capacity else {
+            return Ok(true);
+        };
+        let now = self.clock.now();
+        let request = WorkerCapacityRequest {
+            operation_id: candidate.operation.clone(),
+            ceremony_id: candidate.ceremony.clone(),
+            step_id: candidate.step.clone(),
+            root_id: candidate.root.clone(),
+            connector_id: connector.clone(),
+            provider_id: candidate.provider.clone(),
+            owner_id: input.lease_owner_id().clone(),
+            pending_until: StepLease::acquire(
+                input.lease_owner_id().clone(),
+                IdempotencyKey::new("capacity-pending")?,
+                now,
+                input.lease_ttl(),
+            )?
+            .expires_at(),
+        };
+        capacity.reserve(&request, now).await
+    }
+
+    fn observe(
+        &self,
+        request: CeremonyWorkerScheduleRequest,
+        reason: CeremonyWorkerAdmissionReason,
+    ) -> Result<(), DomainError> {
+        self.scheduler
+            .lock()
+            .map_err(|_| DomainError::InvariantViolated {
+                reason: "worker scheduler state is unavailable",
+            })?
+            .observe(request, reason);
+        Ok(())
+    }
+
+    async fn discover_candidates(
+        &self,
+        ceremony_ids: &[CeremonyId],
+    ) -> (Vec<CeremonyWorkCandidate>, Vec<CeremonyWorkClaimFailure>) {
+        let mut candidates = Vec::new();
+        let mut failures = Vec::new();
+        for ceremony_id in ceremony_ids {
+            let result = if let Some(authorization) = &self.authorization {
+                let target = WorkerAuthorizationTarget::EnforceDeadline {
+                    ceremony: ceremony_id.clone(),
+                };
+                let operation = authorization.authorize(&target).await;
+                match operation {
+                    Ok(operation) => {
+                        Box::pin(AuthorizationOperationScope::run(
+                            operation,
+                            self.discover_one(ceremony_id),
+                        ))
+                        .await
+                    }
+                    Err(error) => Err(error.into_domain()),
+                }
+            } else {
+                self.discover_one(ceremony_id).await
+            };
+            match result {
+                Ok(Some(candidate)) => candidates.push(candidate),
                 Ok(None) => {}
                 Err(error) => {
                     failures.push(CeremonyWorkClaimFailure::new(ceremony_id.clone(), error));
                 }
             }
         }
-        Ok(CeremonyWorkClaimsPage::new(claims, failures, next_cursor))
+        (candidates, failures)
+    }
+
+    async fn discover_one(
+        &self,
+        ceremony_id: &CeremonyId,
+    ) -> Result<Option<CeremonyWorkCandidate>, DomainError> {
+        let instance = self
+            .deadlines
+            .execute(EnforceCeremonyDeadlinesInput::new(ceremony_id.clone()))
+            .await?;
+        let definition = self.definitions.execute(&instance).await?;
+        let view = CeremonyInstanceView::project_at(
+            &instance,
+            &definition,
+            self.clock.now(),
+            self.policy.max_parallel(),
+        )?;
+        let Some(step_id) = view
+            .claimable_step_ids()
+            .iter()
+            .copied()
+            .find(|id| {
+                definition
+                    .step(id)
+                    .is_some_and(|step| step.spawn().is_none() && self.connector_accepts(step))
+            })
+            .cloned()
+        else {
+            return Ok(None);
+        };
+        let record = instance
+            .step_record(&step_id)
+            .ok_or(DomainError::NotFound {
+                what: "ceremony_step",
+            })?;
+        let step = definition.step(&step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_step",
+        })?;
+        let provider = step
+            .handler_config()
+            .attributes()
+            .get("provider")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(step.handler_kind().as_str());
+        Ok(Some(CeremonyWorkCandidate {
+            ceremony: ceremony_id.clone(),
+            root: instance
+                .lineage()
+                .map_or_else(|| ceremony_id.clone(), |lineage| lineage.root_id().clone()),
+            operation: ExecutionOperationId::for_step(
+                ceremony_id,
+                &step_id,
+                record.state_visit(),
+                record.state_iteration(),
+                record.iteration(),
+            ),
+            step: step_id,
+            provider: ExecutionConnectorId::new(provider)?,
+        }))
+    }
+
+    async fn claim_authorized(
+        &self,
+        candidate: &CeremonyWorkCandidate,
+        input: &ClaimCeremonyWorkInput,
+    ) -> Result<Option<ExecuteCeremonyOperationInput>, CeremonyWorkerClaimError> {
+        let Some(authorization) = &self.authorization else {
+            return self
+                .claim_one(&candidate.ceremony, input, Some(&candidate.step))
+                .await;
+        };
+        let target = WorkerAuthorizationTarget::Claim {
+            ceremony: candidate.ceremony.clone(),
+            step: candidate.step.clone(),
+            operation: candidate.operation.clone(),
+            owner: input.lease_owner_id().clone(),
+            lease_ttl: input.lease_ttl(),
+        };
+        let operation = authorization
+            .authorize(&target)
+            .await
+            .map_err(|error| match error {
+                WorkerAuthorizationError::Denied(error) => {
+                    CeremonyWorkerClaimError::Permission(error)
+                }
+                WorkerAuthorizationError::Failure(error) => {
+                    CeremonyWorkerClaimError::Failure(error)
+                }
+            })?;
+        Box::pin(AuthorizationOperationScope::run(
+            operation,
+            self.claim_one(&candidate.ceremony, input, Some(&candidate.step)),
+        ))
+        .await
+    }
+
+    fn connector_accepts(&self, step: &CeremonyStep) -> bool {
+        let Some((_, connector)) = &self.capacity else {
+            return true;
+        };
+        step.handler_config()
+            .attributes()
+            .get("connector")
+            .and_then(serde_json::Value::as_str)
+            .map_or_else(
+                || step.handler_kind().as_str() == connector.as_str(),
+                |configured| configured == connector.as_str(),
+            )
     }
 
     async fn claim_one(
         &self,
         ceremony_id: &CeremonyId,
         input: &ClaimCeremonyWorkInput,
-    ) -> Result<Option<ExecuteCeremonyOperationInput>, DomainError> {
+        selected_step: Option<&StepId>,
+    ) -> Result<Option<ExecuteCeremonyOperationInput>, CeremonyWorkerClaimError> {
         let instance = self
             .deadlines
             .execute(EnforceCeremonyDeadlinesInput::new(ceremony_id.clone()))
@@ -124,9 +462,10 @@ impl ClaimCeremonyWorkUseCase {
             .iter()
             .copied()
             .find(|step_id| {
-                definition
-                    .step(step_id)
-                    .is_some_and(|step| step.spawn().is_none())
+                selected_step.is_none_or(|selected| selected == *step_id)
+                    && definition
+                        .step(step_id)
+                        .is_some_and(|step| step.spawn().is_none())
             })
             .cloned();
         let Some(step_id) = step_id else {
@@ -189,9 +528,13 @@ impl ClaimCeremonyWorkUseCase {
         instance: &made_core::entities::CeremonyInstance,
         step: &CeremonyStep,
         claim_input: StartCeremonyStepInput,
-    ) -> Result<StartCeremonyStepOutput, DomainError> {
+    ) -> Result<StartCeremonyStepOutput, CeremonyWorkerClaimError> {
         if instance.budget_account_id().is_none() {
-            return self.start_step.execute(claim_input).await;
+            return self
+                .start_step
+                .execute(claim_input)
+                .await
+                .map_err(CeremonyWorkerClaimError::Failure);
         }
         let planner = self
             .budget_planner
@@ -207,7 +550,8 @@ impl ClaimCeremonyWorkUseCase {
                 step.handler_config().clone(),
                 instance.context().clone(),
             ))
-            .await?;
+            .await
+            .map_err(CeremonyWorkerClaimError::Failure)?;
         self.budgeted_step
             .as_ref()
             .ok_or(DomainError::InvariantViolated {
@@ -215,7 +559,15 @@ impl ClaimCeremonyWorkUseCase {
             })?
             .execute(BudgetedStepClaimInput::new(claim_input, estimate))
             .await
-            .map_err(crate::budgets::budget_error_to_domain)
+            .map_err(|error| {
+                let exhausted = matches!(error, made_core::BudgetError::Exhausted { .. });
+                let domain = crate::budgets::budget_error_to_domain(error);
+                if exhausted {
+                    CeremonyWorkerClaimError::Budget(domain)
+                } else {
+                    CeremonyWorkerClaimError::Failure(domain)
+                }
+            })
             .map(|output| output.claim().clone())
     }
 

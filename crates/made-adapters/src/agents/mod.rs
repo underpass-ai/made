@@ -29,11 +29,19 @@ mod openai_compat;
 
 // Shared provider-endpoint validation (scheme allowlist, fail-fast).
 // Available whenever any HTTP provider adapter is compiled in.
-#[cfg(feature = "_http")]
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 mod endpoint;
 
 // Shared latency + in-flight instrumentation for HTTP provider calls.
-#[cfg(feature = "_http")]
+#[cfg(any(
+    feature = "agent-anthropic",
+    feature = "agent-openai",
+    feature = "agent-vllm"
+))]
 mod instrument;
 
 #[cfg(any(feature = "agent-openai", feature = "agent-vllm"))]

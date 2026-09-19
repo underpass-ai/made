@@ -8,7 +8,7 @@ pub(crate) fn digest_bytes(bytes: &[u8]) -> ArtifactDigest {
         .expect("sha256 formatting is canonical")
 }
 
-pub(super) fn digest_reader(mut reader: impl Read) -> io::Result<(ArtifactDigest, u64)> {
+pub(crate) fn digest_reader(mut reader: impl Read) -> io::Result<(ArtifactDigest, u64)> {
     let mut hasher = Sha256::new();
     let mut total = 0_u64;
     let mut buffer = vec![0_u8; 64 * 1024];

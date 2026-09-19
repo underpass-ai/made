@@ -5,6 +5,8 @@ use std::sync::Arc;
 use made_adapters::artifacts::{
     ArtifactBackupEntry, ArtifactBackupService, ArtifactRetentionService, LocalArtifactStore,
 };
+#[cfg(feature = "sqlite")]
+use made_adapters::artifacts::{SqliteArtifactBackupService, SqliteBackupService};
 use made_app::artifacts::ArtifactService;
 use made_app::services::AuthorizationOperationScope;
 use made_core::ports::{
@@ -503,6 +505,536 @@ async fn backup_plan_and_manifest_resume_deterministically_and_repeat_idempotent
     assert_eq!(
         fs::read(backup.join("manifest.json")).unwrap(),
         bytes_before
+    );
+}
+
+#[tokio::test]
+async fn prepared_backup_pins_content_against_tombstone_and_gc() {
+    let directory = TempDir::new().unwrap();
+    let source_root = directory.path().join("source");
+    let source = Arc::new(LocalArtifactStore::open(&source_root).unwrap());
+    let body = b"prepared backup must survive garbage collection";
+    let artifact = upload(&source, body, "backup-gc-race").await;
+    let backup = directory.path().join("backup");
+    let service = ArtifactBackupService::new(source.clone());
+
+    service.prepare(&backup).await.unwrap();
+    source
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+            policy: ArtifactRetentionPolicy::new("prepared-backup").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+
+    let plan = source
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("prepared-backup-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert!(plan.candidates.is_empty());
+
+    service.backup_to(&backup).await.unwrap();
+    let manifest = ArtifactBackupService::<LocalArtifactStore>::inspect_manifest(&backup).unwrap();
+    assert!(manifest.is_complete());
+    assert_eq!(manifest.plan.entries.len(), 1);
+    assert_eq!(
+        manifest.plan.entries[0].artifact_id(),
+        artifact.artifact_id()
+    );
+
+    let released_plan = source
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("completed-backup-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert_eq!(released_plan.candidates.len(), 1);
+    let report = source
+        .apply_gc(
+            &released_plan,
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(2),
+        )
+        .await
+        .unwrap();
+    assert_eq!(report.deleted, vec![artifact.digest().clone()]);
+    assert_eq!(report.reclaimed_bytes, body.len() as u64);
+}
+
+#[tokio::test]
+async fn backup_preserves_retired_metadata_when_content_was_already_collected() {
+    let directory = TempDir::new().unwrap();
+    let source = Arc::new(LocalArtifactStore::open(directory.path().join("source")).unwrap());
+    let artifact = upload(&source, b"retired before backup", "retired-metadata").await;
+    source
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+            policy: ArtifactRetentionPolicy::new("already-collected").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    let gc = source
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("retired-metadata-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    source
+        .apply_gc(&gc, OffsetDateTime::UNIX_EPOCH + time::Duration::days(2))
+        .await
+        .unwrap();
+
+    let backup = directory.path().join("backup");
+    ArtifactBackupService::new(source)
+        .backup_to(&backup)
+        .await
+        .unwrap();
+    let manifest = ArtifactBackupService::<LocalArtifactStore>::inspect_manifest(&backup).unwrap();
+    assert_eq!(
+        manifest.plan.entries[0].content,
+        made_adapters::artifacts::ArtifactBackupContent::RetiredMetadataOnly
+    );
+    assert!(fs::read_dir(backup.join("blobs")).unwrap().next().is_none());
+
+    let restored = Arc::new(LocalArtifactStore::open(directory.path().join("restored")).unwrap());
+    ArtifactBackupService::new(restored.clone())
+        .restore_from(&backup)
+        .await
+        .unwrap();
+    assert!(restored
+        .get(artifact.artifact_id())
+        .await
+        .unwrap()
+        .tombstone
+        .is_some());
+    assert!(restored
+        .read_chunk_for_backup(ReadArtifactChunk {
+            artifact_id: artifact.artifact_id().clone(),
+            offset: ArtifactByteOffset::ZERO,
+            max_bytes: ArtifactChunkLimit::DEFAULT,
+        })
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn prepare_recovers_the_original_selection_after_pin_before_manifest() {
+    let directory = TempDir::new().unwrap();
+    let source = Arc::new(LocalArtifactStore::open(directory.path().join("source")).unwrap());
+    let first = upload(&source, b"first protected body", "pin-before-manifest-1").await;
+    let backup = directory.path().join("backup");
+    let service = ArtifactBackupService::new(source.clone());
+
+    let original = service.prepare(&backup).await.unwrap();
+    fs::remove_file(backup.join("manifest.json")).unwrap();
+    fs::remove_file(backup.join("plan.json")).unwrap();
+    let second = upload(&source, b"later body", "pin-before-manifest-2").await;
+
+    let recovered = service.prepare(&backup).await.unwrap();
+    assert_eq!(recovered, original);
+    assert_eq!(recovered.entries.len(), 1);
+    assert_eq!(recovered.entries[0].artifact_id(), first.artifact_id());
+    assert!(recovered
+        .entries
+        .iter()
+        .all(|entry| entry.artifact_id() != second.artifact_id()));
+}
+
+#[tokio::test]
+async fn protection_added_after_gc_plan_fences_stale_apply() {
+    let directory = TempDir::new().unwrap();
+    let store = LocalArtifactStore::open(directory.path()).unwrap();
+    let body = b"stale gc plan";
+    let artifact = upload(&store, body, "stale-gc-plan").await;
+    store
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+            policy: ArtifactRetentionPolicy::new("stale-plan").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    let plan = store
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("stale-plan-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert_eq!(plan.candidates.len(), 1);
+
+    store
+        .protect_references(
+            ArtifactIdempotencyKey::new("receipt:stale-plan").unwrap(),
+            vec![artifact.artifact_id().clone()],
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        store
+            .apply_gc(&plan, OffsetDateTime::UNIX_EPOCH + time::Duration::days(2))
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+    assert!(directory
+        .path()
+        .join("blobs")
+        .join(artifact.digest().as_str().trim_start_matches("sha256:"))
+        .exists());
+}
+
+#[tokio::test]
+async fn protection_survives_reopen_and_release_is_an_idempotent_tombstone() {
+    let directory = TempDir::new().unwrap();
+    let first = LocalArtifactStore::open(directory.path()).unwrap();
+    let artifact = upload(&first, b"durable protection", "durable-protection").await;
+    let key = ArtifactIdempotencyKey::new("backup:durable-protection").unwrap();
+    let selected = first
+        .protect_references(key.clone(), vec![artifact.artifact_id().clone()])
+        .await
+        .unwrap();
+    drop(first);
+
+    let reopened = LocalArtifactStore::open(directory.path()).unwrap();
+    assert_eq!(
+        reopened
+            .protect_references(key.clone(), vec![artifact.artifact_id().clone()])
+            .await
+            .unwrap(),
+        selected
+    );
+    reopened.release_snapshot(&key).await.unwrap();
+    reopened.release_snapshot(&key).await.unwrap();
+    assert_eq!(
+        reopened
+            .protect_references(key, vec![artifact.artifact_id().clone()])
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+}
+
+#[tokio::test]
+async fn database_capture_runs_after_the_artifact_pin_is_durable() {
+    let directory = TempDir::new().unwrap();
+    let store = LocalArtifactStore::open(directory.path()).unwrap();
+    let artifact = upload(&store, b"database snapshot boundary", "database-boundary").await;
+    let protections = directory.path().join("protections");
+
+    let snapshot = store
+        .protect_snapshot_and_then(
+            ArtifactIdempotencyKey::new("backup:database-boundary").unwrap(),
+            move || {
+                let persisted = fs::read_dir(protections)
+                    .map_err(|_| ArtifactStoreError::StorageUnavailable)?
+                    .count();
+                if persisted != 1 {
+                    return Err(ArtifactStoreError::StorageUnavailable);
+                }
+                Ok(())
+            },
+        )
+        .await
+        .unwrap();
+    assert_eq!(snapshot.records.len(), 1);
+    assert_eq!(snapshot.records[0].artifact, artifact);
+}
+
+#[tokio::test]
+async fn failed_database_capture_leaves_a_conservative_artifact_pin() {
+    let directory = TempDir::new().unwrap();
+    let store = LocalArtifactStore::open(directory.path()).unwrap();
+    let artifact = upload(&store, b"failed database capture", "failed-database").await;
+    store
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+            policy: ArtifactRetentionPolicy::new("failed-database").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+
+    assert_eq!(
+        store
+            .protect_snapshot_and_then(
+                ArtifactIdempotencyKey::new("backup:failed-database").unwrap(),
+                || Err(ArtifactStoreError::StorageUnavailable),
+            )
+            .await,
+        Err(ArtifactStoreError::StorageUnavailable)
+    );
+    let plan = store
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("failed-database-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert!(plan.candidates.is_empty());
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_backup_is_online_verifiable_resumable_and_restores_in_isolation() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("made.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA journal_mode=WAL; PRAGMA synchronous=FULL; \
+             CREATE TABLE journal (position INTEGER PRIMARY KEY, payload TEXT NOT NULL); \
+             INSERT INTO journal(position, payload) VALUES (1, 'before-snapshot');",
+        )
+        .unwrap();
+    let artifacts = LocalArtifactStore::open(directory.path().join("artifacts")).unwrap();
+    let artifact = upload(&artifacts, b"sqlite referenced blob", "sqlite-backup").await;
+    let service = SqliteBackupService::new(artifacts, &database);
+    let backup = directory.path().join("backup");
+    let key = ArtifactIdempotencyKey::new("backup:sqlite-online").unwrap();
+
+    let snapshot = service.prepare(&backup, key.clone()).await.unwrap();
+    assert_eq!(snapshot.records.len(), 1);
+    assert_eq!(snapshot.records[0].artifact, artifact);
+    let manifest = SqliteBackupService::inspect(&backup).unwrap();
+    assert_eq!(manifest.protection_key, key);
+    assert_eq!(manifest.artifact_records, snapshot.records);
+
+    connection
+        .execute(
+            "INSERT INTO journal(position, payload) VALUES (2, 'after-snapshot')",
+            [],
+        )
+        .unwrap();
+    assert_eq!(service.prepare(&backup, key).await.unwrap(), snapshot);
+
+    let restored = directory.path().join("restored.sqlite3");
+    SqliteBackupService::restore_to(&backup, &restored).unwrap();
+    let restored = rusqlite::Connection::open(restored).unwrap();
+    let rows: i64 = restored
+        .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+        .unwrap();
+    assert_eq!(rows, 1);
+    let payload: String = restored
+        .query_row(
+            "SELECT payload FROM journal WHERE position = 1",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(payload, "before-snapshot");
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_backup_fails_closed_when_prior_capture_has_no_database() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("made.sqlite3");
+    rusqlite::Connection::open(&database).unwrap();
+    let artifacts = LocalArtifactStore::open(directory.path().join("artifacts")).unwrap();
+    let artifact_identity = artifacts.store_identity().await.unwrap();
+    let service = SqliteBackupService::new(artifacts, &database);
+    let backup = directory.path().join("backup");
+    fs::create_dir_all(&backup).unwrap();
+    let key = ArtifactIdempotencyKey::new("backup:interrupted-sqlite").unwrap();
+    let identity = digest(
+        fs::canonicalize(&database)
+            .unwrap()
+            .to_string_lossy()
+            .as_bytes(),
+    );
+    fs::write(
+        backup.join("sqlite-owner.json"),
+        serde_json::to_vec(&(key.clone(), identity, artifact_identity)).unwrap(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        service.prepare(&backup, key).await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test]
+async fn sqlite_retry_cannot_mix_captured_database_with_another_artifact_store() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("made.sqlite3");
+    rusqlite::Connection::open(&database).unwrap();
+    let first_store = LocalArtifactStore::open(directory.path().join("artifacts-a")).unwrap();
+    upload(&first_store, b"store-a", "store-a").await;
+    let backup = directory.path().join("backup");
+    let key = ArtifactIdempotencyKey::new("backup:captured-db-store-a").unwrap();
+    SqliteBackupService::new(first_store, &database)
+        .prepare(&backup, key.clone())
+        .await
+        .unwrap();
+    fs::remove_file(backup.join("sqlite-manifest.json")).unwrap();
+
+    let second_store = LocalArtifactStore::open(directory.path().join("artifacts-b")).unwrap();
+    upload(&second_store, b"store-b", "store-b").await;
+    assert_eq!(
+        SqliteBackupService::new(second_store, &database)
+            .prepare(&backup, key)
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+}
+
+#[cfg(feature = "sqlite")]
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_restores_atomically() {
+    let directory = TempDir::new().unwrap();
+    let database = directory.path().join("made.sqlite3");
+    let connection = rusqlite::Connection::open(&database).unwrap();
+    connection
+        .execute_batch(
+            "PRAGMA journal_mode=WAL; CREATE TABLE journal(position INTEGER PRIMARY KEY, payload TEXT NOT NULL); INSERT INTO journal VALUES (1, 'boundary');",
+        )
+        .unwrap();
+    drop(connection);
+    let store_root = directory.path().join("artifact-store");
+    let store = LocalArtifactStore::open(&store_root).unwrap();
+    let artifact = upload(&store, b"composed snapshot blob", "composed-snapshot").await;
+    let receipt_key = ArtifactIdempotencyKey::new("receipt:composed-snapshot").unwrap();
+    store
+        .protect_references(receipt_key.clone(), vec![artifact.artifact_id().clone()])
+        .await
+        .unwrap();
+    let service = SqliteArtifactBackupService::new(store.clone(), &database);
+    let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let writer_stop = stop.clone();
+    let writer_database = database.clone();
+    let writer = tokio::task::spawn_blocking(move || {
+        let connection = rusqlite::Connection::open(writer_database).unwrap();
+        let mut position = 2_i64;
+        while !writer_stop.load(std::sync::atomic::Ordering::Acquire) {
+            connection
+                .execute(
+                    "INSERT INTO journal(position, payload) VALUES (?1, 'during-backup')",
+                    [position],
+                )
+                .unwrap();
+            position += 1;
+        }
+    });
+
+    let backup = directory.path().join("backup-set");
+    let manifest = service
+        .backup_to(
+            &backup,
+            ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
+        )
+        .await
+        .unwrap();
+    stop.store(true, std::sync::atomic::Ordering::Release);
+    writer.await.unwrap();
+    service.verify(&backup, &manifest).unwrap();
+    assert_eq!(
+        service
+            .backup_to(
+                &backup,
+                ArtifactIdempotencyKey::new("backup:different-key").unwrap()
+            )
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+    let other_database = directory.path().join("other.sqlite3");
+    rusqlite::Connection::open(&other_database).unwrap();
+    let other_source = SqliteArtifactBackupService::new(store.clone(), other_database);
+    assert_eq!(
+        other_source
+            .backup_to(
+                &backup,
+                ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap()
+            )
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+
+    let restored = directory.path().join("restored-set");
+    service.restore_set_to(&backup, &restored).await.unwrap();
+    assert!(restored.join("restore-complete.json").exists());
+    let restored_database = rusqlite::Connection::open(restored.join("database.sqlite3")).unwrap();
+    let rows: i64 = restored_database
+        .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+        .unwrap();
+    assert!(rows >= 1);
+    let restored_store = LocalArtifactStore::open(restored.join("artifacts")).unwrap();
+    assert_eq!(
+        restored_store
+            .get(artifact.artifact_id())
+            .await
+            .unwrap()
+            .artifact,
+        artifact
+    );
+    let restored_protections = restored_store.active_protections().await.unwrap();
+    assert!(restored_protections
+        .iter()
+        .any(|protection| protection.key == receipt_key));
+    assert!(restored_protections
+        .iter()
+        .all(|protection| !protection.key.as_str().starts_with("restore:")));
+    assert_eq!(
+        service.restore_set_to(&backup, &restored).await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+
+    let raced = directory.path().join("raced-restore-set");
+    let (left, right) = tokio::join!(
+        service.restore_set_to(&backup, &raced),
+        service.restore_set_to(&backup, &raced),
+    );
+    assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    assert!(raced.join("restore-complete.json").exists());
+}
+
+#[tokio::test]
+async fn corrupt_protection_fails_gc_closed() {
+    let directory = TempDir::new().unwrap();
+    let store = LocalArtifactStore::open(directory.path()).unwrap();
+    let artifact = upload(&store, b"corrupt protection", "corrupt-protection").await;
+    store
+        .tombstone(TombstoneArtifact {
+            artifact_id: artifact.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+            policy: ArtifactRetentionPolicy::new("corrupt-protection").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    store
+        .protect_references(
+            ArtifactIdempotencyKey::new("backup:corrupt-protection").unwrap(),
+            vec![artifact.artifact_id().clone()],
+        )
+        .await
+        .unwrap();
+    let protection = fs::read_dir(directory.path().join("protections"))
+        .unwrap()
+        .next()
+        .unwrap()
+        .unwrap()
+        .path();
+    fs::write(protection, b"not json").unwrap();
+
+    assert_eq!(
+        store
+            .plan_gc(
+                OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+                lease("corrupt-protection-gc", 259_200_000),
+            )
+            .await,
+        Err(ArtifactStoreError::StorageUnavailable)
     );
 }
 

@@ -4,7 +4,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, ExecutionReceiptStorePort,
 };
-use made_core::value_objects::{ExecutionIntent, ExecutionRecoveryCapability};
+use made_core::value_objects::{
+    ExecutionIntent, ExecutionReconciliationRequirement, ExecutionRecoveryCapability,
+};
 
 use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::execution_receipt_from_observation::execution_receipt_from_observation;
@@ -66,6 +68,20 @@ impl RecoverExecutionIntentUseCase {
                 what: "execution_connector_contract",
             });
         }
+        if let Some(requirement) = self
+            .store
+            .reconciliation_requirement(intent.operation().operation_id(), intent.claim_fence())
+            .await?
+        {
+            if !requirement.matches_intent(intent) {
+                return Err(DomainError::InvariantViolated {
+                    reason: "execution reconciliation requirement does not match its intent",
+                });
+            }
+            return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
+                intent.operation().operation_id().clone(),
+            ));
+        }
         if intent.recovery_capability() == ExecutionRecoveryCapability::ReconciliationRequired {
             return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
                 intent.operation().operation_id().clone(),
@@ -74,6 +90,16 @@ impl RecoverExecutionIntentUseCase {
         let observation = match self.connector.recover_intent(intent).await? {
             CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
             CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+                if &operation_id != intent.operation().operation_id() {
+                    return Err(DomainError::Conflict {
+                        what: "execution_reconciliation_requirement",
+                    });
+                }
+                self.store
+                    .record_reconciliation_requirement(
+                        ExecutionReconciliationRequirement::from_intent(intent),
+                    )
+                    .await?;
                 return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
                     operation_id,
                 ));

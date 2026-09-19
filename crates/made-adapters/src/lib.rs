@@ -60,6 +60,7 @@ pub mod scoring;
 #[cfg(feature = "otel")]
 pub mod telemetry;
 pub mod validators;
+pub mod workers;
 pub mod yaml;
 
 #[cfg(feature = "grpc")]

@@ -25,6 +25,7 @@ enum FailurePoint {
     None,
     BeforeEffect,
     AfterEffect,
+    AmbiguousAfterEffect,
 }
 
 #[derive(Debug)]
@@ -97,6 +98,11 @@ impl CeremonyExecutionConnectorPort for FailureInjectingConnector {
             });
         }
         state.effects += 1;
+        if state.failure == FailurePoint::AmbiguousAfterEffect {
+            return Ok(CeremonyExecutionConnectorOutcome::ReconciliationRequired(
+                request.intent().operation().operation_id().clone(),
+            ));
+        }
         let observation = CeremonyExecutionObservation::new(
             request.intent().claim_fence().clone(),
             None,
@@ -213,6 +219,34 @@ async fn retrying_the_same_fence_reuses_the_first_intent_timestamp() {
     assert_eq!(retried_intent.recorded_at(), first_intent.recorded_at());
     assert_eq!(connector.calls(), 2);
     assert_eq!(connector.effects(), 1);
+}
+
+#[tokio::test]
+async fn connector_reported_ambiguity_is_durable_and_stops_automatic_replay() {
+    let store = Arc::new(InMemoryExecutionReceiptStore::new());
+    let connector = Arc::new(FailureInjectingConnector::new(
+        FailurePoint::AmbiguousAfterEffect,
+        ExecutionRecoveryCapability::QueryableByOperationId,
+    ));
+    let worker = usecase(store.clone(), connector.clone());
+
+    let first = worker.execute(input(1, fence('8'))).await.unwrap();
+    let ExecuteCeremonyOperationOutcome::ReconciliationRequired(operation_id) = first else {
+        panic!("the connector reported an unresolved external effect");
+    };
+    assert!(store
+        .reconciliation_requirement(&operation_id, &fence('8'))
+        .await
+        .unwrap()
+        .is_some());
+
+    assert!(matches!(
+        worker.execute(input(2, fence('8'))).await.unwrap(),
+        ExecuteCeremonyOperationOutcome::ReconciliationRequired(_)
+    ));
+    assert_eq!(connector.calls(), 1, "durable ambiguity must stop replay");
+    assert_eq!(connector.effects(), 1);
+    assert!(store.receipt(&operation_id).await.unwrap().is_none());
 }
 
 #[tokio::test]

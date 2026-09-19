@@ -15,6 +15,7 @@ mod children;
 mod execution_receipts;
 mod guard_decisions;
 mod interventions;
+mod lease_renewal;
 mod lifecycle;
 mod participant_bindings;
 mod reasons;
@@ -40,6 +41,9 @@ impl CeremonyInstance {
                 self.decide_bind_participant(command, definition)
             }
             CeremonyCommand::StartStep(command) => self.decide_start_step(command, definition),
+            CeremonyCommand::RenewStepLease(command) => {
+                self.decide_renew_step_lease(command, definition)
+            }
             CeremonyCommand::ApplyStepResult(command) => {
                 self.decide_apply_step_result(command, definition)
             }

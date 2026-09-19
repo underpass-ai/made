@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use super::{CeremonyExecutionConnectorOutcome, CeremonyExecutionRequest};
+use super::{CeremonyExecutionConnectorOutcome, CeremonyExecutionRequest, ExecutionCancellation};
 use crate::error::DomainError;
 use crate::value_objects::{
     ArtifactSourceKind, ExecutionConnectorId, ExecutionIntent, ExecutionRecoveryCapability,
@@ -19,6 +19,21 @@ pub trait CeremonyExecutionConnectorPort: Send + Sync {
         &self,
         request: CeremonyExecutionRequest,
     ) -> Result<CeremonyExecutionConnectorOutcome, DomainError>;
+
+    /// Default for adapters without owned processes. Process/container adapters
+    /// override this to kill and reap their whole execution before returning.
+    async fn execute_cancellable(
+        &self,
+        request: CeremonyExecutionRequest,
+        cancellation: ExecutionCancellation,
+    ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
+        cancellation
+            .run(self.execute_or_recover(request))
+            .await
+            .ok_or(DomainError::InvariantViolated {
+                reason: "execution authority was cancelled",
+            })?
+    }
 
     /// Settle a durable intent after the handler-shaped request was lost with the process.
     async fn recover_intent(

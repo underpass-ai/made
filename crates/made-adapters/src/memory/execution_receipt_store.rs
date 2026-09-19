@@ -6,7 +6,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    StepClaimFence,
 };
 use tokio::sync::Mutex;
 
@@ -94,6 +95,54 @@ impl ExecutionReceiptStorePort for InMemoryExecutionReceiptStore {
             .await
             .receipts
             .get(operation_id.as_str())
+            .cloned())
+    }
+
+    async fn record_reconciliation_requirement(
+        &self,
+        requirement: ExecutionReconciliationRequirement,
+    ) -> Result<(), DomainError> {
+        let mut state = self.state.lock().await;
+        let key = (
+            requirement.operation_id().as_str().to_owned(),
+            requirement.producer_claim_fence().as_str().to_owned(),
+        );
+        let Some(intent) = state.intents.get(&key) else {
+            return Err(DomainError::NotFound {
+                what: "execution_intent",
+            });
+        };
+        if !requirement.matches_intent(intent) {
+            return Err(DomainError::Conflict {
+                what: "execution_reconciliation_requirement",
+            });
+        }
+        match state.reconciliation_requirements.get(&key) {
+            Some(stored) if stored == &requirement => Ok(()),
+            Some(_) => Err(DomainError::Conflict {
+                what: "execution_reconciliation_requirement",
+            }),
+            None => {
+                state.reconciliation_requirements.insert(key, requirement);
+                Ok(())
+            }
+        }
+    }
+
+    async fn reconciliation_requirement(
+        &self,
+        operation_id: &ExecutionOperationId,
+        claim_fence: &StepClaimFence,
+    ) -> Result<Option<ExecutionReconciliationRequirement>, DomainError> {
+        Ok(self
+            .state
+            .lock()
+            .await
+            .reconciliation_requirements
+            .get(&(
+                operation_id.as_str().to_owned(),
+                claim_fence.as_str().to_owned(),
+            ))
             .cloned())
     }
 

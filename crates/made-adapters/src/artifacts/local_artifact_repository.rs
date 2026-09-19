@@ -11,7 +11,6 @@ use made_core::ports::{
 use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use uuid::Uuid;
 
-use super::artifact_gc::{ArtifactGcCandidate, ArtifactGcPlan, ArtifactGcReport};
 use super::hashing::{digest_bytes, digest_reader};
 use super::local_artifact_io::{read_json, storage_failure, sync_directory, write_json_atomic};
 use super::local_artifact_layout::LocalArtifactLayout;
@@ -25,13 +24,43 @@ pub(super) struct LocalArtifactRepository {
 }
 
 impl LocalArtifactRepository {
+    pub(super) fn store_identity(
+        &self,
+    ) -> Result<made_core::value_objects::ArtifactDigest, ArtifactStoreError> {
+        let root = self
+            .layout
+            .artifacts_dir()
+            .parent()
+            .ok_or(ArtifactStoreError::StorageUnavailable)?
+            .to_path_buf();
+        let canonical = std::fs::canonicalize(root).map_err(storage_failure)?;
+        Ok(super::hashing::digest_bytes(
+            canonical.to_string_lossy().as_bytes(),
+        ))
+    }
+    pub(super) fn restore_retired_metadata(
+        &self,
+        record: &ArtifactRecord,
+    ) -> Result<(), ArtifactStoreError> {
+        if record.tombstone.is_none() {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
+        self.locked(|| match self.load_record(record.artifact.artifact_id()) {
+            Ok(existing) if &existing == record => Ok(()),
+            Ok(_) => Err(ArtifactStoreError::IdempotencyConflict),
+            Err(ArtifactStoreError::NotFound) => {
+                write_json_atomic(&self.layout.artifact(record.artifact.artifact_id()), record)
+            }
+            Err(error) => Err(error),
+        })
+    }
     pub(super) fn open(root: impl AsRef<std::path::Path>) -> Result<Self, ArtifactStoreError> {
         Ok(Self {
             layout: LocalArtifactLayout::open(root)?,
         })
     }
 
-    fn locked<T>(
+    pub(super) fn locked<T>(
         &self,
         operation: impl FnOnce() -> Result<T, ArtifactStoreError>,
     ) -> Result<T, ArtifactStoreError> {
@@ -364,166 +393,6 @@ impl LocalArtifactRepository {
         })
     }
 
-    pub(super) fn plan_gc(
-        &self,
-        retire_before: time::OffsetDateTime,
-        lease: made_core::value_objects::StepLease,
-    ) -> Result<ArtifactGcPlan, ArtifactStoreError> {
-        self.locked(|| {
-            let records = self.all_records()?;
-            let mut groups: std::collections::BTreeMap<_, Vec<ArtifactRecord>> =
-                std::collections::BTreeMap::new();
-            for record in records {
-                groups
-                    .entry(record.artifact.digest().clone())
-                    .or_default()
-                    .push(record);
-            }
-            let mut candidates = Vec::new();
-            for (digest, mut records) in groups {
-                records.sort_by(|left, right| {
-                    left.artifact
-                        .artifact_id()
-                        .cmp(right.artifact.artifact_id())
-                });
-                if records.is_empty()
-                    || records.iter().any(|record| {
-                        record
-                            .tombstone
-                            .as_ref()
-                            .is_none_or(|tombstone| tombstone.retired_at > retire_before)
-                    })
-                    || self.has_active_upload_for(&digest)?
-                {
-                    continue;
-                }
-                let path = self.layout.blob(&records[0].artifact);
-                let metadata = match fs::metadata(&path) {
-                    Ok(metadata) => metadata,
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
-                    Err(error) => return Err(storage_failure(error)),
-                };
-                verify_reader(
-                    File::open(&path).map_err(storage_failure)?,
-                    &records[0].artifact,
-                )?;
-                candidates.push(ArtifactGcCandidate {
-                    digest,
-                    bytes: metadata.len(),
-                    artifact_ids: records
-                        .into_iter()
-                        .map(|record| record.artifact.artifact_id().clone())
-                        .collect(),
-                });
-            }
-            candidates.sort_by(|left, right| left.digest.cmp(&right.digest));
-            Ok(ArtifactGcPlan {
-                version: 1,
-                retire_before,
-                lease,
-                candidates,
-            })
-        })
-    }
-
-    pub(super) fn apply_gc(
-        &self,
-        plan: &ArtifactGcPlan,
-        now: time::OffsetDateTime,
-    ) -> Result<ArtifactGcReport, ArtifactStoreError> {
-        self.locked(|| {
-            if plan.version != 1 || plan.lease.is_expired_at(now) {
-                return Err(ArtifactStoreError::AccessDenied);
-            }
-            let mut report = ArtifactGcReport {
-                dry_run: false,
-                planned: plan
-                    .candidates
-                    .iter()
-                    .map(|candidate| candidate.digest.clone())
-                    .collect(),
-                deleted: Vec::new(),
-            };
-            for candidate in &plan.candidates {
-                if plan.lease.is_expired_at(now) {
-                    return Err(ArtifactStoreError::AccessDenied);
-                }
-                let records = self.all_records()?;
-                let mut matching = records
-                    .iter()
-                    .filter(|record| record.artifact.digest() == &candidate.digest)
-                    .collect::<Vec<_>>();
-                matching.sort_by(|left, right| {
-                    left.artifact
-                        .artifact_id()
-                        .cmp(right.artifact.artifact_id())
-                });
-                let current_ids = matching
-                    .iter()
-                    .map(|record| record.artifact.artifact_id().clone())
-                    .collect::<Vec<_>>();
-                if current_ids != candidate.artifact_ids
-                    || matching.is_empty()
-                    || matching.iter().any(|record| {
-                        record
-                            .tombstone
-                            .as_ref()
-                            .is_none_or(|tombstone| tombstone.retired_at > plan.retire_before)
-                    })
-                    || self.has_active_upload_for(&candidate.digest)?
-                {
-                    return Err(ArtifactStoreError::IdempotencyConflict);
-                }
-                let path = self.layout.blob(&matching[0].artifact);
-                if !path.exists() {
-                    continue;
-                }
-                verify_reader(
-                    File::open(&path).map_err(storage_failure)?,
-                    &matching[0].artifact,
-                )?;
-                fs::remove_file(path).map_err(storage_failure)?;
-                sync_directory(&self.layout.blobs_dir())?;
-                report.deleted.push(candidate.digest.clone());
-            }
-            Ok(report)
-        })
-    }
-
-    fn all_records(&self) -> Result<Vec<ArtifactRecord>, ArtifactStoreError> {
-        let mut records = Vec::new();
-        for entry in fs::read_dir(self.layout.artifacts_dir()).map_err(storage_failure)? {
-            let path = entry.map_err(storage_failure)?.path();
-            if path.extension().and_then(|value| value.to_str()) == Some("json") {
-                records.push(
-                    read_json::<ArtifactRecord>(&path)?
-                        .ok_or(ArtifactStoreError::StorageUnavailable)?,
-                );
-            }
-        }
-        Ok(records)
-    }
-
-    fn has_active_upload_for(
-        &self,
-        digest: &made_core::value_objects::ArtifactDigest,
-    ) -> Result<bool, ArtifactStoreError> {
-        for entry in fs::read_dir(self.layout.uploads_dir()).map_err(storage_failure)? {
-            let path = entry.map_err(storage_failure)?.path();
-            if path.extension().and_then(|value| value.to_str()) != Some("json") {
-                continue;
-            }
-            let manifest = read_json::<LocalUploadManifest>(&path)?
-                .ok_or(ArtifactStoreError::StorageUnavailable)?;
-            if matches!(manifest.state, LocalUploadState::Active)
-                && manifest.request.expected_digest == *digest
-            {
-                return Ok(true);
-            }
-        }
-        Ok(false)
-    }
-
     pub(super) fn read(
         &self,
         request: &ReadArtifactChunk,
@@ -610,7 +479,10 @@ impl LocalArtifactRepository {
             .clone())
     }
 
-    fn load_record(&self, id: &ArtifactId) -> Result<ArtifactRecord, ArtifactStoreError> {
+    pub(super) fn load_record(
+        &self,
+        id: &ArtifactId,
+    ) -> Result<ArtifactRecord, ArtifactStoreError> {
         read_json(&self.layout.artifact(id))?.ok_or(ArtifactStoreError::NotFound)
     }
 
@@ -661,7 +533,7 @@ impl LocalArtifactRepository {
     }
 }
 
-fn verify_reader(file: File, artifact: &ArtifactRef) -> Result<(), ArtifactStoreError> {
+pub(super) fn verify_reader(file: File, artifact: &ArtifactRef) -> Result<(), ArtifactStoreError> {
     let (digest, size) = digest_reader(file).map_err(storage_failure)?;
     if size != artifact.size_bytes().get() {
         return Err(ArtifactStoreError::Incomplete {

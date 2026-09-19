@@ -69,11 +69,12 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
     assert_eq!(serde_json::to_value(record).unwrap(), expected);
 }
 
-const EVERY_EVENT_TYPE: [AuditEventType; 25] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 26] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
     AuditEventType::StepStarted,
+    AuditEventType::StepLeaseRenewed,
     AuditEventType::StepCompleted,
     AuditEventType::StepFailed,
     AuditEventType::ContextWritten,
@@ -131,6 +132,9 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         )),
         AuditEventType::StepStarted => Some(include_str!(
             "fixtures/ceremony_events/v1/step_started.json"
+        )),
+        AuditEventType::StepLeaseRenewed => Some(include_str!(
+            "fixtures/ceremony_events/v1/step_lease_renewed.json"
         )),
         AuditEventType::StepCompleted => Some(include_str!(
             "fixtures/ceremony_events/v1/step_completed.json"
@@ -241,7 +245,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 21);
+    assert_eq!(pinned, 22);
 }
 
 #[test]

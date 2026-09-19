@@ -4,7 +4,8 @@ use super::{ExecutionRecoveryPage, RecordExecutionIntentOutcome, RecordExecution
 use crate::error::DomainError;
 use crate::value_objects::{
     ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
-    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    StepClaimFence,
 };
 
 /// Durable intents and immutable terminal receipts for recoverable workers.
@@ -35,6 +36,17 @@ pub trait ExecutionReceiptStorePort: Send + Sync {
         &self,
         operation_id: &ExecutionOperationId,
     ) -> Result<Option<ExecutionReceipt>, DomainError>;
+
+    async fn record_reconciliation_requirement(
+        &self,
+        requirement: ExecutionReconciliationRequirement,
+    ) -> Result<(), DomainError>;
+
+    async fn reconciliation_requirement(
+        &self,
+        operation_id: &ExecutionOperationId,
+        claim_fence: &StepClaimFence,
+    ) -> Result<Option<ExecutionReconciliationRequirement>, DomainError>;
 
     async fn record_receipt(
         &self,

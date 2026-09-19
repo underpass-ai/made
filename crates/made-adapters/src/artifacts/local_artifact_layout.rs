@@ -18,7 +18,13 @@ impl LocalArtifactLayout {
         let layout = Self {
             root: root.as_ref().to_path_buf(),
         };
-        for child in ["uploads", "idempotency", "artifacts", "blobs"] {
+        for child in [
+            "uploads",
+            "idempotency",
+            "artifacts",
+            "blobs",
+            "protections",
+        ] {
             fs::create_dir_all(layout.root.join(child)).map_err(storage_failure)?;
         }
         Ok(layout)
@@ -26,6 +32,15 @@ impl LocalArtifactLayout {
 
     pub(super) fn lock_path(&self) -> PathBuf {
         self.root.join(".artifact-store.lock")
+    }
+
+    pub(super) fn protections_dir(&self) -> PathBuf {
+        self.root.join("protections")
+    }
+
+    pub(super) fn protection(&self, key: &str) -> PathBuf {
+        self.protections_dir()
+            .join(format!("{}.json", stable_key(key)))
     }
 
     pub(super) fn uploads_dir(&self) -> PathBuf {

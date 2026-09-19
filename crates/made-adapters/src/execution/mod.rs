@@ -13,3 +13,12 @@ pub use local_execution::{
     LocalExecutionReceipt, LocalExecutionRequest, LocalNetworkPolicy, LocalProcessTermination,
 };
 pub use repository_script_execution_connector::RepositoryScriptExecutionConnector;
+
+mod oci_execution_config;
+mod oci_execution_connector;
+mod oci_execution_request;
+mod oci_output;
+pub(crate) mod operation_record;
+pub use oci_execution_config::OciExecutionConfig;
+pub use oci_execution_connector::OciExecutionConnector;
+pub use oci_execution_request::OciExecutionRequest;

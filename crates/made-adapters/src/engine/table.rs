@@ -33,6 +33,8 @@ pub(crate) enum Table {
     ExecutionOperations,
     /// One durable intent per operation and accepted claim fence.
     ExecutionIntents,
+    /// Connector-reported ambiguity per operation and producing claim fence.
+    ExecutionReconciliationRequirements,
     /// The immutable terminal receipt of each semantic operation.
     ExecutionReceipts,
     Councils,
@@ -69,6 +71,7 @@ impl Table {
             | Table::EventCursorQuarantine
             | Table::MemoryWrites
             | Table::ExecutionIntents
+            | Table::ExecutionReconciliationRequirements
             | Table::CouncilJournal => KeyShape::Bytes,
         }
     }
@@ -90,6 +93,7 @@ impl fmt::Display for Table {
             Table::MemoryWrites => "session_memory_writes",
             Table::ExecutionOperations => "execution_operations",
             Table::ExecutionIntents => "execution_intents",
+            Table::ExecutionReconciliationRequirements => "execution_reconciliation_requirements",
             Table::ExecutionReceipts => "execution_receipts",
             Table::Councils => "council_registry",
             Table::CouncilAgents => "council_agents",
