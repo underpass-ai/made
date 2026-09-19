@@ -10,6 +10,7 @@ mod embedded_authorization_dispatch;
 mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_backend_authorization;
+mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_dispatch;
 mod embedded_budget_fields;
@@ -19,7 +20,6 @@ mod embedded_ceremony_draft_request;
 mod embedded_ceremony_history_presenter;
 mod embedded_ceremony_id_request;
 mod embedded_ceremony_instance_presenter;
-mod embedded_ceremony_listing;
 mod embedded_ceremony_search_request;
 mod embedded_children_request;
 mod embedded_claim_ceremony_step_request;
@@ -60,9 +60,7 @@ mod embedded_tool_authorizer;
 
 use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{
-    AuthorizationRequestId, CeremonyEventPageLimit, CeremonyId, TraceContext,
-};
+use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -153,12 +151,6 @@ impl EmbeddedMadeMcpBackend {
             made,
             authorization: None,
         }
-    }
-
-    async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, ToolError> {
-        EmbeddedCeremonyInstancePresenter::present(&self.made, ceremony_id)
-            .await
-            .map(tool_success_result)
     }
 }
 
@@ -535,9 +527,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     let metrics = self.made.metrics().await?;
                     Ok(tool_success_result(present_service_metrics(&metrics)))
                 }
-                LIST_CEREMONY_INSTANCES_TOOL => {
-                    embedded_ceremony_listing::present_all(&self.made).await
-                }
+                LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
                 SEARCH_CEREMONY_INSTANCES_TOOL => {
                     let request = EmbeddedCeremonySearchRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
