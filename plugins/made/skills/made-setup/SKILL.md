@@ -17,10 +17,12 @@ in this case. An absent or mismatched override needs correction before startup;
 do not silently select another executable.
 
 Without that explicit candidate override, use the release installer only
-after the manifest-matched assets are publicly available. In particular, a
-0.6.0 candidate manifest does not imply that its assets have been published.
-If publication is pending, explain that boundary and direct candidate testing
-to a source build plus `MADE_MCP_BIN`; do not substitute a 0.5.0 download.
+after the manifest-matched assets are publicly available. A candidate manifest,
+including this checkout's `0.7.0-rc.1`, does not imply that matching assets or
+catalogue pointers have been published. If publication is pending, explain
+that boundary and direct candidate testing to a source build plus
+`MADE_MCP_BIN`; do not substitute an older stable download while claiming to
+run the candidate.
 
 For a published release, run its platform adapter:
 
