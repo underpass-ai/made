@@ -16,11 +16,7 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
-use made_app::authorization::{
-    AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
-    ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
-};
+use made_app::authorization::{AuthorizationMutationOutcome, TrustedHostAuthorizationGate};
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
@@ -87,11 +83,7 @@ pub struct EmbeddedMade {
     /// Replaceable operational counters; editions without councils honestly stay at zero.
     statistics: Arc<dyn StatisticsPort>,
     councils: Arc<EmbeddedCouncilServices>,
-    /// The same adapter the recorder writes through, read back.
-    ///
-    /// The writer side is a subscriber of the stream (ADR-012), so the
-    /// recorder is not a field here; this is the read the start use
-    /// cases make before a session opens.
+    /// Reads the memory projection written by the stream subscriber (ADR-012).
     memory_reader: Arc<dyn MemoryReaderPort>,
     /// Durable publication is woken after each append and once explicitly at
     /// host startup, so records left pending by a stopped process do not need
@@ -341,31 +333,15 @@ impl EmbeddedMade {
         policy_id: AuthorizationPolicyId,
         store: Arc<dyn AuthorizationPolicyStorePort>,
     ) -> Self {
-        self.memory_reader = Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
-            self.memory_reader.clone(),
-            Arc::new(made_app::authorization::AuthorizeOperationUseCase::new(
-                policy_id.clone(),
-                store.clone(),
-                self.clock.clone(),
-                made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
-                    .expect("fixed authorization TTL is valid"),
-            )),
-            self.stream.clone(),
-        ));
-        let continuation = ContinueAcceptedCeremonyWorkUseCase::new(
-            policy_id.clone(),
-            store.clone(),
+        let (memory_reader, authorization) = crate::embedded_authorization_wiring::wire(
+            policy_id,
+            store,
             self.clock.clone(),
-            made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
-                .expect("fixed embedded authorization TTL is valid"),
+            self.memory_reader.clone(),
+            &self.stream,
         );
-        self.stream.require_authorization();
-        self.authorization = Some(EmbeddedAuthorizationServices::new(
-            ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
-            ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
-            AuthorizationPolicyAdministrationService::new(policy_id, store, self.clock.clone()),
-            continuation,
-        ));
+        self.memory_reader = memory_reader;
+        self.authorization = Some(authorization);
         self
     }
 
