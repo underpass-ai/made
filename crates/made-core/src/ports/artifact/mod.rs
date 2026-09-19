@@ -19,6 +19,7 @@ mod begin_artifact_upload;
 mod limits;
 mod put_artifact_chunk;
 mod read_artifact_chunk;
+mod restore_protection_key;
 mod tombstone_artifact;
 
 pub use artifact_byte_offset::ArtifactByteOffset;
@@ -45,4 +46,5 @@ pub use limits::{
 };
 pub use put_artifact_chunk::PutArtifactChunk;
 pub use read_artifact_chunk::ReadArtifactChunk;
+pub use restore_protection_key::RestoreProtectionKey;
 pub use tombstone_artifact::TombstoneArtifact;

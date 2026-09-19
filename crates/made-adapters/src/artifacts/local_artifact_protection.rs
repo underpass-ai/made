@@ -45,7 +45,7 @@ impl LocalArtifactRepository {
             let path = self.layout.protection(key.as_str());
             let snapshot = ArtifactSnapshot::protected(key, records);
             if let Some(existing) = read_json::<ArtifactSnapshot>(&path)? {
-                if existing != snapshot {
+                if existing.key != snapshot.key || existing.records != snapshot.records {
                     return Err(ArtifactStoreError::IdempotencyConflict);
                 }
                 return Ok(existing);

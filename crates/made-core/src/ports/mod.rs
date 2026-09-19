@@ -100,8 +100,8 @@ pub use artifact::{
     ArtifactRecord, ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactSnapshot,
     ArtifactStoreError, ArtifactStorePort, ArtifactTombstone, ArtifactUploadId,
     ArtifactUploadStatus, BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk,
-    TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES, ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
-    ARTIFACT_MAX_PAGE_ITEMS,
+    RestoreProtectionKey, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES, ARTIFACT_MAX_BYTES,
+    ARTIFACT_MAX_CHUNK_BYTES, ARTIFACT_MAX_PAGE_ITEMS,
 };
 pub use authorization_decision_page::AuthorizationDecisionPage;
 pub use authorization_policy_append_outcome::AuthorizationPolicyAppendOutcome;

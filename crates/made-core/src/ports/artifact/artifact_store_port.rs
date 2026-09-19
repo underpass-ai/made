@@ -34,10 +34,19 @@ pub trait ArtifactStorePort: Send + Sync {
     ) -> Result<(), ArtifactStoreError> {
         Err(ArtifactStoreError::AccessDenied)
     }
+    /// Release only the temporary protection owned by a verified restore.
+    /// Receipt and other durable reference pins are never released through
+    /// this capability.
+    async fn release_restore(
+        &self,
+        _key: &super::RestoreProtectionKey,
+    ) -> Result<(), ArtifactStoreError> {
+        Err(ArtifactStoreError::AccessDenied)
+    }
     /// Pin expected restore content before uploads/metadata become visible.
     async fn protect_restore(
         &self,
-        _key: super::ArtifactIdempotencyKey,
+        _key: super::RestoreProtectionKey,
         _records: Vec<ArtifactRecord>,
     ) -> Result<super::ArtifactSnapshot, ArtifactStoreError> {
         Err(ArtifactStoreError::AccessDenied)
