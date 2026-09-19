@@ -9,6 +9,10 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.7.0 — 2026-09-19
+
 - Add orthogonal ceremony pause, resume and irreversible cancellation plus
   sealed ceremony, state and step deadlines across Rust, gRPC and both MCP
   backends. Paused sessions drain already accepted fenced work; timed-out or
