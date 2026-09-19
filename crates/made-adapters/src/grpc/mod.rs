@@ -15,11 +15,17 @@
 
 mod made_grpc_service_builder;
 mod mappers;
+mod mutual_tls_authentication_error;
+mod mutual_tls_principal_map;
+mod mutual_tls_principal_mapping_entry;
 mod service;
 mod status;
 mod stream;
 pub(crate) mod tracecontext;
 
 pub use made_grpc_service_builder::MadeGrpcServiceBuilder;
+pub use mutual_tls_authentication_error::MutualTlsAuthenticationError;
+pub use mutual_tls_principal_map::MutualTlsPrincipalMap;
+pub use mutual_tls_principal_mapping_entry::MutualTlsPrincipalMappingEntry;
 pub use service::MadeGrpcService;
 pub use status::{budget_error_to_status, domain_error_to_status};
