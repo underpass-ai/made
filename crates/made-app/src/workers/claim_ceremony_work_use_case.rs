@@ -1,7 +1,9 @@
 use std::sync::Arc;
 
 use made_core::error::DomainError;
-use made_core::ports::{BudgetReservationPlannerPort, CeremonyStepHandlerRequest, ClockPort};
+use made_core::ports::{
+    BudgetReservationPlannerPort, CeremonyInstanceIndexPort, CeremonyStepHandlerRequest, ClockPort,
+};
 use made_core::value_objects::{
     BudgetReservationRequest, CeremonyId, CeremonyStep, IdempotencyKey, StepId,
 };
@@ -20,6 +22,7 @@ use crate::usecases::{
 
 /// Discovers ceremonies in keyset order and claims at most one external step per ceremony.
 pub struct ClaimCeremonyWorkUseCase {
+    index: Arc<dyn CeremonyInstanceIndexPort>,
     stream: Arc<SessionStream>,
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     deadlines: Arc<EnforceCeremonyDeadlinesUseCase>,
@@ -42,6 +45,7 @@ impl std::fmt::Debug for ClaimCeremonyWorkUseCase {
 impl ClaimCeremonyWorkUseCase {
     #[must_use]
     pub fn new(
+        index: Arc<dyn CeremonyInstanceIndexPort>,
         stream: Arc<SessionStream>,
         definitions: Arc<ResolveCeremonyDefinitionUseCase>,
         deadlines: Arc<EnforceCeremonyDeadlinesUseCase>,
@@ -50,6 +54,7 @@ impl ClaimCeremonyWorkUseCase {
         policy: CeremonyWorkerPolicy,
     ) -> Self {
         Self {
+            index,
             stream,
             definitions,
             deadlines,
@@ -76,26 +81,23 @@ impl ClaimCeremonyWorkUseCase {
         &self,
         input: ClaimCeremonyWorkInput,
     ) -> Result<CeremonyWorkClaimsPage, DomainError> {
-        let mut ids = self
-            .stream
-            .ids()
-            .await?
-            .into_iter()
-            .filter(|id| input.after().is_none_or(|after| id > after))
-            .take(usize::from(input.limit().get()) + 1)
-            .collect::<Vec<_>>();
-        let has_more = ids.len() > usize::from(input.limit().get());
-        if has_more {
-            ids.pop();
-        }
-        let next_cursor = has_more.then(|| ids.last().cloned()).flatten();
+        let page = self
+            .index
+            .ids_after(input.after(), None, input.limit())
+            .await?;
+        let next_cursor = page
+            .has_more()
+            .then(|| page.ids().last().cloned())
+            .flatten();
         let mut claims = Vec::new();
         let mut failures = Vec::new();
-        for ceremony_id in ids {
-            match self.claim_one(&ceremony_id, &input).await {
+        for ceremony_id in page.ids() {
+            match self.claim_one(ceremony_id, &input).await {
                 Ok(Some(claim)) => claims.push(claim),
                 Ok(None) => {}
-                Err(error) => failures.push(CeremonyWorkClaimFailure::new(ceremony_id, error)),
+                Err(error) => {
+                    failures.push(CeremonyWorkClaimFailure::new(ceremony_id.clone(), error));
+                }
             }
         }
         Ok(CeremonyWorkClaimsPage::new(claims, failures, next_cursor))

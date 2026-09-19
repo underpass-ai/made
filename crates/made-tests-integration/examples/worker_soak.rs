@@ -28,8 +28,9 @@ use made_core::ports::{
     CeremonyExecutionConnectorPort, ExecutionReceiptStorePort, NoopCeremonyEventSubscriber,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyId, CeremonyName, CeremonyVersion, DurationMs,
-    ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId, MaxParallel,
+    AuditActorKind, CeremonyContext, CeremonyId, CeremonyInstancePageLimit, CeremonyName,
+    CeremonyVersion, DurationMs, ExecutionConnectorId, ExecutionRecoveryPageLimit, LeaseOwnerId,
+    MaxParallel,
 };
 use serde_json::json;
 
@@ -126,8 +127,8 @@ fn parse_positive(raw: &str, field: &str) -> Result<u64, String> {
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = Config::parse().map_err(std::io::Error::other)?;
-    if config.workers > ExecutionRecoveryPageLimit::MAX {
-        return Err(format!("workers must be <= {}", ExecutionRecoveryPageLimit::MAX).into());
+    if config.workers > CeremonyInstancePageLimit::MAX {
+        return Err(format!("workers must be <= {}", CeremonyInstancePageLimit::MAX).into());
     }
     let parent = config
         .store
