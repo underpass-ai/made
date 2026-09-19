@@ -82,10 +82,11 @@ pub use authorization::{
     AuthorizationDecisionId, AuthorizationDecisionKind, AuthorizationDecisionPageLimit,
     AuthorizationDecisionPlan, AuthorizationDecisionTtl, AuthorizationDenialReason,
     AuthorizationEvidence, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
-    AuthorizationPolicyId, AuthorizationPolicyVersion, AuthorizationRequest,
+    AuthorizationKeyRing, AuthorizationPolicyId, AuthorizationPolicyVersion, AuthorizationRequest,
     AuthorizationRequestId, AuthorizationRevocation, AuthorizationRevocationReason,
-    AuthorizationScope, AuthorizationTargetDigest, AuthorizedOperation, DelegationDepth,
-    PrincipalId, PrincipalKind, SeparationRule,
+    AuthorizationScope, AuthorizationTargetDigest, AuthorizedOperation, CursorTransition,
+    DelegationDepth, PrincipalId, PrincipalKind, SeparationRule, VerificationKey,
+    VerificationKeyFingerprint, VerificationKeyId,
 };
 pub use budget::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,

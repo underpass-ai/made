@@ -8,6 +8,10 @@ las siete arquitecturas de coordinación que el código declara.
 
 - [Guía práctica de MCP local y diseño de ceremonias](c6-13-guia-mcp-local.md)
 - [Checklist de aceptación](checklist-aceptacion.md)
+- [Evaluación reproducible](c6-06-evaluacion-reproducible.md)
+- [Identidad y transición de claves](c6-10-identidad-y-claves.md)
+- [Capacidad y observabilidad](c6-11-capacidad-y-observabilidad.md)
+- [Entrega y adopción](c6-12-entrega-y-adopcion.md)
 
 ## Alcance y evidencia
 
