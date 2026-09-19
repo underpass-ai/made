@@ -45,6 +45,8 @@ use serde_json::{json, Value};
 mod council_journal;
 #[path = "mcp_parity_session/dynamic_roles.rs"]
 mod dynamic_roles;
+#[path = "mcp_parity_session/execution_receipts.rs"]
+mod execution_receipts;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
@@ -582,6 +584,8 @@ struct ParityArms {
     terminals: std::sync::Mutex<BTreeMap<String, String>>,
     uploads: std::sync::Mutex<BTreeMap<String, (String, String)>>,
     council_leases: std::sync::Mutex<BTreeMap<String, (Value, Value)>>,
+    receipt_stores: Vec<Arc<dyn made_core::ports::ExecutionReceiptStorePort>>,
+    receipt_artifacts: Vec<Arc<dyn made_core::ports::ArtifactStorePort>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -649,14 +653,21 @@ impl ParityArms {
         );
         let wire_journal = council_journal::seeded(wire_artifact_dir.path()).await;
         let local_journal = council_journal::seeded(local_artifact_dir.path()).await;
+        let wire_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(wire_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+        );
+        let local_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(local_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+        );
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
-                .with_artifact_store(wire_artifacts)
-                .with_council_journal(wire_journal),
+                .with_artifact_store(wire_artifacts.clone())
+                .with_council_journal(wire_journal)
+                .with_execution_receipts(wire_receipts.clone()),
         )
         .await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
@@ -671,8 +682,9 @@ impl ParityArms {
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
                 .with_council_validators(parity_council_validators())
                 .with_executor(Arc::new(NoopExecutor::new()))
-                .with_artifact_store(local_artifacts)
+                .with_artifact_store(local_artifacts.clone())
                 .with_council_journal(local_journal)
+                .with_execution_receipt_store(local_receipts.clone())
                 .build(),
         ));
         Self {
@@ -686,6 +698,8 @@ impl ParityArms {
             terminals: std::sync::Mutex::new(BTreeMap::new()),
             uploads: std::sync::Mutex::new(BTreeMap::new()),
             council_leases: std::sync::Mutex::new(BTreeMap::new()),
+            receipt_stores: vec![wire_receipts, local_receipts],
+            receipt_artifacts: vec![wire_artifacts, local_artifacts],
         }
     }
 
@@ -714,7 +728,13 @@ impl ParityArms {
                 .get(&child_id())
                 .expect("the scripted child history returned its terminal"));
         }
-        if tool == "made_complete_ceremony_step" && arguments.get("claim_fence").is_none() {
+        if matches!(
+            tool,
+            "made_complete_ceremony_step"
+                | "made_complete_execution_receipt"
+                | "made_adopt_execution_receipt"
+        ) && arguments.get("claim_fence").is_none()
+        {
             let key = (
                 arguments["ceremony_id"].as_str().unwrap().to_owned(),
                 arguments["step_id"].as_str().unwrap().to_owned(),
@@ -782,6 +802,13 @@ impl ParityArms {
             let fence = structured(&wire)["claim_fence"].clone();
             assert_eq!(fence, structured(&local)["claim_fence"]);
             assert_eq!(fence.as_str().unwrap().len(), 64);
+            execution_receipts::seed_after_claim(
+                &self.receipt_stores,
+                &self.receipt_artifacts,
+                arguments,
+                fence.as_str().unwrap(),
+            )
+            .await;
             self.claims.lock().unwrap().insert(
                 (
                     arguments["ceremony_id"].as_str().unwrap().to_owned(),
@@ -1500,6 +1527,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({ "ceremony_id": MEMORY_SECOND_ID }),
         ),
     ]);
+    calls.extend(execution_receipts::script());
     calls
 }
 
@@ -1651,6 +1679,7 @@ async fn drive_the_whole_session(arms: &ParityArms) {
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
         assert_same_answer(tool, &over_the_wire, &in_process);
+        execution_receipts::assert_result(tool, &arguments, structured(&in_process));
         if tool == "made_design_ceremony" {
             let yaml = structured(&in_process)["definition_yaml"]
                 .as_str()

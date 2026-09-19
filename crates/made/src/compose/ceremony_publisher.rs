@@ -44,3 +44,28 @@ pub(super) async fn wire(
         )) as Arc<dyn CeremonyEventSubscriberPort>
     }))
 }
+
+/// Project sealed events through the same ordered fanout in every service boot.
+pub(super) fn subscribers(
+    memory: Arc<dyn CeremonyEventSubscriberPort>,
+    progress: Arc<dyn CeremonyEventSubscriberPort>,
+    events: Arc<dyn CeremonyEventStorePort>,
+    metrics: Arc<dyn made_core::ports::MetricsRecorderPort>,
+    publisher: Option<Arc<dyn CeremonyEventSubscriberPort>>,
+) -> Arc<dyn CeremonyEventSubscriberPort> {
+    use made_adapters::ceremony::{
+        CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber,
+        CeremonyStructuredLogSubscriber, CeremonyTracingSubscriber,
+    };
+    use made_app::services::CeremonyEventFanout;
+    let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+        memory,
+        progress,
+        Arc::new(CeremonyMetricsSubscriber::new(metrics.clone())),
+        Arc::new(CeremonyFanoutMetricsSubscriber::new(events, metrics)),
+        Arc::new(CeremonyTracingSubscriber::new()),
+        Arc::new(CeremonyStructuredLogSubscriber::new()),
+    ];
+    subscribers.extend(publisher);
+    Arc::new(CeremonyEventFanout::new(subscribers))
+}

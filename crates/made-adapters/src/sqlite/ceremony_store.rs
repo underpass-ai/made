@@ -19,6 +19,7 @@ use super::error::{encoding_failure, join_failure};
 mod definition_publication;
 mod event_cursor;
 mod event_store;
+mod execution_receipt_store;
 mod legacy_snapshot_source;
 #[cfg(test)]
 mod legacy_store_fixture;

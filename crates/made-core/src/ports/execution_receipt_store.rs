@@ -3,8 +3,8 @@ use async_trait::async_trait;
 use super::{ExecutionRecoveryPage, RecordExecutionIntentOutcome, RecordExecutionReceiptOutcome};
 use crate::error::DomainError;
 use crate::value_objects::{
-    ExecutionIntent, ExecutionOperationId, ExecutionReceipt, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit, StepClaimFence,
+    ExecutionIntent, ExecutionOperation, ExecutionOperationId, ExecutionReceipt,
+    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
 };
 
 /// Durable intents and immutable terminal receipts for recoverable workers.
@@ -20,6 +20,16 @@ pub trait ExecutionReceiptStorePort: Send + Sync {
         operation_id: &ExecutionOperationId,
         claim_fence: &StepClaimFence,
     ) -> Result<Option<ExecutionIntent>, DomainError>;
+
+    async fn intents(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Vec<ExecutionIntent>, DomainError>;
+
+    async fn operation(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<Option<ExecutionOperation>, DomainError>;
 
     async fn receipt(
         &self,

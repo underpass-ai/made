@@ -11,6 +11,7 @@ use crate::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, Ceremo
 use crate::error::DomainError;
 
 mod children;
+mod execution_receipts;
 mod guard_decisions;
 mod interventions;
 mod lifecycle;
@@ -40,6 +41,9 @@ impl CeremonyInstance {
             CeremonyCommand::StartStep(command) => self.decide_start_step(command, definition),
             CeremonyCommand::ApplyStepResult(command) => {
                 self.decide_apply_step_result(command, definition)
+            }
+            CeremonyCommand::ApplyExecutionReceiptResult(command) => {
+                self.decide_apply_execution_receipt_result(command, definition)
             }
             CeremonyCommand::ApplyTransition(command) => {
                 self.decide_apply_transition(command, definition)

@@ -3,19 +3,14 @@
 use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::{
-    CeremonyFanoutMetricsSubscriber, CeremonyMetricsSubscriber, CeremonyStructuredLogSubscriber,
-    CeremonyTracingSubscriber, DeliberatingCeremonyStepHandler,
-};
+use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::EnvConfiguration;
 use made_adapters::memory::InMemoryCeremonyDefinitionRepository;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
-use made_app::services::{
-    AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
-};
+use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
@@ -26,8 +21,7 @@ use made_app::usecases::{
     UnregisterAgentUseCase,
 };
 use made_core::ports::{
-    AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyEventSubscriberPort,
-    CeremonyStepHandlerPort, ScoringPort,
+    AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
 };
 use tracing::info;
 
@@ -46,6 +40,7 @@ mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
 mod ceremony_queries;
+mod execution_receipts;
 mod executor;
 mod messaging;
 mod persistence;
@@ -61,9 +56,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One Prometheus registry for the whole process, shared between the
-    // use cases that record into it and the health endpoint that renders
-    // it. Fails fast if a metric is malformed (a wiring bug).
+    // One Prometheus registry for use cases and the health endpoint. Fails
+    // fast if a metric is malformed (a wiring bug).
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators = validators::wire(metrics_recorder.clone())?;
     // Choose scoring, and when an LLM judge is configured append it to
@@ -97,6 +91,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         publications: ceremony_publications,
         memory_writer,
         memory_reader,
+        receipts: execution_receipts,
     } = wire_ceremony_persistence(&service_config)?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
@@ -131,19 +126,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
     )
     .await?;
     let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-    let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
+    let subscribers = ceremony_publisher::subscribers(
         session_memory,
         progress_notifier.clone(),
-        Arc::new(CeremonyMetricsSubscriber::new(metrics_recorder.clone())),
-        Arc::new(CeremonyFanoutMetricsSubscriber::new(
-            ceremony_events.clone(),
-            metrics_recorder.clone(),
-        )),
-        Arc::new(CeremonyTracingSubscriber::new()),
-        Arc::new(CeremonyStructuredLogSubscriber::new()),
-    ];
-    subscribers.extend(event_publisher);
-    let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
+        ceremony_events.clone(),
+        metrics_recorder.clone(),
+        event_publisher,
+    );
     let ceremony_stream = Arc::new(SessionStream::new(
         ceremony_events.clone(),
         ceremony_snapshots,
@@ -232,13 +221,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         made_core::value_objects::CeremonyEventConsumer::new("made.children.recovery.v1")?,
     ));
-    loop {
-        let limit = made_core::value_objects::CeremonyEventPageLimit::DEFAULT;
-        let round = recover_ceremony_children.execute(limit).await?;
-        if round.busy || round.failed > 0 || round.acknowledged() < limit.value() {
-            break;
-        }
-    }
+    ceremony_operations::recover_to_head(&recover_ceremony_children).await?;
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -351,6 +334,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_cursors,
         progress_notifier,
         ceremony_publications,
+    );
+    grpc_builder = execution_receipts::wire(
+        grpc_builder,
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        execution_receipts,
+        clock.clone(),
+        artifacts.clone(),
     );
     grpc_builder = ceremony_operations::wire(
         grpc_builder,

@@ -28,8 +28,8 @@ use made_core::ports::{
     ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
-    MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort,
+    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
     ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
 use made_core::value_objects::{ArtifactId, ArtifactRef, CeremonyEventConsumer, CeremonyId};
@@ -41,6 +41,7 @@ mod council_journal;
 mod councils;
 mod definitions;
 mod execution;
+mod execution_receipts;
 mod history;
 mod participation;
 
@@ -83,6 +84,7 @@ pub struct EmbeddedMade {
     event_publisher: Option<Arc<PublishCeremonyEventsUseCase>>,
     event_publisher_consumer: CeremonyEventConsumer,
     artifacts: Option<Arc<ArtifactService>>,
+    execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
 }
 
 impl EmbeddedMade {
@@ -220,6 +222,7 @@ impl EmbeddedMade {
         event_transport: Option<Arc<dyn CeremonyEventTransportPort>>,
         progress_settings: CeremonyProgressSettings,
         artifacts: Option<Arc<ArtifactService>>,
+        execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -283,6 +286,7 @@ impl EmbeddedMade {
             event_publisher,
             event_publisher_consumer,
             artifacts,
+            execution_receipts,
         }
     }
 

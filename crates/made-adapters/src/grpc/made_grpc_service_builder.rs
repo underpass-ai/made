@@ -19,6 +19,9 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
     VerifyCeremonyJournalUseCase,
 };
+use made_app::workers::{
+    CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
+};
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
     MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot, StatisticsPort,
@@ -50,6 +53,9 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) recover_ceremony_children: Option<Arc<RecoverCeremonyChildrenUseCase>>,
     pub(super) claim_ceremony_step: Option<Arc<StartCeremonyStepUseCase>>,
     pub(super) complete_ceremony_step: Option<Arc<CompleteCeremonyStepUseCase>>,
+    pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
+    pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
+    pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,
     pub(super) apply_ceremony_transition: Option<Arc<ApplyCeremonyTransitionUseCase>>,
     pub(super) pause_ceremony: Option<Arc<PauseCeremonyUseCase>>,
     pub(super) resume_ceremony: Option<Arc<ResumeCeremonyUseCase>>,
@@ -181,6 +187,21 @@ impl MadeGrpcServiceBuilder {
         complete_ceremony_step,
         CompleteCeremonyStepUseCase,
         complete_ceremony_step
+    );
+    setter!(
+        get_execution_receipt,
+        GetExecutionReceiptUseCase,
+        get_execution_receipt
+    );
+    setter!(
+        inspect_execution_recovery,
+        InspectExecutionRecoveryUseCase,
+        inspect_execution_recovery
+    );
+    setter!(
+        complete_execution_receipt,
+        CompleteExecutionReceiptUseCase,
+        complete_execution_receipt
     );
     setter!(
         apply_ceremony_transition,
@@ -400,6 +421,9 @@ impl MadeGrpcServiceBuilder {
             recover_ceremony_children: required!(self, recover_ceremony_children),
             claim_ceremony_step: required!(self, claim_ceremony_step),
             complete_ceremony_step: required!(self, complete_ceremony_step),
+            get_execution_receipt: self.get_execution_receipt,
+            inspect_execution_recovery: self.inspect_execution_recovery,
+            complete_execution_receipt: self.complete_execution_receipt,
             apply_ceremony_transition: required!(self, apply_ceremony_transition),
             pause_ceremony: required!(self, pause_ceremony),
             resume_ceremony: required!(self, resume_ceremony),

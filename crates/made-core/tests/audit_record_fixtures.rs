@@ -24,7 +24,7 @@ const PRE_P2_EVENT_CHAIN: &str =
 const PRE_P5_IN_PROGRESS_SNAPSHOT: &str =
     include_str!("fixtures/legacy_in_progress_instance_pre_p5.json");
 
-const EVERY_EVENT_TYPE: [AuditEventType; 24] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 25] = [
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
@@ -49,6 +49,7 @@ const EVERY_EVENT_TYPE: [AuditEventType; 24] = [
     AuditEventType::ChildSpawnPlanned,
     AuditEventType::ChildSpawnPlanAdopted,
     AuditEventType::ChildCompletionAccepted,
+    AuditEventType::ExecutionReceiptLinked,
 ];
 
 /// The pinned version-1 payload of each event type a stream can hold.
@@ -76,6 +77,9 @@ fn golden(event_type: AuditEventType) -> Option<&'static str> {
         )),
         AuditEventType::ChildCompletionAccepted => Some(include_str!(
             "fixtures/ceremony_events/v1/child_completion_accepted.json"
+        )),
+        AuditEventType::ExecutionReceiptLinked => Some(include_str!(
+            "fixtures/ceremony_events/v1/execution_receipt_linked.json"
         )),
         AuditEventType::CeremonyInstanceStarted => Some(include_str!(
             "fixtures/ceremony_events/v1/ceremony_instance_started.json"
@@ -192,7 +196,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 20);
+    assert_eq!(pinned, 21);
 }
 
 #[test]

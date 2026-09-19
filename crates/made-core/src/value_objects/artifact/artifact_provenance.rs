@@ -69,6 +69,36 @@ impl ArtifactProvenance {
         }
     }
 
+    /// Re-check invariants after a persistence or wire deserialization.
+    pub fn validate(&self) -> Result<(), DomainError> {
+        let has_execution = self.execution_receipt_id.is_some()
+            && self.operation_id.is_some()
+            && self.accepted_claim_fence.is_some();
+        let has_partial_execution = self.execution_receipt_id.is_some()
+            || self.operation_id.is_some()
+            || self.accepted_claim_fence.is_some();
+        match self.source_kind {
+            ArtifactSourceKind::ExternalExecution
+            | ArtifactSourceKind::Fixture
+            | ArtifactSourceKind::NoOp
+                if has_execution && self.import_ref.is_none() =>
+            {
+                Ok(())
+            }
+            ArtifactSourceKind::GeneratedReport
+                if !has_partial_execution && self.import_ref.is_none() =>
+            {
+                Ok(())
+            }
+            ArtifactSourceKind::Imported if !has_partial_execution && self.import_ref.is_some() => {
+                Ok(())
+            }
+            _ => Err(DomainError::InvariantViolated {
+                reason: "artifact provenance fields do not match its source kind",
+            }),
+        }
+    }
+
     #[must_use]
     pub const fn source_kind(&self) -> ArtifactSourceKind {
         self.source_kind
@@ -97,5 +127,22 @@ impl ArtifactProvenance {
     #[must_use]
     pub fn import_ref(&self) -> Option<&ArtifactImportRef> {
         self.import_ref.as_ref()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+
+    #[test]
+    fn deserialized_provenance_must_match_its_source_kind() {
+        let raw = json!({
+            "source_kind": "external_execution",
+            "observed_at": "1970-01-01T00:00:00Z"
+        });
+        let provenance: ArtifactProvenance = serde_json::from_value(raw).unwrap();
+        assert!(provenance.validate().is_err());
     }
 }

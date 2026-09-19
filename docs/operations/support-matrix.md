@@ -46,22 +46,23 @@ process — and `parity.tsv` carries the reason for each.
 | Image | Pinned digest preferred; release tags only after successful publication; `latest` requires the chart's development override |
 | Chart | `charts/made`; explicit version for OCI installs; Kubernetes floor in `Chart.yaml` |
 | Ceremony persistence | SQLite when explicitly configured; published definitions required for rehydration |
-| Council persistence | In-memory registries by default in embedded composition; hosts can inject council, agent, deliberation and contract adapters; the service can use Postgres adapters |
-| Artifact persistence | Local durable directory for one process, or shared Postgres metadata and chunks for replicas; uploads and reads are bounded and resumable |
+| Council persistence | Explicit SQLite composition persists councils, agents, contracts, deliberations, statistics and their independent journal; the default builder remains in-memory; the service can use Postgres adapters |
+| Artifact persistence | Local durable directory with process coordination, or shared Postgres metadata and chunks for replicas; uploads and reads are bounded and resumable |
 | Messaging | Optional core NATS pub/sub; durable ceremony consumption uses the event feed/cursor contract |
 | Providers | Build feature + environment + registered kind; default image includes OpenAI and vLLM, Anthropic needs a custom feature-enabled build |
 
-The embedded facade and embedded MCP backend expose all 14 council operations:
-six deliberation operations and eight council, agent and output-contract
-configuration operations. Their default registries are process-local and
-in-memory; opening a SQLite ceremony store does not make council records
-durable. A host can inject alternative adapters through `EmbeddedMadeBuilder`.
+The embedded facade and embedded MCP backend expose council deliberation,
+configuration and independent journal operations. The default builder uses
+process-local registries. Explicit SQLite composition persists these records
+and their cursor leases across processes; the council journal has its own
+sequence and never shares ceremony cursor positions. A host can inject
+alternative adapters through `EmbeddedMadeBuilder`.
 The `made-api` trait remains a smaller consumer interface, not an additional
 full transport. See [reference](../reference/README.md) and runtime discovery
 before selecting an operation.
 
 Support means the repository implements and checks the boundary; it does not
-promise provider availability, model quality, automatic worker scheduling or
+promise provider availability, model quality, an automatically started worker daemon or
 compatibility with every historic release. See [deployment](deploy-kubernetes.md)
 and [migrations](../migrations/README.md).
 
@@ -71,3 +72,9 @@ surfaces, `protocol/editions_matrix_tests.rs` checks this table and
 `mcp_parity_session.rs` checks shared behavior.
 
 The independent council journal additionally has exact embedded/gRPC MCP parity, lease fencing and durable cursor restart coverage in `council_journal_surfaces.rs`, plus shared store conformance in `council_journal_conformance.rs`.
+
+The recoverable worker host is an explicit Rust composition with bounded
+concurrency, deadline checks and cooperative stop. The shipping MCP and service
+expose receipt lookup, recovery inspection, completion and adoption. Configuring
+a connector and running the host loop remain host responsibilities. See
+[recoverable workers](recoverable-workers.md) for the effect and recovery contract.

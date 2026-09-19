@@ -9,12 +9,19 @@ pub struct CeremonyExecutionRequest {
 }
 
 impl CeremonyExecutionRequest {
-    #[must_use]
-    pub const fn new(intent: ExecutionIntent, handler_request: CeremonyStepHandlerRequest) -> Self {
-        Self {
+    pub fn new(
+        intent: ExecutionIntent,
+        handler_request: CeremonyStepHandlerRequest,
+    ) -> Result<Self, crate::DomainError> {
+        if intent.operation().request() != &handler_request.semantic_request_bytes()? {
+            return Err(crate::DomainError::InvariantViolated {
+                reason: "handler request does not match the sealed execution request",
+            });
+        }
+        Ok(Self {
             intent,
             handler_request,
-        }
+        })
     }
 
     #[must_use]
