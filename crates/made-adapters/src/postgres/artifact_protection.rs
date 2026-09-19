@@ -154,4 +154,35 @@ impl PostgresArtifactStore {
         tx.commit().await.map_err(storage_failure)?;
         Ok(snapshot)
     }
+
+    pub(super) async fn protect_exact_records(
+        &self,
+        key: ArtifactIdempotencyKey,
+        mut records: Vec<ArtifactRecord>,
+    ) -> Result<ArtifactSnapshot, ArtifactStoreError> {
+        records.sort_by(|left, right| {
+            left.artifact
+                .artifact_id()
+                .cmp(right.artifact.artifact_id())
+        });
+        if records
+            .windows(2)
+            .any(|pair| pair[0].artifact.artifact_id() == pair[1].artifact.artifact_id())
+        {
+            return Err(ArtifactStoreError::IdempotencyConflict);
+        }
+        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        Self::lock_protection_barrier(&mut tx).await?;
+        if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
+            if existing.records != records {
+                return Err(ArtifactStoreError::IdempotencyConflict);
+            }
+            tx.commit().await.map_err(storage_failure)?;
+            return Ok(existing);
+        }
+        let snapshot = ArtifactSnapshot::protected(key, records);
+        Self::persist_protection(&mut tx, &snapshot).await?;
+        tx.commit().await.map_err(storage_failure)?;
+        Ok(snapshot)
+    }
 }
