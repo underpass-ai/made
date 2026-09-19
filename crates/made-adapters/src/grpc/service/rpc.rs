@@ -3,7 +3,7 @@ use std::task::{Context, Poll};
 
 use async_trait::async_trait;
 use made_app::services::AuthorizationOperationScope;
-use made_core::value_objects::AuthorizationAction;
+use made_core::value_objects::{AuthorizationAction, AuthorizationScope};
 use made_proto::v1 as pb;
 use tonic::{Request, Response, Status};
 
