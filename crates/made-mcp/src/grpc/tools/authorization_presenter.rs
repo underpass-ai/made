@@ -35,6 +35,7 @@ pub(super) fn decision(value: &pb::AuthorizationDecisionRecord) -> Value {
         "principal":value.principal.as_ref().map(principal),"action":value.action,
         "scope":value.scope.as_ref().map(scope),"target_digest":value.target_digest,
         "approval_decision_id":value.approval_decision_id,
+        "approved_action":value.approved_action,
         "accepted_work_decision_id":value.accepted_work_decision_id,"policy_version":value.policy_version,
         "outcome":value.outcome,"grant_id":value.grant_id,"denial_reason":value.denial_reason,
         "decided_at":timestamp_to_rfc3339(value.decided_at.as_ref()),

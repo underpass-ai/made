@@ -53,9 +53,15 @@ pub(crate) async fn dispatch(
     traceparent: &str,
     request_id: &str,
     target_digest: &str,
+    approval_decision_id: Option<&str>,
 ) -> Result<Value, ToolError> {
-    let mut client =
-        request_metadata_client::build(channel, traceparent, request_id, target_digest)?;
+    let mut client = request_metadata_client::build(
+        channel,
+        traceparent,
+        request_id,
+        target_digest,
+        approval_decision_id,
+    )?;
     if authorization_dispatch::handles(name) {
         return authorization_dispatch::dispatch(&mut client, name, arguments).await;
     }
@@ -355,45 +361,3 @@ pub(crate) async fn dispatch(
         ))),
     }
 }
-
-// ---------------------------------------------------------------------------
-// Request builders. Each takes the raw `tools/call.arguments` JSON
-// value and produces a typed proto request. Validation errors come
-// back as plain strings; tonic gets a fully-formed proto.
-// ---------------------------------------------------------------------------
-
-#[cfg(test)]
-use artifact_requests::{
-    build_abort_artifact_upload_request, build_begin_artifact_upload_request,
-    build_commit_artifact_upload_request, build_get_artifact_request, build_list_artifacts_request,
-    build_put_artifact_chunk_request, build_read_artifact_chunk_request,
-    build_tombstone_artifact_request,
-};
-#[cfg(test)]
-use ceremony_history_requests::{
-    build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
-    build_pull_ceremony_events_request, build_read_ceremony_events_request,
-    build_stream_ceremony_request,
-};
-#[cfg(test)]
-use ceremony_requests::{
-    build_accept_child_completion_request, build_apply_ceremony_transition_request,
-    build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
-    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
-    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
-    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
-    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
-    build_start_ceremony_request, build_start_published_ceremony_request,
-};
-#[cfg(test)]
-use design_ceremony_request::build_design_ceremony_request;
-#[cfg(test)]
-use general_requests::{
-    build_create_council_request, build_delete_contract_request, build_delete_council_request,
-    build_deliberate_request, build_get_deliberation_result_request, build_orchestrate_request,
-    build_process_trigger_event_request, build_register_agent_request,
-    build_register_contract_request, build_run_ceremony_request,
-    build_run_council_decision_request, build_stream_deliberation_request,
-    build_unregister_agent_request,
-};

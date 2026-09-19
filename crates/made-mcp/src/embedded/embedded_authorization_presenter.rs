@@ -37,6 +37,7 @@ pub(super) fn decision(value: &AuthorizationDecision) -> Result<Value, ToolError
         "decision_id":value.id(),"request_id":request.id(),"principal":principal(request.principal()),
         "action":request.action(),"scope":request.scope(),"target_digest":request.target_digest(),
         "approval_decision_id":request.approval_decision_id(),
+        "approved_action":request.approved_action(),
         "accepted_work_decision_id":request.accepted_work_decision_id(),"policy_version":value.policy_version(),
         "outcome":value.kind(),"grant_id":value.grant_id(),"denial_reason":value.denial_reason(),
         "decided_at":timestamp(value.decided_at())?,"valid_until":timestamp(value.valid_until())?

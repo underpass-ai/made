@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod artifact_fixtures;
+mod authorization_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
 mod council_fixtures;
@@ -144,9 +145,8 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_get_authorization_policy" => authorization_policy_fixture(),
                 "made_issue_authorization_grant" => json!({"version":2,"existing":false}),
                 "made_revoke_authorization_grant" => json!({"version":3,"existing":false}),
-                "made_list_authorization_decisions" => {
-                    json!({"decisions":[],"next_after_decision_id":null})
-                }
+                "made_approve_authorization_operation" => authorization_fixtures::approval(),
+                "made_list_authorization_decisions" => authorization_fixtures::decisions(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {

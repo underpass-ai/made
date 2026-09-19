@@ -16,7 +16,7 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
-use made_app::authorization::{AuthorizationMutationOutcome, TrustedHostAuthorizationGate};
+use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
@@ -32,23 +32,23 @@ use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
     ArtifactChunkPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError, ArtifactTombstone,
-    ArtifactUploadId, ArtifactUploadStatus, AuthorizationDecisionPage, AuthorizationPolicySnapshot,
-    AuthorizationPolicyStorePort, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
-    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
-    MetricsSnapshotPort, PutArtifactChunk, ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
+    ArtifactUploadId, ArtifactUploadStatus, AuthorizationPolicyStorePort, BeginArtifactUpload,
+    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
+    CeremonyEvidenceSourcePort, CeremonyInstanceIndexPort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort, MemoryReaderPort,
+    MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
+    ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
 use made_core::value_objects::{
-    ArtifactId, ArtifactRef, AuthorizationDecisionId, AuthorizationDecisionPageLimit,
-    AuthorizationGrant, AuthorizationGrantId, AuthorizationPolicyId, AuthorizationRequestId,
-    AuthorizationRevocationReason, CeremonyEventConsumer, CeremonyId,
+    ArtifactId, ArtifactRef, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
+    CeremonyId,
 };
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod authorization;
 mod budgets;
 mod council_journal;
 mod councils;
@@ -343,41 +343,6 @@ impl EmbeddedMade {
         self.memory_reader = memory_reader;
         self.authorization = Some(authorization);
         self
-    }
-
-    pub async fn authorization_policy(&self) -> Result<AuthorizationPolicySnapshot, DomainError> {
-        self.authorization()?.policy().await
-    }
-
-    pub async fn authorization_decisions(
-        &self,
-        after: Option<&AuthorizationDecisionId>,
-        limit: AuthorizationDecisionPageLimit,
-    ) -> Result<AuthorizationDecisionPage, DomainError> {
-        self.authorization()?.decisions(after, limit).await
-    }
-
-    pub async fn issue_authorization_grant(
-        &self,
-        grant: AuthorizationGrant,
-    ) -> Result<AuthorizationMutationOutcome, DomainError> {
-        self.authorization()?.issue(grant).await
-    }
-
-    pub async fn revoke_authorization_grant(
-        &self,
-        grant_id: &AuthorizationGrantId,
-        reason: AuthorizationRevocationReason,
-    ) -> Result<AuthorizationMutationOutcome, DomainError> {
-        self.authorization()?.revoke(grant_id, reason).await
-    }
-
-    fn authorization(&self) -> Result<&EmbeddedAuthorizationServices, DomainError> {
-        self.authorization
-            .as_ref()
-            .ok_or(DomainError::InvariantViolated {
-                reason: "embedded authorization policy services are not configured",
-            })
     }
 
     /// Resume durable event publication left pending by an earlier process.

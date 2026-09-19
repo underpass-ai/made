@@ -1,5 +1,6 @@
 use made_proto::v1::{
-    AuthorizationPolicyRecord, IssueAuthorizationGrantRequest, IssueAuthorizationGrantResponse,
+    ApproveAuthorizationOperationRequest, AuthorizationDecisionRecord, AuthorizationPolicyRecord,
+    IssueAuthorizationGrantRequest, IssueAuthorizationGrantResponse,
     ListAuthorizationDecisionsRequest, ListAuthorizationDecisionsResponse,
     RevokeAuthorizationGrantRequest, RevokeAuthorizationGrantResponse,
 };
@@ -7,6 +8,27 @@ use made_proto::v1::{
 use crate::{MadeClient, MadeClientError};
 
 impl MadeClient {
+    pub async fn approve_authorization_operation(
+        &self,
+        request: ApproveAuthorizationOperationRequest,
+    ) -> Result<AuthorizationDecisionRecord, MadeClientError> {
+        let response = self
+            .rpc()
+            .approve_authorization_operation(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/ApproveAuthorizationOperation",
+                request,
+            ))
+            .await
+            .map_err(MadeClientError::from_status)?
+            .into_inner();
+        response.decision.ok_or_else(|| {
+            MadeClientError::ProtocolViolation(
+                "approve authorization operation response has no decision".to_owned(),
+            )
+        })
+    }
+
     pub async fn authorization_policy(&self) -> Result<AuthorizationPolicyRecord, MadeClientError> {
         let response = self
             .rpc()
@@ -76,5 +98,50 @@ impl MadeClient {
             .await
             .map(tonic::Response::into_inner)
             .map_err(MadeClientError::from_status)
+    }
+}
+
+/// Compute the exact target digest used by the direct gRPC authorization gate.
+///
+/// Callers construct the final execution request first, approve this digest,
+/// and then send those same protobuf fields with the returned decision ID.
+#[must_use]
+pub fn authorization_target_digest<T: prost::Message>(request: &T) -> String {
+    use sha2::{Digest, Sha256};
+
+    format!("{:x}", Sha256::digest(request.encode_to_vec()))
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use made_proto::v1::BindCeremonyParticipantsRequest;
+
+    use super::authorization_target_digest;
+
+    #[test]
+    fn target_digest_is_stable_for_canonical_protobuf_maps() {
+        let left = BindCeremonyParticipantsRequest {
+            ceremony_id: "ceremony-1".to_owned(),
+            seating: BTreeMap::from([
+                ("reviewer".to_owned(), "review".to_owned()),
+                ("author".to_owned(), "writing".to_owned()),
+            ]),
+            ..Default::default()
+        };
+        let right = BindCeremonyParticipantsRequest {
+            ceremony_id: "ceremony-1".to_owned(),
+            seating: BTreeMap::from([
+                ("author".to_owned(), "writing".to_owned()),
+                ("reviewer".to_owned(), "review".to_owned()),
+            ]),
+            ..Default::default()
+        };
+
+        assert_eq!(
+            authorization_target_digest(&left),
+            authorization_target_digest(&right)
+        );
     }
 }

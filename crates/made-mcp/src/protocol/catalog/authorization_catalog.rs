@@ -10,6 +10,7 @@ pub(super) fn insert_authorization_tools(tools: &mut Vec<Value>) {
         .expect("observability tools belong to the catalog");
     tools.splice(position..position, [
         tool_def("made_get_authorization_policy", "Read the configured policy, grants, revocations and separation rules. Requires authenticated policy read authority.", empty_object_schema()),
+        tool_def("made_approve_authorization_operation", "Approve the exact target of an operation governed by a configured separation rule. The authenticated principal supplies the approval identity.", authorization_schemas::approval_schema()),
         tool_def("made_issue_authorization_grant", "Issue an explicit, scoped grant. Issuer and policy are supplied by the authenticated runtime, never by tool arguments.", authorization_schemas::grant_schema()),
         tool_def("made_revoke_authorization_grant", "Revoke a grant durably with a reason. Revoker identity comes from the authenticated channel.", authorization_schemas::revoke_schema()),
         tool_def("made_list_authorization_decisions", "Read a bounded page of persisted authorization decisions, including denials and their evidence.", authorization_schemas::decisions_schema()),

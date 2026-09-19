@@ -10,6 +10,7 @@ pub(super) fn build(
     traceparent: &str,
     request_id: &str,
     target_digest: &str,
+    approval_decision_id: Option<&str>,
 ) -> Result<MadeServiceClient<InterceptedService<Channel, RequestMetadataInterceptor>>, ToolError> {
     let traceparent = MetadataValue::try_from(traceparent)
         .map_err(|error| ToolError::invalid_request(error.to_string()))?;
@@ -17,12 +18,17 @@ pub(super) fn build(
         .map_err(|error| ToolError::invalid_request(error.to_string()))?;
     let target_digest = MetadataValue::try_from(target_digest)
         .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let approval_decision_id = approval_decision_id
+        .map(MetadataValue::try_from)
+        .transpose()
+        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
     Ok(MadeServiceClient::with_interceptor(
         channel,
         RequestMetadataInterceptor {
             traceparent,
             request_id,
             target_digest,
+            approval_decision_id,
         },
     ))
 }
@@ -32,6 +38,7 @@ pub(super) struct RequestMetadataInterceptor {
     traceparent: MetadataValue<tonic::metadata::Ascii>,
     request_id: MetadataValue<tonic::metadata::Ascii>,
     target_digest: MetadataValue<tonic::metadata::Ascii>,
+    approval_decision_id: Option<MetadataValue<tonic::metadata::Ascii>>,
 }
 
 impl tonic::service::Interceptor for RequestMetadataInterceptor {
@@ -48,6 +55,11 @@ impl tonic::service::Interceptor for RequestMetadataInterceptor {
         request
             .metadata_mut()
             .insert("x-made-target-digest", self.target_digest.clone());
+        if let Some(approval) = &self.approval_decision_id {
+            request
+                .metadata_mut()
+                .insert("x-made-approval-decision-id", approval.clone());
+        }
         Ok(request)
     }
 }
@@ -68,6 +80,11 @@ mod tests {
             target_digest: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
                 .parse()
                 .unwrap(),
+            approval_decision_id: Some(
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+                    .parse()
+                    .unwrap(),
+            ),
         };
 
         let request = interceptor.call(tonic::Request::new(())).unwrap();
@@ -89,6 +106,15 @@ mod tests {
                 .to_str()
                 .unwrap(),
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert_eq!(
+            request
+                .metadata()
+                .get("x-made-approval-decision-id")
+                .unwrap()
+                .to_str()
+                .unwrap(),
+            "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
         );
     }
 }

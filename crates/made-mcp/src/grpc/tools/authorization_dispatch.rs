@@ -9,6 +9,7 @@ pub(super) fn handles(name: &str) -> bool {
         "made_get_authorization_policy"
             | "made_issue_authorization_grant"
             | "made_revoke_authorization_grant"
+            | "made_approve_authorization_operation"
             | "made_list_authorization_decisions"
     )
 }
@@ -45,6 +46,16 @@ where
                 .await?
                 .into_inner();
             Ok(json!({"version":response.version,"existing":response.existing}))
+        }
+        "made_approve_authorization_operation" => {
+            let response = client
+                .approve_authorization_operation(request::approval(arguments).map_err(bad_request)?)
+                .await?
+                .into_inner();
+            let decision = response
+                .decision
+                .ok_or_else(|| ToolError::refused("made returned no approval decision"))?;
+            Ok(json!({"decision":view::decision(&decision)}))
         }
         "made_list_authorization_decisions" => {
             let response = client

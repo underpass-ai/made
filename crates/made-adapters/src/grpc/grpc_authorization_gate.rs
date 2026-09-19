@@ -3,9 +3,9 @@ use std::sync::Arc;
 
 use made_app::authorization::{AuthorizationGateOutcome, AuthorizeOperationUseCase};
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionId,
-    AuthorizationRequest, AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest,
-    AuthorizedOperation, PrincipalKind,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecision,
+    AuthorizationDecisionId, AuthorizationRequest, AuthorizationRequestId, AuthorizationScope,
+    AuthorizationTargetDigest, AuthorizedOperation, PrincipalKind,
 };
 use prost::Message;
 use tonic::{Request, Status};
@@ -14,6 +14,7 @@ use super::{GrpcAuthorizationError, MutualTlsPrincipalMap};
 
 const REQUEST_ID_HEADER: &str = "x-made-request-id";
 const TARGET_DIGEST_HEADER: &str = "x-made-target-digest";
+const APPROVAL_DECISION_HEADER: &str = "x-made-approval-decision-id";
 
 /// Authenticates a gRPC caller and persists the policy decision before dispatch.
 #[derive(Debug, Clone)]
@@ -104,6 +105,10 @@ impl GrpcAuthorizationGate {
             .map_err(Status::from)?;
         let mut authorization =
             AuthorizationRequest::new(request_id, principal.clone(), action, scope, target_digest);
+        let approval = match approval {
+            Some(approval) => Some(approval),
+            None => Self::approval_decision_id(request).map_err(Status::from)?,
+        };
         if let Some(approval) = approval {
             authorization = authorization.with_approval(approval);
         }
@@ -125,6 +130,43 @@ impl GrpcAuthorizationGate {
             AuthorizationGateOutcome::Expired { decision } => {
                 Err(Status::permission_denied(format!(
                     "authorization decision {} has expired",
+                    decision.id().as_str()
+                )))
+            }
+        }
+    }
+
+    pub async fn approve_authorization_operation<T: Message>(
+        &self,
+        request: &Request<T>,
+        approval_action: AuthorizationAction,
+        execution_action: AuthorizationAction,
+        scope: AuthorizationScope,
+        target_digest: AuthorizationTargetDigest,
+    ) -> Result<AuthorizationDecision, Status> {
+        let principal = self.authenticate(request)?;
+        let request_id = self
+            .request_id(request, approval_action)
+            .map_err(Status::from)?;
+        let authorization =
+            AuthorizationRequest::new(request_id, principal, approval_action, scope, target_digest)
+                .with_approved_action(execution_action);
+        match self
+            .authorize
+            .execute(authorization)
+            .await
+            .map_err(super::domain_error_to_status)?
+        {
+            AuthorizationGateOutcome::Allowed { decision, .. } => Ok(decision),
+            AuthorizationGateOutcome::Denied { decision } => {
+                Err(Status::permission_denied(format!(
+                    "authorization decision {} denied the approval",
+                    decision.id().as_str()
+                )))
+            }
+            AuthorizationGateOutcome::Expired { decision } => {
+                Err(Status::permission_denied(format!(
+                    "authorization decision {} expired before approval",
                     decision.id().as_str()
                 )))
             }
@@ -188,6 +230,22 @@ impl GrpcAuthorizationGate {
             .saturating_add(1);
         AuthorizationRequestId::new(format!("{namespace}:{action:?}:{sequence}"))
             .map_err(GrpcAuthorizationError::InvalidRequestId)
+    }
+
+    fn approval_decision_id<T>(
+        request: &Request<T>,
+    ) -> Result<Option<AuthorizationDecisionId>, GrpcAuthorizationError> {
+        request
+            .metadata()
+            .get(APPROVAL_DECISION_HEADER)
+            .map(|value| {
+                let value = value
+                    .to_str()
+                    .map_err(|_| GrpcAuthorizationError::InvalidApprovalDecisionIdEncoding)?;
+                AuthorizationDecisionId::new(value)
+                    .map_err(GrpcAuthorizationError::InvalidApprovalDecisionId)
+            })
+            .transpose()
     }
 }
 
