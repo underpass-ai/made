@@ -25,8 +25,10 @@
 //! sets either: it does not know the head, and letting it guess would
 //! be worse than leaving the fields empty.
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use crate::authorization::AuthorizeCeremonyAppendUseCase;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
@@ -39,10 +41,9 @@ use time::OffsetDateTime;
 
 use crate::usecases::ReadWholeCeremonyEventsUseCase;
 
-use super::{
-    current_authorized_operation, current_trace_context, session_facts, ConflictPolicy,
-    LoadedSession,
-};
+use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
+
+mod authorization;
 
 /// Loads the fold of a stream and appends what a decision produced.
 pub struct SessionStream {
@@ -50,6 +51,7 @@ pub struct SessionStream {
     snapshots: Arc<dyn CeremonySnapshotStorePort>,
     subscriber: Arc<dyn CeremonyEventSubscriberPort>,
     authorization_required: AtomicBool,
+    append_authorization: RwLock<Option<Arc<AuthorizeCeremonyAppendUseCase>>>,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -70,6 +72,7 @@ impl SessionStream {
             snapshots,
             subscriber,
             authorization_required: AtomicBool::new(false),
+            append_authorization: RwLock::new(None),
         }
     }
 
@@ -85,13 +88,8 @@ impl SessionStream {
             snapshots,
             subscriber,
             authorization_required: AtomicBool::new(true),
+            append_authorization: RwLock::new(None),
         }
-    }
-
-    /// Turn an already-composed embedded stream into a protected runtime
-    /// boundary before it is shared with callers.
-    pub fn require_authorization(&self) {
-        self.authorization_required.store(true, Ordering::Release);
     }
 
     /// The sealed records of one stream, in order.
@@ -353,35 +351,6 @@ impl SessionStream {
     /// conflict reaches here never, because it sealed nothing.
     async fn observe(&self, outcome: &AppendOutcome) {
         self.subscriber.observe(&outcome.positioned()).await;
-    }
-
-    async fn append(
-        &self,
-        ceremony_id: &CeremonyId,
-        version: StreamVersion,
-        facts: Vec<AuditFact>,
-    ) -> Result<AppendOutcome, DomainError> {
-        if let Some(operation) =
-            Self::active_authorization(self.authorization_required.load(Ordering::Acquire))?
-        {
-            return self
-                .events
-                .append_authorized(ceremony_id, version, facts, operation.evidence().clone())
-                .await;
-        }
-        self.events.append(ceremony_id, version, facts).await
-    }
-
-    pub(crate) fn active_authorization(
-        required: bool,
-    ) -> Result<Option<made_core::value_objects::AuthorizedOperation>, DomainError> {
-        let operation = current_authorized_operation();
-        if required && operation.is_none() {
-            return Err(DomainError::InvariantViolated {
-                reason: "protected ceremony append has no active authorization",
-            });
-        }
-        Ok(operation)
     }
 
     /// Cache the fold at this version. A failure is logged and

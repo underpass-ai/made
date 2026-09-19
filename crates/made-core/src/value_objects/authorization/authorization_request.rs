@@ -20,6 +20,13 @@ pub struct AuthorizationRequest {
 }
 
 impl AuthorizationRequest {
+    /// Re-admit the same operation without dropping its approval or scope.
+    #[must_use]
+    pub fn with_request_id(mut self, id: AuthorizationRequestId) -> Self {
+        self.id = id;
+        self
+    }
+
     #[must_use]
     pub const fn new(
         id: AuthorizationRequestId,

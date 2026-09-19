@@ -28,7 +28,7 @@ pub(crate) fn wire(
     ));
     let memory_reader = Arc::new(AuthorizedMemoryReader::new(
         memory_reader,
-        authorize,
+        authorize.clone(),
         Arc::clone(stream),
     ));
     let continuation = ContinueAcceptedCeremonyWorkUseCase::new(
@@ -37,7 +37,13 @@ pub(crate) fn wire(
         clock.clone(),
         ttl,
     );
-    stream.require_authorization();
+    stream.authorize_appends(Arc::new(
+        made_app::authorization::AuthorizeCeremonyAppendUseCase::new(
+            authorize,
+            Arc::new(continuation.clone()),
+            clock.clone(),
+        ),
+    ));
     let services = EmbeddedAuthorizationServices::new(
         ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
         ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
