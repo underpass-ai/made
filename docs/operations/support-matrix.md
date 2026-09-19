@@ -27,6 +27,7 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `service_observability` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_history` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_reporting` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `artifact_transfer` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 
 Two capabilities are in no group, because no MCP tool serves them:
 `list_ceremony_definitions` and `mount_definition` are `EmbeddedMade` host
@@ -45,6 +46,7 @@ process — and `parity.tsv` carries the reason for each.
 | Chart | `charts/made`; explicit version for OCI installs; Kubernetes floor in `Chart.yaml` |
 | Ceremony persistence | SQLite when explicitly configured; published definitions required for rehydration |
 | Council persistence | In-memory registries by default in embedded composition; hosts can inject council, agent, deliberation and contract adapters; the service can use Postgres adapters |
+| Artifact persistence | Local durable directory for one process, or shared Postgres metadata and chunks for replicas; uploads and reads are bounded and resumable |
 | Messaging | Optional core NATS pub/sub; durable ceremony consumption uses the event feed/cursor contract |
 | Providers | Build feature + environment + registered kind; default image includes OpenAI and vLLM, Anthropic needs a custom feature-enabled build |
 

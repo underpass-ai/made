@@ -19,6 +19,7 @@ pub struct ServiceConfig {
     pub publish_prefix: String,
     pub postgres_url: Option<String>,
     pub ceremony_store_path: Option<String>,
+    pub artifact_store_path: Option<String>,
     pub memory: MemorySelection,
     pub grpc_tls: GrpcTlsConfig,
     pub max_parallel: MaxParallel,

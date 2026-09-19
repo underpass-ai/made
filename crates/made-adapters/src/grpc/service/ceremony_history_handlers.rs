@@ -16,6 +16,7 @@ use made_core::value_objects::{
     StreamVersion,
 };
 
+use super::rpc::RpcResultStream;
 use super::{
     domain_error_to_status, generate_ceremony_report_response_from,
     get_ceremony_transcript_response_from, link_span_to_metadata, pb,
@@ -55,7 +56,9 @@ impl MadeGrpcService {
             ))
             .await
             .map_err(domain_error_to_status)?;
-        Ok(Response::new(Box::pin(stream.map(progress_frame_to_grpc))))
+        Ok(Response::new(RpcResultStream::new(
+            stream.map(progress_frame_to_grpc),
+        )))
     }
 
     #[tracing::instrument(name = "rpc.pull_ceremony_events", skip_all)]

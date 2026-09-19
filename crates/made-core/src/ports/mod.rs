@@ -20,6 +20,7 @@ mod agent_factory;
 mod agent_registry;
 mod agent_resolver;
 mod append_outcome;
+mod artifact;
 mod ceremony_definition_publication;
 mod ceremony_definition_repository;
 mod ceremony_definition_source;
@@ -29,6 +30,9 @@ mod ceremony_event_subscriber;
 mod ceremony_event_transport;
 mod ceremony_evidence_request;
 mod ceremony_evidence_source;
+mod ceremony_execution_connector;
+mod ceremony_execution_observation;
+mod ceremony_execution_request;
 mod ceremony_progress_notifier;
 mod ceremony_progress_subscription;
 mod ceremony_snapshot;
@@ -44,6 +48,8 @@ mod deliberation_repository;
 mod domain_event;
 mod draft_request;
 mod evidence_support_judge;
+mod execution_receipt_store;
+mod execution_recovery_page;
 mod executor;
 mod legacy_ceremony_snapshot;
 mod legacy_ceremony_snapshot_source;
@@ -59,6 +65,8 @@ mod noop_metrics_recorder;
 mod noop_metrics_snapshot;
 mod null_observer;
 mod positioned_record;
+mod record_execution_intent_outcome;
+mod record_execution_receipt_outcome;
 mod revision;
 mod scoring;
 mod statistics;
@@ -71,6 +79,14 @@ pub use agent_factory::AgentFactoryPort;
 pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use append_outcome::AppendOutcome;
+pub use artifact::{
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
+    ArtifactPage, ArtifactPageLimit, ArtifactReadCompletion, ArtifactRecord,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
+    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
+    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES, ARTIFACT_MAX_PAGE_ITEMS,
+};
 
 pub use ceremony_definition_publication::CeremonyDefinitionPublicationPort;
 pub use ceremony_definition_repository::CeremonyDefinitionRepositoryPort;
@@ -81,6 +97,9 @@ pub use ceremony_event_subscriber::CeremonyEventSubscriberPort;
 pub use ceremony_event_transport::CeremonyEventTransportPort;
 pub use ceremony_evidence_request::CeremonyEvidenceRequest;
 pub use ceremony_evidence_source::CeremonyEvidenceSourcePort;
+pub use ceremony_execution_connector::CeremonyExecutionConnectorPort;
+pub use ceremony_execution_observation::CeremonyExecutionObservation;
+pub use ceremony_execution_request::CeremonyExecutionRequest;
 pub use ceremony_progress_notifier::CeremonyProgressNotifierPort;
 pub use ceremony_progress_subscription::CeremonyProgressSubscriptionPort;
 pub use ceremony_snapshot::CeremonySnapshot;
@@ -96,6 +115,8 @@ pub use deliberation_repository::DeliberationRepositoryPort;
 pub use domain_event::DomainEvent;
 pub use draft_request::DraftRequest;
 pub use evidence_support_judge::EvidenceSupportJudgePort;
+pub use execution_receipt_store::ExecutionReceiptStorePort;
+pub use execution_recovery_page::ExecutionRecoveryPage;
 pub use executor::ExecutorPort;
 pub use legacy_ceremony_snapshot::LegacyCeremonySnapshot;
 pub use legacy_ceremony_snapshot_source::LegacyCeremonySnapshotSourcePort;
@@ -111,6 +132,8 @@ pub use noop_metrics_recorder::NoopMetricsRecorder;
 pub use noop_metrics_snapshot::NoopMetricsSnapshot;
 pub use null_observer::NullObserver;
 pub use positioned_record::PositionedRecord;
+pub use record_execution_intent_outcome::RecordExecutionIntentOutcome;
+pub use record_execution_receipt_outcome::RecordExecutionReceiptOutcome;
 pub use revision::Revision;
 pub use scoring::ScoringPort;
 pub use statistics::StatisticsPort;

@@ -9,11 +9,16 @@ use serde_json::{json, Map, Value};
 
 use crate::renderers::StatisticsView;
 
+mod artifact;
 mod ceremony_history;
 mod ceremony_instance;
 mod metrics;
 mod primitives;
 
+pub(crate) use artifact::{
+    artifact_chunk_to_json, artifact_listing_to_json, artifact_record_to_json,
+    artifact_ref_to_json, artifact_tombstone_to_json, artifact_upload_status_to_json,
+};
 pub(crate) use ceremony_history::{
     ceremony_event_record_view, ceremony_report_to_json, ceremony_transcript_to_json,
     pull_ceremony_events_to_json, read_ceremony_events_to_json, verify_ceremony_journal_to_json,

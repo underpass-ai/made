@@ -28,6 +28,14 @@ pub(crate) const PULL_CEREMONY_EVENTS_TOOL: &str = "made_pull_ceremony_events";
 pub(crate) const GET_CEREMONY_TRANSCRIPT_TOOL: &str = "made_get_ceremony_transcript";
 pub(crate) const VERIFY_CEREMONY_JOURNAL_TOOL: &str = "made_verify_ceremony_journal";
 pub(crate) const GENERATE_CEREMONY_REPORT_TOOL: &str = "made_generate_ceremony_report";
+pub(crate) const BEGIN_ARTIFACT_UPLOAD_TOOL: &str = "made_begin_artifact_upload";
+pub(crate) const PUT_ARTIFACT_CHUNK_TOOL: &str = "made_put_artifact_chunk";
+pub(crate) const COMMIT_ARTIFACT_UPLOAD_TOOL: &str = "made_commit_artifact_upload";
+pub(crate) const ABORT_ARTIFACT_UPLOAD_TOOL: &str = "made_abort_artifact_upload";
+pub(crate) const GET_ARTIFACT_TOOL: &str = "made_get_artifact";
+pub(crate) const LIST_ARTIFACTS_TOOL: &str = "made_list_artifacts";
+pub(crate) const READ_ARTIFACT_CHUNK_TOOL: &str = "made_read_artifact_chunk";
+pub(crate) const TOMBSTONE_ARTIFACT_TOOL: &str = "made_tombstone_artifact";
 pub(crate) const DISCOVER_CAPABILITIES_TOOL: &str = "made_discover_capabilities";
 pub(crate) const GET_HELP_TOOL: &str = "made_get_help";
 pub(crate) const VALIDATE_CEREMONY_DRAFT_TOOL: &str = "made_validate_ceremony_draft";
@@ -39,7 +47,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 51] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 59] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -88,6 +96,14 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 51] = [
     PULL_CEREMONY_EVENTS_TOOL,
     GET_CEREMONY_TRANSCRIPT_TOOL,
     GENERATE_CEREMONY_REPORT_TOOL,
+    BEGIN_ARTIFACT_UPLOAD_TOOL,
+    PUT_ARTIFACT_CHUNK_TOOL,
+    COMMIT_ARTIFACT_UPLOAD_TOOL,
+    ABORT_ARTIFACT_UPLOAD_TOOL,
+    GET_ARTIFACT_TOOL,
+    LIST_ARTIFACTS_TOOL,
+    READ_ARTIFACT_CHUNK_TOOL,
+    TOMBSTONE_ARTIFACT_TOOL,
     GET_STATUS_TOOL,
     GET_METRICS_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,
