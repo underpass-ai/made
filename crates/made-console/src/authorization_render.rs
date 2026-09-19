@@ -42,6 +42,7 @@ fn decision(value: &AuthorizationDecisionRecord) -> Value {
         "scope": value.scope.as_ref().map(scope),
         "target_digest": value.target_digest,
         "approval_decision_id": value.approval_decision_id,
+        "accepted_work_decision_id": value.accepted_work_decision_id,
         "policy_version": value.policy_version,
         "outcome": value.outcome,
         "grant_id": value.grant_id,
