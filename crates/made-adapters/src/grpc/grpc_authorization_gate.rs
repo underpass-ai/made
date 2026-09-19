@@ -13,6 +13,7 @@ use tonic::{Request, Status};
 use super::{GrpcAuthorizationError, MutualTlsPrincipalMap};
 
 const REQUEST_ID_HEADER: &str = "x-made-request-id";
+const TARGET_DIGEST_HEADER: &str = "x-made-target-digest";
 
 /// Authenticates a gRPC caller and persists the policy decision before dispatch.
 #[derive(Debug, Clone)]
@@ -20,6 +21,7 @@ pub struct GrpcAuthorizationGate {
     authorize: Arc<AuthorizeOperationUseCase>,
     mutual_tls_principals: Option<Arc<MutualTlsPrincipalMap>>,
     trusted_host: Option<AuthenticatedPrincipal>,
+    target_digest_proxy_principals: Arc<Vec<AuthenticatedPrincipal>>,
     trusted_request_namespace: Option<String>,
     trusted_request_sequence: Arc<AtomicU64>,
 }
@@ -34,6 +36,7 @@ impl GrpcAuthorizationGate {
             authorize,
             mutual_tls_principals: Some(principals),
             trusted_host: None,
+            target_digest_proxy_principals: Arc::new(Vec::new()),
             trusted_request_namespace: None,
             trusted_request_sequence: Arc::new(AtomicU64::new(0)),
         }
@@ -57,9 +60,22 @@ impl GrpcAuthorizationGate {
             authorize,
             mutual_tls_principals: None,
             trusted_host: Some(principal),
+            target_digest_proxy_principals: Arc::new(Vec::new()),
             trusted_request_namespace: Some(request_namespace),
             trusted_request_sequence: Arc::new(AtomicU64::new(0)),
         })
+    }
+
+    /// Trust transport-neutral MCP target digests only from these exact,
+    /// already-authenticated proxy identities. An empty set keeps the boundary
+    /// closed and direct gRPC callers continue to use their protobuf bytes.
+    #[must_use]
+    pub fn with_target_digest_proxy_principals(
+        mut self,
+        principals: Vec<AuthenticatedPrincipal>,
+    ) -> Self {
+        self.target_digest_proxy_principals = Arc::new(principals);
+        self
     }
 
     pub async fn authorize<T: Message>(
@@ -83,7 +99,9 @@ impl GrpcAuthorizationGate {
         approval: Option<AuthorizationDecisionId>,
     ) -> Result<AuthorizedOperation, Status> {
         let request_id = self.request_id(request, action).map_err(Status::from)?;
-        let target_digest = target_digest(request.get_ref());
+        let target_digest = self
+            .target_digest_for_authenticated(request, &principal)
+            .map_err(Status::from)?;
         let mut authorization =
             AuthorizationRequest::new(request_id, principal.clone(), action, scope, target_digest);
         if let Some(approval) = approval {
@@ -111,6 +129,27 @@ impl GrpcAuthorizationGate {
                 )))
             }
         }
+    }
+
+    pub(super) fn target_digest_for_authenticated<T: Message>(
+        &self,
+        request: &Request<T>,
+        principal: &AuthenticatedPrincipal,
+    ) -> Result<AuthorizationTargetDigest, GrpcAuthorizationError> {
+        let Some(value) = request.metadata().get(TARGET_DIGEST_HEADER) else {
+            return Ok(target_digest(request.get_ref()));
+        };
+        if !self
+            .target_digest_proxy_principals
+            .iter()
+            .any(|trusted| trusted == principal)
+        {
+            return Err(GrpcAuthorizationError::UntrustedTargetDigestProxy);
+        }
+        let value = value
+            .to_str()
+            .map_err(|_| GrpcAuthorizationError::InvalidTargetDigestEncoding)?;
+        AuthorizationTargetDigest::new(value).map_err(GrpcAuthorizationError::InvalidTargetDigest)
     }
 
     pub fn authenticate<T>(
@@ -187,5 +226,61 @@ mod tests {
 
         assert_eq!(target_digest(&left), target_digest(&right));
         assert_eq!(left.encode_to_vec(), right.encode_to_vec());
+    }
+
+    #[test]
+    fn target_digest_override_requires_the_exact_trusted_principal() {
+        let trusted = fixture_principal("proxy", PrincipalKind::Service);
+        let other = fixture_principal("proxy", PrincipalKind::Worker);
+        let gate = fixture_gate(trusted.clone());
+        let mut request = Request::new(BindCeremonyParticipantsRequest::default());
+        request.metadata_mut().insert(
+            TARGET_DIGEST_HEADER,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                .parse()
+                .unwrap(),
+        );
+
+        assert_eq!(
+            gate.target_digest_for_authenticated(&request, &trusted)
+                .unwrap()
+                .as_str(),
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        );
+        assert!(matches!(
+            gate.target_digest_for_authenticated(&request, &other),
+            Err(GrpcAuthorizationError::UntrustedTargetDigestProxy)
+        ));
+    }
+
+    fn fixture_principal(id: &str, kind: PrincipalKind) -> AuthenticatedPrincipal {
+        AuthenticatedPrincipal::new(
+            made_core::value_objects::PrincipalId::new(id).unwrap(),
+            kind,
+            AuthenticationMethod::MutualTls,
+        )
+        .unwrap()
+    }
+
+    fn fixture_gate(principal: AuthenticatedPrincipal) -> GrpcAuthorizationGate {
+        use crate::clock::SystemClock;
+        use crate::memory::InMemoryAuthorizationPolicyStore;
+        use made_app::authorization::AuthorizeOperationUseCase;
+        use made_core::value_objects::{AuthorizationDecisionTtl, AuthorizationPolicyId};
+
+        let authorize = Arc::new(AuthorizeOperationUseCase::new(
+            AuthorizationPolicyId::new("digest-test").unwrap(),
+            Arc::new(InMemoryAuthorizationPolicyStore::new()),
+            Arc::new(SystemClock::new()),
+            AuthorizationDecisionTtl::from_seconds(60).unwrap(),
+        ));
+        GrpcAuthorizationGate::mutual_tls(
+            authorize,
+            Arc::new(MutualTlsPrincipalMap::from_json(
+                br#"[{"certificate_sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","principal_id":"unused","principal_kind":"service"}]"#,
+            )
+            .unwrap()),
+        )
+        .with_target_digest_proxy_principals(vec![principal])
     }
 }

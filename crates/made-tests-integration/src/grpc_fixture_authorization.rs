@@ -64,8 +64,9 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
     ));
     FixtureAuthorization {
         gate: Arc::new(
-            GrpcAuthorizationGate::trusted_host(authorize, principal, "grpc-fixture")
-                .expect("fixture authorization must be valid"),
+            GrpcAuthorizationGate::trusted_host(authorize, principal.clone(), "grpc-fixture")
+                .expect("fixture authorization must be valid")
+                .with_target_digest_proxy_principals(vec![principal]),
         ),
         administration: Arc::new(AuthorizationPolicyAdministrationService::new(
             policy_id.clone(),

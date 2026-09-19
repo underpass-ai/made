@@ -57,6 +57,14 @@ identical reconstruction receives the same one. Supply `--request-namespace`
 or `MADE_REQUEST_NAMESPACE` when retrying an ambiguous invocation. Request ids
 are correlation and idempotency input, never authentication.
 
+When `made-mcp` proxies MCP calls to gRPC it also sends the canonical MCP
+business-target digest in `x-made-target-digest`. The server accepts that
+metadata only when the certificate principal is named explicitly in
+`MADE_AUTH_MCP_PROXY_PRINCIPAL_IDS` (a comma-separated list of ids already
+present in `MADE_AUTH_MTLS_PRINCIPALS_PATH`). Leave the variable unset on
+servers without an MCP proxy. A certificate that is merely valid under the
+client CA cannot supply or override this digest.
+
 `scripts/ci/package-made-console.sh` builds a native release candidate,
 checks its package manifests, version, top-level help and artifact subcommands,
 then writes the binary and SHA-256 file under `dist/console/`. It never uploads

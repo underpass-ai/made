@@ -249,6 +249,10 @@ impl MadeGrpcService {
         let request_id = self
             .authorization
             .request_id(request, AuthorizationAction::CompleteCeremonyStep)?;
+        let target_digest = self
+            .authorization
+            .target_digest_for_authenticated(request, &principal)
+            .map_err(Status::from)?;
         let input = AcceptedStepCompletion::from_invocation(
             CeremonyId::new(&request.get_ref().ceremony_id).map_err(domain_error_to_status)?,
             made_core::value_objects::StepId::new(&request.get_ref().step_id)
@@ -257,7 +261,7 @@ impl MadeGrpcService {
                 .map_err(domain_error_to_status)?,
             principal,
             &request_id,
-            super::grpc_authorization_gate::target_digest(request.get_ref()),
+            target_digest,
         )
         .map_err(domain_error_to_status)?;
         self.continue_accepted_step_claim

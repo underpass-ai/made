@@ -10,13 +10,16 @@ use made_app::authorization::{
     ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
-use made_core::value_objects::{AuthorizationDecisionTtl, AuthorizationPolicyId};
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthorizationDecisionTtl, AuthorizationPolicyId, PrincipalId,
+};
 use made_core::DomainError;
 
 use crate::ComposeError;
 
 const POLICY_ID_ENV: &str = "MADE_AUTH_POLICY_ID";
 const PRINCIPALS_PATH_ENV: &str = "MADE_AUTH_MTLS_PRINCIPALS_PATH";
+const MCP_PROXY_PRINCIPAL_IDS_ENV: &str = "MADE_AUTH_MCP_PROXY_PRINCIPAL_IDS";
 
 pub(super) struct AuthorizationWiring {
     pub(super) gate: Arc<GrpcAuthorizationGate>,
@@ -67,6 +70,7 @@ pub(super) async fn wire(
         MutualTlsPrincipalMap::from_path(required_env(PRINCIPALS_PATH_ENV)?)
             .map_err(|error| configuration_error(error.to_string()))?,
     );
+    let proxy_principals = proxy_principals(&principals)?;
     let store = policy_store(config, postgres)?;
     if store.load(&policy_id).await?.is_none() {
         return Err(configuration_error(format!(
@@ -87,10 +91,10 @@ pub(super) async fn wire(
         AuthorizationDecisionTtl::from_seconds(60)?,
     ));
     Ok(AuthorizationWiring {
-        gate: Arc::new(GrpcAuthorizationGate::mutual_tls(
-            authorize.clone(),
-            principals,
-        )),
+        gate: Arc::new(
+            GrpcAuthorizationGate::mutual_tls(authorize.clone(), principals)
+                .with_target_digest_proxy_principals(proxy_principals),
+        ),
         authorize,
         administration: Arc::new(AuthorizationPolicyAdministrationService::new(
             policy_id.clone(),
@@ -104,6 +108,43 @@ pub(super) async fn wire(
         read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(policy_id, store)),
         continuation,
     })
+}
+
+fn proxy_principals(
+    principals: &MutualTlsPrincipalMap,
+) -> Result<Vec<AuthenticatedPrincipal>, ComposeError> {
+    let Some(raw) = std::env::var(MCP_PROXY_PRINCIPAL_IDS_ENV)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    raw.split(',')
+        .map(|raw_id| {
+            if raw_id.trim() != raw_id || raw_id.is_empty() {
+                return Err(configuration_error(format!(
+                    "{MCP_PROXY_PRINCIPAL_IDS_ENV} must be a comma-separated list without empty or padded ids"
+                )));
+            }
+            let id = PrincipalId::new(raw_id)?;
+            let matches = principals
+                .principals()
+                .filter(|principal| principal.id() == &id)
+                .cloned()
+                .collect::<Vec<_>>();
+            let Some(first) = matches.first() else {
+                return Err(configuration_error(format!(
+                    "{MCP_PROXY_PRINCIPAL_IDS_ENV} references unmapped principal `{raw_id}`"
+                )));
+            };
+            if matches.iter().any(|candidate| candidate != first) {
+                return Err(configuration_error(format!(
+                    "{MCP_PROXY_PRINCIPAL_IDS_ENV} principal `{raw_id}` is ambiguous"
+                )));
+            }
+            Ok(first.clone())
+        })
+        .collect()
 }
 
 fn policy_store(
