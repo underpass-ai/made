@@ -1,14 +1,12 @@
 use anyhow::{bail, Context, Result};
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::RunCeremonyRequest;
-use tonic::transport::Channel;
 use tracing::info;
 
 const EDITORIAL_MEETING_CEREMONY: &str =
     include_str!("../../../../tests/e2e/ceremonies/editorial-planning-meeting.yaml");
 
 pub(crate) async fn verify_editorial_meeting_ceremony_diagram(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let response = client
         .run_ceremony(RunCeremonyRequest {

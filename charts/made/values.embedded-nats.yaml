@@ -2,7 +2,19 @@
 #
 # Use this when MADE should publish/consume its event
 # surface but you do not want to provision an external NATS first.
-# Runtime, Postgres, provider secrets, and gRPC TLS stay off.
+# Runtime, Postgres and provider secrets stay off. Public access still uses
+# operator-managed mTLS and a prebootstrapped policy.
+
+authorization:
+  policyId: made-embedded-nats-policy
+  principals:
+    existingSecret: made-embedded-nats-auth-principals
+
+ceremonySearch:
+  storeId: made-embedded-nats
+  cursorHmacKeyFromSecret:
+    name: made-embedded-nats-cursor-hmac
+    key: key
 
 config:
   # Seed one NoopAgent + one single-agent council so a fresh install
@@ -30,12 +42,14 @@ executor:
   kind: noop
 
 persistence:
+  ceremonies:
+    enabled: true
   postgres:
     enabled: false
 
 tls:
-  mode: none
-  existingSecret: ""
+  mode: mutual
+  existingSecret: made-embedded-nats-grpc-mtls
 
 pdb:
   enabled: false

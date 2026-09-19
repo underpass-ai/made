@@ -4,7 +4,7 @@ use made_app::usecases::{CeremonyParticipantDescriptor, PrepareCeremonyParticipa
 use made_core::entities::CeremonyDefinition;
 use made_core::error::DomainError;
 use made_core::value_objects::{AgentId, Attributes, CeremonyStep};
-use serde_json::{json, Value};
+use serde_json::Value;
 
 use super::CeremonyStepConfig;
 
@@ -17,7 +17,7 @@ impl CeremonyParticipantPlanAdapter {
     ) -> Result<PrepareCeremonyParticipantsInput, DomainError> {
         let mut participants = BTreeMap::new();
         for step in definition.steps().values() {
-            for participant in participants_from_step(definition, step)? {
+            for participant in participants_from_step(step)? {
                 participants
                     .entry(participant.id().clone())
                     .or_insert(participant);
@@ -30,7 +30,6 @@ impl CeremonyParticipantPlanAdapter {
 }
 
 fn participants_from_step(
-    definition: &CeremonyDefinition,
     step: &CeremonyStep,
 ) -> Result<Vec<CeremonyParticipantDescriptor>, DomainError> {
     let config = CeremonyStepConfig::new(step.handler_config().attributes(), step.handler_kind());
@@ -45,42 +44,31 @@ fn participants_from_step(
 
     (0..count)
         .map(|index| {
-            let label = labels.get(index).map(String::as_str);
             Ok(CeremonyParticipantDescriptor::new(
                 AgentId::new(format!("agent-{}-{index}", specialty.as_str()))?,
                 specialty.clone(),
                 kind.clone(),
-                Attributes::new(participant_attributes(definition, step, index, label))?,
+                Attributes::new(provider_attributes(step))?,
             ))
         })
         .collect()
 }
 
-fn participant_attributes(
-    definition: &CeremonyDefinition,
-    step: &CeremonyStep,
-    index: usize,
-    label: Option<&str>,
-) -> BTreeMap<String, Value> {
-    let mut attributes = step.handler_config().attributes().as_map().clone();
-    attributes.insert(
-        "ceremony.definition_name".to_owned(),
-        json!(definition.name().as_str()),
-    );
-    attributes.insert(
-        "ceremony.definition_version".to_owned(),
-        json!(definition.version().as_str()),
-    );
-    attributes.insert("ceremony.step_id".to_owned(), json!(step.id().as_str()));
-    attributes.insert(
-        "ceremony.handler_kind".to_owned(),
-        json!(step.handler_kind().as_str()),
-    );
-    attributes.insert("ceremony.participant.index".to_owned(), json!(index));
-    if let Some(label) = label {
-        attributes.insert("ceremony.participant.label".to_owned(), json!(label));
-    }
-    attributes
+fn provider_attributes(step: &CeremonyStep) -> BTreeMap<String, Value> {
+    const DURABLE_PROVIDER_KEYS: [&str; 4] = [
+        "provider.endpoint",
+        "provider.max_tokens",
+        "provider.model",
+        "provider.timeout_secs",
+    ];
+
+    step.handler_config()
+        .attributes()
+        .as_map()
+        .iter()
+        .filter(|(key, _)| DURABLE_PROVIDER_KEYS.contains(&key.as_str()))
+        .map(|(key, value)| (key.clone(), value.clone()))
+        .collect()
 }
 
 #[cfg(test)]
@@ -144,20 +132,10 @@ roles:
             "multiagent_round"
         );
         assert_eq!(input.participants()[0].kind().as_str(), "noop");
-        assert_eq!(
-            input.participants()[0]
-                .attributes()
-                .get("ceremony.participant.label")
-                .and_then(Value::as_str),
-            Some("facilitator")
-        );
-        assert_eq!(
-            input.participants()[1]
-                .attributes()
-                .get("ceremony.participant.label")
-                .and_then(Value::as_str),
-            Some("critic")
-        );
+        assert!(input
+            .participants()
+            .iter()
+            .all(|participant| participant.attributes().is_empty()));
     }
 
     #[test]
@@ -178,6 +156,28 @@ roles:
             .participants()
             .iter()
             .all(|participant| participant.kind().as_str() == "vllm"));
+        assert!(input
+            .participants()
+            .iter()
+            .all(|participant| participant.attributes().is_empty()));
+    }
+
+    #[test]
+    fn preserves_only_durable_provider_construction_options() {
+        let yaml = CEREMONY.replace(
+            "      prompt: \"Discuss the brief\"",
+            "      prompt: \"Discuss the brief\"\n      provider.endpoint: http://stub-llm:8000\n      provider.model: stub-v1\n      provider.max_tokens: 256\n      provider.timeout_secs: 30",
+        );
+        let definition = CeremonyDefinitionYaml::parse_str(&yaml).unwrap();
+        let input = CeremonyParticipantPlanAdapter::from_definition(&definition).unwrap();
+        let attributes = input.participants()[0].attributes();
+
+        assert_eq!(attributes.len(), 4);
+        assert_eq!(
+            attributes.get("provider.endpoint").and_then(Value::as_str),
+            Some("http://stub-llm:8000")
+        );
+        assert!(attributes.get("prompt").is_none());
     }
 
     #[test]

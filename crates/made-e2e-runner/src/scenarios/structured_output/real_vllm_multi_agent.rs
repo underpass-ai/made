@@ -1,14 +1,12 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{anyhow, bail, Context, Result};
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::run_council_decision_request::Selector as RunCouncilSelector;
 use made_proto::v1::{
     AgentSummary, CreateCouncilRequest, OutputContract, OutputFormat, RegisterAgentRequest,
     RegisterContractRequest, RunCouncilDecisionRequest, ValidationMode,
 };
 use prost_types::value::Kind as PbKind;
-use tonic::transport::Channel;
 use tonic::Code;
 use tracing::info;
 
@@ -30,7 +28,7 @@ const RUN_ID_ENV: &str = "MADE_E2E_RUN_ID";
 /// peer-review ceremony.
 #[allow(clippy::too_many_lines)] // single real-provider E2E scenario; splitting fragments the assertion
 pub(crate) async fn verify_multi_agent_council_against_real_vllm(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let endpoint = required_env(VLLM_ENDPOINT_ENV)?;
     let model = required_env(VLLM_MODEL_ENV)?;
@@ -293,7 +291,7 @@ fn summarize_candidate_reports(candidates: &[made_proto::v1::CandidateSummary]) 
 }
 
 async fn register_contract(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     contract_id: &str,
     schema_body: &str,
 ) -> Result<()> {
@@ -330,7 +328,7 @@ async fn register_contract(
 }
 
 async fn register_vllm_agent(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     agent_id: &str,
     specialty: &str,
     endpoint: &str,
@@ -382,7 +380,7 @@ async fn register_vllm_agent(
 }
 
 async fn create_council(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     specialty: &str,
     agent_count: u32,
 ) -> Result<()> {

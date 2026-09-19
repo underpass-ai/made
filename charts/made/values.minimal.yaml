@@ -1,9 +1,19 @@
 # Minimal standalone install profile.
 #
-# This profile is intentionally dependency-free: no NATS, no Postgres,
-# no Runtime executor, and no gRPC TLS. It is meant for first install,
-# smoke testing, and demos where the operator only needs the public
-# gRPC/HTTP surface running inside Kubernetes.
+# This profile has no NATS, Postgres or Runtime executor. It still requires the
+# mandatory prebootstrapped authorization policy and operator-managed mTLS,
+# principal-map and cursor-key Secrets used by every public deployment.
+
+authorization:
+  policyId: made-minimal-policy
+  principals:
+    existingSecret: made-minimal-auth-principals
+
+ceremonySearch:
+  storeId: made-minimal
+  cursorHmacKeyFromSecret:
+    name: made-minimal-cursor-hmac
+    key: key
 
 config:
   # Seed one NoopAgent + one single-agent council so a fresh install
@@ -20,12 +30,14 @@ executor:
   kind: noop
 
 persistence:
+  ceremonies:
+    enabled: true
   postgres:
     enabled: false
 
 tls:
-  mode: none
-  existingSecret: ""
+  mode: mutual
+  existingSecret: made-minimal-grpc-mtls
 
 pdb:
   enabled: false

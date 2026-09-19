@@ -17,6 +17,13 @@ tracing is off.
 
   gRPC (MadeService): {{ include "made.fullname" . }}:{{ .Values.service.port }}
   HTTP (healthz, /metrics):    {{ include "made.fullname" . }}:{{ .Values.service.httpPort }}
+  Authorization policy: {{ .Values.authorization.policyId }}
+  mTLS principal map Secret: {{ .Values.authorization.principals.existingSecret }}
+
+  The policy must already exist in the configured durable store. Bootstrap it
+  with the pinned MADE image before waiting for this Deployment; then use the
+  owner certificate to issue narrowly scoped business grants over the public
+  authorization API. See docs/operations/deploy-kubernetes.md.
 {{- if $tracingOn }}
 
   Tracing: MADE_OTLP_ENDPOINT = {{ get $penv "MADE_OTLP_ENDPOINT" }}
