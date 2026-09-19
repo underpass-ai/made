@@ -2,7 +2,7 @@
 
 The `made` service exposes gRPC on 50055 and HTTP health/metrics on 8080 by
 default. Its Helm chart supports a standalone deployment, optional NATS,
-Postgres council repositories, providers and an optional Runtime executor.
+shared Postgres persistence, providers and an optional Runtime executor.
 None of those integrations makes KMP a dependency.
 
 ## Choose a profile
@@ -56,11 +56,18 @@ The chart enforces one replica for that posture. It does not offer a clustered
 SQLite service or automatic failover. Published definitions, sealed events,
 snapshots and session memory belong to this store.
 
-`persistence.postgres.enabled=true` selects Postgres-backed council,
-deliberation, agent, statistics and shared artifact repositories. It does not
-replace the SQLite ceremony store. Artifact metadata and bounded chunks share
-the database transaction boundary, so replicas can resume the same upload.
-Supply the DSN through `urlFromSecret`; migrations run at startup.
+`persistence.postgres.enabled=true` selects one shared backend for ceremony
+events, snapshots, publications, feed cursors, session memory, execution
+receipts, councils, deliberations, agents, statistics and artifacts. Artifact
+metadata and bounded chunks share the database transaction boundary, so
+replicas can resume the same upload. Supply the DSN through `urlFromSecret`;
+migrations run at startup. Do not also enable either local persistence mode.
+
+Set `replicaCount` above one only with Postgres enabled. The chart rejects
+multi-replica in-memory or SQLite configurations, rejects mixed SQLite and
+Postgres ceremony stores, and keeps local artifact storage at one replica.
+Postgres recovery reads the journals and durable cursors directly; NATS may be
+disabled or lose a notification without losing accepted work.
 
 `persistence.artifacts.enabled=true` instead mounts the local artifact store
 and sets `MADE_ARTIFACT_STORE_PATH`. The chart restricts this mode to one

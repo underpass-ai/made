@@ -5,8 +5,14 @@ metadata:
   labels:
     {{- include "made.labels" . | nindent 4 }}
 spec:
+{{- if and (gt (int .Values.replicaCount) 1) (not .Values.persistence.postgres.enabled) }}
+{{- fail "replicaCount>1 requires persistence.postgres.enabled=true: in-memory and local SQLite ceremony state cannot coordinate replicas" }}
+{{- end }}
 {{- if and .Values.persistence.ceremonies.enabled (gt (int .Values.replicaCount) 1) }}
 {{- fail "persistence.ceremonies.enabled=true requires replicaCount=1: the embedded ceremony store takes an exclusive file lock and serves a single process" }}
+{{- end }}
+{{- if and .Values.persistence.ceremonies.enabled .Values.persistence.postgres.enabled }}
+{{- fail "choose one ceremony adapter: persistence.ceremonies for local SQLite or persistence.postgres for shared storage" }}
 {{- end }}
 {{- if and .Values.persistence.artifacts.enabled (gt (int .Values.replicaCount) 1) }}
 {{- fail "persistence.artifacts.enabled=true requires replicaCount=1: use the shared Postgres artifact adapter for replicas" }}

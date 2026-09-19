@@ -194,10 +194,10 @@ executor:
       #   tls.key  — client private key PEM (mutual only)
       existingSecret: ""
 
-# Persistent storage for deliberations, councils, agents, and
-# statistics. When `enabled: true`, every registry that has a
-# Postgres adapter goes through it atomically; migrations apply on
-# startup.
+# Persistent storage for ceremony streams, snapshots, publications, cursors,
+# receipts, session memory, artifacts, deliberations, councils, agents and
+# statistics. When Postgres is enabled, every available shared adapter uses
+# one pool and migrations apply on startup.
 persistence:
   # Durable ceremony state: the sealed event stream of every ceremony
   # and its folded snapshots. Off by default, and an unconfigured
@@ -226,6 +226,8 @@ persistence:
 
   postgres:
     enabled: false
+    # Required for replicaCount > 1. Local ceremony/artifact persistence must
+    # remain disabled because those adapters serve one process.
     # One of the two URL sources below must be set when enabled.
     # Secret-by-reference is strongly preferred in production so
     # the DSN (and the embedded password) never land in the

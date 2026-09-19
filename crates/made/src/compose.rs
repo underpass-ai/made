@@ -92,7 +92,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         memory_writer,
         memory_reader,
         receipts: execution_receipts,
-    } = wire_ceremony_persistence(&service_config)?;
+    } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
     let session_memory = Arc::new(SessionMemoryRecorder::new(

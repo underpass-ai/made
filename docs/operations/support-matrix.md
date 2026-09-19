@@ -45,8 +45,8 @@ process — and `parity.tsv` carries the reason for each.
 | Plugin targets | Linux x86_64/arm64, macOS arm64, Windows x86_64; release assets and installer select exact target |
 | Image | Pinned digest preferred; release tags only after successful publication; `latest` requires the chart's development override |
 | Chart | `charts/made`; explicit version for OCI installs; Kubernetes floor in `Chart.yaml` |
-| Ceremony persistence | SQLite when explicitly configured; published definitions required for rehydration |
-| Council persistence | Explicit SQLite composition persists councils, agents, contracts, deliberations, statistics and their independent journal; the default builder remains in-memory; the service can use Postgres adapters |
+| Ceremony persistence | Explicit SQLite for one process, or shared Postgres streams, snapshots, publications, cursors, session memory and execution receipts; published definitions are required for rehydration |
+| Council persistence | Explicit SQLite composition persists councils, agents, contracts, deliberations, statistics and their independent journal; the default builder remains in-memory; the service uses the same Postgres pool when configured |
 | Artifact persistence | Local durable directory with process coordination, or shared Postgres metadata and chunks for replicas; uploads and reads are bounded and resumable |
 | Messaging | Optional core NATS pub/sub; durable ceremony consumption uses the event feed/cursor contract |
 | Providers | Build feature + environment + registered kind; default image includes OpenAI and vLLM, Anthropic needs a custom feature-enabled build |
@@ -78,3 +78,9 @@ concurrency, deadline checks and cooperative stop. The shipping MCP and service
 expose receipt lookup, recovery inspection, completion and adoption. Configuring
 a connector and running the host loop remain host responsibilities. See
 [recoverable workers](recoverable-workers.md) for the effect and recovery contract.
+
+The chart permits multiple service replicas only when Postgres is enabled and
+local ceremony and artifact stores are disabled. SQLite remains a one-process
+deployment. The Postgres posture uses one pool for ceremony persistence,
+execution receipts, session memory, councils and artifacts; NATS is optional
+notification and is not the recovery source of truth.
