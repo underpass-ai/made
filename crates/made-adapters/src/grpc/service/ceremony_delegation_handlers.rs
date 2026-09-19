@@ -38,15 +38,13 @@ impl MadeGrpcService {
         let input = claim_ceremony_step_input_from_proto(request, &definition, &instance)
             .map_err(domain_error_to_status)?;
         if instance.budget_account_id().is_some() {
-            let reservation = reservation
-                .ok_or_else(|| {
-                    Status::failed_precondition(
-                        "budgeted ceremony claims require a reservation estimate",
-                    )
-                })
-                .and_then(|value| {
-                    budget_reservation_estimate_from_proto(value).map_err(domain_error_to_status)
-                })?;
+            let reservation = reservation.ok_or_else(|| {
+                Status::failed_precondition(
+                    "budgeted ceremony claims require a reservation estimate",
+                )
+            })?;
+            let reservation = budget_reservation_estimate_from_proto(reservation)
+                .map_err(domain_error_to_status)?;
             let output = self
                 .budgeted_step_claim
                 .as_deref()

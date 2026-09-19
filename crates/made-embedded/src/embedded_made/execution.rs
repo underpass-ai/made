@@ -126,15 +126,17 @@ impl EmbeddedMade {
         &self,
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
-        RunCeremonyStepUseCase::new(
-            self.resolve_definition(),
-            self.stream.clone(),
-            self.step_handler.clone(),
-            self.clock.clone(),
+        Box::pin(
+            RunCeremonyStepUseCase::new(
+                self.resolve_definition(),
+                self.stream.clone(),
+                self.step_handler.clone(),
+                self.clock.clone(),
+            )
+            .with_max_parallel_ceiling(self.max_parallel_ceiling)
+            .with_child_orchestrator(self.child_orchestrator())
+            .execute(input),
         )
-        .with_max_parallel_ceiling(self.max_parallel_ceiling)
-        .with_child_orchestrator(self.child_orchestrator())
-        .execute(input)
         .await
     }
 

@@ -180,6 +180,7 @@ async fn direct_rpc_publishes_binds_digest_and_waits_for_both_steps() {
             actor_id: "operator".into(),
             actor_kind: "service".into(),
             context: Some(context),
+            budget_limits: None,
         })
         .await
         .unwrap()

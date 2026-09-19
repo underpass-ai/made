@@ -62,11 +62,15 @@ fn measurement<T>(
         .get("quality")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("field `{field}.quality` must be a string"))?;
-    let amount = optional_u64(measurement, "amount")?.unwrap_or_default();
+    let amount = optional_u64(measurement, "amount")?;
     match quality {
-        "observed" => Ok(BudgetMeasurement::Observed(construct(amount))),
-        "estimated" => Ok(BudgetMeasurement::Estimated(construct(amount))),
-        "unknown" if amount == 0 => Ok(BudgetMeasurement::Unknown),
+        "observed" => amount
+            .map(|amount| BudgetMeasurement::Observed(construct(amount)))
+            .ok_or_else(|| format!("field `{field}.amount` is required for observed quality")),
+        "estimated" => amount
+            .map(|amount| BudgetMeasurement::Estimated(construct(amount)))
+            .ok_or_else(|| format!("field `{field}.amount` is required for estimated quality")),
+        "unknown" if amount.is_none() || amount == Some(0) => Ok(BudgetMeasurement::Unknown),
         _ => Err(format!("field `{field}.quality` is invalid")),
     }
 }

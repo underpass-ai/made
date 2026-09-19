@@ -5,8 +5,6 @@ use super::artifact_schemas::{
     list_artifacts_schema, put_artifact_chunk_schema, read_artifact_chunk_schema,
     tombstone_artifact_schema,
 };
-use super::budget_schemas::{budget_report_schema, pending_budget_reservations_schema};
-
 use super::ceremony_schemas::{
     accept_child_completion_schema, apply_execution_receipt_schema, ceremony_definition_ref_schema,
     ceremony_design_schema, ceremony_draft_schema, ceremony_guard_approval_schema,
@@ -36,18 +34,18 @@ use super::tool_names::{
     COMPLETE_EXECUTION_RECEIPT_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
     DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL,
     EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_ARTIFACT_TOOL,
-    GET_BUDGET_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL,
-    GET_EXECUTION_RECEIPT_TOOL, GET_HELP_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL,
-    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_ARTIFACTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    LIST_PENDING_BUDGET_RESERVATIONS_TOOL, PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL,
-    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, PUT_ARTIFACT_CHUNK_TOOL,
-    READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL,
-    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_EXECUTION_RECEIPT_TOOL,
+    GET_HELP_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
+    LIST_ARTIFACTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL,
+    PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL,
+    PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
+    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
+    TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod budget_catalog;
 mod council_catalog;
 mod council_journal_catalog;
 
@@ -322,16 +320,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             ceremony_report_schema(),
         ),
         tool_def(
-            GET_BUDGET_REPORT_TOOL,
-            "Read the durable budget balance shared by one ceremony tree.",
-            budget_report_schema(),
-        ),
-        tool_def(
-            LIST_PENDING_BUDGET_RESERVATIONS_TOOL,
-            "Read a bounded global recovery page of budget reservations awaiting terminal receipts.",
-            pending_budget_reservations_schema(),
-        ),
-        tool_def(
             BEGIN_ARTIFACT_UPLOAD_TOOL,
             "Begin or resume a bounded, digest-declared artifact upload.",
             begin_artifact_upload_schema(),
@@ -403,5 +391,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             verify_ceremony_journal_schema(),
         ),
     ]);
+    budget_catalog::insert_budget_tools(&mut tools);
     tools
 }

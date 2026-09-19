@@ -105,6 +105,21 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
                 "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
                 "made_generate_ceremony_report" => ceremony_report_fixture(),
+                "made_get_budget_report" => json!({
+                    "account_id": "fixture-budget",
+                    "balance": {
+                        "limits": {"duration_micros": null, "tokens": 100, "cost_micros": null, "tool_calls": null, "currency": null},
+                        "reserved": {"duration_micros": 0, "tokens": 20, "cost_micros": 0, "tool_calls": 0},
+                        "observed": {"duration_micros": 0, "tokens": 0, "cost_micros": 0, "tool_calls": 0},
+                        "estimated": {"duration_micros": 0, "tokens": 0, "cost_micros": 0, "tool_calls": 0},
+                        "unconfirmed": {"duration_micros": 0, "tokens": 0, "cost_micros": 0, "tool_calls": 0},
+                        "overrun": {"duration_micros": 0, "tokens": 0, "cost_micros": 0, "tool_calls": 0},
+                        "available": {"duration_micros": 0, "tokens": 80, "cost_micros": 0, "tool_calls": 0}
+                    }
+                }),
+                "made_list_pending_budget_reservations" => json!({
+                    "reservations": [], "next_cursor": null
+                }),
                 "made_begin_artifact_upload" => artifact_fixtures::upload(),
                 "made_put_artifact_chunk" => artifact_fixtures::upload(),
                 "made_commit_artifact_upload" => artifact_fixtures::reference(),

@@ -17,8 +17,8 @@ pub(crate) fn ceremony_claim_to_json(response: pb::ClaimCeremonyStepResponse) ->
         value["claim_fence"] = json!(response.claim_fence);
         value["budget"] = response
             .budget
-            .map(super::budget_admission_to_json)
-            .unwrap_or(Value::Null);
+            .as_ref()
+            .map_or(Value::Null, super::budget_admission_to_json);
         value
     })
 }

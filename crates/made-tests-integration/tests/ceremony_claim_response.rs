@@ -55,6 +55,7 @@ fn claim(owner: &str, trace: &str) -> Request<ClaimCeremonyStepRequest> {
         lease_owner_id: owner.to_owned(),
         idempotency_key: owner.to_owned(),
         lease_ttl_ms: 1000,
+        budget_reservation: None,
     });
     request
         .metadata_mut()

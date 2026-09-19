@@ -67,6 +67,8 @@ const GAP: &str = "-";
 const SESSION_ID: &str = "parity-session";
 /// The session started from a published version.
 const PUBLISHED_SESSION_ID: &str = "parity-published-session";
+/// A distinct published session whose durable root budget the parity run exercises.
+const BUDGET_SESSION_ID: &str = "parity-budget-session";
 /// The session `made_run_ceremony` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
 /// The session that decides something inside a shared memory scope.
@@ -1290,6 +1292,45 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "title": "  Parity review <both arms>  ",
             }),
         ),
+        // Budget admission uses a separate published ceremony after the
+        // committed report, so exercising the new events cannot perturb its
+        // established trace ids or document bytes.
+        (
+            "made_start_published_ceremony",
+            json!({
+                "ceremony": "parity_published",
+                "version": "1.0",
+                "ceremony_id": BUDGET_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "budget_limits": { "tokens": 100 },
+            }),
+        ),
+        (
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": BUDGET_SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-budget-host",
+                "idempotency_key": "parity-budget-work-1",
+                "lease_ttl_ms": 60_000,
+                "budget_reservation": {
+                    "duration": { "quality": "unknown" },
+                    "tokens": { "quality": "estimated", "amount": 20 },
+                    "cost": { "quality": "unknown" },
+                    "tool_calls": { "quality": "unknown" }
+                },
+            }),
+        ),
+        (
+            "made_get_budget_report",
+            json!({ "ceremony_id": BUDGET_SESSION_ID }),
+        ),
+        (
+            "made_list_pending_budget_reservations",
+            json!({ "limit": 10 }),
+        ),
         // Artifact transfer uses independent stores but fixed metadata,
         // content, digest, artifact ids and timestamps. Only the opaque
         // upload ids are store-minted and normalised above; every byte and
@@ -1977,6 +2018,21 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": { "ticket": 1e17 },
+            }),
+        ),
+        (
+            "an estimated budget measurement without an amount",
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "budget_reservation": {
+                    "duration": { "quality": "unknown" },
+                    "tokens": { "quality": "estimated" },
+                    "cost": { "quality": "unknown" },
+                    "tool_calls": { "quality": "unknown" }
+                }
             }),
         ),
     ]

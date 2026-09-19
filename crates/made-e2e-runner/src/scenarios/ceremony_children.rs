@@ -35,6 +35,7 @@ pub(crate) async fn verify_durable_children_over_public_rpc(
             )),
             actor_id: "children-e2e-operator".to_owned(),
             actor_kind: "service".to_owned(),
+            budget_limits: None,
         })
         .await
         .context("StartPublishedCeremony failed for the parent")?

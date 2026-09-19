@@ -26,7 +26,8 @@ impl MadeGrpcService {
             .budget_account_id()
             .ok_or_else(|| Status::failed_precondition("ceremony has no durable budget account"))?;
         let balance = self
-            .budget_service()?
+            .budget_service()
+            .ok_or_else(|| Status::failed_precondition("budget ledger is not configured"))?
             .report(account)
             .await
             .map_err(budget_error_to_status)?;
@@ -54,7 +55,8 @@ impl MadeGrpcService {
         }
         .map_err(domain_error_to_status)?;
         let page = self
-            .budget_service()?
+            .budget_service()
+            .ok_or_else(|| Status::failed_precondition("budget ledger is not configured"))?
             .pending(after.as_ref(), limit)
             .await
             .map_err(budget_error_to_status)?;
@@ -74,9 +76,7 @@ impl MadeGrpcService {
         }))
     }
 
-    fn budget_service(&self) -> Result<&made_app::budgets::BudgetLedgerService, Status> {
-        self.budgets
-            .as_deref()
-            .ok_or_else(|| Status::failed_precondition("budget ledger is not configured"))
+    fn budget_service(&self) -> Option<&made_app::budgets::BudgetLedgerService> {
+        self.budgets.as_deref()
     }
 }

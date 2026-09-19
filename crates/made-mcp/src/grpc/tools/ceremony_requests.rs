@@ -9,6 +9,8 @@ use crate::protocol::{
     RUN_CEREMONY_STEP_LEASE_TTL_MS,
 };
 
+mod budget;
+
 /// The runner the caller named, or the one this layer applies.
 ///
 /// Absent means "you choose"; blank is refused, as the tool's schema
@@ -96,7 +98,7 @@ pub(super) fn build_start_published_ceremony_request(
         context: j2p::optional_pb_struct(obj, "context")?,
         budget_limits: obj
             .get("budget_limits")
-            .map(budget_limits_from_json)
+            .map(budget::limits_from_json)
             .transpose()?,
     })
 }
@@ -170,56 +172,8 @@ pub(super) fn build_claim_ceremony_step_request(
         lease_ttl_ms: lease_ttl_ms(obj, CLAIM_CEREMONY_STEP_LEASE_TTL_MS)?,
         budget_reservation: obj
             .get("budget_reservation")
-            .map(budget_reservation_from_json)
+            .map(budget::reservation_from_json)
             .transpose()?,
-    })
-}
-
-fn budget_limits_from_json(value: &Value) -> Result<pb::BudgetLimits, String> {
-    let object = j2p::require_object(value, "budget_limits")?;
-    Ok(pb::BudgetLimits {
-        duration_micros: present_u64(object, "duration_micros")?,
-        tokens: present_u64(object, "tokens")?,
-        cost_micros: present_u64(object, "cost_micros")?,
-        tool_calls: present_u64(object, "tool_calls")?,
-        currency: j2p::optional_str(object, "currency")
-            .unwrap_or_default()
-            .to_owned(),
-    })
-}
-
-fn present_u64(object: &Map<String, Value>, field: &str) -> Result<Option<u64>, String> {
-    object
-        .get(field)
-        .map(|value| {
-            value
-                .as_u64()
-                .ok_or_else(|| format!("field `{field}` must be an unsigned integer"))
-        })
-        .transpose()
-}
-
-fn budget_reservation_from_json(value: &Value) -> Result<pb::BudgetReservationEstimate, String> {
-    let object = j2p::require_object(value, "budget_reservation")?;
-    Ok(pb::BudgetReservationEstimate {
-        duration: Some(budget_measurement(object, "duration")?),
-        tokens: Some(budget_measurement(object, "tokens")?),
-        cost: Some(budget_measurement(object, "cost")?),
-        tool_calls: Some(budget_measurement(object, "tool_calls")?),
-    })
-}
-
-fn budget_measurement(
-    object: &Map<String, Value>,
-    field: &str,
-) -> Result<pb::BudgetMeasurement, String> {
-    let value = object
-        .get(field)
-        .ok_or_else(|| format!("missing required field `{field}`"))?;
-    let measurement = j2p::require_object(value, field)?;
-    Ok(pb::BudgetMeasurement {
-        quality: j2p::require_str(measurement, "quality")?.to_owned(),
-        amount: j2p::optional_u64(measurement, "amount")?,
     })
 }
 
