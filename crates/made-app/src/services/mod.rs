@@ -1,6 +1,8 @@
 //! Application services — compose one or more use cases.
 
 mod authorization_operation_scope;
+#[cfg(test)]
+mod authorization_operation_scope_tests;
 mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod ceremony_event_fanout;
