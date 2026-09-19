@@ -16,22 +16,17 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
-use made_app::authorization::{
-    AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
-    ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
-};
+use made_app::authorization::{AuthorizationMutationOutcome, TrustedHostAuthorizationGate};
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
-    AuthorizationOperationScope, CeremonyEventFanout, CeremonyEventPublisherSubscriber,
-    SessionMemoryRecorder, SessionStream,
+    CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
     CeremonySearchCursorKey, CeremonySearchCursorNamespace, GetCeremonyInstanceUseCase,
     GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, SearchCeremonyInstancesUseCase,
-    ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
+    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus,
+    StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
@@ -46,10 +41,9 @@ use made_core::ports::{
     MetricsSnapshotPort, PutArtifactChunk, ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
 use made_core::value_objects::{
-    ArtifactId, ArtifactRef, AuthorizationAction, AuthorizationDecisionId,
-    AuthorizationDecisionPageLimit, AuthorizationGrant, AuthorizationGrantId,
-    AuthorizationPolicyId, AuthorizationRequestId, AuthorizationRevocationReason,
-    AuthorizationScope, CeremonyEventConsumer, CeremonyId,
+    ArtifactId, ArtifactRef, AuthorizationDecisionId, AuthorizationDecisionPageLimit,
+    AuthorizationGrant, AuthorizationGrantId, AuthorizationPolicyId, AuthorizationRequestId,
+    AuthorizationRevocationReason, CeremonyEventConsumer, CeremonyId,
 };
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
@@ -86,19 +80,10 @@ pub struct EmbeddedMade {
     pub(crate) max_parallel_ceiling: MaxParallel,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
     metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
-    /// The operational counters this engine keeps.
-    ///
-    /// Wired like every other port so a host can replace it; the
-    /// default keeps them in memory, and in an edition that runs no
-    /// council they stay at zero — which is the honest answer, not a
-    /// missing one.
+    /// Replaceable operational counters; editions without councils honestly stay at zero.
     statistics: Arc<dyn StatisticsPort>,
     councils: Arc<EmbeddedCouncilServices>,
-    /// The same adapter the recorder writes through, read back.
-    ///
-    /// The writer side is a subscriber of the stream (ADR-012), so the
-    /// recorder is not a field here; this is the read the start use
-    /// cases make before a session opens.
+    /// Reads the memory projection written by the stream subscriber (ADR-012).
     memory_reader: Arc<dyn MemoryReaderPort>,
     /// Durable publication is woken after each append and once explicitly at
     /// host startup, so records left pending by a stopped process do not need
@@ -348,31 +333,15 @@ impl EmbeddedMade {
         policy_id: AuthorizationPolicyId,
         store: Arc<dyn AuthorizationPolicyStorePort>,
     ) -> Self {
-        self.memory_reader = Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
-            self.memory_reader.clone(),
-            Arc::new(made_app::authorization::AuthorizeOperationUseCase::new(
-                policy_id.clone(),
-                store.clone(),
-                self.clock.clone(),
-                made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
-                    .expect("fixed authorization TTL is valid"),
-            )),
-            self.stream.clone(),
-        ));
-        let continuation = ContinueAcceptedCeremonyWorkUseCase::new(
-            policy_id.clone(),
-            store.clone(),
+        let (memory_reader, authorization) = crate::embedded_authorization_wiring::wire(
+            policy_id,
+            store,
             self.clock.clone(),
-            made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
-                .expect("fixed embedded authorization TTL is valid"),
+            self.memory_reader.clone(),
+            &self.stream,
         );
-        self.stream.require_authorization();
-        self.authorization = Some(EmbeddedAuthorizationServices::new(
-            ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
-            ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
-            AuthorizationPolicyAdministrationService::new(policy_id, store, self.clock.clone()),
-            continuation,
-        ));
+        self.memory_reader = memory_reader;
+        self.authorization = Some(authorization);
         self
     }
 
@@ -463,44 +432,14 @@ impl EmbeddedMade {
         request_id: AuthorizationRequestId,
         input: &SearchCeremonyInstancesInput,
     ) -> Result<CeremonyInstancePage, DomainError> {
-        let target_digest = input.authorization_target_digest();
-        if let Some(operation) = AuthorizationOperationScope::current() {
-            let evidence = operation.evidence();
-            if evidence.action() != AuthorizationAction::SearchCeremonyInstances
-                || evidence.scope() != &AuthorizationScope::Global
-                || evidence.target_digest() != &target_digest
-            {
-                return Err(DomainError::InvariantViolated {
-                    reason: "active authorization evidence does not admit this ceremony search",
-                });
-            }
-        } else {
-            self.ceremony_search_authorization
-                .as_ref()
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "embedded ceremony search requires an explicit authorization gate",
-                })?
-                .authorize(
-                    request_id,
-                    AuthorizationAction::SearchCeremonyInstances,
-                    AuthorizationScope::Global,
-                    target_digest,
-                    None,
-                )
-                .await?;
-        }
-        let cursors =
-            self.ceremony_search_cursors
-                .clone()
-                .ok_or(DomainError::InvariantViolated {
-                    reason: "ceremony search cursors require an explicit stable key and namespace",
-                })?;
-        SearchCeremonyInstancesUseCase::new(
+        crate::embedded_ceremony_search::execute(
+            self.ceremony_search_authorization.as_ref(),
+            self.ceremony_search_cursors.clone(),
             self.ceremony_index.clone(),
             self.stream.clone(),
-            cursors,
+            request_id,
+            input,
         )
-        .execute(input)
         .await
     }
 

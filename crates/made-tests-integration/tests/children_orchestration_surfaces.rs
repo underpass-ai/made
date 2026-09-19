@@ -14,13 +14,13 @@ use made_app::usecases::{
 use made_core::entities::{AuditFact, CeremonyDefinition, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort,
-    PositionedRecord,
+    AppendOutcome, CeremonyEventStorePort, CeremonyInstanceIdPage, CeremonyInstanceIndexPort,
+    CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, DurationMs, EventId,
-    GlobalPosition, IdempotencyKey, LeaseOwnerId, LifecycleReason, RoleId, StepId, StreamVersion,
-    TransitionTrigger,
+    AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, DurationMs, EventId, GlobalPosition, IdempotencyKey, LeaseOwnerId,
+    LifecycleReason, RoleId, StepId, StreamVersion, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
@@ -215,6 +215,18 @@ impl CeremonyEventStorePort for PauseBeforeCompletionStore {
 
     async fn streams(&self) -> Result<Vec<CeremonyId>, DomainError> {
         self.inner.streams().await
+    }
+}
+
+#[async_trait]
+impl CeremonyInstanceIndexPort for PauseBeforeCompletionStore {
+    async fn ids_after(
+        &self,
+        after: Option<&CeremonyId>,
+        id_prefix: Option<&CeremonyIdPrefix>,
+        limit: CeremonyInstancePageLimit,
+    ) -> Result<CeremonyInstanceIdPage, DomainError> {
+        self.inner.ids_after(after, id_prefix, limit).await
     }
 }
 

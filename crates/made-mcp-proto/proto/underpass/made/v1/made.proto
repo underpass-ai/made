@@ -130,6 +130,8 @@ service MadeService {
   // working session whichever way it reached the engine.
   rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
   rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+  // Bounded keyset listing. The opaque cursor is scoped to the selected
+  // filters, backing store and authorization policy.
   rpc SearchCeremonyInstances(SearchCeremonyInstancesRequest) returns (SearchCeremonyInstancesResponse);
 
   // Advance a ceremony one move at a time. RunCeremony above runs a
@@ -1117,14 +1119,18 @@ enum CeremonyLifecycleFilter {
 }
 
 message SearchCeremonyInstancesRequest {
+  // Empty starts a new traversal. Returned cursors are opaque.
   string cursor = 1;
+  // Zero selects the server default (50); the accepted range is 1..100.
   uint32 limit = 2;
+  // Empty disables prefix filtering. Matching is literal and case-sensitive.
   string id_prefix = 3;
   CeremonyLifecycleFilter lifecycle = 4;
 }
 
 message SearchCeremonyInstancesResponse {
   repeated CeremonyInstanceState instances = 1;
+  // Empty means this traversal has no further page.
   string next_cursor = 2;
 }
 
