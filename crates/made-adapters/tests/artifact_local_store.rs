@@ -981,6 +981,14 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     stop.store(true, std::sync::atomic::Ordering::Release);
     writer.await.unwrap();
     service.verify(&backup, &manifest).unwrap();
+    let retried = service
+        .backup_to(
+            &backup,
+            ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(retried, manifest);
     assert_eq!(
         service
             .backup_to(
