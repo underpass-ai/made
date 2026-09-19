@@ -211,12 +211,15 @@ impl WorkerCapacityPort for FileWorkerCapacityStore {
         &self,
         operation: &ExecutionOperationId,
         owner: &LeaseOwnerId,
+        fence: &StepClaimFence,
     ) -> Result<Box<dyn WorkerCapacityRenewalGuard>, DomainError> {
         let lock = self.lock().await?;
         let rows = self.read()?;
-        let reserved = rows
-            .iter()
-            .any(|row| &row.request.operation_id == operation && &row.request.owner_id == owner);
+        let reserved = rows.iter().any(|row| {
+            &row.request.operation_id == operation
+                && &row.request.owner_id == owner
+                && row.fence.as_ref() == Some(fence)
+        });
         if !reserved {
             return Err(DomainError::Conflict {
                 what: "worker_capacity_reservation",
