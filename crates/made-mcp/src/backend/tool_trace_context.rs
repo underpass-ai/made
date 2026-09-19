@@ -10,6 +10,7 @@ use made_core::value_objects::AuthorizationTargetDigest;
 pub struct ToolTraceContext {
     traceparent: String,
     authorization_request_id: String,
+    approval_decision_id: Option<String>,
 }
 
 impl ToolTraceContext {
@@ -20,17 +21,23 @@ impl ToolTraceContext {
         tool_name: &str,
         arguments: &Value,
         explicit_request_namespace: Option<&str>,
+        approval_decision_id: Option<&str>,
     ) -> Result<Self, String> {
         if let Some(value) = explicit_request_namespace {
             validate_explicit_namespace(value)?;
         }
         let namespace = explicit_request_namespace.unwrap_or(process_session_namespace);
         let jsonrpc_id = explicit_request_namespace.is_none().then_some(jsonrpc_id);
+        let approval_decision_id = approval_decision_id
+            .map(validate_decision_id)
+            .transpose()?
+            .map(str::to_owned);
         Ok(Self {
             traceparent: validated_traceparent(traceparent),
             authorization_request_id: derive_request_id(
                 namespace, jsonrpc_id, tool_name, arguments,
             ),
+            approval_decision_id,
         })
     }
 
@@ -45,6 +52,7 @@ impl ToolTraceContext {
                 tool_name,
                 arguments,
             ),
+            approval_decision_id: None,
         }
     }
 
@@ -56,6 +64,11 @@ impl ToolTraceContext {
     #[must_use]
     pub fn authorization_request_id(&self) -> &str {
         &self.authorization_request_id
+    }
+
+    #[must_use]
+    pub fn approval_decision_id(&self) -> Option<&str> {
+        self.approval_decision_id.as_deref()
     }
 
     /// Digest of the transport-neutral MCP invocation target.
@@ -89,6 +102,17 @@ fn validate_explicit_namespace(value: &str) -> Result<(), String> {
         );
     }
     Ok(())
+}
+
+fn validate_decision_id(value: &str) -> Result<&str, String> {
+    if value.len() != 64
+        || !value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+    {
+        return Err("_meta.made_approval_decision_id must be a lowercase sha256 value".to_owned());
+    }
+    Ok(value)
 }
 
 fn derive_request_id(
@@ -255,7 +279,8 @@ mod tests {
             &json!(1),
             "tool",
             &json!({}),
-            Some(" bad")
+            Some(" bad"),
+            None,
         )
         .is_err());
     }
@@ -300,6 +325,7 @@ mod tests {
             "made_search_ceremony_instances",
             arguments,
             explicit,
+            None,
         )
         .unwrap()
     }
