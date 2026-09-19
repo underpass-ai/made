@@ -97,6 +97,44 @@ async fn seed(path: &std::path::Path) {
     .unwrap();
 }
 
+async fn assert_restart_preserves_cursor_and_authorized_tail(path: &std::path::Path) {
+    let (_fixture, remote, embedded) = clients(path).await;
+    let consumer = json!({"consumer":"public-reader"});
+    assert_eq!(
+        call(&remote, "made_get_council_event_cursor", consumer).await,
+        json!({"acknowledged_through":1})
+    );
+    let second = call(
+        &embedded,
+        "made_read_council_events",
+        json!({"after":1,"limit":1}),
+    )
+    .await;
+    assert_eq!(
+        second,
+        call(
+            &remote,
+            "made_read_council_events",
+            json!({"after":1,"limit":1})
+        )
+        .await
+    );
+    assert_eq!(second["records"][0]["event"]["kind"], "phase_changed");
+    assert_eq!(
+        second["records"][0]["authorization"]["principal_id"],
+        "council-surface-host"
+    );
+    assert_eq!(second["next_after"], 2);
+    assert_eq!(
+        call(&remote, "made_read_council_events", json!({"after":2})).await,
+        json!({"records":[],"next_after":2})
+    );
+    assert!(remote
+        .call_tool("made_read_council_events", &json!({"limit":1001}))
+        .await
+        .is_err());
+}
+
 #[tokio::test]
 async fn public_consumers_share_fencing_and_resume_after_restart_without_changing_ceremony_cursor()
 {
@@ -174,38 +212,5 @@ async fn public_consumers_share_fencing_and_resume_after_restart_without_changin
     assert_eq!(ceremony["acknowledged_through"], Value::Null);
     assert!(ceremony["records"].as_array().unwrap().is_empty());
     drop((fixture, remote, embedded));
-    let (_fixture, remote, embedded) = clients(&path).await;
-    assert_eq!(
-        call(&remote, "made_get_council_event_cursor", consumer).await,
-        json!({"acknowledged_through":1})
-    );
-    let second = call(
-        &embedded,
-        "made_read_council_events",
-        json!({"after":1,"limit":1}),
-    )
-    .await;
-    assert_eq!(
-        second,
-        call(
-            &remote,
-            "made_read_council_events",
-            json!({"after":1,"limit":1})
-        )
-        .await
-    );
-    assert_eq!(second["records"][0]["event"]["kind"], "phase_changed");
-    assert_eq!(
-        second["records"][0]["authorization"]["principal_id"],
-        "council-surface-host"
-    );
-    assert_eq!(second["next_after"], 2);
-    assert_eq!(
-        call(&remote, "made_read_council_events", json!({"after":2})).await,
-        json!({"records":[],"next_after":2})
-    );
-    let invalid = remote
-        .call_tool("made_read_council_events", &json!({"limit":1001}))
-        .await;
-    assert!(invalid.is_err());
+    assert_restart_preserves_cursor_and_authorized_tail(&path).await;
 }

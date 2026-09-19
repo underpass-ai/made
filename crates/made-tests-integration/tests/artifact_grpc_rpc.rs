@@ -10,14 +10,9 @@ use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 const BYTES: &[u8] = b"fixture";
 const DIGEST: &str = "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d";
 
-#[tokio::test]
-async fn bounded_artifact_lifecycle_crosses_the_public_grpc_surface() {
-    let directory = tempfile::tempdir().unwrap();
-    let store = Arc::new(LocalArtifactStore::open(directory.path()).unwrap());
-    let fixture =
-        GrpcFixture::start_with(GrpcFixtureWiring::new().with_artifact_store(store)).await;
-    let mut client = MadeServiceClient::new(fixture.channel.clone());
-
+async fn commit_fixture(
+    client: &mut MadeServiceClient<tonic::transport::Channel>,
+) -> pb::ArtifactReference {
     let upload = client
         .begin_artifact_upload(pb::BeginArtifactUploadRequest {
             requested_artifact_id: None,
@@ -66,6 +61,17 @@ async fn bounded_artifact_lifecycle_crosses_the_public_grpc_surface() {
         .artifact
         .unwrap();
     assert_eq!(artifact.digest, DIGEST);
+    artifact
+}
+
+#[tokio::test]
+async fn bounded_artifact_lifecycle_crosses_the_public_grpc_surface() {
+    let directory = tempfile::tempdir().unwrap();
+    let store = Arc::new(LocalArtifactStore::open(directory.path()).unwrap());
+    let fixture =
+        GrpcFixture::start_with(GrpcFixtureWiring::new().with_artifact_store(store)).await;
+    let mut client = MadeServiceClient::new(fixture.channel.clone());
+    let artifact = commit_fixture(&mut client).await;
 
     let listed = client
         .list_artifacts(pb::ListArtifactsRequest {
