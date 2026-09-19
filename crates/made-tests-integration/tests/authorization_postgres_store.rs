@@ -196,6 +196,22 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
         .decision()
         .clone();
     assert_eq!(repeated, decided);
+    let after_revoke = left_authorize
+        .execute(request(
+            "after-revoke",
+            worker(),
+            AuthorizationAction::ClaimCeremonyStep,
+            b"new-target",
+        ))
+        .await
+        .unwrap()
+        .decision()
+        .clone();
+    assert_eq!(after_revoke.kind(), AuthorizationDecisionKind::Deny);
+    assert_eq!(
+        after_revoke.denial_reason(),
+        Some(AuthorizationDenialReason::NoMatchingGrant)
+    );
     assert_eq!(
         left.decisions(
             &policy_id,
@@ -206,7 +222,7 @@ async fn replicas_share_one_policy_cas_for_authorize_and_revoke() {
         .unwrap()
         .decisions()
         .len(),
-        2
+        3
     );
 }
 
