@@ -10,19 +10,64 @@
 use made_core::entities::ceremony_events::InstanceImported;
 use made_core::entities::{
     AuditChain, AuditFact, AuditRecord, CeremonyEvent, CeremonyEventReader, CeremonyInstance,
+    AUDIT_RECORD_SCHEMA_VERSION,
 };
 use made_core::value_objects::{
     AuditActor, AuditEventType, AuditRecordHash, CeremonyRevision, EventId, EventSchemaVersion,
     StateIteration,
 };
+use sha2::{Digest, Sha256};
 use time::macros::datetime;
 
 /// Two records sealed by the schema-version-1 code, captured verbatim.
 const AUDIT_RECORDS_V1: &str = include_str!("fixtures/audit_record_v1.json");
 const PRE_P2_EVENT_CHAIN: &str =
     include_str!("fixtures/audit_record_v2_event_schema_v1_chain.json");
+const AUTHORIZED_RECORD_V3: &str = include_str!("fixtures/audit_record_v3_authorized.json");
 const PRE_P5_IN_PROGRESS_SNAPSHOT: &str =
     include_str!("fixtures/legacy_in_progress_instance_pre_p5.json");
+
+#[test]
+fn version_one_and_two_serialization_bytes_match_the_pre_v3_writer() {
+    let cases = [
+        (
+            AUDIT_RECORDS_V1,
+            "1c88df84463e266af9b650e725fdc693ade0b2bb5a87cccfc53dfcaf0ea1e28e",
+        ),
+        (
+            PRE_P2_EVENT_CHAIN,
+            "abbbba0a67ff726558a1519e3675cef3743e29521b5ebfc7d647e44be25f12a7",
+        ),
+    ];
+
+    for (stored, expected_sha256) in cases {
+        let records: Vec<AuditRecord> = serde_json::from_str(stored).unwrap();
+        let bytes = serde_json::to_vec(&records).unwrap();
+        assert_eq!(format!("{:x}", Sha256::digest(bytes)), expected_sha256);
+    }
+}
+
+#[test]
+fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
+    let expected: serde_json::Value = serde_json::from_str(AUTHORIZED_RECORD_V3).unwrap();
+    let record: AuditRecord = serde_json::from_value(expected.clone()).unwrap();
+
+    assert_eq!(record.schema_version(), AUDIT_RECORD_SCHEMA_VERSION);
+    assert_eq!(
+        record
+            .authorization_evidence()
+            .unwrap()
+            .principal_id()
+            .as_str(),
+        "principal-1"
+    );
+    assert_eq!(
+        record.record_hash().to_string(),
+        "0b50be46717d750c0b4ff442300f613f2b21704f1904175c50cac4500beb0747"
+    );
+    assert!(record.digest_is_intact().unwrap());
+    assert_eq!(serde_json::to_value(record).unwrap(), expected);
+}
 
 const EVERY_EVENT_TYPE: [AuditEventType; 25] = [
     AuditEventType::CeremonyDefinitionValidated,

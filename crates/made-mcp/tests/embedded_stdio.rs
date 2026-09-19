@@ -8,14 +8,16 @@ use std::time::Duration;
 use made_core::entities::{
     CeremonyEvidencePack, ContextItem, ContextSummary, ExternalContextBundle,
 };
-use made_core::value_objects::{Attributes, StepOutput, StepResult};
+use made_core::value_objects::{Attributes, AuthorizationAction, StepOutput, StepResult};
 use made_embedded::EmbeddedMade;
 use made_mcp::{EmbeddedMadeMcpBackend, MadeMcpServer};
 use serde_json::{json, Value};
 use time::OffsetDateTime;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
-use tokio::process::Command;
 use tokio::time::timeout;
+
+#[path = "support/protected_embedded_stdio.rs"]
+mod protected_stdio;
 
 const CEREMONY_YAML: &str = r#"
 version: "1.0"
@@ -136,6 +138,7 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_run_ceremony",
         "made_get_ceremony_instance",
         "made_list_ceremony_instances",
+        "made_search_ceremony_instances",
         "made_start_ceremony",
         "made_start_published_ceremony",
         "made_run_ceremony_step",
@@ -181,6 +184,11 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_list_artifacts",
         "made_read_artifact_chunk",
         "made_tombstone_artifact",
+        "made_get_authorization_policy",
+        "made_approve_authorization_operation",
+        "made_issue_authorization_grant",
+        "made_revoke_authorization_grant",
+        "made_list_authorization_decisions",
         "made_get_status",
         "made_get_metrics",
         "made_verify_ceremony_journal",
@@ -558,18 +566,20 @@ async fn designing_a_ceremony_returns_an_analyzed_draft_without_starting_it() {
 #[tokio::test]
 async fn roundtable_fixed_order_design_executes_in_declared_participant_order() {
     let state = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
-        .env("MADE_MCP_BACKEND", "embedded")
-        .env(
-            "MADE_MCP_STORE_PATH",
-            state.path().join("ceremonies.sqlite3"),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+    let mut child = protected_stdio::command(
+        state.path(),
+        &[
+            AuthorizationAction::DesignCeremony,
+            AuthorizationAction::RunCeremony,
+        ],
+    )
+    .await
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::inherit())
+    .kill_on_drop(true)
+    .spawn()
+    .unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let mut lines = BufReader::new(stdout).lines();
@@ -1240,18 +1250,21 @@ async fn embedded_server_pauses_until_a_human_guard_is_approved() {
 #[tokio::test]
 async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
     let state = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
-        .env("MADE_MCP_BACKEND", "embedded")
-        .env(
-            "MADE_MCP_STORE_PATH",
-            state.path().join("ceremonies.sqlite3"),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+    let mut child = protected_stdio::command(
+        state.path(),
+        &[
+            AuthorizationAction::StartCeremony,
+            AuthorizationAction::RunCeremonyStep,
+            AuthorizationAction::GetMetrics,
+        ],
+    )
+    .await
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::inherit())
+    .kill_on_drop(true)
+    .spawn()
+    .unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let mut lines = BufReader::new(child.stdout.take().unwrap()).lines();
 
@@ -1313,18 +1326,22 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     // The binary refuses to start an embedded backend without a state file,
     // so the spawned process gets one of its own for the run.
     let state = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
-        .env("MADE_MCP_BACKEND", "embedded")
-        .env(
-            "MADE_MCP_STORE_PATH",
-            state.path().join("ceremonies.sqlite3"),
-        )
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+    let mut child = protected_stdio::command(
+        state.path(),
+        &[
+            AuthorizationAction::StartCeremony,
+            AuthorizationAction::RunCeremonyStep,
+            AuthorizationAction::ApproveCeremonyGuard,
+            AuthorizationAction::ApplyCeremonyTransition,
+        ],
+    )
+    .await
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::inherit())
+    .kill_on_drop(true)
+    .spawn()
+    .unwrap();
     let mut stdin = child.stdin.take().unwrap();
     let stdout = child.stdout.take().unwrap();
     let mut lines = BufReader::new(stdout).lines();
@@ -1356,7 +1373,10 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 72);
+    assert_eq!(
+        tools["result"]["tools"].as_array().unwrap().len(),
+        executable_tool_names().len()
+    );
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],

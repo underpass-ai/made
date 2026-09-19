@@ -1,4 +1,5 @@
-use made_app::usecases::{RunCeremonyStepInput, RunCeremonyStepOutput};
+use made_app::usecases::{RunCeremonyStepInput, RunCeremonyStepOutput, StartCeremonyStepInput};
+use made_core::entities::CeremonyDefinition;
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
 };
@@ -58,6 +59,46 @@ impl EmbeddedRunCeremonyStepRequest {
 
     pub(super) fn step_id(&self) -> &StepId {
         &self.step_id
+    }
+
+    pub(super) fn ceremony_id(&self) -> &CeremonyId {
+        &self.ceremony_id
+    }
+
+    pub(super) const fn actor_kind(&self) -> AuditActorKind {
+        self.actor_kind
+    }
+
+    pub(super) fn claim_input(
+        &self,
+        definition: &CeremonyDefinition,
+    ) -> Result<StartCeremonyStepInput, made_core::DomainError> {
+        Ok(StartCeremonyStepInput::new(
+            self.ceremony_id.clone(),
+            definition.role_id_for_step(&self.step_id)?,
+            self.actor_kind,
+            self.step_id.clone(),
+            self.lease_owner_id.clone(),
+            self.idempotency_key.clone(),
+            self.lease_ttl,
+        )
+        .with_automatic_role_resolution())
+    }
+
+    pub(super) fn run_input(
+        &self,
+        definition: &CeremonyDefinition,
+    ) -> Result<RunCeremonyStepInput, made_core::DomainError> {
+        Ok(RunCeremonyStepInput::new(
+            self.ceremony_id.clone(),
+            definition.role_id_for_step(&self.step_id)?,
+            self.actor_kind,
+            self.step_id.clone(),
+            self.lease_owner_id.clone(),
+            self.idempotency_key.clone(),
+            self.lease_ttl,
+        )
+        .with_automatic_role_resolution())
     }
 }
 

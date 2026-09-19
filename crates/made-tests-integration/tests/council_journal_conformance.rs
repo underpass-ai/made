@@ -14,14 +14,38 @@ use made_core::ports::{
     StatisticsPort,
 };
 use made_core::value_objects::{
-    AgentId, CouncilId, CouncilJournalConsumer, CouncilJournalPageLimit, CouncilJournalPosition,
-    DurationMs, EventId, OutputContract, OutputFormat, Rounds, Specialty, TaskId,
+    AgentId, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence,
+    AuthorizedOperation, CouncilId, CouncilJournalConsumer, CouncilJournalPageLimit,
+    CouncilJournalPosition, DurationMs, EventId, OutputContract, OutputFormat, PrincipalId,
+    PrincipalKind, Rounds, Specialty, TaskId,
 };
 use made_tests_integration::postgres_fixture;
 use std::collections::BTreeMap;
 use time::{macros::datetime, OffsetDateTime};
 
 const NOW: OffsetDateTime = datetime!(2026-09-19 00:00:00 UTC);
+
+fn authorized_operation() -> AuthorizedOperation {
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("council-operator").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::MutualTls,
+    )
+    .unwrap();
+    let evidence: AuthorizationEvidence = serde_json::from_value(serde_json::json!({
+        "decision_id": "a".repeat(64),
+        "request_id": "council-conformance-request",
+        "principal_id": "council-operator",
+        "action": "create_council",
+        "scope": { "kind": "global" },
+        "target_digest": "b".repeat(64),
+        "policy_version": 1,
+        "admitted_at": "2026-09-19T12:00:00Z",
+        "valid_until": "2026-09-19T12:01:00Z"
+    }))
+    .unwrap();
+    AuthorizedOperation::new(principal, evidence).unwrap()
+}
 
 fn publication(id: &str, phase: &str) -> CouncilJournalEvent {
     CouncilJournalEvent::PhaseChanged(
@@ -41,6 +65,7 @@ async fn exercise_registries(
     deliberations: &dyn DeliberationRepositoryPort,
     statistics: &dyn StatisticsPort,
     journal: &dyn CouncilJournalPort,
+    authorization: AuthorizationEvidence,
 ) -> Vec<CouncilJournalRecord> {
     let specialty = Specialty::new("research").unwrap();
     let council = Council::new(
@@ -50,13 +75,22 @@ async fn exercise_registries(
         NOW,
     )
     .unwrap();
-    councils.register(council.clone()).await.unwrap();
+    councils
+        .register_authorized(council.clone(), Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(councils.register(council.clone()).await.is_err());
     assert_eq!(councils.get(&specialty).await.unwrap(), council);
-    councils.replace(council).await.unwrap();
+    councils
+        .replace_authorized(council, Some(authorization.clone()))
+        .await
+        .unwrap();
     let contract =
         OutputContract::new("report-v1", OutputFormat::JsonObject, BTreeMap::new()).unwrap();
-    contracts.register(contract.clone()).await.unwrap();
+    contracts
+        .register_authorized(contract.clone(), Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(contracts.register(contract.clone()).await.is_err());
     assert_eq!(
         contracts.get(contract.contract_id()).await.unwrap(),
@@ -68,18 +102,25 @@ async fn exercise_registries(
         Rounds::default(),
         NOW,
     );
-    deliberations.save(&deliberation).await.unwrap();
+    deliberations
+        .save_authorized(&deliberation, Some(authorization.clone()))
+        .await
+        .unwrap();
     deliberations.save(&deliberation).await.unwrap();
     assert_eq!(
         deliberations.get(deliberation.task_id()).await.unwrap(),
         deliberation
     );
     statistics
-        .record_deliberation(&specialty, DurationMs::from_millis(11))
+        .record_deliberation_authorized(
+            &specialty,
+            DurationMs::from_millis(11),
+            Some(authorization.clone()),
+        )
         .await
         .unwrap();
     statistics
-        .record_orchestration(DurationMs::from_millis(29))
+        .record_orchestration_authorized(DurationMs::from_millis(29), Some(authorization.clone()))
         .await
         .unwrap();
     assert_eq!(
@@ -87,7 +128,10 @@ async fn exercise_registries(
         40
     );
     let record = journal
-        .publish(publication("event-1", "reviewing"))
+        .publish_authorized(
+            publication("event-1", "reviewing"),
+            Some(authorization.clone()),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -101,9 +145,15 @@ async fn exercise_registries(
         .publish(publication("event-1", "failed"))
         .await
         .is_err());
-    councils.delete(&specialty).await.unwrap();
+    councils
+        .delete_authorized(&specialty, Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(councils.delete(&specialty).await.is_err());
-    contracts.delete(contract.contract_id()).await.unwrap();
+    contracts
+        .delete_authorized(contract.contract_id(), Some(authorization))
+        .await
+        .unwrap();
     assert!(contracts.delete(contract.contract_id()).await.is_err());
     assert!(councils.list().await.unwrap().is_empty());
     assert!(contracts.list().await.unwrap().is_empty());
@@ -123,6 +173,7 @@ async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repo
         &PostgresDeliberationRepository::new(pool.clone()),
         &PostgresStatistics::new(pool.clone()),
         &pg,
+        authorized_operation().evidence().clone(),
     )
     .await;
     let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
@@ -135,6 +186,7 @@ async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repo
         &SqliteDeliberationRepository::new(local.clone()),
         &SqliteCouncilStatistics::new(local.clone()),
         &SqliteCouncilJournal::new(local),
+        authorized_operation().evidence().clone(),
     )
     .await;
     assert_eq!(actual, expected);
@@ -143,6 +195,9 @@ async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repo
         9,
         "failed commands and repeated publications do not append"
     );
+    assert!(actual.iter().all(|record| record
+        .authorization()
+        .is_some_and(|evidence| evidence.principal_id().as_str() == "council-operator")));
     assert_eq!(
         PostgresCouncilJournal::new(pool)
             .read(None, CouncilJournalPageLimit::default())

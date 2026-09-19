@@ -1,7 +1,8 @@
+use made_core::ports::AuthorizationScopeResolverPort;
 use made_core::value_objects::{
-    BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetPageLimit, BudgetQuantities,
-    BudgetReservation, BudgetReservationEstimate, BudgetReservationId, BudgetTokenCount,
-    CeremonyId, CostMicros, ExecutionDuration, ToolCallCount,
+    AuthorizationScope, BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetPageLimit,
+    BudgetQuantities, BudgetReservation, BudgetReservationEstimate, BudgetReservationId,
+    BudgetTokenCount, CeremonyId, CostMicros, ExecutionDuration, ToolCallCount,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
@@ -27,13 +28,13 @@ pub(super) async fn dispatch(
     match name {
         GET_BUDGET_REPORT_TOOL => {
             let ceremony_id = CeremonyId::new(required_string(object, "ceremony_id")?)?;
-            let instance = made.instance(&ceremony_id).await?;
-            let account = instance
-                .budget_account_id()
-                .ok_or_else(|| ToolError::refused("ceremony has no durable budget account"))?;
-            let balance = made.budget_report(account).await?;
+            let scope = made.budget_scope(&ceremony_id).await?;
+            let AuthorizationScope::Budget { account_id } = scope else {
+                return Err(ToolError::refused("ceremony has no durable budget account"));
+            };
+            let balance = made.budget_report(&account_id).await?;
             Ok(json!({
-                "account_id": account.as_str(),
+                "account_id": account_id.as_str(),
                 "balance": balance_to_json(&balance),
             }))
         }

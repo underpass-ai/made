@@ -9,8 +9,8 @@ use made_adapters::postgres::{PostgresCeremonyStore, PostgresPool};
 use made_adapters::sqlite::{SqliteBudgetLedgerStore, SqliteCeremonyStore};
 use made_core::ports::{
     BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyEventCursorPort,
-    CeremonyEventStorePort, CeremonySnapshotStorePort, ExecutionReceiptStorePort, MemoryReaderPort,
-    MemoryWriterPort,
+    CeremonyEventStorePort, CeremonyInstanceIndexPort, CeremonySnapshotStorePort,
+    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort,
 };
 use tracing::{info, warn};
 
@@ -19,6 +19,7 @@ use crate::ComposeError;
 /// Ceremony state and session memory selected as one composition decision.
 pub(super) struct CeremonyPersistence {
     pub(super) events: Arc<dyn CeremonyEventStorePort>,
+    pub(super) index: Arc<dyn CeremonyInstanceIndexPort>,
     pub(super) cursors: Arc<dyn CeremonyEventCursorPort>,
     pub(super) snapshots: Arc<dyn CeremonySnapshotStorePort>,
     pub(super) publications: Arc<dyn CeremonyDefinitionPublicationPort>,
@@ -58,6 +59,7 @@ pub(super) fn wire(
             let memory = Arc::new(ForgetfulMemory::new());
             Ok(CeremonyPersistence {
                 events: store.clone(),
+                index: store.clone(),
                 cursors: Arc::new(InMemoryCeremonyEventCursor::new()),
                 snapshots: store,
                 publications: Arc::new(InMemoryCeremonyDefinitionPublications::new()),
@@ -104,6 +106,7 @@ fn postgres_persistence(
         };
     CeremonyPersistence {
         events: store.clone(),
+        index: store.clone(),
         cursors: store.clone(),
         snapshots: store.clone(),
         publications: store.clone(),
@@ -142,6 +145,7 @@ fn sqlite_persistence(
 
     Ok(CeremonyPersistence {
         events: store.clone(),
+        index: store.clone(),
         cursors: store.clone(),
         snapshots: store.clone(),
         publications: store.clone(),

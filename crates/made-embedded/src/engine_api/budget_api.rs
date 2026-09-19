@@ -5,9 +5,10 @@ use made_api::{
 };
 use made_app::budgets::StartBudgetedCeremonyInput;
 use made_core::error::DomainError;
+use made_core::ports::AuthorizationScopeResolverPort;
 use made_core::value_objects::{
-    BudgetLimits, BudgetPageLimit, BudgetQuantities, BudgetReservationId, BudgetTokenCount,
-    CeremonyId, CostMicros, CurrencyCode, ExecutionDuration, ToolCallCount,
+    AuthorizationScope, BudgetLimits, BudgetPageLimit, BudgetQuantities, BudgetReservationId,
+    BudgetTokenCount, CeremonyId, CostMicros, CurrencyCode, ExecutionDuration, ToolCallCount,
 };
 
 use super::{millis, start_input, summarize, unavailable};
@@ -33,8 +34,8 @@ pub(super) async fn report(
     ceremony_id: &str,
 ) -> Result<BudgetReport, ApiError> {
     let ceremony_id = CeremonyId::new(ceremony_id).map_err(|error| refused(&error))?;
-    let instance = made
-        .instance(&ceremony_id)
+    let scope = made
+        .budget_scope(&ceremony_id)
         .await
         .map_err(|error| match error {
             DomainError::NotFound { .. } => ApiError::CeremonyNotFound {
@@ -42,13 +43,16 @@ pub(super) async fn report(
             },
             other => unavailable(&other),
         })?;
-    let account = instance
-        .budget_account_id()
-        .ok_or_else(|| ApiError::Refused {
+    let AuthorizationScope::Budget {
+        account_id: account,
+    } = scope
+    else {
+        return Err(ApiError::Refused {
             reason: "ceremony has no durable budget account".to_owned(),
-        })?;
+        });
+    };
     let balance = made
-        .budget_report(account)
+        .budget_report(&account)
         .await
         .map_err(|error| ApiError::Refused {
             reason: error.to_string(),

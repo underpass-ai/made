@@ -190,9 +190,12 @@ async fn a_sealed_record_carries_the_trace_that_wrote_it() {
     let trace =
         TraceContext::parse("00-0af7651916cd43dd8448eb211c80319c-b7ad6b7169203331-01").unwrap();
 
-    CeremonyTraceScope::run(trace.clone(), claim(stream).execute(claim_input()))
-        .await
-        .unwrap();
+    Box::pin(CeremonyTraceScope::run(
+        trace.clone(),
+        claim(stream).execute(claim_input()),
+    ))
+    .await
+    .unwrap();
 
     let records = store.records(&ceremony_id()).await;
     assert_eq!(records[1].trace_id(), Some(trace.trace_id()));

@@ -16,7 +16,7 @@
 //!      makes against the current compose stack.
 //!    - Other Err → both report assertions are recorded as Failed.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -96,7 +96,7 @@ pub async fn run_chain_2_with_schema(
         contract: Some(pb::OutputContract {
             contract_id: cfg.contract_id.clone(),
             format: pb::OutputFormat::JsonObject as i32,
-            fields: HashMap::new(),
+            fields: BTreeMap::new(),
             json_schema: schema_json.to_owned(),
         }),
     };

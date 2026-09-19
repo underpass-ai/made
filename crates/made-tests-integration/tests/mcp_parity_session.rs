@@ -24,22 +24,42 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use made_adapters::artifacts::LocalArtifactStore;
-use made_adapters::memory::InProcessSessionMemory;
+use made_adapters::memory::{
+    InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore, InProcessSessionMemory,
+};
 use made_adapters::noop::NoopExecutor;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
-use made_core::ports::ValidatorPort;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
+    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+};
+use made_app::services::{CeremonyEventFanout, SessionStream};
+use made_app::usecases::{
+    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
+};
+use made_core::ports::{
+    AuthorizationPolicyStorePort, CeremonyEventStorePort, CeremonySnapshotStorePort, ClockPort,
+    ValidatorPort,
+};
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
+    AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
+    AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind, SeparationRule,
+};
 use made_embedded::EmbeddedMade;
-use made_mcp::backend::MadeMcpGrpcTlsConfig;
+use made_mcp::backend::{MadeMcpGrpcTlsConfig, ToolTraceContext};
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
 use made_tests_integration::parity_clock::ParityClock;
 use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 
 #[path = "mcp_parity_session/council_journal.rs"]
 mod council_journal;
@@ -588,6 +608,8 @@ struct ParityArms {
     council_leases: std::sync::Mutex<BTreeMap<String, (Value, Value)>>,
     receipt_stores: Vec<Arc<dyn made_core::ports::ExecutionReceiptStorePort>>,
     receipt_artifacts: Vec<Arc<dyn made_core::ports::ArtifactStorePort>>,
+    opaque_authorization_targets: std::sync::Mutex<BTreeMap<String, [(String, String); 2]>>,
+    artifact_authorizations: std::sync::Mutex<Vec<[Value; 2]>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -600,10 +622,152 @@ fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
     ]
 }
 
+struct ParityEmbeddedAuthorization {
+    policy_id: AuthorizationPolicyId,
+    store: Arc<dyn AuthorizationPolicyStorePort>,
+    gate: TrustedHostAuthorizationGate,
+    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+}
+
+async fn parity_embedded_authorization(clock: Arc<dyn ClockPort>) -> ParityEmbeddedAuthorization {
+    let policy_id = AuthorizationPolicyId::new("grpc-fixture").unwrap();
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("grpc-fixture-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    let store: Arc<dyn AuthorizationPolicyStorePort> =
+        Arc::new(InMemoryAuthorizationPolicyStore::new());
+    let administration = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+    );
+    administration
+        .open(
+            principal.clone(),
+            vec![SeparationRule::new(
+                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::MountDefinition,
+            )
+            .unwrap()],
+        )
+        .await
+        .unwrap();
+    let (administration_actions, business_actions): (Vec<_>, Vec<_>) =
+        parity_authorization_actions()
+            .into_iter()
+            .partition(|action| is_administration_action(*action));
+    for (grant_id, actions) in [
+        ("grpc-fixture-business-actions", business_actions),
+        ("grpc-fixture-authorization-admin", administration_actions),
+    ] {
+        administration
+            .issue(
+                &principal,
+                AuthorizationGrant::new(
+                    AuthorizationGrantId::new(grant_id).unwrap(),
+                    principal.id().clone(),
+                    actions,
+                    AuthorizationScope::Global,
+                    (clock.now(), None),
+                    DelegationDepth::none(),
+                    AuthorizationGrantIssuer::direct(principal.clone()),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    let ttl = AuthorizationDecisionTtl::from_seconds(60).unwrap();
+    let authorize = Arc::new(AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+        ttl,
+    ));
+    let gate = TrustedHostAuthorizationGate::new(authorize, principal).unwrap();
+    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock,
+        ttl,
+    ));
+    ParityEmbeddedAuthorization {
+        policy_id,
+        store,
+        gate,
+        continuation,
+    }
+}
+
+fn parity_authorization_actions() -> Vec<AuthorizationAction> {
+    let mut actions: Vec<_> = shared_tools()
+        .into_iter()
+        .map(|tool| match tool.as_str() {
+            "made_get_budget_report" | "made_list_pending_budget_reservations" => {
+                AuthorizationAction::ReadBudget
+            }
+            "made_get_authorization_policy" => AuthorizationAction::ReadAuthorizationPolicy,
+            "made_issue_authorization_grant" => AuthorizationAction::IssueAuthorizationGrant,
+            "made_revoke_authorization_grant" => AuthorizationAction::RevokeAuthorizationGrant,
+            "made_list_authorization_decisions" => AuthorizationAction::ReadAuthorizationDecisions,
+            "made_approve_authorization_operation" => AuthorizationAction::ApproveCeremonyGuard,
+            name => serde_json::from_value(json!(name
+                .strip_prefix("made_")
+                .expect("every shared MCP tool carries the made_ prefix")))
+            .unwrap_or_else(|_| panic!("shared MCP tool `{name}` has no authorization action")),
+        })
+        .collect();
+    // The typed gRPC fixture also serves direct-RPC integration tests. Keep
+    // the policy observed through its public admin RPC byte-for-byte equal on
+    // the embedded parity arm, including capabilities without a shared MCP
+    // tool. These do not count as covered MCP calls below.
+    actions.extend([
+        AuthorizationAction::GetCeremonyDefinition,
+        AuthorizationAction::ListCeremonyDefinitions,
+        AuthorizationAction::MountDefinition,
+        AuthorizationAction::ReserveBudget,
+        AuthorizationAction::ReconcileBudget,
+    ]);
+    actions.sort_unstable();
+    actions.dedup();
+    actions
+}
+
+fn is_administration_action(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::ReadAuthorizationPolicy
+            | AuthorizationAction::IssueAuthorizationGrant
+            | AuthorizationAction::RevokeAuthorizationGrant
+            | AuthorizationAction::ReadAuthorizationDecisions
+    )
+}
+
+fn parity_session_stream(
+    events: Arc<dyn CeremonyEventStorePort>,
+    snapshots: Arc<dyn CeremonySnapshotStorePort>,
+) -> Arc<SessionStream> {
+    Arc::new(SessionStream::new_authorized(
+        events,
+        snapshots,
+        Arc::new(CeremonyEventFanout::new(Vec::new())),
+    ))
+}
+
 impl ParityArms {
     /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
-        Self::over(EmbeddedMade::builder(), None).await
+        let store = Arc::new(InMemoryCeremonyEventStore::new());
+        let stream = parity_session_stream(store.clone(), store.clone());
+        Self::over(
+            EmbeddedMade::builder().with_ceremony_store(store),
+            None,
+            stream,
+        )
+        .await
     }
 
     /// The in-process arm over **the store the local edition ships
@@ -626,11 +790,13 @@ impl ParityArms {
             SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
                 .expect("the durable SQLite ceremony store should open"),
         );
+        let stream = parity_session_stream(store.clone(), store.clone());
         Self::over(
             EmbeddedMade::builder()
                 .with_ceremony_store(store.clone())
                 .with_definition_publications(store),
             Some(directory),
+            stream,
         )
         .await
     }
@@ -638,6 +804,7 @@ impl ParityArms {
     async fn over(
         builder: made_embedded::EmbeddedMadeBuilder,
         store_dir: Option<tempfile::TempDir>,
+        ceremony_stream: Arc<SessionStream>,
     ) -> Self {
         // One memory per arm, not one between them. Both are
         // in-process and equivalent, so each arm recalls what that arm
@@ -672,22 +839,43 @@ impl ParityArms {
                 .with_execution_receipts(wire_receipts.clone()),
         )
         .await;
+        let embedded_authorization = parity_embedded_authorization(ParityClock::shared()).await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
             format!("http://{}", fixture.addr),
             MadeMcpGrpcTlsConfig::disabled(),
         ));
-        let in_process = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(
-            builder
-                .with_step_handler(ParityStepHandler::shared())
-                .with_evidence_source(ParityEvidenceSource::shared())
-                .with_clock(ParityClock::shared())
-                .with_memory(Arc::new(InProcessSessionMemory::new()))
-                .with_council_validators(parity_council_validators())
-                .with_executor(Arc::new(NoopExecutor::new()))
-                .with_artifact_store(local_artifacts.clone())
-                .with_council_journal(local_journal)
-                .with_execution_receipt_store(local_receipts.clone())
-                .build(),
+        let embedded_gate = embedded_authorization.gate.clone();
+        let embedded_policy_id = embedded_authorization.policy_id.clone();
+        let embedded_policy_store = embedded_authorization.store.clone();
+        let embedded_step_continuation = Arc::new(ContinueAcceptedStepClaimUseCase::new(
+            ceremony_stream,
+            embedded_authorization.continuation.clone(),
+            ParityClock::shared(),
+        ));
+        let made = builder
+            .with_step_handler(ParityStepHandler::shared())
+            .with_evidence_source(ParityEvidenceSource::shared())
+            .with_clock(ParityClock::shared())
+            .with_ceremony_search_cursors(CeremonySearchCursorCodec::new(
+                CeremonySearchCursorKey::new([0x5a; 32]),
+                CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture").unwrap(),
+            ))
+            .with_authorization(Arc::new(embedded_gate.clone()))
+            .with_memory(Arc::new(InProcessSessionMemory::new()))
+            .with_council_validators(parity_council_validators())
+            .with_executor(Arc::new(NoopExecutor::new()))
+            .with_artifact_store(local_artifacts.clone())
+            .with_council_journal(local_journal)
+            .with_execution_receipt_store(local_receipts.clone())
+            .build()
+            .with_authorization_policy(embedded_policy_id.clone(), embedded_policy_store.clone());
+        let in_process = MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::with_authorization(
+            made,
+            embedded_gate,
+            ReadAuthorizationPolicyUseCase::new(embedded_policy_id, embedded_policy_store),
+            embedded_step_continuation,
+            local_artifacts.clone(),
+            local_receipts.clone(),
         ));
         Self {
             fixture,
@@ -702,6 +890,8 @@ impl ParityArms {
             council_leases: std::sync::Mutex::new(BTreeMap::new()),
             receipt_stores: vec![wire_receipts, local_receipts],
             receipt_artifacts: vec![wire_artifacts, local_artifacts],
+            opaque_authorization_targets: std::sync::Mutex::new(BTreeMap::new()),
+            artifact_authorizations: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -767,6 +957,7 @@ impl ParityArms {
             wire_arguments["lease"] = wire.clone();
             local_arguments["lease"] = local.clone();
         }
+        self.record_opaque_authorization_targets(id, tool, &wire_arguments, &local_arguments);
         let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
         let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
         if tool == "made_lease_council_events" && !failed(&wire) && !failed(&local) {
@@ -852,6 +1043,25 @@ impl ParityArms {
         (wire, local)
     }
 
+    fn record_opaque_authorization_targets(
+        &self,
+        id: u64,
+        tool: &str,
+        wire_arguments: &Value,
+        local_arguments: &Value,
+    ) {
+        if !is_opaque_authorization_target(tool) {
+            return;
+        }
+        self.opaque_authorization_targets.lock().unwrap().insert(
+            tool.to_owned(),
+            [
+                authorization_expectation(id, tool, wire_arguments),
+                authorization_expectation(id, tool, local_arguments),
+            ],
+        );
+    }
+
     fn artifact_arguments(&self, arguments: &Value) -> (Value, Value) {
         let Some(placeholder) = arguments.get("upload_id").and_then(Value::as_str) else {
             return (arguments.clone(), arguments.clone());
@@ -877,6 +1087,18 @@ impl ParityArms {
 /// envelope or the error envelope, whichever the server built.
 async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Value) -> Value {
     let traceparent = deterministic_traceparent(id);
+    let mut arguments = arguments.clone();
+    let object = arguments
+        .as_object_mut()
+        .expect("parity tool arguments are always objects");
+    let metadata = object
+        .entry("_meta")
+        .or_insert_with(|| json!({}))
+        .as_object_mut()
+        .expect("parity invocation metadata is always an object");
+    metadata
+        .entry("made_request_id")
+        .or_insert_with(|| json!(format!("parity-call-{id}")));
     let request = json!({
         "jsonrpc": "2.0",
         "id": id,
@@ -896,6 +1118,75 @@ async fn call_tool(server: &MadeMcpServer, id: u64, tool: &str, arguments: &Valu
     parsed.get("result").cloned().unwrap_or_else(|| {
         panic!("`{tool}` answered a JSON-RPC error rather than a result: {parsed}")
     })
+}
+
+fn is_opaque_authorization_target(tool: &str) -> bool {
+    matches!(
+        tool,
+        "made_acknowledge_council_events"
+            | "made_release_council_events"
+            | "made_put_artifact_chunk"
+            | "made_commit_artifact_upload"
+            | "made_abort_artifact_upload"
+    )
+}
+
+fn authorization_expectation(id: u64, tool: &str, arguments: &Value) -> (String, String) {
+    let namespace = format!("parity-call-{id}");
+    // The request gate drops optional `null` fields before it derives either
+    // authorization binding. Council leases expose their unset acknowledgement
+    // that way, so reproduce the admitted invocation rather than hashing the
+    // caller's pre-gate JSON.
+    let accepted_arguments = without_unset_fields(arguments);
+    let canonical_arguments = canonical_json(&accepted_arguments);
+    let mut digest = Sha256::new();
+    digest.update(b"made-mcp-v1\0");
+    for field in [
+        namespace.as_bytes(),
+        b"".as_slice(),
+        tool.as_bytes(),
+        canonical_arguments.as_bytes(),
+    ] {
+        digest.update((field.len() as u64).to_be_bytes());
+        digest.update(field);
+    }
+    (
+        ToolTraceContext::authorization_target_digest(tool, &accepted_arguments)
+            .as_str()
+            .to_owned(),
+        format!("made-{:x}", digest.finalize()),
+    )
+}
+
+fn without_unset_fields(value: &Value) -> Value {
+    match value {
+        Value::Object(fields) => Value::Object(
+            fields
+                .iter()
+                .filter(|(_, child)| !child.is_null())
+                .map(|(key, child)| (key.clone(), without_unset_fields(child)))
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(items.iter().map(without_unset_fields).collect()),
+        leaf => leaf.clone(),
+    }
+}
+
+fn canonical_json(value: &Value) -> String {
+    serde_json::to_string(&canonical_value(value)).expect("JSON values always serialize")
+}
+
+fn canonical_value(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_value(value)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(canonical_value).collect()),
+        value => value.clone(),
+    }
 }
 
 /// Give both parity arms the same valid W3C context for each scripted call.
@@ -1220,6 +1511,10 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         ("made_list_ceremony_instances", json!({})),
+        (
+            "made_search_ceremony_instances",
+            json!({ "id_prefix": "parity-", "limit": 100 }),
+        ),
         // What the session left behind, read after it is finished so
         // the stream is whole. The sealed records carry their digests
         // and the payload those digests cover, so a client can verify
@@ -1567,6 +1862,71 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_read_ceremony_events",
             json!({ "ceremony_id": MEMORY_SECOND_ID }),
         ),
+        ("made_get_authorization_policy", json!({})),
+        (
+            "made_issue_authorization_grant",
+            json!({
+                "grant_id": "parity-issued-grant",
+                "grantee_id": "grpc-fixture-host",
+                "actions": ["get_metrics"],
+                "scope": {"kind": "global"},
+                "valid_from": "2026-04-15T12:00:00Z",
+                "delegation_depth": 0,
+                "_meta": {"made_request_id": "parity-admin-issue"},
+            }),
+        ),
+        // Same logical invocation: the transport id changes, while the
+        // explicit request namespace and canonical arguments stay exact.
+        (
+            "made_issue_authorization_grant",
+            json!({
+                "grant_id": "parity-issued-grant",
+                "grantee_id": "grpc-fixture-host",
+                "actions": ["get_metrics"],
+                "scope": {"kind": "global"},
+                "valid_from": "2026-04-15T12:00:00Z",
+                "delegation_depth": 0,
+                "_meta": {"made_request_id": "parity-admin-issue"},
+            }),
+        ),
+        (
+            "made_revoke_authorization_grant",
+            json!({
+                "grant_id": "parity-issued-grant",
+                "reason": "parity retry proof",
+                "_meta": {"made_request_id": "parity-admin-revoke"},
+            }),
+        ),
+        (
+            "made_revoke_authorization_grant",
+            json!({
+                "grant_id": "parity-issued-grant",
+                "reason": "parity retry proof",
+                "_meta": {"made_request_id": "parity-admin-revoke"},
+            }),
+        ),
+        (
+            "made_approve_authorization_operation",
+            json!({
+                "approval_action": "approve_ceremony_guard",
+                "execution_action": "mount_definition",
+                "scope": {"kind": "global"},
+                "target_digest": "b".repeat(64),
+                "_meta": {"made_request_id": "parity-admin-approval"},
+            }),
+        ),
+        // Exact retry must return the same durable approval decision.
+        (
+            "made_approve_authorization_operation",
+            json!({
+                "approval_action": "approve_ceremony_guard",
+                "execution_action": "mount_definition",
+                "scope": {"kind": "global"},
+                "target_digest": "b".repeat(64),
+                "_meta": {"made_request_id": "parity-admin-approval"},
+            }),
+        ),
+        ("made_list_authorization_decisions", json!({"limit": 500})),
     ]);
     calls.extend(execution_receipts::script());
     calls
@@ -1696,6 +2056,26 @@ async fn the_same_session_answers_the_same_over_the_store_the_edition_ships_with
 
 async fn drive_the_whole_session(arms: &ParityArms) {
     let shared = shared_tools();
+    let called = drive_session_script(arms).await;
+    assert_session_is_rich(arms).await;
+    assert_transcript_contains_both_steps(arms).await;
+    assert_denied_decision_is_visible_through_bounded_pages(arms).await;
+
+    let uncovered: Vec<&str> = shared
+        .iter()
+        .filter(|tool| !called.contains(*tool))
+        .map(String::as_str)
+        .collect();
+    assert!(
+        uncovered.is_empty(),
+        "docs/architecture/parity.tsv calls these tools shared and the parity session never \
+         calls them: {uncovered:?}. A shared tool nothing drives is a tool whose two answers \
+         nobody has compared — add it to `session_script`, or say in the file why it is not \
+         shared (ADR-014)."
+    );
+}
+
+async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
     let mut called: BTreeSet<String> = BTreeSet::new();
     let mut ceremony_call_id = 0_u64;
     let mut council_call_id = 10_000_u64;
@@ -1719,7 +2099,24 @@ async fn drive_the_whole_session(arms: &ParityArms) {
             !failed(&in_process),
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
-        assert_same_answer(tool, &over_the_wire, &in_process);
+        if tool == "made_list_authorization_decisions" {
+            assert_authorization_decisions(
+                &over_the_wire,
+                &in_process,
+                &arms.opaque_authorization_targets.lock().unwrap(),
+                &arms.artifact_authorizations.lock().unwrap(),
+            );
+        } else if matches!(tool, "made_get_artifact" | "made_list_artifacts") {
+            assert_artifact_fact_answer(
+                tool,
+                &over_the_wire,
+                &in_process,
+                &arms.opaque_authorization_targets.lock().unwrap(),
+                &mut arms.artifact_authorizations.lock().unwrap(),
+            );
+        } else {
+            assert_same_answer(tool, &over_the_wire, &in_process);
+        }
         execution_receipts::assert_result(tool, &arguments, structured(&in_process));
         if tool == "made_design_ceremony" {
             let yaml = structured(&in_process)["definition_yaml"]
@@ -1733,18 +2130,26 @@ async fn drive_the_whole_session(arms: &ParityArms) {
         }
         called.insert((*tool).to_owned());
     }
+    called
+}
 
+async fn assert_session_is_rich(arms: &ParityArms) {
     // The session really was as rich as it claims: a collection with
     // nothing in it cannot disagree, and two empty answers would agree
     // about nothing at all.
-    let session = call_tool(
-        &arms.in_process,
-        100,
+    let (wire_session, embedded_session) = arms
+        .call(
+            100,
+            "made_get_ceremony_instance",
+            &json!({ "ceremony_id": SESSION_ID }),
+        )
+        .await;
+    assert_same_answer(
         "made_get_ceremony_instance",
-        &json!({ "ceremony_id": SESSION_ID }),
-    )
-    .await;
-    let session = structured(&session);
+        &wire_session,
+        &embedded_session,
+    );
+    let session = structured(&embedded_session);
     assert_eq!(session["current_state"], json!("DONE"), "{session:#}");
     assert_eq!(session["steps"].as_array().map(Vec::len), Some(2));
     assert_eq!(session["context"]["last_step"], "work");
@@ -1763,7 +2168,9 @@ async fn drive_the_whole_session(arms: &ParityArms) {
         .expect("a session carries its table")
         .iter()
         .any(|item| item["responses"][0]["evidence_pack"].is_object()));
+}
 
+async fn assert_transcript_contains_both_steps(arms: &ParityArms) {
     // Both steps are in the transcript, and one of them is the step
     // the host claimed and completed itself. Until the transcript
     // became a fold of `StepCompleted` (A5) it was a store the two
@@ -1793,18 +2200,504 @@ async fn drive_the_whole_session(arms: &ParityArms) {
         ["work", "handoff"],
         "{transcript:#}"
     );
+}
 
-    let uncovered: Vec<&str> = shared
-        .iter()
-        .filter(|tool| !called.contains(*tool))
-        .map(String::as_str)
-        .collect();
+/// Compare an artifact fact while retaining the authorization that admitted
+/// its original commit.
+///
+/// The stores mint different upload IDs, so the commit authorization has three
+/// derived fields that legitimately differ. This checks both complete objects
+/// in place, binds each to its arm's exact admitted commit arguments, and saves
+/// them for byte-for-byte verification against the public decision ledger.
+fn assert_artifact_fact_answer(
+    tool: &str,
+    wire_answer: &Value,
+    embedded_answer: &Value,
+    opaque_targets: &BTreeMap<String, [(String, String); 2]>,
+    captured: &mut Vec<[Value; 2]>,
+) {
+    for answer in [wire_answer, embedded_answer] {
+        assert_eq!(answer["isError"], json!(false));
+        let content = answer["content"]
+            .as_array()
+            .expect("artifact answers carry MCP content");
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], json!("text"));
+        let rendered: Value = serde_json::from_str(
+            content[0]["text"]
+                .as_str()
+                .expect("artifact answers carry a JSON text projection"),
+        )
+        .unwrap();
+        assert_eq!(
+            rendered, answer["structuredContent"],
+            "the artifact text projection must preserve its complete authorization evidence"
+        );
+    }
+
+    let wire_records = artifact_fact_records(tool, structured(wire_answer));
+    let embedded_records = artifact_fact_records(tool, structured(embedded_answer));
+    assert_eq!(wire_records.len(), embedded_records.len());
+    if tool == "made_list_artifacts" {
+        assert_eq!(
+            structured(wire_answer)["next_cursor"],
+            structured(embedded_answer)["next_cursor"]
+        );
+    }
+    let expectations = opaque_targets
+        .get("made_commit_artifact_upload")
+        .expect("the artifact fact follows the recorded opaque commit invocation");
+    for (wire, embedded) in wire_records.into_iter().zip(embedded_records) {
+        assert_eq!(wire["artifact"], embedded["artifact"]);
+        assert_eq!(wire["tombstone"], embedded["tombstone"]);
+        let wire_authorization = wire
+            .get("authorization")
+            .expect("new artifact facts retain commit authorization")
+            .clone();
+        let embedded_authorization = embedded
+            .get("authorization")
+            .expect("new artifact facts retain commit authorization")
+            .clone();
+        assert_artifact_authorization_pair(
+            &wire_authorization,
+            &embedded_authorization,
+            expectations,
+        );
+        captured.push([wire_authorization, embedded_authorization]);
+    }
+}
+
+fn artifact_fact_records<'a>(tool: &str, answer: &'a Value) -> Vec<&'a Value> {
+    match tool {
+        "made_get_artifact" => vec![answer],
+        "made_list_artifacts" => answer["artifacts"]
+            .as_array()
+            .expect("artifact listing carries records")
+            .iter()
+            .collect(),
+        _ => panic!("`{tool}` is not an artifact fact reader"),
+    }
+}
+
+fn assert_artifact_authorization_pair(
+    wire: &Value,
+    embedded: &Value,
+    expectations: &[(String, String); 2],
+) {
+    for (authorization, (target_digest, request_id)) in
+        [(wire, &expectations[0]), (embedded, &expectations[1])]
+    {
+        let fields = authorization
+            .as_object()
+            .expect("artifact authorization is an object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            fields,
+            BTreeSet::from([
+                "action",
+                "admitted_at",
+                "decision_id",
+                "policy_version",
+                "principal_id",
+                "request_id",
+                "scope",
+                "target_digest",
+                "valid_until",
+            ])
+        );
+        assert_eq!(authorization["action"], json!("commit_artifact_upload"));
+        assert_eq!(authorization["target_digest"], json!(target_digest));
+        assert_eq!(authorization["request_id"], json!(request_id));
+        assert_lower_hex(authorization["decision_id"].as_str().unwrap(), 64);
+    }
+    for field in [
+        "action",
+        "admitted_at",
+        "policy_version",
+        "principal_id",
+        "scope",
+        "valid_until",
+    ] {
+        assert_eq!(
+            wire[field], embedded[field],
+            "persisted artifact authorization field `{field}` diverged"
+        );
+    }
+    for field in ["decision_id", "request_id", "target_digest"] {
+        assert_ne!(
+            wire[field], embedded[field],
+            "store-bound artifact authorization field `{field}` unexpectedly matched"
+        );
+    }
+}
+
+fn assert_persisted_artifact_authorizations(
+    captured: &[[Value; 2]],
+    wire_decisions: &[Value],
+    embedded_decisions: &[Value],
+) {
     assert!(
-        uncovered.is_empty(),
-        "docs/architecture/parity.tsv calls these tools shared and the parity session never \
-         calls them: {uncovered:?}. A shared tool nothing drives is a tool whose two answers \
-         nobody has compared — add it to `session_script`, or say in the file why it is not \
-         shared (ADR-014)."
+        !captured.is_empty(),
+        "F4 must observe the commit authorization through artifact readers"
+    );
+    for arm in 0..2 {
+        let decisions = if arm == 0 {
+            wire_decisions
+        } else {
+            embedded_decisions
+        };
+        let first = &captured[0][arm];
+        for pair in captured {
+            let authorization = &pair[arm];
+            assert_eq!(
+                authorization, first,
+                "get/list must preserve the original authorization byte-for-byte within one arm"
+            );
+            let decision = decisions
+                .iter()
+                .find(|decision| decision["decision_id"] == authorization["decision_id"])
+                .expect("persisted artifact authorization links to its public decision");
+            assert_eq!(authorization["request_id"], decision["request_id"]);
+            assert_eq!(
+                authorization["principal_id"],
+                decision["principal"]["principal_id"]
+            );
+            assert_eq!(authorization["action"], decision["action"]);
+            assert_eq!(authorization["scope"], decision["scope"]);
+            assert_eq!(authorization["target_digest"], decision["target_digest"]);
+            assert_eq!(authorization["policy_version"], decision["policy_version"]);
+            assert_eq!(authorization["admitted_at"], decision["decided_at"]);
+            assert_eq!(authorization["valid_until"], decision["valid_until"]);
+        }
+    }
+}
+
+/// Compare the complete authorization ledger without erasing its bindings.
+///
+/// Every record must be byte-for-byte equal across the two arms except the
+/// five operations whose admitted arguments contain a lease or upload ID
+/// minted independently by each store. For those five records, recompute and
+/// verify each arm's target digest and request identity from its actual
+/// admitted arguments, compare every non-derived field exactly, and require
+/// the three derived IDs to differ. No authorization field is normalized or
+/// removed from either record.
+fn assert_authorization_decisions(
+    wire_answer: &Value,
+    embedded_answer: &Value,
+    opaque_targets: &BTreeMap<String, [(String, String); 2]>,
+    artifact_authorizations: &[[Value; 2]],
+) {
+    for answer in [wire_answer, embedded_answer] {
+        let rendered: Value = serde_json::from_str(
+            answer["content"][0]["text"]
+                .as_str()
+                .expect("authorization decisions carry a text projection"),
+        )
+        .unwrap();
+        assert_eq!(
+            rendered, answer["structuredContent"],
+            "the text projection must preserve every authorization field"
+        );
+        assert!(
+            answer["structuredContent"]["next_after_decision_id"].is_null(),
+            "the 500-row F4 page must contain the complete bounded fixture history"
+        );
+    }
+    let mut wire = wire_answer["structuredContent"]["decisions"]
+        .as_array()
+        .expect("wire decisions are an array")
+        .clone();
+    let mut embedded = embedded_answer["structuredContent"]["decisions"]
+        .as_array()
+        .expect("embedded decisions are an array")
+        .clone();
+    assert_eq!(wire.len(), embedded.len());
+    assert_persisted_artifact_authorizations(
+        artifact_authorizations,
+        wire.as_slice(),
+        embedded.as_slice(),
+    );
+
+    for (tool, expectations) in opaque_targets {
+        let action = tool
+            .strip_prefix("made_")
+            .expect("opaque target tools use the made_ prefix");
+        let wire_decision = take_one_decision(&mut wire, action);
+        let embedded_decision = take_one_decision(&mut embedded, action);
+        assert_bound_opaque_decision(&wire_decision, action, &expectations[0], &expectations[1]);
+        assert_bound_opaque_decision(
+            &embedded_decision,
+            action,
+            &expectations[1],
+            &expectations[0],
+        );
+        for field in [
+            "accepted_work_decision_id",
+            "action",
+            "approval_decision_id",
+            "approved_action",
+            "decided_at",
+            "denial_reason",
+            "grant_id",
+            "outcome",
+            "policy_version",
+            "principal",
+            "scope",
+            "valid_until",
+        ] {
+            assert_eq!(
+                wire_decision[field], embedded_decision[field],
+                "opaque-bound decision field `{field}` diverged for `{action}`"
+            );
+        }
+        assert_ne!(wire_decision["request_id"], embedded_decision["request_id"]);
+        assert_ne!(
+            wire_decision["target_digest"],
+            embedded_decision["target_digest"]
+        );
+        assert_ne!(
+            wire_decision["decision_id"],
+            embedded_decision["decision_id"]
+        );
+    }
+
+    if wire != embedded {
+        let wire_by_request = decisions_by_request(&wire);
+        let embedded_by_request = decisions_by_request(&embedded);
+        let differing = wire_by_request
+            .keys()
+            .chain(embedded_by_request.keys())
+            .collect::<BTreeSet<_>>()
+            .into_iter()
+            .filter_map(|request_id| {
+                let wire = wire_by_request.get(request_id);
+                let embedded = embedded_by_request.get(request_id);
+                (wire != embedded).then(|| {
+                    json!({
+                        "request_id": request_id,
+                        "action": wire.or(embedded).map(|decision| &decision["action"]),
+                        "different_fields": differing_decision_fields(wire, embedded),
+                    })
+                })
+            })
+            .collect::<Vec<_>>();
+        panic!("decisions without store-minted opaque inputs diverged: {differing:#?}");
+    }
+}
+
+fn differing_decision_fields(
+    wire: Option<&&Value>,
+    embedded: Option<&&Value>,
+) -> Vec<&'static str> {
+    let fields = [
+        "accepted_work_decision_id",
+        "action",
+        "approval_decision_id",
+        "approved_action",
+        "decided_at",
+        "decision_id",
+        "denial_reason",
+        "grant_id",
+        "outcome",
+        "policy_version",
+        "principal",
+        "request_id",
+        "scope",
+        "target_digest",
+        "valid_until",
+    ];
+    fields
+        .into_iter()
+        .filter(|field| wire.map(|value| &value[*field]) != embedded.map(|value| &value[*field]))
+        .collect()
+}
+
+fn decisions_by_request(decisions: &[Value]) -> BTreeMap<&str, &Value> {
+    decisions
+        .iter()
+        .map(|decision| {
+            (
+                decision["request_id"]
+                    .as_str()
+                    .expect("authorization decisions carry request IDs"),
+                decision,
+            )
+        })
+        .collect()
+}
+
+fn take_one_decision(decisions: &mut Vec<Value>, action: &str) -> Value {
+    let matches = decisions
+        .iter()
+        .enumerate()
+        .filter(|(_, decision)| decision["action"] == json!(action))
+        .map(|(index, _)| index)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        matches.len(),
+        1,
+        "F4 must bind exactly one `{action}` invocation to its opaque input"
+    );
+    decisions.remove(matches[0])
+}
+
+fn assert_bound_opaque_decision(
+    decision: &Value,
+    action: &str,
+    (target_digest, request_id): &(String, String),
+    other_expectation: &(String, String),
+) {
+    let fields = decision
+        .as_object()
+        .expect("authorization decision is an object")
+        .keys()
+        .map(String::as_str)
+        .collect::<BTreeSet<_>>();
+    assert_eq!(
+        fields,
+        BTreeSet::from([
+            "accepted_work_decision_id",
+            "action",
+            "approval_decision_id",
+            "approved_action",
+            "decided_at",
+            "decision_id",
+            "denial_reason",
+            "grant_id",
+            "outcome",
+            "policy_version",
+            "principal",
+            "request_id",
+            "scope",
+            "target_digest",
+            "valid_until",
+        ])
+    );
+    assert_eq!(decision["action"], json!(action));
+    assert_eq!(
+        decision["target_digest"],
+        json!(target_digest),
+        "`{action}` must bind the authorization decision to its exact invocation target; other arm expected {other_expectation:?}"
+    );
+    assert_eq!(
+        decision["request_id"],
+        json!(request_id),
+        "`{action}` must bind the authorization decision to its exact invocation identity"
+    );
+    assert_lower_hex(decision["target_digest"].as_str().unwrap(), 64);
+    assert_lower_hex(decision["decision_id"].as_str().unwrap(), 64);
+    let request_id = decision["request_id"].as_str().unwrap();
+    assert!(request_id.starts_with("made-"));
+    assert_lower_hex(&request_id[5..], 64);
+}
+
+fn assert_lower_hex(value: &str, length: usize) {
+    assert_eq!(value.len(), length);
+    assert!(
+        value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)),
+        "`{value}` is not canonical lowercase hex"
+    );
+}
+
+async fn assert_denied_decision_is_visible_through_bounded_pages(arms: &ParityArms) {
+    let revoke = json!({
+        "grant_id": "grpc-fixture-business-actions",
+        "reason": "prove denied decisions through the public paginated reader",
+        "_meta": {"made_request_id": "parity-revoke-business-actions"},
+    });
+    let (wire, embedded) = arms
+        .call(200, "made_revoke_authorization_grant", &revoke)
+        .await;
+    assert!(!failed(&wire), "gRPC revocation failed: {wire:#}");
+    assert!(
+        !failed(&embedded),
+        "embedded revocation failed: {embedded:#}"
+    );
+    assert_same_answer("made_revoke_authorization_grant", &wire, &embedded);
+
+    let denied_arguments = json!({
+        "_meta": {"made_request_id": "parity-denied-get-metrics"},
+    });
+    let (wire, embedded) = arms.call(201, "made_get_metrics", &denied_arguments).await;
+    assert!(
+        failed(&wire),
+        "revoked gRPC business grant still admitted get_metrics: {wire:#}"
+    );
+    assert!(
+        failed(&embedded),
+        "revoked embedded business grant still admitted get_metrics: {embedded:#}"
+    );
+    assert_same_answer("made_get_metrics", &wire, &embedded);
+
+    let wire_denial = denied_decision_through_bounded_pages(&arms.over_the_wire, "wire", 202).await;
+    let embedded_denial =
+        denied_decision_through_bounded_pages(&arms.in_process, "embedded", 402).await;
+    assert_eq!(
+        wire_denial, embedded_denial,
+        "the denied operation precedes the opaque store-minted inputs and must remain exact"
+    );
+}
+
+async fn denied_decision_through_bounded_pages(
+    server: &MadeMcpServer,
+    label: &str,
+    first_call_id: u64,
+) -> Value {
+    let mut after: Option<String> = None;
+    let mut total_seen = 0_usize;
+    let mut denied_actions = BTreeSet::new();
+    for page_number in 0_u64..512 {
+        let mut arguments = json!({
+            "limit": 2,
+            "_meta": {
+                "made_request_id": format!("parity-decision-page-{label}-{page_number}")
+            },
+        });
+        if let Some(cursor) = &after {
+            arguments["after_decision_id"] = json!(cursor);
+        }
+        let answer = call_tool(
+            server,
+            first_call_id + page_number,
+            "made_list_authorization_decisions",
+            &arguments,
+        )
+        .await;
+        assert!(!failed(&answer), "{label} decision page failed: {answer:#}");
+        let page = structured(&answer);
+        let decisions = page["decisions"]
+            .as_array()
+            .expect("decision page carries an array");
+        total_seen += decisions.len();
+        denied_actions.extend(
+            decisions
+                .iter()
+                .filter(|decision| decision["outcome"] == json!("deny"))
+                .filter_map(|decision| decision["action"].as_str().map(str::to_owned)),
+        );
+        assert!(
+            decisions.len() <= 2,
+            "the public reader exceeded its page bound"
+        );
+        if let Some(decision) = decisions.iter().find(|decision| {
+            decision["action"] == json!("get_metrics") && decision["outcome"] == json!("deny")
+        }) {
+            return decision.clone();
+        }
+        let next = page["next_after_decision_id"].as_str().map(str::to_owned);
+        if next.is_none() {
+            break;
+        }
+        assert_ne!(next, after, "decision cursor must advance monotonically");
+        after = next;
+    }
+    panic!(
+        "bounded {label} authorization-decision pages saw {total_seen} rows and denied actions \
+         {denied_actions:?}, but never exposed denied get_metrics"
     );
 }
 
@@ -2749,7 +3642,7 @@ async fn the_parity_session_costs_seconds_not_minutes() {
 }
 
 #[tokio::test]
-async fn omitted_malformed_and_wrong_completion_fences_are_refused_on_both_backends() {
+async fn invalid_completion_fences_are_refused_and_an_exact_retry_is_idempotent() {
     let arms = ParityArms::start().await;
     let ceremony_id = "parity-fence-contract";
     let (wire, local) = arms.call(4000, "made_start_ceremony", &json!({"ceremony_id": ceremony_id, "definition_yaml": PUBLISHED_CEREMONY, "actor_id": "operator", "actor_kind": "service"})).await;
@@ -2786,7 +3679,19 @@ async fn omitted_malformed_and_wrong_completion_fences_are_refused_on_both_backe
     let (wire, local) = arms.call(4020, "made_complete_ceremony_step", &args).await;
     assert_eq!(wire, local);
     assert!(!failed(&wire), "{wire}");
+    let completed = arms
+        .call(4022, "made_read_ceremony_events", &history_args)
+        .await;
     let (wire, local) = arms.call(4021, "made_complete_ceremony_step", &args).await;
     assert_eq!(wire, local);
-    assert!(failed(&wire));
+    assert!(
+        !failed(&wire),
+        "an exact completion retry must be idempotent: {wire}"
+    );
+    assert_eq!(
+        arms.call(4022, "made_read_ceremony_events", &history_args)
+            .await,
+        completed,
+        "an exact completion retry must not append another event"
+    );
 }

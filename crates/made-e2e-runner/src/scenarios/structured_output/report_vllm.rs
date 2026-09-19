@@ -2,14 +2,12 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::run_council_decision_request::Selector as RunCouncilSelector;
 use made_proto::v1::{
     AgentSummary, CreateCouncilRequest, OutputContract, OutputFormat, RegisterAgentRequest,
     RegisterContractRequest, RunCouncilDecisionRequest, ValidationMode,
 };
 use prost_types::value::Kind as PbKind;
-use tonic::transport::Channel;
 use tonic::Code;
 use tracing::{info, warn};
 
@@ -25,7 +23,7 @@ use super::super::pb_struct_from_pairs;
 /// follow-up.
 #[allow(clippy::too_many_lines)] // single end-to-end scenario; splitting fragments the assertion
 pub(crate) async fn verify_structured_output_against_vllm_kind(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     const CONTRACT_ID: &str = "scenario-9-report-vllm";
     // Must match the id pattern the CreateCouncil handler mints
@@ -48,7 +46,7 @@ pub(crate) async fn verify_structured_output_against_vllm_kind(
             contract: Some(OutputContract {
                 contract_id: CONTRACT_ID.to_owned(),
                 format: OutputFormat::JsonObject as i32,
-                fields: std::collections::HashMap::new(),
+                fields: std::collections::BTreeMap::new(),
                 json_schema: schema_body.clone(),
             }),
         })

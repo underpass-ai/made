@@ -11,6 +11,8 @@ use super::{
     AcceptChildCompletionInput, AcceptChildCompletionUseCase, PrepareCeremonyChildrenUseCase,
     RecoverCeremonyChildrenRound,
 };
+use crate::authorization::ContinueAcceptedCeremonyWorkUseCase;
+use crate::services::AuthorizationOperationScope;
 use crate::services::SessionStream;
 
 mod recovery_effect;
@@ -31,6 +33,7 @@ pub struct RecoverCeremonyChildrenUseCase {
     accept: Arc<AcceptChildCompletionUseCase>,
     clock: Arc<dyn ClockPort>,
     consumer: CeremonyEventConsumer,
+    authorization_continuation: Option<Arc<ContinueAcceptedCeremonyWorkUseCase>>,
 }
 
 impl RecoverCeremonyChildrenUseCase {
@@ -52,7 +55,17 @@ impl RecoverCeremonyChildrenUseCase {
             accept,
             clock,
             consumer,
+            authorization_continuation: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_authorization_continuation(
+        mut self,
+        continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    ) -> Self {
+        self.authorization_continuation = Some(continuation);
+        self
     }
 
     pub async fn execute(
@@ -84,7 +97,7 @@ impl RecoverCeremonyChildrenUseCase {
                 break;
             };
 
-            let effect = self.process(&positioned.record).await;
+            let effect = Box::pin(self.process(&positioned.record, lease.lease_id())).await;
             match effect {
                 Ok(RecoveryEffect::PlanRecovered) => round.recovered_plans += 1,
                 Ok(RecoveryEffect::CompletionAccepted) => round.accepted_completions += 1,
@@ -132,6 +145,44 @@ impl RecoverCeremonyChildrenUseCase {
     async fn process(
         &self,
         record: &made_core::entities::AuditRecord,
+        lease_id: &CeremonyEventCursorLeaseId,
+    ) -> Result<RecoveryEffect, DomainError> {
+        // A root completion has no child-recovery effect. Classify it before
+        // asking for an accepted-work continuation: historical root events
+        // predate authorization evidence and must remain readable unchanged.
+        if matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_)))
+            && self
+                .stream
+                .load(record.ceremony_id())
+                .await?
+                .instance
+                .lineage()
+                .is_none()
+        {
+            return Ok(RecoveryEffect::Skipped);
+        }
+        if let Some(continuation) = self.authorization_continuation.as_ref().filter(|_| {
+            crate::services::AuthorizationOperationScope::current().is_none()
+                && recovery_requires_authorization(record)
+        }) {
+            let request_id = made_core::value_objects::AuthorizationRequestId::new(format!(
+                "ceremony-recovery:{}:{}",
+                record.event_id().as_str(),
+                lease_id.as_str()
+            ))?;
+            let operation = continuation.execute(record, request_id).await?;
+            return Box::pin(AuthorizationOperationScope::run(
+                operation,
+                self.process_authorized(record),
+            ))
+            .await;
+        }
+        self.process_authorized(record).await
+    }
+
+    async fn process_authorized(
+        &self,
+        record: &made_core::entities::AuditRecord,
     ) -> Result<RecoveryEffect, DomainError> {
         match record.event() {
             Some(CeremonyEvent::ChildSpawnPlanned(event)) => {
@@ -167,6 +218,17 @@ impl RecoverCeremonyChildrenUseCase {
     pub fn consumer(&self) -> &CeremonyEventConsumer {
         &self.consumer
     }
+}
+
+fn recovery_requires_authorization(record: &made_core::entities::AuditRecord) -> bool {
+    matches!(
+        record.event(),
+        Some(
+            CeremonyEvent::ChildSpawnPlanned(_)
+                | CeremonyEvent::ChildSpawnPlanAdopted(_)
+                | CeremonyEvent::CeremonyCompleted(_)
+        )
+    )
 }
 
 impl std::fmt::Debug for RecoverCeremonyChildrenUseCase {

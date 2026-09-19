@@ -28,4 +28,9 @@ impl CloseCeremonyInterventionInput {
             role_kind,
         }
     }
+
+    #[must_use]
+    pub const fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
 }

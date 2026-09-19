@@ -1,0 +1,85 @@
+{
+  "schema_version": 3,
+  "record": {
+    "event_id": "e1",
+    "event_type": "step_started",
+    "ceremony_id": "ceremony-1",
+    "definition_name": "planning_ceremony",
+    "definition_version": "1.0",
+    "sequence": 1,
+    "occurred_at": "2026-07-29T09:00:00Z",
+    "actor": {
+      "actor_id": "engineer-1",
+      "kind": "human",
+      "role_id": null
+    },
+    "correlation_id": null,
+    "causation_id": null,
+    "trace_id": null,
+    "event_schema_version": 2,
+    "event": {
+      "type": "step_started",
+      "step_id": "draft",
+      "state_iteration": 1,
+      "iteration": 1,
+      "attempt": 1,
+      "lease": {
+        "owner_id": "host-1",
+        "idempotency_key": "key-1",
+        "acquired_at": "2026-07-29T09:00:00Z",
+        "expires_at": "2026-07-29T10:00:00Z"
+      },
+      "started_by": "author",
+      "started_at": "2026-07-29T09:00:00Z"
+    },
+    "previous_record_hash": null,
+    "record_hash": [
+      11,
+      80,
+      190,
+      70,
+      113,
+      125,
+      117,
+      12,
+      11,
+      79,
+      244,
+      66,
+      48,
+      15,
+      97,
+      63,
+      43,
+      33,
+      112,
+      79,
+      25,
+      4,
+      23,
+      92,
+      80,
+      202,
+      196,
+      80,
+      11,
+      235,
+      7,
+      71
+    ]
+  },
+  "authorization": {
+    "decision_id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "request_id": "request-1",
+    "principal_id": "principal-1",
+    "action": "run_ceremony_step",
+    "scope": {
+      "kind": "ceremony",
+      "ceremony_id": "ceremony-1"
+    },
+    "target_digest": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "policy_version": 7,
+    "admitted_at": "2026-07-29T08:59:00Z",
+    "valid_until": "2026-07-29T09:05:00Z"
+  }
+}

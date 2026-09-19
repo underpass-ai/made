@@ -20,6 +20,7 @@ mod definition_publication;
 mod event_cursor;
 mod event_store;
 mod execution_receipt_store;
+mod instance_index;
 mod legacy_snapshot_source;
 #[cfg(test)]
 mod legacy_store_fixture;

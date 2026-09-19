@@ -6,15 +6,19 @@
 
 pub(crate) mod error;
 mod keys;
+mod stored_authorization_policy_state;
 mod stored_ceremony;
 mod stored_publication;
 
+pub use authorization_policy_store::SqliteAuthorizationPolicyStore;
 pub use budget_ledger_store::SqliteBudgetLedgerStore;
 pub use ceremony_store::SqliteCeremonyStore;
 pub use session_memory::SqliteSessionMemory;
+pub(in crate::sqlite) use stored_authorization_policy_state::StoredAuthorizationPolicyState;
 pub(in crate::sqlite) use stored_ceremony::StoredCeremony;
 pub(in crate::sqlite) use stored_publication::StoredPublication;
 
+mod authorization_policy_store;
 mod budget_ledger_store;
 mod ceremony_store;
 mod session_memory;

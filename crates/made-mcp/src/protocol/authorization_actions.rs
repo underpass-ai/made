@@ -1,0 +1,101 @@
+// This boundary list keeps grpc-only discovery independent from made-core.
+// Embedded builds check that every advertised action is a domain action.
+pub(super) const GRANT_ACTIONS: &[&str] = &[
+    "get_ceremony_instance",
+    "list_ceremony_instances",
+    "search_ceremony_instances",
+    "generate_ceremony_report",
+    "read_ceremony_events",
+    "stream_ceremony",
+    "pull_ceremony_events",
+    "verify_ceremony_journal",
+    "get_ceremony_transcript",
+    "get_ceremony_definition",
+    "list_ceremony_definitions",
+    "mount_definition",
+    "validate_ceremony_draft",
+    "explain_ceremony_draft",
+    "design_ceremony",
+    "diff_ceremony_definitions",
+    "publish_ceremony_definition",
+    "run_ceremony",
+    "start_ceremony",
+    "start_published_ceremony",
+    "run_ceremony_step",
+    "claim_ceremony_step",
+    "complete_ceremony_step",
+    "get_execution_receipt",
+    "inspect_execution_recovery",
+    "complete_execution_receipt",
+    "adopt_execution_receipt",
+    "prepare_ceremony_children",
+    "accept_child_completion",
+    "recover_ceremony_children",
+    "apply_ceremony_transition",
+    "enforce_ceremony_deadlines",
+    "bind_ceremony_participants",
+    "pause_ceremony",
+    "resume_ceremony",
+    "cancel_ceremony",
+    "approve_ceremony_guard",
+    "defer_ceremony_guard",
+    "request_ceremony_intervention",
+    "respond_to_ceremony_intervention",
+    "close_ceremony_intervention",
+    "collect_ceremony_evidence",
+    "assert_ceremony_reason",
+    "begin_artifact_upload",
+    "put_artifact_chunk",
+    "commit_artifact_upload",
+    "abort_artifact_upload",
+    "get_artifact",
+    "list_artifacts",
+    "read_artifact_chunk",
+    "tombstone_artifact",
+    "reserve_budget",
+    "reconcile_budget",
+    "read_budget",
+    "deliberate",
+    "stream_deliberation",
+    "get_deliberation_result",
+    "orchestrate",
+    "process_trigger_event",
+    "run_council_decision",
+    "create_council",
+    "list_councils",
+    "delete_council",
+    "register_agent",
+    "unregister_agent",
+    "register_contract",
+    "list_contracts",
+    "delete_contract",
+    "read_council_events",
+    "get_council_event_cursor",
+    "lease_council_events",
+    "acknowledge_council_events",
+    "release_council_events",
+    "get_status",
+    "get_metrics",
+    "read_authorization_policy",
+    "issue_authorization_grant",
+    "revoke_authorization_grant",
+    "read_authorization_decisions",
+];
+
+#[cfg(all(test, feature = "embedded"))]
+mod tests {
+    use super::GRANT_ACTIONS;
+    use made_core::value_objects::AuthorizationAction;
+
+    #[test]
+    fn advertised_authorization_actions_are_recognized_by_the_domain() {
+        for action in GRANT_ACTIONS {
+            let parsed: AuthorizationAction =
+                serde_json::from_value(serde_json::json!(action)).unwrap();
+            assert_eq!(
+                serde_json::to_value(parsed).unwrap(),
+                serde_json::json!(action)
+            );
+        }
+    }
+}

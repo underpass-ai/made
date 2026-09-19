@@ -6,11 +6,16 @@ The MADE bundle gives Codex and Claude Code setup, design and execution skills
 plus one local MCP server backed by SQLite. The host supplies the agents and
 tools; MADE coordinates their claims, results and human decisions.
 
-## Install the 0.6.0 release
+## Install the current stable release
 
 **These stable routes require the 0.6.0 assets to be public and `marketplace`
 to have advanced to that release.** The old v0.5.0 marketplace snapshot is
 named `underpass` and cannot provide `made@made`.
+
+This checkout's `0.7.0-rc.1` manifest is a source candidate. It does not make
+0.7.0-rc.1 a published release or move the stable catalogue away from 0.6.0.
+Use the candidate route below until matching assets and catalogue pointers are
+published.
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
@@ -40,10 +45,12 @@ codex plugin marketplace add /absolute/path/to/made
 codex plugin add made@made
 ```
 
-The setup skill verifies the explicit candidate instead of downloading an
-asset that does not exist yet. Claude's catalogue source pins the immutable
-release tag; before that tag exists, use manual MCP registration with the
-source-built binary or this checkout's launcher and `MADE_MCP_BIN`.
+The setup skill verifies that the explicit candidate matches this checkout's
+manifest instead of downloading an asset that does not exist yet. Claude's
+catalogue source pins the immutable release tag; before that tag exists, use
+manual MCP registration with the source-built binary or this checkout's
+launcher and `MADE_MCP_BIN`. Do not present that candidate as an installed or
+downloaded stable release.
 
 ## Runtime
 
@@ -55,6 +62,21 @@ SQLite file. On POSIX the default is
 on native Windows it is `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`
 (with a `%USERPROFILE%\.local\state` fallback if `LOCALAPPDATA` is absent).
 A catalogue rename does not rename that data directory.
+
+Embedded startup also requires `MADE_AUTH_POLICY_ID` and
+`MADE_AUTH_TRUSTED_HOST_ID` in the MCP launch environment. Before the first
+start, bootstrap that exact store explicitly:
+
+```bash
+made-mcp bootstrap-authorization "$MADE_MCP_STORE_PATH" \
+  --policy-id "$MADE_AUTH_POLICY_ID" \
+  --trusted-host-id "$MADE_AUTH_TRUSTED_HOST_ID"
+```
+
+Bootstrap is idempotent for the same values. It creates the administrative
+owner boundary; business capabilities still require explicit grants. The
+launcher refuses missing authorization configuration and never creates an
+anonymous owner or a replacement store.
 
 The included `.mcp.json` points to `scripts/run-embedded-mcp.sh`. On native
 Windows without Bash, replace that command in the existing `made` MCP

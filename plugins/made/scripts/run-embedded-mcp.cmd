@@ -75,6 +75,30 @@ exit /b 2
 
 :havePath
 
+if "%MADE_AUTH_POLICY_ID%"=="" goto :missingAuthorization
+if "%MADE_AUTH_TRUSTED_HOST_ID%"=="" goto :missingAuthorization
+goto :authorizationReady
+
+:missingAuthorization
+echo MADE plugin: authorization is not configured. 1>&2
+echo MADE plugin: set MADE_AUTH_POLICY_ID and MADE_AUTH_TRUSTED_HOST_ID in the MCP launch environment. 1>&2
+echo MADE plugin: then run made-mcp bootstrap-authorization "%MADE_MCP_STORE_PATH%" --policy-id POLICY_ID --trusted-host-id TRUSTED_HOST_ID 1>&2
+exit /b 2
+
+:authorizationReady
+
+if "%MADE_CEREMONY_STORE_ID%"=="" goto :missingSearchCursor
+if "%MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingSearchCursor
+goto :searchCursorReady
+
+:missingSearchCursor
+echo MADE plugin: persistent search cursor configuration is missing. 1>&2
+echo MADE plugin: set MADE_CEREMONY_STORE_ID and MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment. 1>&2
+echo MADE plugin: preserve the store id and 32-byte hexadecimal key across restarts and updates; run made-setup for instructions. 1>&2
+exit /b 2
+
+:searchCursorReady
+
 rem No %* — the launcher starts the MCP server and nothing else. The binary
 rem reads a leading argument as a maintenance command, so forwarding whatever
 rem a host happened to pass would exit 2 instead of serving, and only here.

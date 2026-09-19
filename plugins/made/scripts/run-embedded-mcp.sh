@@ -75,4 +75,19 @@ if command -v cygpath >/dev/null 2>&1; then
   export MADE_MCP_STORE_PATH
 fi
 
+if [[ -z "${MADE_AUTH_POLICY_ID:-}" || -z "${MADE_AUTH_TRUSTED_HOST_ID:-}" ]]; then
+  echo "MADE plugin: authorization is not configured." >&2
+  echo "MADE plugin: set MADE_AUTH_POLICY_ID and MADE_AUTH_TRUSTED_HOST_ID in the MCP launch environment." >&2
+  echo "MADE plugin: then bootstrap this store explicitly:" >&2
+  echo "MADE plugin:   made-mcp bootstrap-authorization '${MADE_MCP_STORE_PATH}' --policy-id POLICY_ID --trusted-host-id TRUSTED_HOST_ID" >&2
+  exit 2
+fi
+
+if [[ -z "${MADE_CEREMONY_STORE_ID:-}" || -z "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" ]]; then
+  echo "MADE plugin: persistent search cursor configuration is missing." >&2
+  echo "MADE plugin: set MADE_CEREMONY_STORE_ID and MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment." >&2
+  echo "MADE plugin: preserve the store id and 32-byte hexadecimal key across restarts and updates; run made-setup for instructions." >&2
+  exit 2
+fi
+
 exec "${BINARY}"

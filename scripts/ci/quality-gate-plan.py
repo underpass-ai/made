@@ -68,7 +68,7 @@ WORKSPACE_WIDE = ("architecture", "rustfmt", "clippy", "test", "coverage", "benc
 EMBEDDED_BOUNDARY_CRATES = {"made-embedded", "made-mcp"}
 EMBEDDED_SQLITE_CRATES = {"made-adapters", "made-embedded", "made-mcp"}
 CONTAINER_CRATES = {"made"}
-PUBLISHED_CRATES = {"made-mcp", "made-mcp-proto"}
+PUBLISHED_CRATES = {"made-client", "made-console", "made-mcp", "made-mcp-proto"}
 
 # Files that are documentation or fixtures to a reader and source code to
 # rustc, because some crate bakes them in with `include_str!` /

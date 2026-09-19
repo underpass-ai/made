@@ -13,10 +13,12 @@ members = [
     "crates/made-e2e-runner",
     "crates/made-mcp",
     "crates/made-consumer-smoke",
+    "crates/made-client",
+    "crates/made-console",
 ]
 
 [workspace.package]
-version = "0.6.0"
+version = "0.7.0-rc.1"
 edition = "2021"
 rust-version = "1.97"
 license = "Apache-2.0"
@@ -94,8 +96,9 @@ prost-types = "0.13"
 async-nats = "0.50"
 
 # SQL / persistence
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio-rustls",
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls-ring",
     "postgres",
     "macros",
     "migrate",
@@ -115,21 +118,23 @@ tokio-test = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 
 # crypto / hashing
+hmac = "0.12"
 sha2 = "0.10"
 
 # schema validation
 jsonschema = { version = "0.17", default-features = false }
 
 # internal
-made-core = { path = "crates/made-core", version = "0.6.0" }
-made-api = { path = "crates/made-api", version = "0.6.0" }
-made-app = { path = "crates/made-app", version = "0.6.0" }
-made-adapters = { path = "crates/made-adapters", version = "0.6.0", default-features = false }
-made-embedded = { path = "crates/made-embedded", version = "0.6.0" }
-made-proto = { path = "crates/made-proto", version = "0.6.0" }
-made-mcp = { path = "crates/made-mcp", version = "0.6.0", default-features = false }
-made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.6.0" }
-made-tests-integration = { path = "crates/made-tests-integration", version = "0.6.0" }
+made-core = { path = "crates/made-core", version = "0.7.0-rc.1" }
+made-api = { path = "crates/made-api", version = "0.7.0-rc.1" }
+made-app = { path = "crates/made-app", version = "0.7.0-rc.1" }
+made-adapters = { path = "crates/made-adapters", version = "0.7.0-rc.1", default-features = false }
+made-embedded = { path = "crates/made-embedded", version = "0.7.0-rc.1" }
+made-proto = { path = "crates/made-proto", version = "0.7.0-rc.1" }
+made-mcp = { path = "crates/made-mcp", version = "0.7.0-rc.1", default-features = false }
+made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.7.0-rc.1" }
+made-tests-integration = { path = "crates/made-tests-integration", version = "0.7.0-rc.1" }
+made-client = { path = "crates/made-client", version = "0.7.0-rc.1" }
 
 [profile.release]
 lto = "thin"

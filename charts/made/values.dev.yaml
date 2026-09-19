@@ -4,6 +4,25 @@ image:
 development:
   allowMutableImageTags: true
 
+authorization:
+  policyId: made-dev-policy
+  principals:
+    existingSecret: made-dev-auth-principals
+
+ceremonySearch:
+  storeId: made-dev
+  cursorHmacKeyFromSecret:
+    name: made-dev-cursor-hmac
+    key: key
+
+persistence:
+  ceremonies:
+    enabled: true
+
+tls:
+  mode: mutual
+  existingSecret: made-dev-grpc-mtls
+
 messaging:
   nats:
     enabled: true

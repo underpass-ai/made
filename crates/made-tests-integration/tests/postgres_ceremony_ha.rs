@@ -636,17 +636,24 @@ async fn hold_claim(url: &str) {
     panic!("test must kill this process inside the real claim append");
 }
 
-async fn kill_inside_event_insert(url: &str, mode: &str, stream: &str, survivors: Option<&Path>) {
+async fn kill_inside_event_insert(
+    url: &str,
+    mode: &str,
+    stream: &'static str,
+    survivors: Option<&Path>,
+) {
     let pool = PgPoolOptions::new().connect(url).await.unwrap();
     // The isolated database's trigger blocks after the production adapter has
     // inserted a sealed event, before its global head/stream head and commit.
-    sqlx::raw_sql(&format!(
+    // `stream` is restricted to the static fixture IDs at the call sites and
+    // `BLOCK_KEY` is a test constant, so neither formatted value is caller input.
+    sqlx::raw_sql(sqlx::AssertSqlSafe(format!(
         "CREATE OR REPLACE FUNCTION ha_block_insert() RETURNS trigger LANGUAGE plpgsql AS $$ \
          BEGIN IF NEW.stream_id = '{stream}' THEN PERFORM pg_advisory_xact_lock({BLOCK_KEY}); \
          END IF; RETURN NEW; END $$; \
          CREATE TRIGGER ha_block_insert AFTER INSERT ON ceremony_events \
          FOR EACH ROW EXECUTE FUNCTION ha_block_insert();"
-    ))
+    )))
     .execute(&pool)
     .await
     .unwrap();

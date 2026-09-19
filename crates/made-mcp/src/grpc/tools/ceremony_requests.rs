@@ -130,6 +130,10 @@ pub(super) fn build_prepare_ceremony_children_request(
         idempotency_key: idempotency_key(obj),
         lease_ttl_ms: lease_ttl_ms(obj, RUN_CEREMONY_STEP_LEASE_TTL_MS)?,
         actor_kind: j2p::require_str(obj, "actor_kind")?.to_owned(),
+        budget_reservation: obj
+            .get("budget_reservation")
+            .map(budget::reservation_from_json)
+            .transpose()?,
     })
 }
 

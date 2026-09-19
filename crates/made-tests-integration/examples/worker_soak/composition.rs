@@ -56,6 +56,7 @@ pub async fn compose(
         ExecutionRecoveryPageLimit::new(config.workers)?,
     );
     let claims = Arc::new(ClaimCeremonyWorkUseCase::new(
+        store.clone(),
         stream.clone(),
         resolver.clone(),
         deadlines.clone(),

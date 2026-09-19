@@ -122,13 +122,90 @@ async fn run_cli_command(command: &str, args: &[String]) -> i32 {
                 2
             }
         }
+        "bootstrap-authorization" => match args {
+            [path, policy_flag, policy_id, host_flag, trusted_host_id]
+                if policy_flag == "--policy-id" && host_flag == "--trusted-host-id" =>
+            {
+                run_bootstrap_authorization(path, policy_id, trusted_host_id).await
+            }
+            _ => {
+                eprintln!(
+                        "made-mcp: usage: made-mcp bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>"
+                    );
+                2
+            }
+        },
         other => {
             eprintln!(
-                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version` or `migrate-store <path>`"
+                "made-mcp: unknown command `{other}`; run without arguments for MCP stdio mode, or use `--version`, `migrate-store <path>`, or `bootstrap-authorization <store> --policy-id <id> --trusted-host-id <id>`"
             );
             2
         }
     }
+}
+
+#[cfg(feature = "embedded")]
+async fn run_bootstrap_authorization(path: &str, policy_id: &str, trusted_host_id: &str) -> i32 {
+    use std::sync::Arc;
+
+    use made_adapters::clock::SystemClock;
+    use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+    use made_app::authorization::{
+        AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
+    };
+    use made_core::value_objects::{
+        AuthenticatedPrincipal, AuthenticationMethod, AuthorizationPolicyId, PrincipalId,
+        PrincipalKind,
+    };
+
+    let outcome = async {
+        let policy_id = AuthorizationPolicyId::new(policy_id)?;
+        let owner = AuthenticatedPrincipal::new(
+            PrincipalId::new(trusted_host_id)?,
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::LocalHostPolicy,
+        )?;
+        let store = Arc::new(SqliteAuthorizationPolicyStore::open(path)?);
+        AuthorizationPolicyAdministrationService::new(
+            policy_id,
+            store,
+            Arc::new(SystemClock::new()),
+        )
+        .open(owner, Vec::new())
+        .await
+    }
+    .await;
+    match outcome {
+        Ok(AuthorizationMutationOutcome::Applied { version }) => {
+            println!("authorization policy opened at version {}", version.value());
+            println!(
+                "the trusted-host owner may administer policy; issue explicit grants before serving protected operations"
+            );
+            0
+        }
+        Ok(AuthorizationMutationOutcome::Existing { version }) => {
+            println!(
+                "authorization policy already exists at version {}",
+                version.value()
+            );
+            println!(
+                "the trusted-host owner may administer policy; protected operations still require explicit grants"
+            );
+            0
+        }
+        Err(error) => {
+            eprintln!("made-mcp: bootstrap-authorization: {error}");
+            eprintln!("made-mcp: the authorization policy was not changed");
+            1
+        }
+    }
+}
+
+#[cfg(not(feature = "embedded"))]
+#[allow(clippy::unused_async)]
+async fn run_bootstrap_authorization(_path: &str, _policy_id: &str, _trusted_host_id: &str) -> i32 {
+    eprintln!("made-mcp: bootstrap-authorization needs the embedded engine");
+    2
 }
 
 /// Bring the sessions of a pre-stream store into their own streams

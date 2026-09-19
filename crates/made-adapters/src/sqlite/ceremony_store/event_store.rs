@@ -16,7 +16,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyEventStorePort, PositionedRecord,
 };
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+};
 
 use crate::engine::{Key, ReadTx, Table};
 use crate::sqlite::keys::{ceremony_of, position, scoped};
@@ -26,6 +28,61 @@ use super::{decode, encode, SqliteCeremonyStore};
 
 /// The `store_meta` row holding the last global position assigned.
 const LAST_POSITION: &str = "last_global_position";
+
+impl SqliteCeremonyStore {
+    async fn append_with_authorization(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<AppendOutcome, DomainError> {
+        let stream = stream.clone();
+        self.blocking("append events", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let existing = records_after(tx.as_ref(), &stream, StreamVersion::EMPTY, None)?;
+            let actual = version_of(&existing);
+            if actual != expected {
+                return Ok(AppendOutcome::Conflict { expected, actual });
+            }
+            let sealed = seal_continuation(&stream, &existing, facts, authorization.as_ref())?;
+            let first_position =
+                last_position(tx.as_ref())?.map_or(GlobalPosition::FIRST, GlobalPosition::next);
+            let mut next = first_position;
+            let mut last = first_position;
+            for record in &sealed {
+                let key = scoped(&stream, record.sequence().value());
+                let stored = StoredEvent {
+                    position: next,
+                    record: record.clone(),
+                };
+                tx.insert(
+                    Table::Events,
+                    Key::Bytes(&key),
+                    &encode(&stored, "encode stored event")?,
+                )?;
+                tx.insert(Table::EventLog, Key::Bytes(&position(next.value())), &key)?;
+                last = next;
+                next = next.next();
+            }
+            tx.insert(Table::StreamIndex, Key::Str(stream.as_str()), &[])?;
+            tx.insert(
+                Table::Meta,
+                Key::Str(LAST_POSITION),
+                &encode(&last, "encode last global position")?,
+            )?;
+            tx.commit()?;
+            Ok(AppendOutcome::Appended {
+                version: sealed.last().map_or(actual, |record| {
+                    StreamVersion::from_sequence(record.sequence())
+                }),
+                records: sealed,
+                first_position,
+            })
+        })
+        .await
+    }
+}
 
 /// The records of `stream` with a sequence above `after`, in order.
 fn records_after(
@@ -63,54 +120,19 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
         expected: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
-        let stream = stream.clone();
-        self.blocking("append events", move |engine| {
-            let mut tx = engine.begin_write()?;
+        self.append_with_authorization(stream, expected, facts, None)
+            .await
+    }
 
-            let existing = records_after(tx.as_ref(), &stream, StreamVersion::EMPTY, None)?;
-            let actual = version_of(&existing);
-            if actual != expected {
-                // Dropping the transaction without committing is what
-                // makes a stale append leave nothing behind.
-                return Ok(AppendOutcome::Conflict { expected, actual });
-            }
-            let sealed = seal_continuation(&stream, &existing, facts)?;
-
-            let first_position =
-                last_position(tx.as_ref())?.map_or(GlobalPosition::FIRST, GlobalPosition::next);
-            let mut next = first_position;
-            let mut last = first_position;
-            for record in &sealed {
-                let key = scoped(&stream, record.sequence().value());
-                let stored = StoredEvent {
-                    position: next,
-                    record: record.clone(),
-                };
-                tx.insert(
-                    Table::Events,
-                    Key::Bytes(&key),
-                    &encode(&stored, "encode stored event")?,
-                )?;
-                tx.insert(Table::EventLog, Key::Bytes(&position(next.value())), &key)?;
-                last = next;
-                next = next.next();
-            }
-            tx.insert(
-                Table::Meta,
-                Key::Str(LAST_POSITION),
-                &encode(&last, "encode last global position")?,
-            )?;
-            tx.commit()?;
-
-            Ok(AppendOutcome::Appended {
-                version: sealed.last().map_or(actual, |record| {
-                    StreamVersion::from_sequence(record.sequence())
-                }),
-                records: sealed,
-                first_position,
-            })
-        })
-        .await
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, Some(authorization))
+            .await
     }
 
     async fn read(

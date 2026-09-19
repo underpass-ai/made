@@ -1,10 +1,15 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, ContinueAcceptedStepClaimUseCase,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+};
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
 use made_app::services::AutoDispatchService;
+use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
@@ -31,10 +36,17 @@ use made_core::ports::{
 };
 use made_core::value_objects::MaxParallel;
 
+use super::GrpcAuthorizationGate;
+
 /// Builder so composition-root wiring is readable even as the number
 /// of use cases grows.
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
+    pub(super) authorization: Option<Arc<GrpcAuthorizationGate>>,
+    pub(super) authorization_administration: Option<Arc<AuthorizationPolicyAdministrationService>>,
+    pub(super) read_authorization_policy: Option<Arc<ReadAuthorizationPolicyUseCase>>,
+    pub(super) read_authorization_decisions: Option<Arc<ReadAuthorizationDecisionsUseCase>>,
+    pub(super) continue_accepted_step_claim: Option<Arc<ContinueAcceptedStepClaimUseCase>>,
     pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
@@ -48,6 +60,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) run_ceremony: Option<Arc<RunCeremonyUseCase>>,
     pub(super) get_ceremony_instance: Option<Arc<GetCeremonyInstanceUseCase>>,
     pub(super) list_ceremony_instances: Option<Arc<ListCeremonyInstancesUseCase>>,
+    pub(super) search_ceremony_instances: Option<Arc<SearchCeremonyInstancesUseCase>>,
     pub(super) resolve_ceremony_definition: Option<Arc<ResolveCeremonyDefinitionUseCase>>,
     pub(super) start_ceremony: Option<Arc<StartCeremonyUseCase>>,
     pub(super) start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
@@ -133,6 +146,27 @@ macro_rules! setter {
 }
 
 impl MadeGrpcServiceBuilder {
+    setter!(authorization, GrpcAuthorizationGate, authorization);
+    setter!(
+        authorization_administration,
+        AuthorizationPolicyAdministrationService,
+        authorization_administration
+    );
+    setter!(
+        read_authorization_policy,
+        ReadAuthorizationPolicyUseCase,
+        read_authorization_policy
+    );
+    setter!(
+        read_authorization_decisions,
+        ReadAuthorizationDecisionsUseCase,
+        read_authorization_decisions
+    );
+    setter!(
+        continue_accepted_step_claim,
+        ContinueAcceptedStepClaimUseCase,
+        continue_accepted_step_claim
+    );
     setter!(
         council_journal,
         made_app::services::CouncilJournalService,
@@ -161,6 +195,11 @@ impl MadeGrpcServiceBuilder {
         list_ceremony_instances,
         ListCeremonyInstancesUseCase,
         list_ceremony_instances
+    );
+    setter!(
+        search_ceremony_instances,
+        SearchCeremonyInstancesUseCase,
+        search_ceremony_instances
     );
     setter!(
         resolve_ceremony_definition,
@@ -415,6 +454,11 @@ impl MadeGrpcServiceBuilder {
             ))
         });
         Ok(MadeGrpcService {
+            authorization: required!(self, authorization, "gate"),
+            authorization_administration: required!(self, authorization_administration),
+            read_authorization_policy: required!(self, read_authorization_policy),
+            read_authorization_decisions: required!(self, read_authorization_decisions),
+            continue_accepted_step_claim: required!(self, continue_accepted_step_claim),
             council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
@@ -430,6 +474,7 @@ impl MadeGrpcServiceBuilder {
             run_ceremony: required!(self, run_ceremony),
             get_ceremony_instance: required!(self, get_ceremony_instance),
             list_ceremony_instances: required!(self, list_ceremony_instances),
+            search_ceremony_instances: required!(self, search_ceremony_instances),
             resolve_ceremony_definition: required!(self, resolve_ceremony_definition),
             start_ceremony: required!(self, start_ceremony),
             start_published_ceremony: required!(self, start_published_ceremony),

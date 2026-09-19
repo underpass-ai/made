@@ -130,6 +130,9 @@ service MadeService {
   // working session whichever way it reached the engine.
   rpc GetCeremonyInstance(GetCeremonyInstanceRequest) returns (GetCeremonyInstanceResponse);
   rpc ListCeremonyInstances(ListCeremonyInstancesRequest) returns (ListCeremonyInstancesResponse);
+  // Bounded keyset listing. The opaque cursor is scoped to the selected
+  // filters, backing store and authorization policy.
+  rpc SearchCeremonyInstances(SearchCeremonyInstancesRequest) returns (SearchCeremonyInstancesResponse);
 
   // Advance a ceremony one move at a time. RunCeremony above runs a
   // whole session in a single call, which is right for a ceremony that
@@ -247,6 +250,14 @@ service MadeService {
   rpc ListArtifacts(ListArtifactsRequest) returns (ListArtifactsResponse);
   rpc ReadArtifactChunk(ReadArtifactChunkRequest) returns (ReadArtifactChunkResponse);
   rpc TombstoneArtifact(TombstoneArtifactRequest) returns (TombstoneArtifactResponse);
+
+  // ---- Authorization policy administration ----------------------------
+
+  rpc GetAuthorizationPolicy(GetAuthorizationPolicyRequest) returns (GetAuthorizationPolicyResponse);
+  rpc ApproveAuthorizationOperation(ApproveAuthorizationOperationRequest) returns (ApproveAuthorizationOperationResponse);
+  rpc IssueAuthorizationGrant(IssueAuthorizationGrantRequest) returns (IssueAuthorizationGrantResponse);
+  rpc RevokeAuthorizationGrant(RevokeAuthorizationGrantRequest) returns (RevokeAuthorizationGrantResponse);
+  rpc ListAuthorizationDecisions(ListAuthorizationDecisionsRequest) returns (ListAuthorizationDecisionsResponse);
 
   // ---- Observability --------------------------------------------------
 
@@ -1101,6 +1112,29 @@ message ListCeremonyInstancesResponse {
   repeated CeremonyInstanceState instances = 1;
 }
 
+enum CeremonyLifecycleFilter {
+  CEREMONY_LIFECYCLE_FILTER_UNSPECIFIED = 0;
+  CEREMONY_LIFECYCLE_FILTER_RUNNING = 1;
+  CEREMONY_LIFECYCLE_FILTER_PAUSED = 2;
+  CEREMONY_LIFECYCLE_FILTER_ENDED = 3;
+}
+
+message SearchCeremonyInstancesRequest {
+  // Empty starts a new traversal. Returned cursors are opaque.
+  string cursor = 1;
+  // Zero selects the server default (50); the accepted range is 1..100.
+  uint32 limit = 2;
+  // Empty disables prefix filtering. Matching is literal and case-sensitive.
+  string id_prefix = 3;
+  CeremonyLifecycleFilter lifecycle = 4;
+}
+
+message SearchCeremonyInstancesResponse {
+  repeated CeremonyInstanceState instances = 1;
+  // Empty means this traversal has no further page.
+  string next_cursor = 2;
+}
+
 message StartCeremonyRequest {
   // Identifier for the session about to exist. Required here, unlike
   // in the tool surface that mints one: a server that invents an id
@@ -1185,6 +1219,9 @@ message PrepareCeremonyChildrenRequest {
   string idempotency_key = 4;
   uint64 lease_ttl_ms = 5;
   string actor_kind = 6;
+  // Required when the parent belongs to a budget account. The reservation is
+  // admitted before the fanout claim or plan is appended.
+  BudgetReservationEstimate budget_reservation = 7;
 }
 
 message PrepareCeremonyChildrenResponse {
@@ -2029,9 +2066,8 @@ message CeremonyEventRecord {
   // Catalogue entry this record is an instance of, in snake_case:
   // "step_completed", "intervention_requested", and so on.
   string event_type = 2;
-  // Version of the record's *field set*: 2 for everything sealed
-  // today, 1 for records written before the event travelled inside
-  // them, which carry no payload.
+  // Version of the record's field set: 3 seals authorization evidence,
+  // 2 carries the event without authorization, and 1 has no event payload.
   uint32 schema_version = 3;
   string ceremony_id = 4;
   string definition_name = 5;
@@ -2066,6 +2102,24 @@ message CeremonyEventRecord {
   // This record's digest, over its content and the previous digest.
   // 32 bytes.
   bytes record_hash = 16;
+  // Mandatory for schema 3; absent from historical schema 1 and 2.
+  // These are the exact authorization fields covered by record_hash.
+  CeremonyAuthorizationEvidence authorization = 17;
+}
+
+// Sealed admission evidence. The referenced policy decision supplies the
+// complete authenticated principal and any accepted-work/approval antecedent.
+message CeremonyAuthorizationEvidence {
+  string decision_id = 1;
+  string request_id = 2;
+  string principal_id = 3;
+  string action = 4;
+  AuthorizationScope scope = 5;
+  string target_digest = 6;
+  uint64 policy_version = 7;
+  // Canonical RFC 3339, preserving the same precision as the sealed evidence.
+  string admitted_at = 8;
+  string valid_until = 9;
 }
 
 message ReadCeremonyEventsRequest {
@@ -2244,11 +2298,13 @@ message ArtifactTombstoneRecord {
   string policy = 2;
   google.protobuf.Timestamp retired_at = 3;
   string digest = 4;
+  CeremonyAuthorizationEvidence authorization = 5;
 }
 
 message ArtifactRecord {
   ArtifactReference artifact = 1;
   optional ArtifactTombstoneRecord tombstone = 2;
+  CeremonyAuthorizationEvidence authorization = 3;
 }
 
 message ArtifactUploadStatus {
@@ -2415,6 +2471,7 @@ message ListPendingBudgetReservationsResponse {
 message CouncilJournalRecord {
   uint64 position = 1;
   string event_json = 2;
+  CeremonyAuthorizationEvidence authorization = 3;
 }
 message CouncilJournalLease {
   string consumer = 1;
@@ -2454,3 +2511,116 @@ message ReleaseCouncilEventsRequest {
   CouncilJournalLease lease = 1;
 }
 message ReleaseCouncilEventsResponse {}
+
+// Authorization policy IDs come from process configuration. Payload principals
+// describe grant targets and recorded evidence; the authenticated transport
+// principal always supplies issuer/revoker identity.
+message AuthorizationPrincipal {
+  string principal_id = 1;
+  string kind = 2;
+  string authentication_method = 3;
+}
+
+message AuthorizationScope {
+  string kind = 1;
+  optional string ceremony_id = 2;
+  optional string root_id = 3;
+  optional string definition_name = 4;
+  optional string definition_version = 5;
+  optional string artifact_id = 6;
+  optional string council_id = 7;
+  optional string budget_account_id = 8;
+}
+
+message AuthorizationGrantRecord {
+  string grant_id = 1;
+  string grantee_id = 2;
+  repeated string actions = 3;
+  AuthorizationScope scope = 4;
+  google.protobuf.Timestamp valid_from = 5;
+  optional google.protobuf.Timestamp valid_until = 6;
+  uint32 delegation_depth = 7;
+  AuthorizationPrincipal issuer = 8;
+  optional string parent_grant_id = 9;
+}
+
+message AuthorizationSeparationRule {
+  string approval_action = 1;
+  string execution_action = 2;
+}
+
+message AuthorizationPolicyRecord {
+  string policy_id = 1;
+  uint64 version = 2;
+  AuthorizationPrincipal owner = 3;
+  repeated AuthorizationGrantRecord grants = 4;
+  repeated string revoked_grant_ids = 5;
+  repeated AuthorizationSeparationRule separation_rules = 6;
+}
+
+message GetAuthorizationPolicyRequest {}
+message GetAuthorizationPolicyResponse {
+  AuthorizationPolicyRecord policy = 1;
+}
+
+message ApproveAuthorizationOperationRequest {
+  string approval_action = 1;
+  string execution_action = 2;
+  AuthorizationScope scope = 3;
+  string target_digest = 4;
+}
+message ApproveAuthorizationOperationResponse {
+  AuthorizationDecisionRecord decision = 1;
+}
+
+message IssueAuthorizationGrantRequest {
+  string grant_id = 1;
+  string grantee_id = 2;
+  repeated string actions = 3;
+  AuthorizationScope scope = 4;
+  google.protobuf.Timestamp valid_from = 5;
+  optional google.protobuf.Timestamp valid_until = 6;
+  uint32 delegation_depth = 7;
+  optional string parent_grant_id = 8;
+}
+message IssueAuthorizationGrantResponse {
+  uint64 version = 1;
+  bool existing = 2;
+}
+
+message RevokeAuthorizationGrantRequest {
+  string grant_id = 1;
+  string reason = 2;
+}
+message RevokeAuthorizationGrantResponse {
+  uint64 version = 1;
+  bool existing = 2;
+}
+
+message AuthorizationDecisionRecord {
+  string decision_id = 1;
+  string request_id = 2;
+  AuthorizationPrincipal principal = 3;
+  string action = 4;
+  AuthorizationScope scope = 5;
+  string target_digest = 6;
+  optional string approval_decision_id = 7;
+  uint64 policy_version = 8;
+  string outcome = 9;
+  optional string grant_id = 10;
+  optional string denial_reason = 11;
+  google.protobuf.Timestamp decided_at = 12;
+  google.protobuf.Timestamp valid_until = 13;
+  optional string accepted_work_decision_id = 14;
+  optional string approved_action = 15;
+}
+
+message ListAuthorizationDecisionsRequest {
+  optional string after_decision_id = 1;
+  // Zero uses 100. Maximum 500.
+  uint32 limit = 2;
+}
+message ListAuthorizationDecisionsResponse {
+  repeated AuthorizationDecisionRecord decisions = 1;
+  optional string next_after_decision_id = 2;
+}

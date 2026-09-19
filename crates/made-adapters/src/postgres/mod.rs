@@ -13,10 +13,12 @@
 mod agent_registry;
 mod artifact_blob_queries;
 mod artifact_store;
+mod authorization_policy_store;
 mod budget_ledger_store;
 mod ceremony_definition_publication;
 mod ceremony_event_cursor;
 mod ceremony_event_store;
+mod ceremony_instance_index;
 mod ceremony_snapshot_store;
 mod ceremony_store;
 mod council_registry;
@@ -27,11 +29,13 @@ mod pool;
 mod postgres_config;
 mod postgres_pool_error;
 mod postgres_session_memory;
+mod postgres_stored_authorization_policy_state;
 mod postgres_stored_cursor;
 mod statistics;
 
 pub use agent_registry::PostgresAgentRegistry;
 pub use artifact_store::PostgresArtifactStore;
+pub use authorization_policy_store::PostgresAuthorizationPolicyStore;
 pub use ceremony_store::PostgresCeremonyStore;
 pub use council_registry::PostgresCouncilRegistry;
 pub use deliberation_repository::PostgresDeliberationRepository;
@@ -39,6 +43,7 @@ pub use pool::PostgresPool;
 pub use postgres_config::PostgresConfig;
 pub use postgres_pool_error::PostgresPoolError;
 pub use postgres_session_memory::PostgresSessionMemory;
+use postgres_stored_authorization_policy_state::PostgresStoredAuthorizationPolicyState;
 pub use statistics::PostgresStatistics;
 
 mod council_journal;

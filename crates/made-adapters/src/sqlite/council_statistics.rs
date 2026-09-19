@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use made_core::entities::{CouncilJournalEvent, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::StatisticsPort;
-use made_core::value_objects::{DurationMs, Specialty};
+use made_core::value_objects::{AuthorizationEvidence, DurationMs, Specialty};
 
 #[derive(Debug, Clone)]
 pub struct SqliteCouncilStatistics {
@@ -21,6 +21,7 @@ impl SqliteCouncilStatistics {
         &self,
         specialty: Option<Specialty>,
         duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
     ) -> Result<(), DomainError> {
         self.store
             .blocking(move |engine| {
@@ -39,7 +40,11 @@ impl SqliteCouncilStatistics {
                     Key::Str("totals"),
                     &encode(&stats, "record statistics")?,
                 )?;
-                append(tx.as_mut(), CouncilJournalEvent::StatisticsRecorded(stats))?;
+                append(
+                    tx.as_mut(),
+                    CouncilJournalEvent::StatisticsRecorded(stats),
+                    authorization,
+                )?;
                 tx.commit()
             })
             .await
@@ -52,10 +57,26 @@ impl StatisticsPort for SqliteCouncilStatistics {
         specialty: &Specialty,
         duration: DurationMs,
     ) -> Result<(), DomainError> {
-        self.record(Some(specialty.clone()), duration).await
+        self.record(Some(specialty.clone()), duration, None).await
+    }
+    async fn record_deliberation_authorized(
+        &self,
+        specialty: &Specialty,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        self.record(Some(specialty.clone()), duration, authorization)
+            .await
     }
     async fn record_orchestration(&self, duration: DurationMs) -> Result<(), DomainError> {
-        self.record(None, duration).await
+        self.record(None, duration, None).await
+    }
+    async fn record_orchestration_authorized(
+        &self,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        self.record(None, duration, authorization).await
     }
     async fn snapshot(&self) -> Result<Statistics, DomainError> {
         self.store

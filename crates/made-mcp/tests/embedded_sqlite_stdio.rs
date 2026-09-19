@@ -6,7 +6,16 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
+use made_adapters::clock::SystemClock;
+use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+use made_app::authorization::AuthorizationPolicyAdministrationService;
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationGrant,
+    AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope,
+    DelegationDepth, PrincipalId, PrincipalKind,
+};
 use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
@@ -34,6 +43,62 @@ roles:
       - request_intervention
       - respond_to_intervention
 "#;
+const AUTH_POLICY_ID: &str = "embedded-test";
+const AUTH_TRUSTED_HOST_ID: &str = "embedded-test-host";
+const SEARCH_STORE_ID: &str = "embedded-stdio-test-store";
+const SEARCH_CURSOR_KEY: &str = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
+
+#[test]
+fn an_authorized_host_opens_published_v060_root_completions_without_inventing_evidence() {
+    let state = tempfile::tempdir().unwrap();
+    let store = state.path().join("ceremonies.sqlite3");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../made-tests-integration/fixtures/stores/v0.6.0");
+    std::fs::copy(fixture.join("ceremonies.sqlite3"), &store).unwrap();
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(fixture.join("manifest.json")).unwrap()).unwrap();
+    let requests = [
+        tool_call(
+            1,
+            "made_get_ceremony_instance",
+            &json!({"ceremony_id":"v060-completed"}),
+        ),
+        tool_call(
+            2,
+            "made_read_ceremony_events",
+            &json!({"ceremony_id":"v060-completed", "limit":100}),
+        ),
+        tool_call(
+            3,
+            "made_get_ceremony_instance",
+            &json!({"ceremony_id":"v060-pending"}),
+        ),
+    ];
+    let first = run_made_mcp_process(&store, &requests);
+    for response in &first {
+        assert_ne!(
+            response["result"]["isError"],
+            Value::Bool(true),
+            "{response}"
+        );
+    }
+    assert_eq!(first[0]["result"]["structuredContent"]["completed"], true);
+    assert_eq!(first[2]["result"]["structuredContent"]["completed"], false);
+    let records = first[1]["result"]["structuredContent"]["records"]
+        .as_array()
+        .unwrap();
+    let historical = manifest["sessions"]["v060-completed"]["records"]
+        .as_array()
+        .unwrap();
+    assert_eq!(records.len(), historical.len());
+    for (actual, original) in records.iter().zip(historical) {
+        assert_eq!(actual["event_id"], original["event_id"]);
+        assert_eq!(actual["schema_version"], 2);
+        assert!(actual.get("authorization").is_none());
+        assert_eq!(actual, original);
+    }
+    assert_eq!(run_made_mcp_process(&store, &requests), first);
+}
 
 #[test]
 fn an_event_sink_recovers_pending_records_before_reading_stdio() {
@@ -74,8 +139,9 @@ fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     );
     let record: Value = serde_json::from_str(records[0]).unwrap();
     assert_eq!(record["global_position"], 1);
-    assert_eq!(record["ceremony_id"], "pending-publication");
-    assert_eq!(record["event_type"], "ceremony_instance_started");
+    assert_eq!(record["record"]["ceremony_id"], "pending-publication");
+    assert_eq!(record["record"]["event_type"], "ceremony_instance_started");
+    assert_eq!(record["schema_version"], 3);
     let metrics: Value = serde_json::from_str(records[1]).unwrap();
     assert_eq!(metrics["record_type"], "metrics_snapshot");
     assert!(metrics["registry_text"].is_string());
@@ -418,28 +484,26 @@ async fn opening_the_store_over_a_directory_fails_instead_of_degrading_to_memory
 
 #[test]
 fn the_embedded_backend_selected_by_env_requires_a_state_file() {
-    // One test owns the process environment for both directions: the
-    // variables are global, so splitting this would race with itself.
-    std::env::set_var(MCP_BACKEND_ENV, "embedded");
-    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
-
-    let Err(refused) = MadeMcpServer::try_from_env() else {
-        panic!("embedded must demand a state file");
-    };
-    assert!(refused.contains(EMBEDDED_STORE_PATH_ENV), "{refused}");
-
-    let state = tempfile::tempdir().unwrap();
-    std::env::set_var(
-        EMBEDDED_STORE_PATH_ENV,
-        state.path().join("ceremonies.sqlite3"),
+    // Exercise environment selection in child processes. Changing this
+    // process's policy environment races with in-process SQLite fixtures.
+    let refused = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+        .env(MCP_BACKEND_ENV, "embedded")
+        .env_remove(EMBEDDED_STORE_PATH_ENV)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !refused.status.success(),
+        "embedded must demand a state file"
     );
-    let Ok(server) = MadeMcpServer::try_from_env() else {
-        panic!("a named state file must be accepted");
-    };
-    assert_eq!(server.backend_name(), "embedded");
-
-    std::env::remove_var(MCP_BACKEND_ENV);
-    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
+    let message = String::from_utf8(refused.stderr).unwrap();
+    assert!(message.contains(EMBEDDED_STORE_PATH_ENV), "{message}");
+    let state = tempfile::tempdir().unwrap();
+    let responses = run_made_mcp_process(
+        &state.path().join("ceremonies.sqlite3"),
+        &[json!({"jsonrpc":"2.0", "id":1, "method":"initialize"})],
+    );
+    assert_eq!(responses[0]["result"]["metadata"]["backend"], "embedded");
 }
 
 async fn send(server: &MadeMcpServer, request: Value) -> Value {
@@ -476,10 +540,15 @@ fn run_made_mcp_process_with_optional_event_sink(
     sink: Option<&std::path::Path>,
     requests: &[Value],
 ) -> Vec<Value> {
+    bootstrap_authorization(path);
     let mut command = Command::new(env!("CARGO_BIN_EXE_made-mcp"));
     command
         .env(MCP_BACKEND_ENV, "embedded")
         .env(EMBEDDED_STORE_PATH_ENV, path)
+        .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
+        .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
+        .env("MADE_CEREMONY_STORE_ID", SEARCH_STORE_ID)
+        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
         .env_remove(EVENT_SINK_PATH_ENV);
     if let Some(sink) = sink {
         command.env(EVENT_SINK_PATH_ENV, sink);
@@ -508,4 +577,52 @@ fn run_made_mcp_process_with_optional_event_sink(
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+fn bootstrap_authorization(path: &std::path::Path) {
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async move {
+            let store = Arc::new(SqliteAuthorizationPolicyStore::open(path).unwrap());
+            let service = AuthorizationPolicyAdministrationService::new(
+                AuthorizationPolicyId::new(AUTH_POLICY_ID).unwrap(),
+                store,
+                Arc::new(SystemClock::new()),
+            );
+            let owner = AuthenticatedPrincipal::new(
+                PrincipalId::new(AUTH_TRUSTED_HOST_ID).unwrap(),
+                PrincipalKind::TrustedHost,
+                AuthenticationMethod::LocalHostPolicy,
+            )
+            .unwrap();
+            service.open(owner.clone(), Vec::new()).await.unwrap();
+            let grant = AuthorizationGrant::new(
+                AuthorizationGrantId::new("embedded-test-all").unwrap(),
+                owner.id().clone(),
+                [
+                    AuthorizationAction::StartCeremony,
+                    AuthorizationAction::StartPublishedCeremony,
+                    AuthorizationAction::GetCeremonyInstance,
+                    AuthorizationAction::ListCeremonyInstances,
+                    AuthorizationAction::PublishCeremonyDefinition,
+                    AuthorizationAction::ReadCeremonyEvents,
+                    AuthorizationAction::RunCeremony,
+                    AuthorizationAction::RequestCeremonyIntervention,
+                    AuthorizationAction::RespondToCeremonyIntervention,
+                ],
+                AuthorizationScope::Global,
+                (time::OffsetDateTime::UNIX_EPOCH, None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(owner.clone()),
+            )
+            .unwrap();
+            service.issue(&owner, grant).await.unwrap();
+        });
+    })
+    .join()
+    .unwrap();
 }

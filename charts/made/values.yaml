@@ -97,6 +97,27 @@ config:
   # own max_parallel (default 3); the effective capacity is the lower value.
   maxParallel: 8
 
+# Every public operation is authenticated and authorized. The policy must be
+# bootstrapped in the selected durable store before the Deployment starts.
+# The chart deliberately does not create credentials or open a policy.
+authorization:
+  # Stable policy identifier shared by every replica.
+  policyId: ""
+  principals:
+    # Existing Secret containing the certificate fingerprint -> principal map.
+    # The selected key is mounted read-only at /etc/made/auth/principals.json.
+    existingSecret: ""
+    key: principals.json
+
+# Opaque search cursors are scoped to one logical store and authenticated with
+# one key. Both values must be identical across replicas. The key remains in an
+# existing Secret and is never rendered into the Deployment.
+ceremonySearch:
+  storeId: ""
+  cursorHmacKeyFromSecret:
+    name: ""
+    key: ""
+
 # Extra env wiring for provider adapters. These fields are intentionally
 # generic because provider enablement is feature-gated in the binary
 # and env-gated at boot.
@@ -238,20 +259,17 @@ persistence:
       key: ""
 
 tls:
-  # Transport security mode for the gRPC service.
-  # One of: "none" | "server" | "mutual".
-  #   - "none":   plain HTTP/2 over TCP (private mesh only)
-  #   - "server": one-way TLS; the server presents an identity, the
-  #               client verifies it via a trust anchor it already has
-  #   - "mutual": both server and client present identities; the server
-  #               validates the client cert against the CA bundle
-  # When non-"none", `existingSecret` must reference a Kubernetes
-  # `kubernetes.io/tls` (or similar) secret containing:
+  # Transport security mode for the gRPC service. The public runtime requires
+  # `mutual`; `none` and `server` are retained as parser values only so the
+  # template can reject unsafe legacy configuration with a clear error.
+  # `existingSecret` must reference a Kubernetes `kubernetes.io/tls` (or
+  # similar) secret containing:
   #   tls.crt  — server certificate PEM
   #   tls.key  — server private key PEM
-  #   ca.crt   — client CA bundle PEM (required only for `mutual`)
+  #   ca.crt   — client CA bundle PEM
   # The secret is mounted read-only at /etc/made/tls and the
   # binary picks up the paths via MADE_GRPC_TLS_* env vars.
+  # Authorization requires a client identity established by mutual TLS.
   mode: none
   existingSecret: ""
 

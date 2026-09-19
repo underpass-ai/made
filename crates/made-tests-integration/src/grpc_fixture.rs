@@ -40,6 +40,7 @@ use made_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::AuthorizedMemoryReader;
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
@@ -49,6 +50,7 @@ use made_app::services::{
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
+    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
     CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
@@ -59,20 +61,38 @@ use made_app::usecases::{
     RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
     RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    SearchCeremonyInstancesUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ContractRegistryPort,
-    CouncilRegistryPort, ValidatorPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceIndexPort, CeremonyStepHandlerPort,
+    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
 };
 use made_core::value_objects::CeremonyEventConsumer;
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
 
+use crate::grpc_fixture_authorization::fixture_authorization;
+
 pub use crate::grpc_fixture_wiring::GrpcFixtureWiring;
 pub use crate::tls_server_setup::TlsServerSetup;
+
+fn search_ceremonies(
+    index: Arc<dyn CeremonyInstanceIndexPort>,
+    stream: Arc<SessionStream>,
+) -> Arc<SearchCeremonyInstancesUseCase> {
+    Arc::new(SearchCeremonyInstancesUseCase::new(
+        index,
+        stream,
+        CeremonySearchCursorCodec::new(
+            CeremonySearchCursorKey::new([0x5a; 32]),
+            CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture")
+                .expect("fixture search cursor namespace should be valid"),
+        ),
+    ))
+}
 
 /// Handles a test needs to drive the in-process made:
 /// the gRPC channel for issuing RPCs and the registries for seeding
@@ -121,6 +141,7 @@ impl GrpcFixture {
     #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start_with(wiring: GrpcFixtureWiring) -> Self {
         let ceremony_store = wiring.ceremony_store();
+        let ceremony_index = wiring.ceremony_index();
         let clock = wiring.clock();
         let memory = wiring.memory();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
@@ -155,7 +176,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let ceremony_stream = Arc::new(SessionStream::new(
+        let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
             Arc::new(CeremonyEventFanout::new(vec![
@@ -170,6 +191,12 @@ impl GrpcFixture {
                     metrics.clone(),
                 )),
             ])),
+        ));
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
+        let memory_reader = Arc::new(AuthorizedMemoryReader::new(
+            memory_reader,
+            fixture_authorization.authorize.clone(),
+            ceremony_stream.clone(),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -400,7 +427,22 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        let authorization = wiring
+            .authorization()
+            .unwrap_or_else(|| fixture_authorization.gate.clone());
+        authorization.protect_session_stream(&ceremony_stream);
         let mut service_builder = MadeGrpcService::builder()
+            .authorization(authorization)
+            .authorization_administration(fixture_authorization.administration)
+            .read_authorization_policy(fixture_authorization.read_policy)
+            .read_authorization_decisions(fixture_authorization.read_decisions)
+            .continue_accepted_step_claim(Arc::new(
+                made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
+                    ceremony_stream.clone(),
+                    fixture_authorization.continuation,
+                    clock.clone(),
+                ),
+            ))
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -441,6 +483,7 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
             )))
+            .search_ceremony_instances(search_ceremonies(ceremony_index, ceremony_stream.clone()))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
@@ -593,7 +636,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let ceremony_stream = Arc::new(SessionStream::new(
+        let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             ceremony_store.clone(),
             Arc::new(CeremonyEventFanout::new(vec![
@@ -608,6 +651,12 @@ impl GrpcFixture {
                     metrics.clone(),
                 )),
             ])),
+        ));
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
+        let memory_reader = Arc::new(AuthorizedMemoryReader::new(
+            memory_reader,
+            fixture_authorization.authorize.clone(),
+            ceremony_stream.clone(),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -819,7 +868,21 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        fixture_authorization
+            .gate
+            .protect_session_stream(&ceremony_stream);
         let svc = MadeGrpcService::builder()
+            .authorization(fixture_authorization.gate)
+            .authorization_administration(fixture_authorization.administration)
+            .read_authorization_policy(fixture_authorization.read_policy)
+            .read_authorization_decisions(fixture_authorization.read_decisions)
+            .continue_accepted_step_claim(Arc::new(
+                made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
+                    ceremony_stream.clone(),
+                    fixture_authorization.continuation,
+                    clock.clone(),
+                ),
+            ))
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -858,6 +921,10 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
             )))
+            .search_ceremony_instances(search_ceremonies(
+                ceremony_store.clone(),
+                ceremony_stream.clone(),
+            ))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody

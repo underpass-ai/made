@@ -1,5 +1,8 @@
 //! Application services — compose one or more use cases.
 
+mod authorization_operation_scope;
+#[cfg(test)]
+mod authorization_operation_scope_tests;
 mod auto_dispatch;
 mod auto_dispatch_outcome;
 mod ceremony_event_fanout;
@@ -16,6 +19,8 @@ mod session_memory_recorder;
 pub(crate) mod session_recall;
 mod session_stream;
 
+pub(crate) use authorization_operation_scope::current_authorized_operation;
+pub use authorization_operation_scope::AuthorizationOperationScope;
 pub use auto_dispatch::AutoDispatchService;
 pub use auto_dispatch_outcome::AutoDispatchOutcome;
 pub use ceremony_event_fanout::CeremonyEventFanout;

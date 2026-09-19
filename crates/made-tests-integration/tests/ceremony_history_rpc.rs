@@ -97,8 +97,24 @@ async fn session(remote: &GrpcMadeMcpBackend) {
 }
 
 fn records_from(answer: &Value) -> Vec<AuditRecord> {
-    serde_json::from_value(answer["records"].clone())
-        .expect("what the wire hands back must read back as the records it sealed")
+    answer["records"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .cloned()
+        .map(|mut record| {
+            // Public fields remain flat. The v3 storage envelope deliberately
+            // refuses readers that do not understand sealed authorization.
+            if record["schema_version"] == 3 {
+                let fields = record.as_object_mut().unwrap();
+                fields.remove("schema_version");
+                let authorization = fields.remove("authorization").unwrap();
+                record = json!({"schema_version":3,"record":record,"authorization":authorization});
+            }
+            serde_json::from_value(record)
+                .expect("public fields must reconstruct the exact record that was sealed")
+        })
+        .collect()
 }
 
 #[tokio::test]

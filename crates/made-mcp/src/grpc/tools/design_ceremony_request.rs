@@ -237,9 +237,9 @@ fn aggregation(
 fn string_map(
     obj: &Map<String, Value>,
     key: &str,
-) -> Result<std::collections::HashMap<String, String>, String> {
+) -> Result<std::collections::BTreeMap<String, String>, String> {
     let Some(value) = obj.get(key) else {
-        return Ok(std::collections::HashMap::new());
+        return Ok(std::collections::BTreeMap::new());
     };
     let map = j2p::require_object(value, key)?;
     map.iter()

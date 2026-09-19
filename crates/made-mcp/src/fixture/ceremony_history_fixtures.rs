@@ -13,6 +13,7 @@ use crate::renderers::{AuditRecordView, CeremonyEventPageView};
 pub(super) fn read_ceremony_events_fixture() -> Value {
     let record = AuditRecordView {
         global_position: None,
+        authorization: None,
         event_id: "ceremony-fixture-1:started".to_owned(),
         event_type: "ceremony_instance_started".to_owned(),
         schema_version: 2,

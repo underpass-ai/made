@@ -2,7 +2,7 @@
 use super::optionals::checked;
 use super::*;
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::{GetCeremonyInstanceRequest, GetCeremonyTranscriptRequest};
+use made_proto::v1::GetCeremonyTranscriptRequest;
 
 const YAML: &str = include_str!("../../../../tests/e2e/ceremonies/state-visits.yaml");
 const ID: &str = "parity-visits";
@@ -30,16 +30,7 @@ async fn cyclic_state_visits_have_mcp_and_direct_grpc_parity() {
         ("a", 3, 1, false, None),
         ("a", 3, 2, true, Some("finish")),
     ] {
-        claim_complete(
-            &arms,
-            &mut direct,
-            request_id,
-            step,
-            visit,
-            iteration,
-            ready,
-        )
-        .await;
+        claim_complete(&arms, request_id, step, visit, iteration, ready).await;
         request_id += 2;
         if let Some(trigger) = transition {
             let moved = checked(
@@ -69,7 +60,6 @@ async fn cyclic_state_visits_have_mcp_and_direct_grpc_parity() {
 
 async fn claim_complete(
     arms: &ParityArms,
-    direct: &mut MadeServiceClient<tonic::transport::Channel>,
     request_id: u64,
     step: &str,
     visit: u32,
@@ -108,24 +98,31 @@ async fn claim_complete(
         }),
     )
     .await;
-    let grpc = direct
-        .get_ceremony_instance(GetCeremonyInstanceRequest {
-            ceremony_id: ID.to_owned(),
-        })
-        .await
-        .unwrap()
-        .into_inner()
-        .instance
-        .unwrap();
-    assert_eq!(grpc.current_state_visit, visit);
+    // Read through both authorized MCP arms here. A one-arm gRPC read would
+    // consume an authorization decision only on that side and would change
+    // the policy version sealed into the next mutation's audit evidence.
+    let instance = checked(
+        arms,
+        request_id + 10_000,
+        "made_get_ceremony_instance",
+        json!({"ceremony_id": ID}),
+    )
+    .await;
+    let grpc = structured(&instance);
+    assert_eq!(grpc["current_state_visit"], visit);
     assert_eq!(
-        u64::from(grpc.current_state_iteration),
+        grpc["current_state_iteration"].as_u64().unwrap(),
         structured(&completed)["current_state_iteration"]
             .as_u64()
             .unwrap()
     );
-    let grpc_record = grpc.steps.iter().find(|r| r.step_id == step).unwrap();
-    assert_eq!(grpc_record.state_visit, visit);
+    let grpc_record = grpc["steps"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["step_id"] == step)
+        .unwrap();
+    assert_eq!(grpc_record["state_visit"], visit);
 }
 
 async fn assert_history(

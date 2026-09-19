@@ -1,11 +1,16 @@
 //! Embedded MCP backend.
-
 mod domain_tool_error;
 mod embedded_accept_child_completion_request;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_artifact_dispatch;
 mod embedded_assert_ceremony_reason_request;
+mod embedded_authorization_dispatch;
+mod embedded_authorization_presenter;
+mod embedded_authorization_request;
+mod embedded_authorized_dispatch;
+mod embedded_backend_authorization;
+mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_dispatch;
 mod embedded_budget_fields;
@@ -15,6 +20,8 @@ mod embedded_ceremony_draft_request;
 mod embedded_ceremony_history_presenter;
 mod embedded_ceremony_id_request;
 mod embedded_ceremony_instance_presenter;
+mod embedded_ceremony_search_dispatch;
+mod embedded_ceremony_search_request;
 mod embedded_children_request;
 mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
@@ -50,10 +57,10 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
+mod embedded_tool_authorizer;
 
-use made_app::services::CeremonyTraceScope;
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, TraceContext};
+use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -73,10 +80,10 @@ use crate::protocol::{
     PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
     RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    RUN_CEREMONY_TOOL, SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL,
+    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
-use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
 use self::embedded_accept_child_completion_request::EmbeddedAcceptChildCompletionRequest;
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -127,53 +134,22 @@ use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
 
-/// What this backend calls itself. Shared with the default lease owner
-/// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
-/// the name `initialize` advertises.
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 
 /// MCP adapter that executes ceremonies inside the host process.
 #[derive(Clone, Debug, Default)]
 pub struct EmbeddedMadeMcpBackend {
     made: EmbeddedMade,
+    authorization: Option<embedded_tool_authorizer::EmbeddedToolAuthorizer>,
 }
 
 impl EmbeddedMadeMcpBackend {
     #[must_use]
     pub fn new(made: EmbeddedMade) -> Self {
-        Self { made }
-    }
-
-    async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, ToolError> {
-        EmbeddedCeremonyInstancePresenter::present(&self.made, ceremony_id)
-            .await
-            .map(tool_success_result)
-    }
-
-    async fn present_instances(&self) -> Result<Value, ToolError> {
-        let instances = self.made.instances().await?;
-        let mut values = Vec::with_capacity(instances.len());
-        for instance in instances {
-            // An instance whose definition is not in this store cannot be
-            // read back — the published-definition restart boundary. The
-            // state is still there, so the listing reports that one entry
-            // as unreadable instead of taking every readable ceremony down
-            // with it. Asking for it by id still fails loudly.
-            //
-            // Every entry carries `rehydratable` and `reason`, readable
-            // or not, so a caller tests one field rather than inferring
-            // readability from a field that is not there.
-            match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(value) => values.push(CeremonyInstanceListingEntry::rehydratable(value)),
-                Err(reason) => values.push(CeremonyInstanceListingEntry::unrehydratable(
-                    instance.id().as_str(),
-                    reason.message(),
-                )),
-            }
+        Self {
+            made,
+            authorization: None,
         }
-        Ok(tool_success_result(
-            CeremonyInstanceListing::new(values).to_json(),
-        ))
     }
 }
 
@@ -184,6 +160,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
 
     fn initialize(&self) -> MadeMcpBackendInitializationFuture<'_> {
         Box::pin(async {
+            if let Some(authorization) = &self.authorization {
+                authorization.validate_configuration().await?;
+            }
             self.made
                 .recover_event_publication()
                 .await
@@ -234,6 +213,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | ENFORCE_CEREMONY_DEADLINES_TOOL
                 | GET_CEREMONY_INSTANCE_TOOL
                 | LIST_CEREMONY_INSTANCES_TOOL
+                | SEARCH_CEREMONY_INSTANCES_TOOL
                 | REQUEST_CEREMONY_INTERVENTION_TOOL
                 | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
@@ -547,6 +527,12 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     Ok(tool_success_result(present_service_metrics(&metrics)))
                 }
                 LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
+                SEARCH_CEREMONY_INSTANCES_TOOL => {
+                    let request_id =
+                        AuthorizationRequestId::new(uuid::Uuid::new_v4().simple().to_string())
+                            .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+                    self.search_and_present(arguments, request_id).await
+                }
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {
                     let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
@@ -584,10 +570,6 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         arguments: &'a Value,
         trace: &'a ToolTraceContext,
     ) -> MadeMcpToolFuture<'a> {
-        Box::pin(async move {
-            let trace = TraceContext::parse(trace.traceparent())
-                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-            CeremonyTraceScope::run(trace, self.call_tool(name, arguments)).await
-        })
+        embedded_authorized_dispatch::call(self, name, arguments, trace)
     }
 }

@@ -2,10 +2,8 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{Constraints, OrchestrateRequest, OutputContract, OutputFormat, Task};
 use prost_types::value::Kind as PbKind;
-use tonic::transport::Channel;
 use tracing::{info, warn};
 
 use super::super::pb_struct_from_pairs;
@@ -23,7 +21,7 @@ use super::super::pb_struct_from_pairs;
 /// real provider council is wired into this compose stack.
 #[allow(clippy::too_many_lines)] // single end-to-end scenario; splitting fragments the assertion
 pub(crate) async fn verify_orchestrate_rejects_proposal_violating_json_schema(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     specialty: &str,
 ) -> Result<()> {
     // Pre-subscribe so the published TaskFailed envelope cannot land
@@ -50,7 +48,7 @@ pub(crate) async fn verify_orchestrate_rejects_proposal_violating_json_schema(
         output_contract: Some(OutputContract {
             contract_id: "scenario-6-strict".to_owned(),
             format: OutputFormat::JsonObject as i32,
-            fields: std::collections::HashMap::new(),
+            fields: std::collections::BTreeMap::new(),
             json_schema: r#"{
                 "type": "object",
                 "additionalProperties": false,

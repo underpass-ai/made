@@ -11,7 +11,7 @@ use made_proto::v1::{
     StartCeremonyRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use tonic::Code;
 
 const SEATED_CEREMONY: &str = r#"
@@ -92,7 +92,7 @@ async fn a_seated_role_sends_its_work_to_the_panel_the_session_chose() {
             ceremony_id: ceremony_id.to_owned(),
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            seating: HashMap::from([("RISK_REVIEWER".to_owned(), "senior_sre_panel".to_owned())]),
+            seating: BTreeMap::from([("RISK_REVIEWER".to_owned(), "senior_sre_panel".to_owned())]),
         })
         .await
         .expect("BindCeremonyParticipants should succeed")
@@ -189,7 +189,7 @@ async fn a_seat_the_ceremony_never_declared_is_refused() {
             ceremony_id: ceremony_id.to_owned(),
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            seating: HashMap::from([("NOT_A_ROLE".to_owned(), "senior_sre_panel".to_owned())]),
+            seating: BTreeMap::from([("NOT_A_ROLE".to_owned(), "senior_sre_panel".to_owned())]),
         })
         .await
         .expect_err("a seat that does not exist cannot be filled");
@@ -209,7 +209,7 @@ async fn seating_nobody_is_refused_rather_than_answered_with_done() {
             ceremony_id: ceremony_id.to_owned(),
             actor_id: "operator-1".to_owned(),
             actor_kind: "service".to_owned(),
-            seating: HashMap::new(),
+            seating: BTreeMap::new(),
         })
         .await
         .expect_err("empty seating would change nothing");
@@ -230,7 +230,7 @@ async fn a_panel_can_be_changed_halfway_through() {
                 ceremony_id: ceremony_id.to_owned(),
                 actor_id: "operator-1".to_owned(),
                 actor_kind: "service".to_owned(),
-                seating: HashMap::from([("RISK_REVIEWER".to_owned(), specialty.to_owned())]),
+                seating: BTreeMap::from([("RISK_REVIEWER".to_owned(), specialty.to_owned())]),
             })
             .await
             .expect("re-seating a session should succeed");

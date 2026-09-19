@@ -1,4 +1,7 @@
-use crate::{embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION};
+use crate::{
+    embedded_authorization_services::EmbeddedAuthorizationServices,
+    embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION,
+};
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::ceremony::{
@@ -12,33 +15,44 @@ use made_adapters::sqlite::{
     SqliteDeliberationRepository,
 };
 use made_api::ApiError;
-use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
+use made_app::artifacts::ArtifactService;
+use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    CeremonyProgressSettings, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase,
-    ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
+    CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
+    CeremonySearchCursorKey, CeremonySearchCursorNamespace, GetCeremonyInstanceUseCase,
+    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
+    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, ServiceMetrics, ServiceStatus,
+    StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
-    ArtifactChunkPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError, ArtifactTombstone,
-    ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
+    AuthorizationPolicyStorePort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
-    ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
+    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
+    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
+    MetricsSnapshotPort, StatisticsPort,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef, CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{
+    AuthorizationAction, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
+    CeremonyId,
+};
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod artifacts;
+mod authorization;
+mod authorization_guards;
 mod budgets;
+mod ceremony_authority;
+mod ceremony_operation_authority;
+mod ceremony_projection_data;
 mod council_journal;
 mod councils;
 mod definitions;
@@ -46,6 +60,10 @@ mod execution;
 mod execution_receipts;
 mod history;
 mod participation;
+
+pub use ceremony_authority::EmbeddedCeremonyAuthority;
+pub use ceremony_operation_authority::EmbeddedCeremonyOperationAuthority;
+pub use ceremony_projection_data::EmbeddedCeremonyProjectionData;
 
 /// In-process facade over the MADE ceremony use cases.
 #[derive(Clone)]
@@ -55,30 +73,24 @@ pub struct EmbeddedMade {
     /// The streams themselves, for the one read that wants records
     /// rather than the session they fold to.
     events: Arc<dyn CeremonyEventStorePort>,
+    ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
+    ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+    ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
     progress_stream: Arc<StreamCeremonyUseCase>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
-    stream: Arc<SessionStream>,
+    pub(crate) stream: Arc<SessionStream>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     pub(crate) clock: Arc<dyn ClockPort>,
     pub(crate) max_parallel_ceiling: MaxParallel,
     metrics_recorder: Arc<dyn MetricsRecorderPort>,
     metrics_snapshot: Arc<dyn MetricsSnapshotPort>,
-    /// The operational counters this engine keeps.
-    ///
-    /// Wired like every other port so a host can replace it; the
-    /// default keeps them in memory, and in an edition that runs no
-    /// council they stay at zero — which is the honest answer, not a
-    /// missing one.
+    /// Replaceable operational counters; editions without councils honestly stay at zero.
     statistics: Arc<dyn StatisticsPort>,
     councils: Arc<EmbeddedCouncilServices>,
-    /// The same adapter the recorder writes through, read back.
-    ///
-    /// The writer side is a subscriber of the stream (ADR-012), so the
-    /// recorder is not a field here; this is the read the start use
-    /// cases make before a session opens.
+    /// Reads the memory projection written by the stream subscriber (ADR-012).
     memory_reader: Arc<dyn MemoryReaderPort>,
     /// Durable publication is woken after each append and once explicitly at
     /// host startup, so records left pending by a stopped process do not need
@@ -88,6 +100,7 @@ pub struct EmbeddedMade {
     artifacts: Option<Arc<ArtifactService>>,
     execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
     budgets: BudgetLedgerService,
+    authorization: Option<EmbeddedAuthorizationServices>,
 }
 
 impl EmbeddedMade {
@@ -202,7 +215,7 @@ impl EmbeddedMade {
         let factory = Arc::new(factory);
         let councils = SqliteCouncilStore::over(store);
         let journal = Arc::new(SqliteCouncilJournal::new(councils.clone()));
-        Ok(Self::builder()
+        let builder = Self::builder()
             .with_council_journal(journal)
             .with_agent_factory(factory.clone())
             .with_agent_registry(Arc::new(SqliteAgentRegistry::new(
@@ -214,13 +227,18 @@ impl EmbeddedMade {
             .with_deliberation_repository(Arc::new(SqliteDeliberationRepository::new(
                 councils.clone(),
             )))
-            .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils))))
+            .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils)));
+        Ok(match ceremony_search_cursors_from_env()? {
+            Some(cursors) => builder.with_ceremony_search_cursors(cursors),
+            None => builder,
+        })
     }
 
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         events: Arc<dyn CeremonyEventStorePort>,
+        ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
         cursors: Arc<dyn CeremonyEventCursorPort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
@@ -239,6 +257,8 @@ impl EmbeddedMade {
         artifacts: Option<Arc<ArtifactService>>,
         execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
         budgets: BudgetLedgerService,
+        ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+        ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -286,6 +306,9 @@ impl EmbeddedMade {
         Self {
             definitions,
             publications,
+            ceremony_index,
+            ceremony_search_cursors,
+            ceremony_search_authorization,
             progress_stream,
             stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
@@ -304,7 +327,29 @@ impl EmbeddedMade {
             artifacts,
             execution_receipts,
             budgets,
+            authorization: None,
         }
+    }
+
+    /// Attach the policy services used by protected direct facade calls and
+    /// embedded MCP administration. The caller must pass the same durable
+    /// store used by the authorization gate.
+    #[must_use]
+    pub fn with_authorization_policy(
+        mut self,
+        policy_id: AuthorizationPolicyId,
+        store: Arc<dyn AuthorizationPolicyStorePort>,
+    ) -> Self {
+        let (memory_reader, authorization) = crate::embedded_authorization_wiring::wire(
+            policy_id,
+            store,
+            self.clock.clone(),
+            self.memory_reader.clone(),
+            &self.stream,
+        );
+        self.memory_reader = memory_reader;
+        self.authorization = Some(authorization);
+        self
     }
 
     /// Resume durable event publication left pending by an earlier process.
@@ -343,15 +388,33 @@ impl EmbeddedMade {
     }
 
     pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::GetCeremonyInstance, id)?;
         GetCeremonyInstanceUseCase::new(self.stream.clone())
             .execute(id)
             .await
     }
 
     pub async fn instances(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListCeremonyInstances)?;
         ListCeremonyInstancesUseCase::new(self.stream.clone())
             .execute()
             .await
+    }
+
+    pub async fn search_instances(
+        &self,
+        request_id: AuthorizationRequestId,
+        input: &SearchCeremonyInstancesInput,
+    ) -> Result<CeremonyInstancePage, DomainError> {
+        crate::embedded_ceremony_search::execute(
+            self.ceremony_search_authorization.as_ref(),
+            self.ceremony_search_cursors.clone(),
+            self.ceremony_index.clone(),
+            self.stream.clone(),
+            request_id,
+            input,
+        )
+        .await
     }
 
     /// How this engine is doing: the version it was built from, how
@@ -362,6 +425,7 @@ impl EmbeddedMade {
     /// a host that moves between editions reads one answer rather than
     /// two (ADR-014).
     pub async fn status(&self, include_statistics: bool) -> Result<ServiceStatus, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GetStatus)?;
         GetServiceStatusUseCase::new(
             self.statistics.clone(),
             self.metrics_recorder.clone(),
@@ -374,73 +438,10 @@ impl EmbeddedMade {
 
     /// The operational counters on their own.
     pub async fn metrics(&self) -> Result<ServiceMetrics, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GetMetrics)?;
         GetServiceMetricsUseCase::new(self.statistics.clone(), self.metrics_snapshot.clone())
             .execute()
             .await
-    }
-
-    pub async fn begin_artifact_upload(
-        &self,
-        request: BeginArtifactUpload,
-    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
-        self.artifact_service()?.begin_upload(request).await
-    }
-
-    pub async fn put_artifact_chunk(
-        &self,
-        request: PutArtifactChunk,
-    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
-        self.artifact_service()?.put_chunk(request).await
-    }
-
-    pub async fn commit_artifact_upload(
-        &self,
-        upload_id: &ArtifactUploadId,
-    ) -> Result<ArtifactRef, ArtifactStoreError> {
-        self.artifact_service()?.commit_upload(upload_id).await
-    }
-
-    pub async fn abort_artifact_upload(
-        &self,
-        upload_id: &ArtifactUploadId,
-    ) -> Result<(), ArtifactStoreError> {
-        self.artifact_service()?.abort_upload(upload_id).await
-    }
-
-    pub async fn get_artifact(
-        &self,
-        artifact_id: &ArtifactId,
-    ) -> Result<ArtifactRecord, ArtifactStoreError> {
-        self.artifact_service()?.get(artifact_id).await
-    }
-
-    pub async fn list_artifacts(
-        &self,
-        cursor: Option<&ArtifactCursor>,
-        limit: ArtifactPageLimit,
-    ) -> Result<ArtifactListing, ArtifactStoreError> {
-        self.artifact_service()?.list_page(cursor, limit).await
-    }
-
-    pub async fn read_artifact_chunk(
-        &self,
-        request: ReadArtifactChunk,
-    ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
-        self.artifact_service()?.read_chunk(request).await
-    }
-
-    /// The host must authorize retention before calling this method.
-    pub async fn tombstone_artifact(
-        &self,
-        command: TombstoneArtifact,
-    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
-        self.artifact_service()?.tombstone(command).await
-    }
-
-    fn artifact_service(&self) -> Result<&ArtifactService, ArtifactStoreError> {
-        self.artifacts
-            .as_deref()
-            .ok_or(ArtifactStoreError::StorageUnavailable)
     }
 }
 
@@ -452,6 +453,35 @@ fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, Api
             reason: format!("the durable local artifact store did not open: {error}"),
         }
     })
+}
+
+fn ceremony_search_cursors_from_env() -> Result<Option<CeremonySearchCursorCodec>, ApiError> {
+    const KEY: &str = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY";
+    const STORE: &str = "MADE_CEREMONY_STORE_ID";
+    const POLICY: &str = "MADE_AUTH_POLICY_ID";
+    let key = std::env::var(KEY).ok();
+    let store = std::env::var(STORE).ok();
+    let policy = std::env::var(POLICY).ok();
+    if key.is_none() && store.is_none() && policy.is_none() {
+        return Ok(None);
+    }
+    let missing = |name| ApiError::Unavailable {
+        reason: format!("{name} is required for scoped, restart-stable ceremony search cursors"),
+    };
+    let key =
+        CeremonySearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
+            ApiError::Unavailable {
+                reason: format!("{KEY} is invalid: {error}"),
+            }
+        })?;
+    let namespace = CeremonySearchCursorNamespace::new(
+        store.ok_or_else(|| missing(STORE))?,
+        policy.ok_or_else(|| missing(POLICY))?,
+    )
+    .map_err(|error| ApiError::Unavailable {
+        reason: format!("ceremony search cursor namespace is invalid: {error}"),
+    })?;
+    Ok(Some(CeremonySearchCursorCodec::new(key, namespace)))
 }
 
 fn open_budget_store(path: &std::path::Path) -> Result<SqliteBudgetLedgerStore, ApiError> {

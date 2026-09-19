@@ -14,7 +14,7 @@ use made_proto::v1 as pb;
 use prost_types::Timestamp;
 use time::OffsetDateTime;
 
-use super::offset_to_timestamp;
+use super::{ceremony_authorization::evidence_to_proto, offset_to_timestamp};
 
 pub fn begin_artifact_upload_from_proto(
     request: pb::BeginArtifactUploadRequest,
@@ -105,12 +105,22 @@ pub fn artifact_ref_to_proto(artifact: &ArtifactRef) -> pb::ArtifactReference {
     }
 }
 
-#[must_use]
-pub fn artifact_record_to_proto(record: &ArtifactRecord) -> pb::ArtifactRecord {
-    pb::ArtifactRecord {
+pub fn artifact_record_to_proto(
+    record: &ArtifactRecord,
+) -> Result<pb::ArtifactRecord, DomainError> {
+    Ok(pb::ArtifactRecord {
         artifact: Some(artifact_ref_to_proto(&record.artifact)),
-        tombstone: record.tombstone.as_ref().map(artifact_tombstone_to_proto),
-    }
+        tombstone: record
+            .tombstone
+            .as_ref()
+            .map(artifact_tombstone_to_proto)
+            .transpose()?,
+        authorization: record
+            .authorization
+            .as_ref()
+            .map(evidence_to_proto)
+            .transpose()?,
+    })
 }
 
 #[must_use]
@@ -124,14 +134,20 @@ pub fn artifact_chunk_to_proto(chunk: ArtifactChunkPage) -> pb::ReadArtifactChun
     }
 }
 
-#[must_use]
-pub fn artifact_tombstone_to_proto(tombstone: &ArtifactTombstone) -> pb::ArtifactTombstoneRecord {
-    pb::ArtifactTombstoneRecord {
+pub fn artifact_tombstone_to_proto(
+    tombstone: &ArtifactTombstone,
+) -> Result<pb::ArtifactTombstoneRecord, DomainError> {
+    Ok(pb::ArtifactTombstoneRecord {
         actor: tombstone.actor.as_str().to_owned(),
         policy: tombstone.policy.as_str().to_owned(),
         retired_at: Some(offset_to_timestamp(tombstone.retired_at)),
         digest: tombstone.digest.as_str().to_owned(),
-    }
+        authorization: tombstone
+            .authorization
+            .as_ref()
+            .map(evidence_to_proto)
+            .transpose()?,
+    })
 }
 
 fn artifact_provenance_from_proto(

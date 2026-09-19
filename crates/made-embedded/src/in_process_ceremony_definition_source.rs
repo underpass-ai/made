@@ -21,6 +21,10 @@ impl InProcessCeremonyDefinitionSource {
     pub fn from_yaml(raw: &str) -> Result<Self, DomainError> {
         CeremonyDefinitionYaml::parse_str(raw).map(|definition| Self::new([definition]))
     }
+
+    pub(crate) fn definitions(&self) -> &[CeremonyDefinition] {
+        &self.definitions
+    }
 }
 
 #[async_trait]

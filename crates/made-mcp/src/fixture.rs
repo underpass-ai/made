@@ -14,6 +14,7 @@ use serde_json::{json, Value};
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod artifact_fixtures;
+mod authorization_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
 mod council_fixtures;
@@ -23,7 +24,8 @@ use council_fixtures::{
 mod execution_receipt_fixtures;
 
 use crate::renderers::{
-    CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
+    CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
+    ServiceMetricsView, StatisticsView,
 };
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
@@ -98,6 +100,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
+                "made_search_ceremony_instances" => ceremony_search_fixture(),
                 "made_design_ceremony" => design_ceremony_fixture(),
                 "made_read_ceremony_events" => read_ceremony_events_fixture(),
                 "made_stream_ceremony" => stream_ceremony_fixture(),
@@ -139,6 +142,11 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
                 "made_complete_execution_receipt" => ceremony_instance_fixture(),
                 "made_adopt_execution_receipt" => ceremony_instance_fixture(),
+                "made_get_authorization_policy" => authorization_policy_fixture(),
+                "made_issue_authorization_grant" => json!({"version":2,"existing":false}),
+                "made_revoke_authorization_grant" => json!({"version":3,"existing":false}),
+                "made_approve_authorization_operation" => authorization_fixtures::approval(),
+                "made_list_authorization_decisions" => authorization_fixtures::decisions(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -299,6 +307,16 @@ fn ceremony_listing_fixture() -> Value {
             "not found: ceremony_definition",
         ),
     ])
+    .to_json()
+}
+
+fn ceremony_search_fixture() -> Value {
+    CeremonyInstanceSearchPage::new(
+        vec![CeremonyInstanceListingEntry::rehydratable(
+            ceremony_instance_fixture(),
+        )],
+        Some("fixture-next-cursor".to_owned()),
+    )
     .to_json()
 }
 
@@ -554,6 +572,14 @@ fn publish_definition_fixture() -> Value {
         "version": "1.0",
         "digest": "3f786850e387550fdab836ed7e6dc881de23001b"
     })
+}
+
+fn authorization_policy_fixture() -> Value {
+    json!({"policy":{
+        "policy_id":"fixture-policy","version":1,
+        "owner":{"principal_id":"fixture-host","kind":"trusted_host","authentication_method":"local_host_policy"},
+        "grants":[],"revocations":[],"separation_rules":[]
+    }})
 }
 
 #[cfg(test)]

@@ -57,9 +57,15 @@ services:
       dockerfile: Dockerfile
     environment:
       MADE_GRPC_PORT: "50055"
+      MADE_GRPC_TLS_MODE: "mutual"
+      MADE_GRPC_TLS_CERT_PATH: "/etc/made/auth/server.pem"
+      MADE_GRPC_TLS_KEY_PATH: "/etc/made/auth/server.key"
+      MADE_GRPC_TLS_CLIENT_CA_PATH: "/etc/made/auth/ca.pem"
+      MADE_AUTH_POLICY_ID: "made-e2e-policy"
+      MADE_AUTH_MTLS_PRINCIPALS_PATH: "/etc/made/auth/principals.json"
       MADE_NATS_ENABLED: "true"
       MADE_NATS_URL: "nats://nats:4222"
-      MADE_CEREMONY_STORE_PATH: "/tmp/made-e2e.sqlite3"
+      MADE_CEREMONY_STORE_PATH: "/var/lib/made/made-e2e.sqlite3"
       MADE_PUBLISH_PREFIX: "made"
       MADE_TRIGGER_SUBJECT: "made.trigger.>"
       MADE_SEED_SPECIALTIES: "triage"
@@ -80,6 +86,14 @@ services:
       MADE_VLLM_MODEL: "stub-report-vllm-v1"
       MADE_VLLM_ENDPOINT: "http://stub-llm:8000"
       RUST_LOG: "info"
+    volumes:
+      - type: bind
+        source: "${MADE_E2E_AUTH_DIR:?MADE_E2E_AUTH_DIR is required}"
+        target: /etc/made/auth
+        read_only: true
+      - type: bind
+        source: "${MADE_E2E_STATE_DIR:?MADE_E2E_STATE_DIR is required}"
+        target: /var/lib/made
     depends_on:
       - nats
       - stub-runtime
@@ -91,7 +105,11 @@ services:
       context: ../..
       dockerfile: tests/e2e/runner.Dockerfile
     environment:
-      MADE_ENDPOINT: "http://made:50055"
+      MADE_ENDPOINT: "https://made:50055"
+      MADE_CLIENT_TLS_CA_PATH: "/etc/made/auth/ca.pem"
+      MADE_CLIENT_TLS_CERT_PATH: "/etc/made/auth/client.pem"
+      MADE_CLIENT_TLS_KEY_PATH: "/etc/made/auth/client.key"
+      MADE_CLIENT_TLS_DOMAIN: "made"
       MADE_SEED_SPECIALTY: "triage"
       # Compose-owned 1-9 and 17-20 suite by default. Override from the host with, e.g.,
       # `MADE_E2E_SCENARIOS=cluster-connectivity make e2e-compose`.
@@ -110,5 +128,10 @@ services:
       MADE_VLLM_MAX_TOKENS: "512"
       MADE_VLLM_TIMEOUT_SECS: "30"
       RUST_LOG: "info"
+    volumes:
+      - type: bind
+        source: "${MADE_E2E_AUTH_DIR:?MADE_E2E_AUTH_DIR is required}"
+        target: /etc/made/auth
+        read_only: true
     depends_on:
       - made

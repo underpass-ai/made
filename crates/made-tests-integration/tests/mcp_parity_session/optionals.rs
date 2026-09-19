@@ -66,7 +66,24 @@ pub(super) async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: V
         !failed(&embedded),
         "{tool} embedded refused {arguments}: {embedded:#}"
     );
-    assert_same_answer(tool, &wire, &embedded);
+    if tool == "made_list_authorization_decisions" {
+        assert_authorization_decisions(
+            &wire,
+            &embedded,
+            &arms.opaque_authorization_targets.lock().unwrap(),
+            &arms.artifact_authorizations.lock().unwrap(),
+        );
+    } else if matches!(tool, "made_get_artifact" | "made_list_artifacts") {
+        assert_artifact_fact_answer(
+            tool,
+            &wire,
+            &embedded,
+            &arms.opaque_authorization_targets.lock().unwrap(),
+            &mut arms.artifact_authorizations.lock().unwrap(),
+        );
+    } else {
+        assert_same_answer(tool, &wire, &embedded);
+    }
     embedded
 }
 

@@ -4,10 +4,16 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::{
+    AcceptedStepCompletion, AuthorizationPolicyAdministrationService,
+    ContinueAcceptedStepClaimUseCase, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
+};
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
 use made_app::services::AutoDispatchService;
+use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
@@ -30,9 +36,12 @@ use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
+use made_core::ports::{
+    ArtifactUploadId, CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort,
+};
 use made_core::value_objects::{
-    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId,
+    AgentId, ArtifactId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId,
+    CouncilId, MaxParallel, OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -75,7 +84,7 @@ use super::status::{artifact_error_to_status, budget_error_to_status, domain_err
 use super::tracecontext::{
     link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
 };
-use super::MadeGrpcServiceBuilder;
+use super::{GrpcAuthorizationGate, MadeGrpcServiceBuilder};
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
 
@@ -86,11 +95,13 @@ use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
 mod artifact_handlers;
 mod authoring_handlers;
+mod authorization_handlers;
 mod budget_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
 mod ceremony_lifecycle_handlers;
+mod ceremony_search_handlers;
 mod council_handlers;
 mod council_journal_handlers;
 mod descriptor_error;
@@ -104,6 +115,11 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) authorization: Arc<GrpcAuthorizationGate>,
+    pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
+    pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,
+    pub(super) read_authorization_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+    pub(super) continue_accepted_step_claim: Arc<ContinueAcceptedStepClaimUseCase>,
     pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
@@ -119,6 +135,7 @@ pub struct MadeGrpcService {
     pub(super) run_ceremony: Arc<RunCeremonyUseCase>,
     pub(super) get_ceremony_instance: Arc<GetCeremonyInstanceUseCase>,
     pub(super) list_ceremony_instances: Arc<ListCeremonyInstancesUseCase>,
+    pub(super) search_ceremony_instances: Arc<SearchCeremonyInstancesUseCase>,
     pub(super) resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
@@ -178,6 +195,253 @@ impl MadeGrpcService {
     #[must_use]
     pub fn builder() -> MadeGrpcServiceBuilder {
         MadeGrpcServiceBuilder::default()
+    }
+
+    /// Authorization boundary shared by every typed RPC handler.
+    #[must_use]
+    pub const fn authorization(&self) -> &Arc<GrpcAuthorizationGate> {
+        &self.authorization
+    }
+
+    async fn authorize_global<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+    ) -> Result<AuthorizedOperation, Status> {
+        self.authorization
+            .authorize(request, action, AuthorizationScope::Global, None)
+            .await
+    }
+
+    async fn authorize_definition<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        definition_yaml: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml)
+            .map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize(
+                request,
+                action,
+                AuthorizationScope::Definition {
+                    name: draft.name().clone(),
+                    version: Some(draft.version().clone()),
+                },
+                None,
+            )
+            .await
+    }
+
+    async fn authorize_ceremony<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        ceremony_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
+        let scope = match self.get_ceremony_instance.execute(&ceremony_id).await {
+            Ok(instance) => instance.lineage().map_or_else(
+                || AuthorizationScope::Ceremony {
+                    ceremony_id: ceremony_id.clone(),
+                },
+                |lineage| AuthorizationScope::ResolvedCeremony {
+                    ceremony_id: ceremony_id.clone(),
+                    root_id: lineage.root_id().clone(),
+                },
+            ),
+            Err(DomainError::NotFound { .. }) => AuthorizationScope::Ceremony {
+                ceremony_id: ceremony_id.clone(),
+            },
+            Err(error) => return Err(domain_error_to_status(error)),
+        };
+        self.authorization
+            .authorize_authenticated(request, principal, action, scope, None)
+            .await
+    }
+
+    async fn authorize_child_parent<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        child_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let child_id = CeremonyId::new(child_id).map_err(domain_error_to_status)?;
+        let child = self
+            .get_ceremony_instance
+            .execute(&child_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let parent_id = child
+            .lineage()
+            .ok_or_else(|| {
+                domain_error_to_status(DomainError::InvariantViolated {
+                    reason: "child authorization scope requires sealed lineage",
+                })
+            })?
+            .parent_id()
+            .clone();
+        let parent = self
+            .get_ceremony_instance
+            .execute(&parent_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let scope = parent.lineage().map_or_else(
+            || AuthorizationScope::Ceremony {
+                ceremony_id: parent_id.clone(),
+            },
+            |lineage| AuthorizationScope::ResolvedCeremony {
+                ceremony_id: parent_id.clone(),
+                root_id: lineage.root_id().clone(),
+            },
+        );
+        self.authorization
+            .authorize_authenticated(request, principal, action, scope, None)
+            .await
+    }
+
+    async fn authorize_council<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        council_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let council_id = CouncilId::new(council_id).map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                AuthorizationScope::Council { council_id },
+                None,
+            )
+            .await
+    }
+
+    async fn continue_accepted_step_completion(
+        &self,
+        request: &Request<pb::CompleteCeremonyStepRequest>,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let request_id = self
+            .authorization
+            .request_id(request, AuthorizationAction::CompleteCeremonyStep)?;
+        let target_digest = self
+            .authorization
+            .target_digest_for_authenticated(request, &principal)
+            .map_err(Status::from)?;
+        let input = AcceptedStepCompletion::from_invocation(
+            CeremonyId::new(&request.get_ref().ceremony_id).map_err(domain_error_to_status)?,
+            made_core::value_objects::StepId::new(&request.get_ref().step_id)
+                .map_err(domain_error_to_status)?,
+            made_core::value_objects::StepClaimFence::new(&request.get_ref().claim_fence)
+                .map_err(domain_error_to_status)?,
+            principal,
+            &request_id,
+            target_digest,
+        )
+        .map_err(domain_error_to_status)?;
+        self.continue_accepted_step_claim
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)
+    }
+
+    async fn authorize_artifact<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        artifact_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let artifact_id = ArtifactId::new(artifact_id).map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                AuthorizationScope::Artifact { artifact_id },
+                None,
+            )
+            .await
+    }
+
+    async fn authorize_artifact_upload<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        upload_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let upload_id = ArtifactUploadId::new(upload_id).map_err(domain_error_to_status)?;
+        let artifact_id = self
+            .artifact_service()
+            .ok_or_else(|| Status::unavailable("artifact storage is not configured"))?
+            .artifact_id_for_upload(&upload_id)
+            .await
+            .map_err(artifact_error_to_status)?;
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                AuthorizationScope::Artifact { artifact_id },
+                None,
+            )
+            .await
+    }
+
+    async fn authorize_artifact_upload_begin<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        requested_artifact_id: Option<&str>,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let scope = requested_artifact_id.map_or(Ok(AuthorizationScope::Global), |id| {
+            ArtifactId::new(id).map(|artifact_id| AuthorizationScope::Artifact { artifact_id })
+        });
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                scope.map_err(domain_error_to_status)?,
+                None,
+            )
+            .await
+    }
+
+    async fn authorize_budget_for_ceremony<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        ceremony_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
+        let instance = self
+            .get_ceremony_instance
+            .execute(&ceremony_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let account_id = instance
+            .budget_account_id()
+            .cloned()
+            .ok_or_else(|| Status::failed_precondition("ceremony has no durable budget account"))?;
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                AuthorizationScope::Budget { account_id },
+                None,
+            )
+            .await
     }
 
     fn artifact_service(&self) -> Option<&ArtifactService> {

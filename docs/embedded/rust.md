@@ -6,6 +6,19 @@ The narrower `made-api::CeremonyEngineApi` trait is a transport-neutral
 consumer boundary; the `EmbeddedMade` facade exposes additional typed host
 operations.
 
+`EmbeddedMade::default()`, `EmbeddedMade::open(path)` and a builder completed
+without authorization deliberately leave the embedding host as the trust
+boundary. They are the unprotected in-process composition used by the examples
+below; actor fields remain provenance rather than credentials. A protected
+direct facade installs a `TrustedHostAuthorizationGate` on the builder and an
+authorization policy store through `with_authorization_policy`. Every protected
+public read or mutation then requires an active `AuthorizationOperationScope`
+admitted for the exact action, authoritative scope and target. Missing or
+mismatched context fails before the facade reads or mutates protected state.
+See the checked
+[protected facade example](../../crates/made-embedded/tests/protected_facade_authorization.rs)
+for approval by one principal and execution by another.
+
 ## Publish, start and reopen
 
 Add matching release versions of `made-api` and `made-embedded`, plus Tokio.

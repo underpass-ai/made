@@ -14,11 +14,10 @@ use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStre
 use made_app::usecases::{
     AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    UnregisterAgentUseCase,
+    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase,
+    ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::ports::{
     AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
@@ -34,12 +33,15 @@ use persistence::wire_persistence;
 use persistence_handles::Persistence;
 
 mod artifact_storage;
+mod authorization;
 mod budget_operations;
 mod ceremony_lifecycle;
 mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
 mod ceremony_queries;
+mod children_recovery;
+mod council_event_publisher;
 mod execution_receipts;
 mod executor;
 mod messaging;
@@ -56,12 +58,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One Prometheus registry for use cases and the health endpoint. Fails
-    // fast if a metric is malformed (a wiring bug).
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators = validators::wire(metrics_recorder.clone())?;
-    // Choose scoring, and when an LLM judge is configured append it to
-    // the validator chain so its verdict drives the ranking.
+    // An optional LLM judge joins validators so its verdict drives ranking.
     let scoring: Arc<dyn ScoringPort> = scoring::wire(&mut validators, metrics_recorder.clone())?;
     let executor = executor::wire().await?;
     let dispatching_factory =
@@ -69,7 +68,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
     let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(dispatching_factory);
 
-    // Select council repositories and their journal together to keep one source of truth.
     let Persistence {
         repository,
         council_registry,
@@ -81,11 +79,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
         pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
+    let authorization =
+        authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
+    let authorization_continuation = authorization.continuation.clone();
 
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let CeremonyPersistence {
         events: ceremony_events,
+        index: ceremony_index,
         cursors: ceremony_cursors,
         snapshots: ceremony_snapshots,
         publications: ceremony_publications,
@@ -94,8 +96,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         receipts: execution_receipts,
         budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
-    // The writer is a subscriber of the stream: memory is a projection
-    // of sealed events, outside the ceremony transaction (ADR-012/013).
+    // Memory projects sealed events outside the ceremony transaction (ADR-012/013).
     let session_memory = Arc::new(SessionMemoryRecorder::new(
         memory_writer,
         ceremony_events.clone(),
@@ -107,18 +108,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_client,
         ceremony_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
-    let council_event_publisher = service_config.nats_enabled.then(|| {
-        Arc::new(made_app::usecases::PublishCouncilEventsUseCase::new(
-            council_journal.clone(),
-            messaging_transport,
-            clock.clone(),
-        ))
-    });
-    let messaging = Arc::new(
-        made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
-            council_journal.clone(),
-        ),
+    let council_event_publisher = council_event_publisher::wire(
+        service_config.nats_enabled,
+        council_journal.clone(),
+        messaging_transport,
+        clock.clone(),
     );
+    let messaging = council_event_publisher::journal_messaging(council_journal.clone());
     let event_publisher = ceremony_publisher::wire(
         ceremony_events.clone(),
         ceremony_cursors.clone(),
@@ -134,11 +130,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         metrics_recorder.clone(),
         event_publisher,
     );
-    let ceremony_stream = Arc::new(SessionStream::new(
+    let ceremony_stream = Arc::new(SessionStream::new_authorized(
         ceremony_events.clone(),
         ceremony_snapshots,
         subscribers,
     ));
+    let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
@@ -222,15 +219,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
-    let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
-        ceremony_events.clone(),
-        ceremony_cursors.clone(),
-        ceremony_stream.clone(),
-        prepare_ceremony_children.clone(),
-        accept_child_completion.clone(),
-        clock.clone(),
-        made_core::value_objects::CeremonyEventConsumer::new("made.children.recovery.v1")?,
-    ));
+    let recover_ceremony_children = Arc::new(children_recovery::wire(
+        children_recovery::ChildrenRecoveryDependencies {
+            events: ceremony_events.clone(),
+            cursors: ceremony_cursors.clone(),
+            stream: ceremony_stream.clone(),
+            prepare: prepare_ceremony_children.clone(),
+            accept: accept_child_completion.clone(),
+            clock: clock.clone(),
+            continuation: authorization_continuation.clone(),
+        },
+    )?);
     ceremony_operations::recover_to_head(&recover_ceremony_children).await?;
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
@@ -292,13 +291,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
     .await?;
     crate::seeding::apply_contract_seeding(contract_registry.as_ref()).await?;
 
-    // Now that the auto-dispatch service exists, the subscriber
-    // factory can finish wiring.
+    // Auto-dispatch completes subscriber wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
     let nats_ceremony_recovery =
         ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
-    let mut grpc_builder = made_adapters::grpc::MadeGrpcService::builder()
+    let mut grpc_builder = authorization
+        .apply(made_adapters::grpc::MadeGrpcService::builder())
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .create_council(create_council)
@@ -325,8 +324,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
-        // The same registry the use cases record into and `/metrics`
-        // renders, so `GetStatus` names what is actually recording.
+        // Status and `/metrics` read the same registry use cases write.
         .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .council_journal(Arc::new(made_app::services::CouncilJournalService::new(
@@ -340,11 +338,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         grpc_builder,
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
+        ceremony_index,
         ceremony_events,
         ceremony_cursors,
         progress_notifier,
         ceremony_publications,
-    );
+    )?;
     grpc_builder = execution_receipts::wire(
         grpc_builder,
         resolve_ceremony_definition.clone(),
@@ -357,8 +356,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     grpc_builder = ceremony_operations::wire(
         grpc_builder,
         resolve_ceremony_definition,
-        ceremony_stream,
-        clock,
+        &ceremony_stream,
+        &clock,
+        authorization_continuation,
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);
@@ -402,11 +402,61 @@ pub async fn compose() -> Result<Application, ComposeError> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+    use made_app::authorization::AuthorizationPolicyAdministrationService;
+    use made_core::value_objects::{
+        AuthenticatedPrincipal, AuthenticationMethod, AuthorizationPolicyId, PrincipalId,
+        PrincipalKind,
+    };
     use made_proto::runtime_v1 as runtime_pb;
     use tonic::{transport::Server, Request, Response, Status};
 
     // One lock prevents concurrent tests racing over process-wide MADE_* variables.
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    async fn configure_test_authorization() -> tempfile::TempDir {
+        let scratch = std::env::current_dir().unwrap().join("tmp");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::tempdir_in(scratch).unwrap();
+        let store_path = directory.path().join("made.sqlite3");
+        let principals_path = directory.path().join("principals.json");
+        std::fs::write(
+            &principals_path,
+            serde_json::to_vec(&serde_json::json!([{
+                "certificate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "compose-test-owner",
+                "principal_kind": "trusted_host"
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        let policy_id = AuthorizationPolicyId::new("compose-test-policy").unwrap();
+        let owner = AuthenticatedPrincipal::new(
+            PrincipalId::new("compose-test-owner").unwrap(),
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::MutualTls,
+        )
+        .unwrap();
+        AuthorizationPolicyAdministrationService::new(
+            policy_id,
+            Arc::new(SqliteAuthorizationPolicyStore::open(&store_path).unwrap()),
+            Arc::new(SystemClock::new()),
+        )
+        .open(owner, Vec::new())
+        .await
+        .unwrap();
+
+        std::env::set_var("MADE_CEREMONY_STORE_PATH", &store_path);
+        std::env::set_var("MADE_GRPC_TLS_MODE", "mutual");
+        std::env::set_var("MADE_GRPC_TLS_CERT_PATH", "test-server-cert.pem");
+        std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "test-server-key.pem");
+        std::env::set_var("MADE_GRPC_TLS_CLIENT_CA_PATH", "test-client-ca.pem");
+        std::env::set_var("MADE_AUTH_POLICY_ID", "compose-test-policy");
+        std::env::set_var("MADE_CEREMONY_STORE_ID", "compose-test-store");
+        std::env::set_var("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "5a".repeat(32));
+        std::env::set_var("MADE_AUTH_MTLS_PRINCIPALS_PATH", principals_path);
+        directory
+    }
 
     #[tokio::test]
     async fn compose_builds_application_with_nats_disabled() {
@@ -420,6 +470,7 @@ mod tests {
             }
         }
         std::env::set_var("MADE_NATS_ENABLED", "false");
+        let _authorization = configure_test_authorization().await;
 
         let app = compose().await.expect("compose should succeed");
         assert!(!app.service_config.nats_enabled);
@@ -506,6 +557,7 @@ mod tests {
         std::env::set_var("MADE_NATS_ENABLED", "false");
         std::env::set_var("MADE_EXECUTOR_KIND", "runtime");
         std::env::set_var("MADE_RUNTIME_GRPC_ENDPOINT", format!("http://{addr}"));
+        let _authorization = configure_test_authorization().await;
 
         let app = compose().await.expect("compose should succeed");
         assert!(!app.service_config.nats_enabled);

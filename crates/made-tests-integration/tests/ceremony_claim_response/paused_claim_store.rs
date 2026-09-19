@@ -3,10 +3,13 @@ use made_adapters::memory::InMemoryCeremonyEventStore;
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent};
 use made_core::error::DomainError;
 use made_core::ports::{
-    AppendOutcome, CeremonyEventStorePort, CeremonySnapshot, CeremonySnapshotStorePort,
-    PositionedRecord,
+    AppendOutcome, CeremonyEventStorePort, CeremonyInstanceIdPage, CeremonyInstanceIndexPort,
+    CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, GlobalPosition, StreamVersion,
+};
 use tokio::sync::Notify;
 
 /// Holds A's append response after durability, letting B reclaim before A renders.
@@ -30,6 +33,28 @@ impl CeremonyEventStorePort for PausedClaimStore {
                 if event.lease.idempotency_key().as_str() == "worker-a")
         });
         let outcome = self.inner.append(stream, expected, facts).await?;
+        if first_claim && matches!(outcome, AppendOutcome::Appended { .. }) {
+            self.committed.notify_one();
+            self.resume.notified().await;
+        }
+        Ok(outcome)
+    }
+
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        let first_claim = facts.iter().any(|fact| {
+            matches!(&fact.event, CeremonyEvent::StepStarted(event)
+                if event.lease.idempotency_key().as_str() == "worker-a")
+        });
+        let outcome = self
+            .inner
+            .append_authorized(stream, expected, facts, authorization)
+            .await?;
         if first_claim && matches!(outcome, AppendOutcome::Appended { .. }) {
             self.committed.notify_one();
             self.resume.notified().await;
@@ -75,5 +100,17 @@ impl CeremonySnapshotStorePort for PausedClaimStore {
 
     async fn forget(&self, stream: &CeremonyId) -> Result<(), DomainError> {
         self.inner.forget(stream).await
+    }
+}
+
+#[async_trait]
+impl CeremonyInstanceIndexPort for PausedClaimStore {
+    async fn ids_after(
+        &self,
+        after: Option<&CeremonyId>,
+        id_prefix: Option<&CeremonyIdPrefix>,
+        limit: CeremonyInstancePageLimit,
+    ) -> Result<CeremonyInstanceIdPage, DomainError> {
+        self.inner.ids_after(after, id_prefix, limit).await
     }
 }

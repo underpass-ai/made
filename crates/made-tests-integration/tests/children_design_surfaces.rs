@@ -1,6 +1,6 @@
 //! Child-spawn authoring is byte-identical on every public design surface.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use made_adapters::yaml::{CeremonyDefinitionYaml, DesignedCeremonyYaml};
 use made_app::usecases::{
@@ -209,7 +209,7 @@ fn proto_spawn(count: usize, max_children: u32, max_depth: u32) -> ProtoSpawn {
             .map(|index| ProtoChild {
                 ceremony: "review_child".into(),
                 version: "1.0".into(),
-                inputs: HashMap::from([("artifact".into(), format!("artifact_{index}"))]),
+                inputs: BTreeMap::from([("artifact".into(), format!("artifact_{index}"))]),
             })
             .collect(),
         max_children,

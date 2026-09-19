@@ -9,16 +9,20 @@
 //! depends on them.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::entities::{AuditFact, AuditRecord};
 use made_core::error::DomainError;
 use made_core::ports::{
-    seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonySnapshot,
-    CeremonySnapshotStorePort, PositionedRecord,
+    seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonyInstanceIdPage,
+    CeremonyInstanceIndexPort, CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, GlobalPosition, StreamVersion,
+};
 use tokio::sync::RwLock;
 
 mod event_store_state;
@@ -38,15 +42,13 @@ impl InMemoryCeremonyEventStore {
     pub fn new() -> Self {
         Self::default()
     }
-}
 
-#[async_trait]
-impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
-    async fn append(
+    async fn append_with_authorization(
         &self,
         stream: &CeremonyId,
         expected: StreamVersion,
         facts: Vec<AuditFact>,
+        authorization: Option<&AuthorizationEvidence>,
     ) -> Result<AppendOutcome, DomainError> {
         let mut state = self.inner.write().await;
 
@@ -55,9 +57,7 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
         if actual != expected {
             return Ok(AppendOutcome::Conflict { expected, actual });
         }
-        // Sealed before anything is touched: a refused batch leaves the
-        // stream and the log exactly as they were.
-        let sealed = seal_continuation(stream, existing, facts)?;
+        let sealed = seal_continuation(stream, existing, facts, authorization)?;
 
         let first_position = state.next_position();
         let mut position = first_position;
@@ -76,6 +76,30 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
             records: sealed,
             first_position,
         })
+    }
+}
+
+#[async_trait]
+impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
+    async fn append(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, None)
+            .await
+    }
+
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, Some(&authorization))
+            .await
     }
 
     async fn read(
@@ -152,6 +176,30 @@ impl CeremonySnapshotStorePort for InMemoryCeremonyEventStore {
     async fn forget(&self, stream: &CeremonyId) -> Result<(), DomainError> {
         self.inner.write().await.snapshots.remove(stream);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl CeremonyInstanceIndexPort for InMemoryCeremonyEventStore {
+    async fn ids_after(
+        &self,
+        after: Option<&CeremonyId>,
+        id_prefix: Option<&CeremonyIdPrefix>,
+        limit: CeremonyInstancePageLimit,
+    ) -> Result<CeremonyInstanceIdPage, DomainError> {
+        let state = self.inner.read().await;
+        let lower = after.map_or(Bound::Unbounded, Bound::Excluded);
+        let mut ids: Vec<_> = state
+            .streams
+            .range((lower, Bound::Unbounded))
+            .map(|(id, _)| id)
+            .filter(|id| id_prefix.is_none_or(|prefix| id.as_str().starts_with(prefix.as_str())))
+            .take(limit.value() + 1)
+            .cloned()
+            .collect();
+        let has_more = ids.len() > limit.value();
+        ids.truncate(limit.value());
+        Ok(CeremonyInstanceIdPage::new(ids, has_more))
     }
 }
 

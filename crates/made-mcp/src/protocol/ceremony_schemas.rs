@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::budget_schemas::budget_reservation_schema;
 use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
 use super::default_lease_ttl::{lease_ttl_rule, RUN_CEREMONY_STEP_LEASE_TTL_MS};
@@ -69,6 +70,27 @@ pub(super) fn ceremony_draft_schema() -> Value {
     })
 }
 
+pub(super) fn ceremony_search_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "cursor": string_schema("Opaque cursor returned by the preceding page. Omit to start a traversal."),
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 50
+            },
+            "id_prefix": string_schema("Literal, case-sensitive ceremony id prefix. Percent and underscore are ordinary characters."),
+            "lifecycle": {
+                "type": "string",
+                "enum": ["running", "paused", "ended"]
+            }
+        }
+    })
+}
+
 mod design;
 
 pub(super) use design::ceremony_design_schema;
@@ -117,7 +139,9 @@ pub(super) fn run_ceremony_step_schema() -> Value {
 }
 
 pub(super) fn prepare_ceremony_children_schema() -> Value {
-    run_ceremony_step_schema()
+    let mut schema = run_ceremony_step_schema();
+    schema["properties"]["budget_reservation"] = budget_reservation_schema();
+    schema
 }
 
 pub(super) fn accept_child_completion_schema() -> Value {

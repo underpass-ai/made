@@ -10,16 +10,21 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::error::DomainError;
-use made_core::ports::{AgentPort, AgentRegistryPort, AgentResolverPort};
-use made_core::value_objects::AgentId;
+use made_core::ports::{AgentDescriptor, AgentPort, AgentRegistryPort, AgentResolverPort};
+use made_core::value_objects::{AgentId, AuthorizationEvidence};
 use tokio::sync::RwLock;
+
+type AgentRegistryState = (
+    BTreeMap<AgentId, Arc<dyn AgentPort>>,
+    Vec<AuthorizationEvidence>,
+);
 
 /// In-memory agent registry that doubles as an [`AgentResolverPort`].
 ///
 /// Cloning yields a shared handle; all clones see the same state.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryAgentRegistry {
-    inner: Arc<RwLock<BTreeMap<AgentId, Arc<dyn AgentPort>>>>,
+    inner: Arc<RwLock<AgentRegistryState>>,
 }
 
 impl InMemoryAgentRegistry {
@@ -31,32 +36,50 @@ impl InMemoryAgentRegistry {
     /// Register an agent under its [`AgentPort::id`]. Returns
     /// [`DomainError::AlreadyExists`] if that id was already taken.
     pub async fn insert(&self, agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+        self.insert_authorized(agent, None).await
+    }
+
+    async fn insert_authorized(
+        &self,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut map = self.inner.write().await;
         let id = agent.id().clone();
-        if map.contains_key(&id) {
+        if map.0.contains_key(&id) {
             return Err(DomainError::AlreadyExists { what: "agent" });
         }
-        map.insert(id, agent);
+        map.0.insert(id, agent);
+        map.1.extend(authorization);
         Ok(())
     }
 
     /// Unregister an agent by id. Returns [`DomainError::NotFound`]
     /// when the id is unknown.
     pub async fn remove(&self, id: &AgentId) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
+        self.remove_authorized(id, None).await
+    }
+
+    async fn remove_authorized(
+        &self,
+        id: &AgentId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state
+            .0
             .remove(id)
-            .map(|_| ())
-            .ok_or(DomainError::NotFound { what: "agent" })
+            .ok_or(DomainError::NotFound { what: "agent" })?;
+        state.1.extend(authorization);
+        Ok(())
     }
 
     pub async fn len(&self) -> usize {
-        self.inner.read().await.len()
+        self.inner.read().await.0.len()
     }
 
     pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
+        self.inner.read().await.0.is_empty()
     }
 }
 
@@ -66,6 +89,7 @@ impl AgentResolverPort for InMemoryAgentRegistry {
         self.inner
             .read()
             .await
+            .0
             .get(id)
             .cloned()
             .ok_or(DomainError::NotFound { what: "agent" })
@@ -78,8 +102,38 @@ impl AgentRegistryPort for InMemoryAgentRegistry {
         self.insert(agent).await
     }
 
+    async fn register_authorized(
+        &self,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        self.insert_authorized(agent, authorization).await
+    }
+
+    async fn register_described_authorized(
+        &self,
+        descriptor: AgentDescriptor,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
+            return Err(DomainError::InvariantViolated {
+                reason: "agent descriptor and materialized identity differ",
+            });
+        }
+        self.insert_authorized(agent, authorization).await
+    }
+
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
         self.remove(id).await
+    }
+
+    async fn unregister_authorized(
+        &self,
+        id: &AgentId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        self.remove_authorized(id, authorization).await
     }
 }
 

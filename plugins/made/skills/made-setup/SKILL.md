@@ -17,10 +17,12 @@ in this case. An absent or mismatched override needs correction before startup;
 do not silently select another executable.
 
 Without that explicit candidate override, use the release installer only
-after the manifest-matched assets are publicly available. In particular, a
-0.6.0 candidate manifest does not imply that its assets have been published.
-If publication is pending, explain that boundary and direct candidate testing
-to a source build plus `MADE_MCP_BIN`; do not substitute a 0.5.0 download.
+after the manifest-matched assets are publicly available. A candidate manifest,
+including this checkout's `0.7.0-rc.1`, does not imply that matching assets or
+catalogue pointers have been published. If publication is pending, explain
+that boundary and direct candidate testing to a source build plus
+`MADE_MCP_BIN`; do not substitute an older stable download while claiming to
+run the candidate.
 
 For a published release, run its platform adapter:
 
@@ -61,3 +63,39 @@ an already-running server. Discovery in the new task verifies the runtime.
 Keep the existing `MADE_MCP_STORE_PATH` and SQLite data. Plugin setup does not
 migrate a store or move it when catalogue identity changes. A legacy Redb
 startup refusal requires its explicit migration path, not an empty replacement.
+
+Authorization setup is explicit and precedes server startup. Require the
+operator's stable, non-empty policy id and trusted host principal id. Preserve
+them in the MCP launch environment as `MADE_AUTH_POLICY_ID` and
+`MADE_AUTH_TRUSTED_HOST_ID`; do not generate replacements during an update.
+Then run the release-matched binary once against the selected store:
+
+```bash
+<made-mcp> bootstrap-authorization <store> \
+  --policy-id <policy-id> \
+  --trusted-host-id <trusted-host-id>
+```
+
+The command is idempotent for the same policy, host and store. Report its
+receipt before starting the MCP server. Never create an anonymous owner,
+infer a host identity, or fall back to an unprotected store. The trusted host
+owner administers authorization. Business actions need explicit grants issued
+through `IssueAuthorizationGrant`; setup must not give the owner implicit
+business permissions or wildcard scopes.
+
+Search also requires persistent cursor configuration in that same MCP launch
+environment. Set `MADE_CEREMONY_STORE_ID` to a stable, non-secret identifier for
+this store and policy. Set `MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` to exactly 32
+cryptographically random bytes encoded as 64 hexadecimal characters. Generate
+the key once, write it directly to the host's private launch configuration,
+and restrict that configuration to its owner. Do not print the key, put it in
+a transcript, commit it, or include it in an installation receipt.
+
+Preserve both values across restarts and package updates. Replicas of the same
+store share the key and store id; separate stores use different identities.
+Losing or deliberately rotating the key invalidates existing search cursors,
+which must then restart from the first page. Do not silently generate a new key
+each time the launcher runs. Report only whether these values are configured,
+then verify discovery and a paginated search with the appropriate explicit
+business grant. Keep native host reload verification separate from a launcher
+started by a shell test.

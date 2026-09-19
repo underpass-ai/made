@@ -47,13 +47,14 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 /// `state_migrations` — and they are left exactly where they are:
 /// nothing here writes them, and dropping a table an operator can
 /// still read is not this command's to do.
-const ALL_TABLES: [Table; 21] = [
+const ALL_TABLES: [Table; 22] = [
     Table::Ceremonies,
     Table::Journal,
     Table::Publications,
     Table::Events,
     Table::EventLog,
     Table::Snapshots,
+    Table::StreamIndex,
     Table::Meta,
     Table::EventCursors,
     Table::EventCursorQuarantine,
@@ -224,7 +225,13 @@ fn poisoned() -> DomainError {
 /// reasons crosses into the domain.
 fn failure(error: &rusqlite::Error, op: &'static str) -> DomainError {
     let rendered = error.to_string();
-    tracing::error!(error = %rendered, operation = op, "sqlite operation failed");
+    tracing::error!(error = %rendered, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), operation = op, "sqlite operation failed");
+    if error.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) {
+        return DomainError::InvariantViolated {
+            reason: "sqlite: file is not a SQLite database; if this is a legacy Redb store, \
+                     convert it with made-mcp v0.2.0 before upgrading",
+        };
+    }
     if rendered.contains("database is locked") {
         return DomainError::InvariantViolated {
             reason: "sqlite: the store is busy and did not free within the wait",

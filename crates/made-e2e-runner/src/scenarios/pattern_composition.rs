@@ -1,13 +1,11 @@
 use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
     CeremonyEventRecord, GenerateCeremonyReportRequest, ReadCeremonyEventsRequest,
     RunCeremonyRequest, RunCeremonyResponse,
 };
 use prost_types::{value::Kind, Struct, Value};
-use tonic::transport::Channel;
 use tracing::info;
 
 use super::ceremony_vllm_provider_config::CeremonyVllmProviderConfig;
@@ -18,7 +16,7 @@ const INCIDENT_ID: &str = "e2e-incident-review-pattern";
 const REVIEW_STEPS: [&str; 3] = ["review_correctness", "review_security", "review_operations"];
 
 pub(crate) async fn verify_concurrent_review_pattern(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let provider = CeremonyVllmProviderConfig::from_env()?;
     let definition = PatternCeremonyDefinition::concurrent_review(&provider)?;
@@ -49,7 +47,7 @@ pub(crate) async fn verify_concurrent_review_pattern(
 }
 
 pub(crate) async fn verify_incident_review_pattern(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let provider = CeremonyVllmProviderConfig::from_env()?;
     let definition = PatternCeremonyDefinition::incident_review(&provider)?;
@@ -86,7 +84,7 @@ pub(crate) async fn verify_incident_review_pattern(
 }
 
 async fn run(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     ceremony_id: &str,
     definition_yaml: &str,
 ) -> Result<RunCeremonyResponse> {
@@ -135,7 +133,7 @@ fn assert_completed(response: &RunCeremonyResponse, state: &str, steps: usize) -
 }
 
 async fn read_events(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     ceremony_id: &str,
 ) -> Result<Vec<CeremonyEventRecord>> {
     let response = client
@@ -221,7 +219,7 @@ fn assert_projected_bool(
 }
 
 async fn assert_report(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     ceremony_id: &str,
     expected_steps: &[&str],
 ) -> Result<()> {

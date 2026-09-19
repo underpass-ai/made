@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +68,20 @@ def git_output(*args: str) -> str | None:
         check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def bash_executable(platform_name: str = os.name, which=shutil.which) -> str:
+    """Resolve Git Bash instead of the WSL launcher on Windows runners."""
+    if platform_name == "nt":
+        sh = which("sh")
+        if sh is not None:
+            git_bash = Path(sh).with_name("bash.exe")
+            if git_bash.is_file():
+                return str(git_bash)
+    bash = which("bash")
+    if bash is None:
+        fail("bash is required to verify release script self-tests")
+    return bash
 
 
 def verify_release_tag(release_ref: str, require_release_tag: bool) -> None:
@@ -130,12 +145,23 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Claude marketplace must contain exactly one plugin")
     claude_entry = claude_plugins[0]
     source = claude_entry.get("source")
-    if claude_entry.get("name") != "made" or source != {
+    expected_source = {
         "source": "git-subdir",
         "url": "https://github.com/underpass-ai/made.git",
         "path": "plugins/made",
-        "ref": release_ref,
-    }:
+    }
+    if not isinstance(source, dict):
+        fail("Claude marketplace source must be an object")
+    source_without_ref = {key: value for key, value in source.items() if key != "ref"}
+    if claude_entry.get("name") != "made" or source_without_ref != expected_source:
+        fail("Claude marketplace must pin plugins/made to its immutable repository path")
+    marketplace_ref = source.get("ref")
+    if "-" in version:
+        if not isinstance(marketplace_ref, str) or not re.fullmatch(
+            r"v[0-9]+\.[0-9]+\.[0-9]+", marketplace_ref
+        ):
+            fail("a prerelease must leave Claude marketplace on an immutable stable tag")
+    elif marketplace_ref != release_ref:
         fail(f"Claude marketplace must pin plugins/made to immutable {release_ref}")
 
     tracked_bin = git_output("ls-files", "--", "plugins/made/bin")
@@ -196,6 +222,43 @@ def self_test() -> None:
     # A future metadata edit must not restore the known catalogue collision or
     # hide the official site. Exercise the same gate used for packaging.
     original_loader = load_json
+
+    # Windows exposes System32/bash.exe as the WSL launcher. Native Python
+    # must select the Git Bash executable beside sh.exe or every shell
+    # contract fails before packaging begins.
+    (ROOT / "tmp").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="marketplace-shell-", dir=ROOT / "tmp") as scratch:
+        shell_root = Path(scratch)
+        git_sh = shell_root / "sh.exe"
+        git_bash = shell_root / "bash.exe"
+        git_sh.touch()
+        git_bash.touch()
+        lookup = {
+            "sh": str(git_sh),
+            "bash": r"C:\Windows\System32\bash.exe",
+        }.get
+        assert bash_executable("nt", lookup) == str(git_bash)
+
+    # Both sparse-index readers must consume the whole response even when the
+    # requested version is the first row. Otherwise their upstream curl can
+    # receive SIGPIPE under `set -o pipefail` and turn a published version into
+    # a false negative.
+    bash = bash_executable()
+    for script in (
+        "scripts/ci/publish-crates.sh",
+        "scripts/release/advance-marketplace.sh",
+    ):
+        result = subprocess.run(
+            [bash, script, "--self-test"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            fail(f"{script} self-test failed:\n{result.stdout}")
+
     for path, field, message in (
         (".agents/plugins/marketplace.json", "name", "distinct from KMP"),
         (".claude-plugin/marketplace.json", "name", "distinct from KMP"),
@@ -217,6 +280,22 @@ def self_test() -> None:
                 assert message in str(error), error
             else:
                 raise AssertionError(f"accepted broken marketplace metadata: {path}")
+
+    if "-" in workspace_version():
+
+        def prerelease_catalog(relative: str) -> dict:
+            value = original_loader(relative)
+            if relative == ".claude-plugin/marketplace.json":
+                value["plugins"][0]["source"]["ref"] = f"v{workspace_version()}"
+            return value
+
+        with patch.dict(globals(), load_json=prerelease_catalog):
+            try:
+                verify()
+            except SystemExit as error:
+                assert "immutable stable tag" in str(error), error
+            else:
+                raise AssertionError("accepted a prerelease as the stable marketplace ref")
 
     # Real Git objects distinguish annotated tags, lightweight tags and branches.
     (ROOT / "tmp").mkdir(exist_ok=True)

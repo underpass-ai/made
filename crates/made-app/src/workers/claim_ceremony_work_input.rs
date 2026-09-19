@@ -1,12 +1,12 @@
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, DurationMs, ExecutionRecoveryPageLimit, LeaseOwnerId,
+    AuditActorKind, CeremonyId, CeremonyInstancePageLimit, DurationMs, LeaseOwnerId,
 };
 
 /// One bounded discovery and claim request for the reference worker host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ClaimCeremonyWorkInput {
     after: Option<CeremonyId>,
-    limit: ExecutionRecoveryPageLimit,
+    limit: CeremonyInstancePageLimit,
     lease_owner_id: LeaseOwnerId,
     lease_ttl: DurationMs,
     actor_kind: AuditActorKind,
@@ -16,7 +16,7 @@ impl ClaimCeremonyWorkInput {
     #[must_use]
     pub const fn new(
         after: Option<CeremonyId>,
-        limit: ExecutionRecoveryPageLimit,
+        limit: CeremonyInstancePageLimit,
         lease_owner_id: LeaseOwnerId,
         lease_ttl: DurationMs,
         actor_kind: AuditActorKind,
@@ -36,7 +36,7 @@ impl ClaimCeremonyWorkInput {
     }
 
     #[must_use]
-    pub const fn limit(&self) -> ExecutionRecoveryPageLimit {
+    pub const fn limit(&self) -> CeremonyInstancePageLimit {
         self.limit
     }
 

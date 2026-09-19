@@ -7,7 +7,7 @@ use made_core::ports::{
     ArtifactStorePort, ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus,
     BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef};
+use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 
 use super::local_artifact_repository::LocalArtifactRepository;
 
@@ -58,12 +58,31 @@ impl ArtifactStorePort for LocalArtifactStore {
             .await
     }
 
+    async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        let upload_id = upload_id.clone();
+        self.blocking(move |repository| repository.artifact_id_for_upload(&upload_id))
+            .await
+    }
+
     async fn commit_upload(
         &self,
         upload_id: &ArtifactUploadId,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
         let upload_id = upload_id.clone();
         self.blocking(move |repository| repository.commit(&upload_id))
+            .await
+    }
+
+    async fn commit_upload_authorized(
+        &self,
+        upload_id: &ArtifactUploadId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
+        let upload_id = upload_id.clone();
+        self.blocking(move |repository| repository.commit_authorized(&upload_id, authorization))
             .await
     }
 
@@ -110,6 +129,15 @@ impl ArtifactStorePort for LocalArtifactStore {
         command: TombstoneArtifact,
     ) -> Result<ArtifactTombstone, ArtifactStoreError> {
         self.blocking(move |repository| repository.tombstone(command))
+            .await
+    }
+
+    async fn tombstone_authorized(
+        &self,
+        command: TombstoneArtifact,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
+        self.blocking(move |repository| repository.tombstone_authorized(command, authorization))
             .await
     }
 }

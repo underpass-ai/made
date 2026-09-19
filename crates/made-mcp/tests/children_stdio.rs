@@ -4,10 +4,19 @@
 
 use std::path::Path;
 use std::process::Stdio;
+use std::sync::Arc;
 use std::time::Duration;
 
+use made_adapters::clock::SystemClock;
+use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+use made_app::authorization::AuthorizationPolicyAdministrationService;
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationGrant,
+    AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope,
+    DelegationDepth, PrincipalId, PrincipalKind,
+};
 use serde_json::{json, Value};
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 
 const CHILD: &str = r#"
@@ -39,6 +48,12 @@ guards:
 roles: [{ id: PARENT, allowed_actions: [delegate, finish] }]
 "#;
 
+const AUTH_POLICY_ID: &str = "children-stdio-policy";
+const AUTH_TRUSTED_HOST_ID: &str = "children-stdio-host";
+const SEARCH_CURSOR_HMAC_KEY: &str =
+    "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
+const STORE_ID: &str = "children-stdio-store";
+
 struct StdioMcp {
     child: Child,
     stdin: ChildStdin,
@@ -51,6 +66,13 @@ impl StdioMcp {
         let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
             .env("MADE_MCP_BACKEND", "embedded")
             .env("MADE_MCP_STORE_PATH", store)
+            .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
+            .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
+            .env(
+                "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY",
+                SEARCH_CURSOR_HMAC_KEY,
+            )
+            .env("MADE_CEREMONY_STORE_ID", STORE_ID)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
@@ -81,8 +103,14 @@ impl StdioMcp {
         let line = tokio::time::timeout(Duration::from_secs(10), self.stdout.next_line())
             .await
             .expect("stdio response timed out")
-            .unwrap()
-            .expect("made-mcp closed stdout");
+            .unwrap();
+        let Some(line) = line else {
+            let mut stderr = String::new();
+            if let Some(mut stream) = self.child.stderr.take() {
+                stream.read_to_string(&mut stderr).await.unwrap();
+            }
+            panic!("made-mcp closed stdout: {stderr}");
+        };
         let response: Value = serde_json::from_str(&line).unwrap();
         assert_eq!(response["result"]["isError"], false, "{name}: {response}");
         response["result"]["structuredContent"].clone()
@@ -104,6 +132,7 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
     std::fs::create_dir_all(&root).unwrap();
     let directory = tempfile::tempdir_in(root).unwrap();
     let store = directory.path().join("children-stdio.sqlite3");
+    bootstrap_authorization(&store).await;
     let mut mcp = StdioMcp::start(&store);
     for yaml in [CHILD, PARENT] {
         mcp.tool(
@@ -192,4 +221,49 @@ async fn embedded_stdio_process_spawns_accepts_recovers_and_reopens_sqlite() {
         1
     );
     reopened.stop().await;
+}
+
+async fn bootstrap_authorization(store_path: &Path) {
+    let store = Arc::new(SqliteAuthorizationPolicyStore::open(store_path).unwrap());
+    let administration = AuthorizationPolicyAdministrationService::new(
+        AuthorizationPolicyId::new(AUTH_POLICY_ID).unwrap(),
+        store,
+        Arc::new(SystemClock::new()),
+    );
+    let owner = AuthenticatedPrincipal::new(
+        PrincipalId::new(AUTH_TRUSTED_HOST_ID).unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    administration
+        .open(owner.clone(), Vec::new())
+        .await
+        .unwrap();
+    administration
+        .issue(
+            &owner,
+            AuthorizationGrant::new(
+                AuthorizationGrantId::new("children-stdio-business").unwrap(),
+                owner.id().clone(),
+                [
+                    AuthorizationAction::PublishCeremonyDefinition,
+                    AuthorizationAction::StartPublishedCeremony,
+                    AuthorizationAction::PrepareCeremonyChildren,
+                    AuthorizationAction::RunCeremonyStep,
+                    AuthorizationAction::ApplyCeremonyTransition,
+                    AuthorizationAction::ReadCeremonyEvents,
+                    AuthorizationAction::AcceptChildCompletion,
+                    AuthorizationAction::RecoverCeremonyChildren,
+                    AuthorizationAction::GetCeremonyInstance,
+                ],
+                AuthorizationScope::Global,
+                (time::OffsetDateTime::UNIX_EPOCH, None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(owner.clone()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
 }

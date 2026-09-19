@@ -25,7 +25,10 @@
 //! sets either: it does not know the head, and letting it guess would
 //! be worse than leaving the fields empty.
 
+use crate::authorization::AuthorizeCeremonyAppendUseCase;
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
+use std::sync::RwLock;
 
 use made_core::entities::{AuditFact, AuditRecord, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
@@ -40,11 +43,15 @@ use crate::usecases::ReadWholeCeremonyEventsUseCase;
 
 use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
 
+mod authorization;
+
 /// Loads the fold of a stream and appends what a decision produced.
 pub struct SessionStream {
     events: Arc<dyn CeremonyEventStorePort>,
     snapshots: Arc<dyn CeremonySnapshotStorePort>,
     subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+    authorization_required: AtomicBool,
+    append_authorization: RwLock<Option<Arc<AuthorizeCeremonyAppendUseCase>>>,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -64,6 +71,24 @@ impl SessionStream {
             events,
             snapshots,
             subscriber,
+            authorization_required: AtomicBool::new(false),
+            append_authorization: RwLock::new(None),
+        }
+    }
+
+    /// Construct the stream used by protected runtime surfaces.
+    #[must_use]
+    pub fn new_authorized(
+        events: Arc<dyn CeremonyEventStorePort>,
+        snapshots: Arc<dyn CeremonySnapshotStorePort>,
+        subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+    ) -> Self {
+        Self {
+            events,
+            snapshots,
+            subscriber,
+            authorization_required: AtomicBool::new(true),
+            append_authorization: RwLock::new(None),
         }
     }
 
@@ -220,7 +245,6 @@ impl SessionStream {
         let head = causation;
 
         match self
-            .events
             .append(instance.id(), StreamVersion::EMPTY, facts)
             .await?
         {
@@ -268,7 +292,7 @@ impl SessionStream {
             })
             .collect();
 
-        match self.events.append(instance.id(), version, facts).await? {
+        match self.append(instance.id(), version, facts).await? {
             outcome @ AppendOutcome::Appended { .. } => {
                 let version = outcome.appended_version().unwrap_or(version);
                 self.snapshot(&instance, version).await;

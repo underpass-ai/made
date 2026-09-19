@@ -9,8 +9,8 @@ use super::ceremony_schemas::{
     accept_child_completion_schema, apply_execution_receipt_schema, ceremony_definition_ref_schema,
     ceremony_design_schema, ceremony_draft_schema, ceremony_guard_approval_schema,
     ceremony_guard_deferral_schema, ceremony_instance_schema, ceremony_lifecycle_control_schema,
-    ceremony_reason_schema, ceremony_report_schema, ceremony_transition_schema,
-    claim_ceremony_step_schema, close_ceremony_intervention_schema,
+    ceremony_reason_schema, ceremony_report_schema, ceremony_search_schema,
+    ceremony_transition_schema, claim_ceremony_step_schema, close_ceremony_intervention_schema,
     collect_ceremony_evidence_schema, complete_ceremony_step_schema,
     enforce_ceremony_deadlines_schema, get_ceremony_transcript_schema,
     get_execution_receipt_schema, inspect_execution_recovery_schema,
@@ -41,10 +41,12 @@ use super::tool_names::{
     PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL,
     RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
-    TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    RUN_CEREMONY_TOOL, SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL,
+    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod authorization_catalog;
 mod budget_catalog;
 mod council_catalog;
 mod council_journal_catalog;
@@ -117,6 +119,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                 "properties": {}
             }),
         ),
+        tool_def(SEARCH_CEREMONY_INSTANCES_TOOL, "Search one bounded ceremony page.", ceremony_search_schema()),
         tool_def(
             START_CEREMONY_TOOL,
             "Mount a ceremony YAML definition and start a persistent in-process instance without advancing it.",
@@ -392,5 +395,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
         ),
     ]);
     budget_catalog::insert_budget_tools(&mut tools);
+    authorization_catalog::insert_authorization_tools(&mut tools);
     tools
 }

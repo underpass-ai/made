@@ -39,4 +39,9 @@ impl StartCeremonyInput {
             actor_kind,
         }
     }
+
+    #[must_use]
+    pub const fn id(&self) -> &CeremonyId {
+        &self.id
+    }
 }

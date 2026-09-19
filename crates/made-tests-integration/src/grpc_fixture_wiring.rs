@@ -18,14 +18,16 @@ use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyEventStore};
 use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_core::ports::{
     ArtifactStorePort, CeremonyEventStorePort, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
-    MemoryWriterPort,
+    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
+    MemoryReaderPort, MemoryWriterPort,
 };
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
+    authorization: Option<Arc<made_adapters::grpc::GrpcAuthorizationGate>>,
     council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     ceremony_store: Arc<dyn CeremonyEventStorePort>,
+    ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
     ceremony_snapshots: Arc<dyn CeremonySnapshotStorePort>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
@@ -39,8 +41,10 @@ impl Default for GrpcFixtureWiring {
     fn default() -> Self {
         let store = Arc::new(InMemoryCeremonyEventStore::new());
         Self {
+            authorization: None,
             council_journal: None,
             ceremony_store: store.clone(),
+            ceremony_index: store.clone(),
             ceremony_snapshots: store,
             step_handler: None,
             evidence_source: None,
@@ -55,6 +59,19 @@ impl Default for GrpcFixtureWiring {
 }
 
 impl GrpcFixtureWiring {
+    #[must_use]
+    pub fn with_authorization(
+        mut self,
+        authorization: Arc<made_adapters::grpc::GrpcAuthorizationGate>,
+    ) -> Self {
+        self.authorization = Some(authorization);
+        self
+    }
+
+    pub(crate) fn authorization(&self) -> Option<Arc<made_adapters::grpc::GrpcAuthorizationGate>> {
+        self.authorization.clone()
+    }
+
     #[must_use]
     pub fn with_council_journal(
         mut self,
@@ -78,9 +95,10 @@ impl GrpcFixtureWiring {
     #[must_use]
     pub fn with_ceremony_store<S>(mut self, store: Arc<S>) -> Self
     where
-        S: CeremonyEventStorePort + CeremonySnapshotStorePort + 'static,
+        S: CeremonyEventStorePort + CeremonyInstanceIndexPort + CeremonySnapshotStorePort + 'static,
     {
         self.ceremony_snapshots = store.clone();
+        self.ceremony_index = store.clone();
         self.ceremony_store = store;
         self
     }
@@ -134,6 +152,11 @@ impl GrpcFixtureWiring {
     #[must_use]
     pub fn ceremony_store(&self) -> Arc<dyn CeremonyEventStorePort> {
         self.ceremony_store.clone()
+    }
+
+    #[must_use]
+    pub fn ceremony_index(&self) -> Arc<dyn CeremonyInstanceIndexPort> {
+        self.ceremony_index.clone()
     }
 
     #[must_use]

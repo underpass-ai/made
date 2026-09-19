@@ -7,7 +7,7 @@ if (-not (Test-Path $SourceBinary)) {
     throw "MADE Windows bootstrap: build the plugin binary before this test"
 }
 
-$Scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("made-bootstrap-" + [guid]::NewGuid())
+$Scratch = Join-Path (Join-Path $Root "tmp") ("made-bootstrap-" + [guid]::NewGuid())
 $TestPlugin = Join-Path $Scratch "made"
 New-Item -ItemType Directory -Path $Scratch | Out-Null
 Copy-Item -Recurse $Plugin $TestPlugin
@@ -61,6 +61,23 @@ try {
         throw "MADE Windows bootstrap: installed version $InstalledVersion, expected $Version"
     }
 
+    # Isolated CI policy and public test key; never operator defaults.
+    $env:MADE_MCP_STORE_PATH = Join-Path $Scratch "ceremonies.sqlite3"
+    $env:MADE_AUTH_POLICY_ID = "plugin-ci-policy"
+    $env:MADE_AUTH_TRUSTED_HOST_ID = "plugin-ci-host"
+    $env:MADE_CEREMONY_STORE_ID = "plugin-ci-store"
+    $env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY = "a5" * 32
+    & $Installed bootstrap-authorization $env:MADE_MCP_STORE_PATH `
+        --policy-id $env:MADE_AUTH_POLICY_ID --trusted-host-id $env:MADE_AUTH_TRUSTED_HOST_ID
+    if ($LASTEXITCODE -ne 0) {
+        throw "MADE Windows bootstrap: isolated policy setup failed"
+    }
+    $Initialize = '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
+    $Response = $Initialize | & (Join-Path $TestPlugin "scripts\run-embedded-mcp.cmd")
+    if (($LASTEXITCODE -ne 0) -or -not (($Response | ConvertFrom-Json).result.serverInfo)) {
+        throw "MADE Windows bootstrap: verified binary did not start through the native launcher"
+    }
+
     $global:MadeBootstrapRequests = @()
     $env:MADE_SETUP_FORCE = "1"
     $env:MADE_FAKE_CURL_BAD_CHECKSUM = "1"
@@ -85,6 +102,11 @@ finally {
     Remove-Item Env:MADE_INSTALL_DIR -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_SETUP_FORCE -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_FAKE_CURL_BAD_CHECKSUM -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_MCP_STORE_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_AUTH_POLICY_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_AUTH_TRUSTED_HOST_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_CEREMONY_STORE_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
     Remove-Item Function:\global:Invoke-WebRequest -ErrorAction SilentlyContinue
     Remove-Variable MadeBootstrapRequests -Scope Global -ErrorAction SilentlyContinue
     Remove-Variable MadeBootstrapSourceBinary -Scope Global -ErrorAction SilentlyContinue

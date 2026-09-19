@@ -45,6 +45,27 @@ spec:
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       {{- $tlsMode := .Values.tls.mode | default "none" }}
+      {{- if ne $tlsMode "mutual" }}
+      {{- fail "authorization requires tls.mode=mutual; MADE has no anonymous or server-TLS-only public runtime" }}
+      {{- end }}
+      {{- if not .Values.authorization.policyId }}
+      {{- fail "authorization.policyId is required and must name a policy bootstrapped before the Deployment starts" }}
+      {{- end }}
+      {{- if not .Values.authorization.principals.existingSecret }}
+      {{- fail "authorization.principals.existingSecret is required for the mTLS certificate-to-principal map" }}
+      {{- end }}
+      {{- if not .Values.authorization.principals.key }}
+      {{- fail "authorization.principals.key is required" }}
+      {{- end }}
+      {{- if and (not .Values.persistence.ceremonies.enabled) (not .Values.persistence.postgres.enabled) }}
+      {{- fail "authorization requires a durable policy store: enable persistence.ceremonies for one replica or persistence.postgres" }}
+      {{- end }}
+      {{- if and (gt (int .Values.replicaCount) 1) (not .Values.ceremonySearch.storeId) }}
+      {{- fail "replicaCount>1 requires ceremonySearch.storeId shared by every replica" }}
+      {{- end }}
+      {{- if and (gt (int .Values.replicaCount) 1) (or (not .Values.ceremonySearch.cursorHmacKeyFromSecret.name) (not .Values.ceremonySearch.cursorHmacKeyFromSecret.key)) }}
+      {{- fail "replicaCount>1 requires ceremonySearch.cursorHmacKeyFromSecret.{name,key} shared by every replica" }}
+      {{- end }}
       {{- $executorKind := .Values.executor.kind | default "noop" }}
       {{- $runtimeTlsMode := .Values.executor.runtime.tls.mode | default "disabled" }}
       {{- if and (eq $executorKind "runtime") (not .Values.executor.runtime.endpoint) }}
@@ -72,7 +93,7 @@ spec:
       {{- fail "MADE_JUDGE_ENABLED is set but providerEnv lacks MADE_VLLM_ENDPOINT/MADE_VLLM_MODEL; the judge fails fast without them. Add both to providerEnv, or supply them via providerEnvFrom." }}
       {{- end }}
       {{- end }}
-      {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+      {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
       volumes:
         {{- if .Values.persistence.ceremonies.enabled }}
         - name: ceremonies
@@ -97,13 +118,20 @@ spec:
         - name: grpc-tls
           secret:
             secretName: {{ .Values.tls.existingSecret | quote }}
-            defaultMode: 0400
+            defaultMode: 0440
+        - name: authorization-principals
+          secret:
+            secretName: {{ .Values.authorization.principals.existingSecret | quote }}
+            defaultMode: 0440
+            items:
+              - key: {{ .Values.authorization.principals.key | quote }}
+                path: principals.json
         {{- end }}
         {{- if $runtimeTlsMounted }}
         - name: runtime-tls
           secret:
             secretName: {{ .Values.executor.runtime.tls.existingSecret | quote }}
-            defaultMode: 0400
+            defaultMode: 0440
         {{- end }}
       {{- end }}
       containers:
@@ -112,7 +140,7 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
-          {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted }}
+          {{- if or .Values.persistence.ceremonies.enabled .Values.persistence.artifacts.enabled .Values.tmpVolume.enabled (ne $tlsMode "none") $runtimeTlsMounted .Values.authorization.principals.existingSecret }}
           volumeMounts:
             {{- if .Values.persistence.ceremonies.enabled }}
             - name: ceremonies
@@ -129,6 +157,9 @@ spec:
             {{- if ne $tlsMode "none" }}
             - name: grpc-tls
               mountPath: /etc/made/tls
+              readOnly: true
+            - name: authorization-principals
+              mountPath: /etc/made/auth
               readOnly: true
             {{- end }}
             {{- if $runtimeTlsMounted }}
@@ -151,6 +182,21 @@ spec:
               value: {{ .Values.config.httpPort | quote }}
             - name: MADE_MAX_PARALLEL
               value: {{ .Values.config.maxParallel | quote }}
+            - name: MADE_AUTH_POLICY_ID
+              value: {{ .Values.authorization.policyId | quote }}
+            - name: MADE_AUTH_MTLS_PRINCIPALS_PATH
+              value: "/etc/made/auth/principals.json"
+            {{- with .Values.ceremonySearch.storeId }}
+            - name: MADE_CEREMONY_STORE_ID
+              value: {{ . | quote }}
+            {{- end }}
+            {{- if and .Values.ceremonySearch.cursorHmacKeyFromSecret.name .Values.ceremonySearch.cursorHmacKeyFromSecret.key }}
+            - name: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.ceremonySearch.cursorHmacKeyFromSecret.name | quote }}
+                  key: {{ .Values.ceremonySearch.cursorHmacKeyFromSecret.key | quote }}
+            {{- end }}
             - name: RUST_LOG
               value: {{ .Values.config.logLevel | quote }}
             {{- if .Values.messaging.nats.enabled }}
