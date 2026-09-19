@@ -205,6 +205,18 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_list_artifacts" => rendered(build_list_artifacts_request(arguments)),
         "made_read_artifact_chunk" => rendered(build_read_artifact_chunk_request(arguments)),
         "made_tombstone_artifact" => rendered(build_tombstone_artifact_request(arguments)),
+        "made_get_authorization_policy" => {
+            rendered(Ok::<_, String>(super::pb::GetAuthorizationPolicyRequest {}))
+        }
+        "made_issue_authorization_grant" => {
+            rendered(super::authorization_requests::grant(arguments))
+        }
+        "made_revoke_authorization_grant" => {
+            rendered(super::authorization_requests::revoke(arguments))
+        }
+        "made_list_authorization_decisions" => {
+            rendered(super::authorization_requests::decisions(arguments))
+        }
         _ => return None,
     };
     Some(outcome)
