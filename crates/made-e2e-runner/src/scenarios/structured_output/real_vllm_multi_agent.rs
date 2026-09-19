@@ -302,7 +302,7 @@ async fn register_contract(
             contract: Some(OutputContract {
                 contract_id: contract_id.to_owned(),
                 format: OutputFormat::JsonObject as i32,
-                fields: std::collections::HashMap::new(),
+                fields: std::collections::BTreeMap::new(),
                 json_schema: schema_body.to_owned(),
             }),
         })

@@ -7,7 +7,7 @@
 //! `/v1/chat/completions` shape. The default `--chain all` remains the
 //! provider-free rejection smoke.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use std::time::{Duration, Instant};
 
 use anyhow::Result;
@@ -160,7 +160,7 @@ pub async fn run_positive_path(
             contract: Some(pb::OutputContract {
                 contract_id: cfg.contract_id.clone(),
                 format: pb::OutputFormat::JsonObject as i32,
-                fields: HashMap::new(),
+                fields: BTreeMap::new(),
                 json_schema: schema_body.clone(),
             }),
         })

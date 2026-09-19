@@ -157,7 +157,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let ceremony_stream = Arc::new(SessionStream::new(
+        let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
             Arc::new(CeremonyEventFanout::new(vec![
@@ -596,7 +596,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let ceremony_stream = Arc::new(SessionStream::new(
+        let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             ceremony_store.clone(),
             Arc::new(CeremonyEventFanout::new(vec![

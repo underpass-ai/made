@@ -32,7 +32,8 @@ use made_app::workers::{
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
-    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId,
+    AgentId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId, MaxParallel,
+    OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -185,6 +186,33 @@ impl MadeGrpcService {
     #[must_use]
     pub const fn authorization(&self) -> &Arc<GrpcAuthorizationGate> {
         &self.authorization
+    }
+
+    async fn authorize_global<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+    ) -> Result<AuthorizedOperation, Status> {
+        self.authorization
+            .authorize(request, action, AuthorizationScope::Global, None)
+            .await
+    }
+
+    async fn authorize_ceremony<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        ceremony_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize(
+                request,
+                action,
+                AuthorizationScope::Ceremony { ceremony_id },
+                None,
+            )
+            .await
     }
 
     fn artifact_service(&self) -> Option<&ArtifactService> {

@@ -260,7 +260,7 @@ fn apply_dynamic_fields(
     mut stage: CeremonyDesignStage,
     role_from: &str,
     allowed_roles: Vec<String>,
-    context_writes: std::collections::HashMap<String, String>,
+    context_writes: std::collections::BTreeMap<String, String>,
 ) -> Result<CeremonyDesignStage, DomainError> {
     match (role_from.is_empty(), allowed_roles.is_empty()) {
         (true, true) => {}

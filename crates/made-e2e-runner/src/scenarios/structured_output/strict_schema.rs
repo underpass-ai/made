@@ -50,7 +50,7 @@ pub(crate) async fn verify_orchestrate_rejects_proposal_violating_json_schema(
         output_contract: Some(OutputContract {
             contract_id: "scenario-6-strict".to_owned(),
             format: OutputFormat::JsonObject as i32,
-            fields: std::collections::HashMap::new(),
+            fields: std::collections::BTreeMap::new(),
             json_schema: r#"{
                 "type": "object",
                 "additionalProperties": false,

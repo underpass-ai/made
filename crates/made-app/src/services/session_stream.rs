@@ -38,13 +38,17 @@ use time::OffsetDateTime;
 
 use crate::usecases::ReadWholeCeremonyEventsUseCase;
 
-use super::{current_trace_context, session_facts, ConflictPolicy, LoadedSession};
+use super::{
+    current_authorized_operation, current_trace_context, session_facts, ConflictPolicy,
+    LoadedSession,
+};
 
 /// Loads the fold of a stream and appends what a decision produced.
 pub struct SessionStream {
     events: Arc<dyn CeremonyEventStorePort>,
     snapshots: Arc<dyn CeremonySnapshotStorePort>,
     subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+    authorization_required: bool,
 }
 
 impl std::fmt::Debug for SessionStream {
@@ -64,6 +68,22 @@ impl SessionStream {
             events,
             snapshots,
             subscriber,
+            authorization_required: false,
+        }
+    }
+
+    /// Construct the stream used by protected runtime surfaces.
+    #[must_use]
+    pub fn new_authorized(
+        events: Arc<dyn CeremonyEventStorePort>,
+        snapshots: Arc<dyn CeremonySnapshotStorePort>,
+        subscriber: Arc<dyn CeremonyEventSubscriberPort>,
+    ) -> Self {
+        Self {
+            events,
+            snapshots,
+            subscriber,
+            authorization_required: true,
         }
     }
 
@@ -220,7 +240,6 @@ impl SessionStream {
         let head = causation;
 
         match self
-            .events
             .append(instance.id(), StreamVersion::EMPTY, facts)
             .await?
         {
@@ -268,7 +287,7 @@ impl SessionStream {
             })
             .collect();
 
-        match self.events.append(instance.id(), version, facts).await? {
+        match self.append(instance.id(), version, facts).await? {
             outcome @ AppendOutcome::Appended { .. } => {
                 let version = outcome.appended_version().unwrap_or(version);
                 self.snapshot(&instance, version).await;
@@ -327,6 +346,26 @@ impl SessionStream {
     /// conflict reaches here never, because it sealed nothing.
     async fn observe(&self, outcome: &AppendOutcome) {
         self.subscriber.observe(&outcome.positioned()).await;
+    }
+
+    async fn append(
+        &self,
+        ceremony_id: &CeremonyId,
+        version: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        if let Some(operation) = current_authorized_operation() {
+            return self
+                .events
+                .append_authorized(ceremony_id, version, facts, operation.evidence().clone())
+                .await;
+        }
+        if self.authorization_required {
+            return Err(DomainError::InvariantViolated {
+                reason: "protected ceremony append has no active authorization",
+            });
+        }
+        self.events.append(ceremony_id, version, facts).await
     }
 
     /// Cache the fold at this version. A failure is logged and
