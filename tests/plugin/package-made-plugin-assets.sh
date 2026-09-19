@@ -7,46 +7,34 @@ SCRATCH="$(mktemp -d "${ROOT_DIR}/tmp/plugin-package-assets.XXXXXX")"
 trap 'rm -rf "${SCRATCH}"' EXIT
 
 TEST_ROOT="${SCRATCH}/repo"
-FAKE_BIN="${SCRATCH}/fake-bin"
-FAKE_TARGET="${SCRATCH}/target"
 mkdir -p "${TEST_ROOT}/scripts/plugin" "${TEST_ROOT}/scripts/ci" \
-  "${TEST_ROOT}/tests/plugin" "${FAKE_BIN}"
+  "${TEST_ROOT}/tests/plugin"
 cp "${ROOT_DIR}/Cargo.toml" "${TEST_ROOT}/Cargo.toml"
 cp -R "${ROOT_DIR}/plugins" "${TEST_ROOT}/plugins"
 rm -rf "${TEST_ROOT}/plugins/made/bin"
 cp "${ROOT_DIR}/scripts/plugin/package-made-plugin.sh" "${TEST_ROOT}/scripts/plugin/"
-cp "${ROOT_DIR}/scripts/plugin/build-local-made-plugin.sh" "${TEST_ROOT}/scripts/plugin/"
 cp "${ROOT_DIR}/scripts/ci/plugin-bundle-assets.py" "${TEST_ROOT}/scripts/ci/"
 
-cat >"${FAKE_BIN}/cargo" <<'EOF'
+cat >"${TEST_ROOT}/scripts/plugin/build-local-made-plugin.sh" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-case "${1:-}" in
-  metadata)
-    printf '{"target_directory":"%s"}\n' "${FAKE_CARGO_TARGET_DIR}"
-    ;;
-  build)
-    mkdir -p "${FAKE_CARGO_TARGET_DIR}/release"
-    suffix=
-    [[ "${OS:-}" == "Windows_NT" ]] && suffix=.exe
-    printf '#!/usr/bin/env bash\necho fake-made-mcp\n' \
-      >"${FAKE_CARGO_TARGET_DIR}/release/made-mcp${suffix}"
-    chmod +x "${FAKE_CARGO_TARGET_DIR}/release/made-mcp${suffix}"
-    ;;
-  *)
-    echo "fake cargo: unexpected command ${*}" >&2
-    exit 1
-    ;;
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+BINARY_NAME="made-mcp"
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) BINARY_NAME="made-mcp.exe" ;;
 esac
+[[ "${OS:-}" == "Windows_NT" ]] && BINARY_NAME="made-mcp.exe"
+mkdir -p "${ROOT_DIR}/plugins/made/bin"
+printf '#!/usr/bin/env bash\necho fixture-made-mcp\n' \
+  >"${ROOT_DIR}/plugins/made/bin/${BINARY_NAME}"
+chmod +x "${ROOT_DIR}/plugins/made/bin/${BINARY_NAME}"
 EOF
-chmod +x "${FAKE_BIN}/cargo"
+chmod +x "${TEST_ROOT}/scripts/plugin/build-local-made-plugin.sh"
 
 WORKSPACE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' \
   "${TEST_ROOT}/Cargo.toml" | head -1)"
 [[ -n "${WORKSPACE_VERSION}" ]]
-FAKE_CARGO_TARGET_DIR="${FAKE_TARGET}" \
 GITHUB_REF_NAME="v${WORKSPACE_VERSION}" \
-PATH="${FAKE_BIN}:${PATH}" \
   bash "${TEST_ROOT}/scripts/plugin/package-made-plugin.sh" >/dev/null
 
 ARCHIVE="$(find "${TEST_ROOT}/dist/plugin" -maxdepth 1 -name 'made-plugin-*.tar.gz' -print -quit)"
