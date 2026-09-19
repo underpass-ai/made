@@ -1,6 +1,7 @@
 use made_adapters::postgres::PostgresPoolError;
 use made_adapters::runtime::RuntimeExecutorConnectError;
 use made_core::error::DomainError;
+use made_core::ports::ArtifactStoreError;
 use thiserror::Error;
 
 use crate::seeding::SeedingError;
@@ -28,4 +29,7 @@ pub enum ComposeError {
 
     #[error("session memory setup failed: {0}")]
     Memory(String),
+
+    #[error("artifact store setup failed: {0}")]
+    ArtifactStore(#[from] ArtifactStoreError),
 }

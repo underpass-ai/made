@@ -40,6 +40,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod artifacts;
 pub mod ceremony;
 mod ceremony_event_wire;
 pub mod clock;

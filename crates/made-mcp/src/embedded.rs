@@ -4,6 +4,7 @@ mod domain_tool_error;
 mod embedded_accept_child_completion_request;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
+mod embedded_artifact_dispatch;
 mod embedded_assert_ceremony_reason_request;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_cancel_ceremony_request;
@@ -197,7 +198,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
-        if embedded_council_dispatch::handles(name) {
+        if embedded_council_dispatch::handles(name) || embedded_artifact_dispatch::handles(name) {
             return true;
         }
         matches!(
@@ -249,6 +250,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         Box::pin(async move {
             if embedded_council_dispatch::handles(name) {
                 return embedded_council_dispatch::dispatch(&self.made, name, arguments).await;
+            }
+            if embedded_artifact_dispatch::handles(name) {
+                return embedded_artifact_dispatch::dispatch(&self.made, name, arguments).await;
             }
             match name {
                 DESIGN_CEREMONY_TOOL => {

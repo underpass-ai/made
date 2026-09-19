@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use made_app::artifacts::ArtifactService;
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
@@ -84,6 +85,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) service_version: Option<&'static str>,
     pub(super) clock: Option<Arc<dyn ClockPort>>,
     pub(super) max_parallel_ceiling: Option<MaxParallel>,
+    pub(super) artifacts: Option<Arc<ArtifactService>>,
 }
 
 use made_core::error::DomainError;
@@ -269,6 +271,7 @@ impl MadeGrpcServiceBuilder {
         publish_ceremony_definition
     );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
+    setter!(artifacts, ArtifactService, artifacts);
 
     #[must_use]
     pub fn statistics(mut self, value: Arc<dyn StatisticsPort>) -> Self {
@@ -411,6 +414,7 @@ impl MadeGrpcServiceBuilder {
             auto_dispatch: required!(self, auto_dispatch, "service"),
             get_service_status,
             get_service_metrics,
+            artifacts: self.artifacts,
         })
     }
 }

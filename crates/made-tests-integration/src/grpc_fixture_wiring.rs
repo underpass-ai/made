@@ -17,8 +17,9 @@ use std::sync::Arc;
 use made_adapters::memory::{ForgetfulMemory, InMemoryCeremonyEventStore};
 use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_core::ports::{
-    CeremonyEventStorePort, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ClockPort, MemoryReaderPort, MemoryWriterPort,
+    ArtifactStorePort, CeremonyEventStorePort, CeremonyEvidenceSourcePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, MemoryReaderPort,
+    MemoryWriterPort,
 };
 
 /// The adapters a fixture will use where a test has an opinion.
@@ -29,6 +30,7 @@ pub struct GrpcFixtureWiring {
     evidence_source: Option<Arc<dyn CeremonyEvidenceSourcePort>>,
     clock: Option<Arc<dyn ClockPort>>,
     memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
+    artifact_store: Option<Arc<dyn ArtifactStorePort>>,
 }
 
 impl Default for GrpcFixtureWiring {
@@ -41,6 +43,7 @@ impl Default for GrpcFixtureWiring {
             evidence_source: None,
             clock: None,
             memory: None,
+            artifact_store: None,
         }
     }
 }
@@ -101,6 +104,15 @@ impl GrpcFixtureWiring {
     }
 
     #[must_use]
+    pub fn with_artifact_store<S>(mut self, store: Arc<S>) -> Self
+    where
+        S: ArtifactStorePort + 'static,
+    {
+        self.artifact_store = Some(store);
+        self
+    }
+
+    #[must_use]
     pub fn ceremony_store(&self) -> Arc<dyn CeremonyEventStorePort> {
         self.ceremony_store.clone()
     }
@@ -143,5 +155,10 @@ impl GrpcFixtureWiring {
             let forgetful = Arc::new(ForgetfulMemory::new());
             (forgetful.clone(), forgetful)
         })
+    }
+
+    #[must_use]
+    pub fn artifact_store(&self) -> Option<Arc<dyn ArtifactStorePort>> {
+        self.artifact_store.clone()
     }
 }

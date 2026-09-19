@@ -215,6 +215,15 @@ persistence:
     size: 1Gi
     storageClass: ""
 
+  # Durable local artifact content and metadata. This adapter is bounded and
+  # restart-safe but serves one pod. For replicas, enable Postgres instead;
+  # Postgres stores artifact metadata and chunks transactionally.
+  artifacts:
+    enabled: false
+    mountPath: /var/lib/made-artifacts
+    size: 5Gi
+    storageClass: ""
+
   postgres:
     enabled: false
     # One of the two URL sources below must be set when enabled.

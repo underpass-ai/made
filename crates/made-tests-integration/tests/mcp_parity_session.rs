@@ -23,6 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::noop::NoopExecutor;
 use made_adapters::sqlite::SqliteCeremonyStore;
@@ -75,6 +76,8 @@ const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
 const CHILD_PARENT_ID: &str = "parity-child-parent";
 const CHILD_PLACEHOLDER: &str = "$parity-child-0";
 const TERMINAL_PLACEHOLDER: &str = "$parity-child-terminal";
+const ARTIFACT_UPLOAD_PLACEHOLDER: &str = "$parity-artifact-upload";
+const ABORT_UPLOAD_PLACEHOLDER: &str = "$parity-abort-upload";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
@@ -94,6 +97,26 @@ const TERMINAL_PLACEHOLDER: &str = "$parity-child-terminal";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
+    (
+        "made_begin_artifact_upload",
+        ".structuredContent.upload_id",
+        "each isolated artifact store mints its own opaque upload identity",
+    ),
+    (
+        "made_begin_artifact_upload",
+        ".content[].text.upload_id",
+        "the text projection mirrors the independently minted upload identity",
+    ),
+    (
+        "made_put_artifact_chunk",
+        ".structuredContent.upload_id",
+        "chunk progress retains the opaque upload identity minted by each store",
+    ),
+    (
+        "made_put_artifact_chunk",
+        ".content[].text.upload_id",
+        "the text projection mirrors the upload identity retained by each store",
+    ),
     (
         "made_deliberate",
         ".structuredContent.winner_proposal_id",
@@ -546,11 +569,14 @@ struct ParityArms {
     /// Dropping it removes the durable store's directory, on the pass
     /// that has one.
     _store_dir: Option<tempfile::TempDir>,
+    /// The two artifact roots must outlive their independently composed stores.
+    _artifact_store_dirs: Vec<tempfile::TempDir>,
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
     claims: std::sync::Mutex<std::collections::BTreeMap<(String, String), Value>>,
     children: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
     terminals: std::sync::Mutex<BTreeMap<String, String>>,
+    uploads: std::sync::Mutex<BTreeMap<String, (String, String)>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -606,12 +632,23 @@ impl ParityArms {
         // in-process and equivalent, so each arm recalls what that arm
         // wrote and the two answers are equal because the engines
         // agree — not because they are reading each other's writes.
+        let wire_artifact_dir = tempfile::tempdir().expect("a gRPC artifact root");
+        let local_artifact_dir = tempfile::tempdir().expect("an embedded artifact root");
+        let wire_artifacts = Arc::new(
+            LocalArtifactStore::open(wire_artifact_dir.path())
+                .expect("the gRPC artifact store should open"),
+        );
+        let local_artifacts = Arc::new(
+            LocalArtifactStore::open(local_artifact_dir.path())
+                .expect("the embedded artifact store should open"),
+        );
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
-                .with_memory(Arc::new(InProcessSessionMemory::new())),
+                .with_memory(Arc::new(InProcessSessionMemory::new()))
+                .with_artifact_store(wire_artifacts),
         )
         .await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
@@ -626,16 +663,19 @@ impl ParityArms {
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
                 .with_council_validators(parity_council_validators())
                 .with_executor(Arc::new(NoopExecutor::new()))
+                .with_artifact_store(local_artifacts)
                 .build(),
         ));
         Self {
             fixture,
             _store_dir: store_dir,
+            _artifact_store_dirs: vec![wire_artifact_dir, local_artifact_dir],
             over_the_wire,
             in_process,
             claims: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             children: std::sync::Mutex::new(BTreeMap::new()),
             terminals: std::sync::Mutex::new(BTreeMap::new()),
+            uploads: std::sync::Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -682,8 +722,28 @@ impl ParityArms {
 
     /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
-        let wire = call_tool(&self.over_the_wire, id, tool, arguments).await;
-        let local = call_tool(&self.in_process, id, tool, arguments).await;
+        let (wire_arguments, local_arguments) = self.artifact_arguments(arguments);
+        let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
+        let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
+        if tool == "made_begin_artifact_upload" && !failed(&wire) && !failed(&local) {
+            let key = arguments["idempotency_key"]
+                .as_str()
+                .expect("artifact begin carries an idempotency key")
+                .to_owned();
+            self.uploads.lock().unwrap().insert(
+                key,
+                (
+                    structured(&wire)["upload_id"]
+                        .as_str()
+                        .expect("wire begin returns an upload id")
+                        .to_owned(),
+                    structured(&local)["upload_id"]
+                        .as_str()
+                        .expect("embedded begin returns an upload id")
+                        .to_owned(),
+                ),
+            );
+        }
         if tool == "made_claim_ceremony_step" && !failed(&wire) && !failed(&local) {
             let fence = structured(&wire)["claim_fence"].clone();
             assert_eq!(fence, structured(&local)["claim_fence"]);
@@ -726,6 +786,26 @@ impl ParityArms {
                 );
             }
         }
+        (wire, local)
+    }
+
+    fn artifact_arguments(&self, arguments: &Value) -> (Value, Value) {
+        let Some(placeholder) = arguments.get("upload_id").and_then(Value::as_str) else {
+            return (arguments.clone(), arguments.clone());
+        };
+        let key = match placeholder {
+            ARTIFACT_UPLOAD_PLACEHOLDER => "parity-artifact-upload",
+            ABORT_UPLOAD_PLACEHOLDER => "parity-artifact-abort",
+            _ => return (arguments.clone(), arguments.clone()),
+        };
+        let uploads = self.uploads.lock().unwrap();
+        let (wire_upload, local_upload) = uploads
+            .get(key)
+            .unwrap_or_else(|| panic!("the scripted begin did not capture {key}"));
+        let mut wire = arguments.clone();
+        let mut local = arguments.clone();
+        wire["upload_id"] = json!(wire_upload);
+        local["upload_id"] = json!(local_upload);
         (wire, local)
     }
 }
@@ -1147,6 +1227,77 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
                 "title": "  Parity review <both arms>  ",
             }),
+        ),
+        // Artifact transfer uses independent stores but fixed metadata,
+        // content, digest, artifact ids and timestamps. Only the opaque
+        // upload ids are store-minted and normalised above; every byte and
+        // every durable record is still compared across both backends.
+        (
+            "made_begin_artifact_upload",
+            json!({
+                "requested_artifact_id": "artifact-parity-primary",
+                "expected_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+                "size_bytes": 7,
+                "media_type": "text/plain",
+                "provenance": {
+                    "source_kind": "generated_report",
+                    "observed_at": "2026-04-15T12:00:00Z",
+                },
+                "idempotency_key": "parity-artifact-upload",
+            }),
+        ),
+        (
+            "made_put_artifact_chunk",
+            json!({
+                "upload_id": ARTIFACT_UPLOAD_PLACEHOLDER,
+                "offset": 0,
+                "bytes_base64": "Zml4dHVyZQ==",
+                "chunk_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+            }),
+        ),
+        (
+            "made_commit_artifact_upload",
+            json!({ "upload_id": ARTIFACT_UPLOAD_PLACEHOLDER }),
+        ),
+        (
+            "made_get_artifact",
+            json!({ "artifact_id": "artifact-parity-primary" }),
+        ),
+        ("made_list_artifacts", json!({ "limit": 1 })),
+        (
+            "made_read_artifact_chunk",
+            json!({
+                "artifact_id": "artifact-parity-primary",
+                "offset": 0,
+                "max_bytes": 4,
+            }),
+        ),
+        (
+            "made_tombstone_artifact",
+            json!({
+                "artifact_id": "artifact-parity-primary",
+                "actor": "parity-host",
+                "policy": "parity-retention",
+                "retired_at": "2026-04-15T12:05:00Z",
+            }),
+        ),
+        (
+            "made_begin_artifact_upload",
+            json!({
+                "requested_artifact_id": "artifact-parity-aborted",
+                "expected_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+                "size_bytes": 7,
+                "media_type": "text/plain",
+                "provenance": {
+                    "source_kind": "generated_report",
+                    "observed_at": "2026-04-15T12:00:00Z",
+                },
+                "idempotency_key": "parity-artifact-abort",
+            }),
+        ),
+        (
+            "made_abort_artifact_upload",
+            json!({ "upload_id": ABORT_UPLOAD_PLACEHOLDER }),
         ),
         // Lifecycle controls run after the golden report so their trace ids
         // and events cannot perturb the established report fixture.
