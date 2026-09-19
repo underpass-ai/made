@@ -30,6 +30,12 @@ pub enum Command {
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=1000))]
         max_nodes: u32,
     },
+    /// Bounded read-only operator dashboard assembled from public APIs.
+    Dashboard {
+        ceremony_id: String,
+        #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=1000))]
+        max_nodes: u32,
+    },
     Watch {
         ceremony_id: String,
         #[arg(long)]

@@ -52,6 +52,10 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
                 args.output
             )
         ),
+        Command::Dashboard {
+            ceremony_id,
+            max_nodes,
+        } => dashboard(&client, &ceremony_id, max_nodes as usize, args.output).await?,
         Command::Watch {
             ceremony_id,
             cursor_file,
@@ -85,6 +89,22 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
         } => report(&client, ceremony_ids, title, &destination, args.output).await?,
         command => action(&client, command, args.output).await?,
     }
+    Ok(())
+}
+
+async fn dashboard(
+    client: &MadeClient,
+    ceremony_id: &str,
+    max_nodes: usize,
+    output: OutputFormat,
+) -> Result<(), MadeClientError> {
+    let instance = client.get_ceremony(ceremony_id).await?;
+    let tree = client.ceremony_tree(ceremony_id, max_nodes).await?;
+    let budget = client.get_budget_report(ceremony_id).await.ok();
+    println!(
+        "{}",
+        render::dashboard(&instance, &tree, budget.as_ref(), output)
+    );
     Ok(())
 }
 

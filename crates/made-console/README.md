@@ -29,6 +29,7 @@ made-console get ceremony-123
 ```bash
 made-console get ceremony-123
 made-console tree ceremony-123 --max-nodes 100
+made-console dashboard ceremony-123 --max-nodes 100
 made-console watch ceremony-123 --cursor-file ./ceremony-123.cursor --follow
 made-console artifact list --limit 50
 made-console artifact export artifact-123 ./report.bin
@@ -86,3 +87,8 @@ their observed/estimated/unknown measurement quality.
 the store, policy and exact filters; return it unchanged on the next page.
 `receipt recovery` pages through immutable execution observations and their
 claim fences without opening the service store.
+
+`dashboard` is a bounded, read-only operator view assembled from the ceremony,
+tree and budget APIs. It owns no state and performs no mutation; use the
+existing pause/resume/cancel/approve commands when the displayed authorization
+scope permits an intervention.

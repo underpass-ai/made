@@ -1,3 +1,13 @@
+#![allow(
+    clippy::format_push_string,
+    clippy::manual_let_else,
+    clippy::match_same_arms,
+    clippy::never_loop,
+    clippy::single_match_else,
+    clippy::struct_excessive_bools,
+    clippy::too_many_lines
+)]
+
 use std::collections::BTreeMap;
 use std::fmt;
 use std::io;

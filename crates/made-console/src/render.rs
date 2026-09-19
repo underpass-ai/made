@@ -28,6 +28,29 @@ pub fn tree(tree: &CeremonyTree, format: OutputFormat) -> String {
     render(&json!({ "roots": roots }), format)
 }
 
+/// A non-authoritative operator view. Every field comes from bounded public
+/// reads; the console never keeps a parallel dashboard state.
+pub fn dashboard(
+    instance: &CeremonyInstanceState,
+    tree: &CeremonyTree,
+    budget: Option<&GetBudgetReportResponse>,
+    format: OutputFormat,
+) -> String {
+    render(
+        &json!({
+            "ceremony": instance_value(instance),
+            "tree": tree.roots().iter().map(tree_node_value).collect::<Vec<_>>(),
+            "budget": budget.map(budget_report_value),
+            "operator_notes": [
+                "read-only view assembled from public APIs",
+                "mutations require their existing authorization command",
+                "reconnect with `watch --cursor-file` for resumable progress",
+            ],
+        }),
+        format,
+    )
+}
+
 pub fn artifacts(
     artifacts: &[ArtifactRecord],
     next_cursor: Option<&str>,
@@ -81,27 +104,28 @@ pub fn progress(batch: &ProgressBatch, format: OutputFormat) -> String {
 }
 
 pub fn budget_report(report: &GetBudgetReportResponse, format: OutputFormat) -> String {
+    render(&budget_report_value(report), format)
+}
+
+fn budget_report_value(report: &GetBudgetReportResponse) -> Value {
     let blocked_dimensions = report
         .balance
         .as_ref()
         .map(blocked_dimensions)
         .unwrap_or_default();
-    render(
-        &json!({
-            "account_id": report.account_id,
-            "balance": report.balance.as_ref().map(balance_value),
-            "admission": {
-                "blocked": !blocked_dimensions.is_empty(),
-                "blocked_dimensions": blocked_dimensions,
-                "explanation": if blocked_dimensions.is_empty() {
-                    "no exhausted or overrun bounded dimension"
-                } else {
-                    "a bounded dimension is exhausted or overrun; inspect pending reservations before retrying"
-                },
+    json!({
+        "account_id": report.account_id,
+        "balance": report.balance.as_ref().map(balance_value),
+        "admission": {
+            "blocked": !blocked_dimensions.is_empty(),
+            "blocked_dimensions": blocked_dimensions,
+            "explanation": if blocked_dimensions.is_empty() {
+                "no exhausted or overrun bounded dimension"
+            } else {
+                "a bounded dimension is exhausted or overrun; inspect pending reservations before retrying"
             },
-        }),
-        format,
-    )
+        },
+    })
 }
 
 pub fn pending_budget_reservations(

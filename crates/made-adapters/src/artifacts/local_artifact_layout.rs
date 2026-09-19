@@ -36,6 +36,10 @@ impl LocalArtifactLayout {
         self.root.join("artifacts")
     }
 
+    pub(super) fn blobs_dir(&self) -> PathBuf {
+        self.root.join("blobs")
+    }
+
     pub(super) fn upload_manifest(&self, id: &ArtifactUploadId) -> PathBuf {
         self.uploads_dir()
             .join(format!("{}.json", stable_key(id.as_str())))
