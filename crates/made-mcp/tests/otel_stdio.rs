@@ -4,6 +4,7 @@ use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
+use made_core::value_objects::AuthorizationAction;
 use opentelemetry_proto::tonic::collector::trace::v1::trace_service_server::{
     TraceService, TraceServiceServer,
 };
@@ -13,10 +14,12 @@ use opentelemetry_proto::tonic::collector::trace::v1::{
 use serde_json::{json, Value};
 use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tokio::process::Command;
 use tokio::time::timeout;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic_otel::{Request, Response, Status};
+
+#[path = "support/protected_embedded_stdio.rs"]
+mod protected_stdio;
 
 const CEREMONY_YAML: &str = r#"
 version: "1.0"
@@ -105,20 +108,22 @@ fn requests() -> [Value; 2] {
 
 async fn run_mcp(address: std::net::SocketAddr) -> (Vec<String>, String) {
     let state = tempfile::tempdir().unwrap();
-    let mut child = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
-        .env("MADE_MCP_BACKEND", "embedded")
-        .env(
-            "MADE_MCP_STORE_PATH",
-            state.path().join("ceremonies.sqlite3"),
-        )
-        .env("MADE_OTLP_ENDPOINT", format!("http://{address}"))
-        .env("RUST_LOG", "made_mcp=info,made_app=info,made_adapters=info")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .kill_on_drop(true)
-        .spawn()
-        .unwrap();
+    let mut child = protected_stdio::command(
+        state.path(),
+        &[
+            AuthorizationAction::StartCeremony,
+            AuthorizationAction::RunCeremonyStep,
+        ],
+    )
+    .await
+    .env("MADE_OTLP_ENDPOINT", format!("http://{address}"))
+    .env("RUST_LOG", "made_mcp=info,made_app=info,made_adapters=info")
+    .stdin(Stdio::piped())
+    .stdout(Stdio::piped())
+    .stderr(Stdio::piped())
+    .kill_on_drop(true)
+    .spawn()
+    .unwrap();
 
     let mut stdin = child.stdin.take().unwrap();
     for request in requests() {

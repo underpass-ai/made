@@ -45,6 +45,8 @@ roles:
 "#;
 const AUTH_POLICY_ID: &str = "embedded-test";
 const AUTH_TRUSTED_HOST_ID: &str = "embedded-test-host";
+const SEARCH_STORE_ID: &str = "embedded-stdio-test-store";
+const SEARCH_CURSOR_KEY: &str = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
 
 #[test]
 fn an_event_sink_recovers_pending_records_before_reading_stdio() {
@@ -430,32 +432,26 @@ async fn opening_the_store_over_a_directory_fails_instead_of_degrading_to_memory
 
 #[test]
 fn the_embedded_backend_selected_by_env_requires_a_state_file() {
-    // One test owns the process environment for both directions: the
-    // variables are global, so splitting this would race with itself.
-    std::env::set_var(MCP_BACKEND_ENV, "embedded");
-    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
-
-    let Err(refused) = MadeMcpServer::try_from_env() else {
-        panic!("embedded must demand a state file");
-    };
-    assert!(refused.contains(EMBEDDED_STORE_PATH_ENV), "{refused}");
-
-    let state = tempfile::tempdir().unwrap();
-    std::env::set_var(
-        EMBEDDED_STORE_PATH_ENV,
-        state.path().join("ceremonies.sqlite3"),
+    // Exercise environment selection in child processes. Changing this
+    // process's policy environment races with in-process SQLite fixtures.
+    let refused = Command::new(env!("CARGO_BIN_EXE_made-mcp"))
+        .env(MCP_BACKEND_ENV, "embedded")
+        .env_remove(EMBEDDED_STORE_PATH_ENV)
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    assert!(
+        !refused.status.success(),
+        "embedded must demand a state file"
     );
-    std::env::set_var("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID);
-    std::env::set_var("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID);
-    let Ok(server) = MadeMcpServer::try_from_env() else {
-        panic!("a named state file must be accepted");
-    };
-    assert_eq!(server.backend_name(), "embedded");
-
-    std::env::remove_var(MCP_BACKEND_ENV);
-    std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
-    std::env::remove_var("MADE_AUTH_POLICY_ID");
-    std::env::remove_var("MADE_AUTH_TRUSTED_HOST_ID");
+    let message = String::from_utf8(refused.stderr).unwrap();
+    assert!(message.contains(EMBEDDED_STORE_PATH_ENV), "{message}");
+    let state = tempfile::tempdir().unwrap();
+    let responses = run_made_mcp_process(
+        &state.path().join("ceremonies.sqlite3"),
+        &[json!({"jsonrpc":"2.0", "id":1, "method":"initialize"})],
+    );
+    assert_eq!(responses[0]["result"]["metadata"]["backend"], "embedded");
 }
 
 async fn send(server: &MadeMcpServer, request: Value) -> Value {
@@ -499,6 +495,8 @@ fn run_made_mcp_process_with_optional_event_sink(
         .env(EMBEDDED_STORE_PATH_ENV, path)
         .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
         .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
+        .env("MADE_CEREMONY_STORE_ID", SEARCH_STORE_ID)
+        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", SEARCH_CURSOR_KEY)
         .env_remove(EVENT_SINK_PATH_ENV);
     if let Some(sink) = sink {
         command.env(EVENT_SINK_PATH_ENV, sink);
@@ -557,6 +555,9 @@ fn bootstrap_authorization(path: &std::path::Path) {
                     AuthorizationAction::StartCeremony,
                     AuthorizationAction::StartPublishedCeremony,
                     AuthorizationAction::GetCeremonyInstance,
+                    AuthorizationAction::ListCeremonyInstances,
+                    AuthorizationAction::PublishCeremonyDefinition,
+                    AuthorizationAction::ReadCeremonyEvents,
                     AuthorizationAction::RunCeremony,
                     AuthorizationAction::RequestCeremonyIntervention,
                     AuthorizationAction::RespondToCeremonyIntervention,

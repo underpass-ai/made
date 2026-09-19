@@ -20,7 +20,8 @@ SOURCE_BINARY="${PLUGIN_DIR}/bin/${BINARY_NAME}"
   exit 1
 }
 
-SCRATCH="$(mktemp -d)"
+mkdir -p "${ROOT_DIR}/tmp"
+SCRATCH="$(mktemp -d "${ROOT_DIR}/tmp/plugin-bootstrap.XXXXXX")"
 trap 'rm -rf "${SCRATCH}"' EXIT
 cp -R "${PLUGIN_DIR}" "${SCRATCH}/made"
 rm -rf "${SCRATCH}/made/bin"
@@ -65,9 +66,14 @@ REQUEST_TWO="$(sed -n '2p' "${REQUESTS}")"
 INSTALLED="${SCRATCH}/made/bin/${BINARY_NAME}"
 "${INSTALLED}" --version | grep -F "made-mcp ${VERSION}" >/dev/null
 
+export MADE_MCP_STORE_PATH="${SCRATCH}/ceremonies.sqlite3"
+if command -v cygpath >/dev/null 2>&1; then
+  export MADE_MCP_STORE_PATH="$(cygpath -w "${MADE_MCP_STORE_PATH}")"
+fi
+source "${ROOT_DIR}/tests/plugin/setup-authorization.sh" "${INSTALLED}"
+
 INITIALIZE="$(head -n 1 "${ROOT_DIR}/tests/plugin/made-smoke.jsonl")"
 RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
-  MADE_MCP_STORE_PATH="${SCRATCH}/ceremonies.sqlite3" \
   "${SCRATCH}/made/scripts/run-embedded-mcp.sh")"
 [[ "${RESPONSE}" == *'"serverInfo"'* ]] || {
   echo "MADE plugin bootstrap: verified binary did not start through the launcher" >&2
