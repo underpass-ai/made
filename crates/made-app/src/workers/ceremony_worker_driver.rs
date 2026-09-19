@@ -112,6 +112,16 @@ impl CeremonyWorkerDriver {
         ))
     }
 
+    #[must_use]
+    pub fn stop_requested(&self) -> bool {
+        self.stop.is_requested()
+    }
+
+    #[must_use]
+    pub const fn recovery_enabled(&self) -> bool {
+        self.inspect_recovery.is_some()
+    }
+
     pub async fn recover_page(
         &self,
         after: Option<&ExecutionRecoveryCursor>,

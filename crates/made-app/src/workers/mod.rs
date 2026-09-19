@@ -1,3 +1,4 @@
+mod ceremony_worker_admission;
 mod claim_ceremony_work_input;
 mod claim_ceremony_work_use_case;
 mod complete_execution_receipt_input;
@@ -18,6 +19,12 @@ mod recoverable_ceremony_worker;
 mod recoverable_ceremony_worker_outcome;
 mod recoverable_ceremony_worker_port;
 
+pub use ceremony_worker_admission::{
+    CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionReason, CeremonyWorkerCapacity,
+    CeremonyWorkerCost, CeremonyWorkerEligibility, CeremonyWorkerLeaseContext,
+    CeremonyWorkerPolicyVersion, CeremonyWorkerPriority, CeremonyWorkerScheduleRequest,
+    CeremonyWorkerWeight,
+};
 pub use claim_ceremony_work_input::ClaimCeremonyWorkInput;
 pub use claim_ceremony_work_use_case::ClaimCeremonyWorkUseCase;
 pub use complete_execution_receipt_input::CompleteExecutionReceiptInput;
@@ -40,18 +47,27 @@ mod ceremony_worker_batch_outcome;
 mod ceremony_worker_driver;
 mod ceremony_worker_host;
 mod ceremony_worker_host_outcome;
+mod ceremony_worker_host_policy;
 mod ceremony_worker_item_failure;
 mod ceremony_worker_policy;
+mod ceremony_worker_run_outcome;
+mod ceremony_worker_scheduler;
 mod ceremony_worker_stop_token;
 pub use ceremony_deadline_enforcement_port::CeremonyDeadlineEnforcementPort;
 pub use ceremony_worker_batch_outcome::CeremonyWorkerBatchOutcome;
 pub use ceremony_worker_driver::CeremonyWorkerDriver;
 pub use ceremony_worker_host::CeremonyWorkerHost;
 pub use ceremony_worker_host_outcome::CeremonyWorkerHostOutcome;
+pub use ceremony_worker_host_policy::CeremonyWorkerHostPolicy;
 pub use ceremony_worker_item_failure::CeremonyWorkerItemFailure;
 mod ceremony_work_claim_failure;
 mod ceremony_work_claims_page;
 pub use ceremony_work_claim_failure::CeremonyWorkClaimFailure;
 pub use ceremony_work_claims_page::CeremonyWorkClaimsPage;
 pub use ceremony_worker_policy::CeremonyWorkerPolicy;
+pub use ceremony_worker_run_outcome::CeremonyWorkerRunOutcome;
+pub use ceremony_worker_scheduler::{
+    CeremonyWorkerAdmissionObserver, CeremonyWorkerSchedule, CeremonyWorkerScheduler,
+    CeremonyWorkerSchedulerPolicy, NoopCeremonyWorkerAdmissionObserver,
+};
 pub use ceremony_worker_stop_token::CeremonyWorkerStopToken;

@@ -35,6 +35,18 @@ impl ClaimCeremonyWorkInput {
         self.after.as_ref()
     }
 
+    /// Returns the same bounded request with a new keyset cursor.
+    #[must_use]
+    pub fn with_after(&self, after: Option<CeremonyId>) -> Self {
+        Self {
+            after,
+            limit: self.limit,
+            lease_owner_id: self.lease_owner_id.clone(),
+            lease_ttl: self.lease_ttl,
+            actor_kind: self.actor_kind,
+        }
+    }
+
     #[must_use]
     pub const fn limit(&self) -> CeremonyInstancePageLimit {
         self.limit
