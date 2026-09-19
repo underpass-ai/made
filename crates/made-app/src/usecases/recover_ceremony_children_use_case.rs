@@ -147,6 +147,20 @@ impl RecoverCeremonyChildrenUseCase {
         record: &made_core::entities::AuditRecord,
         lease_id: &CeremonyEventCursorLeaseId,
     ) -> Result<RecoveryEffect, DomainError> {
+        // A root completion has no child-recovery effect. Classify it before
+        // asking for an accepted-work continuation: historical root events
+        // predate authorization evidence and must remain readable unchanged.
+        if matches!(record.event(), Some(CeremonyEvent::CeremonyCompleted(_)))
+            && self
+                .stream
+                .load(record.ceremony_id())
+                .await?
+                .instance
+                .lineage()
+                .is_none()
+        {
+            return Ok(RecoveryEffect::Skipped);
+        }
         if let Some(continuation) = self.authorization_continuation.as_ref().filter(|_| {
             crate::services::AuthorizationOperationScope::current().is_none()
                 && recovery_requires_authorization(record)

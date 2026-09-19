@@ -49,6 +49,58 @@ const SEARCH_STORE_ID: &str = "embedded-stdio-test-store";
 const SEARCH_CURSOR_KEY: &str = "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5";
 
 #[test]
+fn an_authorized_host_opens_published_v060_root_completions_without_inventing_evidence() {
+    let state = tempfile::tempdir().unwrap();
+    let store = state.path().join("ceremonies.sqlite3");
+    let fixture = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("../made-tests-integration/fixtures/stores/v0.6.0");
+    std::fs::copy(fixture.join("ceremonies.sqlite3"), &store).unwrap();
+    let manifest: Value =
+        serde_json::from_slice(&std::fs::read(fixture.join("manifest.json")).unwrap()).unwrap();
+    let requests = [
+        tool_call(
+            1,
+            "made_get_ceremony_instance",
+            &json!({"ceremony_id":"v060-completed"}),
+        ),
+        tool_call(
+            2,
+            "made_read_ceremony_events",
+            &json!({"ceremony_id":"v060-completed", "limit":100}),
+        ),
+        tool_call(
+            3,
+            "made_get_ceremony_instance",
+            &json!({"ceremony_id":"v060-pending"}),
+        ),
+    ];
+    let first = run_made_mcp_process(&store, &requests);
+    for response in &first {
+        assert_ne!(
+            response["result"]["isError"],
+            Value::Bool(true),
+            "{response}"
+        );
+    }
+    assert_eq!(first[0]["result"]["structuredContent"]["completed"], true);
+    assert_eq!(first[2]["result"]["structuredContent"]["completed"], false);
+    let records = first[1]["result"]["structuredContent"]["records"]
+        .as_array()
+        .unwrap();
+    let historical = manifest["sessions"]["v060-completed"]["records"]
+        .as_array()
+        .unwrap();
+    assert_eq!(records.len(), historical.len());
+    for (actual, original) in records.iter().zip(historical) {
+        assert_eq!(actual["event_id"], original["event_id"]);
+        assert_eq!(actual["schema_version"], 2);
+        assert!(actual.get("authorization").is_none());
+        assert_eq!(actual, original);
+    }
+    assert_eq!(run_made_mcp_process(&store, &requests), first);
+}
+
+#[test]
 fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     let state = tempfile::tempdir().unwrap();
     let store = state.path().join("ceremonies.sqlite3");
