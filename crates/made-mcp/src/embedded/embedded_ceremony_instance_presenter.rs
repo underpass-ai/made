@@ -90,6 +90,7 @@ impl EmbeddedCeremonyInstancePresenter {
 
         Ok(json!({
             "ceremony_id": instance.id().as_str(),
+            "budget_account_id": instance.budget_account_id().map(|value| value.as_str()),
             "trace_id": head.and_then(|record| record.trace_id()),
             "correlation_id": head
                 .and_then(|record| record.correlation_id())

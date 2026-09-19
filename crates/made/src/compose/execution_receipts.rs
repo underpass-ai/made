@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use made_adapters::grpc::MadeGrpcServiceBuilder;
 use made_app::artifacts::ArtifactService;
+use made_app::budgets::BudgetLedgerService;
 use made_app::services::SessionStream;
 use made_app::usecases::ResolveCeremonyDefinitionUseCase;
 use made_app::workers::{
@@ -18,6 +19,7 @@ pub(super) fn wire(
     receipts: Arc<dyn ExecutionReceiptStorePort>,
     clock: Arc<dyn ClockPort>,
     artifacts: Option<Arc<ArtifactService>>,
+    budgets: BudgetLedgerService,
 ) -> MadeGrpcServiceBuilder {
     let builder = builder
         .get_execution_receipt(Arc::new(GetExecutionReceiptUseCase::new(receipts.clone())))
@@ -31,5 +33,6 @@ pub(super) fn wire(
     } else {
         complete
     };
+    let complete = complete.with_budget_ledger(budgets);
     builder.complete_execution_receipt(Arc::new(complete))
 }

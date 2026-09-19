@@ -431,6 +431,20 @@ impl MadeService for MadeGrpcService {
         self.handle_generate_ceremony_report(request).await
     }
 
+    async fn get_budget_report(
+        &self,
+        request: Request<pb::GetBudgetReportRequest>,
+    ) -> GrpcResult<pb::GetBudgetReportResponse> {
+        self.handle_get_budget_report(request).await
+    }
+
+    async fn list_pending_budget_reservations(
+        &self,
+        request: Request<pb::ListPendingBudgetReservationsRequest>,
+    ) -> GrpcResult<pb::ListPendingBudgetReservationsResponse> {
+        self.handle_list_pending_budget_reservations(request).await
+    }
+
     async fn begin_artifact_upload(
         &self,
         request: Request<pb::BeginArtifactUploadRequest>,

@@ -2,14 +2,15 @@ use std::sync::Arc;
 
 use made_adapters::config::{MemorySelection, ServiceConfig};
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyEventCursor,
-    InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
+    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
+    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
 };
 use made_adapters::postgres::{PostgresCeremonyStore, PostgresPool};
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::{SqliteBudgetLedgerStore, SqliteCeremonyStore};
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonySnapshotStorePort, ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort,
+    BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonySnapshotStorePort, ExecutionReceiptStorePort, MemoryReaderPort,
+    MemoryWriterPort,
 };
 use tracing::{info, warn};
 
@@ -24,6 +25,7 @@ pub(super) struct CeremonyPersistence {
     pub(super) memory_writer: Arc<dyn MemoryWriterPort>,
     pub(super) memory_reader: Arc<dyn MemoryReaderPort>,
     pub(super) receipts: Arc<dyn ExecutionReceiptStorePort>,
+    pub(super) budgets: Arc<dyn BudgetLedgerStorePort>,
 }
 
 pub(super) fn wire(
@@ -62,6 +64,7 @@ pub(super) fn wire(
                 memory_writer: memory.clone(),
                 memory_reader: memory,
                 receipts: Arc::new(InMemoryExecutionReceiptStore::new()),
+                budgets: Arc::new(InMemoryBudgetLedgerStore::new()),
             })
         }
     }
@@ -104,7 +107,8 @@ fn postgres_persistence(
         publications: store.clone(),
         memory_writer,
         memory_reader,
-        receipts: store,
+        receipts: store.clone(),
+        budgets: store,
     }
 }
 
@@ -116,6 +120,9 @@ fn sqlite_persistence(
         SqliteCeremonyStore::open(path)
             .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
     );
+    let budgets = Arc::new(SqliteBudgetLedgerStore::open(path).map_err(|error| {
+        ComposeError::CeremonyStore(format!("budget ledger at {path}: {error}"))
+    })?);
     info!(path, "ceremony state is durable");
 
     let (memory_writer, memory_reader): (Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>) =
@@ -139,6 +146,7 @@ fn sqlite_persistence(
         memory_writer,
         memory_reader,
         receipts: store,
+        budgets,
     })
 }
 

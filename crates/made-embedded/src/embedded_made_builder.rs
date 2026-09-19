@@ -5,25 +5,27 @@ use std::sync::Arc;
 use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
-    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
-    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
-    InMemoryStatistics,
+    InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
+    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
+    InMemoryExecutionReceiptStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use made_app::artifacts::ArtifactService;
+use made_app::budgets::BudgetLedgerService;
 use made_app::usecases::CeremonyProgressSettings;
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ArtifactStorePort,
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
-    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
-    CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort,
-    MemoryReaderPort, MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort,
-    NoopMetricsRecorder, NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
+    BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
+    CeremonyEventTransportPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
+    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
+    ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
+    ExecutionReceiptStorePort, ExecutorPort, MemoryReaderPort, MemoryWriterPort, MessagingPort,
+    MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot,
+    ScoringPort, StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -69,6 +71,7 @@ pub struct EmbeddedMadeBuilder {
     progress_settings: Option<CeremonyProgressSettings>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
     execution_receipts: Option<Arc<dyn ExecutionReceiptStorePort>>,
+    budget_ledger: Option<Arc<dyn BudgetLedgerStorePort>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -156,6 +159,12 @@ impl EmbeddedMadeBuilder {
         adapter: Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
         self.execution_receipts = Some(adapter);
+        self
+    }
+
+    #[must_use]
+    pub fn with_budget_ledger_store(mut self, adapter: Arc<dyn BudgetLedgerStorePort>) -> Self {
+        self.budget_ledger = Some(adapter);
         self
     }
 
@@ -470,6 +479,10 @@ impl EmbeddedMadeBuilder {
         let execution_receipts = self.execution_receipts.take().unwrap_or_else(|| {
             Arc::new(InMemoryExecutionReceiptStore::new()) as Arc<dyn ExecutionReceiptStorePort>
         });
+        let budget_ledger = self.budget_ledger.take().unwrap_or_else(|| {
+            Arc::new(InMemoryBudgetLedgerStore::new()) as Arc<dyn BudgetLedgerStorePort>
+        });
+        let budgets = BudgetLedgerService::new(budget_ledger, clock.clone());
 
         EmbeddedMade::new(
             definitions,
@@ -492,6 +505,7 @@ impl EmbeddedMadeBuilder {
             self.progress_settings.unwrap_or_default(),
             artifacts,
             execution_receipts,
+            budgets,
         )
     }
 }
@@ -519,6 +533,7 @@ impl fmt::Debug for EmbeddedMadeBuilder {
                 "has_execution_receipt_store",
                 &self.execution_receipts.is_some(),
             )
+            .field("has_budget_ledger_store", &self.budget_ledger.is_some())
             .finish()
     }
 }

@@ -10,6 +10,9 @@ use made_adapters::memory::InMemoryCeremonyDefinitionRepository;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+};
 use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
     AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
@@ -92,6 +95,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         memory_writer,
         memory_reader,
         receipts: execution_receipts,
+        budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
@@ -188,6 +192,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         memory_reader.clone(),
     ));
+    let budgets = BudgetLedgerService::new(budget_ledger, clock.clone());
+    let start_budgeted_ceremony = Arc::new(StartBudgetedCeremonyUseCase::new(
+        ceremony_publications.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+        memory_reader.clone(),
+        budgets.clone(),
+    ));
     let prepare_ceremony_children = Arc::new(PrepareCeremonyChildrenUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_publications.clone(),
@@ -238,6 +250,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+        )
+        .with_max_parallel_ceiling(service_config.max_parallel),
+    );
+    let budgeted_step_claim = Arc::new(
+        BudgetedStepClaimUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+            budgets.clone(),
         )
         .with_max_parallel_ceiling(service_config.max_parallel),
     );
@@ -302,10 +323,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .run_ceremony(run_ceremony)
         .start_ceremony(start_ceremony)
         .start_published_ceremony(start_published_ceremony)
+        .start_budgeted_ceremony(start_budgeted_ceremony)
         .run_ceremony_step(run_ceremony_step)
         .accept_child_completion(accept_child_completion)
         .recover_ceremony_children(recover_ceremony_children)
         .claim_ceremony_step(claim_ceremony_step)
+        .budgeted_step_claim(budgeted_step_claim)
+        .budgets(Arc::new(budgets.clone()))
         .pause_ceremony(lifecycle.pause)
         .resume_ceremony(lifecycle.resume)
         .cancel_ceremony(lifecycle.cancel)
@@ -342,6 +366,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         execution_receipts,
         clock.clone(),
         artifacts.clone(),
+        budgets,
     );
     grpc_builder = ceremony_operations::wire(
         grpc_builder,

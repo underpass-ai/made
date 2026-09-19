@@ -7,12 +7,13 @@ use made_adapters::ceremony::{
 };
 use made_adapters::progress::CeremonyProgressNotifier;
 use made_adapters::sqlite::{
-    SqliteAgentRegistry, SqliteCeremonyStore, SqliteContractRegistry, SqliteCouncilJournal,
-    SqliteCouncilRegistry, SqliteCouncilStatistics, SqliteCouncilStore,
+    SqliteAgentRegistry, SqliteBudgetLedgerStore, SqliteCeremonyStore, SqliteContractRegistry,
+    SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStatistics, SqliteCouncilStore,
     SqliteDeliberationRepository,
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
+use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
@@ -37,6 +38,7 @@ use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod budgets;
 mod council_journal;
 mod councils;
 mod definitions;
@@ -85,6 +87,7 @@ pub struct EmbeddedMade {
     event_publisher_consumer: CeremonyEventConsumer,
     artifacts: Option<Arc<ArtifactService>>,
     execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
+    budgets: BudgetLedgerService,
 }
 
 impl EmbeddedMade {
@@ -100,7 +103,11 @@ impl EmbeddedMade {
         let store = SqliteCeremonyStore::open(path).map_err(|error| ApiError::Unavailable {
             reason: format!("the durable SQLite ceremony store did not open: {error}"),
         })?;
-        Self::over(store, open_artifact_store(path)?)
+        let budgets =
+            SqliteBudgetLedgerStore::open(path).map_err(|error| ApiError::Unavailable {
+                reason: format!("the durable SQLite budget ledger did not open: {error}"),
+            })?;
+        Self::over(store, open_artifact_store(path)?, budgets)
     }
 
     /// Open durable SQLite and publish its global feed after each append.
@@ -118,6 +125,7 @@ impl EmbeddedMade {
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
+            .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
             .with_event_transport(transport)
             .build())
     }
@@ -141,6 +149,7 @@ impl EmbeddedMade {
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
+            .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
             .with_observability(metrics)
             .build())
     }
@@ -165,18 +174,24 @@ impl EmbeddedMade {
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(open_artifact_store(path)?))
+            .with_budget_ledger_store(Arc::new(open_budget_store(path)?))
             .with_observability(metrics)
             .with_event_transport(transport)
             .build())
     }
 
-    fn over(store: SqliteCeremonyStore, artifacts: LocalArtifactStore) -> Result<Self, ApiError> {
+    fn over(
+        store: SqliteCeremonyStore,
+        artifacts: LocalArtifactStore,
+        budgets: SqliteBudgetLedgerStore,
+    ) -> Result<Self, ApiError> {
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
             .with_artifact_store(Arc::new(artifacts))
+            .with_budget_ledger_store(Arc::new(budgets))
             .build())
     }
 
@@ -223,6 +238,7 @@ impl EmbeddedMade {
         progress_settings: CeremonyProgressSettings,
         artifacts: Option<Arc<ArtifactService>>,
         execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
+        budgets: BudgetLedgerService,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -287,6 +303,7 @@ impl EmbeddedMade {
             event_publisher_consumer,
             artifacts,
             execution_receipts,
+            budgets,
         }
     }
 
@@ -434,6 +451,12 @@ fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, Api
         ApiError::Unavailable {
             reason: format!("the durable local artifact store did not open: {error}"),
         }
+    })
+}
+
+fn open_budget_store(path: &std::path::Path) -> Result<SqliteBudgetLedgerStore, ApiError> {
+    SqliteBudgetLedgerStore::open(path).map_err(|error| ApiError::Unavailable {
+        reason: format!("the durable SQLite budget ledger did not open: {error}"),
     })
 }
 

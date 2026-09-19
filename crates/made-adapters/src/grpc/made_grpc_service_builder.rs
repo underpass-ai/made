@@ -1,6 +1,9 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+};
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
@@ -48,10 +51,12 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) resolve_ceremony_definition: Option<Arc<ResolveCeremonyDefinitionUseCase>>,
     pub(super) start_ceremony: Option<Arc<StartCeremonyUseCase>>,
     pub(super) start_published_ceremony: Option<Arc<StartPublishedCeremonyUseCase>>,
+    pub(super) start_budgeted_ceremony: Option<Arc<StartBudgetedCeremonyUseCase>>,
     pub(super) run_ceremony_step: Option<Arc<RunCeremonyStepUseCase>>,
     pub(super) accept_child_completion: Option<Arc<AcceptChildCompletionUseCase>>,
     pub(super) recover_ceremony_children: Option<Arc<RecoverCeremonyChildrenUseCase>>,
     pub(super) claim_ceremony_step: Option<Arc<StartCeremonyStepUseCase>>,
+    pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
     pub(super) complete_ceremony_step: Option<Arc<CompleteCeremonyStepUseCase>>,
     pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
     pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
@@ -93,6 +98,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) clock: Option<Arc<dyn ClockPort>>,
     pub(super) max_parallel_ceiling: Option<MaxParallel>,
     pub(super) artifacts: Option<Arc<ArtifactService>>,
+    pub(super) budgets: Option<Arc<BudgetLedgerService>>,
 }
 
 use made_core::error::DomainError;
@@ -299,6 +305,17 @@ impl MadeGrpcServiceBuilder {
     );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
     setter!(artifacts, ArtifactService, artifacts);
+    setter!(budgets, BudgetLedgerService, budgets);
+    setter!(
+        start_budgeted_ceremony,
+        StartBudgetedCeremonyUseCase,
+        start_budgeted_ceremony
+    );
+    setter!(
+        budgeted_step_claim,
+        BudgetedStepClaimUseCase,
+        budgeted_step_claim
+    );
 
     #[must_use]
     pub fn statistics(mut self, value: Arc<dyn StatisticsPort>) -> Self {
@@ -416,10 +433,12 @@ impl MadeGrpcServiceBuilder {
             resolve_ceremony_definition: required!(self, resolve_ceremony_definition),
             start_ceremony: required!(self, start_ceremony),
             start_published_ceremony: required!(self, start_published_ceremony),
+            start_budgeted_ceremony: self.start_budgeted_ceremony,
             run_ceremony_step: required!(self, run_ceremony_step),
             accept_child_completion: required!(self, accept_child_completion),
             recover_ceremony_children: required!(self, recover_ceremony_children),
             claim_ceremony_step: required!(self, claim_ceremony_step),
+            budgeted_step_claim: self.budgeted_step_claim,
             complete_ceremony_step: required!(self, complete_ceremony_step),
             get_execution_receipt: self.get_execution_receipt,
             inspect_execution_recovery: self.inspect_execution_recovery,
@@ -452,6 +471,7 @@ impl MadeGrpcServiceBuilder {
             get_service_status,
             get_service_metrics,
             artifacts: self.artifacts,
+            budgets: self.budgets,
         })
     }
 }

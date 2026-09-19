@@ -233,6 +233,10 @@ service MadeService {
   // same state report the same bytes whichever engine served the call.
   rpc GenerateCeremonyReport(GenerateCeremonyReportRequest) returns (GenerateCeremonyReportResponse);
 
+  // Durable budget ledger shared by one ceremony tree.
+  rpc GetBudgetReport(GetBudgetReportRequest) returns (GetBudgetReportResponse);
+  rpc ListPendingBudgetReservations(ListPendingBudgetReservationsRequest) returns (ListPendingBudgetReservationsResponse);
+
   // Bounded artifact transfer. Metadata is safe to list; blob bytes cross the
   // API only through the chunk verbs and are never embedded in ArtifactRef.
   rpc BeginArtifactUpload(BeginArtifactUploadRequest) returns (BeginArtifactUploadResponse);
@@ -991,6 +995,8 @@ message CeremonyInstanceState {
   string ceremony_deadline_at = 35;
   string state_deadline_at = 36;
   repeated CeremonyStepDeadlineState step_deadlines = 37;
+  // Root-scoped durable budget account. Empty for historical/unbudgeted runs.
+  string budget_account_id = 38;
 }
 
 message CeremonyStepDeadlineState {
@@ -1132,6 +1138,8 @@ message StartPublishedCeremonyRequest {
   // What kind of party that is: "human", "agent", "service" or
   // "engine". Refused when missing or unrecognised.
   string actor_kind = 6;
+  // Present to open a durable budget account for the whole ceremony tree.
+  BudgetLimits budget_limits = 7;
 }
 
 message StartPublishedCeremonyResponse {
@@ -1620,12 +1628,16 @@ message ClaimCeremonyStepRequest {
   string idempotency_key = 5;
   // Zero takes the server default.
   uint64 lease_ttl_ms = 6;
+  // Required when the ceremony has a budget account. Unknown is explicit;
+  // limited dimensions never default to zero.
+  BudgetReservationEstimate budget_reservation = 7;
 }
 
 message ClaimCeremonyStepResponse {
   CeremonyInstanceState instance = 1;
   // Capture this opaque identity before work; return it unchanged to complete.
   string claim_fence = 2;
+  BudgetClaimAdmission budget = 3;
 }
 
 message CompleteCeremonyStepRequest {
@@ -2325,6 +2337,78 @@ message TombstoneArtifactRequest {
 
 message TombstoneArtifactResponse {
   ArtifactTombstoneRecord tombstone = 1;
+}
+
+message BudgetQuantities {
+  uint64 duration_micros = 1;
+  uint64 tokens = 2;
+  uint64 cost_micros = 3;
+  uint64 tool_calls = 4;
+}
+
+message BudgetLimits {
+  optional uint64 duration_micros = 1;
+  optional uint64 tokens = 2;
+  optional uint64 cost_micros = 3;
+  optional uint64 tool_calls = 4;
+  string currency = 5;
+}
+
+message BudgetMeasurement {
+  // "observed", "estimated" or "unknown". Unknown never invents a quantity.
+  string quality = 1;
+  uint64 amount = 2;
+}
+
+message BudgetReservationEstimate {
+  BudgetMeasurement duration = 1;
+  BudgetMeasurement tokens = 2;
+  BudgetMeasurement cost = 3;
+  BudgetMeasurement tool_calls = 4;
+}
+
+message BudgetBalance {
+  BudgetLimits limits = 1;
+  BudgetQuantities reserved = 2;
+  BudgetQuantities observed = 3;
+  BudgetQuantities estimated = 4;
+  BudgetQuantities unconfirmed = 5;
+  BudgetQuantities overrun = 6;
+  BudgetQuantities available = 7;
+}
+
+message BudgetClaimAdmission {
+  string account_id = 1;
+  string operation_id = 2;
+  string reservation_id = 3;
+}
+
+message BudgetReservationRecord {
+  string reservation_id = 1;
+  string operation_id = 2;
+  BudgetQuantities quantities = 3;
+  BudgetReservationEstimate estimate = 4;
+  string reserved_at = 5;
+  bool reconciled = 6;
+}
+
+message GetBudgetReportRequest {
+  string ceremony_id = 1;
+}
+
+message GetBudgetReportResponse {
+  string account_id = 1;
+  BudgetBalance balance = 2;
+}
+
+message ListPendingBudgetReservationsRequest {
+  string after_reservation_id = 1;
+  uint32 limit = 2;
+}
+
+message ListPendingBudgetReservationsResponse {
+  repeated BudgetReservationRecord reservations = 1;
+  string next_cursor = 2;
 }
 
 // Council records preserve their typed event's canonical JSON representation.

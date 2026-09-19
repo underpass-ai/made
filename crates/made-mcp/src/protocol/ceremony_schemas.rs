@@ -1,5 +1,6 @@
 use serde_json::{json, Value};
 
+use super::budget_schemas::{budget_limits_schema, budget_reservation_schema};
 use super::default_idempotency_key::DEFAULT_IDEMPOTENCY_KEY_RULE;
 use super::default_lease_owner::DEFAULT_LEASE_OWNER_RULE;
 use super::default_lease_ttl::{
@@ -38,7 +39,8 @@ pub(super) fn start_published_ceremony_schema() -> Value {
             "ceremony": string_schema("Name of the published ceremony to run."),
             "version": string_schema("Published version to bind this instance to."),
             "ceremony_id": string_schema("Identifier for the new instance. Generated when omitted."),
-            "context": attributes_schema("Opening context for the working session.")
+            "context": attributes_schema("Opening context for the working session."),
+            "budget_limits": budget_limits_schema()
         }
     })
 }
@@ -112,7 +114,8 @@ pub(super) fn run_ceremony_schema() -> Value {
                 "type": "integer",
                 "minimum": 0,
                 "description": lease_ttl_rule(RUN_CEREMONY_LEASE_TTL_MS)
-            }
+            },
+            "budget_reservation": budget_reservation_schema()
         }
     })
 }
