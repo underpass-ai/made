@@ -37,7 +37,7 @@ def resolve_reference(root: Path, base: Path, reference: str, label: str) -> Pat
     except ValueError:
         fail(f"{label} escapes the plugin root: {reference!r}")
     if not resolved.is_file():
-        fail(f"{label} points at missing file {resolved.relative_to(root)}")
+        fail(f"{label} points at missing file {resolved.relative_to(root).as_posix()}")
     return resolved
 
 
@@ -50,7 +50,7 @@ def validate(plugin_root: Path) -> dict:
     try:
         codex = json.loads(codex_path.read_text())
     except (OSError, json.JSONDecodeError) as error:
-        fail(f"cannot read {codex_path.relative_to(root)}: {error}")
+        fail(f"cannot read {codex_path.relative_to(root).as_posix()}: {error}")
     interface = codex.get("interface", {})
     if interface.get("websiteURL") != WEBSITE:
         fail(f"Codex websiteURL must be {WEBSITE}")
@@ -64,7 +64,7 @@ def validate(plugin_root: Path) -> dict:
         digest = sha256(path)
         if digest != BRANDING_SHA256:
             fail(f"interface.{field} artwork digest is {digest}, expected {BRANDING_SHA256}")
-        checked[str(path.relative_to(root))] = digest
+        checked[path.relative_to(root).as_posix()] = digest
 
     skills_root = root / "skills"
     actual_skills = {path.name for path in skills_root.iterdir() if path.is_dir()}
@@ -87,7 +87,7 @@ def validate(plugin_root: Path) -> dict:
             digest = sha256(path)
             if path.name != BRANDING_NAME or digest != BRANDING_SHA256:
                 fail(f"skills/{skill} {field} does not use the exact C4 branding PNG")
-            checked[str(path.relative_to(root))] = digest
+            checked[path.relative_to(root).as_posix()] = digest
 
     expected_branding_paths = {"assets/made-cuatro-voces.png"} | {
         f"skills/{skill}/assets/made-cuatro-voces.png" for skill in SKILLS
