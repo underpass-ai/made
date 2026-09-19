@@ -11,6 +11,8 @@
 //! only ever see domain ports and a `PostgresPool` handle.
 
 mod agent_registry;
+mod artifact_blob_queries;
+mod artifact_store;
 mod council_registry;
 mod deliberation_repository;
 mod error;
@@ -20,9 +22,21 @@ mod postgres_pool_error;
 mod statistics;
 
 pub use agent_registry::PostgresAgentRegistry;
+pub use artifact_store::PostgresArtifactStore;
 pub use council_registry::PostgresCouncilRegistry;
 pub use deliberation_repository::PostgresDeliberationRepository;
 pub use pool::PostgresPool;
 pub use postgres_config::PostgresConfig;
 pub use postgres_pool_error::PostgresPoolError;
 pub use statistics::PostgresStatistics;
+
+mod council_journal;
+mod council_journal_store;
+pub use council_journal::PostgresCouncilJournal;
+
+mod contract_registry;
+pub use contract_registry::PostgresContractRegistry;
+
+mod council_snapshot;
+mod council_snapshot_write;
+pub use council_snapshot::PostgresCouncilSnapshot;

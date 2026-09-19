@@ -13,6 +13,7 @@ use serde_json::{json, Value};
 
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
+mod artifact_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
 
@@ -52,6 +53,11 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
     fn call_tool<'a>(&'a self, name: &'a str, _arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
             let structured = match name {
+                "made_read_council_events" => json!({"records":[],"next_after":null}),
+                "made_get_council_event_cursor" => json!({"acknowledged_through":null}),
+                "made_lease_council_events" => json!({"lease":null}),
+                "made_acknowledge_council_events" => json!({}),
+                "made_release_council_events" => json!({}),
                 "made_deliberate" => deliberate_fixture(),
                 "made_stream_deliberation" => stream_fixture(),
                 "made_get_deliberation_result" => get_deliberation_fixture(),
@@ -94,6 +100,14 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_verify_ceremony_journal" => verify_ceremony_journal_fixture(),
                 "made_get_ceremony_transcript" => ceremony_transcript_fixture(),
                 "made_generate_ceremony_report" => ceremony_report_fixture(),
+                "made_begin_artifact_upload" => artifact_fixtures::upload(),
+                "made_put_artifact_chunk" => artifact_fixtures::upload(),
+                "made_commit_artifact_upload" => artifact_fixtures::reference(),
+                "made_abort_artifact_upload" => json!({ "aborted": true }),
+                "made_get_artifact" => artifact_fixtures::record(),
+                "made_list_artifacts" => artifact_fixtures::listing(),
+                "made_read_artifact_chunk" => artifact_fixtures::chunk(),
+                "made_tombstone_artifact" => artifact_fixtures::tombstone(),
                 "made_validate_ceremony_draft" => validate_draft_fixture(),
                 "made_explain_ceremony_draft" => explain_draft_fixture(),
                 "made_publish_ceremony_definition" => publish_definition_fixture(),

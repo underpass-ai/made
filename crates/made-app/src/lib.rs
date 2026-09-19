@@ -15,6 +15,7 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod artifacts;
 pub mod services;
 pub mod usecases;
 pub mod workers;

@@ -10,6 +10,7 @@
 
 mod actor_kind;
 mod agent;
+mod artifact;
 mod attributes;
 mod ceremony_authoring;
 mod ceremony_delegation;
@@ -23,6 +24,7 @@ mod ceremony_lifecycle;
 mod ceremony_progress;
 mod context;
 mod council;
+pub(crate) mod council_journal;
 mod deliberation;
 mod event;
 mod output_contract;
@@ -35,6 +37,12 @@ mod timestamp;
 mod validation;
 
 // Helpers wired by the service module.
+pub use artifact::{
+    artifact_chunk_to_proto, artifact_page_limit_from_proto, artifact_record_to_proto,
+    artifact_ref_to_proto, artifact_tombstone_to_proto, artifact_upload_status_to_proto,
+    begin_artifact_upload_from_proto, put_artifact_chunk_from_proto,
+    read_artifact_chunk_from_proto, tombstone_artifact_from_proto,
+};
 pub(super) use attributes::attributes_from_struct;
 pub use ceremony_authoring::{
     ceremony_definition_source_from_proto, diff_ceremony_definitions_response_from,

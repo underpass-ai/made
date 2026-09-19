@@ -16,6 +16,7 @@ pub struct Application {
     pub contract_registry: Arc<dyn ContractRegistryPort>,
     pub repository: Arc<dyn DeliberationRepositoryPort>,
     pub grpc_service: made_adapters::grpc::MadeGrpcService,
+    pub council_event_publisher: Option<Arc<made_app::usecases::PublishCouncilEventsUseCase>>,
     pub nats_subscriber: Option<NatsTriggerSubscriber>,
     pub nats_ceremony_recovery: Option<NatsCeremonyRecoverySubscriber>,
     pub health_state: crate::health::HealthState,

@@ -5,6 +5,7 @@
 //! can dispatch reliably.
 
 use made_core::error::DomainError;
+use made_core::ports::ArtifactStoreError;
 use tonic::Status;
 
 /// Map a [`DomainError`] onto a [`tonic::Status`] with the most
@@ -42,6 +43,30 @@ pub fn domain_error_to_status(err: DomainError) -> Status {
         DomainError::Conflict { .. } => Status::aborted(msg),
         DomainError::NotFound { .. } => Status::not_found(msg),
         DomainError::AlreadyExists { .. } => Status::already_exists(msg),
+    }
+}
+
+#[must_use]
+pub fn artifact_error_to_status(error: ArtifactStoreError) -> Status {
+    let message = error.to_string();
+    match error {
+        ArtifactStoreError::Invalid(error) => domain_error_to_status(error),
+        ArtifactStoreError::NotFound => Status::not_found(message),
+        ArtifactStoreError::ArtifactTooLarge { .. }
+        | ArtifactStoreError::ChunkTooLarge { .. }
+        | ArtifactStoreError::UnexpectedOffset { .. }
+        | ArtifactStoreError::ChunkDigestMismatch
+        | ArtifactStoreError::Incomplete { .. }
+        | ArtifactStoreError::FinalDigestMismatch
+        | ArtifactStoreError::InvalidCursor => Status::invalid_argument(message),
+        ArtifactStoreError::UploadCommitted
+        | ArtifactStoreError::UploadAborted
+        | ArtifactStoreError::Tombstoned => Status::failed_precondition(message),
+        ArtifactStoreError::IdempotencyConflict => Status::aborted(message),
+        ArtifactStoreError::AccessDenied => Status::permission_denied(message),
+        ArtifactStoreError::StorageUnavailable | ArtifactStoreError::InvalidBackup => {
+            Status::unavailable(message)
+        }
     }
 }
 

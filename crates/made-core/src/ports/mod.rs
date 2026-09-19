@@ -20,6 +20,7 @@ mod agent_factory;
 mod agent_registry;
 mod agent_resolver;
 mod append_outcome;
+mod artifact;
 mod ceremony_definition_publication;
 mod ceremony_definition_repository;
 mod ceremony_definition_source;
@@ -79,6 +80,14 @@ pub use agent_factory::AgentFactoryPort;
 pub use agent_registry::AgentRegistryPort;
 pub use agent_resolver::AgentResolverPort;
 pub use append_outcome::AppendOutcome;
+pub use artifact::{
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
+    ArtifactPage, ArtifactPageLimit, ArtifactReadCompletion, ArtifactRecord,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
+    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
+    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES, ARTIFACT_MAX_PAGE_ITEMS,
+};
 
 pub use ceremony_definition_publication::CeremonyDefinitionPublicationPort;
 pub use ceremony_definition_repository::CeremonyDefinitionRepositoryPort;
@@ -132,3 +141,6 @@ pub use scoring::ScoringPort;
 pub use statistics::StatisticsPort;
 pub use subscription_handler::SubscriptionHandler;
 pub use validator::ValidatorPort;
+
+mod council_journal;
+pub use council_journal::CouncilJournalPort;

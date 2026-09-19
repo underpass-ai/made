@@ -35,3 +35,7 @@ pub use in_memory_message::InMemoryMessage;
 pub use messaging::InMemoryMessaging;
 pub use session_memory::InProcessSessionMemory;
 pub use statistics::InMemoryStatistics;
+
+mod council_journal;
+mod council_journal_state;
+pub use council_journal::InMemoryCouncilJournal;

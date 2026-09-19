@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use made_app::artifacts::ArtifactService;
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
@@ -28,6 +29,7 @@ use made_core::value_objects::MaxParallel;
 /// of use cases grows.
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
+    pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
     pub(super) create_council: Option<Arc<CreateCouncilUseCase>>,
@@ -84,6 +86,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) service_version: Option<&'static str>,
     pub(super) clock: Option<Arc<dyn ClockPort>>,
     pub(super) max_parallel_ceiling: Option<MaxParallel>,
+    pub(super) artifacts: Option<Arc<ArtifactService>>,
 }
 
 use made_core::error::DomainError;
@@ -118,6 +121,11 @@ macro_rules! setter {
 }
 
 impl MadeGrpcServiceBuilder {
+    setter!(
+        council_journal,
+        made_app::services::CouncilJournalService,
+        council_journal
+    );
     setter!(deliberate, DeliberateUseCase, deliberate);
     setter!(orchestrate, OrchestrateUseCase, orchestrate);
     setter!(create_council, CreateCouncilUseCase, create_council);
@@ -269,6 +277,7 @@ impl MadeGrpcServiceBuilder {
         publish_ceremony_definition
     );
     setter!(auto_dispatch, AutoDispatchService, auto_dispatch);
+    setter!(artifacts, ArtifactService, artifacts);
 
     #[must_use]
     pub fn statistics(mut self, value: Arc<dyn StatisticsPort>) -> Self {
@@ -361,7 +370,14 @@ impl MadeGrpcServiceBuilder {
         ));
         let get_service_metrics =
             Arc::new(GetServiceMetricsUseCase::new(statistics, metrics_snapshot));
+        let council_journal = self.council_journal.unwrap_or_else(|| {
+            Arc::new(made_app::services::CouncilJournalService::new(
+                Arc::new(crate::memory::InMemoryCouncilJournal::new()),
+                clock.clone(),
+            ))
+        });
         Ok(MadeGrpcService {
+            council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             deliberate: required!(self, deliberate),
@@ -411,6 +427,7 @@ impl MadeGrpcServiceBuilder {
             auto_dispatch: required!(self, auto_dispatch, "service"),
             get_service_status,
             get_service_metrics,
+            artifacts: self.artifacts,
         })
     }
 }

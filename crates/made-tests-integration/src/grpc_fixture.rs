@@ -39,6 +39,7 @@ use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
+use made_app::artifacts::ArtifactService;
 use made_app::services::{
     AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
 };
@@ -128,7 +129,12 @@ impl GrpcFixture {
         ];
         let scoring = Arc::new(UniformScoring::new());
         let executor = Arc::new(NoopExecutor::new());
-        let messaging = Arc::new(NoopMessaging::new());
+        let council_journal = wiring.council_journal();
+        let messaging = Arc::new(
+            made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
+                council_journal.clone(),
+            ),
+        );
         let statistics = Arc::new(InMemoryStatistics::new());
         let repository = Arc::new(InMemoryDeliberationRepository::new());
         let council_registry: Arc<dyn CouncilRegistryPort> =
@@ -376,7 +382,7 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-        let svc = MadeGrpcService::builder()
+        let mut service_builder = MadeGrpcService::builder()
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -446,7 +452,15 @@ impl GrpcFixture {
             .statistics(statistics.clone())
             .observability(metrics)
             .service_version("made-tests")
-            .clock(wiring.clock())
+            .council_journal(Arc::new(made_app::services::CouncilJournalService::new(
+                council_journal,
+                wiring.clock(),
+            )))
+            .clock(wiring.clock());
+        if let Some(store) = wiring.artifact_store() {
+            service_builder = service_builder.artifacts(Arc::new(ArtifactService::new(store)));
+        }
+        let svc = service_builder
             .build()
             .expect("grpc service wiring should succeed");
 

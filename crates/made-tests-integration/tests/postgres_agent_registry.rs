@@ -109,7 +109,11 @@ async fn register_via_port_trait_persists_then_unregister_removes() {
         id: AgentId::new("a-port").unwrap(),
         specialty: Specialty::new("triage").unwrap(),
     });
-    registry.register(agent).await.unwrap();
+    assert!(registry.register(agent.clone()).await.is_err());
+    registry
+        .register_described(noop_descriptor("a-port", "triage"), agent)
+        .await
+        .unwrap();
     // Post-register the descriptor resolves to a live NoopAgent (the
     // wired factory only knows the "noop" kind; the port contract
     // does not expose which concrete type is returned).
@@ -163,4 +167,67 @@ async fn resolve_propagates_factory_rejection_for_unsupported_kind() {
         .await
         .unwrap_err();
     assert!(matches!(err, DomainError::InvariantViolated { .. }));
+}
+
+#[tokio::test]
+async fn described_registration_preserves_provider_and_refuses_credentials_without_inserting() {
+    let (pool, _container) = postgres_fixture::start().await;
+    let registry = PostgresAgentRegistry::new(pool.clone(), factory());
+    let descriptor = AgentDescriptor {
+        id: AgentId::new("actual-vllm").unwrap(),
+        specialty: Specialty::new("triage").unwrap(),
+        kind: AgentKind::new("vllm").unwrap(),
+        attributes: Attributes::new(std::collections::BTreeMap::from([(
+            "provider.model".into(),
+            serde_json::json!("local-model"),
+        )]))
+        .unwrap(),
+    };
+    let agent: Arc<dyn AgentPort> = Arc::new(StubAgent {
+        id: descriptor.id.clone(),
+        specialty: descriptor.specialty.clone(),
+    });
+    registry
+        .register_described(descriptor.clone(), agent)
+        .await
+        .unwrap();
+    let recording = Arc::new(RecordingDescriptorFactory::default());
+    PostgresAgentRegistry::new(pool.clone(), recording.clone())
+        .resolve(&descriptor.id)
+        .await
+        .unwrap();
+    assert_eq!(
+        recording.0.lock().unwrap().as_slice(),
+        std::slice::from_ref(&descriptor)
+    );
+    // A fresh process with an incompatible factory must refuse, not silently noop.
+    assert!(PostgresAgentRegistry::new(pool.clone(), factory())
+        .resolve(&descriptor.id)
+        .await
+        .is_err());
+
+    let mut secret = noop_descriptor("refused-secret", "triage");
+    secret.attributes = Attributes::new(std::collections::BTreeMap::from([(
+        "provider.api_key".into(),
+        serde_json::json!("synthetic-test-value"),
+    )]))
+    .unwrap();
+    assert!(registry.insert_descriptor(&secret).await.is_err());
+    assert!(matches!(
+        registry.resolve(&secret.id).await,
+        Err(DomainError::NotFound { what: "agent" })
+    ));
+}
+
+#[derive(Debug, Default)]
+struct RecordingDescriptorFactory(std::sync::Mutex<Vec<AgentDescriptor>>);
+#[async_trait::async_trait]
+impl AgentFactoryPort for RecordingDescriptorFactory {
+    async fn create(&self, descriptor: AgentDescriptor) -> Result<Arc<dyn AgentPort>, DomainError> {
+        self.0.lock().unwrap().push(descriptor.clone());
+        Ok(Arc::new(StubAgent {
+            id: descriptor.id,
+            specialty: descriptor.specialty,
+        }))
+    }
 }
