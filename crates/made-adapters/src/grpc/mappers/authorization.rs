@@ -138,6 +138,7 @@ pub fn authorization_decision_to_proto(
         approval_decision_id: request
             .approval_decision_id()
             .map(|id| id.as_str().to_owned()),
+        approved_action: request.approved_action().map(authorization_action_to_proto),
         policy_version: decision.policy_version().value(),
         outcome: enum_to_string(decision.kind()),
         grant_id: decision.grant_id().map(|id| id.as_str().to_owned()),

@@ -8,6 +8,7 @@ mod embedded_assert_ceremony_reason_request;
 mod embedded_authorization_dispatch;
 mod embedded_authorization_presenter;
 mod embedded_authorization_request;
+mod embedded_authorized_dispatch;
 mod embedded_backend_authorization;
 mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
@@ -58,9 +59,8 @@ mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
 mod embedded_tool_authorizer;
 
-use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit, TraceContext};
+use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -570,31 +570,6 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         arguments: &'a Value,
         trace: &'a ToolTraceContext,
     ) -> MadeMcpToolFuture<'a> {
-        Box::pin(async move {
-            let tool_trace = trace;
-            let authorization_request_id =
-                AuthorizationRequestId::new(tool_trace.authorization_request_id().to_owned())
-                    .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-            let trace = TraceContext::parse(tool_trace.traceparent())
-                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-            let dispatch = async {
-                let Some(authorization) = &self.authorization else {
-                    return self.call_tool(name, arguments).await;
-                };
-                let operation = authorization
-                    .authorize(&self.made, name, arguments, tool_trace)
-                    .await?;
-                AuthorizationOperationScope::run(operation, async {
-                    if name == SEARCH_CEREMONY_INSTANCES_TOOL {
-                        return self
-                            .search_and_present(arguments, authorization_request_id)
-                            .await;
-                    }
-                    self.call_tool(name, arguments).await
-                })
-                .await
-            };
-            CeremonyTraceScope::run(trace, dispatch).await
-        })
+        embedded_authorized_dispatch::call(self, name, arguments, trace)
     }
 }

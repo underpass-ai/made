@@ -1,5 +1,6 @@
 use made_app::authorization::{
-    ContinueAcceptedStepClaimUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+    AuthorizationGateOutcome, ContinueAcceptedStepClaimUseCase, ReadAuthorizationPolicyUseCase,
+    TrustedHostAuthorizationGate,
 };
 use made_core::ports::{ArtifactStorePort, ArtifactUploadId, ExecutionReceiptStorePort};
 use made_core::value_objects::{
@@ -13,6 +14,7 @@ use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStep
 use crate::backend::ToolTraceContext;
 use crate::protocol::{ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
 
+use super::embedded_authorization_request;
 use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
 
 #[derive(Clone)]
@@ -77,9 +79,9 @@ impl EmbeddedToolAuthorizer {
         } else {
             ToolTraceContext::authorization_target_digest(tool_name, arguments)
         };
-        let ordinary = self
+        let outcome = self
             .gate
-            .authorize(
+            .authorize_outcome(
                 request_id.clone(),
                 action,
                 scope,
@@ -89,10 +91,18 @@ impl EmbeddedToolAuthorizer {
                     .map(made_core::value_objects::AuthorizationDecisionId::new)
                     .transpose()?,
             )
-            .await;
-        match ordinary {
-            Ok(operation) => Ok(operation),
-            Err(_) if action == AuthorizationAction::CompleteCeremonyStep => {
+            .await?;
+        match outcome {
+            AuthorizationGateOutcome::Allowed { evidence, .. } => {
+                made_core::value_objects::AuthorizedOperation::new(
+                    self.gate.principal().clone(),
+                    evidence,
+                )
+                .map_err(Into::into)
+            }
+            AuthorizationGateOutcome::Denied { .. } | AuthorizationGateOutcome::Expired { .. }
+                if action == AuthorizationAction::CompleteCeremonyStep =>
+            {
                 let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
                     .map_err(ToolError::invalid_request)?;
                 self.step_continuation
@@ -104,7 +114,44 @@ impl EmbeddedToolAuthorizer {
                     .await
                     .map_err(Into::into)
             }
-            Err(error) => Err(error.into()),
+            AuthorizationGateOutcome::Denied { decision } => Err(ToolError::refused(format!(
+                "authorization decision {} denied the operation",
+                decision.id().as_str()
+            ))),
+            AuthorizationGateOutcome::Expired { decision } => Err(ToolError::refused(format!(
+                "authorization decision {} has expired",
+                decision.id().as_str()
+            ))),
+        }
+    }
+
+    pub(super) async fn approve_operation(
+        &self,
+        arguments: &Value,
+        trace: &ToolTraceContext,
+    ) -> Result<made_core::value_objects::AuthorizationDecision, ToolError> {
+        let (approval_action, execution_action, scope, target_digest) =
+            embedded_authorization_request::approval(arguments)?;
+        match self
+            .gate
+            .approve_operation_outcome(
+                AuthorizationRequestId::new(trace.authorization_request_id())?,
+                approval_action,
+                execution_action,
+                scope,
+                target_digest,
+            )
+            .await?
+        {
+            AuthorizationGateOutcome::Allowed { decision, .. } => Ok(decision),
+            AuthorizationGateOutcome::Denied { decision } => Err(ToolError::refused(format!(
+                "authorization decision {} denied the approval",
+                decision.id().as_str()
+            ))),
+            AuthorizationGateOutcome::Expired { decision } => Err(ToolError::refused(format!(
+                "authorization decision {} expired before approval",
+                decision.id().as_str()
+            ))),
         }
     }
     async fn scope_for_tool(

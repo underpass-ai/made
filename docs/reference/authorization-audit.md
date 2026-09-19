@@ -34,6 +34,17 @@ live. Other mutations after expiry require a current grant. The domain event
 retains its observation time; the journal fact records its renewed admission
 time when that is later, so authorization is never backdated.
 
+Separation rules are exercised through `ApproveAuthorizationOperation` (or
+`made_approve_authorization_operation`). The approver supplies the configured
+approval action, execution action, authoritative scope, and the SHA-256 digest
+of the exact execution request. The resulting decision records
+`approved_action`; the executor sends its id in
+`x-made-approval-decision-id`, or in MCP
+`_meta.made_approval_decision_id`. Admission requires a live approval grant,
+the configured action pair, the same target and covered scope, and a different
+principal id. Reusing an approval for another target, action, or principal is
+recorded as a denial before the domain operation runs.
+
 Public history keeps its fields flat for transport consumers. To reconstruct a
 schema-3 domain `AuditRecord` for independent verification, remove
 `global_position` if present, move `authorization` to the envelope below, and

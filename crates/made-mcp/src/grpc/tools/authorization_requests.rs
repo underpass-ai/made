@@ -73,6 +73,19 @@ pub(super) fn revoke(args: &Value) -> Result<pb::RevokeAuthorizationGrantRequest
     })
 }
 
+pub(super) fn approval(args: &Value) -> Result<pb::ApproveAuthorizationOperationRequest, String> {
+    let obj = j2p::require_object(args, "tools/call.arguments")?;
+    Ok(pb::ApproveAuthorizationOperationRequest {
+        approval_action: j2p::require_str(obj, "approval_action")?.to_owned(),
+        execution_action: j2p::require_str(obj, "execution_action")?.to_owned(),
+        scope: Some(scope(
+            obj.get("scope")
+                .ok_or_else(|| "scope is required".to_owned())?,
+        )?),
+        target_digest: j2p::require_str(obj, "target_digest")?.to_owned(),
+    })
+}
+
 pub(super) fn decisions(args: &Value) -> Result<pb::ListAuthorizationDecisionsRequest, String> {
     let obj = j2p::require_object(args, "tools/call.arguments")?;
     let limit = match obj.get("limit") {
@@ -161,6 +174,26 @@ mod tests {
             scope(&json!({"kind":"resolved_ceremony","ceremony_id":"child","root_id":"root"}))
                 .is_err()
         );
+    }
+
+    #[test]
+    fn operation_approval_preserves_the_exact_action_scope_and_target() {
+        let digest = "a".repeat(64);
+        let request = approval(&json!({
+            "approval_action":"approve_ceremony_guard",
+            "execution_action":"complete_ceremony_step",
+            "scope":{"kind":"ceremony","ceremony_id":"ceremony-1"},
+            "target_digest":digest
+        }))
+        .unwrap();
+
+        assert_eq!(request.approval_action, "approve_ceremony_guard");
+        assert_eq!(request.execution_action, "complete_ceremony_step");
+        assert_eq!(
+            request.scope.unwrap().ceremony_id.as_deref(),
+            Some("ceremony-1")
+        );
+        assert_eq!(request.target_digest, "a".repeat(64));
     }
 
     #[test]

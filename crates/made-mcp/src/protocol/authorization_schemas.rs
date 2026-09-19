@@ -32,6 +32,19 @@ fn scope_schema() -> Value {
     ]})
 }
 
+pub(super) fn approval_schema() -> Value {
+    json!({
+        "type":"object", "additionalProperties":false,
+        "required":["approval_action","execution_action","scope","target_digest"],
+        "properties":{
+            "approval_action":{"type":"string","enum":GRANT_ACTIONS},
+            "execution_action":{"type":"string","enum":GRANT_ACTIONS},
+            "scope":scope_schema(),
+            "target_digest":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+        }
+    })
+}
+
 pub(super) fn revoke_schema() -> Value {
     json!({"type":"object","additionalProperties":false,"required":["grant_id","reason"],"properties":{
         "grant_id":string_schema("Grant to revoke."),

@@ -496,7 +496,8 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
         human("approver"),
         AuthorizationAction::ApproveCeremonyGuard,
         b"step-result",
-    );
+    )
+    .with_approved_action(AuthorizationAction::CompleteCeremonyStep);
     let (approval, event) = policy
         .decide_authorize(approval, NOW, ttl())
         .unwrap()
@@ -588,7 +589,8 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
                 human("dual-role"),
                 AuthorizationAction::ApproveCeremonyGuard,
                 b"step-result",
-            ),
+            )
+            .with_approved_action(AuthorizationAction::CompleteCeremonyStep),
             NOW,
             ttl(),
         )
@@ -610,6 +612,44 @@ fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_
             .decision()
             .denial_reason(),
         Some(AuthorizationDenialReason::ApprovalInvalid)
+    );
+}
+
+#[test]
+fn approval_intent_must_name_the_execution_action_from_the_rule() {
+    let rule = SeparationRule::new(
+        AuthorizationAction::ApproveCeremonyGuard,
+        AuthorizationAction::CompleteCeremonyStep,
+    )
+    .unwrap();
+    let mut policy = opened_policy(vec![rule]);
+    issue(
+        &mut policy,
+        &trusted_host(),
+        grant(
+            "approver",
+            human("approver").id().clone(),
+            [AuthorizationAction::ApproveCeremonyGuard],
+            DelegationDepth::none(),
+            trusted_host(),
+            None,
+        ),
+    );
+    let wrong = request(
+        "wrong-approved-action",
+        human("approver"),
+        AuthorizationAction::ApproveCeremonyGuard,
+        b"target",
+    )
+    .with_approved_action(AuthorizationAction::CancelCeremony);
+
+    assert_eq!(
+        policy
+            .decide_authorize(wrong, NOW, ttl())
+            .unwrap()
+            .decision()
+            .denial_reason(),
+        Some(AuthorizationDenialReason::ApprovalIntentInvalid)
     );
 }
 
