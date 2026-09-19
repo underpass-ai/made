@@ -130,6 +130,7 @@ fn start(
             .unwrap(),
             now: datetime!(2026-09-18 12:00:00 UTC),
             max_parallel_ceiling: MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         definition,
     )

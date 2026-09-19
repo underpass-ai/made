@@ -6,14 +6,16 @@ use super::{
     pb, request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, run_ceremony_input_from_proto,
     run_ceremony_response_from, run_ceremony_step_input_from_proto, start_ceremony_from_proto,
-    start_published_ceremony_input_from_proto, CeremonyId, CeremonyParticipantPlanAdapter,
-    GrpcResult, MadeGrpcService, Request, Response, StartCeremonyFromYaml,
+    CeremonyId, CeremonyParticipantPlanAdapter, GrpcResult, MadeGrpcService, Request, Response,
+    StartCeremonyFromYaml,
 };
 use made_app::usecases::AcceptChildCompletionInput;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     CeremonyEventPageLimit, ChildGroupId, ChildSpawnCoordinates, EventId, StepId,
 };
+
+mod budgeted_start;
 
 impl MadeGrpcService {
     #[tracing::instrument(name = "rpc.run_ceremony", skip_all)]
@@ -76,13 +78,7 @@ impl MadeGrpcService {
         request: Request<pb::StartPublishedCeremonyRequest>,
     ) -> GrpcResult<pb::StartPublishedCeremonyResponse> {
         link_span_to_metadata(&request);
-        let input = start_published_ceremony_input_from_proto(request.into_inner())
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .start_published_ceremony
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
+        let instance = budgeted_start::execute(self, request.into_inner()).await?;
         // Resolved rather than read from the publication directly: the
         // instance records a digest, and resolving it back through the
         // same path every other RPC uses is what proves the digest it

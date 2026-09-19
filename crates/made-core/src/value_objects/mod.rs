@@ -8,6 +8,7 @@ mod agent_kind;
 mod artifact;
 mod attributes;
 mod audit;
+mod budget;
 mod ceremony;
 mod ceremony_outcome;
 mod claim_text;
@@ -74,6 +75,13 @@ pub use audit::{
     CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
     CeremonyEventQuarantineReason, CeremonyProgressWait, EventSchemaVersion, GlobalPosition,
     QuarantinedCeremonyEvent, StreamVersion,
+};
+pub use budget::{
+    BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,
+    BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
+    BudgetReconciliationId, BudgetReservation, BudgetReservationEstimate, BudgetReservationId,
+    BudgetReservationRequest, BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration,
+    MeasuredBudgetQuantities, ToolCallCount,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,
@@ -165,3 +173,21 @@ pub use trace_context::TraceContext;
 pub use trace_id::TraceId;
 pub use validation_mode::ValidationMode;
 pub use validation_passed::ValidationPassed;
+
+mod council_journal_position;
+pub use council_journal_position::CouncilJournalPosition;
+
+mod council_journal_consumer;
+pub use council_journal_consumer::CouncilJournalConsumer;
+
+mod council_journal_lease_id;
+pub use council_journal_lease_id::CouncilJournalLeaseId;
+
+mod council_journal_page_limit;
+pub use council_journal_page_limit::CouncilJournalPageLimit;
+
+mod council_journal_lease;
+pub use council_journal_lease::CouncilJournalLease;
+
+mod council_snapshot_source;
+pub use council_snapshot_source::CouncilSnapshotSource;

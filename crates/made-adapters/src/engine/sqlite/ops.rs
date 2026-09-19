@@ -9,6 +9,15 @@ pub(super) struct Ops<'c> {
     pub(super) connection: &'c Connection,
 }
 
+fn checked_scan_limit(limit: usize) -> Result<i64, DomainError> {
+    i64::try_from(limit).map_err(|_| DomainError::OutOfRange {
+        field: "embedded_store.scan_limit",
+        value: limit as f64,
+        min: 0.0,
+        max: i64::MAX as f64,
+    })
+}
+
 impl Ops<'_> {
     pub(super) fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError> {
         check_key(table, key)?;
@@ -54,7 +63,7 @@ impl Ops<'_> {
                AND (?2 IS NULL OR substr(k, 1, length(?2)) = ?2) \
              ORDER BY k LIMIT ?3"
         );
-        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let limit = checked_scan_limit(limit)?;
         let mut statement = self.prepare(&sql)?;
         let rows = statement
             .query_map(params![after, prefix, limit], |row| {
@@ -63,6 +72,28 @@ impl Ops<'_> {
             .map_err(|error| failure(&error, "scan string page"))?;
         rows.collect::<Result<Vec<_>, _>>()
             .map_err(|error| failure(&error, "scan string page"))
+    }
+
+    pub(super) fn scan_str_after(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError> {
+        if table.key_shape() != KeyShape::Str {
+            return Err(scan_shape_mismatch(table, KeyShape::Str));
+        }
+        let limit = checked_scan_limit(limit)?;
+        let sql = format!("SELECT k, v FROM \"{table}\" WHERE k > ?1 ORDER BY k LIMIT ?2");
+        let after = after.unwrap_or_default();
+        let mut statement = self.prepare(&sql)?;
+        let rows = statement
+            .query_map(params![after, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|error| failure(&error, "scan bounded rows"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error, "scan bounded rows"))
     }
 
     pub(super) fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {

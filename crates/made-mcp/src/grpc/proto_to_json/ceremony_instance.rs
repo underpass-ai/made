@@ -15,6 +15,10 @@ pub(crate) fn ceremony_claim_to_json(response: pb::ClaimCeremonyStepResponse) ->
     response.instance.map(|instance| {
         let mut value = ceremony_instance_state_to_json(instance);
         value["claim_fence"] = json!(response.claim_fence);
+        value["budget"] = response
+            .budget
+            .as_ref()
+            .map_or(Value::Null, super::budget_admission_to_json);
         value
     })
 }
@@ -76,6 +80,7 @@ pub(crate) fn ceremony_instance_state_to_json(mut state: pb::CeremonyInstanceSta
         .collect::<Vec<_>>();
     json!({
         "ceremony_id": state.ceremony_id,
+        "budget_account_id": empty_as_null(state.budget_account_id),
         "trace_id": empty_as_null(state.trace_id),
         "correlation_id": empty_as_null(state.correlation_id),
         "causation_id": empty_as_null(state.causation_id),

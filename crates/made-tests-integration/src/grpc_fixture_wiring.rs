@@ -24,6 +24,7 @@ use made_core::ports::{
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
+    council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     ceremony_store: Arc<dyn CeremonyEventStorePort>,
     ceremony_snapshots: Arc<dyn CeremonySnapshotStorePort>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
@@ -31,12 +32,14 @@ pub struct GrpcFixtureWiring {
     clock: Option<Arc<dyn ClockPort>>,
     memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
+    execution_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort>,
 }
 
 impl Default for GrpcFixtureWiring {
     fn default() -> Self {
         let store = Arc::new(InMemoryCeremonyEventStore::new());
         Self {
+            council_journal: None,
             ceremony_store: store.clone(),
             ceremony_snapshots: store,
             step_handler: None,
@@ -44,11 +47,27 @@ impl Default for GrpcFixtureWiring {
             clock: None,
             memory: None,
             artifact_store: None,
+            execution_receipts: Arc::new(
+                made_adapters::memory::InMemoryExecutionReceiptStore::new(),
+            ),
         }
     }
 }
 
 impl GrpcFixtureWiring {
+    #[must_use]
+    pub fn with_council_journal(
+        mut self,
+        journal: Arc<dyn made_core::ports::CouncilJournalPort>,
+    ) -> Self {
+        self.council_journal = Some(journal);
+        self
+    }
+    pub(crate) fn council_journal(&self) -> Arc<dyn made_core::ports::CouncilJournalPort> {
+        self.council_journal
+            .clone()
+            .unwrap_or_else(|| Arc::new(made_adapters::memory::InMemoryCouncilJournal::new()))
+    }
     #[must_use]
     pub fn new() -> Self {
         Self::default()
@@ -155,6 +174,21 @@ impl GrpcFixtureWiring {
             let forgetful = Arc::new(ForgetfulMemory::new());
             (forgetful.clone(), forgetful)
         })
+    }
+
+    #[must_use]
+    pub fn with_execution_receipts(
+        mut self,
+        store: Arc<dyn made_core::ports::ExecutionReceiptStorePort>,
+    ) -> Self {
+        self.execution_receipts = store;
+        self
+    }
+
+    pub(crate) fn execution_receipts(
+        &self,
+    ) -> Arc<dyn made_core::ports::ExecutionReceiptStorePort> {
+        self.execution_receipts.clone()
     }
 
     #[must_use]

@@ -53,9 +53,13 @@ impl CeremonyEventReader {
             ),
             EventSchemaVersion::V4 => matches!(
                 event_type,
-                AuditEventType::StepStarted | AuditEventType::StepFailed
+                AuditEventType::CeremonyInstanceStarted
+                    | AuditEventType::StepStarted
+                    | AuditEventType::StepFailed
             ),
-            EventSchemaVersion::V5 => event_type == AuditEventType::StepStarted,
+            EventSchemaVersion::V5 | EventSchemaVersion::V6 => {
+                event_type == AuditEventType::StepStarted
+            }
             _ => false,
         };
         if !supported {
@@ -176,6 +180,12 @@ fn validate_seals(
                 "the sealed static role differs from started_by",
             ));
         }
+    }
+    if let CeremonyEvent::ExecutionReceiptLinked(linked) = event {
+        linked
+            .link
+            .validate()
+            .map_err(|_| unreadable(event_type, version, "execution receipt link is invalid"))?;
     }
     Ok(())
 }
@@ -385,5 +395,44 @@ mod tests {
             raw,
         )
         .is_err());
+    }
+
+    #[test]
+    fn version_four_reads_a_budgeted_ceremony_start() {
+        let raw = json!({
+            "type": "ceremony_instance_started",
+            "ceremony_id": "budgeted-reader",
+            "definition_name": "reader_fixture",
+            "definition_version": "1.0",
+            "initial_state": "OPEN",
+            "step_ids": ["work"],
+            "context": {},
+            "bound_definition": null,
+            "budget_account_id": "budgeted-reader",
+            "created_at": "2026-07-29T09:00:00Z"
+        });
+
+        let event = CeremonyEventReader::read(
+            AuditEventType::CeremonyInstanceStarted,
+            EventSchemaVersion::V4,
+            raw,
+        )
+        .unwrap();
+
+        assert_eq!(event.schema_version(), EventSchemaVersion::V4);
+    }
+
+    #[test]
+    fn version_six_reads_a_budgeted_step_claim() {
+        let mut raw = step_started_json();
+        raw["state_iteration"] = json!(1);
+        raw["state_visit"] = json!(1);
+        raw["budget_reservation_id"] = json!("reservation-reader-fixture");
+
+        let event =
+            CeremonyEventReader::read(AuditEventType::StepStarted, EventSchemaVersion::V6, raw)
+                .unwrap();
+
+        assert_eq!(event.schema_version(), EventSchemaVersion::V6);
     }
 }

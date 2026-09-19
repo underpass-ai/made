@@ -23,6 +23,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::memory::InProcessSessionMemory;
 use made_adapters::noop::NoopExecutor;
 use made_adapters::sqlite::SqliteCeremonyStore;
@@ -40,8 +41,12 @@ use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
+#[path = "mcp_parity_session/council_journal.rs"]
+mod council_journal;
 #[path = "mcp_parity_session/dynamic_roles.rs"]
 mod dynamic_roles;
+#[path = "mcp_parity_session/execution_receipts.rs"]
+mod execution_receipts;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
@@ -62,6 +67,8 @@ const GAP: &str = "-";
 const SESSION_ID: &str = "parity-session";
 /// The session started from a published version.
 const PUBLISHED_SESSION_ID: &str = "parity-published-session";
+/// A distinct published session whose durable root budget the parity run exercises.
+const BUDGET_SESSION_ID: &str = "parity-budget-session";
 /// The session `made_run_ceremony` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
 /// The session that decides something inside a shared memory scope.
@@ -75,6 +82,8 @@ const CONCURRENT_SESSION_ID: &str = "parity-concurrent";
 const CHILD_PARENT_ID: &str = "parity-child-parent";
 const CHILD_PLACEHOLDER: &str = "$parity-child-0";
 const TERMINAL_PLACEHOLDER: &str = "$parity-child-terminal";
+const ARTIFACT_UPLOAD_PLACEHOLDER: &str = "$parity-artifact-upload";
+const ABORT_UPLOAD_PLACEHOLDER: &str = "$parity-abort-upload";
 
 /// Values that are allowed to differ, named per tool, with why.
 ///
@@ -94,6 +103,28 @@ const TERMINAL_PLACEHOLDER: &str = "$parity-child-terminal";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
+    ("made_lease_council_events", ".structuredContent.lease.id", "each independent council store mints an opaque exclusive lease identity"),
+    ("made_lease_council_events", ".content[].text.lease.id", "the text projection mirrors the independently minted council lease identity"),
+    (
+        "made_begin_artifact_upload",
+        ".structuredContent.upload_id",
+        "each isolated artifact store mints its own opaque upload identity",
+    ),
+    (
+        "made_begin_artifact_upload",
+        ".content[].text.upload_id",
+        "the text projection mirrors the independently minted upload identity",
+    ),
+    (
+        "made_put_artifact_chunk",
+        ".structuredContent.upload_id",
+        "chunk progress retains the opaque upload identity minted by each store",
+    ),
+    (
+        "made_put_artifact_chunk",
+        ".content[].text.upload_id",
+        "the text projection mirrors the upload identity retained by each store",
+    ),
     (
         "made_deliberate",
         ".structuredContent.winner_proposal_id",
@@ -546,11 +577,17 @@ struct ParityArms {
     /// Dropping it removes the durable store's directory, on the pass
     /// that has one.
     _store_dir: Option<tempfile::TempDir>,
+    /// The two artifact roots must outlive their independently composed stores.
+    _artifact_store_dirs: Vec<tempfile::TempDir>,
     over_the_wire: MadeMcpServer,
     in_process: MadeMcpServer,
     claims: std::sync::Mutex<std::collections::BTreeMap<(String, String), Value>>,
     children: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
     terminals: std::sync::Mutex<BTreeMap<String, String>>,
+    uploads: std::sync::Mutex<BTreeMap<String, (String, String)>>,
+    council_leases: std::sync::Mutex<BTreeMap<String, (Value, Value)>>,
+    receipt_stores: Vec<Arc<dyn made_core::ports::ExecutionReceiptStorePort>>,
+    receipt_artifacts: Vec<Arc<dyn made_core::ports::ArtifactStorePort>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -584,7 +621,7 @@ impl ParityArms {
     /// clock on both arms — the whole reason its values can be compared
     /// at all — and `open` composes an engine that takes none of them.
     async fn start_on_the_shipped_store() -> Self {
-        let directory = tempfile::tempdir().expect("a directory for the durable store");
+        let directory = council_journal::scratch_directory("ceremony");
         let store = Arc::new(
             SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
                 .expect("the durable SQLite ceremony store should open"),
@@ -606,12 +643,33 @@ impl ParityArms {
         // in-process and equivalent, so each arm recalls what that arm
         // wrote and the two answers are equal because the engines
         // agree — not because they are reading each other's writes.
+        let wire_artifact_dir = council_journal::scratch_directory("wire-artifacts");
+        let local_artifact_dir = council_journal::scratch_directory("local-artifacts");
+        let wire_artifacts = Arc::new(
+            LocalArtifactStore::open(wire_artifact_dir.path())
+                .expect("the gRPC artifact store should open"),
+        );
+        let local_artifacts = Arc::new(
+            LocalArtifactStore::open(local_artifact_dir.path())
+                .expect("the embedded artifact store should open"),
+        );
+        let wire_journal = council_journal::seeded(wire_artifact_dir.path()).await;
+        let local_journal = council_journal::seeded(local_artifact_dir.path()).await;
+        let wire_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(wire_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+        );
+        let local_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(local_artifact_dir.path().join("receipts.sqlite3")).unwrap(),
+        );
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
-                .with_memory(Arc::new(InProcessSessionMemory::new())),
+                .with_memory(Arc::new(InProcessSessionMemory::new()))
+                .with_artifact_store(wire_artifacts.clone())
+                .with_council_journal(wire_journal)
+                .with_execution_receipts(wire_receipts.clone()),
         )
         .await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
@@ -626,16 +684,24 @@ impl ParityArms {
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
                 .with_council_validators(parity_council_validators())
                 .with_executor(Arc::new(NoopExecutor::new()))
+                .with_artifact_store(local_artifacts.clone())
+                .with_council_journal(local_journal)
+                .with_execution_receipt_store(local_receipts.clone())
                 .build(),
         ));
         Self {
             fixture,
             _store_dir: store_dir,
+            _artifact_store_dirs: vec![wire_artifact_dir, local_artifact_dir],
             over_the_wire,
             in_process,
             claims: std::sync::Mutex::new(std::collections::BTreeMap::new()),
             children: std::sync::Mutex::new(BTreeMap::new()),
             terminals: std::sync::Mutex::new(BTreeMap::new()),
+            uploads: std::sync::Mutex::new(BTreeMap::new()),
+            council_leases: std::sync::Mutex::new(BTreeMap::new()),
+            receipt_stores: vec![wire_receipts, local_receipts],
+            receipt_artifacts: vec![wire_artifacts, local_artifacts],
         }
     }
 
@@ -664,7 +730,13 @@ impl ParityArms {
                 .get(&child_id())
                 .expect("the scripted child history returned its terminal"));
         }
-        if tool == "made_complete_ceremony_step" && arguments.get("claim_fence").is_none() {
+        if matches!(
+            tool,
+            "made_complete_ceremony_step"
+                | "made_complete_execution_receipt"
+                | "made_adopt_execution_receipt"
+        ) && arguments.get("claim_fence").is_none()
+        {
             let key = (
                 arguments["ceremony_id"].as_str().unwrap().to_owned(),
                 arguments["step_id"].as_str().unwrap().to_owned(),
@@ -682,12 +754,63 @@ impl ParityArms {
 
     /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
-        let wire = call_tool(&self.over_the_wire, id, tool, arguments).await;
-        let local = call_tool(&self.in_process, id, tool, arguments).await;
+        let (mut wire_arguments, mut local_arguments) = self.artifact_arguments(arguments);
+        if let Some(consumer) = arguments
+            .get("lease")
+            .and_then(Value::as_str)
+            .and_then(|value| value.strip_prefix("$council-lease:"))
+        {
+            let leases = self.council_leases.lock().unwrap();
+            let (wire, local) = leases
+                .get(consumer)
+                .expect("script acquired this consumer lease");
+            wire_arguments["lease"] = wire.clone();
+            local_arguments["lease"] = local.clone();
+        }
+        let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
+        let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
+        if tool == "made_lease_council_events" && !failed(&wire) && !failed(&local) {
+            let key = arguments["consumer"].as_str().unwrap().to_owned();
+            let leases = (
+                structured(&wire)["lease"].clone(),
+                structured(&local)["lease"].clone(),
+            );
+            assert!(
+                leases.0.is_object() && leases.1.is_object(),
+                "script acquires independent free consumers"
+            );
+            self.council_leases.lock().unwrap().insert(key, leases);
+        }
+        if tool == "made_begin_artifact_upload" && !failed(&wire) && !failed(&local) {
+            let key = arguments["idempotency_key"]
+                .as_str()
+                .expect("artifact begin carries an idempotency key")
+                .to_owned();
+            self.uploads.lock().unwrap().insert(
+                key,
+                (
+                    structured(&wire)["upload_id"]
+                        .as_str()
+                        .expect("wire begin returns an upload id")
+                        .to_owned(),
+                    structured(&local)["upload_id"]
+                        .as_str()
+                        .expect("embedded begin returns an upload id")
+                        .to_owned(),
+                ),
+            );
+        }
         if tool == "made_claim_ceremony_step" && !failed(&wire) && !failed(&local) {
             let fence = structured(&wire)["claim_fence"].clone();
             assert_eq!(fence, structured(&local)["claim_fence"]);
             assert_eq!(fence.as_str().unwrap().len(), 64);
+            execution_receipts::seed_after_claim(
+                &self.receipt_stores,
+                &self.receipt_artifacts,
+                arguments,
+                fence.as_str().unwrap(),
+            )
+            .await;
             self.claims.lock().unwrap().insert(
                 (
                     arguments["ceremony_id"].as_str().unwrap().to_owned(),
@@ -726,6 +849,26 @@ impl ParityArms {
                 );
             }
         }
+        (wire, local)
+    }
+
+    fn artifact_arguments(&self, arguments: &Value) -> (Value, Value) {
+        let Some(placeholder) = arguments.get("upload_id").and_then(Value::as_str) else {
+            return (arguments.clone(), arguments.clone());
+        };
+        let key = match placeholder {
+            ARTIFACT_UPLOAD_PLACEHOLDER => "parity-artifact-upload",
+            ABORT_UPLOAD_PLACEHOLDER => "parity-artifact-abort",
+            _ => return (arguments.clone(), arguments.clone()),
+        };
+        let uploads = self.uploads.lock().unwrap();
+        let (wire_upload, local_upload) = uploads
+            .get(key)
+            .unwrap_or_else(|| panic!("the scripted begin did not capture {key}"));
+        let mut wire = arguments.clone();
+        let mut local = arguments.clone();
+        wire["upload_id"] = json!(wire_upload);
+        local["upload_id"] = json!(local_upload);
         (wire, local)
     }
 }
@@ -841,7 +984,8 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
 /// least once; the coverage assertion below is what keeps it true.
 #[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
 fn session_script() -> Vec<(&'static str, Value)> {
-    let mut calls = council_session_script();
+    let mut calls = council_journal::script();
+    calls.extend(council_session_script());
     calls.extend(vec![
         ("made_design_ceremony", design_intent()),
         (
@@ -1148,6 +1292,116 @@ fn session_script() -> Vec<(&'static str, Value)> {
                 "title": "  Parity review <both arms>  ",
             }),
         ),
+        // Budget admission uses a separate published ceremony after the
+        // committed report, so exercising the new events cannot perturb its
+        // established trace ids or document bytes.
+        (
+            "made_start_published_ceremony",
+            json!({
+                "ceremony": "parity_published",
+                "version": "1.0",
+                "ceremony_id": BUDGET_SESSION_ID,
+                "actor_id": "parity-operator",
+                "actor_kind": "service",
+                "budget_limits": { "tokens": 100 },
+            }),
+        ),
+        (
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": BUDGET_SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "lease_owner_id": "parity-budget-host",
+                "idempotency_key": "parity-budget-work-1",
+                "lease_ttl_ms": 60_000,
+                "budget_reservation": {
+                    "duration": { "quality": "unknown" },
+                    "tokens": { "quality": "estimated", "amount": 20 },
+                    "cost": { "quality": "unknown" },
+                    "tool_calls": { "quality": "unknown" }
+                },
+            }),
+        ),
+        (
+            "made_get_budget_report",
+            json!({ "ceremony_id": BUDGET_SESSION_ID }),
+        ),
+        (
+            "made_list_pending_budget_reservations",
+            json!({ "limit": 10 }),
+        ),
+        // Artifact transfer uses independent stores but fixed metadata,
+        // content, digest, artifact ids and timestamps. Only the opaque
+        // upload ids are store-minted and normalised above; every byte and
+        // every durable record is still compared across both backends.
+        (
+            "made_begin_artifact_upload",
+            json!({
+                "requested_artifact_id": "artifact-parity-primary",
+                "expected_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+                "size_bytes": 7,
+                "media_type": "text/plain",
+                "provenance": {
+                    "source_kind": "generated_report",
+                    "observed_at": "2026-04-15T12:00:00Z",
+                },
+                "idempotency_key": "parity-artifact-upload",
+            }),
+        ),
+        (
+            "made_put_artifact_chunk",
+            json!({
+                "upload_id": ARTIFACT_UPLOAD_PLACEHOLDER,
+                "offset": 0,
+                "bytes_base64": "Zml4dHVyZQ==",
+                "chunk_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+            }),
+        ),
+        (
+            "made_commit_artifact_upload",
+            json!({ "upload_id": ARTIFACT_UPLOAD_PLACEHOLDER }),
+        ),
+        (
+            "made_get_artifact",
+            json!({ "artifact_id": "artifact-parity-primary" }),
+        ),
+        ("made_list_artifacts", json!({ "limit": 1 })),
+        (
+            "made_read_artifact_chunk",
+            json!({
+                "artifact_id": "artifact-parity-primary",
+                "offset": 0,
+                "max_bytes": 4,
+            }),
+        ),
+        (
+            "made_tombstone_artifact",
+            json!({
+                "artifact_id": "artifact-parity-primary",
+                "actor": "parity-host",
+                "policy": "parity-retention",
+                "retired_at": "2026-04-15T12:05:00Z",
+            }),
+        ),
+        (
+            "made_begin_artifact_upload",
+            json!({
+                "requested_artifact_id": "artifact-parity-aborted",
+                "expected_digest": "sha256:f16d05ec6b29248d2c61adb1e9263f78e4f7bace1b955014a2d17872cfe4064d",
+                "size_bytes": 7,
+                "media_type": "text/plain",
+                "provenance": {
+                    "source_kind": "generated_report",
+                    "observed_at": "2026-04-15T12:00:00Z",
+                },
+                "idempotency_key": "parity-artifact-abort",
+            }),
+        ),
+        (
+            "made_abort_artifact_upload",
+            json!({ "upload_id": ABORT_UPLOAD_PLACEHOLDER }),
+        ),
         // Lifecycle controls run after the golden report so their trace ids
         // and events cannot perturb the established report fixture.
         (
@@ -1314,6 +1568,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({ "ceremony_id": MEMORY_SECOND_ID }),
         ),
     ]);
+    calls.extend(execution_receipts::script());
     calls
 }
 
@@ -1465,6 +1720,7 @@ async fn drive_the_whole_session(arms: &ParityArms) {
             "`{tool}` failed on the in-process backend: {in_process:#}"
         );
         assert_same_answer(tool, &over_the_wire, &in_process);
+        execution_receipts::assert_result(tool, &arguments, structured(&in_process));
         if tool == "made_design_ceremony" {
             let yaml = structured(&in_process)["definition_yaml"]
                 .as_str()
@@ -1569,6 +1825,11 @@ fn is_council_tool(tool: &str) -> bool {
             | "made_register_contract"
             | "made_list_contracts"
             | "made_delete_contract"
+            | "made_read_council_events"
+            | "made_get_council_event_cursor"
+            | "made_lease_council_events"
+            | "made_acknowledge_council_events"
+            | "made_release_council_events"
     )
 }
 
@@ -1757,6 +2018,33 @@ fn requests_the_gate_refuses() -> Vec<(&'static str, &'static str, Value)> {
                 "actor_id": "parity-operator",
                 "actor_kind": "service",
                 "context": { "ticket": 1e17 },
+            }),
+        ),
+        (
+            "an estimated budget measurement without an amount",
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "budget_reservation": {
+                    "duration": { "quality": "unknown" },
+                    "tokens": { "quality": "estimated" },
+                    "cost": { "quality": "unknown" },
+                    "tool_calls": { "quality": "unknown" }
+                }
+            }),
+        ),
+        (
+            "a zero budget ceiling beside a positive ceiling",
+            "made_start_published_ceremony",
+            json!({
+                "ceremony_id": "zero-budget",
+                "ceremony": "parity_published",
+                "version": "1.0",
+                "actor_id": "operator",
+                "actor_kind": "service",
+                "budget_limits": { "tokens": 0, "tool_calls": 10 }
             }),
         ),
     ]

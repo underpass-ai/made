@@ -79,6 +79,7 @@ impl StartCeremonyStepUseCase {
             lease,
             now,
             max_parallel_ceiling: self.max_parallel_ceiling,
+            budget_reservation_id: None,
         });
         // The claim commutes with what other writers do to the session
         // — a second claim of the same step is refused by the lease,

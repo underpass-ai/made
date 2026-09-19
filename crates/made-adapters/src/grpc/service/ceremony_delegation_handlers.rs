@@ -10,15 +10,17 @@
 //!
 //! Both answer with the session, like every other move.
 
+use made_app::budgets::{BudgetedStepClaimInput, BudgetedStepClaimOutput};
 use made_app::usecases::{CeremonyInstanceRead, ReadCeremonyEventsInput, StartCeremonyStepOutput};
 use made_core::entities::CeremonyDefinition;
 use made_core::error::DomainError;
 use made_core::value_objects::{CeremonyEventPageLimit, StreamVersion, TraceId};
 
 use super::{
+    budget_error_to_status, budget_reservation_estimate_from_proto,
     claim_ceremony_step_input_from_proto, complete_ceremony_step_input_from_proto,
     domain_error_to_status, link_span_to_metadata, pb, CeremonyId, GrpcResult, MadeGrpcService,
-    Request, Response,
+    Request, Response, Status,
 };
 
 impl MadeGrpcService {
@@ -28,20 +30,58 @@ impl MadeGrpcService {
         request: Request<pb::ClaimCeremonyStepRequest>,
     ) -> GrpcResult<pb::ClaimCeremonyStepResponse> {
         link_span_to_metadata(&request);
-        let request = request.into_inner();
+        let mut request = request.into_inner();
         let ceremony_id =
             CeremonyId::new(request.ceremony_id.clone()).map_err(domain_error_to_status)?;
         let (instance, definition) = self.session(&ceremony_id).await?;
+        let reservation = request.budget_reservation.take();
         let input = claim_ceremony_step_input_from_proto(request, &definition, &instance)
             .map_err(domain_error_to_status)?;
-        let claim = self
-            .claim_ceremony_step
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
+        if instance.budget_account_id().is_some() {
+            let reservation = reservation.ok_or_else(|| {
+                Status::failed_precondition(
+                    "budgeted ceremony claims require a reservation estimate",
+                )
+            })?;
+            let reservation = budget_reservation_estimate_from_proto(reservation)
+                .map_err(domain_error_to_status)?;
+            let output = self
+                .budgeted_step_claim
+                .as_deref()
+                .ok_or_else(|| {
+                    Status::failed_precondition("budgeted step admission is not configured")
+                })?
+                .execute(BudgetedStepClaimInput::new(input, reservation))
+                .await
+                .map_err(budget_error_to_status)?;
+            let budget = Some(budget_claim_admission(&output));
+            self.claim_response(output.claim(), budget, &definition)
+                .await
+        } else {
+            if reservation.is_some() {
+                return Err(Status::invalid_argument(
+                    "budget reservation supplied for an unbudgeted ceremony",
+                ));
+            }
+            let output = self
+                .claim_ceremony_step
+                .execute(input)
+                .await
+                .map_err(domain_error_to_status)?;
+            self.claim_response(&output, None, &definition).await
+        }
+    }
+
+    async fn claim_response(
+        &self,
+        claim: &StartCeremonyStepOutput,
+        budget: Option<pb::BudgetClaimAdmission>,
+        definition: &CeremonyDefinition,
+    ) -> GrpcResult<pb::ClaimCeremonyStepResponse> {
         Ok(Response::new(pb::ClaimCeremonyStepResponse {
-            instance: Some(self.render_claim(&claim, &definition).await?),
+            instance: Some(self.render_claim(claim, definition).await?),
             claim_fence: claim.claim_fence().as_str().to_owned(),
+            budget,
         }))
     }
 
@@ -101,5 +141,13 @@ impl MadeGrpcService {
         Ok(Response::new(pb::CompleteCeremonyStepResponse {
             instance: Some(state),
         }))
+    }
+}
+
+fn budget_claim_admission(output: &BudgetedStepClaimOutput) -> pb::BudgetClaimAdmission {
+    pb::BudgetClaimAdmission {
+        account_id: output.account_id().as_str().to_owned(),
+        operation_id: output.operation_id().as_str().to_owned(),
+        reservation_id: output.reservation_id().as_str().to_owned(),
     }
 }

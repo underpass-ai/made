@@ -8,17 +8,13 @@
 //! materialize its own live handles using whatever factory it has
 //! feature-enabled.
 //!
-//! Adapter-specific limitation in this slice: `register(agent)` asks
-//! the passed-in agent for its id / specialty, but then we need a
-//! descriptor to persist — we only store kind="noop" today because
-//! the composition root only wires the NoopAgentFactory. When the
-//! dispatching factory lands (with vLLM / Anthropic / OpenAI kinds),
-//! we will switch register to take an [`AgentDescriptor`] directly so
-//! the persisted kind is an honest reflection of the wiring.
+//! Registration preserves the original descriptor. A live handle alone cannot
+//! prove which provider constructed it and is therefore not a durable record.
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use made_core::entities::CouncilJournalEvent;
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentDescriptor, AgentFactoryPort, AgentPort, AgentRegistryPort, AgentResolverPort,
@@ -48,12 +44,10 @@ impl PostgresAgentRegistry {
         Self { pool, factory }
     }
 
-    /// Persist a full [`AgentDescriptor`]. Used by wiring / registration
-    /// paths that already have a descriptor in hand; the
-    /// [`AgentRegistryPort::register`] surface degrades to this by
-    /// reconstructing a descriptor with `kind = "noop"` because that
-    /// is the only kind the noop factory recognises today.
+    /// Persist validated provider construction options; credentials remain host-side.
     pub async fn insert_descriptor(&self, descriptor: &AgentDescriptor) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
+        crate::persisted_agent_descriptor::validate(descriptor)?;
         let attributes: JsonValue = serde_json::to_value(&descriptor.attributes)
             .map_err(|e| serde_to_domain(&e, "insert_descriptor"))?;
         let result = sqlx::query(
@@ -67,13 +61,20 @@ impl PostgresAgentRegistry {
         .bind(descriptor.specialty.as_str())
         .bind(descriptor.kind.as_str())
         .bind(&attributes)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "insert_descriptor"))?;
         if result.rows_affected() == 0 {
             return Err(DomainError::AlreadyExists { what: "agent" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::AgentRegistered(descriptor.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn load_descriptor(&self, id: &AgentId) -> Result<Option<AgentDescriptor>, DomainError> {
@@ -93,30 +94,43 @@ impl PostgresAgentRegistry {
 
 #[async_trait]
 impl AgentRegistryPort for PostgresAgentRegistry {
-    async fn register(&self, agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
-        // The port surface carries a live agent, but we persist
-        // descriptors only. Until a dispatching factory lands, every
-        // agent is materialised by NoopAgentFactory, so recording
-        // kind="noop" is the honest projection.
-        let descriptor = AgentDescriptor {
-            id: agent.id().clone(),
-            specialty: agent.specialty().clone(),
-            kind: AgentKind::new("noop")?,
-            attributes: Attributes::empty(),
-        };
+    async fn register(&self, _agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+        Err(DomainError::InvariantViolated {
+            reason: "durable agent registration requires the original descriptor",
+        })
+    }
+
+    async fn register_described(
+        &self,
+        descriptor: AgentDescriptor,
+        agent: Arc<dyn AgentPort>,
+    ) -> Result<(), DomainError> {
+        if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
+            return Err(DomainError::InvariantViolated {
+                reason: "agent descriptor and materialized identity differ",
+            });
+        }
         self.insert_descriptor(&descriptor).await
     }
 
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM agents WHERE agent_id = $1")
             .bind(id.as_str())
-            .execute(self.pool.inner())
+            .execute(&mut *tx)
             .await
             .map_err(|e| sqlx_to_domain(e, "unregister"))?;
         if result.rows_affected() == 0 {
             return Err(DomainError::NotFound { what: "agent" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::AgentUnregistered(id.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 }
 

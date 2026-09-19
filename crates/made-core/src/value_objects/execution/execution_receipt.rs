@@ -8,6 +8,7 @@ use super::{
 use crate::error::DomainError;
 use crate::value_objects::artifact::{ArtifactRef, ArtifactSourceKind};
 use crate::value_objects::ceremony::{StepClaimFence, StepResult};
+use crate::value_objects::MeasuredBudgetQuantities;
 
 pub const MAX_EXECUTION_ARTIFACTS: usize = 100;
 
@@ -25,6 +26,8 @@ pub struct ExecutionReceipt {
     source_kind: ArtifactSourceKind,
     result: StepResult,
     artifacts: Vec<ArtifactRef>,
+    #[serde(default, skip_serializing_if = "MeasuredBudgetQuantities::is_unknown")]
+    budget_measurement: MeasuredBudgetQuantities,
     #[serde(with = "time::serde::rfc3339")]
     observed_at: OffsetDateTime,
 }
@@ -80,8 +83,15 @@ impl ExecutionReceipt {
             source_kind,
             result,
             artifacts,
+            budget_measurement: MeasuredBudgetQuantities::default(),
             observed_at,
         })
+    }
+
+    #[must_use]
+    pub fn with_budget_measurement(mut self, measured: MeasuredBudgetQuantities) -> Self {
+        self.budget_measurement = measured;
+        self
     }
 
     #[must_use]
@@ -135,7 +145,109 @@ impl ExecutionReceipt {
     }
 
     #[must_use]
+    pub const fn budget_measurement(&self) -> MeasuredBudgetQuantities {
+        self.budget_measurement
+    }
+
+    #[must_use]
     pub const fn observed_at(&self) -> OffsetDateTime {
         self.observed_at
+    }
+
+    /// Re-check all derived and nested invariants after deserialization.
+    pub fn validate(&self) -> Result<(), DomainError> {
+        if self.receipt_id != ExecutionReceiptId::for_operation(&self.operation_id) {
+            return Err(DomainError::InvariantViolated {
+                reason: "execution receipt id does not match its operation",
+            });
+        }
+        if !self.source_kind.is_execution_source() {
+            return Err(DomainError::InvariantViolated {
+                reason: "execution receipt requires an execution source kind",
+            });
+        }
+        if self.artifacts.len() > MAX_EXECUTION_ARTIFACTS {
+            return Err(DomainError::OutOfRange {
+                field: "execution_receipt.artifacts",
+                value: self.artifacts.len() as f64,
+                min: 0.0,
+                max: MAX_EXECUTION_ARTIFACTS as f64,
+            });
+        }
+        for artifact in &self.artifacts {
+            artifact.validate()?;
+            let provenance = artifact.provenance();
+            if provenance.execution_receipt_id() != Some(&self.receipt_id)
+                || provenance.operation_id() != Some(&self.operation_id)
+                || provenance.accepted_claim_fence() != Some(&self.producer_claim_fence)
+                || provenance.source_kind() != self.source_kind
+            {
+                return Err(DomainError::InvariantViolated {
+                    reason: "execution receipt artifact provenance does not match its execution",
+                });
+            }
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::*;
+    use crate::value_objects::{
+        ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
+        StepOutput,
+    };
+
+    fn receipt() -> ExecutionReceipt {
+        let operation_id = ExecutionOperationId::new("1".repeat(64)).unwrap();
+        let receipt_id = ExecutionReceiptId::for_operation(&operation_id);
+        let fence = StepClaimFence::new("2".repeat(64)).unwrap();
+        let provenance = ArtifactProvenance::execution(
+            ArtifactSourceKind::NoOp,
+            receipt_id,
+            operation_id.clone(),
+            fence.clone(),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap();
+        ExecutionReceipt::new(
+            operation_id,
+            ExecutionRequestDigest::new("3".repeat(64)).unwrap(),
+            fence,
+            ExecutionConnectorId::new("test").unwrap(),
+            None,
+            ExecutionRecoveryCapability::IdempotentByOperationId,
+            ArtifactSourceKind::NoOp,
+            StepResult::completed(StepOutput::empty()).unwrap(),
+            vec![ArtifactRef::new(
+                ArtifactId::new("artifact").unwrap(),
+                ArtifactDigest::new(format!("sha256:{}", "4".repeat(64))).unwrap(),
+                ArtifactSizeBytes::new(1),
+                ArtifactMediaType::new("text/plain").unwrap(),
+                provenance,
+            )],
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn deserialized_receipt_revalidates_identity_and_collection_bound() {
+        let original = receipt();
+        original.validate().unwrap();
+
+        let mut wrong_identity = serde_json::to_value(&original).unwrap();
+        wrong_identity["receipt_id"] = json!("5".repeat(64));
+        let wrong_identity: ExecutionReceipt = serde_json::from_value(wrong_identity).unwrap();
+        assert!(wrong_identity.validate().is_err());
+
+        let mut too_many = serde_json::to_value(&original).unwrap();
+        let artifact = too_many["artifacts"][0].clone();
+        too_many["artifacts"] = json!(vec![artifact; MAX_EXECUTION_ARTIFACTS + 1]);
+        let too_many: ExecutionReceipt = serde_json::from_value(too_many).unwrap();
+        assert!(too_many.validate().is_err());
     }
 }

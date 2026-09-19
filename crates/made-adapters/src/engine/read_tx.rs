@@ -13,6 +13,12 @@ pub(crate) trait ReadTx {
         prefix: Option<&str>,
         limit: usize,
     ) -> Result<Vec<StrRow>, DomainError>;
+    fn scan_str_after(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError>;
     fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError>;
     fn scan_byte_keys_page(
         &self,

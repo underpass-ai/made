@@ -16,6 +16,7 @@ use made_proto::v1 as pb;
 use time::OffsetDateTime;
 
 use super::attributes::attributes_to_struct;
+use super::budget::budget_account_id_to_proto;
 use super::ceremony_instance_children::{child_group_state_from, lineage_state_from};
 
 /// One instant, one rendering.
@@ -130,6 +131,7 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .values()
             .map(step_deadline_state_from)
             .collect(),
+        budget_account_id: budget_account_id_to_proto(instance.budget_account_id()),
     }
 }
 

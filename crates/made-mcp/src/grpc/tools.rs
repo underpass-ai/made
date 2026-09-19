@@ -17,11 +17,14 @@ use super::streaming;
 
 mod artifact_dispatch;
 mod artifact_requests;
+mod budget_dispatch;
 mod ceremony_history_requests;
 mod ceremony_read_dispatch;
 mod ceremony_requests;
 mod children_dispatch;
+mod council_journal_dispatch;
 mod design_ceremony_request;
+mod execution_receipt_dispatch;
 mod general_dispatch;
 mod general_requests;
 mod lifecycle_dispatch;
@@ -55,6 +58,9 @@ pub(crate) async fn dispatch(
                 .insert("traceparent", traceparent.clone());
             Ok(request)
         });
+    if council_journal_dispatch::handles(name) {
+        return council_journal_dispatch::dispatch(&mut client, name, arguments).await;
+    }
     if general_dispatch::handles(name) {
         return general_dispatch::dispatch(&mut client, name, arguments).await;
     }
@@ -69,6 +75,9 @@ pub(crate) async fn dispatch(
     }
     if artifact_dispatch::handles(name) {
         return artifact_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if execution_receipt_dispatch::handles(name) {
+        return execution_receipt_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {

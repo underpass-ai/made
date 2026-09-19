@@ -25,16 +25,16 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest,
+    AuditActorKind, BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest,
     CeremonyEvidenceSourceId, CeremonyGuardApproval, CeremonyGuardDeferral,
     CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
     CeremonyLifecycle, CeremonyLineage, CeremonyName, CeremonyParticipantBinding, CeremonyReason,
     CeremonyReasonKind, CeremonyRecordRef, CeremonyTransitionRecord, CeremonyVersion, ChildGroupId,
-    ChildGroupState, GuardName, IdempotencyKey, LateStepResult, MemoryConfidence, RoleAction,
-    RoleId, SessionRecollection, Specialty, StateDeadline, StateId, StateIteration, StateVisit,
-    StepAttempt, StepClaimFence, StepDeadline, StepExecutionRecord, StepId, StepLease, StepResult,
-    TransitionTrigger,
+    ChildGroupState, ExecutionOperationId, ExecutionReceiptLink, GuardName, IdempotencyKey,
+    LateStepResult, MemoryConfidence, RoleAction, RoleId, SessionRecollection, Specialty,
+    StateDeadline, StateId, StateIteration, StateVisit, StepAttempt, StepClaimFence, StepDeadline,
+    StepExecutionRecord, StepId, StepLease, StepResult, TransitionTrigger,
 };
 
 mod children;
@@ -139,6 +139,8 @@ pub struct CeremonyInstance {
     bound_definition: Option<CeremonyDefinitionDigest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lineage: Option<CeremonyLineage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budget_account_id: Option<BudgetAccountId>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     child_groups: BTreeMap<ChildGroupId, ChildGroupState>,
     #[serde(default, skip_serializing_if = "CeremonyLifecycle::is_default")]
@@ -153,6 +155,8 @@ pub struct CeremonyInstance {
     retired_deadline_claims: BTreeMap<StepClaimFence, StepDeadline>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     late_step_results: BTreeMap<StepClaimFence, LateStepResult>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    execution_receipt_links: BTreeMap<ExecutionOperationId, ExecutionReceiptLink>,
 }
 
 impl CeremonyInstance {
@@ -168,7 +172,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
         Ok(Self::from_started(&Self::opening(
-            id, definition, context, now, None, None,
+            id, definition, context, now, None, None, None,
         )?))
     }
 
@@ -190,6 +194,7 @@ impl CeremonyInstance {
             now,
             Some(published.digest()),
             None,
+            None,
         )?))
     }
 
@@ -203,6 +208,11 @@ impl CeremonyInstance {
     #[must_use]
     pub fn lineage(&self) -> Option<&CeremonyLineage> {
         self.lineage.as_ref()
+    }
+
+    #[must_use]
+    pub fn budget_account_id(&self) -> Option<&BudgetAccountId> {
+        self.budget_account_id.as_ref()
     }
 
     #[must_use]
@@ -312,6 +322,19 @@ impl CeremonyInstance {
     #[must_use]
     pub fn step_record(&self, step_id: &StepId) -> Option<&StepExecutionRecord> {
         self.step_records.get(step_id)
+    }
+
+    #[must_use]
+    pub fn execution_receipt_links(&self) -> &BTreeMap<ExecutionOperationId, ExecutionReceiptLink> {
+        &self.execution_receipt_links
+    }
+
+    #[must_use]
+    pub fn execution_receipt_link(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Option<&ExecutionReceiptLink> {
+        self.execution_receipt_links.get(operation_id)
     }
 
     /// Finished iterations before the current record, in execution order.

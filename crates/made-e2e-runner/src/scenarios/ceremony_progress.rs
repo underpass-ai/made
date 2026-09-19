@@ -33,6 +33,7 @@ pub(crate) async fn verify_live_ceremony_progress(
             )),
             actor_id: "progress-e2e-operator".to_owned(),
             actor_kind: "service".to_owned(),
+            budget_limits: None,
         })
         .await
         .context("StartPublishedCeremony failed for progress scenario")?;

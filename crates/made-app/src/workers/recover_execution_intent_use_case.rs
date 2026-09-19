@@ -1,0 +1,93 @@
+use std::sync::Arc;
+
+use made_core::error::DomainError;
+use made_core::ports::{
+    CeremonyExecutionConnectorOutcome, CeremonyExecutionConnectorPort, ExecutionReceiptStorePort,
+};
+use made_core::value_objects::{ExecutionIntent, ExecutionRecoveryCapability};
+
+use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
+use super::execution_receipt_from_observation::execution_receipt_from_observation;
+use super::RecoverExecutionIntentOutcome;
+use crate::artifacts::ArtifactService;
+
+/// Recover one persisted intent without relying on process-local request state.
+pub struct RecoverExecutionIntentUseCase {
+    store: Arc<dyn ExecutionReceiptStorePort>,
+    connector: Arc<dyn CeremonyExecutionConnectorPort>,
+    artifacts: Option<Arc<ArtifactService>>,
+}
+
+impl std::fmt::Debug for RecoverExecutionIntentUseCase {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("RecoverExecutionIntentUseCase")
+            .field("connector_id", &self.connector.connector_id())
+            .finish_non_exhaustive()
+    }
+}
+
+impl RecoverExecutionIntentUseCase {
+    #[must_use]
+    pub fn new(
+        store: Arc<dyn ExecutionReceiptStorePort>,
+        connector: Arc<dyn CeremonyExecutionConnectorPort>,
+    ) -> Self {
+        Self {
+            store,
+            connector,
+            artifacts: None,
+        }
+    }
+
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Arc<ArtifactService>) -> Self {
+        self.artifacts = Some(artifacts);
+        self
+    }
+
+    pub async fn execute(
+        &self,
+        intent: &ExecutionIntent,
+    ) -> Result<RecoverExecutionIntentOutcome, DomainError> {
+        if let Some(receipt) = self
+            .store
+            .receipt(intent.operation().operation_id())
+            .await?
+        {
+            verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
+            return Ok(RecoverExecutionIntentOutcome::Receipt(Box::new(receipt)));
+        }
+        if intent.connector_id() != self.connector.connector_id()
+            || intent.recovery_capability() != self.connector.recovery_capability()
+            || intent.source_kind() != self.connector.source_kind()
+        {
+            return Err(DomainError::Conflict {
+                what: "execution_connector_contract",
+            });
+        }
+        if intent.recovery_capability() == ExecutionRecoveryCapability::ReconciliationRequired {
+            return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
+                intent.operation().operation_id().clone(),
+            ));
+        }
+        let observation = match self.connector.recover_intent(intent).await? {
+            CeremonyExecutionConnectorOutcome::Observed(observation) => *observation,
+            CeremonyExecutionConnectorOutcome::ReconciliationRequired(operation_id) => {
+                return Ok(RecoverExecutionIntentOutcome::ReconciliationRequired(
+                    operation_id,
+                ));
+            }
+        };
+        let receipt = execution_receipt_from_observation(
+            self.store.as_ref(),
+            self.connector.as_ref(),
+            intent,
+            observation,
+        )
+        .await?;
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
+        self.store.record_receipt(receipt.clone()).await?;
+        Ok(RecoverExecutionIntentOutcome::Receipt(Box::new(receipt)))
+    }
+}

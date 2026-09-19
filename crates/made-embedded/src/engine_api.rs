@@ -8,10 +8,11 @@ use std::collections::BTreeMap;
 
 use made_adapters::yaml::CeremonyDefinitionYaml;
 use made_api::{
-    ApiCapabilities, ApiError, CeremonyEngineApi, CeremonyParticipant, CeremonySummary,
-    DefinitionAnalysisView, DefinitionDefectView, InterventionResponseView, InterventionView,
-    PublishedDefinitionView, RaiseInterventionRequest, RecalledEntryView, RecollectionView,
-    RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
+    ApiCapabilities, ApiError, BudgetLimits as BudgetLimitsView, BudgetReport,
+    BudgetReservation as BudgetReservationView, CeremonyEngineApi, CeremonyParticipant,
+    CeremonySummary, DefinitionAnalysisView, DefinitionDefectView, InterventionResponseView,
+    InterventionView, PublishedDefinitionView, RaiseInterventionRequest, RecalledEntryView,
+    RecollectionView, RespondToInterventionRequest, StartCeremonyRequest, CONTRACT_VERSION,
 };
 use made_app::usecases::{
     RequestCeremonyInterventionInput, RespondToCeremonyInterventionInput, StartCeremonyInput,
@@ -28,11 +29,13 @@ use time::OffsetDateTime;
 
 use crate::{EmbeddedMade, VERSION};
 
+mod budget_api;
+
 /// What this build can do, by name.
 ///
 /// Listed here, next to the implementation, so that adding a method to the
 /// trait without adding its name is a diff a reviewer sees in one place.
-const CAPABILITIES: [&str; 7] = [
+const CAPABILITIES: [&str; 10] = [
     "list_ceremonies",
     "get_ceremony",
     "start_ceremony",
@@ -40,6 +43,9 @@ const CAPABILITIES: [&str; 7] = [
     "respond_to_intervention",
     "analyze_definition",
     "publish_definition",
+    "start_budgeted_ceremony",
+    "get_budget_report",
+    "list_pending_budget_reservations",
 ];
 
 #[async_trait::async_trait]
@@ -231,6 +237,26 @@ impl CeremonyEngineApi for EmbeddedMade {
                 reason: error.to_string(),
             }),
         }
+    }
+
+    async fn start_budgeted_ceremony(
+        &self,
+        request: StartCeremonyRequest,
+        limits: BudgetLimitsView,
+    ) -> Result<CeremonySummary, ApiError> {
+        budget_api::start(self, request, limits).await
+    }
+
+    async fn budget_report(&self, ceremony_id: &str) -> Result<BudgetReport, ApiError> {
+        budget_api::report(self, ceremony_id).await
+    }
+
+    async fn pending_budget_reservations(
+        &self,
+        after_reservation_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<BudgetReservationView>, ApiError> {
+        budget_api::pending(self, after_reservation_id, limit).await
     }
 }
 

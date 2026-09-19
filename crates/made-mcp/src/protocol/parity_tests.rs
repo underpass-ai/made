@@ -38,7 +38,7 @@ const API_NON_CAPABILITY_METHOD: &str = "capabilities";
 /// carries, mapped to that capability. Every one of these is explicit: an
 /// unmapped public method of `EmbeddedMade` fails the test rather than being
 /// waved through.
-const FACADE_VARIANTS: [(&str, &str); 7] = [
+const FACADE_VARIANTS: [(&str, &str); 9] = [
     ("mount_definitions", "mount_definition"),
     ("mount_yaml", "mount_definition"),
     ("definition", "list_ceremony_definitions"),
@@ -49,7 +49,12 @@ const FACADE_VARIANTS: [(&str, &str); 7] = [
     // that verifies the chain it was given, one page for a caller
     // following it.
     ("audit_records_from", "read_ceremony_events"),
+    ("start_budgeted_published", "start_published_ceremony"),
+    ("start_budgeted_step", "claim_ceremony_step"),
 ];
+
+/// Versioned API methods that specialize an existing capability.
+const API_VARIANTS: [(&str, &str); 1] = [("start_budgeted_ceremony", "start_ceremony")];
 
 /// Facade methods that are not capabilities, each with the reason it is not.
 ///
@@ -351,7 +356,7 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 14] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 16] = [
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
     ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
     ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),
@@ -383,6 +388,8 @@ const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 14] = [
     ("resume_ceremony", "resume_ceremony", "keeps the domain noun to distinguish ceremony lifecycle control from host process control"),
     ("cancel_ceremony", "cancel_ceremony", "keeps the domain noun to distinguish ceremony lifecycle control from host process control"),
     ("enforce_ceremony_deadlines", "enforce_ceremony_deadlines", "keeps the domain noun because enforcement targets one ceremony instance"),
+    ("get_budget_report", "budget_report", "named after the balance it answers with"),
+    ("list_pending_budget_reservations", "pending_budget_reservations", "named after the bounded recovery records it answers with"),
 ];
 
 fn expected_facade_method(capability: &str) -> String {
@@ -525,6 +532,16 @@ fn ceremony_engine_api_capabilities() -> BTreeSet<String> {
         "CeremonyEngineApi no longer declares `{API_NON_CAPABILITY_METHOD}`; \
          the one method that reports capabilities instead of being one"
     );
+    for (method, capability) in API_VARIANTS {
+        assert!(
+            methods.remove(method),
+            "CeremonyEngineApi no longer declares variant `{method}`"
+        );
+        assert!(
+            methods.contains(capability),
+            "CeremonyEngineApi variant `{method}` maps to missing capability `{capability}`"
+        );
+    }
     methods
 }
 

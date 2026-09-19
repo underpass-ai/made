@@ -32,6 +32,14 @@ impl ReadTx for SqliteRead<'_> {
     ) -> Result<Vec<StrRow>, DomainError> {
         self.ops().scan_str_page(table, after, prefix, limit)
     }
+    fn scan_str_after(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError> {
+        self.ops().scan_str_after(table, after, limit)
+    }
     fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
         self.ops().scan_bytes(table)
     }

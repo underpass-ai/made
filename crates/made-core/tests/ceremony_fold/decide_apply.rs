@@ -2,14 +2,15 @@
 //! folding them leaves exactly the session the mutator leaves.
 
 use made_core::entities::ceremony_commands::{
-    ApplyStepResult, ApplyTransition, ApproveGuard, AssertReason, BindParticipant,
-    CloseIntervention, DeferGuard, RequestIntervention, RespondToIntervention,
+    ApplyExecutionReceiptResult, ApplyStepResult, ApplyTransition, ApproveGuard, AssertReason,
+    BindParticipant, CloseIntervention, DeferGuard, RequestIntervention, RespondToIntervention,
     RespondToInterventionWithEvidence, StartStep,
 };
 use made_core::entities::ceremony_events::{
-    CeremonyCompleted, CeremonyInstanceStarted, EvidenceCollected, HumanApprovalRecorded,
-    HumanDeferralRecorded, InterventionClosed, InterventionRequested, InterventionResponded,
-    ParticipantsBound, ReasonAsserted, StepCompleted, StepFailed, StepStarted, TransitionApplied,
+    CeremonyCompleted, CeremonyInstanceStarted, EvidenceCollected, ExecutionReceiptLinked,
+    HumanApprovalRecorded, HumanDeferralRecorded, InterventionClosed, InterventionRequested,
+    InterventionResponded, ParticipantsBound, ReasonAsserted, StepCompleted, StepFailed,
+    StepStarted, TransitionApplied,
 };
 use made_core::entities::{
     CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance, CeremonyIntervention,
@@ -20,8 +21,9 @@ use made_core::value_objects::{
     AuditActorKind, CeremonyContext, CeremonyGuardApproval, CeremonyGuardDeferral, CeremonyId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionResponse,
     CeremonyInterventionTarget, CeremonyParticipantBinding, CeremonyReason, CeremonyReasonKind,
-    CeremonyRecordRef, CeremonyTransitionRecord, MemoryConfidence, StateIteration, StateVisit,
-    StepAttempt, StepErrorMessage, StepIteration, StepResult,
+    CeremonyRecordRef, CeremonyTransitionRecord, ExecutionOperationId, ExecutionReceiptId,
+    ExecutionReceiptLink, ExecutionReceiptLinkKind, MemoryConfidence, StateIteration, StateVisit,
+    StepAttempt, StepClaimFence, StepErrorMessage, StepIteration, StepResult,
 };
 
 use super::fixture::{
@@ -119,6 +121,7 @@ fn starting_is_the_fold_of_the_opening_event() {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            budget_account_id: None,
             ceremony_deadline: None,
             state_deadline: None,
             created_at: OPENED_AT,
@@ -194,6 +197,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
             lease: lease("plan-1", at(1)),
             now: at(1),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         |session| {
             session.start_step_as(
@@ -219,6 +223,7 @@ fn starting_a_step_names_the_seat_that_took_it() {
             role_from: None,
             sealed_role: None,
             deadline: None,
+            budget_reservation_id: None,
             started_at: at(1),
         })]
     );
@@ -240,6 +245,7 @@ fn a_step_started_by_the_engine_names_the_definitions_seat() {
             lease: lease("plan-1", at(1)),
             now: at(1),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         |session| session.start_step(&definition, &step("plan"), lease("plan-1", at(1)), at(1)),
     );
@@ -265,6 +271,7 @@ fn taking_over_an_expired_lease_is_the_next_attempt() {
             lease: lease("plan-2", at(7)),
             now: at(7),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         |session| session.start_step(&definition, &step("plan"), lease("plan-2", at(7)), at(7)),
     );
@@ -315,6 +322,89 @@ fn a_result_that_reopens_the_step_carries_the_next_iteration() {
             finished_at: at(2),
         })]
     );
+}
+
+#[test]
+fn a_receipt_link_and_its_step_result_are_one_atomic_decision() {
+    let definition = definition();
+    let instance = with_plan_in_progress(&definition);
+    let record = instance.step_record(&step("plan")).unwrap();
+    let claim_fence = instance.step_claim_fence(&step("plan")).unwrap();
+    let operation_id = ExecutionOperationId::for_step(
+        instance.id(),
+        &step("plan"),
+        record.state_visit(),
+        record.state_iteration(),
+        record.iteration(),
+    );
+    let link = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation_id),
+        operation_id.clone(),
+        claim_fence.clone(),
+        claim_fence.clone(),
+        ExecutionReceiptLinkKind::Direct,
+    )
+    .unwrap();
+    let result = StepResult::completed(readiness(true)).unwrap();
+    let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+        step_id: step("plan"),
+        claim_fence,
+        receipt_link: link.clone(),
+        result: result.clone(),
+        now: at(2),
+    });
+
+    let events = instance.decide(&command, &definition).unwrap();
+    assert!(matches!(
+        events.as_slice(),
+        [
+            CeremonyEvent::ExecutionReceiptLinked(ExecutionReceiptLinked { .. }),
+            CeremonyEvent::StepCompleted(_)
+        ]
+    ));
+    let mut folded = instance;
+    for event in &events {
+        folded.apply(event);
+    }
+    assert_eq!(folded.execution_receipt_link(&operation_id), Some(&link));
+    assert_eq!(
+        folded.step_record(&step("plan")).unwrap().output(),
+        result.output()
+    );
+    assert!(folded.decide(&command, &definition).unwrap().is_empty());
+}
+
+#[test]
+fn a_receipt_link_cannot_complete_a_different_claim_or_operation() {
+    let definition = definition();
+    let instance = with_plan_in_progress(&definition);
+    let claim_fence = instance.step_claim_fence(&step("plan")).unwrap();
+    let wrong_operation = ExecutionOperationId::for_step(
+        instance.id(),
+        &step("check"),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    );
+    let foreign_fence = StepClaimFence::new("9".repeat(64)).unwrap();
+    let wrong_link = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&wrong_operation),
+        wrong_operation,
+        foreign_fence,
+        claim_fence.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    )
+    .unwrap();
+    let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+        step_id: step("plan"),
+        claim_fence,
+        receipt_link: wrong_link,
+        result: StepResult::completed(readiness(true)).unwrap(),
+        now: at(2),
+    });
+
+    assert!(instance.decide(&command, &definition).is_err());
+    assert!(instance.execution_receipt_links().is_empty());
 }
 
 #[test]
@@ -889,6 +979,7 @@ fn deciding_leaves_the_session_untouched() {
             lease: lease("plan-1", at(2)),
             now: at(2),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         &definition,
     );

@@ -9,6 +9,7 @@
 
 use made_core::error::DomainError;
 use made_core::ports::ArtifactStoreError;
+use made_core::BudgetError;
 
 use crate::protocol::ToolError;
 
@@ -75,6 +76,24 @@ impl From<ArtifactStoreError> for ToolError {
             | ArtifactStoreError::AccessDenied
             | ArtifactStoreError::InvalidBackup
             | ArtifactStoreError::InvalidCursor => Self::refused(message),
+        }
+    }
+}
+
+impl From<BudgetError> for ToolError {
+    fn from(error: BudgetError) -> Self {
+        let message = error.to_string();
+        match error {
+            BudgetError::Persistence(error) => error.into(),
+            BudgetError::LedgerNotOpen | BudgetError::ReservationNotFound(_) => {
+                Self::not_found(message)
+            }
+            BudgetError::ReservationConflict(_) | BudgetError::ReconciliationConflict(_) => {
+                Self::conflict(message)
+            }
+            BudgetError::Exhausted { .. } | BudgetError::MissingReservationEstimate(_) => {
+                Self::refused(message)
+            }
         }
     }
 }

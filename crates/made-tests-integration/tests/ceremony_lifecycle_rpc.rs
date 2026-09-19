@@ -263,6 +263,7 @@ async fn a_published_ceremony_is_bound_to_its_digest_and_can_be_advanced() {
                 .into_iter()
                 .collect(),
             }),
+            budget_limits: None,
         })
         .await
         .expect("StartPublishedCeremony should succeed")

@@ -7,7 +7,7 @@
 //! operations stay distinguishable from the port surface.
 
 use async_trait::async_trait;
-use made_core::entities::Council;
+use made_core::entities::{Council, CouncilJournalEvent};
 use made_core::error::DomainError;
 use made_core::ports::CouncilRegistryPort;
 use made_core::value_objects::Specialty;
@@ -38,6 +38,7 @@ impl PostgresCouncilRegistry {
 #[async_trait]
 impl CouncilRegistryPort for PostgresCouncilRegistry {
     async fn register(&self, council: Council) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(&council).map_err(|e| serde_to_domain(&e, "register"))?;
         let result = sqlx::query(
@@ -50,17 +51,25 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
         .bind(council.specialty().as_str())
         .bind(council.id().as_str())
         .bind(&body)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "register"))?;
 
         if result.rows_affected() == 0 {
             return Err(DomainError::AlreadyExists { what: "council" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::CouncilRegistered(council),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn replace(&self, council: Council) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(&council).map_err(|e| serde_to_domain(&e, "replace"))?;
         let result = sqlx::query(
@@ -75,14 +84,21 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
         .bind(council.specialty().as_str())
         .bind(council.id().as_str())
         .bind(&body)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "replace"))?;
 
         if result.rows_affected() == 0 {
             return Err(DomainError::NotFound { what: "council" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::CouncilReplaced(council),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn get(&self, specialty: &Specialty) -> Result<Council, DomainError> {
@@ -110,15 +126,23 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
     }
 
     async fn delete(&self, specialty: &Specialty) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM councils WHERE specialty = $1")
             .bind(specialty.as_str())
-            .execute(self.pool.inner())
+            .execute(&mut *tx)
             .await
             .map_err(|e| sqlx_to_domain(e, "delete"))?;
         if result.rows_affected() == 0 {
             return Err(DomainError::NotFound { what: "council" });
         }
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::CouncilDeleted(specialty.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn contains(&self, specialty: &Specialty) -> Result<bool, DomainError> {

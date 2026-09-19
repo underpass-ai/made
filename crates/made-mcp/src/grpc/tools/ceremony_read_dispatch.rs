@@ -5,13 +5,14 @@ use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
 
-use super::{bad_request, j2p, p2j};
+use super::{bad_request, budget_dispatch, j2p, p2j};
 
 pub(super) fn handles(name: &str) -> bool {
-    matches!(
-        name,
-        "made_get_ceremony_instance" | "made_list_ceremony_instances"
-    )
+    budget_dispatch::handles(name)
+        || matches!(
+            name,
+            "made_get_ceremony_instance" | "made_list_ceremony_instances"
+        )
 }
 
 pub(super) async fn dispatch(
@@ -21,6 +22,9 @@ pub(super) async fn dispatch(
     name: &str,
     arguments: &Value,
 ) -> Result<Value, ToolError> {
+    if budget_dispatch::handles(name) {
+        return budget_dispatch::dispatch(client, name, arguments).await;
+    }
     match name {
         "made_get_ceremony_instance" => {
             let obj =

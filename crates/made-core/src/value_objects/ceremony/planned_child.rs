@@ -7,6 +7,7 @@ use super::{
     CeremonyContext, CeremonyDefinitionDigest, CeremonyId, CeremonyLineage, CeremonyName,
     CeremonyVersion, ChildPosition,
 };
+use crate::value_objects::BudgetAccountId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PlannedChild {
@@ -19,6 +20,8 @@ pub struct PlannedChild {
     lineage: CeremonyLineage,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     recollection: Option<SessionRecollection>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budget_account_id: Option<BudgetAccountId>,
     #[serde(with = "time::serde::rfc3339")]
     opened_at: OffsetDateTime,
 }
@@ -46,8 +49,15 @@ impl PlannedChild {
             context,
             lineage,
             recollection,
+            budget_account_id: None,
             opened_at,
         }
+    }
+
+    #[must_use]
+    pub fn with_budget_account_id(mut self, account_id: Option<BudgetAccountId>) -> Self {
+        self.budget_account_id = account_id;
+        self
     }
     #[must_use]
     pub fn child_id(&self) -> &CeremonyId {
@@ -80,6 +90,10 @@ impl PlannedChild {
     #[must_use]
     pub fn recollection(&self) -> Option<&SessionRecollection> {
         self.recollection.as_ref()
+    }
+    #[must_use]
+    pub fn budget_account_id(&self) -> Option<&BudgetAccountId> {
+        self.budget_account_id.as_ref()
     }
     #[must_use]
     pub const fn opened_at(&self) -> OffsetDateTime {

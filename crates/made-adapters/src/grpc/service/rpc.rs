@@ -36,6 +36,67 @@ impl<T> futures::Stream for RpcResultStream<T> {
 
 #[async_trait]
 impl MadeService for MadeGrpcService {
+    async fn get_execution_receipt(
+        &self,
+        request: Request<pb::GetExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::GetExecutionReceiptResponse> {
+        self.handle_get_execution_receipt(request).await
+    }
+
+    async fn inspect_execution_recovery(
+        &self,
+        request: Request<pb::InspectExecutionRecoveryRequest>,
+    ) -> GrpcResult<pb::InspectExecutionRecoveryResponse> {
+        self.handle_inspect_execution_recovery(request).await
+    }
+
+    async fn complete_execution_receipt(
+        &self,
+        request: Request<pb::CompleteExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request)).await
+    }
+
+    async fn adopt_execution_receipt(
+        &self,
+        request: Request<pb::AdoptExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request)).await
+    }
+
+    async fn read_council_events(
+        &self,
+        request: Request<pb::ReadCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReadCouncilEventsResponse> {
+        self.handle_read_council_events(request).await
+    }
+    async fn get_council_event_cursor(
+        &self,
+        request: Request<pb::GetCouncilEventCursorRequest>,
+    ) -> GrpcResult<pb::GetCouncilEventCursorResponse> {
+        self.handle_get_council_event_cursor(request).await
+    }
+    async fn lease_council_events(
+        &self,
+        request: Request<pb::LeaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::LeaseCouncilEventsResponse> {
+        self.handle_lease_council_events(request).await
+    }
+    async fn acknowledge_council_events(
+        &self,
+        request: Request<pb::AcknowledgeCouncilEventsRequest>,
+    ) -> GrpcResult<pb::AcknowledgeCouncilEventsResponse> {
+        self.handle_acknowledge_council_events(request).await
+    }
+    async fn release_council_events(
+        &self,
+        request: Request<pb::ReleaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReleaseCouncilEventsResponse> {
+        self.handle_release_council_events(request).await
+    }
+
     type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,
@@ -368,6 +429,20 @@ impl MadeService for MadeGrpcService {
         request: Request<pb::GenerateCeremonyReportRequest>,
     ) -> GrpcResult<pb::GenerateCeremonyReportResponse> {
         self.handle_generate_ceremony_report(request).await
+    }
+
+    async fn get_budget_report(
+        &self,
+        request: Request<pb::GetBudgetReportRequest>,
+    ) -> GrpcResult<pb::GetBudgetReportResponse> {
+        self.handle_get_budget_report(request).await
+    }
+
+    async fn list_pending_budget_reservations(
+        &self,
+        request: Request<pb::ListPendingBudgetReservationsRequest>,
+    ) -> GrpcResult<pb::ListPendingBudgetReservationsResponse> {
+        self.handle_list_pending_budget_reservations(request).await
     }
 
     async fn begin_artifact_upload(

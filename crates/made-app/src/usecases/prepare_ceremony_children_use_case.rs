@@ -319,25 +319,29 @@ impl PrepareCeremonyChildrenUseCase {
             let scope = memory_scope_resolver::of_context(&context, &child_id)?;
             let recollection = session_recall::recall(self.memory.as_ref(), &scope).await;
             // Validate every required child input and opening invariant before the parent plan lands.
-            CeremonyInstance::decide_start_bound_child(
+            child_opening(
                 child_id.clone(),
                 &published,
                 context.clone(),
                 lineage.clone(),
+                parent.budget_account_id().cloned(),
                 recollection.clone(),
                 now,
             )?;
-            children.push(PlannedChild::new(
-                child_id,
-                position,
-                spec.ceremony().clone(),
-                spec.version().clone(),
-                published.digest(),
-                context,
-                lineage,
-                recollection,
-                now,
-            ));
+            children.push(
+                PlannedChild::new(
+                    child_id,
+                    position,
+                    spec.ceremony().clone(),
+                    spec.version().clone(),
+                    published.digest(),
+                    context,
+                    lineage,
+                    recollection,
+                    now,
+                )
+                .with_budget_account_id(parent.budget_account_id().cloned()),
+            );
         }
         ChildSpawnPlan::new(
             group_id,
@@ -439,11 +443,12 @@ impl PrepareCeremonyChildrenUseCase {
                 reason: "sealed child publication digest changed",
             });
         }
-        let expected = CeremonyInstance::decide_start_bound_child(
+        let expected = child_opening(
             child.child_id().clone(),
             &published,
             child.context().clone(),
             child.lineage().clone(),
+            child.budget_account_id().cloned(),
             child.recollection().cloned(),
             child.opened_at(),
         )?;
@@ -557,5 +562,35 @@ impl PrepareCeremonyChildrenUseCase {
             child_ids,
             result,
         ))
+    }
+}
+
+fn child_opening(
+    child_id: CeremonyId,
+    published: &PublishedCeremonyDefinition,
+    context: made_core::value_objects::CeremonyContext,
+    lineage: CeremonyLineage,
+    account_id: Option<made_core::value_objects::BudgetAccountId>,
+    recollection: Option<made_core::value_objects::SessionRecollection>,
+    opened_at: time::OffsetDateTime,
+) -> Result<Vec<CeremonyEvent>, DomainError> {
+    match account_id {
+        Some(account_id) => CeremonyInstance::decide_start_bound_budgeted_child(
+            child_id,
+            published,
+            context,
+            lineage,
+            account_id,
+            recollection,
+            opened_at,
+        ),
+        None => CeremonyInstance::decide_start_bound_child(
+            child_id,
+            published,
+            context,
+            lineage,
+            recollection,
+            opened_at,
+        ),
     }
 }

@@ -61,6 +61,7 @@ impl CeremonyInstance {
             lease,
             now,
             max_parallel_ceiling,
+            budget_reservation_id: None,
         });
         let events = self.decide(&command, definition)?;
         let attempt = events

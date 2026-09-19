@@ -5,19 +5,20 @@ use super::artifact_schemas::{
     list_artifacts_schema, put_artifact_chunk_schema, read_artifact_chunk_schema,
     tombstone_artifact_schema,
 };
-
 use super::ceremony_schemas::{
-    accept_child_completion_schema, ceremony_definition_ref_schema, ceremony_design_schema,
-    ceremony_draft_schema, ceremony_guard_approval_schema, ceremony_guard_deferral_schema,
-    ceremony_instance_schema, ceremony_lifecycle_control_schema, ceremony_reason_schema,
-    ceremony_report_schema, ceremony_transition_schema, claim_ceremony_step_schema,
-    close_ceremony_intervention_schema, collect_ceremony_evidence_schema,
-    complete_ceremony_step_schema, enforce_ceremony_deadlines_schema,
-    get_ceremony_transcript_schema, prepare_ceremony_children_schema, pull_ceremony_events_schema,
-    read_ceremony_events_schema, recover_ceremony_children_schema,
-    request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
-    run_ceremony_schema, run_ceremony_step_schema, start_ceremony_schema,
-    start_published_ceremony_schema, stream_ceremony_schema, verify_ceremony_journal_schema,
+    accept_child_completion_schema, apply_execution_receipt_schema, ceremony_definition_ref_schema,
+    ceremony_design_schema, ceremony_draft_schema, ceremony_guard_approval_schema,
+    ceremony_guard_deferral_schema, ceremony_instance_schema, ceremony_lifecycle_control_schema,
+    ceremony_reason_schema, ceremony_report_schema, ceremony_transition_schema,
+    claim_ceremony_step_schema, close_ceremony_intervention_schema,
+    collect_ceremony_evidence_schema, complete_ceremony_step_schema,
+    enforce_ceremony_deadlines_schema, get_ceremony_transcript_schema,
+    get_execution_receipt_schema, inspect_execution_recovery_schema,
+    prepare_ceremony_children_schema, pull_ceremony_events_schema, read_ceremony_events_schema,
+    recover_ceremony_children_schema, request_ceremony_intervention_schema,
+    respond_to_ceremony_intervention_schema, run_ceremony_schema, run_ceremony_step_schema,
+    start_ceremony_schema, start_published_ceremony_schema, stream_ceremony_schema,
+    verify_ceremony_journal_schema,
 };
 use super::general_schemas::{
     agent_summary_schema, empty_object_schema, help_schema, output_contract_schema,
@@ -26,23 +27,27 @@ use super::general_schemas::{
 use super::schema_primitives::{attributes_schema, string_schema, tool_def};
 use super::tool_names::{
     is_server_tool, ABORT_ARTIFACT_UPLOAD_TOOL, ACCEPT_CHILD_COMPLETION_TOOL,
-    APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL,
-    BEGIN_ARTIFACT_UPLOAD_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL, CANCEL_CEREMONY_TOOL,
-    CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL,
-    COMMIT_ARTIFACT_UPLOAD_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DEFER_CEREMONY_GUARD_TOOL,
-    DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    ENFORCE_CEREMONY_DEADLINES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
-    GET_ARTIFACT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
-    GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_ARTIFACTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    PULL_CEREMONY_EVENTS_TOOL, PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL,
-    READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    ADOPT_EXECUTION_RECEIPT_TOOL, APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL,
+    ASSERT_CEREMONY_REASON_TOOL, BEGIN_ARTIFACT_UPLOAD_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL,
+    CANCEL_CEREMONY_TOOL, CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
+    COLLECT_CEREMONY_EVIDENCE_TOOL, COMMIT_ARTIFACT_UPLOAD_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_ARTIFACT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_EXECUTION_RECEIPT_TOOL,
+    GET_HELP_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
+    LIST_ARTIFACTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL,
+    PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL,
+    PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
     TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod budget_catalog;
 mod council_catalog;
+mod council_journal_catalog;
 
 use council_catalog::council_tool_catalog;
 
@@ -90,6 +95,7 @@ fn tool_catalog() -> Vec<Value> {
 #[allow(clippy::too_many_lines)] // gRPC tool definitions form one auditable transport contract
 pub(super) fn grpc_tool_catalog() -> Vec<Value> {
     let mut tools = council_tool_catalog();
+    tools.extend(council_journal_catalog::council_journal_tool_catalog());
     tools.extend([
         tool_def(
             RUN_CEREMONY_TOOL,
@@ -264,6 +270,26 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             complete_ceremony_step_schema(),
         ),
         tool_def(
+            GET_EXECUTION_RECEIPT_TOOL,
+            "Read one immutable terminal execution receipt by its stable operation identity.",
+            get_execution_receipt_schema(),
+        ),
+        tool_def(
+            INSPECT_EXECUTION_RECOVERY_TOOL,
+            "Page durable operation roots whose receipt has not yet been linked to the ceremony, including persisted intents, any terminal receipt, and the current claim fence.",
+            inspect_execution_recovery_schema(),
+        ),
+        tool_def(
+            COMPLETE_EXECUTION_RECEIPT_TOOL,
+            "Apply a persisted receipt through the exact claim fence that produced it. A different fence is refused rather than silently adopted.",
+            apply_execution_receipt_schema(),
+        ),
+        tool_def(
+            ADOPT_EXECUTION_RECEIPT_TOOL,
+            "Explicitly adopt a persisted receipt into a different current claim after reliable operation-id recovery. The producer fence remains unchanged in the receipt.",
+            apply_execution_receipt_schema(),
+        ),
+        tool_def(
             DESIGN_CEREMONY_TOOL,
             "Turn structured intent into a safe linear ceremony YAML draft and analyse it immediately. Read-only: it neither publishes nor starts the ceremony.",
             ceremony_design_schema(),
@@ -365,5 +391,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             verify_ceremony_journal_schema(),
         ),
     ]);
+    budget_catalog::insert_budget_tools(&mut tools);
     tools
 }

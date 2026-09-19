@@ -11,10 +11,11 @@ use serde_json::{json, Map, Value};
 
 use crate::mcp_server_identity::McpServerIdentity;
 use crate::protocol::{
-    available_tool_catalog, design_pattern_catalog, APPLY_CEREMONY_TRANSITION_TOOL,
-    CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DESIGN_CEREMONY_TOOL,
-    DISCOVER_CAPABILITIES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
+    APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,
@@ -308,6 +309,11 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "when": "Use when the MCP host, its worker, or an external tool must perform the real stage work.",
             "sequence": delegated_host_sequence.clone(),
         }));
+    }
+    if names.contains(INSPECT_EXECUTION_RECOVERY_TOOL) {
+        preconditions.push(format!(
+            "After an interrupted worker, inspect durable operation roots with {INSPECT_EXECUTION_RECOVERY_TOOL}. Use {COMPLETE_EXECUTION_RECEIPT_TOOL} only with the producer fence; use {ADOPT_EXECUTION_RECEIPT_TOOL} explicitly for a different current fence after reliable operation-id recovery."
+        ));
     }
     if names.contains(GENERATE_CEREMONY_REPORT_TOOL) {
         authority_boundaries.push(json!({
