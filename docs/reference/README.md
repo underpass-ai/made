@@ -30,9 +30,19 @@ assuming crate version implies every capability.
 Council deliberation and council, agent and output-contract configuration are
 available through gRPC, both MCP backends and `EmbeddedMade`. The embedded
 builder supplies process-local in-memory registries by default and accepts
-injected adapters; its SQLite ceremony store does not persist those council
-records. A provider also requires its build feature, runtime configuration and
-registered agent kind.
+injected adapters. Explicit SQLite composition persists council records and
+their independent journal, including leased consumer cursors. A provider also
+requires its build feature, runtime configuration and registered agent kind.
+
+## Recoverable execution
+
+Receipt lookup and paged recovery inspection are shared public operations.
+Completion applies a durable receipt to its producing claim; adoption applies
+a recoverable receipt to the current replacement claim. Both require the
+accepted claim fence, and verify linked artifact metadata against the artifact
+store before appending the result. Retries preserve the semantic operation ID
+and reuse its durable receipt. The [worker guide](../operations/recoverable-workers.md)
+defines admission, external effects and unresolved reconciliation.
 
 ## Artifact transfer
 
