@@ -34,27 +34,27 @@ pub(crate) fn execution_receipt_to_json(receipt: &pb::ExecutionReceipt) -> Value
 }
 
 pub(crate) fn execution_recovery_page_to_json(
-    response: pb::InspectExecutionRecoveryResponse,
+    response: &pb::InspectExecutionRecoveryResponse,
 ) -> Value {
     json!({
-        "items": response.items.into_iter().map(recovery_item).collect::<Vec<_>>(),
+        "items": response.items.iter().map(recovery_item).collect::<Vec<_>>(),
         "next_cursor": response.next_cursor,
     })
 }
 
-fn recovery_item(item: pb::ExecutionRecoveryItem) -> Value {
+fn recovery_item(item: &pb::ExecutionRecoveryItem) -> Value {
     json!({
         "operation_id": item.operation_id,
         "ceremony_id": item.ceremony_id,
         "step_id": item.step_id,
         "request_digest": item.request_digest,
-        "intents": item.intents.into_iter().map(intent).collect::<Vec<_>>(),
+        "intents": item.intents.iter().map(intent).collect::<Vec<_>>(),
         "receipt": item.receipt.as_ref().map(execution_receipt_to_json),
         "current_claim_fence": item.current_claim_fence,
     })
 }
 
-fn intent(intent: pb::ExecutionIntentSummary) -> Value {
+fn intent(intent: &pb::ExecutionIntentSummary) -> Value {
     let source_kind = match pb::ArtifactSourceKind::try_from(intent.source_kind)
         .unwrap_or(pb::ArtifactSourceKind::Unspecified)
     {

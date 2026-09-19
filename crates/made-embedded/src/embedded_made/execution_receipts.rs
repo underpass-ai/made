@@ -38,14 +38,18 @@ impl EmbeddedMade {
         mut input: CompleteExecutionReceiptInput,
     ) -> Result<CeremonyInstance, DomainError> {
         input.link_kind = ExecutionReceiptLinkKind::Direct;
-        CompleteExecutionReceiptUseCase::new(
+        let complete = CompleteExecutionReceiptUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.execution_receipts.clone(),
             self.clock.clone(),
-        )
-        .execute(input)
-        .await
+        );
+        let complete = if let Some(artifacts) = &self.artifacts {
+            complete.with_artifacts(artifacts.clone())
+        } else {
+            complete
+        };
+        complete.execute(input).await
     }
 
     pub async fn adopt_execution_receipt(
@@ -53,13 +57,17 @@ impl EmbeddedMade {
         mut input: CompleteExecutionReceiptInput,
     ) -> Result<CeremonyInstance, DomainError> {
         input.link_kind = ExecutionReceiptLinkKind::Adopted;
-        CompleteExecutionReceiptUseCase::new(
+        let complete = CompleteExecutionReceiptUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.execution_receipts.clone(),
             self.clock.clone(),
-        )
-        .execute(input)
-        .await
+        );
+        let complete = if let Some(artifacts) = &self.artifacts {
+            complete.with_artifacts(artifacts.clone())
+        } else {
+            complete
+        };
+        complete.execute(input).await
     }
 }

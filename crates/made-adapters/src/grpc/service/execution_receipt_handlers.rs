@@ -1,10 +1,10 @@
 //! Public inspection and fenced application of durable execution receipts.
 
-use made_core::value_objects::{ExecutionOperationId, ExecutionReceiptLinkKind};
+use made_core::value_objects::ExecutionOperationId;
 
 use super::{
-    complete_execution_receipt_input_from_proto, domain_error_to_status,
-    execution_receipt_to_proto, execution_recovery_cursor_from_proto,
+    adopt_execution_receipt_input_from_proto, complete_execution_receipt_input_from_proto,
+    domain_error_to_status, execution_receipt_to_proto, execution_recovery_cursor_from_proto,
     execution_recovery_limit_from_proto, execution_recovery_page_to_proto, link_span_to_metadata,
     pb, GrpcResult, MadeGrpcService, Request, Response,
 };
@@ -53,38 +53,40 @@ impl MadeGrpcService {
 
     pub(super) async fn handle_complete_execution_receipt(
         &self,
-        request: Request<pb::ApplyExecutionReceiptRequest>,
-    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
-        self.handle_apply_execution_receipt(request, ExecutionReceiptLinkKind::Direct)
-            .await
+        request: Request<pb::CompleteExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
+        link_span_to_metadata(&request);
+        let input = complete_execution_receipt_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self.apply_execution_receipt(input).await?;
+        Ok(Response::new(pb::CompleteExecutionReceiptResponse {
+            instance: Some(self.project(&instance).await?),
+        }))
     }
 
     pub(super) async fn handle_adopt_execution_receipt(
         &self,
-        request: Request<pb::ApplyExecutionReceiptRequest>,
-    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
-        self.handle_apply_execution_receipt(request, ExecutionReceiptLinkKind::Adopted)
-            .await
+        request: Request<pb::AdoptExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
+        link_span_to_metadata(&request);
+        let input = adopt_execution_receipt_input_from_proto(request.into_inner())
+            .map_err(domain_error_to_status)?;
+        let instance = self.apply_execution_receipt(input).await?;
+        Ok(Response::new(pb::AdoptExecutionReceiptResponse {
+            instance: Some(self.project(&instance).await?),
+        }))
     }
 
-    async fn handle_apply_execution_receipt(
+    async fn apply_execution_receipt(
         &self,
-        request: Request<pb::ApplyExecutionReceiptRequest>,
-        link_kind: ExecutionReceiptLinkKind,
-    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
-        link_span_to_metadata(&request);
-        let input = complete_execution_receipt_input_from_proto(request.into_inner(), link_kind)
-            .map_err(domain_error_to_status)?;
-        let instance = self
-            .complete_execution_receipt
+        input: made_app::workers::CompleteExecutionReceiptInput,
+    ) -> Result<made_core::entities::CeremonyInstance, tonic::Status> {
+        self.complete_execution_receipt
             .as_ref()
             .ok_or_else(receipts_unconfigured)?
             .execute(input)
             .await
-            .map_err(domain_error_to_status)?;
-        Ok(Response::new(pb::ApplyExecutionReceiptResponse {
-            instance: Some(self.project(&instance).await?),
-        }))
+            .map_err(domain_error_to_status)
     }
 }
 

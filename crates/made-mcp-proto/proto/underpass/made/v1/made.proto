@@ -198,8 +198,8 @@ service MadeService {
   rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
   rpc GetExecutionReceipt(GetExecutionReceiptRequest) returns (GetExecutionReceiptResponse);
   rpc InspectExecutionRecovery(InspectExecutionRecoveryRequest) returns (InspectExecutionRecoveryResponse);
-  rpc CompleteExecutionReceipt(ApplyExecutionReceiptRequest) returns (ApplyExecutionReceiptResponse);
-  rpc AdoptExecutionReceipt(ApplyExecutionReceiptRequest) returns (ApplyExecutionReceiptResponse);
+  rpc CompleteExecutionReceipt(CompleteExecutionReceiptRequest) returns (CompleteExecutionReceiptResponse);
+  rpc AdoptExecutionReceipt(AdoptExecutionReceiptRequest) returns (AdoptExecutionReceiptResponse);
 
   // Design one. The caller says what the working session is for, who
   // sits at it and what each stage asks; the engine decides the
@@ -1710,7 +1710,7 @@ message InspectExecutionRecoveryResponse {
   optional string next_cursor = 2;
 }
 
-message ApplyExecutionReceiptRequest {
+message CompleteExecutionReceiptRequest {
   string ceremony_id = 1;
   string step_id = 2;
   string operation_id = 3;
@@ -1718,7 +1718,19 @@ message ApplyExecutionReceiptRequest {
   string actor_kind = 5;
 }
 
-message ApplyExecutionReceiptResponse {
+message CompleteExecutionReceiptResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message AdoptExecutionReceiptRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string operation_id = 3;
+  string claim_fence = 4;
+  string actor_kind = 5;
+}
+
+message AdoptExecutionReceiptResponse {
   CeremonyInstanceState instance = 1;
 }
 

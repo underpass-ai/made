@@ -37,9 +37,10 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    artifact_chunk_to_proto, artifact_page_limit_from_proto, artifact_record_to_proto,
-    artifact_ref_to_proto, artifact_tombstone_to_proto, artifact_upload_status_to_proto,
+    adopt_execution_receipt_input_from_proto, apply_ceremony_transition_input_from_proto,
+    approve_ceremony_guard_input_from_proto, artifact_chunk_to_proto,
+    artifact_page_limit_from_proto, artifact_record_to_proto, artifact_ref_to_proto,
+    artifact_tombstone_to_proto, artifact_upload_status_to_proto,
     assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
     bind_ceremony_participants_input_from_proto, cancel_ceremony_input_from_proto,
     ceremony_definition_source_from_proto, ceremony_design_document_from_proto,

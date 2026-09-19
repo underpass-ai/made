@@ -1,8 +1,8 @@
 use made_app::workers::{CompleteExecutionReceiptInput, ExecutionRecoveryItemsPage};
 use made_core::value_objects::{
     ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionOperationId, ExecutionReceipt,
-    ExecutionReceiptLinkKind, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit, StepClaimFence,
-    StepId,
+    ExecutionReceiptLinkKind, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
+    ExternalOperationId, StepClaimFence, StepId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Map, Value};
@@ -90,7 +90,7 @@ pub(super) fn present_receipt(receipt: &ExecutionReceipt) -> Value {
         "request_digest": receipt.request_digest().as_str(),
         "producer_claim_fence": receipt.producer_claim_fence().as_str(),
         "connector_id": receipt.connector_id().as_str(),
-        "external_operation_id": receipt.external_operation_id().map(|id| id.as_str()),
+        "external_operation_id": receipt.external_operation_id().map(ExternalOperationId::as_str),
         "recovery_capability": recovery_capability(receipt.recovery_capability()),
         "source_kind": source_kind(receipt.source_kind()),
         "status": receipt.result().status().as_label(),
@@ -120,10 +120,10 @@ pub(super) fn present_recovery_page(page: &ExecutionRecoveryItemsPage) -> Value 
                     "recorded_at": intent.recorded_at(),
                 })).collect::<Vec<_>>(),
                 "receipt": item.receipt().map(present_receipt),
-                "current_claim_fence": item.current_claim_fence().map(|fence| fence.as_str()),
+                "current_claim_fence": item.current_claim_fence().map(StepClaimFence::as_str),
             })
         }).collect::<Vec<_>>(),
-        "next_cursor": page.next_cursor().map(|cursor| cursor.as_str()),
+        "next_cursor": page.next_cursor().map(ExecutionRecoveryCursor::as_str),
     })
 }
 

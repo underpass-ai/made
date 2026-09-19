@@ -62,9 +62,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One Prometheus registry for the whole process, shared between the
-    // use cases that record into it and the health endpoint that renders
-    // it. Fails fast if a metric is malformed (a wiring bug).
+    // One Prometheus registry for use cases and the health endpoint. Fails
+    // fast if a metric is malformed (a wiring bug).
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators = validators::wire(metrics_recorder.clone())?;
     // Choose scoring, and when an LLM judge is configured append it to
@@ -360,6 +359,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         execution_receipts,
         clock.clone(),
+        artifacts.clone(),
     );
     grpc_builder = ceremony_operations::wire(
         grpc_builder,

@@ -52,15 +52,15 @@ impl MadeService for MadeGrpcService {
 
     async fn complete_execution_receipt(
         &self,
-        request: Request<pb::ApplyExecutionReceiptRequest>,
-    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
+        request: Request<pb::CompleteExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
         self.handle_complete_execution_receipt(request).await
     }
 
     async fn adopt_execution_receipt(
         &self,
-        request: Request<pb::ApplyExecutionReceiptRequest>,
-    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
+        request: Request<pb::AdoptExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
         self.handle_adopt_execution_receipt(request).await
     }
 

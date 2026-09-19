@@ -81,9 +81,9 @@ pub(super) use council::council_summary_from;
 pub(super) use deliberation::{deliberate_response_from, orchestrate_response_from};
 pub(super) use event::trigger_event_from_proto;
 pub use execution_receipt::{
-    complete_execution_receipt_input_from_proto, execution_receipt_to_proto,
-    execution_recovery_cursor_from_proto, execution_recovery_limit_from_proto,
-    execution_recovery_page_to_proto,
+    adopt_execution_receipt_input_from_proto, complete_execution_receipt_input_from_proto,
+    execution_receipt_to_proto, execution_recovery_cursor_from_proto,
+    execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
 };
 pub(super) use output_contract::{output_contract_from_proto, output_contract_to_proto};
 pub(super) use phase::proto_phase_from_domain;

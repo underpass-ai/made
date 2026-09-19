@@ -48,10 +48,16 @@ pub(super) async fn dispatch(
                 })
                 .await?
                 .into_inner();
-            Ok(p2j::execution_recovery_page_to_json(response))
+            Ok(p2j::execution_recovery_page_to_json(&response))
         }
         "made_complete_execution_receipt" => {
-            let request = apply_request(object)?;
+            let request = pb::CompleteExecutionReceiptRequest {
+                ceremony_id: required(object, "ceremony_id")?,
+                step_id: required(object, "step_id")?,
+                operation_id: required(object, "operation_id")?,
+                claim_fence: required(object, "claim_fence")?,
+                actor_kind: required(object, "actor_kind")?,
+            };
             let instance = client
                 .complete_execution_receipt(request)
                 .await?
@@ -62,7 +68,13 @@ pub(super) async fn dispatch(
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
         "made_adopt_execution_receipt" => {
-            let request = apply_request(object)?;
+            let request = pb::AdoptExecutionReceiptRequest {
+                ceremony_id: required(object, "ceremony_id")?,
+                step_id: required(object, "step_id")?,
+                operation_id: required(object, "operation_id")?,
+                claim_fence: required(object, "claim_fence")?,
+                actor_kind: required(object, "actor_kind")?,
+            };
             let instance = client
                 .adopt_execution_receipt(request)
                 .await?
@@ -76,18 +88,6 @@ pub(super) async fn dispatch(
             "unknown execution receipt tool `{other}`"
         ))),
     }
-}
-
-fn apply_request(
-    object: &serde_json::Map<String, Value>,
-) -> Result<pb::ApplyExecutionReceiptRequest, ToolError> {
-    Ok(pb::ApplyExecutionReceiptRequest {
-        ceremony_id: required(object, "ceremony_id")?,
-        step_id: required(object, "step_id")?,
-        operation_id: required(object, "operation_id")?,
-        claim_fence: required(object, "claim_fence")?,
-        actor_kind: required(object, "actor_kind")?,
-    })
 }
 
 fn required(

@@ -15,16 +15,46 @@ use super::attributes::attributes_to_struct;
 use super::timestamp::offset_to_timestamp;
 
 pub fn complete_execution_receipt_input_from_proto(
-    request: pb::ApplyExecutionReceiptRequest,
+    request: pb::CompleteExecutionReceiptRequest,
+) -> Result<CompleteExecutionReceiptInput, DomainError> {
+    execution_receipt_input(
+        request.ceremony_id,
+        request.step_id,
+        request.operation_id,
+        request.claim_fence,
+        &request.actor_kind,
+        ExecutionReceiptLinkKind::Direct,
+    )
+}
+
+pub fn adopt_execution_receipt_input_from_proto(
+    request: pb::AdoptExecutionReceiptRequest,
+) -> Result<CompleteExecutionReceiptInput, DomainError> {
+    execution_receipt_input(
+        request.ceremony_id,
+        request.step_id,
+        request.operation_id,
+        request.claim_fence,
+        &request.actor_kind,
+        ExecutionReceiptLinkKind::Adopted,
+    )
+}
+
+fn execution_receipt_input(
+    ceremony_id: String,
+    step_id: String,
+    operation_id: String,
+    claim_fence: String,
+    actor_kind: &str,
     link_kind: ExecutionReceiptLinkKind,
 ) -> Result<CompleteExecutionReceiptInput, DomainError> {
     Ok(CompleteExecutionReceiptInput {
-        ceremony_id: CeremonyId::new(request.ceremony_id)?,
-        step_id: StepId::new(request.step_id)?,
-        operation_id: ExecutionOperationId::new(request.operation_id)?,
-        claim_fence: StepClaimFence::new(request.claim_fence)?,
+        ceremony_id: CeremonyId::new(ceremony_id)?,
+        step_id: StepId::new(step_id)?,
+        operation_id: ExecutionOperationId::new(operation_id)?,
+        claim_fence: StepClaimFence::new(claim_fence)?,
         link_kind,
-        actor_kind: actor_kind_from_proto(&request.actor_kind, "actor_kind")?,
+        actor_kind: actor_kind_from_proto(actor_kind, "actor_kind")?,
     })
 }
 

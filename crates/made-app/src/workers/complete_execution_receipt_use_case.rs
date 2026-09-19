@@ -6,7 +6,9 @@ use made_core::error::DomainError;
 use made_core::ports::{ClockPort, ExecutionReceiptStorePort};
 use made_core::value_objects::{ExecutionReceiptLink, ExecutionReceiptLinkKind};
 
+use super::execution_receipt_artifact_verifier::verify_receipt_artifacts;
 use super::CompleteExecutionReceiptInput;
+use crate::artifacts::ArtifactService;
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 use crate::usecases::ResolveCeremonyDefinitionUseCase;
 
@@ -16,6 +18,7 @@ pub struct CompleteExecutionReceiptUseCase {
     stream: Arc<SessionStream>,
     receipts: Arc<dyn ExecutionReceiptStorePort>,
     clock: Arc<dyn ClockPort>,
+    artifacts: Option<Arc<ArtifactService>>,
 }
 
 impl std::fmt::Debug for CompleteExecutionReceiptUseCase {
@@ -39,7 +42,14 @@ impl CompleteExecutionReceiptUseCase {
             stream,
             receipts,
             clock,
+            artifacts: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_artifacts(mut self, artifacts: Arc<ArtifactService>) -> Self {
+        self.artifacts = Some(artifacts);
+        self
     }
 
     pub async fn execute(
@@ -69,6 +79,7 @@ impl CompleteExecutionReceiptUseCase {
                 reason: "execution receipt does not belong to the requested ceremony step",
             });
         }
+        verify_receipt_artifacts(self.artifacts.as_deref(), &receipt).await?;
 
         let actual_link_kind = if receipt.producer_claim_fence() == &input.claim_fence {
             ExecutionReceiptLinkKind::Direct

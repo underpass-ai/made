@@ -8,7 +8,7 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactRef,
-    ArtifactSizeBytes,
+    ArtifactSizeBytes, ExecutionReceipt,
 };
 use sha2::{Digest, Sha256};
 use time::OffsetDateTime;
@@ -65,6 +65,27 @@ impl ArtifactService {
         artifact_id: &ArtifactId,
     ) -> Result<ArtifactRecord, ArtifactStoreError> {
         self.store.get(artifact_id).await
+    }
+
+    /// Confirm every receipt reference names the exact metadata committed in
+    /// the authoritative artifact store.
+    pub async fn verify_execution_receipt(
+        &self,
+        receipt: &ExecutionReceipt,
+    ) -> Result<(), made_core::error::DomainError> {
+        for expected in receipt.artifacts() {
+            let stored = self.store.get(expected.artifact_id()).await.map_err(|_| {
+                made_core::error::DomainError::InvariantViolated {
+                    reason: "execution receipt artifact is not available for verification",
+                }
+            })?;
+            if &stored.artifact != expected {
+                return Err(made_core::error::DomainError::InvariantViolated {
+                    reason: "execution receipt artifact metadata or digest does not match storage",
+                });
+            }
+        }
+        Ok(())
     }
 
     pub async fn list(

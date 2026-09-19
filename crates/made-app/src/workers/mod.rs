@@ -5,6 +5,7 @@ mod complete_execution_receipt_use_case;
 mod execute_ceremony_operation_input;
 mod execute_ceremony_operation_outcome;
 mod execute_ceremony_operation_use_case;
+mod execution_receipt_artifact_verifier;
 mod execution_receipt_from_observation;
 mod execution_recovery_inspector_port;
 mod execution_recovery_item;
