@@ -134,7 +134,11 @@ impl EmbeddedMade {
         &self,
         instance: &CeremonyInstance,
     ) -> Result<CeremonyDefinition, DomainError> {
-        self.require_authorized_ceremony_view(instance.id())?;
+        self.require_authorized_definition_action(
+            AuthorizationAction::GetCeremonyDefinition,
+            instance.definition_name(),
+            Some(instance.definition_version()),
+        )?;
         self.resolve_definition().execute(instance).await
     }
 

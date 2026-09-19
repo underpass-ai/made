@@ -31,47 +31,6 @@ impl EmbeddedMade {
         Ok(())
     }
 
-    pub(super) fn require_authorized_ceremony_view(
-        &self,
-        ceremony_id: &made_core::value_objects::CeremonyId,
-    ) -> Result<(), DomainError> {
-        if self.authorization.is_none() {
-            return Ok(());
-        }
-        let operation = made_app::services::AuthorizationOperationScope::current().ok_or(
-            DomainError::InvariantViolated {
-                reason: "protected embedded facade requires an authorized operation context",
-            },
-        )?;
-        let action = operation.evidence().action();
-        if !is_ceremony_view_action(action) {
-            return Err(DomainError::InvariantViolated {
-                reason: "authorized operation action does not admit a ceremony view",
-            });
-        }
-        let matches_resource = match operation.evidence().scope() {
-            AuthorizationScope::Ceremony {
-                ceremony_id: admitted,
-            }
-            | AuthorizationScope::ResolvedCeremony {
-                ceremony_id: admitted,
-                ..
-            } => admitted == ceremony_id,
-            AuthorizationScope::Global => matches!(
-                action,
-                AuthorizationAction::ListCeremonyInstances
-                    | AuthorizationAction::SearchCeremonyInstances
-            ),
-            _ => false,
-        };
-        if !matches_resource {
-            return Err(DomainError::InvariantViolated {
-                reason: "authorized operation scope does not admit this ceremony view",
-            });
-        }
-        Ok(())
-    }
-
     pub(super) fn require_authorized_ceremony_action(
         &self,
         expected: AuthorizationAction,
@@ -277,58 +236,11 @@ impl EmbeddedMade {
         &self,
         ceremony_id: &made_core::value_objects::CeremonyId,
     ) -> Result<(), DomainError> {
-        if self.authorization.is_none() {
-            return Ok(());
-        }
-        let operation = made_app::services::AuthorizationOperationScope::current().ok_or(
-            DomainError::InvariantViolated {
-                reason: "protected embedded facade requires an authorized operation context",
-            },
-        )?;
-        if operation.evidence().action() != AuthorizationAction::ReadCeremonyEvents {
-            return self.require_authorized_ceremony_view(ceremony_id);
-        }
-        if ceremony_scope_matches(operation.evidence().scope(), ceremony_id) {
-            return Ok(());
-        }
-        Err(DomainError::InvariantViolated {
-            reason: "authorized operation scope does not admit these ceremony records",
-        })
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ReadCeremonyEvents,
+            ceremony_id,
+        )
     }
-}
-
-fn is_ceremony_view_action(action: AuthorizationAction) -> bool {
-    use AuthorizationAction as A;
-    matches!(
-        action,
-        A::GetCeremonyInstance
-            | A::ListCeremonyInstances
-            | A::SearchCeremonyInstances
-            | A::RunCeremony
-            | A::StartCeremony
-            | A::StartPublishedCeremony
-            | A::RunCeremonyStep
-            | A::ClaimCeremonyStep
-            | A::CompleteCeremonyStep
-            | A::CompleteExecutionReceipt
-            | A::AdoptExecutionReceipt
-            | A::PrepareCeremonyChildren
-            | A::AcceptChildCompletion
-            | A::RecoverCeremonyChildren
-            | A::ApplyCeremonyTransition
-            | A::EnforceCeremonyDeadlines
-            | A::BindCeremonyParticipants
-            | A::PauseCeremony
-            | A::ResumeCeremony
-            | A::CancelCeremony
-            | A::ApproveCeremonyGuard
-            | A::DeferCeremonyGuard
-            | A::RequestCeremonyIntervention
-            | A::RespondToCeremonyIntervention
-            | A::CloseCeremonyIntervention
-            | A::CollectCeremonyEvidence
-            | A::AssertCeremonyReason
-    )
 }
 
 fn ceremony_scope_matches(
