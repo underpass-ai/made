@@ -5,12 +5,18 @@ use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
 
+#[allow(clippy::result_large_err)] // tonic interceptor requires a Status error.
 pub(super) fn build(
     channel: Channel,
     traceparent: &str,
     request_id: &str,
 ) -> Result<
-    MadeServiceClient<InterceptedService<Channel, impl tonic::service::Interceptor>>,
+    MadeServiceClient<
+        InterceptedService<
+            Channel,
+            impl tonic::service::Interceptor + Clone + Send + Sync + 'static,
+        >,
+    >,
     ToolError,
 > {
     let traceparent = MetadataValue::try_from(traceparent)
