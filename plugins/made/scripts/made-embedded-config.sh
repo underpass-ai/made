@@ -66,6 +66,10 @@ made_embedded_file_mode() {
   stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"
 }
 
+made_embedded_is_windows_host() {
+  command -v cygpath >/dev/null 2>&1
+}
+
 made_embedded_validate_identity() {
   local name="$1"
   local value="$2"
@@ -112,11 +116,16 @@ made_embedded_read_config() {
     made_embedded_error "repair it with made-setup; the launcher will not use it."
     return 2
   fi
-  local mode="$(made_embedded_file_mode "${config_path}")"
-  if [[ "${mode}" != "600" && "${mode}" != "400" ]]; then
-    made_embedded_error "private setup configuration must be owner-readable only (mode 600 or 400)."
-    made_embedded_error "repair it with made-setup; the launcher will not use it."
-    return 2
+  # Git Bash's stat mode is not a reliable representation of the native ACL.
+  # The Windows adapter enforces an owner+SYSTEM ACL, so only enforce the
+  # POSIX mode contract on Unix hosts.
+  if ! made_embedded_is_windows_host; then
+    local mode="$(made_embedded_file_mode "${config_path}")"
+    if [[ "${mode}" != "600" && "${mode}" != "400" ]]; then
+      made_embedded_error "private setup configuration must be owner-readable only (mode 600 or 400)."
+      made_embedded_error "repair it with made-setup; the launcher will not use it."
+      return 2
+    fi
   fi
 
   local line key value

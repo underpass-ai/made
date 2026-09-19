@@ -11,6 +11,12 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.3 — 2026-09-19
+
+- Make the shared Git Bash configuration adapter defer private-file
+  permission validation to native Windows ACL checks while retaining strict
+  mode checks on Unix hosts.
+
 ## 0.7.2 — 2026-09-19
 
 - Harden the plugin publication checks across macOS and native Windows so the
