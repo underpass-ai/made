@@ -41,8 +41,11 @@ esac
 EOF
 chmod +x "${FAKE_BIN}/cargo"
 
+WORKSPACE_VERSION="$(sed -n 's/^version = "\(.*\)"/\1/p' \
+  "${TEST_ROOT}/Cargo.toml" | head -1)"
+[[ -n "${WORKSPACE_VERSION}" ]]
 FAKE_CARGO_TARGET_DIR="${FAKE_TARGET}" \
-GITHUB_REF_NAME=v0.7.0-rc.1 \
+GITHUB_REF_NAME="v${WORKSPACE_VERSION}" \
 PATH="${FAKE_BIN}:${PATH}" \
   bash "${TEST_ROOT}/scripts/plugin/package-made-plugin.sh" >/dev/null
 
