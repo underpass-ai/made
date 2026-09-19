@@ -493,7 +493,7 @@ impl AuthorizationPolicy {
                     && approval.is_live_at(now)
                     && self.decision_grant_is_live(approval, now)
                     && approval.request().action() == rule.approval_action()
-                    && approval.request().principal() != request.principal()
+                    && approval.request().principal().id() != request.principal().id()
                     && approval.request().scope().covers(request.scope())
                     && approval.request().target_digest() == request.target_digest()
             });

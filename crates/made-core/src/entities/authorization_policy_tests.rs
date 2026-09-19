@@ -359,6 +359,61 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
 }
 
 #[test]
+fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_person() {
+    let rule = SeparationRule::new(
+        AuthorizationAction::ApproveCeremonyGuard,
+        AuthorizationAction::CompleteCeremonyStep,
+    )
+    .unwrap();
+    let mut policy = opened_policy(vec![rule]);
+    issue(
+        &mut policy,
+        &trusted_host(),
+        grant(
+            "dual-role",
+            human("dual-role").id().clone(),
+            [
+                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::CompleteCeremonyStep,
+            ],
+            DelegationDepth::none(),
+            trusted_host(),
+            None,
+        ),
+    );
+    let (approval, event) = policy
+        .decide_authorize(
+            request(
+                "same-id-approval",
+                human("dual-role"),
+                AuthorizationAction::ApproveCeremonyGuard,
+                b"step-result",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap()
+        .into_parts();
+    apply(&mut policy, event.unwrap());
+
+    let execution = request(
+        "same-id-execution",
+        worker("dual-role"),
+        AuthorizationAction::CompleteCeremonyStep,
+        b"step-result",
+    )
+    .with_approval(approval.id().clone());
+    assert_eq!(
+        policy
+            .decide_authorize(execution, NOW, ttl())
+            .unwrap()
+            .decision()
+            .denial_reason(),
+        Some(AuthorizationDenialReason::ApprovalInvalid)
+    );
+}
+
+#[test]
 fn expired_grant_is_a_persistable_denial() {
     let mut policy = opened_policy(Vec::new());
     let expired = grant(
