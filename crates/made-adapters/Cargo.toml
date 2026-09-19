@@ -85,7 +85,7 @@ prost = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }
-rusqlite = { version = "0.32.1", features = ["bundled"], optional = true }
+rusqlite = { version = "0.39.0", features = ["bundled"], optional = true }
 sqlx = { workspace = true, optional = true }
 opentelemetry = { workspace = true, optional = true }
 opentelemetry_sdk = { workspace = true, optional = true }

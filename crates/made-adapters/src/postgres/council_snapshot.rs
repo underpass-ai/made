@@ -113,7 +113,7 @@ fn decode<T: DeserializeOwned>(value: Value) -> Result<T, DomainError> {
 }
 async fn list<T: DeserializeOwned>(
     tx: &mut Transaction<'_, Postgres>,
-    query: &str,
+    query: &'static str,
 ) -> Result<Vec<T>, DomainError> {
     let rows: Vec<Value> = sqlx::query_scalar(query)
         .fetch_all(&mut **tx)
