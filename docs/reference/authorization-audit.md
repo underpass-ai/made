@@ -30,6 +30,21 @@ the configured action pair, the same target and covered scope, and a different
 principal id. Reusing an approval for another target, action, or principal is
 recorded as a denial before the domain operation runs.
 
+An exact `CompleteCeremonyStep` retry recovers the accepted response from the
+sealed journal, including its context writes and any reopened iteration. It
+does not append another result or include work admitted after that response.
+The claim fence, result, actor kind and original authenticated principal must
+match. A different result for the same completed claim is refused.
+
+Long-running `RunCeremony` and `RunCeremonyStep` calls renew admission evidence
+before sealing a result after the initial decision expires. This completion
+points to the decision sealed with its original claim and can drain after a
+grant is revoked. A one-shot ceremony rechecks current grants before every new
+claim; revocation stops the next step even while the initial decision remains
+live. Other mutations after expiry require a current grant. The domain event
+retains its observation time; the journal fact records its renewed admission
+time when that is later, so authorization is never backdated.
+
 Public history keeps its fields flat for transport consumers. To reconstruct a
 schema-3 domain `AuditRecord` for independent verification, remove
 `global_position` if present, move `authorization` to the envelope below, and
