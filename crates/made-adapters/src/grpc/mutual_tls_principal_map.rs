@@ -64,6 +64,11 @@ impl MutualTlsPrincipalMap {
             .cloned()
             .ok_or(MutualTlsAuthenticationError::UnmappedCertificate)
     }
+
+    /// Exact authenticated identities present in the certificate map.
+    pub fn principals(&self) -> impl Iterator<Item = &AuthenticatedPrincipal> {
+        self.principals.values()
+    }
 }
 
 #[cfg(test)]

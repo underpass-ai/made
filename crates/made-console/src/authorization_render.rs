@@ -90,3 +90,27 @@ fn scope(value: &AuthorizationScope) -> Value {
 fn timestamp(value: &prost_types::Timestamp) -> Value {
     json!({"seconds": value.seconds, "nanos": value.nanos})
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decisions_render_the_accepted_work_authorization_antecedent() {
+        let page = ListAuthorizationDecisionsResponse {
+            decisions: vec![AuthorizationDecisionRecord {
+                decision_id: "completion-decision".to_owned(),
+                accepted_work_decision_id: Some("accepted-work-decision".to_owned()),
+                ..AuthorizationDecisionRecord::default()
+            }],
+            ..ListAuthorizationDecisionsResponse::default()
+        };
+
+        let rendered: Value = serde_json::from_str(&decisions(&page, OutputFormat::Json)).unwrap();
+
+        assert_eq!(
+            rendered["decisions"][0]["accepted_work_decision_id"],
+            json!("accepted-work-decision")
+        );
+    }
+}

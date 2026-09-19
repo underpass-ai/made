@@ -90,6 +90,81 @@ impl ToolTraceContext {
         ]));
         AuthorizationTargetDigest::for_bytes(canonical_json(&target).as_bytes())
     }
+
+    /// Lowercase SHA-256 target sent by the authenticated MCP proxy to gRPC.
+    #[cfg(feature = "grpc")]
+    pub(crate) fn grpc_authorization_target_digest(
+        tool_name: &str,
+        arguments: &Value,
+    ) -> Result<String, String> {
+        if tool_name == "made_search_ceremony_instances" {
+            return search_authorization_target_digest(arguments);
+        }
+        let target = Value::Object(serde_json::Map::from_iter([
+            ("tool".to_owned(), Value::String(tool_name.to_owned())),
+            ("args".to_owned(), without_transport_meta(arguments)),
+        ]));
+        Ok(format!(
+            "{:x}",
+            Sha256::digest(canonical_json(&target).as_bytes())
+        ))
+    }
+}
+
+#[cfg(feature = "grpc")]
+fn search_authorization_target_digest(arguments: &Value) -> Result<String, String> {
+    let object = arguments
+        .as_object()
+        .ok_or_else(|| "tools/call.arguments: expected an object".to_owned())?;
+    let cursor = optional_string(object, "cursor")?;
+    let limit = match object.get("limit") {
+        None => 50_u64,
+        Some(value) => value
+            .as_u64()
+            .filter(|value| (1..=100).contains(value))
+            .ok_or_else(|| "`limit` must be an integer from 1 to 100".to_owned())?,
+    };
+    let id_prefix = optional_string(object, "id_prefix")?;
+    let lifecycle = match object.get("lifecycle") {
+        None => 0,
+        Some(Value::String(value)) if value == "running" => 1,
+        Some(Value::String(value)) if value == "paused" => 2,
+        Some(Value::String(value)) if value == "ended" => 3,
+        Some(_) => return Err("`lifecycle` must be running, paused or ended".to_owned()),
+    };
+    let mut bytes = b"underpass.made.search-ceremony-instances.v1\0".to_vec();
+    push_optional(&mut bytes, cursor);
+    bytes.extend_from_slice(&limit.to_be_bytes());
+    push_optional(&mut bytes, id_prefix);
+    bytes.push(lifecycle);
+    Ok(format!("{:x}", Sha256::digest(bytes)))
+}
+
+#[cfg(feature = "grpc")]
+fn optional_string<'a>(
+    object: &'a serde_json::Map<String, Value>,
+    field: &str,
+) -> Result<Option<&'a str>, String> {
+    object
+        .get(field)
+        .map(|value| {
+            value
+                .as_str()
+                .ok_or_else(|| format!("`{field}` must be a string"))
+        })
+        .transpose()
+}
+
+#[cfg(feature = "grpc")]
+fn push_optional(bytes: &mut Vec<u8>, value: Option<&str>) {
+    match value {
+        None => bytes.push(0),
+        Some(value) => {
+            bytes.push(1);
+            bytes.extend_from_slice(&(value.len() as u64).to_be_bytes());
+            bytes.extend_from_slice(value.as_bytes());
+        }
+    }
 }
 
 fn validate_explicit_namespace(value: &str) -> Result<(), String> {
@@ -309,6 +384,37 @@ mod tests {
                 "made_test",
                 &json!({"nested": {"a": 1, "b": 2}, "ordered": [1, 2]})
             )
+        );
+    }
+
+    #[cfg(all(feature = "grpc", feature = "embedded"))]
+    #[test]
+    fn grpc_search_digest_matches_the_application_semantic_digest() {
+        use made_app::usecases::SearchCeremonyInstancesInput;
+        use made_core::value_objects::{
+            CeremonyIdPrefix, CeremonyInstancePageLimit, CeremonyLifecyclePhase,
+        };
+
+        let arguments = json!({
+            "limit": 12,
+            "id_prefix": "team-",
+            "lifecycle": "paused"
+        });
+        let expected = SearchCeremonyInstancesInput::new(
+            None,
+            CeremonyInstancePageLimit::new(12).unwrap(),
+            Some(CeremonyIdPrefix::new("team-").unwrap()),
+            Some(CeremonyLifecyclePhase::Paused),
+        )
+        .authorization_target_digest();
+
+        assert_eq!(
+            ToolTraceContext::grpc_authorization_target_digest(
+                "made_search_ceremony_instances",
+                &arguments,
+            )
+            .unwrap(),
+            expected.as_str()
         );
     }
 

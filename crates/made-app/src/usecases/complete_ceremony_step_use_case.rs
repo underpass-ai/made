@@ -8,6 +8,7 @@ use made_core::error::DomainError;
 use made_core::ports::ClockPort;
 
 use super::complete_ceremony_step_input::CompleteCeremonyStepInput;
+use super::replay_step_completion::replay_step_completion;
 use super::resolve_ceremony_definition_use_case::ResolveCeremonyDefinitionUseCase;
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 
@@ -54,18 +55,30 @@ impl CompleteCeremonyStepUseCase {
         // a bound session unadvanceable, because publishing writes to
         // the catalogue and not to the repository.
         let definition = self.definitions.execute(&session.instance).await?;
+        if !session
+            .instance
+            .step_claim_fence(&input.step_id)
+            .is_ok_and(|fence| fence == input.claim_fence)
+        {
+            if let Some(accepted) =
+                replay_step_completion(&self.stream, &input, &definition).await?
+            {
+                return Ok(accepted);
+            }
+        }
         let actor_kind = input.actor_kind;
         let now = self.clock.now();
         let command = CeremonyCommand::ApplyStepResult(ApplyStepResult {
-            step_id: input.step_id,
-            result: input.result,
-            claim_fence: input.claim_fence,
+            step_id: input.step_id.clone(),
+            result: input.result.clone(),
+            claim_fence: input.claim_fence.clone(),
             now,
         });
         // A step ending commutes with what other writers do to the
-        // session, so a lost race is decided again; a step that was
-        // ended meanwhile is refused by the decision, not the store.
-        self.stream
+        // session, so a lost race is decided again. If another writer sealed
+        // this exact completion meanwhile, recover that accepted response.
+        let outcome = self
+            .stream
             .execute(session, ConflictPolicy::retry(), |session| {
                 let events = session.instance.decide(&command, &definition)?;
                 if events.is_empty() {
@@ -75,7 +88,13 @@ impl CompleteCeremonyStepUseCase {
                 session_facts::facts(&session.instance, events, &actor, now)
             })
             .await
-            .map(|session| session.instance)
+            .map(|session| session.instance);
+        match outcome {
+            Ok(instance) => Ok(instance),
+            Err(error) => replay_step_completion(&self.stream, &input, &definition)
+                .await?
+                .ok_or(error),
+        }
     }
 }
 

@@ -19,6 +19,12 @@ An authorized policy administrator can resolve `decision_id` through the paged
 to the admission that originally accepted the work, even if its grant has
 subsequently been revoked.
 
+An exact `CompleteCeremonyStep` retry recovers the accepted response from the
+sealed journal, including its context writes and any reopened iteration. It
+does not append another result or include work admitted after that response.
+The claim fence, result, actor kind and original authenticated principal must
+match. A different result for the same completed claim is refused.
+
 Public history keeps its fields flat for transport consumers. To reconstruct a
 schema-3 domain `AuditRecord` for independent verification, remove
 `global_position` if present, move `authorization` to the envelope below, and
