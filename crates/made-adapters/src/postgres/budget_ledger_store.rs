@@ -88,9 +88,21 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
         &self,
         account: &BudgetAccountId,
     ) -> Result<Option<BudgetLedgerSnapshot>, DomainError> {
+        let mut transaction = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|error| sqlx_error(error, "begin budget ledger load"))?;
+        // Head and events must describe one committed version even when a
+        // different replica appends after the first SELECT.
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            .execute(&mut *transaction)
+            .await
+            .map_err(|error| sqlx_error(error, "isolate budget ledger snapshot"))?;
         let row = sqlx::query("SELECT version FROM ceremony_budget_ledgers WHERE account_id = $1")
             .bind(account.as_str())
-            .fetch_optional(self.pool.inner())
+            .fetch_optional(&mut *transaction)
             .await
             .map_err(|error| sqlx_error(error, "load budget ledger head"))?;
         let Some(row) = row else {
@@ -99,12 +111,6 @@ impl BudgetLedgerStorePort for PostgresCeremonyStore {
         let stored_version: i64 = row
             .try_get("version")
             .map_err(|error| sqlx_error(error, "decode budget ledger version"))?;
-        let mut transaction = self
-            .pool
-            .inner()
-            .begin()
-            .await
-            .map_err(|error| sqlx_error(error, "begin budget ledger load"))?;
         let events = load_events(&mut transaction, account).await?;
         let ledger = rehydrate(&events)?;
         if ledger.version().value() != i64_to_u64(stored_version)? {
