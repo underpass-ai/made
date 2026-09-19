@@ -6,8 +6,9 @@ use std::sync::Arc;
 
 use made_adapters::postgres::PostgresCeremonyStore;
 use made_core::conformance::{
-    CeremonyDefinitionPublicationConformance, CeremonyEventCursorConformance,
-    CeremonyEventStoreConformance, CeremonySnapshotStoreConformance, MemoryConformance,
+    BudgetLedgerStoreConformance, CeremonyDefinitionPublicationConformance,
+    CeremonyEventCursorConformance, CeremonyEventStoreConformance,
+    CeremonySnapshotStoreConformance, MemoryConformance,
 };
 use made_core::ports::{
     ExecutionReceiptStorePort, RecordExecutionIntentOutcome, RecordExecutionReceiptOutcome,
@@ -41,12 +42,16 @@ async fn postgres_satisfies_every_existing_ceremony_store_contract() {
     let memory = MemoryConformance::run(&store, &store)
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
+    let budgets = BudgetLedgerStoreConformance::run(&store)
+        .await
+        .unwrap_or_else(|failure| panic!("{failure}"));
 
     assert_eq!(publications.len(), 5);
     assert_eq!(events.len(), 14);
     assert_eq!(snapshots.len(), 5);
     assert_eq!(cursors.len(), 7);
     assert_eq!(memory.len(), 9);
+    assert_eq!(budgets.len(), 3);
 }
 
 #[tokio::test]

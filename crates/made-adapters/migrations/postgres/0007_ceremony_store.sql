@@ -86,3 +86,25 @@ CREATE TABLE ceremony_execution_receipts (
     observed_at TIMESTAMPTZ NOT NULL,
     payload BYTEA NOT NULL
 );
+
+CREATE TABLE ceremony_budget_ledgers (
+    account_id TEXT PRIMARY KEY,
+    version BIGINT NOT NULL CHECK (version >= 0)
+);
+
+CREATE TABLE ceremony_budget_ledger_events (
+    account_id TEXT NOT NULL REFERENCES ceremony_budget_ledgers(account_id) ON DELETE CASCADE,
+    version BIGINT NOT NULL CHECK (version > 0),
+    payload BYTEA NOT NULL,
+    PRIMARY KEY (account_id, version)
+);
+
+CREATE TABLE ceremony_budget_reservations (
+    reservation_id TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES ceremony_budget_ledgers(account_id) ON DELETE CASCADE,
+    pending BOOLEAN NOT NULL,
+    payload BYTEA NOT NULL
+);
+
+CREATE INDEX ceremony_budget_reservations_pending_idx
+    ON ceremony_budget_reservations(pending, reservation_id);

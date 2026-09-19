@@ -11,6 +11,7 @@
 //! only ever see domain ports and a `PostgresPool` handle.
 
 mod agent_registry;
+mod budget_ledger_store;
 mod ceremony_definition_publication;
 mod ceremony_event_cursor;
 mod ceremony_event_store;
