@@ -109,7 +109,7 @@ if (-not (Test-Path -Path $ConfigPath -PathType Leaf)) {
         "MADE_AUTH_TRUSTED_HOST_ID=$TrustedHost",
         "MADE_CEREMONY_STORE_ID=$StoreId",
         "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=$Key"
-    ) | Set-Content -LiteralPath $Temporary -Encoding ascii -NoNewline
+    ) | Set-Content -LiteralPath $Temporary -Encoding ascii
     Move-Item -LiteralPath $Temporary -Destination $ConfigPath
 }
 

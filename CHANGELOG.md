@@ -11,6 +11,11 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.7 — 2026-09-19
+
+- Preserve line separators in the native Windows private configuration file
+  so the `cmd` launcher can parse all four setup values.
+
 ## 0.7.6 — 2026-09-19
 
 - Make the native Windows bootstrap verify the same private configuration
