@@ -89,6 +89,8 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
             APPLY_CEREMONY_TRANSITION_TOOL,
             PAUSE_CEREMONY_TOOL,
             RESUME_CEREMONY_TOOL,
+            crate::protocol::RECORD_CEREMONY_HOST_HANDOFF_TOOL,
+            crate::protocol::INSPECT_CEREMONY_RESUME_TOOL,
             CANCEL_CEREMONY_TOOL,
             ENFORCE_CEREMONY_DEADLINES_TOOL,
         ],

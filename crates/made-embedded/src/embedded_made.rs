@@ -60,6 +60,7 @@ mod definitions;
 mod execution;
 mod execution_receipts;
 mod history;
+mod host_handoff;
 mod participation;
 
 pub use ceremony_authority::EmbeddedCeremonyAuthority;

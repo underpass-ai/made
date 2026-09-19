@@ -205,6 +205,7 @@ mod council_journal_lease;
 pub use council_journal_lease::CouncilJournalLease;
 
 mod council_snapshot_source;
+pub use ceremony::{HostHandoffDeclaration, HostWorkState};
 pub use council_snapshot_source::CouncilSnapshotSource;
 mod ceremony_agent_execution_id;
 mod host_agent_incarnation;

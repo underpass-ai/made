@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AuditEventType {
+    HostHandoffRecorded,
     CeremonyDefinitionValidated,
     CeremonyDefinitionPublished,
     CeremonyInstanceStarted,
@@ -51,6 +52,7 @@ impl AuditEventType {
     #[must_use]
     pub fn as_str(self) -> &'static str {
         match self {
+            Self::HostHandoffRecorded => "host_handoff_recorded",
             Self::CeremonyDefinitionValidated => "ceremony_definition_validated",
             Self::CeremonyDefinitionPublished => "ceremony_definition_published",
             Self::CeremonyInstanceStarted => "ceremony_instance_started",

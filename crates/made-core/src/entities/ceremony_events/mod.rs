@@ -70,3 +70,5 @@ pub use transition_applied::TransitionApplied;
 
 mod step_lease_renewed;
 pub use step_lease_renewed::StepLeaseRenewed;
+mod host_handoff_recorded;
+pub use host_handoff_recorded::HostHandoffRecorded;

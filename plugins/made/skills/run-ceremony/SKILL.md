@@ -153,6 +153,19 @@ lost, establish which claim performed the work. Never borrow the current
 worker's identity. If ownership cannot be recovered, let the lease expire
 before a new claim and account for external idempotency.
 
+For a planned host handoff, pause only closes new MADE admission; it does not
+stop or diagnose the host worker. Inspect `made_inspect_ceremony_resume` and
+follow `next_after_claim` to the end before reporting coordination status.
+Keep `engine_drained` separate from
+`all_claims_host_reported_quiesced`: the former is sealed engine work, the
+latter is host-supplied durable evidence. The owner of each accepted claim may
+record `made_record_ceremony_host_handoff` only with that claim's original
+fence, owner and stable worker incarnation, plus observed time and evidence.
+An exact retry returns its durable receipt; changing that id's payload
+conflicts. A quiescent preflight is not liveness proof, authority to take over,
+or permission to extend a lease or deadline. Resume remains a separate,
+authorized lifecycle action.
+
 ## Interventions and evidence
 
 Preserve the participant's request in `message`, choose `opinion`,

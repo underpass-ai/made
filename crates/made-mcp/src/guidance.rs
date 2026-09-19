@@ -291,6 +291,9 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
     ];
     let mut authority_boundaries = base_agent_authority_boundaries();
     let mut execution_paths = Vec::new();
+    if names.contains(crate::protocol::INSPECT_CEREMONY_RESUME_TOOL) {
+        preconditions.push("After pause, inspect the resume preflight and all its pages. Paused admission is not host quiescence. Record authenticated handoff/quiescence/loss declarations with the original fence, worker incarnation and evidence before coordinated resume; evidence never authorizes takeover or extends clocks. Reconcile effects before replacing an expired claim.".to_owned());
+    }
 
     if let Some(path) = server_owned_execution_path(names) {
         preconditions.push(format!(

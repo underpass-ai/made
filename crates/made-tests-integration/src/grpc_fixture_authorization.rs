@@ -150,6 +150,8 @@ fn fixture_actions() -> Vec<AuthorizationAction> {
         A::BindCeremonyParticipants,
         A::PauseCeremony,
         A::ResumeCeremony,
+        A::RecordCeremonyHostHandoff,
+        A::InspectCeremonyResume,
         A::CancelCeremony,
         A::ApproveCeremonyGuard,
         A::DeferCeremonyGuard,

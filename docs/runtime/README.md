@@ -49,6 +49,38 @@ The lifecycle phase is independent of the definition state. A ceremony can be
 paused in any nonterminal state, and historical completed sessions still read
 as completed even though their old snapshots contain no lifecycle field.
 
+### Coordinated host handoff preflight
+
+Pause controls only MADE admission. It does not stop a delegated host process,
+infer that a worker is alive or lost, renew a lease, or make any already
+accepted work disappear. Before an operator coordinates a resume, read
+`made_inspect_ceremony_resume` and retain its bounded `next_after_claim`
+cursor until it is empty. The report deliberately keeps two independent facts:
+`engine_drained` is derived from the sealed engine state, while
+`all_claims_host_reported_quiesced` is the latest durable declaration from
+each exact host claim that is still in flight. Completed, failed and replaced
+historical claims remain visible in the cursor but do not require a new host
+acknowledgement. Neither fact substitutes for the other.
+
+The host that owns an accepted claim may journal
+`made_record_ceremony_host_handoff` with its original `claim_fence`, owner,
+stable worker `incarnation`, observed time and evidence reference. A
+`quiesced` declaration for every in-flight claim makes
+`coordinated_resume_ready` true only while admission is paused and no absolute
+deadline is overdue. Separately, a sealed `engine_drained` fact satisfies this
+coordination condition without requiring a host declaration. An expired
+in-progress claim is not ready merely because it has a host declaration: its
+explicit recovery disposition remains necessary. This is a coordination
+signal, not an authorization, liveness verdict or takeover permit; resume
+remains a separate lifecycle action.
+
+Handoff identities are durable receipts: an identical retry returns the
+original record without appending or changing clocks. A reused identity with a
+different payload conflicts. A new declaration carrying a replaced owner,
+fence or worker incarnation is refused without mutation. The preflight only
+reports absolute deadlines and receipt/reconciliation evidence; it never
+extends a deadline or lease.
+
 ## Claim → work → complete
 
 1. Inspect the instance and choose a claimable step.

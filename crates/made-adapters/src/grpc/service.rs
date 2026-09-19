@@ -109,6 +109,7 @@ mod council_handlers;
 mod council_journal_handlers;
 mod descriptor_error;
 mod execution_receipt_handlers;
+mod host_handoff_handlers;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod rpc;
@@ -118,6 +119,10 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) record_ceremony_host_handoff:
+        Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
+    pub(super) inspect_ceremony_resume:
+        Option<Arc<made_app::workers::InspectCeremonyResumeUseCase>>,
     pub(super) authorization: Arc<GrpcAuthorizationGate>,
     pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,

@@ -253,3 +253,7 @@ pub use step_result::StepResult;
 pub use step_status::StepStatus;
 pub use step_timeout::StepTimeout;
 pub use transition_trigger::TransitionTrigger;
+mod host_handoff_declaration;
+mod host_work_state;
+pub use host_handoff_declaration::HostHandoffDeclaration;
+pub use host_work_state::HostWorkState;

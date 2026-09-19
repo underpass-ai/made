@@ -148,6 +148,8 @@ service MadeService {
   rpc ApplyCeremonyTransition(ApplyCeremonyTransitionRequest) returns (ApplyCeremonyTransitionResponse);
   rpc PauseCeremony(PauseCeremonyRequest) returns (PauseCeremonyResponse);
   rpc ResumeCeremony(ResumeCeremonyRequest) returns (ResumeCeremonyResponse);
+  rpc RecordCeremonyHostHandoff(RecordCeremonyHostHandoffRequest) returns (RecordCeremonyHostHandoffResponse);
+  rpc InspectCeremonyResume(InspectCeremonyResumeRequest) returns (InspectCeremonyResumeResponse);
   rpc CancelCeremony(CancelCeremonyRequest) returns (CancelCeremonyResponse);
   rpc EnforceCeremonyDeadlines(EnforceCeremonyDeadlinesRequest) returns (EnforceCeremonyDeadlinesResponse);
 
@@ -2766,4 +2768,76 @@ message ListAuthorizationDecisionsRequest {
 message ListAuthorizationDecisionsResponse {
   repeated AuthorizationDecisionRecord decisions = 1;
   optional string next_after_decision_id = 2;
+}
+
+// External declaration about one exact host invocation. It never grants takeover.
+message HostHandoffDeclaration {
+  string id = 1;
+  string step_id = 2;
+  string claim_fence = 3;
+  string owner = 4;
+  string incarnation = 5;
+  string state = 6;
+  string observed_at = 7;
+  string evidence = 8;
+}
+message HostHandoffRecorded {
+  HostHandoffDeclaration declaration = 1;
+  string recorded_at = 2;
+}
+message RecordCeremonyHostHandoffRequest {
+  string ceremony_id = 1;
+  HostHandoffDeclaration declaration = 2;
+}
+message RecordCeremonyHostHandoffResponse {
+  HostHandoffRecorded recorded = 1;
+}
+message InspectCeremonyResumeRequest {
+  string ceremony_id = 1;
+  string after_claim = 2;
+  uint32 limit = 3;
+}
+message ClaimExecutionEvidence {
+  bool intent_recorded = 1;
+  string receipt_id = 2;
+  string receipt_producer_fence = 3;
+  string receipt_status = 4;
+  string external_operation_id = 5;
+  string recovery_capability = 6;
+  bool receipt_applied = 7;
+  bool reconciliation_required = 8;
+}
+message CeremonyClaimPreflight {
+  string step_id = 1;
+  string claim_fence = 2;
+  string owner = 3;
+  string operation_id = 4;
+  string phase = 5;
+  string effective_lease_expires_at = 6;
+  uint64 remaining_lease_ms = 7;
+  string step_deadline_at = 8;
+  bool deadline_overdue = 9;
+  string budget_reservation_id = 10;
+  HostHandoffRecorded host_declaration = 11;
+  ClaimExecutionEvidence execution = 12;
+  repeated string permitted_recovery_paths = 13;
+}
+message CeremonyResumePreflight {
+  bool coordinated_resume_ready = 14;
+  string ceremony_id = 1;
+  uint64 journal_version = 2;
+  string inspected_at = 3;
+  string lifecycle = 4;
+  bool admission_paused = 5;
+  bool engine_drained = 6;
+  bool all_claims_host_reported_quiesced = 7;
+  string ceremony_deadline_at = 8;
+  string state_deadline_at = 9;
+  bool deadline_overdue = 10;
+  repeated CeremonyClaimPreflight claims = 11;
+  string next_after_claim = 12;
+  repeated string permitted_recovery_paths = 13;
+}
+message InspectCeremonyResumeResponse {
+  CeremonyResumePreflight report = 1;
 }

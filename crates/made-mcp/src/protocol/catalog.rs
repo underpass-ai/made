@@ -51,12 +51,12 @@ mod ceremony_history_catalog;
 mod council_catalog;
 mod council_journal_catalog;
 mod definition_diff_catalog;
+mod host_handoff_catalog;
 mod renewal_catalog;
 
 use ceremony_agent_catalog::ceremony_agent_tool_catalog;
 use ceremony_history_catalog::verify_ceremony_journal_tool;
 use council_catalog::council_tool_catalog;
-
 /// `tools/list` result filtered to capabilities honored by the active
 /// backend.
 pub(crate) fn tools_list_result(supports: impl Fn(&str) -> bool) -> Value {
@@ -108,7 +108,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             "Execute a declarative ceremony YAML definition and return final state, step trace, and Mermaid sequence diagram.",
             run_ceremony_schema(),
         ),
-
         tool_def(
             GET_CEREMONY_INSTANCE_TOOL,
             "Inspect a persistent ceremony instance, including step status and blocking guards.",
@@ -169,6 +168,8 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             "Resume admission of new work without shifting absolute deadlines or live claim fences.",
             ceremony_lifecycle_control_schema(false),
         ),
+        host_handoff_catalog::record_tool(),
+        host_handoff_catalog::inspect_tool(),
         tool_def(
             CANCEL_CEREMONY_TOOL,
             "Irreversibly end a ceremony without cascading to children or rolling back external work.",

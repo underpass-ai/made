@@ -148,6 +148,8 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_apply_ceremony_transition",
         "made_pause_ceremony",
         "made_resume_ceremony",
+        "made_record_ceremony_host_handoff",
+        "made_inspect_ceremony_resume",
         "made_cancel_ceremony",
         "made_enforce_ceremony_deadlines",
         "made_approve_ceremony_guard",

@@ -49,3 +49,5 @@ pub use start_step::StartStep;
 
 mod renew_step_lease;
 pub use renew_step_lease::RenewStepLease;
+mod record_host_handoff;
+pub use record_host_handoff::RecordHostHandoff;

@@ -1,0 +1,14 @@
+{
+  "type": "host_handoff_recorded",
+  "declaration": {
+    "id": "handoff-1",
+    "step_id": "draft",
+    "claim_fence": "1111111111111111111111111111111111111111111111111111111111111111",
+    "owner": "host-1",
+    "incarnation": "worker-1",
+    "state": "quiesced",
+    "observed_at": "2026-07-29T09:04:00Z",
+    "evidence": "artifact:handoff-1"
+  },
+  "recorded_at": "2026-07-29T09:05:00Z"
+}

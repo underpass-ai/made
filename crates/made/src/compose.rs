@@ -252,6 +252,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
         clock.clone(),
+        execution_receipts.clone(),
+        authorization.authorize.clone(),
     );
 
     let registry_operations = registry_operations::RegistryOperations {
@@ -310,10 +312,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .accept_child_completion(accept_child_completion)
         .recover_ceremony_children(recover_ceremony_children)
         .claim_ceremony_step(claim_ceremony_step)
-        .pause_ceremony(lifecycle.pause)
-        .resume_ceremony(lifecycle.resume)
-        .cancel_ceremony(lifecycle.cancel)
-        .enforce_ceremony_deadlines(lifecycle.enforce_deadlines)
         .ceremony_definitions(ceremony_definitions.clone())
         .resolve_ceremony_definition(resolve_ceremony_definition.clone())
         .contract_registry(contract_registry.clone())
@@ -331,6 +329,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let (ceremony_agent_status, ceremony_agent_status_port) =
         ceremony_agent_status::wire(clock.clone(), ceremony_stream.clone());
     grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status);
+    grpc_builder = lifecycle.apply_to(grpc_builder);
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
     grpc_builder = ceremony_queries::wire(
