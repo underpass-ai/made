@@ -211,7 +211,20 @@ fn append_events(
                 .flatten(),
             _ => None,
         };
-        policy.apply_projected(event.clone(), approval.as_ref())?;
+        let accepted = match &event {
+            AuthorizationPolicyEvent::DecisionRecorded { decision, .. } => decision
+                .request()
+                .accepted_work_decision_id()
+                .map(|id| read_decision(&transaction, policy_id, "decision_id", id.as_str()))
+                .transpose()?
+                .flatten(),
+            _ => None,
+        };
+        policy.apply_projected_with_authorities(
+            event.clone(),
+            approval.as_ref(),
+            accepted.as_ref(),
+        )?;
         version = version.next();
         transaction
             .execute(

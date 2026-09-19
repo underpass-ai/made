@@ -1,8 +1,6 @@
 use anyhow::{anyhow, bail, Context, Result};
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{OrchestrateRequest, Task};
 use prost_types::value::Kind as PbKind;
-use tonic::transport::Channel;
 use tracing::info;
 
 use super::pb_struct_from_pairs;
@@ -15,7 +13,7 @@ use super::pb_struct_from_pairs;
 /// `underpass.runtime.v1.{SessionService,InvocationService}` -> back
 /// up the use-case -> `TaskCompleted`.
 pub(crate) async fn verify_orchestrate_invokes_runtime_executor(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     specialty: &str,
 ) -> Result<()> {
     let attributes = pb_struct_from_pairs([(

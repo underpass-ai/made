@@ -2,7 +2,8 @@ use std::sync::Arc;
 
 use made_app::authorization::{
     AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::{AuthorizationDecisionPage, AuthorizationPolicySnapshot};
 use made_core::value_objects::{
@@ -16,6 +17,7 @@ pub(crate) struct EmbeddedAuthorizationServices {
     policy: Arc<ReadAuthorizationPolicyUseCase>,
     decisions: Arc<ReadAuthorizationDecisionsUseCase>,
     administration: Arc<AuthorizationPolicyAdministrationService>,
+    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
 }
 
 impl EmbeddedAuthorizationServices {
@@ -23,12 +25,18 @@ impl EmbeddedAuthorizationServices {
         policy: ReadAuthorizationPolicyUseCase,
         decisions: ReadAuthorizationDecisionsUseCase,
         administration: AuthorizationPolicyAdministrationService,
+        continuation: ContinueAcceptedCeremonyWorkUseCase,
     ) -> Self {
         Self {
             policy: Arc::new(policy),
             decisions: Arc::new(decisions),
             administration: Arc::new(administration),
+            continuation: Arc::new(continuation),
         }
+    }
+
+    pub(crate) fn continuation(&self) -> Arc<ContinueAcceptedCeremonyWorkUseCase> {
+        self.continuation.clone()
     }
 
     pub(crate) async fn policy(&self) -> Result<AuthorizationPolicySnapshot, DomainError> {

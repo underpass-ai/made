@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 
 use anyhow::{bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::stream_ceremony_response::Frame;
 use made_proto::v1::{
     ApplyCeremonyTransitionRequest, CeremonyEventRecord, GenerateCeremonyReportRequest,
@@ -11,7 +10,6 @@ use made_proto::v1::{
     StreamCeremonyEndReason, StreamCeremonyRequest, VerifyCeremonyJournalRequest,
 };
 use prost_types::{value::Kind, Struct, Value};
-use tonic::transport::Channel;
 use tracing::info;
 
 use super::children_ceremony_definitions::ChildrenCeremonyDefinitions;
@@ -19,7 +17,7 @@ use super::children_ceremony_definitions::ChildrenCeremonyDefinitions;
 const PROGRESS_ID: &str = "e2e-ceremony-progress";
 
 pub(crate) async fn verify_live_ceremony_progress(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     publish(client, ChildrenCeremonyDefinitions::child()).await?;
     client
@@ -57,7 +55,7 @@ pub(crate) async fn verify_live_ceremony_progress(
     Ok(())
 }
 
-async fn assert_idle_at_head(client: &mut MadeServiceClient<Channel>, head: u64) -> Result<()> {
+async fn assert_idle_at_head(client: &mut crate::scenarios::E2eClient, head: u64) -> Result<()> {
     let (records, end) = stream(
         client,
         StreamCeremonyRequest {
@@ -78,7 +76,7 @@ async fn assert_idle_at_head(client: &mut MadeServiceClient<Channel>, head: u64)
 }
 
 async fn follow_to_terminal(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     after_sequence: u64,
 ) -> Result<Vec<CeremonyEventRecord>> {
     let mut live = client
@@ -119,7 +117,7 @@ async fn follow_to_terminal(
 }
 
 async fn assert_resumable_replay(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     journal: &[CeremonyEventRecord],
 ) -> Result<StreamCeremonyEnd> {
     let (first_page, limited) = stream(
@@ -168,7 +166,7 @@ async fn assert_resumable_replay(
 }
 
 async fn assert_terminal_journal(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     head: u64,
     record_count: usize,
 ) -> Result<()> {
@@ -199,7 +197,7 @@ async fn assert_terminal_journal(
     Ok(())
 }
 
-async fn publish(client: &mut MadeServiceClient<Channel>, yaml: &str) -> Result<()> {
+async fn publish(client: &mut crate::scenarios::E2eClient, yaml: &str) -> Result<()> {
     let response = client
         .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
             definition_yaml: yaml.to_owned(),
@@ -216,7 +214,7 @@ async fn publish(client: &mut MadeServiceClient<Channel>, yaml: &str) -> Result<
     Ok(())
 }
 
-async fn drive_to_terminal(client: &mut MadeServiceClient<Channel>) -> Result<()> {
+async fn drive_to_terminal(client: &mut crate::scenarios::E2eClient) -> Result<()> {
     client
         .run_ceremony_step(RunCeremonyStepRequest {
             ceremony_id: PROGRESS_ID.to_owned(),
@@ -240,7 +238,7 @@ async fn drive_to_terminal(client: &mut MadeServiceClient<Channel>) -> Result<()
 }
 
 async fn stream(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     request: StreamCeremonyRequest,
 ) -> Result<(Vec<CeremonyEventRecord>, StreamCeremonyEnd)> {
     let mut stream = client
@@ -262,7 +260,7 @@ async fn stream(
     }
 }
 
-async fn read_events(client: &mut MadeServiceClient<Channel>) -> Result<Vec<CeremonyEventRecord>> {
+async fn read_events(client: &mut crate::scenarios::E2eClient) -> Result<Vec<CeremonyEventRecord>> {
     let response = client
         .read_ceremony_events(ReadCeremonyEventsRequest {
             ceremony_id: PROGRESS_ID.to_owned(),
@@ -278,7 +276,7 @@ async fn read_events(client: &mut MadeServiceClient<Channel>) -> Result<Vec<Cere
     Ok(response.records)
 }
 
-async fn assert_report(client: &mut MadeServiceClient<Channel>) -> Result<()> {
+async fn assert_report(client: &mut crate::scenarios::E2eClient) -> Result<()> {
     let report = client
         .generate_ceremony_report(GenerateCeremonyReportRequest {
             ceremony_ids: vec![PROGRESS_ID.to_owned()],

@@ -18,8 +18,8 @@ use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
 use made_app::authorization::{
     AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
-    TrustedHostAuthorizationGate,
+    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
 };
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
@@ -352,10 +352,19 @@ impl EmbeddedMade {
             )),
             self.stream.clone(),
         ));
+        let continuation = ContinueAcceptedCeremonyWorkUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+            self.clock.clone(),
+            made_core::value_objects::AuthorizationDecisionTtl::from_seconds(60)
+                .expect("fixed embedded authorization TTL is valid"),
+        );
+        self.stream.require_authorization();
         self.authorization = Some(EmbeddedAuthorizationServices::new(
             ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
             ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
             AuthorizationPolicyAdministrationService::new(policy_id, store, self.clock.clone()),
+            continuation,
         ));
         self
     }

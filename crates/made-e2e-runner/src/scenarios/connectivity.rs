@@ -2,15 +2,13 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{DeleteCouncilRequest, DeliberateRequest, ListCouncilsRequest, Task};
 use time::format_description::well_known::Rfc3339;
 use time::OffsetDateTime;
-use tonic::transport::Channel;
 use tracing::{info, warn};
 
 pub(crate) async fn verify_seeded_council_visible(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     seed_specialty: &str,
 ) -> Result<()> {
     let councils = client
@@ -36,7 +34,7 @@ pub(crate) async fn verify_seeded_council_visible(
 }
 
 pub(crate) async fn verify_deliberate_returns_winner(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     seed_specialty: &str,
 ) -> Result<()> {
     let response = client
@@ -85,7 +83,7 @@ pub(crate) async fn verify_deliberate_returns_winner(
 }
 
 pub(crate) async fn verify_delete_missing_council_returns_false(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     let delete = client
         .delete_council(DeleteCouncilRequest {

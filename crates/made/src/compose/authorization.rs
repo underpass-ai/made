@@ -6,7 +6,8 @@ use made_adapters::postgres::{PostgresAuthorizationPolicyStore, PostgresPool};
 use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
 use made_core::value_objects::{AuthorizationDecisionTtl, AuthorizationPolicyId};
@@ -23,6 +24,7 @@ pub(super) struct AuthorizationWiring {
     pub(super) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(super) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+    pub(super) continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
 }
 
 impl AuthorizationWiring {
@@ -78,6 +80,12 @@ pub(super) async fn wire(
         clock.clone(),
         AuthorizationDecisionTtl::from_seconds(60)?,
     ));
+    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+        AuthorizationDecisionTtl::from_seconds(60)?,
+    ));
     Ok(AuthorizationWiring {
         gate: Arc::new(GrpcAuthorizationGate::mutual_tls(
             authorize.clone(),
@@ -94,6 +102,7 @@ pub(super) async fn wire(
             store.clone(),
         )),
         read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(policy_id, store)),
+        continuation,
     })
 }
 

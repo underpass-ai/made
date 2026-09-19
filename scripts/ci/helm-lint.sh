@@ -12,6 +12,16 @@ TMP_DIR="${TMPDIR:-/tmp}"
 DEFAULT_ERR="${TMP_DIR}/made-helm-default.err"
 HARDENED_OUT="${TMP_DIR}/made-helm-hardened.yaml"
 HARDENED_ERR="${TMP_DIR}/made-helm-hardened.err"
+AUTH_ARGS=(
+  --set tls.mode=mutual
+  --set tls.existingSecret=made-test-grpc-mtls
+  --set authorization.policyId=made-test-policy
+  --set authorization.principals.existingSecret=made-test-auth-principals
+  --set ceremonySearch.storeId=made-test-store
+  --set ceremonySearch.cursorHmacKeyFromSecret.name=made-test-cursor-hmac
+  --set ceremonySearch.cursorHmacKeyFromSecret.key=key
+)
+LOCAL_STORE_ARGS=(--set persistence.ceremonies.enabled=true)
 
 helm lint "${CHART_PATH}" -f "${DEV_VALUES}"
 helm lint "${CHART_PATH}" -f "${MINIMAL_VALUES}" --set image.tag=v0
@@ -23,7 +33,7 @@ helm template made "${CHART_PATH}" -f "${DEV_VALUES}" >/tmp/made-helm-template.y
 
 # --- Gate 1: default render refuses to produce a manifest without a
 # pinned image. Keeps ":latest" accidents out of production.
-if helm template made "${CHART_PATH}" > /dev/null 2>"${DEFAULT_ERR}"; then
+if helm template made "${CHART_PATH}" "${AUTH_ARGS[@]}" "${LOCAL_STORE_ARGS[@]}" > /dev/null 2>"${DEFAULT_ERR}"; then
   echo "default chart render unexpectedly succeeded" >&2
   exit 1
 fi
@@ -33,6 +43,7 @@ grep -q "set image.tag or image.digest" "${DEFAULT_ERR}"
 # must fail loudly. Mis-configured persistence should never silently
 # install a broken pod.
 if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
   --set persistence.postgres.enabled=true \
   > /dev/null 2>"${HARDENED_ERR}"; then
@@ -44,6 +55,7 @@ grep -q "persistence.postgres.enabled=true requires" "${HARDENED_ERR}"
 # --- Gate 3: full hardened render (every knob turned on) must
 # produce a valid manifest that carries every hardening feature.
 helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
   --set networkPolicy.enabled=true \
   --set persistence.postgres.enabled=true \
@@ -73,54 +85,73 @@ for marker in "${required_markers[@]}"; do
   fi
 done
 
-# --- Gate 4: TLS render. `tls.mode=server` with an existingSecret
-# must wire the env vars + volume mount; `tls.mode=mutual` must also
-# carry the client-CA env var; `tls.mode=server` without a secret
-# must fail loudly.
+# --- Gate 4: authorization is fail-closed. Server-only TLS is insufficient;
+# mutual TLS, a prebootstrapped policy id and a certificate-principal map are
+# mandatory. The valid render wires those inputs without embedding secrets.
 
-TLS_SERVER_OUT="${TMP_DIR}/made-helm-tls-server.yaml"
+TLS_SERVER_ERR="${TMP_DIR}/made-helm-tls-server.err"
 TLS_MUTUAL_OUT="${TMP_DIR}/made-helm-tls-mutual.yaml"
 TLS_MISSING_ERR="${TMP_DIR}/made-helm-tls-missing.err"
+AUTH_POLICY_MISSING_ERR="${TMP_DIR}/made-helm-auth-policy-missing.err"
+AUTH_PRINCIPALS_MISSING_ERR="${TMP_DIR}/made-helm-auth-principals-missing.err"
+AUTH_STORE_MISSING_ERR="${TMP_DIR}/made-helm-auth-store-missing.err"
 
 if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
   --set tls.mode=server \
+  --set tls.existingSecret=made-grpc-tls \
+  > /dev/null 2>"${TLS_SERVER_ERR}"; then
+  echo "tls.mode=server render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "authorization requires tls.mode=mutual" "${TLS_SERVER_ERR}"
+
+if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  "${LOCAL_STORE_ARGS[@]}" \
+  --set image.tag=v0 \
+  --set tls.existingSecret= \
   > /dev/null 2>"${TLS_MISSING_ERR}"; then
-  echo "tls.mode=server with no existingSecret render unexpectedly succeeded" >&2
+  echo "tls.mode=mutual with no existingSecret render unexpectedly succeeded" >&2
   exit 1
 fi
 grep -q "tls.mode is not 'none' but tls.existingSecret is empty" "${TLS_MISSING_ERR}"
 
-helm template made "${CHART_PATH}" \
+if helm template made "${CHART_PATH}" \
   --set image.tag=v0 \
-  --set tls.mode=server \
-  --set tls.existingSecret=made-grpc-tls \
-  > "${TLS_SERVER_OUT}"
-
-tls_server_markers=(
-  'name: MADE_GRPC_TLS_MODE'
-  'value: "server"'
-  'name: MADE_GRPC_TLS_CERT_PATH'
-  'value: "/etc/made/tls/tls.crt"'
-  'name: MADE_GRPC_TLS_KEY_PATH'
-  'value: "/etc/made/tls/tls.key"'
-  'name: grpc-tls'
-  'secretName: "made-grpc-tls"'
-  'mountPath: /etc/made/tls'
-)
-for marker in "${tls_server_markers[@]}"; do
-  if ! grep -qF -- "${marker}" "${TLS_SERVER_OUT}"; then
-    echo "tls=server chart manifest missing required marker: ${marker}" >&2
-    exit 1
-  fi
-done
-
-if grep -qF 'MADE_GRPC_TLS_CLIENT_CA_PATH' "${TLS_SERVER_OUT}"; then
-  echo "tls=server manifest must NOT carry MADE_GRPC_TLS_CLIENT_CA_PATH" >&2
+  --set tls.mode=mutual \
+  --set tls.existingSecret=made-grpc-mtls \
+  --set authorization.principals.existingSecret=made-auth-principals \
+  > /dev/null 2>"${AUTH_POLICY_MISSING_ERR}"; then
+  echo "authorization without policy id render unexpectedly succeeded" >&2
   exit 1
 fi
+grep -q "authorization.policyId is required" "${AUTH_POLICY_MISSING_ERR}"
+
+if helm template made "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set tls.mode=mutual \
+  --set tls.existingSecret=made-grpc-mtls \
+  --set authorization.policyId=made-policy \
+  > /dev/null 2>"${AUTH_PRINCIPALS_MISSING_ERR}"; then
+  echo "authorization without principal map render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "authorization.principals.existingSecret is required" "${AUTH_PRINCIPALS_MISSING_ERR}"
+
+if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  --set image.tag=v0 \
+  > /dev/null 2>"${AUTH_STORE_MISSING_ERR}"; then
+  echo "authorization without durable policy store render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "authorization requires a durable policy store" "${AUTH_STORE_MISSING_ERR}"
 
 helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  "${LOCAL_STORE_ARGS[@]}" \
   --set image.tag=v0 \
   --set tls.mode=mutual \
   --set tls.existingSecret=made-grpc-mtls \
@@ -132,6 +163,14 @@ tls_mutual_markers=(
   'name: MADE_GRPC_TLS_CLIENT_CA_PATH'
   'value: "/etc/made/tls/ca.crt"'
   'secretName: "made-grpc-mtls"'
+  'defaultMode: 0440'
+  'name: MADE_AUTH_POLICY_ID'
+  'value: "made-test-policy"'
+  'name: MADE_AUTH_MTLS_PRINCIPALS_PATH'
+  'value: "/etc/made/auth/principals.json"'
+  'name: authorization-principals'
+  'secretName: "made-test-auth-principals"'
+  'mountPath: /etc/made/auth'
 )
 for marker in "${tls_mutual_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${TLS_MUTUAL_OUT}"; then
@@ -207,6 +246,7 @@ done
 # both the Deployment volume and its mount.
 CEREMONY_STORE_OUT="${TMP_DIR}/made-helm-ceremony-store.yaml"
 helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
   --set persistence.ceremonies.enabled=true \
   --set tmpVolume.enabled=false \
@@ -237,6 +277,8 @@ RUNTIME_MISSING_TLS_ERR="${TMP_DIR}/made-helm-runtime-missing-tls.err"
 RUNTIME_OUT="${TMP_DIR}/made-helm-runtime.yaml"
 
 if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  "${LOCAL_STORE_ARGS[@]}" \
   --set image.tag=v0 \
   --set executor.kind=runtime \
   > /dev/null 2>"${RUNTIME_MISSING_ENDPOINT_ERR}"; then
@@ -246,6 +288,8 @@ fi
 grep -q "executor.kind=runtime but executor.runtime.endpoint is empty" "${RUNTIME_MISSING_ENDPOINT_ERR}"
 
 if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  "${LOCAL_STORE_ARGS[@]}" \
   --set image.tag=v0 \
   --set executor.kind=runtime \
   --set executor.runtime.endpoint=https://underpass-runtime:50053 \
@@ -397,6 +441,7 @@ done
 
 MULTI_WITHOUT_POSTGRES_ERR="${TMP_DIR}/made-helm-multi-without-postgres.err"
 MIXED_CEREMONY_ERR="${TMP_DIR}/made-helm-mixed-ceremony.err"
+MULTI_WITHOUT_CURSOR_ERR="${TMP_DIR}/made-helm-multi-without-cursor.err"
 POSTGRES_MULTI_OUT="${TMP_DIR}/made-helm-postgres-multi.yaml"
 
 if helm template made "${CHART_PATH}" \
@@ -420,7 +465,22 @@ if helm template made "${CHART_PATH}" \
 fi
 grep -q "choose one ceremony adapter" "${MIXED_CEREMONY_ERR}"
 
+if helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
+  --set image.tag=v0 \
+  --set replicaCount=3 \
+  --set persistence.postgres.enabled=true \
+  --set persistence.postgres.urlFromSecret.name=pg-dsn \
+  --set persistence.postgres.urlFromSecret.key=url \
+  --set ceremonySearch.cursorHmacKeyFromSecret.name= \
+  > /dev/null 2>"${MULTI_WITHOUT_CURSOR_ERR}"; then
+  echo "three-replica render without shared cursor key unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "replicaCount>1 requires ceremonySearch.cursorHmacKeyFromSecret" "${MULTI_WITHOUT_CURSOR_ERR}"
+
 helm template made "${CHART_PATH}" \
+  "${AUTH_ARGS[@]}" \
   --set image.tag=v0 \
   --set replicaCount=3 \
   --set persistence.postgres.enabled=true \
@@ -433,6 +493,10 @@ postgres_multi_markers=(
   'name: MADE_POSTGRES_URL'
   'name: "pg-dsn"'
   'key: "url"'
+  'name: MADE_CEREMONY_STORE_ID'
+  'value: "made-test-store"'
+  'name: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY'
+  'name: "made-test-cursor-hmac"'
 )
 for marker in "${postgres_multi_markers[@]}"; do
   if ! grep -qF -- "${marker}" "${POSTGRES_MULTI_OUT}"; then

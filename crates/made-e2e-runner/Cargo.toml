@@ -65,6 +65,7 @@ time = { workspace = true }
 futures = { workspace = true }
 jsonschema = { workspace = true }
 axum = "0.7"
+uuid = { workspace = true }
 
 [dev-dependencies]
 tower = { version = "0.5", features = ["util"] }

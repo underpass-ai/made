@@ -57,11 +57,13 @@ impl PrepareCeremonyParticipantsUseCase {
             let id = participant.id().clone();
             let specialty = participant.specialty().clone();
             let kind = participant.kind().clone();
-            let agent = self
-                .agent_factory
-                .create(participant.into_agent_descriptor())
-                .await?;
-            match self.agent_registry.register(agent).await {
+            let descriptor = participant.into_agent_descriptor();
+            let agent = self.agent_factory.create(descriptor.clone()).await?;
+            match self
+                .agent_registry
+                .register_described(descriptor, agent)
+                .await
+            {
                 Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
                 Err(error) => return Err(error),
             }
@@ -177,16 +179,33 @@ mod tests {
     #[derive(Default)]
     struct RecordingAgentRegistry {
         ids: Mutex<Vec<AgentId>>,
+        descriptors: Mutex<Vec<AgentDescriptor>>,
     }
 
     #[async_trait]
     impl AgentRegistryPort for RecordingAgentRegistry {
-        async fn register(&self, agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+        async fn register(&self, _agent: Arc<dyn AgentPort>) -> Result<(), DomainError> {
+            Err(DomainError::InvariantViolated {
+                reason: "test registry requires the original descriptor",
+            })
+        }
+
+        async fn register_described(
+            &self,
+            descriptor: AgentDescriptor,
+            agent: Arc<dyn AgentPort>,
+        ) -> Result<(), DomainError> {
+            if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
+                return Err(DomainError::InvariantViolated {
+                    reason: "agent descriptor and materialized identity differ",
+                });
+            }
             let mut ids = self.ids.lock().unwrap();
             if ids.contains(agent.id()) {
                 return Err(DomainError::AlreadyExists { what: "agent" });
             }
             ids.push(agent.id().clone());
+            self.descriptors.lock().unwrap().push(descriptor);
             Ok(())
         }
 
@@ -269,6 +288,7 @@ mod tests {
 
         assert_eq!(factory.descriptors.lock().unwrap().len(), 3);
         assert_eq!(agents.ids.lock().unwrap().len(), 3);
+        assert_eq!(agents.descriptors.lock().unwrap().len(), 3);
         let editor = councils
             .get(&Specialty::new("editor").unwrap())
             .await

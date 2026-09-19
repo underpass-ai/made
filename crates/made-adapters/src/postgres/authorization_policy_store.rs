@@ -64,7 +64,12 @@ impl AuthorizationPolicyStorePort for PostgresAuthorizationPolicyStore {
         let mut version = actual;
         for event in events {
             let approval = approval_for_event(&mut transaction, policy_id, &event).await?;
-            policy.apply_projected(event.clone(), approval.as_ref())?;
+            let accepted = accepted_work_for_event(&mut transaction, policy_id, &event).await?;
+            policy.apply_projected_with_authorities(
+                event.clone(),
+                approval.as_ref(),
+                accepted.as_ref(),
+            )?;
             version = version.next();
             insert_event(&mut transaction, policy_id, version, &event).await?;
             project_decision(&mut transaction, policy_id, &event).await?;
@@ -306,6 +311,29 @@ async fn approval_for_event(
     .fetch_optional(&mut **transaction)
     .await
     .map_err(|error| sqlx_error(error, "load authorization approval decision"))?;
+    row.map(|row| decode_decision_row(&row)).transpose()
+}
+
+async fn accepted_work_for_event(
+    transaction: &mut Transaction<'_, Postgres>,
+    policy_id: &AuthorizationPolicyId,
+    event: &AuthorizationPolicyEvent,
+) -> Result<Option<AuthorizationDecision>, DomainError> {
+    let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = event else {
+        return Ok(None);
+    };
+    let Some(accepted_id) = decision.request().accepted_work_decision_id() else {
+        return Ok(None);
+    };
+    let row = sqlx::query(
+        "SELECT decision_id, request_id, payload FROM authorization_decisions \
+         WHERE policy_id = $1 AND decision_id = $2",
+    )
+    .bind(policy_id.as_str())
+    .bind(accepted_id.as_str())
+    .fetch_optional(&mut **transaction)
+    .await
+    .map_err(|error| sqlx_error(error, "load accepted-work authorization decision"))?;
     row.map(|row| decode_decision_row(&row)).transpose()
 }
 
