@@ -4,9 +4,7 @@
 //! request mappers, calls the generated tonic client, and maps the response.
 
 use made_mcp_proto::v1 as pb;
-use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
-use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
@@ -30,6 +28,7 @@ mod general_requests;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
+mod request_metadata_client;
 
 use request_error::bad_request;
 
@@ -50,20 +49,7 @@ pub(crate) async fn dispatch(
     traceparent: &str,
     request_id: &str,
 ) -> Result<Value, ToolError> {
-    let traceparent = MetadataValue::try_from(traceparent)
-        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-    let request_id = MetadataValue::try_from(request_id)
-        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-    let mut client =
-        MadeServiceClient::with_interceptor(channel, move |mut request: tonic::Request<()>| {
-            request
-                .metadata_mut()
-                .insert("traceparent", traceparent.clone());
-            request
-                .metadata_mut()
-                .insert("x-made-request-id", request_id.clone());
-            Ok(request)
-        });
+    let mut client = request_metadata_client::build(channel, traceparent, request_id)?;
     if council_journal_dispatch::handles(name) {
         return council_journal_dispatch::dispatch(&mut client, name, arguments).await;
     }
