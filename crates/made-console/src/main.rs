@@ -2,11 +2,13 @@ use clap::Parser;
 
 use args::Args;
 use artifact_command::ArtifactCommand;
+use budget_command::BudgetCommand;
 use command::Command;
 use output_format::OutputFormat;
 
 mod args;
 mod artifact_command;
+mod budget_command;
 mod command;
 mod execute;
 mod output_format;

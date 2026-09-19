@@ -30,6 +30,23 @@ export MADE_ENDPOINT=http://127.0.0.1:50055
 made-console get CEREMONY_ID
 ```
 
+Production gRPC uses mutual TLS. The server maps the client certificate's
+SHA-256 fingerprint through `MADE_AUTH_MTLS_PRINCIPALS_PATH`; clients never
+assert a principal in metadata:
+
+```bash
+export MADE_ENDPOINT=https://made.example:50055
+export MADE_TLS_CA_CERTIFICATE=./ca.pem
+export MADE_TLS_CLIENT_CERTIFICATE=./operator-cert.pem
+export MADE_TLS_CLIENT_KEY=./operator-key.pem
+made-console get CEREMONY_ID
+```
+
+The console creates one `x-made-request-id` per invocation and keeps it for
+all internal RPCs and reconnects. Supply `--request-id` or `MADE_REQUEST_ID`
+when retrying an ambiguous mutation with the same logical request. A request
+id is correlation and idempotency input, never authentication.
+
 `scripts/ci/package-made-console.sh` builds a native release candidate,
 checks its package manifests, version, top-level help and artifact subcommands,
 then writes the binary and SHA-256 file under `dist/console/`. It never uploads
@@ -48,12 +65,15 @@ install it only after the response is complete; artifact export also verifies
 chunk offsets, chunk digests, final size and final digest.
 
 The console exposes lifecycle actions supported by the public API: pause,
-resume, cancel, deadline enforcement and guard approval. MADE records the
-supplied actor or role, but the host remains responsible for authentication
-and authorization until the C5.7 boundary is installed.
+resume, cancel, deadline enforcement and guard approval. Admission uses the
+principal authenticated by mTLS and the server's policy; actor-shaped payload
+fields are provenance only and cannot override that principal.
 
-Budget is shown as unknown until the C5.3 public budget report is available.
-The console does not estimate consumption from partial events.
+`budget report CEREMONY_ID` reads the durable account shared by the ceremony
+tree and identifies bounded dimensions that are exhausted or overrun.
+`budget pending` pages unresolved reservations and their measurement quality;
+these reservations explain capacity that is unavailable before terminal
+reconciliation. The console does not estimate consumption from partial events.
 
 The current `list` command calls the legacy unpaged API. It does not satisfy
 the C5.8 bounded search/listing requirement. Do not use it as an inventory

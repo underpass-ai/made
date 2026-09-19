@@ -14,12 +14,12 @@ impl MadeClient {
     ) -> Result<ProgressBatch, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
-            .stream_ceremony(StreamCeremonyRequest {
+            .stream_ceremony(self.request(StreamCeremonyRequest {
                 ceremony_id: checkpoint.ceremony_id().to_owned(),
                 after_sequence: checkpoint.after_sequence(),
                 max_events,
                 wait_timeout_ms,
-            })
+            }))
             .await
             .map_err(MadeClientError::from_status)?;
         let mut stream = response.into_inner();

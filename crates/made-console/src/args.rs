@@ -1,4 +1,5 @@
 use clap::Parser;
+use std::path::PathBuf;
 
 use crate::{Command, OutputFormat};
 
@@ -9,6 +10,21 @@ pub struct Args {
     /// Public MADE gRPC endpoint.
     #[arg(long, env = "MADE_ENDPOINT", default_value = "http://127.0.0.1:50055")]
     pub endpoint: String,
+    /// Stable id sent as x-made-request-id for every RPC in this invocation.
+    #[arg(long, env = "MADE_REQUEST_ID")]
+    pub request_id: Option<String>,
+    /// Additional PEM CA certificate for the MADE endpoint.
+    #[arg(long, env = "MADE_TLS_CA_CERTIFICATE")]
+    pub tls_ca_certificate: Option<PathBuf>,
+    /// PEM client certificate chain used for mTLS.
+    #[arg(long, env = "MADE_TLS_CLIENT_CERTIFICATE", requires = "tls_client_key")]
+    pub tls_client_certificate: Option<PathBuf>,
+    /// PEM private key used for mTLS.
+    #[arg(long, env = "MADE_TLS_CLIENT_KEY", requires = "tls_client_certificate")]
+    pub tls_client_key: Option<PathBuf>,
+    /// TLS server name when it differs from the endpoint host.
+    #[arg(long, env = "MADE_TLS_DOMAIN_NAME")]
+    pub tls_domain_name: Option<String>,
     /// Output format for metadata and events.
     #[arg(long, value_enum, default_value_t = OutputFormat::Text)]
     pub output: OutputFormat,

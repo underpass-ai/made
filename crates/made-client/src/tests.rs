@@ -1,6 +1,15 @@
 use made_proto::v1::{CeremonyInstanceState, CeremonyLineageState};
 
-use crate::{CeremonyTree, MadeClientError, ProgressCheckpoint};
+use crate::{CeremonyTree, ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint};
+
+#[tokio::test]
+async fn invalid_request_id_is_rejected_before_connecting() {
+    let result = MadeClient::connect_with_config(
+        ClientConfig::new("http://127.0.0.1:1").with_request_id("not\na\nheader"),
+    )
+    .await;
+    assert!(matches!(result, Err(MadeClientError::InvalidRequestId(_))));
+}
 
 #[tokio::test]
 async fn checkpoint_round_trips_atomically_and_rejects_another_scope() {

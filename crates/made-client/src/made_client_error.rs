@@ -8,6 +8,10 @@ use tonic::Code;
 pub enum MadeClientError {
     #[error("invalid MADE endpoint: {0}")]
     InvalidEndpoint(String),
+    #[error("invalid x-made-request-id: {0}")]
+    InvalidRequestId(String),
+    #[error("invalid TLS client configuration: {0}")]
+    TlsConfiguration(String),
     #[error("connection attempts exhausted: {0}")]
     ConnectionExhausted(String),
     #[error("gRPC transport failed: {0}")]
@@ -26,8 +30,6 @@ pub enum MadeClientError {
     ArtifactSizeMismatch { expected: u64, observed: u64 },
     #[error("local I/O failed at {path}: {source}")]
     Io { path: String, source: io::Error },
-    #[error("server does not yet expose public capability {0}")]
-    UnsupportedCapability(&'static str),
 }
 
 impl MadeClientError {
@@ -46,10 +48,11 @@ impl MadeClientError {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::InvalidEndpoint(_)
+            | Self::InvalidRequestId(_)
+            | Self::TlsConfiguration(_)
             | Self::ConnectionExhausted(_)
             | Self::Transport(_)
-            | Self::RemoteStatus { .. }
-            | Self::UnsupportedCapability(_) => 3,
+            | Self::RemoteStatus { .. } => 3,
             Self::ProtocolViolation(_)
             | Self::CursorScopeMismatch { .. }
             | Self::CursorCheckpointCorrupt(_)

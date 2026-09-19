@@ -3,6 +3,7 @@
 mod actions;
 mod artifact_export;
 mod artifacts;
+mod budgets;
 mod ceremonies;
 mod ceremony_tree;
 mod ceremony_tree_node;

@@ -32,6 +32,8 @@ made-console tree ceremony-123 --max-nodes 100
 made-console watch ceremony-123 --cursor-file ./ceremony-123.cursor --follow
 made-console artifact list --limit 50
 made-console artifact export artifact-123 ./report.bin
+made-console budget report ceremony-123
+made-console budget pending --limit 100
 made-console report ceremony-123 --destination ./report.md
 made-console pause ceremony-123 \
   --actor-id operator-7 --actor-kind human --reason maintenance
@@ -48,9 +50,26 @@ made-console approve ceremony-123 \
 `late_step_result_observed` records as late history. Artifact bytes are printed
 only to an explicitly requested destination.
 
-Actor and role fields are host assertions until C5.7 authenticates and
-authorizes them. Budget is rendered as `unknown` until C5.3 publishes its
-budget report contract.
+For a mutual-TLS endpoint, provide the client identity and trust root. MADE
+maps the presented certificate fingerprint to the configured principal; the
+console never sends principal metadata:
+
+```bash
+export MADE_ENDPOINT=https://made.example:50055
+export MADE_TLS_CA_CERTIFICATE=./ca.pem
+export MADE_TLS_CLIENT_CERTIFICATE=./operator-cert.pem
+export MADE_TLS_CLIENT_KEY=./operator-key.pem
+made-console budget report ceremony-123
+```
+
+Each invocation creates one `x-made-request-id` and reuses it for every RPC
+and reconnect. Set `MADE_REQUEST_ID` or `--request-id` to reuse a caller-owned
+id after an ambiguous response. The id correlates and deduplicates requests;
+it is never an identity or credential.
+
+`budget report` identifies bounded dimensions that are exhausted or overrun.
+`budget pending` shows the reservations currently reducing availability and
+their observed/estimated/unknown measurement quality.
 
 `list` currently reflects the server's legacy unpaged RPC. It is an operator
 checkpoint, not the accepted C5.8 search/pagination surface; the bounded

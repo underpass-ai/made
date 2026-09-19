@@ -5,13 +5,13 @@ use made_client::v1::{
     ApproveCeremonyGuardRequest, CancelCeremonyRequest, PauseCeremonyRequest,
     ResumeCeremonyRequest, StreamCeremonyEndReason,
 };
-use made_client::{MadeClient, MadeClientError, ProgressCheckpoint};
+use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint};
 use serde_json::json;
 
-use crate::{render, Args, ArtifactCommand, Command, OutputFormat};
+use crate::{render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat};
 
 pub async fn run(args: Args) -> Result<(), MadeClientError> {
-    let client = MadeClient::connect(args.endpoint).await?;
+    let client = connect_client(&args).await?;
     match args.command {
         Command::Get { ceremony_id } => println!(
             "{}",
@@ -54,12 +54,59 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
             .await?;
         }
         Command::Artifact { command } => artifact(&client, command, args.output).await?,
+        Command::Budget { command } => budget(&client, command, args.output).await?,
         Command::Report {
             ceremony_ids,
             title,
             destination,
         } => report(&client, ceremony_ids, title, &destination, args.output).await?,
         command => action(&client, command, args.output).await?,
+    }
+    Ok(())
+}
+
+async fn connect_client(args: &Args) -> Result<MadeClient, MadeClientError> {
+    let mut config = ClientConfig::new(args.endpoint.clone());
+    if let Some(request_id) = &args.request_id {
+        config = config.with_request_id(request_id.clone());
+    }
+    if let Some(path) = &args.tls_ca_certificate {
+        config = config.with_ca_certificate_pem(read_pem(path).await?);
+    }
+    if let (Some(certificate), Some(key)) = (&args.tls_client_certificate, &args.tls_client_key) {
+        config = config.with_mtls_identity_pem(read_pem(certificate).await?, read_pem(key).await?);
+    }
+    if let Some(domain_name) = &args.tls_domain_name {
+        config = config.with_tls_domain_name(domain_name.clone());
+    }
+    MadeClient::connect_with_config(config).await
+}
+
+async fn read_pem(path: &Path) -> Result<Vec<u8>, MadeClientError> {
+    tokio::fs::read(path)
+        .await
+        .map_err(|error| MadeClientError::Io {
+            path: path.display().to_string(),
+            source: error,
+        })
+}
+
+async fn budget(
+    client: &MadeClient,
+    command: BudgetCommand,
+    output: OutputFormat,
+) -> Result<(), MadeClientError> {
+    match command {
+        BudgetCommand::Report { ceremony_id } => {
+            let report = client.get_budget_report(ceremony_id).await?;
+            println!("{}", render::budget_report(&report, output));
+        }
+        BudgetCommand::Pending { after, limit } => {
+            let page = client
+                .list_pending_budget_reservations(after, limit)
+                .await?;
+            println!("{}", render::pending_budget_reservations(&page, output));
+        }
     }
     Ok(())
 }

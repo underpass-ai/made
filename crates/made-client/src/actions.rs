@@ -12,7 +12,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .pause_ceremony(request)
+            .pause_ceremony(self.request(request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -25,7 +25,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .resume_ceremony(request)
+            .resume_ceremony(self.request(request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -38,7 +38,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .cancel_ceremony(request)
+            .cancel_ceremony(self.request(request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -51,9 +51,9 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .enforce_ceremony_deadlines(EnforceCeremonyDeadlinesRequest {
+            .enforce_ceremony_deadlines(self.request(EnforceCeremonyDeadlinesRequest {
                 ceremony_id: ceremony_id.into(),
-            })
+            }))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -66,7 +66,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .approve_ceremony_guard(request)
+            .approve_ceremony_guard(self.request(request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();

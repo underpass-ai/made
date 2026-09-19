@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
-use crate::ArtifactCommand;
+use crate::{ArtifactCommand, BudgetCommand};
 
 /// Public operator reads, exports and authorized actions.
 #[derive(Debug, Subcommand)]
@@ -32,6 +32,10 @@ pub enum Command {
     Artifact {
         #[command(subcommand)]
         command: ArtifactCommand,
+    },
+    Budget {
+        #[command(subcommand)]
+        command: BudgetCommand,
     },
     Report {
         #[arg(required = true, num_args = 1..)]
