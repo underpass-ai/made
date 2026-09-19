@@ -1192,6 +1192,9 @@ message PrepareCeremonyChildrenRequest {
   string idempotency_key = 4;
   uint64 lease_ttl_ms = 5;
   string actor_kind = 6;
+  // Required when the parent belongs to a budget account. The reservation is
+  // admitted before the fanout claim or plan is appended.
+  BudgetReservationEstimate budget_reservation = 7;
 }
 
 message PrepareCeremonyChildrenResponse {

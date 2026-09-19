@@ -707,6 +707,7 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
             idempotency_key: "rpc-any-spawn".into(),
             lease_ttl_ms: 30_000,
             actor_kind: "agent".into(),
+            budget_reservation: None,
         })
         .await
         .unwrap()
