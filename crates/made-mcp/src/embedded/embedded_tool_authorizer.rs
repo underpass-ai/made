@@ -335,11 +335,12 @@ async fn resolved_ceremony(
     ceremony_id: CeremonyId,
 ) -> Result<AuthorizationScope, ToolError> {
     match made.instance(&ceremony_id).await {
-        Ok(instance) => Ok(AuthorizationScope::ResolvedCeremony {
-            root_id: instance
-                .lineage()
-                .map_or_else(|| ceremony_id.clone(), |lineage| lineage.root_id().clone()),
-            ceremony_id,
+        Ok(instance) => Ok(match instance.lineage() {
+            Some(lineage) => AuthorizationScope::ResolvedCeremony {
+                root_id: lineage.root_id().clone(),
+                ceremony_id,
+            },
+            None => AuthorizationScope::Ceremony { ceremony_id },
         }),
         Err(made_core::DomainError::NotFound { .. }) => {
             Ok(AuthorizationScope::Ceremony { ceremony_id })

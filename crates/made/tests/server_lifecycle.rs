@@ -150,6 +150,8 @@ fn spawn_server(configuration: &ServerConfiguration) -> (ServerProcess, u16, u16
         .env("MADE_GRPC_TLS_CLIENT_CA_PATH", &configuration.ca)
         .env("MADE_AUTH_POLICY_ID", "lifecycle-policy")
         .env("MADE_AUTH_MTLS_PRINCIPALS_PATH", &configuration.principals)
+        .env("MADE_CEREMONY_STORE_ID", "lifecycle-fixture-store")
+        .env("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "a5".repeat(32))
         .env("RUST_LOG", "error")
         .stdout(Stdio::null())
         .stderr(Stdio::inherit());

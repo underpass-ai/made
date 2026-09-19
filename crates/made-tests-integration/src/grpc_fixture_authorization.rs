@@ -11,10 +11,11 @@ use made_core::ports::ClockPort;
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
-    AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind,
+    AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind, SeparationRule,
 };
 
 pub(crate) struct FixtureAuthorization {
+    pub(crate) authorize: Arc<AuthorizeOperationUseCase>,
     pub(crate) gate: Arc<GrpcAuthorizationGate>,
     pub(crate) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(crate) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
@@ -37,25 +38,40 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
         clock.clone(),
     );
     administration
-        .open(principal.clone(), Vec::new())
-        .await
-        .unwrap();
-    administration
-        .issue(
-            &principal,
-            AuthorizationGrant::new(
-                AuthorizationGrantId::new("grpc-fixture-all-actions").unwrap(),
-                principal.id().clone(),
-                fixture_actions(),
-                AuthorizationScope::Global,
-                (clock.now(), None),
-                DelegationDepth::none(),
-                AuthorizationGrantIssuer::direct(principal.clone()),
+        .open(
+            principal.clone(),
+            vec![SeparationRule::new(
+                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::MountDefinition,
             )
-            .unwrap(),
+            .unwrap()],
         )
         .await
         .unwrap();
+    let (administration_actions, business_actions): (Vec<_>, Vec<_>) = fixture_actions()
+        .into_iter()
+        .partition(|action| is_administration_action(*action));
+    for (grant_id, actions) in [
+        ("grpc-fixture-business-actions", business_actions),
+        ("grpc-fixture-authorization-admin", administration_actions),
+    ] {
+        administration
+            .issue(
+                &principal,
+                AuthorizationGrant::new(
+                    AuthorizationGrantId::new(grant_id).unwrap(),
+                    principal.id().clone(),
+                    actions,
+                    AuthorizationScope::Global,
+                    (clock.now(), None),
+                    DelegationDepth::none(),
+                    AuthorizationGrantIssuer::direct(principal.clone()),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
     let authorize = Arc::new(AuthorizeOperationUseCase::new(
         policy_id.clone(),
         store.clone(),
@@ -63,6 +79,7 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
         AuthorizationDecisionTtl::from_seconds(60).unwrap(),
     ));
     FixtureAuthorization {
+        authorize: authorize.clone(),
         gate: Arc::new(
             GrpcAuthorizationGate::trusted_host(authorize, principal.clone(), "grpc-fixture")
                 .expect("fixture authorization must be valid")
@@ -174,4 +191,14 @@ fn fixture_actions() -> Vec<AuthorizationAction> {
         A::RevokeAuthorizationGrant,
         A::ReadAuthorizationDecisions,
     ]
+}
+
+fn is_administration_action(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::ReadAuthorizationPolicy
+            | AuthorizationAction::IssueAuthorizationGrant
+            | AuthorizationAction::RevokeAuthorizationGrant
+            | AuthorizationAction::ReadAuthorizationDecisions
+    )
 }
