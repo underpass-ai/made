@@ -77,12 +77,12 @@ function Assert-Identity([string]$Name, [string]$Value) {
 
 $Existing = Get-ConfigValues $ConfigPath
 $Policy = Get-Value "MADE_AUTH_POLICY_ID" $Existing
-$Host = Get-Value "MADE_AUTH_TRUSTED_HOST_ID" $Existing
+$TrustedHost = Get-Value "MADE_AUTH_TRUSTED_HOST_ID" $Existing
 $StoreId = Get-Value "MADE_CEREMONY_STORE_ID" $Existing
 $Key = Get-Value "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY" $Existing
 $Digest = $Hash.Substring(0, 16)
 if (-not $Policy) { $Policy = "made-local-policy-$Digest" }
-if (-not $Host) { $Host = "made-local-host-$Digest" }
+if (-not $TrustedHost) { $TrustedHost = "made-local-host-$Digest" }
 if (-not $StoreId) { $StoreId = "made-local-store-$Digest" }
 if (-not $Key) {
     $bytes = New-Object byte[] 32
@@ -91,7 +91,7 @@ if (-not $Key) {
     $Key = ($bytes | ForEach-Object { $_.ToString("x2") }) -join ""
 }
 Assert-Identity "MADE_AUTH_POLICY_ID" $Policy
-Assert-Identity "MADE_AUTH_TRUSTED_HOST_ID" $Host
+Assert-Identity "MADE_AUTH_TRUSTED_HOST_ID" $TrustedHost
 Assert-Identity "MADE_CEREMONY_STORE_ID" $StoreId
 if ($Key -notmatch '^[0-9a-fA-F]{64}$') { throw "MADE setup: MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY must be 64 hexadecimal characters." }
 
@@ -100,7 +100,7 @@ if (-not (Test-Path -Path $ConfigPath -PathType Leaf)) {
     @(
         "# MADE embedded host configuration; managed by made-setup.",
         "MADE_AUTH_POLICY_ID=$Policy",
-        "MADE_AUTH_TRUSTED_HOST_ID=$Host",
+        "MADE_AUTH_TRUSTED_HOST_ID=$TrustedHost",
         "MADE_CEREMONY_STORE_ID=$StoreId",
         "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=$Key"
     ) | Set-Content -LiteralPath $Temporary -Encoding ascii -NoNewline
@@ -113,7 +113,7 @@ $user = if ($env:USERNAME) { $env:USERNAME } else { "$env:USERDOMAIN\$env:USERNA
 & icacls $ConfigRoot /inheritance:r /grant:r "${user}:(OI)(CI)F" /grant:r "*S-1-5-18:(OI)(CI)F" | Out-Null
 & icacls $ConfigPath /inheritance:r /grant:r "${user}:F" /grant:r "*S-1-5-18:F" | Out-Null
 
-$BootstrapOutput = & $Binary bootstrap-authorization $Store --policy-id $Policy --trusted-host-id $Host 2>&1
+$BootstrapOutput = & $Binary bootstrap-authorization $Store --policy-id $Policy --trusted-host-id $TrustedHost 2>&1
 if ($LASTEXITCODE -ne 0) {
     throw "MADE setup: authorization bootstrap failed for the selected store; the private configuration was not replaced."
 }

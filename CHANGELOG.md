@@ -11,6 +11,11 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.4 — 2026-09-19
+
+- Fix the native Windows setup adapter's trusted-host variable name so it does
+  not collide with PowerShell's reserved `$Host` variable.
+
 ## 0.7.3 — 2026-09-19
 
 - Make the shared Git Bash configuration adapter defer private-file
