@@ -6,7 +6,6 @@
 use made_mcp_proto::v1 as pb;
 use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
-use tonic::metadata::MetadataValue;
 use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
@@ -17,6 +16,9 @@ use super::streaming;
 
 mod artifact_dispatch;
 mod artifact_requests;
+mod authorization_dispatch;
+mod authorization_presenter;
+mod authorization_requests;
 mod budget_dispatch;
 mod ceremony_history_requests;
 mod ceremony_read_dispatch;
@@ -30,6 +32,7 @@ mod general_requests;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
+mod request_metadata_client;
 
 use request_error::bad_request;
 
@@ -48,16 +51,12 @@ pub(crate) async fn dispatch(
     name: &str,
     arguments: &Value,
     traceparent: &str,
+    request_id: &str,
 ) -> Result<Value, ToolError> {
-    let traceparent = MetadataValue::try_from(traceparent)
-        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-    let mut client =
-        MadeServiceClient::with_interceptor(channel, move |mut request: tonic::Request<()>| {
-            request
-                .metadata_mut()
-                .insert("traceparent", traceparent.clone());
-            Ok(request)
-        });
+    let mut client = request_metadata_client::build(channel, traceparent, request_id)?;
+    if authorization_dispatch::handles(name) {
+        return authorization_dispatch::dispatch(&mut client, name, arguments).await;
+    }
     if council_journal_dispatch::handles(name) {
         return council_journal_dispatch::dispatch(&mut client, name, arguments).await;
     }

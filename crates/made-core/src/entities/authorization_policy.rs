@@ -14,6 +14,9 @@ use crate::value_objects::{
 };
 use crate::DomainError;
 
+#[path = "authorization_policy/accepted_work.rs"]
+mod accepted_work;
+
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthorizationPolicy {
     id: Option<AuthorizationPolicyId>,
@@ -399,6 +402,15 @@ impl AuthorizationPolicy {
         event: AuthorizationPolicyEvent,
         approval: Option<&AuthorizationDecision>,
     ) -> Result<(), DomainError> {
+        self.apply_projected_with_authorities(event, approval, None)
+    }
+
+    pub fn apply_projected_with_authorities(
+        &mut self,
+        event: AuthorizationPolicyEvent,
+        approval: Option<&AuthorizationDecision>,
+        accepted: Option<&AuthorizationDecision>,
+    ) -> Result<(), DomainError> {
         let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = &event else {
             return self.apply(event);
         };
@@ -413,7 +425,7 @@ impl AuthorizationPolicy {
                 reason: "authorization decision carries the wrong policy version",
             });
         }
-        if !self.decision_authority_is_valid_with_approval(decision, approval) {
+        if !self.decision_authority_is_valid_with_authorities(decision, approval, accepted) {
             return Err(DomainError::InvariantViolated {
                 reason: "stored authorization decision contradicts the active policy",
             });
@@ -515,19 +527,26 @@ impl AuthorizationPolicy {
             .request()
             .approval_decision_id()
             .and_then(|id| self.decisions_by_id.get(id));
-        self.decision_authority_is_valid_with_approval(decision, approval)
+        let accepted = decision
+            .request()
+            .accepted_work_decision_id()
+            .and_then(|id| self.decisions_by_id.get(id));
+        self.decision_authority_is_valid_with_authorities(decision, approval, accepted)
     }
 
-    fn decision_authority_is_valid_with_approval(
+    fn decision_authority_is_valid_with_authorities(
         &self,
         decision: &AuthorizationDecision,
         approval: Option<&AuthorizationDecision>,
+        accepted: Option<&AuthorizationDecision>,
     ) -> bool {
         let request = decision.request();
         let now = decision.decided_at();
         if decision.valid_until() - now > time::Duration::seconds(300) {
             return false;
         }
+        let continuation =
+            accepted.is_some_and(|accepted| accepted_work::authority_is_valid(request, accepted));
         let owner = self.is_owner(request.principal()) && owner_permits(request.action());
         let grant = decision
             .grant_id()
@@ -543,7 +562,9 @@ impl AuthorizationPolicy {
             });
         let separation_denial = self.separation_denial(request, approval, now);
         match decision.kind() {
-            AuthorizationDecisionKind::Allow => granted && separation_denial.is_none(),
+            AuthorizationDecisionKind::Allow => {
+                continuation || granted && separation_denial.is_none()
+            }
             AuthorizationDecisionKind::Deny => {
                 let expected = if !owner && self.matching_grant(request, now).is_none() {
                     Some(AuthorizationDenialReason::NoMatchingGrant)

@@ -103,12 +103,26 @@ macro_rules! ceremony_rpc_methods {
             request: Request<pb::CompleteCeremonyStepRequest>,
         ) -> GrpcResult<pb::CompleteCeremonyStepResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_ceremony!(
-                self,
-                request,
-                CompleteCeremonyStep,
-                run_with_ceremony_trace(trace, self.handle_complete_ceremony_step(request))
+            let ceremony_id = request.get_ref().ceremony_id.clone();
+            let authorization = match self
+                .authorize_ceremony(
+                    &request,
+                    AuthorizationAction::CompleteCeremonyStep,
+                    &ceremony_id,
+                )
+                .await
+            {
+                Ok(operation) => operation,
+                Err(status) if status.code() == tonic::Code::PermissionDenied => {
+                    self.continue_accepted_step_completion(&request).await?
+                }
+                Err(status) => return Err(status),
+            };
+            AuthorizationOperationScope::run(
+                authorization,
+                run_with_ceremony_trace(trace, self.handle_complete_ceremony_step(request)),
             )
+            .await
         }
         async fn apply_ceremony_transition(
             &self,

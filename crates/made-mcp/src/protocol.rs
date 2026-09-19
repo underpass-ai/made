@@ -4,6 +4,8 @@
 //! byte that crosses stdio and projects one catalog over its active backend.
 
 mod artifact_schemas;
+mod authorization_actions;
+mod authorization_schemas;
 mod budget_schemas;
 mod catalog;
 #[cfg(any(feature = "embedded", feature = "grpc"))]

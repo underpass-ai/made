@@ -42,6 +42,46 @@ async fn sqlite_bootstrap_is_explicit_idempotent_and_owner_bound() {
     let _ = std::fs::remove_dir_all(scratch);
 }
 
+#[tokio::test]
+async fn sqlite_bootstrap_persists_explicit_separation_rules() {
+    let scratch = scratch_directory();
+    std::fs::create_dir_all(&scratch).unwrap();
+    let store = scratch.join("made.db");
+    let rules = scratch.join("separation.json");
+    std::fs::write(
+        &rules,
+        r#"[{"approval_action":"approve_ceremony_guard","execution_action":"apply_ceremony_transition"}]"#,
+    )
+    .unwrap();
+
+    let output = Command::new(env!("CARGO_BIN_EXE_made"))
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap())
+        .env("MADE_CEREMONY_STORE_PATH", &store)
+        .args([
+            "bootstrap-authorization",
+            "--policy-id",
+            "separated",
+            "--trusted-host-id",
+            "host-a",
+            "--separation-rules",
+            rules.to_str().unwrap(),
+        ])
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    let receipt: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(receipt["separation_rules"], 1);
+    let snapshot = SqliteAuthorizationPolicyStore::open(&store)
+        .unwrap()
+        .load(&AuthorizationPolicyId::new("separated").unwrap())
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(snapshot.policy.separation_rules().count(), 1);
+    let _ = std::fs::remove_dir_all(scratch);
+}
+
 fn invoke(store: &Path, policy_id: &str, owner_id: &str) -> Output {
     Command::new(env!("CARGO_BIN_EXE_made"))
         .env_clear()

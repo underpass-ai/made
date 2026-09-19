@@ -10,7 +10,8 @@ use made_app::authorization::{
 };
 use made_core::ports::AuthorizationPolicyStorePort;
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationPolicyId, PrincipalId, PrincipalKind,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationPolicyId, PrincipalId,
+    PrincipalKind, SeparationRule,
 };
 use serde::Serialize;
 
@@ -20,10 +21,12 @@ struct AuthorizationBootstrapReceipt {
     version: u64,
     existing: bool,
     owner_id: String,
+    separation_rules: usize,
 }
 
 pub(crate) async fn run(arguments: Vec<String>) -> Result<()> {
-    let (policy_id, owner_id) = parse_arguments(&arguments)?;
+    let (policy_id, owner_id, separation_rules_path) = parse_arguments(&arguments)?;
+    let separation_rules = read_separation_rules(separation_rules_path.as_deref())?;
     let config = EnvConfiguration::new().load()?;
     let store = policy_store(&config).await?;
     let owner = AuthenticatedPrincipal::new(
@@ -36,7 +39,7 @@ pub(crate) async fn run(arguments: Vec<String>) -> Result<()> {
         store,
         Arc::new(SystemClock::new()),
     );
-    let (version, existing) = match administration.open(owner, Vec::new()).await? {
+    let (version, existing) = match administration.open(owner, separation_rules.clone()).await? {
         AuthorizationMutationOutcome::Applied { version } => (version.value(), false),
         AuthorizationMutationOutcome::Existing { version } => (version.value(), true),
     };
@@ -45,19 +48,22 @@ pub(crate) async fn run(arguments: Vec<String>) -> Result<()> {
         version,
         existing,
         owner_id,
+        separation_rules: separation_rules.len(),
     };
     println!("{}", serde_json::to_string(&receipt)?);
     Ok(())
 }
 
-fn parse_arguments(arguments: &[String]) -> Result<(String, String)> {
+fn parse_arguments(arguments: &[String]) -> Result<(String, String, Option<String>)> {
     let mut policy_id = None;
     let mut owner_id = None;
+    let mut separation_rules = None;
     let mut index = 0;
     while index < arguments.len() {
         let target = match arguments[index].as_str() {
             "--policy-id" => &mut policy_id,
             "--trusted-host-id" => &mut owner_id,
+            "--separation-rules" => &mut separation_rules,
             unexpected => bail!("unexpected bootstrap-authorization argument `{unexpected}`"),
         };
         index += 1;
@@ -74,7 +80,23 @@ fn parse_arguments(arguments: &[String]) -> Result<(String, String)> {
     Ok((
         policy_id.context("--policy-id is required")?,
         owner_id.context("--trusted-host-id is required")?,
+        separation_rules,
     ))
+}
+
+fn read_separation_rules(path: Option<&str>) -> Result<Vec<SeparationRule>> {
+    let Some(path) = path else {
+        return Ok(Vec::new());
+    };
+    let bytes = std::fs::read(path)
+        .with_context(|| format!("failed to read authorization separation rules from `{path}`"))?;
+    let rules: Vec<SeparationRule> = serde_json::from_slice(&bytes)
+        .with_context(|| format!("invalid authorization separation rules in `{path}`"))?;
+    rules
+        .into_iter()
+        .map(|rule| SeparationRule::new(rule.approval_action(), rule.execution_action()))
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(Into::into)
 }
 
 async fn policy_store(
@@ -104,7 +126,7 @@ mod tests {
             "policy-a".to_owned(),
         ])
         .unwrap();
-        assert_eq!(parsed, ("policy-a".to_owned(), "host-a".to_owned()));
+        assert_eq!(parsed, ("policy-a".to_owned(), "host-a".to_owned(), None));
         assert!(parse_arguments(&["--policy-id".to_owned(), "policy-a".to_owned()]).is_err());
         assert!(parse_arguments(&[
             "--policy-id".to_owned(),

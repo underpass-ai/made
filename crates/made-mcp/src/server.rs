@@ -32,10 +32,24 @@ use crate::protocol::{
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
+#[cfg(feature = "embedded")]
+const AUTH_POLICY_ID_ENV: &str = "MADE_AUTH_POLICY_ID";
+#[cfg(feature = "embedded")]
+const AUTH_TRUSTED_HOST_ID_ENV: &str = "MADE_AUTH_TRUSTED_HOST_ID";
+
+#[cfg(feature = "embedded")]
+fn required_env(name: &str) -> Result<String, String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{name} is required for the protected embedded backend"))
+}
+
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].
 pub struct MadeMcpServer {
     backend: Arc<dyn MadeMcpToolBackend>,
     identity: McpServerIdentity,
+    process_session_namespace: String,
 }
 
 impl Default for MadeMcpServer {
@@ -120,11 +134,105 @@ impl MadeMcpServer {
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
+    #[cfg(feature = "embedded")]
+    fn embedded_sqlite_authorized(
+        path: impl AsRef<std::path::Path>,
+        policy_id: &str,
+        trusted_host_id: &str,
+    ) -> Result<Self, String> {
+        use made_adapters::artifacts::LocalArtifactStore;
+        use made_adapters::clock::SystemClock;
+        use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+        use made_adapters::sqlite::SqliteCeremonyStore;
+        use made_app::authorization::{
+            AuthorizeOperationUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+        };
+        use made_core::ports::{
+            ArtifactStorePort, AuthorizationPolicyStorePort, ExecutionReceiptStorePort,
+        };
+        use made_core::value_objects::{
+            AuthenticatedPrincipal, AuthenticationMethod, AuthorizationDecisionTtl,
+            AuthorizationPolicyId, PrincipalId, PrincipalKind,
+        };
+
+        let path = path.as_ref();
+        let metrics = Arc::new(
+            made_adapters::metrics::PrometheusMetricsRecorder::new()
+                .map_err(|error| format!("failed to initialize embedded metrics: {error}"))?,
+        );
+        let sink = std::env::var(EVENT_SINK_PATH_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|sink_path| {
+                made_adapters::event_sink::JsonLinesCeremonyEventSink::open_with_metrics(
+                    sink_path,
+                    metrics.clone(),
+                )
+            })
+            .transpose()
+            .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
+        let made = match sink {
+            Some(sink) => {
+                made_embedded::EmbeddedMade::open_with_observability(path, metrics, Arc::new(sink))
+            }
+            None => made_embedded::EmbeddedMade::open_with_metrics(path, metrics),
+        }
+        .map_err(|error| {
+            format!(
+                "failed to open the embedded SQLite ceremony store at `{}`: {error}",
+                path.display()
+            )
+        })?;
+        let store: Arc<dyn AuthorizationPolicyStorePort> =
+            Arc::new(SqliteAuthorizationPolicyStore::open(path).map_err(|error| {
+                format!("failed to open embedded authorization store: {error}")
+            })?);
+        let policy_id = AuthorizationPolicyId::new(policy_id).map_err(|error| error.to_string())?;
+        let principal = AuthenticatedPrincipal::new(
+            PrincipalId::new(trusted_host_id).map_err(|error| error.to_string())?,
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::LocalHostPolicy,
+        )
+        .map_err(|error| error.to_string())?;
+        let clock = Arc::new(SystemClock::new());
+        let authorize = Arc::new(AuthorizeOperationUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+            clock,
+            AuthorizationDecisionTtl::from_seconds(60).expect("fixed TTL is valid"),
+        ));
+        let gate = TrustedHostAuthorizationGate::new(authorize, principal)
+            .map_err(|error| error.to_string())?;
+        let read_policy = ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone());
+        let made = made.with_authorization_policy(policy_id, store);
+        let receipts: Arc<dyn ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(path)
+                .map_err(|error| format!("failed to open execution receipt store: {error}"))?,
+        );
+        let mut artifact_root = path.as_os_str().to_owned();
+        artifact_root.push(".artifacts");
+        let artifacts: Arc<dyn ArtifactStorePort> = Arc::new(
+            LocalArtifactStore::open(std::path::PathBuf::from(artifact_root)).map_err(|error| {
+                format!("failed to open artifact authorization resolver: {error}")
+            })?,
+        );
+        Ok(Self::with_backend(
+            EmbeddedMadeMcpBackend::with_authorization(
+                made,
+                gate,
+                read_policy,
+                artifacts,
+                receipts,
+            ),
+        ))
+    }
+
     /// Wrap an arbitrary backend.
     pub fn with_backend(backend: impl MadeMcpToolBackend + 'static) -> Self {
         Self {
             backend: Arc::new(backend),
             identity: McpServerIdentity::default(),
+            process_session_namespace: uuid::Uuid::new_v4().simple().to_string(),
         }
     }
 
@@ -171,7 +279,9 @@ impl MadeMcpServer {
                             "{EMBEDDED_STORE_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
                         )
                     })?;
-                Self::embedded_sqlite(path)
+                let policy_id = required_env(AUTH_POLICY_ID_ENV)?;
+                let trusted_host_id = required_env(AUTH_TRUSTED_HOST_ID_ENV)?;
+                Self::embedded_sqlite_authorized(path, &policy_id, &trusted_host_id)
             }
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(
@@ -275,7 +385,8 @@ impl MadeMcpServer {
                     .and_then(|meta| meta.get("traceparent"))
                     .and_then(Value::as_str)
             });
-        let trace = ToolTraceContext::from_metadata(supplied_traceparent);
+        let supplied_request_namespace = request_namespace(params, received);
+        let supplied_approval_decision = approval_decision(params, received);
         let start = Instant::now();
 
         // Two things happen to a call before a backend sees it, and
@@ -301,6 +412,20 @@ impl MadeMcpServer {
         // What is recorded is what ran; a call that never ran is
         // recorded as the client wrote it.
         let arguments = accepted.as_ref().unwrap_or(received);
+        let trace = match ToolTraceContext::for_invocation(
+            supplied_traceparent,
+            &self.process_session_namespace,
+            &id,
+            name,
+            arguments,
+            supplied_request_namespace,
+            supplied_approval_decision,
+        ) {
+            Ok(trace) => trace,
+            Err(error) => {
+                return jsonrpc_result(id, tool_error_result(&ToolError::invalid_request(error)));
+            }
+        };
         // The two server-owned tools answer about this process and
         // reach no engine, so the only way either can fail is the call
         // itself: an unknown field, a missing one, an audience that is
@@ -395,6 +520,42 @@ where
     }
 }
 
+fn request_namespace<'a>(
+    params: &'a serde_json::Map<String, Value>,
+    arguments: &'a Value,
+) -> Option<&'a str> {
+    params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .and_then(|meta| meta.get("made_request_id"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            arguments
+                .get("_meta")
+                .and_then(Value::as_object)
+                .and_then(|meta| meta.get("made_request_id"))
+                .and_then(Value::as_str)
+        })
+}
+
+fn approval_decision<'a>(
+    params: &'a serde_json::Map<String, Value>,
+    arguments: &'a Value,
+) -> Option<&'a str> {
+    params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .and_then(|meta| meta.get("made_approval_decision_id"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            arguments
+                .get("_meta")
+                .and_then(Value::as_object)
+                .and_then(|meta| meta.get("made_approval_decision_id"))
+                .and_then(Value::as_str)
+        })
+}
+
 fn default_backend_name() -> &'static str {
     if cfg!(feature = "grpc") {
         "grpc"
@@ -472,7 +633,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC plus backend-independent discovery and help.
-        assert_eq!(tools.len(), 72);
+        assert_eq!(tools.len(), 76);
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));

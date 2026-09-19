@@ -14,11 +14,10 @@ use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStre
 use made_app::usecases::{
     AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase,
-    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, ResolveCeremonyDefinitionUseCase,
-    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    UnregisterAgentUseCase,
+    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase,
+    ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
+    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
 };
 use made_core::ports::{
     AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
@@ -41,6 +40,8 @@ mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
 mod ceremony_queries;
+mod children_recovery;
+mod council_event_publisher;
 mod execution_receipts;
 mod executor;
 mod messaging;
@@ -82,6 +83,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
+    let authorization_continuation = authorization.continuation.clone();
+    let step_authorization_continuation = authorization.continuation.clone();
 
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
@@ -107,18 +110,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         nats_client,
         ceremony_transport,
     } = wire_messaging(&service_config, metrics_recorder.clone()).await?;
-    let council_event_publisher = service_config.nats_enabled.then(|| {
-        Arc::new(made_app::usecases::PublishCouncilEventsUseCase::new(
-            council_journal.clone(),
-            messaging_transport,
-            clock.clone(),
-        ))
-    });
-    let messaging = Arc::new(
-        made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
-            council_journal.clone(),
-        ),
+    let council_event_publisher = council_event_publisher::wire(
+        service_config.nats_enabled,
+        council_journal.clone(),
+        messaging_transport,
+        clock.clone(),
     );
+    let messaging = council_event_publisher::journal_messaging(council_journal.clone());
     let event_publisher = ceremony_publisher::wire(
         ceremony_events.clone(),
         ceremony_cursors.clone(),
@@ -222,15 +220,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_stream.clone(),
         clock.clone(),
     ));
-    let recover_ceremony_children = Arc::new(RecoverCeremonyChildrenUseCase::new(
-        ceremony_events.clone(),
-        ceremony_cursors.clone(),
-        ceremony_stream.clone(),
-        prepare_ceremony_children.clone(),
-        accept_child_completion.clone(),
-        clock.clone(),
-        made_core::value_objects::CeremonyEventConsumer::new("made.children.recovery.v1")?,
-    ));
+    let recover_ceremony_children = Arc::new(children_recovery::wire(
+        children_recovery::ChildrenRecoveryDependencies {
+            events: ceremony_events.clone(),
+            cursors: ceremony_cursors.clone(),
+            stream: ceremony_stream.clone(),
+            prepare: prepare_ceremony_children.clone(),
+            accept: accept_child_completion.clone(),
+            clock: clock.clone(),
+            continuation: authorization_continuation,
+        },
+    )?);
     ceremony_operations::recover_to_head(&recover_ceremony_children).await?;
     let run_ceremony_step = Arc::new(
         RunCeremonyStepUseCase::new(
@@ -356,8 +356,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     grpc_builder = ceremony_operations::wire(
         grpc_builder,
         resolve_ceremony_definition,
-        ceremony_stream,
-        clock,
+        &ceremony_stream,
+        &clock,
+        step_authorization_continuation,
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);

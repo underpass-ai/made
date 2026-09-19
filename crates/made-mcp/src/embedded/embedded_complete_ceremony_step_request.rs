@@ -1,3 +1,4 @@
+use made_app::authorization::AcceptedStepCompletion;
 use made_app::usecases::CompleteCeremonyStepInput;
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, StepClaimFence, StepErrorMessage, StepId, StepOutput, StepResult,
@@ -23,6 +24,22 @@ pub(super) struct EmbeddedCompleteCeremonyStepRequest {
 }
 
 impl EmbeddedCompleteCeremonyStepRequest {
+    pub(super) fn accepted_completion(
+        &self,
+        principal: made_core::value_objects::AuthenticatedPrincipal,
+        invocation_id: &made_core::value_objects::AuthorizationRequestId,
+        target_digest: made_core::value_objects::AuthorizationTargetDigest,
+    ) -> Result<AcceptedStepCompletion, made_core::DomainError> {
+        AcceptedStepCompletion::from_invocation(
+            self.ceremony_id.clone(),
+            self.step_id.clone(),
+            self.claim_fence.clone(),
+            principal,
+            invocation_id,
+            target_digest,
+        )
+    }
+
     pub(super) async fn execute(self, made: &EmbeddedMade) -> Result<CeremonyId, ToolError> {
         made.complete_step(CompleteCeremonyStepInput::new(
             self.ceremony_id.clone(),

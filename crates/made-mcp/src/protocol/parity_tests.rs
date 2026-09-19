@@ -63,7 +63,8 @@ const API_VARIANTS: [(&str, &str); 1] = [("start_budgeted_ceremony", "start_cere
 /// `FACADE_VARIANTS` is — an unlisted public method fails the test rather
 /// than being waved through — and with a reason each, because "not a
 /// capability" is a judgement and a judgement with no reason is a hole.
-const FACADE_NON_CAPABILITIES: [(&str, &str); 7] = [
+const FACADE_NON_CAPABILITIES: [(&str, &str); 8] = [
+    ("with_authorization_policy", "configures the facade's explicit policy store at composition time; it does not perform an operator command"),
     (
         "open",
         "opens the durable store the engine runs over; making an engine is not          something an engine does",
@@ -356,7 +357,9 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 16] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 18] = [
+    ("get_authorization_policy", "authorization_policy", "named after the configured policy snapshot it answers with"),
+    ("list_authorization_decisions", "authorization_decisions", "named after the bounded decision page it answers with"),
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),
     ("list_ceremony_instances", "instances", "the plural of the row above, for the same reason"),
     ("list_ceremony_definitions", "definitions", "the same shape again, for definitions"),

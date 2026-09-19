@@ -6,7 +6,16 @@
 
 use std::io::Write;
 use std::process::{Command, Stdio};
+use std::sync::Arc;
 
+use made_adapters::clock::SystemClock;
+use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+use made_app::authorization::AuthorizationPolicyAdministrationService;
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationGrant,
+    AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope,
+    DelegationDepth, PrincipalId, PrincipalKind,
+};
 use made_mcp::{MadeMcpServer, EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
@@ -34,6 +43,8 @@ roles:
       - request_intervention
       - respond_to_intervention
 "#;
+const AUTH_POLICY_ID: &str = "embedded-test";
+const AUTH_TRUSTED_HOST_ID: &str = "embedded-test-host";
 
 #[test]
 fn an_event_sink_recovers_pending_records_before_reading_stdio() {
@@ -74,8 +85,9 @@ fn an_event_sink_recovers_pending_records_before_reading_stdio() {
     );
     let record: Value = serde_json::from_str(records[0]).unwrap();
     assert_eq!(record["global_position"], 1);
-    assert_eq!(record["ceremony_id"], "pending-publication");
-    assert_eq!(record["event_type"], "ceremony_instance_started");
+    assert_eq!(record["record"]["ceremony_id"], "pending-publication");
+    assert_eq!(record["record"]["event_type"], "ceremony_instance_started");
+    assert_eq!(record["schema_version"], 3);
     let metrics: Value = serde_json::from_str(records[1]).unwrap();
     assert_eq!(metrics["record_type"], "metrics_snapshot");
     assert!(metrics["registry_text"].is_string());
@@ -433,6 +445,8 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
         EMBEDDED_STORE_PATH_ENV,
         state.path().join("ceremonies.sqlite3"),
     );
+    std::env::set_var("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID);
+    std::env::set_var("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID);
     let Ok(server) = MadeMcpServer::try_from_env() else {
         panic!("a named state file must be accepted");
     };
@@ -440,6 +454,8 @@ fn the_embedded_backend_selected_by_env_requires_a_state_file() {
 
     std::env::remove_var(MCP_BACKEND_ENV);
     std::env::remove_var(EMBEDDED_STORE_PATH_ENV);
+    std::env::remove_var("MADE_AUTH_POLICY_ID");
+    std::env::remove_var("MADE_AUTH_TRUSTED_HOST_ID");
 }
 
 async fn send(server: &MadeMcpServer, request: Value) -> Value {
@@ -476,10 +492,13 @@ fn run_made_mcp_process_with_optional_event_sink(
     sink: Option<&std::path::Path>,
     requests: &[Value],
 ) -> Vec<Value> {
+    bootstrap_authorization(path);
     let mut command = Command::new(env!("CARGO_BIN_EXE_made-mcp"));
     command
         .env(MCP_BACKEND_ENV, "embedded")
         .env(EMBEDDED_STORE_PATH_ENV, path)
+        .env("MADE_AUTH_POLICY_ID", AUTH_POLICY_ID)
+        .env("MADE_AUTH_TRUSTED_HOST_ID", AUTH_TRUSTED_HOST_ID)
         .env_remove(EVENT_SINK_PATH_ENV);
     if let Some(sink) = sink {
         command.env(EVENT_SINK_PATH_ENV, sink);
@@ -508,4 +527,49 @@ fn run_made_mcp_process_with_optional_event_sink(
         .lines()
         .map(|line| serde_json::from_str(line).unwrap())
         .collect()
+}
+
+fn bootstrap_authorization(path: &std::path::Path) {
+    let path = path.to_path_buf();
+    std::thread::spawn(move || {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        runtime.block_on(async move {
+            let store = Arc::new(SqliteAuthorizationPolicyStore::open(path).unwrap());
+            let service = AuthorizationPolicyAdministrationService::new(
+                AuthorizationPolicyId::new(AUTH_POLICY_ID).unwrap(),
+                store,
+                Arc::new(SystemClock::new()),
+            );
+            let owner = AuthenticatedPrincipal::new(
+                PrincipalId::new(AUTH_TRUSTED_HOST_ID).unwrap(),
+                PrincipalKind::TrustedHost,
+                AuthenticationMethod::LocalHostPolicy,
+            )
+            .unwrap();
+            service.open(owner.clone(), Vec::new()).await.unwrap();
+            let grant = AuthorizationGrant::new(
+                AuthorizationGrantId::new("embedded-test-all").unwrap(),
+                owner.id().clone(),
+                [
+                    AuthorizationAction::StartCeremony,
+                    AuthorizationAction::StartPublishedCeremony,
+                    AuthorizationAction::GetCeremonyInstance,
+                    AuthorizationAction::RunCeremony,
+                    AuthorizationAction::RequestCeremonyIntervention,
+                    AuthorizationAction::RespondToCeremonyIntervention,
+                ],
+                AuthorizationScope::Global,
+                (time::OffsetDateTime::UNIX_EPOCH, None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(owner.clone()),
+            )
+            .unwrap();
+            service.issue(&owner, grant).await.unwrap();
+        });
+    })
+    .join()
+    .unwrap();
 }

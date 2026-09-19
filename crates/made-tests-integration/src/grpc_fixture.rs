@@ -411,6 +411,13 @@ impl GrpcFixture {
             .authorization_administration(fixture_authorization.administration)
             .read_authorization_policy(fixture_authorization.read_policy)
             .read_authorization_decisions(fixture_authorization.read_decisions)
+            .continue_accepted_step_claim(Arc::new(
+                made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
+                    ceremony_stream.clone(),
+                    fixture_authorization.continuation,
+                    clock.clone(),
+                ),
+            ))
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -835,6 +842,13 @@ impl GrpcFixture {
             .authorization_administration(fixture_authorization.administration)
             .read_authorization_policy(fixture_authorization.read_policy)
             .read_authorization_decisions(fixture_authorization.read_decisions)
+            .continue_accepted_step_claim(Arc::new(
+                made_app::authorization::ContinueAcceptedStepClaimUseCase::new(
+                    ceremony_stream.clone(),
+                    fixture_authorization.continuation,
+                    clock.clone(),
+                ),
+            ))
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
