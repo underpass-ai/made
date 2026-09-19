@@ -11,6 +11,12 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.8 — 2026-09-19
+
+- Refresh the configured Codex or Claude marketplace before `made-setup` reads
+  the installed plugin manifest, preventing a stale cache from configuring an
+  older MADE release after publication. (#186)
+
 ## 0.7.7 — 2026-09-19
 
 - Preserve line separators in the native Windows private configuration file

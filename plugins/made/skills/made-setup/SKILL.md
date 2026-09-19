@@ -5,8 +5,43 @@ description: Install or update the release-matched MADE MCP binary after a Codex
 
 # Set up MADE
 
-Resolve the plugin root two directories above this skill directory
-(`skills/made-setup/../..`) and read its manifest version.
+## Refresh the marketplace before setup
+
+For a normal installed-plugin setup, refresh the host catalogue before
+resolving the plugin root. A host may still be pointing at an older marketplace
+snapshot even when a newer MADE release and marketplace commit are public.
+Do not configure an older plugin just because its local cache is present.
+
+On Codex, inspect the configured sources and refresh the MADE marketplace:
+
+```bash
+codex plugin marketplace list --json
+codex plugin marketplace upgrade made
+codex plugin list --marketplace made --available --json
+codex plugin add made@made --json
+```
+
+The marketplace name is `made`; do not substitute a repository name or an
+older `underpass` registration. If the refresh or install changes the plugin,
+stop and ask the operator to start a new host task before continuing: the
+current task may still have the previous plugin root and skill loaded. In the
+new task, repeat this preflight and continue with the refreshed plugin.
+
+On Claude Code, use the equivalent host commands before continuing:
+
+```text
+/plugin marketplace update made
+/plugin install made@made
+```
+
+For an intentional source-candidate test with `MADE_MCP_BIN` already set,
+skip marketplace refresh and installation. Verify that the explicit candidate
+is executable and that its `--version` matches the checkout manifest.
+
+After the preflight (or for a source candidate), resolve the plugin root two
+directories above this skill directory (`skills/made-setup/../..`) and read
+its manifest version. The effective plugin version must be the version used by
+the release-matched binary below.
 
 For an intentional source-candidate test with `MADE_MCP_BIN` already set,
 verify that the path is executable and its `--version` matches the manifest.
@@ -17,12 +52,11 @@ in this case. An absent or mismatched override needs correction before startup;
 do not silently select another executable.
 
 Without that explicit candidate override, use the release installer only
-after the manifest-matched assets are publicly available. A candidate manifest,
-including this checkout's `0.7.0-rc.1`, does not imply that matching assets or
-catalogue pointers have been published. If publication is pending, explain
-that boundary and direct candidate testing to a source build plus
-`MADE_MCP_BIN`; do not substitute an older stable download while claiming to
-run the candidate.
+after the manifest-matched assets are publicly available. A candidate or
+prerelease manifest does not imply that matching assets or catalogue pointers
+have been published. If publication is pending, explain that boundary and
+direct candidate testing to a source build plus `MADE_MCP_BIN`; do not
+substitute an older stable download while claiming to run the candidate.
 
 For a published release, run its platform adapter:
 

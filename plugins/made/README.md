@@ -8,17 +8,13 @@ tools; MADE coordinates their claims, results and human decisions.
 
 ## Install the current stable release
 
-**These stable routes require the 0.6.0 assets to be public and `marketplace`
-to have advanced to that release.** The old v0.5.0 marketplace snapshot is
-named `underpass` and cannot provide `made@made`.
-
-This checkout's `0.7.0-rc.1` manifest is a source candidate. It does not make
-0.7.0-rc.1 a published release or move the stable catalogue away from 0.6.0.
-Use the candidate route below until matching assets and catalogue pointers are
-published.
+**The stable route requires the 0.7.8 assets to be public and `marketplace`
+to have advanced to that release.** The old `underpass` marketplace
+registration cannot provide the current `made@made` entry.
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin marketplace upgrade made
 codex plugin add made@made
 ```
 
@@ -28,8 +24,8 @@ codex plugin add made@made
 /made:setup
 ```
 
-After publication, run `made-setup` in Codex or `/made:setup` in Claude Code,
-then start a new task. The
+After publication, refresh the marketplace before running `made-setup` in
+Codex or `/made:setup` in Claude Code, then start a new task. The
 [installation guide](https://github.com/underpass-ai/made/blob/main/docs/plugins/README.md)
 covers registration and migration from the old catalogue.
 
@@ -102,8 +98,8 @@ inspect the actual running version/backend. `tools/list` is the authority for
 request schemas. Publish definitions before starting resumable sessions.
 No-op handler success proves protocol wiring only. For delegated work,
 retain the accepted claim response, perform the real work and complete using
-its exact identity. Version 0.6.0 requires `claim_fence` on completion;
-v0.5.0 predates that boundary, so inspect the running schema.
+its exact identity. The current release requires `claim_fence` on completion;
+the older v0.5.0 predates that boundary, so inspect the running schema.
 
 The skills are self-contained inside the bundle:
 [setup](skills/made-setup/SKILL.md),

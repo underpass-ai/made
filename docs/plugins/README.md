@@ -4,17 +4,18 @@ The plugin installs three workflows: setup, ceremony design and ceremony
 execution. It declares one local MCP server. It does not create agent workers;
 the host executes the procedure through its existing capabilities.
 
-## Install the 0.6.0 release
+## Install the 0.7.8 release
 
-**The stable route requires public 0.6.0 assets and `marketplace` advanced to
-that release.** The v0.5.0 snapshot uses `underpass` and cannot provide
-`made@made`. Before the new publication completes, use the candidate route
-below; bumping a manifest does not make its download exist.
+**The stable route requires public 0.7.8 assets and `marketplace` advanced to
+that release.** The old `underpass` snapshot cannot provide the current
+`made@made` entry. Bumping a manifest does not refresh an already-installed
+marketplace cache.
 
 Codex:
 
 ```bash
 codex plugin marketplace add underpass-ai/made --ref marketplace
+codex plugin marketplace upgrade made
 codex plugin add made@made
 ```
 
@@ -26,14 +27,14 @@ Claude Code:
 /made:setup
 ```
 
-After publication, run `made-setup` in Codex (or `/made:setup` in Claude Code)
-and start a new task. The [manual MCP route](../embedded/README.md) is also
+After publication, run the marketplace refresh before `made-setup` in Codex (or
+`/made:setup` in Claude Code), then start a new task. The [manual MCP route](../embedded/README.md) is also
 available with a checksummed binary or the matching Cargo release. Moving
 v0.5.0 would not be a valid way to publish the catalogue repair.
 
 ## Test a local candidate
 
-Build the reviewed 0.6.0 checkout using the
+Build the reviewed 0.7.8 checkout using the
 [source instructions](../embedded/README.md#test-a-source-candidate).
 Set `MADE_MCP_BIN` to that executable's absolute path in the host launch
 environment, then register the local Codex catalogue:
@@ -43,7 +44,7 @@ codex plugin marketplace add /absolute/path/to/made
 codex plugin add made@made
 ```
 
-Do not run the release download installer while 0.6.0 assets are absent.
+Do not run the release download installer while 0.7.8 assets are absent.
 With an explicit `MADE_MCP_BIN`, the setup skill verifies the chosen candidate
 instead. Start a new task and check that discovery reports the intended build.
 
@@ -121,7 +122,8 @@ activating `made@made`, keeping the same SQLite path. Do not remove another
 product's data or assume every `underpass` registration belongs to MADE.
 
 Update the repaired catalogue with
-`codex plugin marketplace upgrade made`, rerun setup and start a new task.
+`codex plugin marketplace upgrade made`, reinstall `made@made`, rerun setup and
+start a new task.
 A host's curated public plugin directory is a separate publication channel;
 registering this repository does not submit it there.
 

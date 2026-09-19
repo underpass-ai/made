@@ -191,6 +191,26 @@ def verify(require_release_tag: bool = False) -> str:
     if not setup_index_entry or not setup_index_entry.startswith("100755 "):
         fail("POSIX setup adapter must be tracked as executable")
 
+    setup_text = (ROOT / "plugins/made/skills/made-setup/SKILL.md").read_text()
+    preflight_commands = (
+        "codex plugin marketplace list --json",
+        "codex plugin marketplace upgrade made",
+        "codex plugin list --marketplace made --available --json",
+        "codex plugin add made@made --json",
+        "/plugin marketplace update made",
+        "/plugin install made@made",
+    )
+    missing_preflight = [command for command in preflight_commands if command not in setup_text]
+    if missing_preflight:
+        fail(
+            "made-setup must refresh the configured marketplace before using a cached plugin; "
+            f"missing {missing_preflight}"
+        )
+    if setup_text.find("codex plugin marketplace upgrade made") > setup_text.find(
+        "resolve the plugin root"
+    ):
+        fail("made-setup must refresh the marketplace before resolving the cached plugin root")
+
     package_text = (ROOT / "scripts/plugin/package-made-plugin.sh").read_text()
     posix_setup = (ROOT / required[0]).read_text()
     windows_setup = (ROOT / required[1]).read_text()
