@@ -3495,7 +3495,10 @@ async fn invalid_completion_fences_are_refused_and_an_exact_retry_is_idempotent(
         .await;
     let (wire, local) = arms.call(4021, "made_complete_ceremony_step", &args).await;
     assert_eq!(wire, local);
-    assert!(!failed(&wire), "an exact completion retry must be idempotent: {wire}");
+    assert!(
+        !failed(&wire),
+        "an exact completion retry must be idempotent: {wire}"
+    );
     assert_eq!(
         arms.call(4022, "made_read_ceremony_events", &history_args)
             .await,
