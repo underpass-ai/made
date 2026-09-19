@@ -140,12 +140,16 @@ impl MadeMcpServer {
         policy_id: &str,
         trusted_host_id: &str,
     ) -> Result<Self, String> {
+        use made_adapters::artifacts::LocalArtifactStore;
         use made_adapters::clock::SystemClock;
         use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+        use made_adapters::sqlite::SqliteCeremonyStore;
         use made_app::authorization::{
             AuthorizeOperationUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
         };
-        use made_core::ports::AuthorizationPolicyStorePort;
+        use made_core::ports::{
+            ArtifactStorePort, AuthorizationPolicyStorePort, ExecutionReceiptStorePort,
+        };
         use made_core::value_objects::{
             AuthenticatedPrincipal, AuthenticationMethod, AuthorizationDecisionTtl,
             AuthorizationPolicyId, PrincipalId, PrincipalKind,
@@ -201,8 +205,25 @@ impl MadeMcpServer {
             .map_err(|error| error.to_string())?;
         let read_policy = ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone());
         let made = made.with_authorization_policy(policy_id, store);
+        let receipts: Arc<dyn ExecutionReceiptStorePort> = Arc::new(
+            SqliteCeremonyStore::open(path)
+                .map_err(|error| format!("failed to open execution receipt store: {error}"))?,
+        );
+        let mut artifact_root = path.as_os_str().to_owned();
+        artifact_root.push(".artifacts");
+        let artifacts: Arc<dyn ArtifactStorePort> = Arc::new(
+            LocalArtifactStore::open(std::path::PathBuf::from(artifact_root)).map_err(|error| {
+                format!("failed to open artifact authorization resolver: {error}")
+            })?,
+        );
         Ok(Self::with_backend(
-            EmbeddedMadeMcpBackend::with_authorization(made, gate, read_policy),
+            EmbeddedMadeMcpBackend::with_authorization(
+                made,
+                gate,
+                read_policy,
+                artifacts,
+                receipts,
+            ),
         ))
     }
 
@@ -365,6 +386,7 @@ impl MadeMcpServer {
                     .and_then(Value::as_str)
             });
         let supplied_request_namespace = request_namespace(params, received);
+        let supplied_approval_decision = approval_decision(params, received);
         let start = Instant::now();
 
         // Two things happen to a call before a backend sees it, and
@@ -397,6 +419,7 @@ impl MadeMcpServer {
             name,
             arguments,
             supplied_request_namespace,
+            supplied_approval_decision,
         ) {
             Ok(trace) => trace,
             Err(error) => {
@@ -511,6 +534,24 @@ fn request_namespace<'a>(
                 .get("_meta")
                 .and_then(Value::as_object)
                 .and_then(|meta| meta.get("made_request_id"))
+                .and_then(Value::as_str)
+        })
+}
+
+fn approval_decision<'a>(
+    params: &'a serde_json::Map<String, Value>,
+    arguments: &'a Value,
+) -> Option<&'a str> {
+    params
+        .get("_meta")
+        .and_then(Value::as_object)
+        .and_then(|meta| meta.get("made_approval_decision_id"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            arguments
+                .get("_meta")
+                .and_then(Value::as_object)
+                .and_then(|meta| meta.get("made_approval_decision_id"))
                 .and_then(Value::as_str)
         })
 }

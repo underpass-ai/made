@@ -1,7 +1,8 @@
 use made_app::authorization::{ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate};
+use made_core::ports::{ArtifactStorePort, ArtifactUploadId, ExecutionReceiptStorePort};
 use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
-    CeremonyId, CouncilId, ExecutionOperationId,
+    CeremonyId, CeremonyName, CeremonyVersion, CouncilId, ExecutionOperationId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
@@ -9,18 +10,36 @@ use serde_json::Value;
 use crate::backend::ToolTraceContext;
 use crate::protocol::ToolError;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub(super) struct EmbeddedToolAuthorizer {
     gate: TrustedHostAuthorizationGate,
     read_policy: ReadAuthorizationPolicyUseCase,
+    artifacts: std::sync::Arc<dyn ArtifactStorePort>,
+    execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
+}
+
+impl std::fmt::Debug for EmbeddedToolAuthorizer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter
+            .debug_struct("EmbeddedToolAuthorizer")
+            .field("gate", &self.gate)
+            .finish_non_exhaustive()
+    }
 }
 
 impl EmbeddedToolAuthorizer {
     pub(super) const fn new(
         gate: TrustedHostAuthorizationGate,
         read_policy: ReadAuthorizationPolicyUseCase,
+        artifacts: std::sync::Arc<dyn ArtifactStorePort>,
+        execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
-        Self { gate, read_policy }
+        Self {
+            gate,
+            read_policy,
+            artifacts,
+            execution_receipts,
+        }
     }
 
     pub(super) async fn validate_configuration(&self) -> Result<(), String> {
@@ -36,20 +55,43 @@ impl EmbeddedToolAuthorizer {
         made: &EmbeddedMade,
         tool_name: &str,
         arguments: &Value,
-        request_id: &str,
+        trace: &ToolTraceContext,
     ) -> Result<made_core::value_objects::AuthorizedOperation, ToolError> {
         let action = action_for_tool(tool_name)?;
-        let scope = scope_for_tool(made, tool_name, arguments).await?;
+        let scope = self
+            .scope_for_tool(made, tool_name, action, arguments)
+            .await?;
         self.gate
             .authorize(
-                AuthorizationRequestId::new(request_id)?,
+                AuthorizationRequestId::new(trace.authorization_request_id())?,
                 action,
                 scope,
                 ToolTraceContext::authorization_target_digest(tool_name, arguments),
-                approval_id(arguments)?,
+                trace
+                    .approval_decision_id()
+                    .map(made_core::value_objects::AuthorizationDecisionId::new)
+                    .transpose()?,
             )
             .await
             .map_err(Into::into)
+    }
+    async fn scope_for_tool(
+        &self,
+        made: &EmbeddedMade,
+        tool_name: &str,
+        action: AuthorizationAction,
+        arguments: &Value,
+    ) -> Result<AuthorizationScope, ToolError> {
+        scope_for_tool(
+            &self.read_policy,
+            self.artifacts.as_ref(),
+            self.execution_receipts.as_ref(),
+            made,
+            tool_name,
+            action,
+            arguments,
+        )
+        .await
     }
 }
 
@@ -82,21 +124,64 @@ fn action_for_tool(tool_name: &str) -> Result<AuthorizationAction, ToolError> {
 }
 
 async fn scope_for_tool(
+    read_policy: &ReadAuthorizationPolicyUseCase,
+    artifacts: &dyn ArtifactStorePort,
+    execution_receipts: &dyn ExecutionReceiptStorePort,
     made: &EmbeddedMade,
     tool_name: &str,
+    action: AuthorizationAction,
     arguments: &Value,
 ) -> Result<AuthorizationScope, ToolError> {
     let object = arguments
         .as_object()
         .ok_or_else(|| ToolError::invalid_request("tools/call.arguments must be an object"))?;
 
+    if tool_name == "made_issue_authorization_grant" {
+        return mcp_scope(
+            object
+                .get("scope")
+                .ok_or_else(|| ToolError::invalid_request("field `scope` is required"))?,
+        );
+    }
+    if tool_name == "made_revoke_authorization_grant" {
+        let grant_id = string_field(object, "grant_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `grant_id` is required"))?;
+        let grant_id = made_core::value_objects::AuthorizationGrantId::new(grant_id)?;
+        let snapshot = read_policy.execute().await?;
+        return Ok(snapshot
+            .policy
+            .grants()
+            .find(|grant| grant.id() == &grant_id)
+            .map_or(AuthorizationScope::Global, |grant| grant.scope().clone()));
+    }
+
+    if tool_name == "made_get_budget_report" {
+        let raw = string_field(object, "ceremony_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `ceremony_id` is required"))?;
+        let instance = made.instance(&CeremonyId::new(raw)?).await?;
+        let account_id = instance
+            .budget_account_id()
+            .ok_or_else(|| ToolError::refused("ceremony has no durable budget account"))?;
+        return Ok(AuthorizationScope::Budget {
+            account_id: account_id.clone(),
+        });
+    }
+
+    if is_definition_action(action) {
+        let (name, version) = definition_identity(object)?;
+        return Ok(AuthorizationScope::Definition { name, version });
+    }
+
     if let Some(raw) = string_field(object, "ceremony_id")? {
         return resolved_ceremony(made, CeremonyId::new(raw)?).await;
     }
     if let Some(raw) = string_field(object, "operation_id")? {
-        let operation = made
-            .execution_operation(&ExecutionOperationId::new(raw)?)
+        let operation = execution_receipts
+            .operation(&ExecutionOperationId::new(raw)?)
             .await?;
+        let operation = operation.ok_or(made_core::DomainError::NotFound {
+            what: "execution_operation",
+        })?;
         return resolved_ceremony(made, operation.ceremony_id().clone()).await;
     }
     if let Some(raw) =
@@ -107,8 +192,8 @@ async fn scope_for_tool(
         });
     }
     if let Some(raw) = string_field(object, "upload_id")? {
-        let artifact_id = made
-            .artifact_id_for_upload(&made_core::ports::ArtifactUploadId::new(raw)?)
+        let artifact_id = artifacts
+            .artifact_id_for_upload(&ArtifactUploadId::new(raw)?)
             .await?;
         return Ok(AuthorizationScope::Artifact { artifact_id });
     }
@@ -129,6 +214,43 @@ async fn scope_for_tool(
     Ok(AuthorizationScope::Global)
 }
 
+fn is_definition_action(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::GetCeremonyDefinition
+            | AuthorizationAction::MountDefinition
+            | AuthorizationAction::ValidateCeremonyDraft
+            | AuthorizationAction::ExplainCeremonyDraft
+            | AuthorizationAction::PublishCeremonyDefinition
+    )
+}
+
+fn definition_identity(
+    object: &serde_json::Map<String, Value>,
+) -> Result<(CeremonyName, Option<CeremonyVersion>), ToolError> {
+    if let Some(name) = string_field(object, "name")?.or(string_field(object, "definition_name")?) {
+        let version = string_field(object, "version")?
+            .or(string_field(object, "definition_version")?)
+            .map(CeremonyVersion::new)
+            .transpose()?;
+        return Ok((CeremonyName::new(name)?, version));
+    }
+    let yaml = string_field(object, "definition_yaml")?
+        .ok_or_else(|| ToolError::invalid_request("definition identity is required"))?;
+    let document: serde_yaml::Value = serde_yaml::from_str(yaml)
+        .map_err(|error| ToolError::invalid_request(format!("invalid definition YAML: {error}")))?;
+    let name = document
+        .get("name")
+        .and_then(serde_yaml::Value::as_str)
+        .ok_or_else(|| ToolError::invalid_request("definition YAML name is required"))?;
+    let version = document
+        .get("version")
+        .and_then(serde_yaml::Value::as_str)
+        .map(CeremonyVersion::new)
+        .transpose()?;
+    Ok((CeremonyName::new(name)?, version))
+}
+
 async fn resolved_ceremony(
     made: &EmbeddedMade,
     ceremony_id: CeremonyId,
@@ -147,26 +269,6 @@ async fn resolved_ceremony(
     }
 }
 
-fn approval_id(
-    arguments: &Value,
-) -> Result<Option<made_core::value_objects::AuthorizationDecisionId>, ToolError> {
-    let Some(meta) = arguments.get("_meta") else {
-        return Ok(None);
-    };
-    let Some(raw) = meta
-        .as_object()
-        .and_then(|object| object.get("made_approval_decision_id"))
-    else {
-        return Ok(None);
-    };
-    let raw = raw.as_str().ok_or_else(|| {
-        ToolError::invalid_request("_meta.made_approval_decision_id must be a string")
-    })?;
-    made_core::value_objects::AuthorizationDecisionId::new(raw)
-        .map(Some)
-        .map_err(Into::into)
-}
-
 fn string_field<'a>(
     object: &'a serde_json::Map<String, Value>,
     field: &str,
@@ -179,4 +281,44 @@ fn string_field<'a>(
             })
         })
         .transpose()
+}
+
+fn mcp_scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
+    let object = value
+        .as_object()
+        .ok_or_else(|| ToolError::invalid_request("field `scope` must be an object"))?;
+    let kind = string_field(object, "kind")?
+        .ok_or_else(|| ToolError::invalid_request("scope.kind is required"))?;
+    let required = |field| {
+        string_field(object, field)?.ok_or_else(|| {
+            ToolError::invalid_request(format!("scope.{field} is required for `{kind}`"))
+        })
+    };
+    match kind {
+        "global" => Ok(AuthorizationScope::Global),
+        "ceremony" => Ok(AuthorizationScope::Ceremony {
+            ceremony_id: CeremonyId::new(required("ceremony_id")?)?,
+        }),
+        "ceremony_tree" => Ok(AuthorizationScope::CeremonyTree {
+            root_id: CeremonyId::new(required("root_id")?)?,
+        }),
+        "definition" => Ok(AuthorizationScope::Definition {
+            name: CeremonyName::new(required("name")?)?,
+            version: string_field(object, "version")?
+                .map(CeremonyVersion::new)
+                .transpose()?,
+        }),
+        "artifact" => Ok(AuthorizationScope::Artifact {
+            artifact_id: ArtifactId::new(required("artifact_id")?)?,
+        }),
+        "council" => Ok(AuthorizationScope::Council {
+            council_id: CouncilId::new(required("council_id")?)?,
+        }),
+        "budget" => Ok(AuthorizationScope::Budget {
+            account_id: BudgetAccountId::new(required("account_id")?)?,
+        }),
+        _ => Err(ToolError::invalid_request(format!(
+            "unknown authorization scope `{kind}`"
+        ))),
+    }
 }

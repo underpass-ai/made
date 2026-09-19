@@ -587,17 +587,18 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         trace: &'a ToolTraceContext,
     ) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
-            let request_id = trace.authorization_request_id();
-            let authorization_request_id = AuthorizationRequestId::new(request_id.to_owned())
-                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-            let trace = TraceContext::parse(trace.traceparent())
+            let tool_trace = trace;
+            let authorization_request_id =
+                AuthorizationRequestId::new(tool_trace.authorization_request_id().to_owned())
+                    .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+            let trace = TraceContext::parse(tool_trace.traceparent())
                 .map_err(|error| ToolError::invalid_request(error.to_string()))?;
             let dispatch = async {
                 let Some(authorization) = &self.authorization else {
                     return self.call_tool(name, arguments).await;
                 };
                 let operation = authorization
-                    .authorize(&self.made, name, arguments, request_id)
+                    .authorize(&self.made, name, arguments, tool_trace)
                     .await?;
                 AuthorizationOperationScope::run(operation, async {
                     if name == SEARCH_CEREMONY_INSTANCES_TOOL {
