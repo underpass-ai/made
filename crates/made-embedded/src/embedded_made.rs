@@ -473,15 +473,6 @@ impl EmbeddedMade {
         self.artifact_service()?.abort_upload(upload_id).await
     }
 
-    pub async fn artifact_id_for_upload(
-        &self,
-        upload_id: &ArtifactUploadId,
-    ) -> Result<ArtifactId, ArtifactStoreError> {
-        self.artifact_service()?
-            .artifact_id_for_upload(upload_id)
-            .await
-    }
-
     pub async fn get_artifact(
         &self,
         artifact_id: &ArtifactId,
