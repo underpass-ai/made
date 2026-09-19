@@ -48,14 +48,20 @@ pub(crate) async fn dispatch(
     name: &str,
     arguments: &Value,
     traceparent: &str,
+    request_id: &str,
 ) -> Result<Value, ToolError> {
     let traceparent = MetadataValue::try_from(traceparent)
+        .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let request_id = MetadataValue::try_from(request_id)
         .map_err(|error| ToolError::invalid_request(error.to_string()))?;
     let mut client =
         MadeServiceClient::with_interceptor(channel, move |mut request: tonic::Request<()>| {
             request
                 .metadata_mut()
                 .insert("traceparent", traceparent.clone());
+            request
+                .metadata_mut()
+                .insert("x-made-request-id", request_id.clone());
             Ok(request)
         });
     if council_journal_dispatch::handles(name) {
