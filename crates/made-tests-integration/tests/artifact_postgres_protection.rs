@@ -403,16 +403,14 @@ async fn postgres_protection_survives_processes_and_full_dump_restores_state_and
     assert!(reopened.backup_content_available(&live_id).await.unwrap());
 }
 
-#[tokio::test]
-async fn postgres_receipt_requires_content_and_survives_reopen() {
-    let (pool, url, _container) = start_with_url().await;
-    let store = PostgresArtifactStore::new(pool.clone());
-    let artifact_service = ArtifactService::new(Arc::new(store.clone()));
-
+async fn assert_receipt_rejects_collected_content(
+    store: &PostgresArtifactStore,
+    artifact_service: &ArtifactService,
+) {
     let collected_bytes = b"receipt bytes collected by postgres gc";
     let (collected_operation, _, collected_fence) = operation_fixture("postgres-receipt-collected");
     let collected = upload_receipt_artifact(
-        &store,
+        store,
         collected_bytes,
         &collected_operation,
         &collected_fence,
@@ -442,7 +440,16 @@ async fn postgres_receipt_requires_content_and_survives_reopen() {
         .protect_execution_receipt(&collected_receipt)
         .await
         .is_err());
+}
 
+#[tokio::test]
+async fn postgres_receipt_requires_content_and_survives_reopen() {
+    let (pool, url, _container) = start_with_url().await;
+    let store = PostgresArtifactStore::new(pool.clone());
+    let artifact_service = ArtifactService::new(Arc::new(store.clone()));
+    assert_receipt_rejects_collected_content(&store, &artifact_service).await;
+
+    let cutoff = OffsetDateTime::UNIX_EPOCH + time::Duration::days(1);
     let protected_bytes = b"receipt bytes protected by postgres receipt";
     let (operation, intent, claim_fence) = operation_fixture("postgres-receipt-content");
     let protected =
