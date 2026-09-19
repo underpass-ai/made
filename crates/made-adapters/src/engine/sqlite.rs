@@ -225,7 +225,7 @@ fn poisoned() -> DomainError {
 /// reasons crosses into the domain.
 fn failure(error: &rusqlite::Error, op: &'static str) -> DomainError {
     let rendered = error.to_string();
-    tracing::error!(error = %rendered, operation = op, "sqlite operation failed");
+    tracing::error!(error = %rendered, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), operation = op, "sqlite operation failed");
     if rendered.contains("database is locked") {
         return DomainError::InvariantViolated {
             reason: "sqlite: the store is busy and did not free within the wait",

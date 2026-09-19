@@ -443,7 +443,7 @@ fn to_i64(value: u64) -> Result<i64, DomainError> {
 }
 
 fn sqlite_error(error: &rusqlite::Error) -> DomainError {
-    tracing::error!(%error, "authorization SQLite operation failed");
+    tracing::error!(%error, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), "authorization SQLite operation failed");
     DomainError::InvariantViolated {
         reason: "authorization SQLite operation failed",
     }
