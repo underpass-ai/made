@@ -10,6 +10,7 @@ use serde_json::{json, Map, Value};
 use crate::renderers::StatisticsView;
 
 mod artifact;
+mod authorization;
 mod budget;
 mod ceremony_history;
 mod ceremony_instance;
@@ -21,6 +22,7 @@ pub(crate) use artifact::{
     artifact_chunk_to_json, artifact_listing_to_json, artifact_record_to_json,
     artifact_ref_to_json, artifact_tombstone_to_json, artifact_upload_status_to_json,
 };
+pub(crate) use authorization::scope as authorization_scope_to_json;
 pub(crate) use budget::{
     admission_to_json as budget_admission_to_json, budget_report_to_json,
     pending_budget_reservations_to_json,
