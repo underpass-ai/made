@@ -2065,9 +2065,8 @@ message CeremonyEventRecord {
   // Catalogue entry this record is an instance of, in snake_case:
   // "step_completed", "intervention_requested", and so on.
   string event_type = 2;
-  // Version of the record's *field set*: 2 for everything sealed
-  // today, 1 for records written before the event travelled inside
-  // them, which carry no payload.
+  // Version of the record's field set: 3 seals authorization evidence,
+  // 2 carries the event without authorization, and 1 has no event payload.
   uint32 schema_version = 3;
   string ceremony_id = 4;
   string definition_name = 5;
@@ -2102,6 +2101,24 @@ message CeremonyEventRecord {
   // This record's digest, over its content and the previous digest.
   // 32 bytes.
   bytes record_hash = 16;
+  // Mandatory for schema 3; absent from historical schema 1 and 2.
+  // These are the exact authorization fields covered by record_hash.
+  CeremonyAuthorizationEvidence authorization = 17;
+}
+
+// Sealed admission evidence. The referenced policy decision supplies the
+// complete authenticated principal and any accepted-work/approval antecedent.
+message CeremonyAuthorizationEvidence {
+  string decision_id = 1;
+  string request_id = 2;
+  string principal_id = 3;
+  string action = 4;
+  AuthorizationScope scope = 5;
+  string target_digest = 6;
+  uint64 policy_version = 7;
+  // Canonical RFC 3339, preserving the same precision as the sealed evidence.
+  string admitted_at = 8;
+  string valid_until = 9;
 }
 
 message ReadCeremonyEventsRequest {
@@ -2580,6 +2597,7 @@ message AuthorizationDecisionRecord {
   optional string denial_reason = 11;
   google.protobuf.Timestamp decided_at = 12;
   google.protobuf.Timestamp valid_until = 13;
+  optional string accepted_work_decision_id = 14;
 }
 
 message ListAuthorizationDecisionsRequest {

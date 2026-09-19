@@ -124,6 +124,13 @@ pub(super) fn audit_record_view(record: &AuditRecord) -> Result<AuditRecordView,
             .previous_record_hash()
             .map(|hash| hash.as_bytes().to_vec()),
         record_hash: record.record_hash().as_bytes().to_vec(),
+        authorization: record
+            .authorization_evidence()
+            .map(serde_json::to_value)
+            .transpose()
+            .map_err(|error| {
+                ToolError::refused(format!("sealed authorization cannot be rendered: {error}"))
+            })?,
     })
 }
 

@@ -24,10 +24,12 @@ pub(crate) struct AuditRecordView {
     pub(crate) event: Option<Value>,
     pub(crate) previous_record_hash: Option<Vec<u8>>,
     pub(crate) record_hash: Vec<u8>,
+    pub(crate) authorization: Option<Value>,
 }
 
 impl AuditRecordView {
-    /// Render the serde shape a client can read back as an audit record.
+    /// Render public record fields. Schema 3 additionally carries the sealed
+    /// authorization; persisted domain records use a separate v3 envelope.
     #[must_use]
     pub(crate) fn to_json(&self) -> Value {
         let mut rendered = json!({
@@ -48,6 +50,9 @@ impl AuditRecordView {
             "previous_record_hash": self.previous_record_hash,
             "record_hash": self.record_hash,
         });
+        if let Some(authorization) = &self.authorization {
+            rendered["authorization"] = authorization.clone();
+        }
         if let Some(position) = self.global_position {
             rendered["global_position"] = json!(position);
         }
@@ -79,6 +84,7 @@ mod tests {
             event: Some(json!({"type": "ceremony_instance_started"})),
             previous_record_hash: None,
             record_hash: vec![0; 32],
+            authorization: None,
         }
         .to_json();
 

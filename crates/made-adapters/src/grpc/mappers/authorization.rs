@@ -132,6 +132,9 @@ pub fn authorization_decision_to_proto(
         action: authorization_action_to_proto(request.action()),
         scope: Some(authorization_scope_to_proto(request.scope())),
         target_digest: request.target_digest().as_str().to_owned(),
+        accepted_work_decision_id: request
+            .accepted_work_decision_id()
+            .map(|id| id.as_str().to_owned()),
         approval_decision_id: request
             .approval_decision_id()
             .map(|id| id.as_str().to_owned()),
@@ -171,7 +174,7 @@ fn authorization_principal_to_proto(value: &AuthenticatedPrincipal) -> pb::Autho
     }
 }
 
-fn authorization_scope_to_proto(value: &AuthorizationScope) -> pb::AuthorizationScope {
+pub(super) fn authorization_scope_to_proto(value: &AuthorizationScope) -> pb::AuthorizationScope {
     match value {
         AuthorizationScope::Global => pb::AuthorizationScope {
             kind: "global".to_owned(),

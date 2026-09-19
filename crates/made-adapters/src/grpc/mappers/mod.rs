@@ -15,6 +15,7 @@ mod attributes;
 mod authorization;
 mod budget;
 mod ceremony_authoring;
+mod ceremony_authorization;
 mod ceremony_delegation;
 mod ceremony_design;
 mod ceremony_design_stage;

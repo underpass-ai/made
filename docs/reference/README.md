@@ -97,3 +97,6 @@ also needs `MADE_MCP_GRPC_TLS_CERT_PATH` and `MADE_MCP_GRPC_TLS_KEY_PATH`.
 necessary. Client `disabled/server/mutual` names differ from the chart's
 `none/server/mutual` names. See [backend configuration](../../crates/made-mcp/src/backend.rs)
 for exact settings.
+
+See [authorization in ceremony history](authorization-audit.md) for sealed
+admission fields and independent verification of schema-3 records.

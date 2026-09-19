@@ -36,6 +36,13 @@ made-console budget report ceremony-123
 made-console budget pending --limit 100
 made-console receipt get operation-123
 made-console receipt recovery --limit 100
+made-console authorization policy
+made-console authorization decisions --limit 100
+made-console authorization issue grant-123 operator-7 \
+  --actions pause_ceremony,resume_ceremony \
+  --scope ceremony-tree --scope-id ceremony-123 \
+  --valid-from 2026-09-19T10:00:00Z
+made-console authorization revoke grant-123 --reason superseded
 made-console report ceremony-123 --destination ./report.md
 made-console pause ceremony-123 \
   --actor-id operator-7 --actor-kind human --reason maintenance
