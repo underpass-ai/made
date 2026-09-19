@@ -32,6 +32,19 @@ use crate::protocol::{
     DISCOVER_CAPABILITIES_TOOL, GET_HELP_TOOL,
 };
 
+#[cfg(feature = "embedded")]
+const AUTH_POLICY_ID_ENV: &str = "MADE_AUTH_POLICY_ID";
+#[cfg(feature = "embedded")]
+const AUTH_TRUSTED_HOST_ID_ENV: &str = "MADE_AUTH_TRUSTED_HOST_ID";
+
+#[cfg(feature = "embedded")]
+fn required_env(name: &str) -> Result<String, String> {
+    std::env::var(name)
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+        .ok_or_else(|| format!("{name} is required for the protected embedded backend"))
+}
+
 /// Boxed-trait holder over any [`MadeMcpToolBackend`].
 pub struct MadeMcpServer {
     backend: Arc<dyn MadeMcpToolBackend>,
@@ -121,6 +134,78 @@ impl MadeMcpServer {
         Ok(Self::with_backend(EmbeddedMadeMcpBackend::new(made)))
     }
 
+    #[cfg(feature = "embedded")]
+    fn embedded_sqlite_authorized(
+        path: impl AsRef<std::path::Path>,
+        policy_id: &str,
+        trusted_host_id: &str,
+    ) -> Result<Self, String> {
+        use made_adapters::clock::SystemClock;
+        use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+        use made_app::authorization::{
+            AuthorizeOperationUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+        };
+        use made_core::ports::AuthorizationPolicyStorePort;
+        use made_core::value_objects::{
+            AuthenticatedPrincipal, AuthenticationMethod, AuthorizationDecisionTtl,
+            AuthorizationPolicyId, PrincipalId, PrincipalKind,
+        };
+
+        let path = path.as_ref();
+        let metrics = Arc::new(
+            made_adapters::metrics::PrometheusMetricsRecorder::new()
+                .map_err(|error| format!("failed to initialize embedded metrics: {error}"))?,
+        );
+        let sink = std::env::var(EVENT_SINK_PATH_ENV)
+            .ok()
+            .filter(|value| !value.trim().is_empty())
+            .map(|sink_path| {
+                made_adapters::event_sink::JsonLinesCeremonyEventSink::open_with_metrics(
+                    sink_path,
+                    metrics.clone(),
+                )
+            })
+            .transpose()
+            .map_err(|error| format!("failed to open {EVENT_SINK_PATH_ENV}: {error}"))?;
+        let made = match sink {
+            Some(sink) => {
+                made_embedded::EmbeddedMade::open_with_observability(path, metrics, Arc::new(sink))
+            }
+            None => made_embedded::EmbeddedMade::open_with_metrics(path, metrics),
+        }
+        .map_err(|error| {
+            format!(
+                "failed to open the embedded SQLite ceremony store at `{}`: {error}",
+                path.display()
+            )
+        })?;
+        let store: Arc<dyn AuthorizationPolicyStorePort> =
+            Arc::new(SqliteAuthorizationPolicyStore::open(path).map_err(|error| {
+                format!("failed to open embedded authorization store: {error}")
+            })?);
+        let policy_id = AuthorizationPolicyId::new(policy_id).map_err(|error| error.to_string())?;
+        let principal = AuthenticatedPrincipal::new(
+            PrincipalId::new(trusted_host_id).map_err(|error| error.to_string())?,
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::LocalHostPolicy,
+        )
+        .map_err(|error| error.to_string())?;
+        let clock = Arc::new(SystemClock::new());
+        let authorize = Arc::new(AuthorizeOperationUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+            clock,
+            AuthorizationDecisionTtl::from_seconds(60).expect("fixed TTL is valid"),
+        ));
+        let gate = TrustedHostAuthorizationGate::new(authorize, principal)
+            .map_err(|error| error.to_string())?;
+        let read_policy = ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone());
+        let made = made.with_authorization_policy(policy_id, store);
+        Ok(Self::with_backend(
+            EmbeddedMadeMcpBackend::with_authorization(made, gate, read_policy),
+        ))
+    }
+
     /// Wrap an arbitrary backend.
     pub fn with_backend(backend: impl MadeMcpToolBackend + 'static) -> Self {
         Self {
@@ -173,7 +258,9 @@ impl MadeMcpServer {
                             "{EMBEDDED_STORE_PATH_ENV} is required when {MCP_BACKEND_ENV}=embedded"
                         )
                     })?;
-                Self::embedded_sqlite(path)
+                let policy_id = required_env(AUTH_POLICY_ID_ENV)?;
+                let trusted_host_id = required_env(AUTH_TRUSTED_HOST_ID_ENV)?;
+                Self::embedded_sqlite_authorized(path, &policy_id, &trusted_host_id)
             }
             "fixture" | "fixtures" => Ok(Self::fixture()),
             other => Err(format!(

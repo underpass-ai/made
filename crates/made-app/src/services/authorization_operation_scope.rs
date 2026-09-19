@@ -17,6 +17,14 @@ impl AuthorizationOperationScope {
     {
         ACTIVE_AUTHORIZED_OPERATION.scope(operation, future).await
     }
+
+    /// The admitted operation active in this task, if the caller crossed an
+    /// authorization boundary. Facades use this to reject protected direct
+    /// calls rather than falling back to legacy unaudited appends.
+    #[must_use]
+    pub fn current() -> Option<AuthorizedOperation> {
+        current_authorized_operation()
+    }
 }
 
 pub(crate) fn current_authorized_operation() -> Option<AuthorizedOperation> {

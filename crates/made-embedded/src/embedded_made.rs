@@ -1,4 +1,7 @@
-use crate::{embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION};
+use crate::{
+    embedded_authorization_services::EmbeddedAuthorizationServices,
+    embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION,
+};
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::ceremony::{
@@ -13,6 +16,10 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
+use made_app::authorization::{
+    AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+};
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
@@ -26,14 +33,19 @@ use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
     ArtifactChunkPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError, ArtifactTombstone,
-    ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
+    ArtifactUploadId, ArtifactUploadStatus, AuthorizationDecisionPage, AuthorizationPolicySnapshot,
+    AuthorizationPolicyStorePort, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
     CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort,
     MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
     ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef, CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{
+    ArtifactId, ArtifactRef, AuthorizationDecisionId, AuthorizationDecisionPageLimit,
+    AuthorizationGrant, AuthorizationGrantId, AuthorizationPolicyId, AuthorizationRevocationReason,
+    CeremonyEventConsumer, CeremonyId,
+};
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
@@ -88,6 +100,7 @@ pub struct EmbeddedMade {
     artifacts: Option<Arc<ArtifactService>>,
     execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
     budgets: BudgetLedgerService,
+    authorization: Option<EmbeddedAuthorizationServices>,
 }
 
 impl EmbeddedMade {
@@ -304,7 +317,60 @@ impl EmbeddedMade {
             artifacts,
             execution_receipts,
             budgets,
+            authorization: None,
         }
+    }
+
+    /// Attach the policy services used by protected direct facade calls and
+    /// embedded MCP administration. The caller must pass the same durable
+    /// store used by the authorization gate.
+    #[must_use]
+    pub fn with_authorization_policy(
+        mut self,
+        policy_id: AuthorizationPolicyId,
+        store: Arc<dyn AuthorizationPolicyStorePort>,
+    ) -> Self {
+        self.authorization = Some(EmbeddedAuthorizationServices::new(
+            ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
+            ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
+            AuthorizationPolicyAdministrationService::new(policy_id, store, self.clock.clone()),
+        ));
+        self
+    }
+
+    pub async fn authorization_policy(&self) -> Result<AuthorizationPolicySnapshot, DomainError> {
+        self.authorization()?.policy().await
+    }
+
+    pub async fn authorization_decisions(
+        &self,
+        after: Option<&AuthorizationDecisionId>,
+        limit: AuthorizationDecisionPageLimit,
+    ) -> Result<AuthorizationDecisionPage, DomainError> {
+        self.authorization()?.decisions(after, limit).await
+    }
+
+    pub async fn issue_authorization_grant(
+        &self,
+        grant: AuthorizationGrant,
+    ) -> Result<AuthorizationMutationOutcome, DomainError> {
+        self.authorization()?.issue(grant).await
+    }
+
+    pub async fn revoke_authorization_grant(
+        &self,
+        grant_id: &AuthorizationGrantId,
+        reason: AuthorizationRevocationReason,
+    ) -> Result<AuthorizationMutationOutcome, DomainError> {
+        self.authorization()?.revoke(grant_id, reason).await
+    }
+
+    fn authorization(&self) -> Result<&EmbeddedAuthorizationServices, DomainError> {
+        self.authorization
+            .as_ref()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "embedded authorization policy services are not configured",
+            })
     }
 
     /// Resume durable event publication left pending by an earlier process.
@@ -405,6 +471,15 @@ impl EmbeddedMade {
         upload_id: &ArtifactUploadId,
     ) -> Result<(), ArtifactStoreError> {
         self.artifact_service()?.abort_upload(upload_id).await
+    }
+
+    pub async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        self.artifact_service()?
+            .artifact_id_for_upload(upload_id)
+            .await
     }
 
     pub async fn get_artifact(
