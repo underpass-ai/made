@@ -1,19 +1,22 @@
+use crate::usecases::CeremonySearchCursor;
 use made_core::entities::CeremonyInstance;
-use made_core::value_objects::CeremonyId;
 
 /// A bounded result page and the last examined id when more work remains.
 #[derive(Debug, Clone)]
 pub struct CeremonyInstancePage {
     instances: Vec<CeremonyInstance>,
-    next_after: Option<CeremonyId>,
+    next_cursor: Option<CeremonySearchCursor>,
 }
 
 impl CeremonyInstancePage {
     #[must_use]
-    pub fn new(instances: Vec<CeremonyInstance>, next_after: Option<CeremonyId>) -> Self {
+    pub fn new(
+        instances: Vec<CeremonyInstance>,
+        next_cursor: Option<CeremonySearchCursor>,
+    ) -> Self {
         Self {
             instances,
-            next_after,
+            next_cursor,
         }
     }
 
@@ -23,7 +26,7 @@ impl CeremonyInstancePage {
     }
 
     #[must_use]
-    pub fn next_after(&self) -> Option<&CeremonyId> {
-        self.next_after.as_ref()
+    pub fn next_cursor(&self) -> Option<&CeremonySearchCursor> {
+        self.next_cursor.as_ref()
     }
 }

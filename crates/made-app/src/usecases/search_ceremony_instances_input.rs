@@ -1,11 +1,13 @@
 use made_core::value_objects::{
-    CeremonyId, CeremonyIdPrefix, CeremonyInstancePageLimit, CeremonyLifecyclePhase,
+    CeremonyIdPrefix, CeremonyInstancePageLimit, CeremonyLifecyclePhase,
 };
+
+use crate::usecases::CeremonySearchCursor;
 
 /// Validated application query behind the public paginated listing.
 #[derive(Debug, Clone)]
 pub struct SearchCeremonyInstancesInput {
-    after: Option<CeremonyId>,
+    cursor: Option<CeremonySearchCursor>,
     limit: CeremonyInstancePageLimit,
     id_prefix: Option<CeremonyIdPrefix>,
     lifecycle: Option<CeremonyLifecyclePhase>,
@@ -14,13 +16,13 @@ pub struct SearchCeremonyInstancesInput {
 impl SearchCeremonyInstancesInput {
     #[must_use]
     pub fn new(
-        after: Option<CeremonyId>,
+        cursor: Option<CeremonySearchCursor>,
         limit: CeremonyInstancePageLimit,
         id_prefix: Option<CeremonyIdPrefix>,
         lifecycle: Option<CeremonyLifecyclePhase>,
     ) -> Self {
         Self {
-            after,
+            cursor,
             limit,
             id_prefix,
             lifecycle,
@@ -28,8 +30,8 @@ impl SearchCeremonyInstancesInput {
     }
 
     #[must_use]
-    pub fn after(&self) -> Option<&CeremonyId> {
-        self.after.as_ref()
+    pub fn cursor(&self) -> Option<&CeremonySearchCursor> {
+        self.cursor.as_ref()
     }
 
     #[must_use]

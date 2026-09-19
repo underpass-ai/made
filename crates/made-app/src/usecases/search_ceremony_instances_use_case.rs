@@ -6,7 +6,9 @@ use made_core::ports::CeremonyInstanceIndexPort;
 use made_core::value_objects::CeremonyInstancePageLimit;
 
 use crate::services::SessionStream;
-use crate::usecases::{CeremonyInstancePage, SearchCeremonyInstancesInput};
+use crate::usecases::{
+    CeremonyInstancePage, CeremonySearchCursorCodec, SearchCeremonyInstancesInput,
+};
 
 const MAX_INDEX_PAGES_SCANNED: usize = 10;
 
@@ -14,6 +16,7 @@ const MAX_INDEX_PAGES_SCANNED: usize = 10;
 pub struct SearchCeremonyInstancesUseCase {
     index: Arc<dyn CeremonyInstanceIndexPort>,
     stream: Arc<SessionStream>,
+    cursors: CeremonySearchCursorCodec,
 }
 
 impl fmt::Debug for SearchCeremonyInstancesUseCase {
@@ -26,8 +29,16 @@ impl fmt::Debug for SearchCeremonyInstancesUseCase {
 
 impl SearchCeremonyInstancesUseCase {
     #[must_use]
-    pub fn new(index: Arc<dyn CeremonyInstanceIndexPort>, stream: Arc<SessionStream>) -> Self {
-        Self { index, stream }
+    pub fn new(
+        index: Arc<dyn CeremonyInstanceIndexPort>,
+        stream: Arc<SessionStream>,
+        cursors: CeremonySearchCursorCodec,
+    ) -> Self {
+        Self {
+            index,
+            stream,
+            cursors,
+        }
     }
 
     #[tracing::instrument(name = "search_ceremony_instances", skip_all)]
@@ -37,7 +48,13 @@ impl SearchCeremonyInstancesUseCase {
     ) -> Result<CeremonyInstancePage, DomainError> {
         let scan_limit = CeremonyInstancePageLimit::new(CeremonyInstancePageLimit::MAX)?;
         let mut instances = Vec::with_capacity(input.limit().value());
-        let mut after = input.after().cloned();
+        let mut after = input
+            .cursor()
+            .map(|cursor| {
+                self.cursors
+                    .decode(cursor, input.id_prefix(), input.lifecycle())
+            })
+            .transpose()?;
         let mut more = false;
 
         'pages: for _ in 0..MAX_INDEX_PAGES_SCANNED {
@@ -70,8 +87,15 @@ impl SearchCeremonyInstancesUseCase {
             }
         }
 
-        let next_after = more.then_some(after).flatten();
-        Ok(CeremonyInstancePage::new(instances, next_after))
+        let next_cursor = more
+            .then(|| {
+                after.as_ref().map(|after| {
+                    self.cursors
+                        .after(after, input.id_prefix(), input.lifecycle())
+                })
+            })
+            .flatten();
+        Ok(CeremonyInstancePage::new(instances, next_cursor))
     }
 }
 
@@ -149,8 +173,12 @@ mod tests {
             store.save(&instance).await.unwrap();
             ids.push(id);
         }
-        let usecase =
-            SearchCeremonyInstancesUseCase::new(Arc::new(IndexFake { ids }), stream(store));
+        let cursors = CeremonySearchCursorCodec::new([9; 32]);
+        let usecase = SearchCeremonyInstancesUseCase::new(
+            Arc::new(IndexFake { ids }),
+            stream(store),
+            cursors.clone(),
+        );
         let input = SearchCeremonyInstancesInput::new(
             None,
             CeremonyInstancePageLimit::new(1).unwrap(),
@@ -160,11 +188,18 @@ mod tests {
 
         let first = usecase.execute(&input).await.unwrap();
         assert_eq!(first.instances()[0].id().as_str(), "b-paused");
-        assert_eq!(first.next_after().unwrap().as_str(), "b-paused");
+        let next_cursor = first.next_cursor().unwrap();
+        assert_eq!(
+            cursors
+                .decode(next_cursor, None, Some(CeremonyLifecyclePhase::Paused))
+                .unwrap()
+                .as_str(),
+            "b-paused"
+        );
 
         let rest = usecase
             .execute(&SearchCeremonyInstancesInput::new(
-                first.next_after().cloned(),
+                Some(next_cursor.clone()),
                 CeremonyInstancePageLimit::new(1).unwrap(),
                 None,
                 Some(CeremonyLifecyclePhase::Paused),
@@ -172,6 +207,6 @@ mod tests {
             .await
             .unwrap();
         assert!(rest.instances().is_empty());
-        assert!(rest.next_after().is_none());
+        assert!(rest.next_cursor().is_none());
     }
 }
