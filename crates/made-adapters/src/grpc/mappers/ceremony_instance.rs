@@ -255,6 +255,12 @@ fn step_state_from(step: &CeremonyStepView<'_>) -> pb::CeremonyStepState {
             .unwrap_or_default(),
         state_visit: step.record().state_visit().get(),
         state_iteration: step.record().state_iteration().get(),
+        execution_profile: step
+            .record()
+            .lease()
+            .and_then(|lease| lease.execution_profile())
+            .and_then(|profile| serde_json::to_value(profile).ok())
+            .and_then(|value| super::attributes::struct_from_json(&value)),
     }
 }
 

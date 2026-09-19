@@ -1,14 +1,15 @@
 use made_app::budgets::BudgetedStepClaimInput;
 use made_app::usecases::{StartCeremonyStepInput, StartCeremonyStepOutput};
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
+    AuditActorKind, CeremonyId, DurationMs, ExecutionProfile, IdempotencyKey, LeaseOwnerId, StepId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::json;
 use serde_json::Value;
 
 use super::embedded_request_fields::{
-    load_instance_definition, optional_string, optional_u64, required_actor_kind, required_string,
+    load_instance_definition, optional_execution_profile, optional_string, optional_u64,
+    required_actor_kind, required_string,
 };
 
 use crate::embedded::EMBEDDED_BACKEND_NAME;
@@ -25,6 +26,7 @@ pub(super) struct EmbeddedClaimCeremonyStepRequest {
     lease_owner_id: LeaseOwnerId,
     idempotency_key: IdempotencyKey,
     lease_ttl: DurationMs,
+    execution_profile: Option<ExecutionProfile>,
     reservation: Option<made_core::value_objects::BudgetReservationEstimate>,
 }
 
@@ -44,6 +46,7 @@ impl EmbeddedClaimCeremonyStepRequest {
             self.idempotency_key,
             self.lease_ttl,
         )
+        .with_execution_profile_option(self.execution_profile.clone())
         .with_automatic_role_resolution();
         if instance.budget_account_id().is_some() {
             let reservation = self.reservation.ok_or_else(|| {
@@ -95,6 +98,7 @@ impl TryFrom<&Value> for EmbeddedClaimCeremonyStepRequest {
             } else {
                 lease_ttl_ms
             }),
+            execution_profile: optional_execution_profile(object)?,
             reservation: super::embedded_budget_fields::reservation(object)?,
         })
     }
@@ -145,6 +149,55 @@ mod tests {
             "{}",
             request.idempotency_key.as_str()
         );
+    }
+
+    #[test]
+    fn execution_profile_records_actual_selection_and_rejects_implicit_fallback() {
+        let request = EmbeddedClaimCeremonyStepRequest::try_from(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "execution_profile": {
+                "requested_model": "strong",
+                "requested_reasoning_effort": "high",
+                "required_capabilities": ["review"],
+                "fallback_policy": "fallback",
+                "fallback_model": "balanced",
+                "fallback_reasoning_effort": "medium",
+                "actual_model": "balanced",
+                "actual_reasoning_effort": "medium",
+                "actual_capabilities": ["review"],
+                "host_agent_id": "codex-agent-1",
+                "host_agent_incarnation": "inc-2",
+                "inherited_from": "role-default",
+                "checkpoint_id": "checkpoint-7",
+                "handoff_from": "codex-agent-0/inc-1"
+            }
+        }))
+        .expect("an explicit fallback profile should parse");
+        let profile = request.execution_profile.as_ref().unwrap();
+        assert_eq!(profile.requested_model(), "strong");
+        assert_eq!(profile.actual_model(), "balanced");
+        assert_eq!(profile.host_agent_incarnation(), "inc-2");
+
+        let error = EmbeddedClaimCeremonyStepRequest::try_from(&json!({
+            "ceremony_id": "c-1",
+            "step_id": "work",
+            "actor_kind": "agent",
+            "execution_profile": {
+                "requested_model": "strong",
+                "requested_reasoning_effort": "high",
+                "required_capabilities": [],
+                "fallback_policy": "reject",
+                "actual_model": "balanced",
+                "actual_reasoning_effort": "medium",
+                "actual_capabilities": [],
+                "host_agent_id": "agent",
+                "host_agent_incarnation": "inc"
+            }
+        }))
+        .expect_err("a changed selection without an explicit fallback must be refused");
+        assert!(error.contains("fallback_policy is reject"), "{error}");
     }
 
     #[test]

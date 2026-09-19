@@ -25,6 +25,16 @@ Use one owner for each step:
   receipt, execute with the host's authorized worker/tools, then complete it
   with the observed status, structured output and artifact/evidence references.
 
+Before delegated work, resolve the host-owned execution profile for that
+role/step. Keep requested and actual model/reasoning, required and actual
+capabilities, fallback, inheritance, host agent/incarnation and
+checkpoint/handoff provenance separate and visible. An unsupported requested
+profile is either refused with an actionable reason or resolved through its
+explicit fallback. MADE does not switch a live Codex/Claude agent's model; a
+checkpoint/handoff is provenance for later work, and the next claim identifies
+the new host incarnation. Host agent ids and MADE role ids remain separate,
+and an execution profile never widens ceremony authority.
+
 The bundled handler may be `NoopCeremonyStepHandler`. Empty no-op completion
 proves wiring only. A claim performs no work and grants no external authority.
 Never report simulated, inaccessible or unperformed work as completed evidence.

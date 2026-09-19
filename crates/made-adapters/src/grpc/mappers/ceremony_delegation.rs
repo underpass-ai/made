@@ -16,8 +16,8 @@ use made_app::usecases::{CompleteCeremonyStepInput, StartCeremonyStepInput};
 use made_core::entities::{CeremonyDefinition, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepClaimFence, StepErrorMessage, StepId,
-    StepOutput, StepResult, StepStatus,
+    CeremonyId, DurationMs, ExecutionProfile, IdempotencyKey, LeaseOwnerId, StepClaimFence,
+    StepErrorMessage, StepId, StepOutput, StepResult, StepStatus,
 };
 use made_proto::v1 as pb;
 use uuid::Uuid;
@@ -72,6 +72,15 @@ pub fn claim_ceremony_step_input_from_proto(
     } else {
         DurationMs::from_millis(request.lease_ttl_ms)
     };
+    let execution_profile = request
+        .execution_profile
+        .map(|profile| {
+            let attributes = attributes_from_struct(Some(profile))?;
+            ExecutionProfile::from_json(serde_json::Value::Object(
+                attributes.into_inner().into_iter().collect(),
+            ))
+        })
+        .transpose()?;
 
     Ok(StartCeremonyStepInput::new(
         instance.id().clone(),
@@ -82,7 +91,8 @@ pub fn claim_ceremony_step_input_from_proto(
         idempotency_key,
         lease_ttl,
     )
-    .with_automatic_role_resolution())
+    .with_automatic_role_resolution()
+    .with_execution_profile_option(execution_profile))
 }
 
 /// Record what the host saw when it ran the step.
@@ -154,6 +164,7 @@ mod tests {
             idempotency_key: String::new(),
             lease_ttl_ms: 0,
             budget_reservation: None,
+            execution_profile: None,
         }
     }
 

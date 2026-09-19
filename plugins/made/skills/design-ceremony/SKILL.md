@@ -15,6 +15,15 @@ objective and instructions; use `lower_snake_case` ids. Give roles intervention
 capabilities only when they need to request or respond to live agenda items.
 Those capabilities do not authorize external actions.
 
+Keep host execution profiles outside the ceremony definition. A host may
+declare a requested model, reasoning effort, required capabilities and an
+explicit fallback for each role/step, then record the actual selection with
+the host agent id and incarnation. Inheritance must name its source; a
+Codex/Claude id is host provenance, not a MADE role id. Changing the effective
+selection for future delegated work therefore does not require a new ceremony
+definition. Unsupported selections must be refused or resolved through the
+declared fallback before the claim is taken.
+
 Use peer `review_rounds` only with at least two agents. Use a bounded repeat
 only for successful work that must recur until a structured stop condition:
 provide `max_iterations` (1–1000), a top-level `output_field` and exact JSON

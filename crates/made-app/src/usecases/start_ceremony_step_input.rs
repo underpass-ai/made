@@ -1,5 +1,6 @@
 use made_core::value_objects::{
-    AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, RoleId, StepId,
+    AuditActorKind, CeremonyId, DurationMs, ExecutionProfile, IdempotencyKey, LeaseOwnerId, RoleId,
+    StepId,
 };
 
 use super::step_role_resolution::StepRoleResolution;
@@ -17,6 +18,7 @@ pub struct StartCeremonyStepInput {
     pub(crate) lease_owner_id: LeaseOwnerId,
     pub(crate) idempotency_key: IdempotencyKey,
     pub(crate) lease_ttl: DurationMs,
+    pub(crate) execution_profile: Option<ExecutionProfile>,
     pub(crate) role_resolution: StepRoleResolution,
 }
 
@@ -48,6 +50,7 @@ impl StartCeremonyStepInput {
             lease_owner_id,
             idempotency_key,
             lease_ttl,
+            execution_profile: None,
             role_resolution: StepRoleResolution::Explicit,
         }
     }
@@ -60,6 +63,18 @@ impl StartCeremonyStepInput {
     #[must_use]
     pub fn with_automatic_role_resolution(mut self) -> Self {
         self.role_resolution = StepRoleResolution::Automatic;
+        self
+    }
+
+    #[must_use]
+    pub fn with_execution_profile(mut self, profile: ExecutionProfile) -> Self {
+        self.execution_profile = Some(profile);
+        self
+    }
+
+    #[must_use]
+    pub fn with_execution_profile_option(mut self, profile: Option<ExecutionProfile>) -> Self {
+        self.execution_profile = profile;
         self
     }
 
@@ -100,5 +115,10 @@ impl StartCeremonyStepInput {
     #[must_use]
     pub const fn lease_ttl(&self) -> DurationMs {
         self.lease_ttl
+    }
+
+    #[must_use]
+    pub fn execution_profile(&self) -> Option<&ExecutionProfile> {
+        self.execution_profile.as_ref()
     }
 }

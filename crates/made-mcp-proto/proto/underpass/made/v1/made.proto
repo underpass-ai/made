@@ -832,6 +832,8 @@ message CeremonyStepState {
   // Whole-state iteration containing this record.
   uint32 state_iteration = 11;
   uint32 state_visit = 12;
+  // Host-owned requested/actual execution profile for the accepted claim.
+  google.protobuf.Struct execution_profile = 13;
 }
 
 // A guard on an outgoing transition.
@@ -1668,6 +1670,8 @@ message ClaimCeremonyStepRequest {
   // Required when the ceremony has a budget account. Unknown is explicit;
   // limited dimensions never default to zero.
   BudgetReservationEstimate budget_reservation = 7;
+  // Host-owned profile; never part of the ceremony definition.
+  google.protobuf.Struct execution_profile = 8;
 }
 
 message ClaimCeremonyStepResponse {

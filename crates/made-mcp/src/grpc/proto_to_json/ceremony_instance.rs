@@ -257,6 +257,7 @@ fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
         "iteration": step.iteration,
         "state_iteration": step.state_iteration,
         "state_visit": step.state_visit,
+        "execution_profile": optional_pb_struct_to_json(step.execution_profile),
         "repeat_condition_satisfied": step.repeat_condition_satisfied,
         "repeat_limit_reached": step.repeat_limit_reached,
         "repeat_max_iterations": if step.repeat_max_iterations == 0 {

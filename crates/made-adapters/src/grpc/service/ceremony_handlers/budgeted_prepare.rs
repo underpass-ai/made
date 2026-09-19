@@ -54,6 +54,7 @@ async fn admit_budget(
             idempotency_key: request.idempotency_key.clone(),
             lease_ttl_ms: request.lease_ttl_ms,
             budget_reservation: None,
+            execution_profile: None,
         },
         definition,
         instance,
