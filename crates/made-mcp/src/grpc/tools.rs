@@ -4,6 +4,7 @@
 //! request mappers, calls the generated tonic client, and maps the response.
 
 use made_mcp_proto::v1 as pb;
+use made_mcp_proto::v1::made_service_client::MadeServiceClient;
 use serde_json::{json, Value};
 use tonic::transport::Channel;
 
