@@ -13,7 +13,7 @@
 //! port.
 
 use async_trait::async_trait;
-use made_core::entities::Statistics;
+use made_core::entities::{CouncilJournalEvent, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::StatisticsPort;
 use made_core::value_objects::{DurationMs, Specialty};
@@ -49,12 +49,7 @@ impl StatisticsPort for PostgresStatistics {
         specialty: &Specialty,
         duration: DurationMs,
     ) -> Result<(), DomainError> {
-        let mut tx = self
-            .pool
-            .inner()
-            .begin()
-            .await
-            .map_err(|e| sqlx_to_domain(e, "record_deliberation"))?;
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
 
         let duration_ms = i64::try_from(duration.get()).unwrap_or(i64::MAX);
 
@@ -89,6 +84,12 @@ impl StatisticsPort for PostgresStatistics {
         .await
         .map_err(|e| sqlx_to_domain(e, "record_deliberation"))?;
 
+        let snapshot = read_snapshot(&mut tx).await?;
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::StatisticsRecorded(snapshot),
+        )
+        .await?;
         tx.commit()
             .await
             .map_err(|e| sqlx_to_domain(e, "record_deliberation"))?;
@@ -96,6 +97,7 @@ impl StatisticsPort for PostgresStatistics {
     }
 
     async fn record_orchestration(&self, duration: DurationMs) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let duration_ms = i64::try_from(duration.get()).unwrap_or(i64::MAX);
         sqlx::query(
             "
@@ -110,68 +112,92 @@ impl StatisticsPort for PostgresStatistics {
         )
         .bind(TOTALS_SINGLETON_ID)
         .bind(duration_ms)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "record_orchestration"))?;
-        Ok(())
+        let snapshot = read_snapshot(&mut tx).await?;
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::StatisticsRecorded(snapshot),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit orchestration statistics"))
     }
 
     async fn snapshot(&self) -> Result<Statistics, DomainError> {
-        let totals = sqlx::query(
-            "
+        let mut tx = self
+            .pool
+            .inner()
+            .begin()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "read statistics"))?;
+        sqlx::query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            .execute(&mut *tx)
+            .await
+            .map_err(|e| sqlx_to_domain(e, "snapshot isolation"))?;
+        read_snapshot(&mut tx).await
+    }
+}
+
+pub(super) async fn read_snapshot(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+) -> Result<Statistics, DomainError> {
+    let totals = sqlx::query(
+        "
             SELECT total_deliberations, total_orchestrations, total_duration_ms
             FROM statistics_totals WHERE id = $1
             ",
-        )
-        .bind(TOTALS_SINGLETON_ID)
-        .fetch_optional(self.pool.inner())
-        .await
-        .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
+    )
+    .bind(TOTALS_SINGLETON_ID)
+    .fetch_optional(&mut **tx)
+    .await
+    .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
 
-        let (total_deliberations, total_orchestrations, total_duration) = match totals {
-            Some(row) => {
-                let td: i64 = row
-                    .try_get("total_deliberations")
-                    .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-                let to: i64 = row
-                    .try_get("total_orchestrations")
-                    .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-                let dur: i64 = row
-                    .try_get("total_duration_ms")
-                    .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-                (
-                    clamp_nonneg(td),
-                    clamp_nonneg(to),
-                    DurationMs::from_millis(clamp_nonneg(dur)),
-                )
-            }
-            None => (0, 0, DurationMs::ZERO),
-        };
-
-        let specialty_rows =
-            sqlx::query("SELECT specialty, deliberations FROM statistics_by_specialty")
-                .fetch_all(self.pool.inner())
-                .await
+    let (total_deliberations, total_orchestrations, total_duration) = match totals {
+        Some(row) => {
+            let td: i64 = row
+                .try_get("total_deliberations")
                 .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-
-        let mut per_specialty = std::collections::BTreeMap::new();
-        for row in specialty_rows {
-            let name: String = row
-                .try_get("specialty")
+            let to: i64 = row
+                .try_get("total_orchestrations")
                 .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-            let count: i64 = row
-                .try_get("deliberations")
+            let dur: i64 = row
+                .try_get("total_duration_ms")
                 .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
-            per_specialty.insert(Specialty::new(name)?, clamp_nonneg(count));
+            (
+                clamp_nonneg(td),
+                clamp_nonneg(to),
+                DurationMs::from_millis(clamp_nonneg(dur)),
+            )
         }
+        None => (0, 0, DurationMs::ZERO),
+    };
 
-        Ok(Statistics::from_counters(
-            total_deliberations,
-            total_orchestrations,
-            total_duration,
-            per_specialty,
-        ))
+    let specialty_rows =
+        sqlx::query("SELECT specialty, deliberations FROM statistics_by_specialty")
+            .fetch_all(&mut **tx)
+            .await
+            .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
+
+    let mut per_specialty = std::collections::BTreeMap::new();
+    for row in specialty_rows {
+        let name: String = row
+            .try_get("specialty")
+            .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
+        let count: i64 = row
+            .try_get("deliberations")
+            .map_err(|e| sqlx_to_domain(e, "snapshot"))?;
+        per_specialty.insert(Specialty::new(name)?, clamp_nonneg(count));
     }
+
+    Ok(Statistics::from_counters(
+        total_deliberations,
+        total_orchestrations,
+        total_duration,
+        per_specialty,
+    ))
 }
 
 /// Map a signed counter onto the entity's `u64` shape. Negative

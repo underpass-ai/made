@@ -43,6 +43,7 @@ use super::tool_names::{
 };
 
 mod council_catalog;
+mod council_journal_catalog;
 
 use council_catalog::council_tool_catalog;
 
@@ -90,6 +91,7 @@ fn tool_catalog() -> Vec<Value> {
 #[allow(clippy::too_many_lines)] // gRPC tool definitions form one auditable transport contract
 pub(super) fn grpc_tool_catalog() -> Vec<Value> {
     let mut tools = council_tool_catalog();
+    tools.extend(council_journal_catalog::council_journal_tool_catalog());
     tools.extend([
         tool_def(
             RUN_CEREMONY_TOOL,

@@ -40,3 +40,14 @@ pub use postgres_config::PostgresConfig;
 pub use postgres_pool_error::PostgresPoolError;
 pub use postgres_session_memory::PostgresSessionMemory;
 pub use statistics::PostgresStatistics;
+
+mod council_journal;
+mod council_journal_store;
+pub use council_journal::PostgresCouncilJournal;
+
+mod contract_registry;
+pub use contract_registry::PostgresContractRegistry;
+
+mod council_snapshot;
+mod council_snapshot_write;
+pub use council_snapshot::PostgresCouncilSnapshot;

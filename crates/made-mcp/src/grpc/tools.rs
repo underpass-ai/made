@@ -21,6 +21,7 @@ mod ceremony_history_requests;
 mod ceremony_read_dispatch;
 mod ceremony_requests;
 mod children_dispatch;
+mod council_journal_dispatch;
 mod design_ceremony_request;
 mod general_dispatch;
 mod general_requests;
@@ -55,6 +56,9 @@ pub(crate) async fn dispatch(
                 .insert("traceparent", traceparent.clone());
             Ok(request)
         });
+    if council_journal_dispatch::handles(name) {
+        return council_journal_dispatch::dispatch(&mut client, name, arguments).await;
+    }
     if general_dispatch::handles(name) {
         return general_dispatch::dispatch(&mut client, name, arguments).await;
     }

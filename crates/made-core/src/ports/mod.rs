@@ -151,3 +151,6 @@ pub use scoring::ScoringPort;
 pub use statistics::StatisticsPort;
 pub use subscription_handler::SubscriptionHandler;
 pub use validator::ValidatorPort;
+
+mod council_journal;
+pub use council_journal::CouncilJournalPort;

@@ -53,6 +53,11 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
     fn call_tool<'a>(&'a self, name: &'a str, _arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
             let structured = match name {
+                "made_read_council_events" => json!({"records":[],"next_after":null}),
+                "made_get_council_event_cursor" => json!({"acknowledged_through":null}),
+                "made_lease_council_events" => json!({"lease":null}),
+                "made_acknowledge_council_events" => json!({}),
+                "made_release_council_events" => json!({}),
                 "made_deliberate" => deliberate_fixture(),
                 "made_stream_deliberation" => stream_fixture(),
                 "made_get_deliberation_result" => get_deliberation_fixture(),

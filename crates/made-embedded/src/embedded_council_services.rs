@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use made_app::services::AutoDispatchService;
+use made_app::services::{AutoDispatchService, CouncilJournalService};
 use made_app::usecases::{
     CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase, GetDeliberationUseCase,
     ListCouncilsUseCase, OrchestrateUseCase, RegisterAgentUseCase, RunCouncilDecisionUseCase,
@@ -8,8 +8,8 @@ use made_app::usecases::{
 };
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ClockPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MessagingPort,
-    MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
+    CouncilJournalPort, CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort,
+    MessagingPort, MetricsRecorderPort, ScoringPort, StatisticsPort, ValidatorPort,
 };
 
 /// Council use cases composed once for the in-process facade.
@@ -25,12 +25,14 @@ pub(crate) struct EmbeddedCouncilServices {
     pub(crate) run_council_decision: Arc<RunCouncilDecisionUseCase>,
     pub(crate) auto_dispatch: Arc<AutoDispatchService>,
     pub(crate) contracts: Arc<dyn ContractRegistryPort>,
+    pub(crate) journal: Arc<CouncilJournalService>,
 }
 
 impl EmbeddedCouncilServices {
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn new(
         clock: Arc<dyn ClockPort>,
+        journal: Arc<dyn CouncilJournalPort>,
         council_registry: Arc<dyn CouncilRegistryPort>,
         agent_registry: Arc<dyn AgentRegistryPort>,
         agent_resolver: Arc<dyn AgentResolverPort>,
@@ -72,6 +74,7 @@ impl EmbeddedCouncilServices {
             .expect("the built-in trigger task description is valid"),
         );
         Self {
+            journal: Arc::new(CouncilJournalService::new(journal, clock.clone())),
             get_deliberation: Arc::new(GetDeliberationUseCase::new(repository.clone())),
             create_council: Arc::new(CreateCouncilUseCase::new(
                 clock,
