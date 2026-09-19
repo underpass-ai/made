@@ -161,6 +161,10 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_bind_ceremony_participants",
         "made_claim_ceremony_step",
         "made_complete_ceremony_step",
+        "made_get_execution_receipt",
+        "made_inspect_execution_recovery",
+        "made_complete_execution_receipt",
+        "made_adopt_execution_receipt",
         "made_design_ceremony",
         "made_read_ceremony_events",
         "made_stream_ceremony",
@@ -1350,7 +1354,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     let completed = read_response(&mut lines).await;
 
     assert_eq!(initialized["result"]["metadata"]["backend"], "embedded");
-    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 66);
+    assert_eq!(tools["result"]["tools"].as_array().unwrap().len(), 70);
     assert_eq!(structured(&started)["next_step_id"], "investigate");
     assert_eq!(
         structured(&stepped)["waiting_for_human"],
