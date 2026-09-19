@@ -2,7 +2,7 @@ use made_core::entities::ceremony_commands::{
     ApplyExecutionReceiptResult, ApplyStepResult, CancelCeremony, EnforceCeremonyDeadlines,
     PauseCeremony, ResumeCeremony, StartStep,
 };
-use made_core::entities::ceremony_events::CeremonyCompleted;
+use made_core::entities::ceremony_events::{CeremonyCompleted, ExecutionReceiptLinked};
 use made_core::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use made_core::error::DomainError;
 use made_core::value_objects::{
@@ -315,6 +315,7 @@ fn historical_completion_fold_keeps_the_legacy_snapshot_shape() {
     let folded = CeremonyInstance::rehydrate(&events).unwrap();
     let encoded = serde_json::to_value(&folded).unwrap();
     assert!(encoded.get("lifecycle").is_none());
+    assert!(encoded.get("execution_receipt_adoptions").is_none());
 
     let historical: CeremonyInstance = serde_json::from_value(encoded.clone()).unwrap();
     assert_eq!(folded, historical);
@@ -324,6 +325,123 @@ fn historical_completion_fold_keeps_the_legacy_snapshot_shape() {
         folded.lifecycle().end_reason(),
         Some(CeremonyEndReason::Completed)
     );
+}
+
+#[test]
+fn two_receipt_adoptions_survive_snapshot_roundtrip_and_tail_replay() {
+    let definition = definition();
+    let ceremony_id = made_core::value_objects::CeremonyId::new("receipt-adoption-tail").unwrap();
+    let mut events = CeremonyInstance::decide_start(
+        ceremony_id.clone(),
+        &definition,
+        made_core::value_objects::CeremonyContext::empty(),
+        None,
+        OPENED_AT,
+    )
+    .unwrap();
+    let operation = ExecutionOperationId::for_step(
+        &ceremony_id,
+        &step("plan"),
+        made_core::value_objects::StateVisit::FIRST,
+        made_core::value_objects::StateIteration::FIRST,
+        made_core::value_objects::StepIteration::FIRST,
+    );
+    let receipt = ExecutionReceiptId::for_operation(&operation);
+    let producer = StepClaimFence::new("1".repeat(64)).unwrap();
+    let first_applied = StepClaimFence::new("2".repeat(64)).unwrap();
+    let second_applied = StepClaimFence::new("3".repeat(64)).unwrap();
+    let receipt_event = |applied: StepClaimFence, kind| {
+        CeremonyEvent::ExecutionReceiptLinked(ExecutionReceiptLinked {
+            step_id: step("plan"),
+            link: ExecutionReceiptLink::new(
+                receipt.clone(),
+                operation.clone(),
+                producer.clone(),
+                applied,
+                kind,
+            )
+            .unwrap(),
+            linked_at: at(1),
+        })
+    };
+    events.push(receipt_event(
+        producer.clone(),
+        ExecutionReceiptLinkKind::Direct,
+    ));
+    events.push(receipt_event(
+        first_applied.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    ));
+    let tail = receipt_event(second_applied.clone(), ExecutionReceiptLinkKind::Adopted);
+
+    let mut full_events = events.clone();
+    full_events.push(tail.clone());
+    let full = CeremonyInstance::rehydrate(&full_events).unwrap();
+    let snapshot = CeremonyInstance::rehydrate(&events).unwrap();
+    let encoded = serde_json::to_value(snapshot).unwrap();
+    let mut snapshot_tail: CeremonyInstance = serde_json::from_value(encoded).unwrap();
+    snapshot_tail.apply(&tail);
+
+    assert_eq!(snapshot_tail, full);
+    assert!(full
+        .execution_receipt_adoption(&operation, &first_applied)
+        .is_some());
+    assert!(full
+        .execution_receipt_adoption(&operation, &second_applied)
+        .is_some());
+}
+
+#[test]
+fn an_adoption_requires_the_immutable_producer_link() {
+    let definition = timed_definition_with_alternate();
+    let mut instance = CeremonyInstance::start(
+        made_core::value_objects::CeremonyId::new("adoption-without-producer").unwrap(),
+        &definition,
+        made_core::value_objects::CeremonyContext::empty(),
+        OPENED_AT,
+    )
+    .unwrap();
+    let producer = start_plan_as(&mut instance, &definition, "facilitator", "first", 1);
+    let record = instance.step_record(&step("plan")).unwrap();
+    let operation_id = ExecutionOperationId::for_step(
+        instance.id(),
+        &step("plan"),
+        record.state_visit(),
+        record.state_iteration(),
+        record.iteration(),
+    );
+    let deadline = instance
+        .decide(
+            &CeremonyCommand::EnforceCeremonyDeadlines(EnforceCeremonyDeadlines { now: at(2) }),
+            &definition,
+        )
+        .unwrap();
+    apply(&mut instance, &deadline);
+    let current = start_plan_as(&mut instance, &definition, "alternate", "second", 4);
+    let adoption = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation_id),
+        operation_id,
+        producer,
+        current.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    )
+    .unwrap();
+
+    assert!(matches!(
+        instance.decide(
+            &CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+                step_id: step("plan"),
+                claim_fence: current,
+                receipt_link: adoption,
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(5),
+            }),
+            &definition,
+        ),
+        Err(DomainError::NotFound {
+            what: "ceremony_instance.execution_receipt_link"
+        })
+    ));
 }
 
 #[test]
@@ -416,4 +534,170 @@ fn retired_fence_keeps_its_actor_after_a_retry_changes_role() {
     });
     assert!(instance.decide(&foreign_step, &definition).is_err());
     assert_eq!(instance.late_step_results().len(), 1);
+}
+
+fn late_receipt_with_retry() -> (
+    CeremonyDefinition,
+    CeremonyInstance,
+    ExecutionOperationId,
+    ExecutionReceiptLink,
+    StepClaimFence,
+    StepClaimFence,
+) {
+    let definition = timed_definition_with_alternate();
+    let mut instance = CeremonyInstance::start(
+        made_core::value_objects::CeremonyId::new("late-receipt-adoption").unwrap(),
+        &definition,
+        made_core::value_objects::CeremonyContext::empty(),
+        OPENED_AT,
+    )
+    .unwrap();
+    let retired = start_plan_as(&mut instance, &definition, "facilitator", "first", 1);
+    let record = instance.step_record(&step("plan")).unwrap();
+    let operation_id = ExecutionOperationId::for_step(
+        instance.id(),
+        &step("plan"),
+        record.state_visit(),
+        record.state_iteration(),
+        record.iteration(),
+    );
+    let receipt_id = ExecutionReceiptId::for_operation(&operation_id);
+    let deadline = instance
+        .decide(
+            &CeremonyCommand::EnforceCeremonyDeadlines(EnforceCeremonyDeadlines { now: at(2) }),
+            &definition,
+        )
+        .unwrap();
+    apply(&mut instance, &deadline);
+
+    let original = ExecutionReceiptLink::new(
+        receipt_id.clone(),
+        operation_id.clone(),
+        retired.clone(),
+        retired.clone(),
+        ExecutionReceiptLinkKind::Direct,
+    )
+    .unwrap();
+    let late = instance
+        .decide(
+            &CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+                step_id: step("plan"),
+                claim_fence: retired.clone(),
+                receipt_link: original.clone(),
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(3),
+            }),
+            &definition,
+        )
+        .unwrap();
+    assert!(matches!(
+        late.as_slice(),
+        [
+            CeremonyEvent::ExecutionReceiptLinked(_),
+            CeremonyEvent::LateStepResultObserved(_)
+        ]
+    ));
+    apply(&mut instance, &late);
+
+    let current = start_plan_as(&mut instance, &definition, "alternate", "second", 4);
+    (
+        definition,
+        instance,
+        operation_id,
+        original,
+        retired,
+        current,
+    )
+}
+
+#[test]
+fn a_late_receipt_keeps_its_original_link_and_records_one_explicit_adoption() {
+    let (definition, mut instance, operation_id, original, retired, current) =
+        late_receipt_with_retry();
+    let adoption = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation_id),
+        operation_id.clone(),
+        retired,
+        current.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    )
+    .unwrap();
+    let command = CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+        step_id: step("plan"),
+        claim_fence: current.clone(),
+        receipt_link: adoption.clone(),
+        result: StepResult::completed(readiness(true)).unwrap(),
+        now: at(5),
+    });
+    let adopted = instance.decide(&command, &definition).unwrap();
+    assert!(matches!(
+        adopted.as_slice(),
+        [
+            CeremonyEvent::ExecutionReceiptLinked(_),
+            CeremonyEvent::StepCompleted(_)
+        ]
+    ));
+    apply(&mut instance, &adopted);
+
+    assert_eq!(
+        instance.execution_receipt_link(&operation_id),
+        Some(&original)
+    );
+    assert_eq!(
+        instance.execution_receipt_adoption(&operation_id, &current),
+        Some(&adoption)
+    );
+    assert!(instance.decide(&command, &definition).unwrap().is_empty());
+}
+
+#[test]
+fn an_adoption_rejects_a_contradictory_direct_link_or_producer_fence() {
+    let (definition, instance, operation_id, _, _, current) = late_receipt_with_retry();
+    let contradictory_direct = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation_id),
+        operation_id.clone(),
+        current.clone(),
+        current.clone(),
+        ExecutionReceiptLinkKind::Direct,
+    )
+    .unwrap();
+    assert!(matches!(
+        instance.decide(
+            &CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+                step_id: step("plan"),
+                claim_fence: current.clone(),
+                receipt_link: contradictory_direct,
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(5),
+            }),
+            &definition,
+        ),
+        Err(DomainError::Conflict {
+            what: "execution_receipt_link"
+        })
+    ));
+    let foreign_producer = StepClaimFence::new("8".repeat(64)).unwrap();
+    let wrong_receipt = ExecutionReceiptLink::new(
+        ExecutionReceiptId::for_operation(&operation_id),
+        operation_id.clone(),
+        foreign_producer,
+        current.clone(),
+        ExecutionReceiptLinkKind::Adopted,
+    )
+    .unwrap();
+    assert!(matches!(
+        instance.decide(
+            &CeremonyCommand::ApplyExecutionReceiptResult(ApplyExecutionReceiptResult {
+                step_id: step("plan"),
+                claim_fence: current.clone(),
+                receipt_link: wrong_receipt,
+                result: StepResult::completed(readiness(true)).unwrap(),
+                now: at(5),
+            }),
+            &definition,
+        ),
+        Err(DomainError::Conflict {
+            what: "execution_receipt_adoption"
+        })
+    ));
 }

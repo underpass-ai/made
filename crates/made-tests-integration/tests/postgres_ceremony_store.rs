@@ -48,7 +48,7 @@ async fn postgres_satisfies_every_existing_ceremony_store_contract() {
 
     assert_eq!(publications.len(), 5);
     assert_eq!(events.len(), 14);
-    assert_eq!(snapshots.len(), 5);
+    assert_eq!(snapshots.len(), 6);
     assert_eq!(cursors.len(), 7);
     assert_eq!(memory.len(), 9);
     assert_eq!(budgets.len(), 3);

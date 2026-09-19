@@ -16,20 +16,35 @@ impl CeremonyInstance {
                 reason: "execution receipt link does not target the completing claim fence",
             });
         }
-        if let Some(stored) = self
+        let original = self
             .execution_receipt_links
-            .get(command.receipt_link.operation_id())
-        {
-            return if stored == &command.receipt_link {
-                Ok(Vec::new())
-            } else {
-                Err(DomainError::Conflict {
-                    what: "execution_receipt_link",
-                })
-            };
+            .get(command.receipt_link.operation_id());
+        if original == Some(&command.receipt_link) {
+            return Ok(Vec::new());
+        }
+        if command.receipt_link.kind() == ExecutionReceiptLinkKind::Direct && original.is_some() {
+            return Err(DomainError::Conflict {
+                what: "execution_receipt_link",
+            });
         }
         if command.receipt_link.kind() == ExecutionReceiptLinkKind::Adopted {
+            if let Some(stored) = self.execution_receipt_adoption(
+                command.receipt_link.operation_id(),
+                command.receipt_link.applied_claim_fence(),
+            ) {
+                return if stored == &command.receipt_link {
+                    Ok(Vec::new())
+                } else {
+                    Err(DomainError::Conflict {
+                        what: "execution_receipt_adoption",
+                    })
+                };
+            }
             self.require_admits_new_work("adopt_execution_receipt")?;
+            let original = original.ok_or(DomainError::NotFound {
+                what: "ceremony_instance.execution_receipt_link",
+            })?;
+            require_same_receipt(original, &command.receipt_link)?;
         }
 
         let record = self
@@ -89,4 +104,19 @@ impl CeremonyInstance {
         events.append(&mut result_events);
         Ok(events)
     }
+}
+
+fn require_same_receipt(
+    original: &crate::value_objects::ExecutionReceiptLink,
+    adoption: &crate::value_objects::ExecutionReceiptLink,
+) -> Result<(), DomainError> {
+    if original.receipt_id() != adoption.receipt_id()
+        || original.operation_id() != adoption.operation_id()
+        || original.producer_claim_fence() != adoption.producer_claim_fence()
+    {
+        return Err(DomainError::Conflict {
+            what: "execution_receipt_adoption",
+        });
+    }
+    Ok(())
 }
