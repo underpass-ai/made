@@ -1,9 +1,10 @@
 use made_proto::v1::{
     CeremonyInstanceState, GetCeremonyInstanceRequest, ListCeremonyInstancesRequest,
+    SearchCeremonyInstancesRequest,
 };
 use std::collections::{BTreeSet, VecDeque};
 
-use crate::{CeremonyTree, MadeClient, MadeClientError};
+use crate::{CeremonySearchPage, CeremonyTree, MadeClient, MadeClientError};
 
 impl MadeClient {
     pub async fn get_ceremony(
@@ -27,8 +28,7 @@ impl MadeClient {
         })
     }
 
-    /// Existing unpaged server listing. Prefer `search_ceremonies` once the
-    /// paginated C5.8 RPC is available.
+    /// Existing unpaged server listing kept for compatibility.
     pub async fn list_ceremonies(&self) -> Result<Vec<CeremonyInstanceState>, MadeClientError> {
         let mut rpc = self.rpc();
         let response = rpc
@@ -41,6 +41,28 @@ impl MadeClient {
             .map_err(MadeClientError::from_status)?
             .into_inner();
         Ok(response.instances)
+    }
+
+    /// Search one bounded page. The returned cursor is opaque and bound to
+    /// the request's filters; callers must send it back unchanged.
+    pub async fn search_ceremonies(
+        &self,
+        query: SearchCeremonyInstancesRequest,
+    ) -> Result<CeremonySearchPage, MadeClientError> {
+        let mut rpc = self.rpc();
+        let response = rpc
+            .search_ceremony_instances(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/SearchCeremonyInstances",
+                query,
+            ))
+            .await
+            .map_err(MadeClientError::from_status)?
+            .into_inner();
+        Ok(CeremonySearchPage::new(
+            response.instances,
+            (!response.next_cursor.is_empty()).then_some(response.next_cursor),
+        ))
     }
 
     pub async fn ceremony_tree(

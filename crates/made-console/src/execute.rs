@@ -2,8 +2,9 @@ use std::path::Path;
 use std::time::Duration;
 
 use made_client::v1::{
-    ApproveCeremonyGuardRequest, CancelCeremonyRequest, PauseCeremonyRequest,
-    ResumeCeremonyRequest, StreamCeremonyEndReason,
+    ApproveCeremonyGuardRequest, CancelCeremonyRequest, CeremonyLifecycleFilter,
+    PauseCeremonyRequest, ResumeCeremonyRequest, SearchCeremonyInstancesRequest,
+    StreamCeremonyEndReason,
 };
 use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint, RequestContext};
 use serde_json::json;
@@ -17,10 +18,25 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
             "{}",
             render::instance(&client.get_ceremony(ceremony_id).await?, args.output)
         ),
-        Command::List => println!(
-            "{}",
-            render::instances(&client.list_ceremonies().await?, args.output)
-        ),
+        Command::List {
+            cursor,
+            limit,
+            id_prefix,
+            lifecycle,
+        } => {
+            let page = client
+                .search_ceremonies(SearchCeremonyInstancesRequest {
+                    cursor: cursor.unwrap_or_default(),
+                    limit,
+                    id_prefix: id_prefix.unwrap_or_default(),
+                    lifecycle: lifecycle
+                        .map_or(CeremonyLifecycleFilter::Unspecified as i32, |value| {
+                            CeremonyLifecycleFilter::from(value) as i32
+                        }),
+                })
+                .await?;
+            println!("{}", render::ceremony_page(&page, args.output));
+        }
         Command::Tree {
             ceremony_id,
             max_nodes,

@@ -3,7 +3,7 @@ use made_client::v1::{
     ArtifactRecord, BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetQuantities,
     BudgetReservationEstimate, GetBudgetReportResponse, ListPendingBudgetReservationsResponse,
 };
-use made_client::{CeremonyTree, CeremonyTreeNode, ProgressBatch};
+use made_client::{CeremonySearchPage, CeremonyTree, CeremonyTreeNode, ProgressBatch};
 use serde_json::{json, Value};
 
 use crate::OutputFormat;
@@ -12,9 +12,12 @@ pub fn instance(instance: &CeremonyInstanceState, format: OutputFormat) -> Strin
     render(&instance_value(instance), format)
 }
 
-pub fn instances(instances: &[CeremonyInstanceState], format: OutputFormat) -> String {
-    let values: Vec<_> = instances.iter().map(instance_value).collect();
-    render(&json!({ "ceremonies": values }), format)
+pub fn ceremony_page(page: &CeremonySearchPage, format: OutputFormat) -> String {
+    let values: Vec<_> = page.instances().iter().map(instance_value).collect();
+    render(
+        &json!({ "ceremonies": values, "next_cursor": page.next_cursor() }),
+        format,
+    )
 }
 
 pub fn tree(tree: &CeremonyTree, format: OutputFormat) -> String {

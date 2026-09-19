@@ -2,7 +2,9 @@ use std::convert::Infallible;
 use std::sync::{Arc, Mutex};
 use std::task::{Context, Poll};
 
-use made_proto::v1::{GetBudgetReportRequest, GetBudgetReportResponse};
+use made_proto::v1::{
+    BindCeremonyParticipantsRequest, GetBudgetReportRequest, GetBudgetReportResponse,
+};
 use tokio::sync::oneshot;
 use tokio_stream::wrappers::TcpListenerStream;
 use tonic::codegen::{http, Body, BoxFuture, Service, StdError};
@@ -128,4 +130,39 @@ fn unimplemented_response() -> http::Response<tonic::body::BoxBody> {
         .header("content-type", "application/grpc")
         .body(tonic::body::empty_body())
         .unwrap()
+}
+
+#[test]
+fn canonical_map_payloads_derive_the_same_request_id() {
+    let context = RequestContext::from_id("map-retry").unwrap();
+    let first = BindCeremonyParticipantsRequest {
+        ceremony_id: "ceremony-a".to_owned(),
+        seating: [
+            ("reviewer".to_owned(), "agent-b".to_owned()),
+            ("author".to_owned(), "agent-a".to_owned()),
+        ]
+        .into_iter()
+        .collect(),
+        actor_id: "operator".to_owned(),
+        actor_kind: "service".to_owned(),
+    };
+    let second = BindCeremonyParticipantsRequest {
+        ceremony_id: "ceremony-a".to_owned(),
+        seating: [
+            ("author".to_owned(), "agent-a".to_owned()),
+            ("reviewer".to_owned(), "agent-b".to_owned()),
+        ]
+        .into_iter()
+        .collect(),
+        actor_id: "operator".to_owned(),
+        actor_kind: "service".to_owned(),
+    };
+    let method = "/underpass.made.v1.MadeService/BindCeremonyParticipants";
+    let first = MadeClient::request(&context, method, first);
+    let second = MadeClient::request(&context, method, second);
+
+    assert_eq!(
+        first.metadata().get("x-made-request-id"),
+        second.metadata().get("x-made-request-id")
+    );
 }

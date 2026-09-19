@@ -13,13 +13,16 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
+use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
-    CeremonyProgressSettings, GetCeremonyInstanceUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, PublishCeremonyEventsUseCase,
+    CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
+    CeremonySearchCursorKey, CeremonySearchCursorNamespace, GetCeremonyInstanceUseCase,
+    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
+    PublishCeremonyEventsUseCase, SearchCeremonyInstancesInput, SearchCeremonyInstancesUseCase,
     ServiceMetrics, ServiceStatus, StreamCeremonyUseCase,
 };
 use made_core::entities::CeremonyInstance;
@@ -29,11 +32,14 @@ use made_core::ports::{
     ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort,
-    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
-    ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
+    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
+    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
+    MetricsSnapshotPort, PutArtifactChunk, ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef, CeremonyEventConsumer, CeremonyId};
+use made_core::value_objects::{
+    ArtifactId, ArtifactRef, AuthorizationAction, AuthorizationRequestId, AuthorizationScope,
+    CeremonyEventConsumer, CeremonyId,
+};
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
@@ -55,6 +61,9 @@ pub struct EmbeddedMade {
     /// The streams themselves, for the one read that wants records
     /// rather than the session they fold to.
     events: Arc<dyn CeremonyEventStorePort>,
+    ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
+    ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+    authorization: Option<Arc<TrustedHostAuthorizationGate>>,
     progress_stream: Arc<StreamCeremonyUseCase>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
@@ -202,7 +211,7 @@ impl EmbeddedMade {
         let factory = Arc::new(factory);
         let councils = SqliteCouncilStore::over(store);
         let journal = Arc::new(SqliteCouncilJournal::new(councils.clone()));
-        Ok(Self::builder()
+        let builder = Self::builder()
             .with_council_journal(journal)
             .with_agent_factory(factory.clone())
             .with_agent_registry(Arc::new(SqliteAgentRegistry::new(
@@ -214,13 +223,18 @@ impl EmbeddedMade {
             .with_deliberation_repository(Arc::new(SqliteDeliberationRepository::new(
                 councils.clone(),
             )))
-            .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils))))
+            .with_statistics(Arc::new(SqliteCouncilStatistics::new(councils)));
+        Ok(match ceremony_search_cursors_from_env()? {
+            Some(cursors) => builder.with_ceremony_search_cursors(cursors),
+            None => builder,
+        })
     }
 
     pub(crate) fn new(
         definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
         publications: Arc<dyn CeremonyDefinitionPublicationPort>,
         events: Arc<dyn CeremonyEventStorePort>,
+        ceremony_index: Arc<dyn CeremonyInstanceIndexPort>,
         cursors: Arc<dyn CeremonyEventCursorPort>,
         snapshots: Arc<dyn CeremonySnapshotStorePort>,
         step_handler: Arc<dyn CeremonyStepHandlerPort>,
@@ -239,6 +253,8 @@ impl EmbeddedMade {
         artifacts: Option<Arc<ArtifactService>>,
         execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
         budgets: BudgetLedgerService,
+        ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+        authorization: Option<Arc<TrustedHostAuthorizationGate>>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -286,6 +302,9 @@ impl EmbeddedMade {
         Self {
             definitions,
             publications,
+            ceremony_index,
+            ceremony_search_cursors,
+            authorization,
             progress_stream,
             stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
             events,
@@ -352,6 +371,39 @@ impl EmbeddedMade {
         ListCeremonyInstancesUseCase::new(self.stream.clone())
             .execute()
             .await
+    }
+
+    pub async fn search_instances(
+        &self,
+        request_id: AuthorizationRequestId,
+        input: &SearchCeremonyInstancesInput,
+    ) -> Result<CeremonyInstancePage, DomainError> {
+        self.authorization
+            .as_ref()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "embedded ceremony search requires an explicit authorization gate",
+            })?
+            .authorize(
+                request_id,
+                AuthorizationAction::SearchCeremonyInstances,
+                AuthorizationScope::Global,
+                input.authorization_target_digest(),
+                None,
+            )
+            .await?;
+        let cursors =
+            self.ceremony_search_cursors
+                .clone()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "ceremony search cursors require an explicit stable key and namespace",
+                })?;
+        SearchCeremonyInstancesUseCase::new(
+            self.ceremony_index.clone(),
+            self.stream.clone(),
+            cursors,
+        )
+        .execute(input)
+        .await
     }
 
     /// How this engine is doing: the version it was built from, how
@@ -452,6 +504,35 @@ fn open_artifact_store(path: &std::path::Path) -> Result<LocalArtifactStore, Api
             reason: format!("the durable local artifact store did not open: {error}"),
         }
     })
+}
+
+fn ceremony_search_cursors_from_env() -> Result<Option<CeremonySearchCursorCodec>, ApiError> {
+    const KEY: &str = "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY";
+    const STORE: &str = "MADE_CEREMONY_STORE_ID";
+    const POLICY: &str = "MADE_AUTH_POLICY_ID";
+    let key = std::env::var(KEY).ok();
+    let store = std::env::var(STORE).ok();
+    let policy = std::env::var(POLICY).ok();
+    if key.is_none() && store.is_none() && policy.is_none() {
+        return Ok(None);
+    }
+    let missing = |name| ApiError::Unavailable {
+        reason: format!("{name} is required for scoped, restart-stable ceremony search cursors"),
+    };
+    let key =
+        CeremonySearchCursorKey::from_hex(&key.ok_or_else(|| missing(KEY))?).map_err(|error| {
+            ApiError::Unavailable {
+                reason: format!("{KEY} is invalid: {error}"),
+            }
+        })?;
+    let namespace = CeremonySearchCursorNamespace::new(
+        store.ok_or_else(|| missing(STORE))?,
+        policy.ok_or_else(|| missing(POLICY))?,
+    )
+    .map_err(|error| ApiError::Unavailable {
+        reason: format!("ceremony search cursor namespace is invalid: {error}"),
+    })?;
+    Ok(Some(CeremonySearchCursorCodec::new(key, namespace)))
 }
 
 fn open_budget_store(path: &std::path::Path) -> Result<SqliteBudgetLedgerStore, ApiError> {

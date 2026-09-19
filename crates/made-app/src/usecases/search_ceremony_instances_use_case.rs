@@ -3,11 +3,12 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::CeremonyInstanceIndexPort;
-use made_core::value_objects::CeremonyInstancePageLimit;
+use made_core::value_objects::{CeremonyId, CeremonyInstancePageLimit, TraceId};
 
 use crate::services::SessionStream;
 use crate::usecases::{
-    CeremonyInstancePage, CeremonySearchCursorCodec, SearchCeremonyInstancesInput,
+    CeremonyInstancePage, CeremonyInstanceRead, CeremonySearchCursorCodec,
+    SearchCeremonyInstancesInput,
 };
 
 const MAX_INDEX_PAGES_SCANNED: usize = 10;
@@ -69,12 +70,12 @@ impl SearchCeremonyInstancesUseCase {
             more = page.has_more();
             for (position, id) in page.ids().iter().enumerate() {
                 after = Some(id.clone());
-                let instance = self.stream.load(id).await?.instance;
+                let read = self.read(id).await?;
                 let matches_lifecycle = input
                     .lifecycle()
-                    .is_none_or(|phase| instance.lifecycle().phase() == phase);
+                    .is_none_or(|phase| read.instance().lifecycle().phase() == phase);
                 if matches_lifecycle {
-                    instances.push(instance);
+                    instances.push(read);
                 }
                 if instances.len() == input.limit().value() {
                     more = position + 1 < page.ids().len() || page.has_more();
@@ -96,6 +97,22 @@ impl SearchCeremonyInstancesUseCase {
             })
             .flatten();
         Ok(CeremonyInstancePage::new(instances, next_cursor))
+    }
+
+    async fn read(&self, id: &CeremonyId) -> Result<CeremonyInstanceRead, DomainError> {
+        let instance = self.stream.load(id).await?.instance;
+        let records = self.stream.records(id).await?;
+        let head = records.last();
+        let trace_id = head
+            .and_then(|record| record.trace_id())
+            .map(TraceId::new)
+            .transpose()?;
+        Ok(CeremonyInstanceRead::new(
+            instance,
+            trace_id,
+            head.and_then(|record| record.correlation_id()).cloned(),
+            head.and_then(|record| record.causation_id()).cloned(),
+        ))
     }
 }
 
@@ -191,7 +208,7 @@ mod tests {
         );
 
         let first = usecase.execute(&input).await.unwrap();
-        assert_eq!(first.instances()[0].id().as_str(), "b-paused");
+        assert_eq!(first.reads()[0].instance().id().as_str(), "b-paused");
         let next_cursor = first.next_cursor().unwrap();
         assert_eq!(
             cursors
@@ -210,7 +227,7 @@ mod tests {
             ))
             .await
             .unwrap();
-        assert!(rest.instances().is_empty());
+        assert!(rest.reads().is_empty());
         assert!(rest.next_cursor().is_none());
     }
 }

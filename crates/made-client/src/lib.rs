@@ -5,6 +5,7 @@ mod artifact_export;
 mod artifacts;
 mod budgets;
 mod ceremonies;
+mod ceremony_search_page;
 mod ceremony_tree;
 mod ceremony_tree_node;
 mod client_config;
@@ -16,6 +17,7 @@ mod progress_checkpoint;
 mod reports;
 mod request_context;
 
+pub use ceremony_search_page::CeremonySearchPage;
 pub use ceremony_tree::CeremonyTree;
 pub use ceremony_tree_node::CeremonyTreeNode;
 pub use client_config::ClientConfig;

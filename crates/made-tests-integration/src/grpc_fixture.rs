@@ -49,6 +49,7 @@ use made_app::services::{
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
+    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
     CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
@@ -59,13 +60,14 @@ use made_app::usecases::{
     RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
     ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
     RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
-    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
-    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
+    SearchCeremonyInstancesUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
+    VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
     AgentRegistryPort, AgentResolverPort, CeremonyDefinitionPublicationPort,
-    CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ContractRegistryPort,
-    CouncilRegistryPort, ValidatorPort,
+    CeremonyDefinitionRepositoryPort, CeremonyInstanceIndexPort, CeremonyStepHandlerPort,
+    ContractRegistryPort, CouncilRegistryPort, ValidatorPort,
 };
 use made_core::value_objects::CeremonyEventConsumer;
 use tokio::sync::oneshot;
@@ -75,6 +77,21 @@ use crate::grpc_fixture_authorization::fixture_authorization;
 
 pub use crate::grpc_fixture_wiring::GrpcFixtureWiring;
 pub use crate::tls_server_setup::TlsServerSetup;
+
+fn search_ceremonies(
+    index: Arc<dyn CeremonyInstanceIndexPort>,
+    stream: Arc<SessionStream>,
+) -> Arc<SearchCeremonyInstancesUseCase> {
+    Arc::new(SearchCeremonyInstancesUseCase::new(
+        index,
+        stream,
+        CeremonySearchCursorCodec::new(
+            CeremonySearchCursorKey::new([0x5a; 32]),
+            CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture")
+                .expect("fixture search cursor namespace should be valid"),
+        ),
+    ))
+}
 
 /// Handles a test needs to drive the in-process made:
 /// the gRPC channel for issuing RPCs and the registries for seeding
@@ -123,6 +140,7 @@ impl GrpcFixture {
     #[allow(clippy::too_many_lines)] // wiring graph mirrors `compose::compose`; splitting fragments the dep order
     pub async fn start_with(wiring: GrpcFixtureWiring) -> Self {
         let ceremony_store = wiring.ceremony_store();
+        let ceremony_index = wiring.ceremony_index();
         let clock = wiring.clock();
         let memory = wiring.memory();
         let validators: Vec<Arc<dyn ValidatorPort>> = vec![
@@ -451,6 +469,7 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
             )))
+            .search_ceremony_instances(search_ceremonies(ceremony_index, ceremony_stream.clone()))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody
@@ -873,6 +892,10 @@ impl GrpcFixture {
             .list_ceremony_instances(Arc::new(ListCeremonyInstancesUseCase::new(
                 ceremony_stream.clone(),
             )))
+            .search_ceremony_instances(search_ceremonies(
+                ceremony_store.clone(),
+                ceremony_stream.clone(),
+            ))
             // What the session left behind. The parity session drives
             // all four over these very RPCs, so a fixture missing
             // them would prove the tools agree on a server nobody

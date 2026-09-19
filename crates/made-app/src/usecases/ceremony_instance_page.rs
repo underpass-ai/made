@@ -1,28 +1,25 @@
+use crate::usecases::CeremonyInstanceRead;
 use crate::usecases::CeremonySearchCursor;
-use made_core::entities::CeremonyInstance;
 
 /// A bounded result page and the last examined id when more work remains.
 #[derive(Debug, Clone)]
 pub struct CeremonyInstancePage {
-    instances: Vec<CeremonyInstance>,
+    reads: Vec<CeremonyInstanceRead>,
     next_cursor: Option<CeremonySearchCursor>,
 }
 
 impl CeremonyInstancePage {
     #[must_use]
     pub fn new(
-        instances: Vec<CeremonyInstance>,
+        reads: Vec<CeremonyInstanceRead>,
         next_cursor: Option<CeremonySearchCursor>,
     ) -> Self {
-        Self {
-            instances,
-            next_cursor,
-        }
+        Self { reads, next_cursor }
     }
 
     #[must_use]
-    pub fn instances(&self) -> &[CeremonyInstance] {
-        &self.instances
+    pub fn reads(&self) -> &[CeremonyInstanceRead] {
+        &self.reads
     }
 
     #[must_use]

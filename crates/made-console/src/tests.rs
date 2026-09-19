@@ -86,4 +86,31 @@ fn bounded_arguments_are_rejected_by_clap() {
             .is_err()
     );
     assert!(Args::try_parse_from(["made-console", "artifact", "list", "--limit", "101",]).is_err());
+    assert!(Args::try_parse_from(["made-console", "list", "--limit", "101"]).is_err());
+}
+
+#[test]
+fn list_accepts_bounded_paging_and_lifecycle_filters() {
+    let args = Args::try_parse_from([
+        "made-console",
+        "list",
+        "--cursor",
+        "opaque",
+        "--limit",
+        "25",
+        "--id-prefix",
+        "release_%",
+        "--lifecycle",
+        "paused",
+    ])
+    .unwrap();
+    assert!(matches!(
+        args.command,
+        Command::List {
+            cursor: Some(cursor),
+            limit: 25,
+            id_prefix: Some(prefix),
+            lifecycle: Some(_),
+        } if cursor == "opaque" && prefix == "release_%"
+    ));
 }

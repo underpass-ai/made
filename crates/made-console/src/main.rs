@@ -11,6 +11,7 @@ mod artifact_command;
 mod budget_command;
 mod command;
 mod execute;
+mod lifecycle_filter_arg;
 mod output_format;
 mod render;
 

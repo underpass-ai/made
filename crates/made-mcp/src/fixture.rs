@@ -23,7 +23,8 @@ use council_fixtures::{
 mod execution_receipt_fixtures;
 
 use crate::renderers::{
-    CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
+    CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
+    ServiceMetricsView, StatisticsView,
 };
 use ceremony_history_fixtures::{
     ceremony_report_fixture, ceremony_transcript_fixture, pull_ceremony_events_fixture,
@@ -98,6 +99,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),
+                "made_search_ceremony_instances" => ceremony_search_fixture(),
                 "made_design_ceremony" => design_ceremony_fixture(),
                 "made_read_ceremony_events" => read_ceremony_events_fixture(),
                 "made_stream_ceremony" => stream_ceremony_fixture(),
@@ -299,6 +301,16 @@ fn ceremony_listing_fixture() -> Value {
             "not found: ceremony_definition",
         ),
     ])
+    .to_json()
+}
+
+fn ceremony_search_fixture() -> Value {
+    CeremonyInstanceSearchPage::new(
+        vec![CeremonyInstanceListingEntry::rehydratable(
+            ceremony_instance_fixture(),
+        )],
+        Some("fixture-next-cursor".to_owned()),
+    )
     .to_json()
 }
 

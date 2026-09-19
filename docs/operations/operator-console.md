@@ -42,6 +42,14 @@ export MADE_TLS_CLIENT_KEY=./operator-key.pem
 made-console get CEREMONY_ID
 ```
 
+The service requires two stable ceremony-search settings in addition to its
+authorization policy. `MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` is exactly 32
+bytes encoded as 64 hexadecimal characters and must come from a secret shared
+by every replica. `MADE_CEREMONY_STORE_ID` is a non-secret deployment/store
+identifier, stable across restarts and replicas. Changing the key, store id or
+`MADE_AUTH_POLICY_ID` invalidates outstanding list cursors by design. Never log
+the HMAC key.
+
 The console creates one random namespace per invocation, then derives each
 `x-made-request-id` from that namespace, the exact RPC method and canonical
 protobuf payload. Two actions or chunk offsets receive different ids; an
@@ -77,7 +85,8 @@ tree and identifies bounded dimensions that are exhausted or overrun.
 these reservations explain capacity that is unavailable before terminal
 reconciliation. The console does not estimate consumption from partial events.
 
-The current `list` command calls the legacy unpaged API. It does not satisfy
-the C5.8 bounded search/listing requirement. Do not use it as an inventory
-export on an unbounded host; the paginated storage query and public opaque
-cursor must land before that capability is accepted.
+`list` uses bounded storage keyset pages and returns `next_cursor`. Pass that
+cursor back unchanged with the same `--id-prefix` and `--lifecycle` filters.
+The prefix is literal, including `%` and `_`. A cursor is scoped and
+tamper-checked, but it is not authority: every page is authorized again for
+the authenticated principal and current policy.

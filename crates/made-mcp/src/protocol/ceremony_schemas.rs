@@ -69,6 +69,27 @@ pub(super) fn ceremony_draft_schema() -> Value {
     })
 }
 
+pub(super) fn ceremony_search_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "cursor": string_schema("Opaque cursor returned by the preceding page. Omit to start a traversal."),
+            "limit": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 100,
+                "default": 50
+            },
+            "id_prefix": string_schema("Literal, case-sensitive ceremony id prefix. Percent and underscore are ordinary characters."),
+            "lifecycle": {
+                "type": "string",
+                "enum": ["running", "paused", "ended"]
+            }
+        }
+    })
+}
+
 mod design;
 
 pub(super) use design::ceremony_design_schema;

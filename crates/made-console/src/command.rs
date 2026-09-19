@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
-use crate::{ArtifactCommand, BudgetCommand};
+use crate::{lifecycle_filter_arg::LifecycleFilterArg, ArtifactCommand, BudgetCommand};
 
 /// Public operator reads, exports and authorized actions.
 #[derive(Debug, Subcommand)]
@@ -10,7 +10,18 @@ pub enum Command {
     Get {
         ceremony_id: String,
     },
-    List,
+    List {
+        /// Opaque cursor returned by the preceding page.
+        #[arg(long)]
+        cursor: Option<String>,
+        #[arg(long, default_value_t = 50, value_parser = clap::value_parser!(u32).range(1..=100))]
+        limit: u32,
+        /// Literal ceremony id prefix; `%` and `_` have no wildcard meaning.
+        #[arg(long)]
+        id_prefix: Option<String>,
+        #[arg(long, value_enum)]
+        lifecycle: Option<LifecycleFilterArg>,
+    },
     Tree {
         ceremony_id: String,
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=1000))]
