@@ -8,7 +8,7 @@ macro_rules! council_rpc_methods {
             authorized_global!(
                 self,
                 request,
-                CompleteCeremonyStep,
+            GetExecutionReceipt,
                 self.handle_get_execution_receipt(request)
             )
         }
@@ -19,7 +19,7 @@ macro_rules! council_rpc_methods {
             authorized_global!(
                 self,
                 request,
-                CompleteCeremonyStep,
+            InspectExecutionRecovery,
                 self.handle_inspect_execution_recovery(request)
             )
         }
@@ -31,7 +31,7 @@ macro_rules! council_rpc_methods {
             authorized_global!(
                 self,
                 request,
-                CompleteCeremonyStep,
+            CompleteExecutionReceipt,
                 run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request))
             )
         }
@@ -43,7 +43,7 @@ macro_rules! council_rpc_methods {
             authorized_global!(
                 self,
                 request,
-                CompleteCeremonyStep,
+            AdoptExecutionReceipt,
                 run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request))
             )
         }

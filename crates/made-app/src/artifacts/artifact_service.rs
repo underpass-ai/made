@@ -46,6 +46,13 @@ impl ArtifactService {
         self.store.put_chunk(request).await
     }
 
+    pub async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        self.store.artifact_id_for_upload(upload_id).await
+    }
+
     pub async fn commit_upload(
         &self,
         upload_id: &ArtifactUploadId,

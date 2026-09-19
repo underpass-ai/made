@@ -38,6 +38,50 @@ macro_rules! authorized_ceremony {
     }};
 }
 
+macro_rules! authorized_artifact {
+    ($service:expr, $request:ident, $action:ident, $artifact_id:expr, $future:expr) => {{
+        let artifact_id = $artifact_id.clone();
+        let authorization = $service
+            .authorize_artifact(&$request, AuthorizationAction::$action, &artifact_id)
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
+macro_rules! authorized_budget_for_ceremony {
+    ($service:expr, $request:ident, $action:ident, $future:expr) => {{
+        let ceremony_id = $request.get_ref().ceremony_id.clone();
+        let authorization = $service
+            .authorize_budget_for_ceremony(&$request, AuthorizationAction::$action, &ceremony_id)
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
+macro_rules! authorized_artifact_upload {
+    ($service:expr, $request:ident, $action:ident, $upload_id:expr, $future:expr) => {{
+        let upload_id = $upload_id.clone();
+        let authorization = $service
+            .authorize_artifact_upload(&$request, AuthorizationAction::$action, &upload_id)
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
+macro_rules! authorized_artifact_upload_begin {
+    ($service:expr, $request:ident, $action:ident, $future:expr) => {{
+        let requested_artifact_id = $request.get_ref().requested_artifact_id.clone();
+        let authorization = $service
+            .authorize_artifact_upload_begin(
+                &$request,
+                AuthorizationAction::$action,
+                requested_artifact_id.as_deref(),
+            )
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
 /// Boxed server stream used by the generated gRPC associated type.
 pub struct RpcResultStream<T>(Pin<Box<dyn futures::Stream<Item = Result<T, Status>> + Send>>);
 

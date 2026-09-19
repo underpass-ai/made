@@ -401,11 +401,59 @@ pub async fn compose() -> Result<Application, ComposeError> {
 mod tests {
     use super::*;
     use async_trait::async_trait;
+    use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
+    use made_app::authorization::AuthorizationPolicyAdministrationService;
+    use made_core::value_objects::{
+        AuthenticatedPrincipal, AuthenticationMethod, AuthorizationPolicyId, PrincipalId,
+        PrincipalKind,
+    };
     use made_proto::runtime_v1 as runtime_pb;
     use tonic::{transport::Server, Request, Response, Status};
 
     // One lock prevents concurrent tests racing over process-wide MADE_* variables.
     static ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+    async fn configure_test_authorization() -> tempfile::TempDir {
+        let scratch = std::env::current_dir().unwrap().join("tmp");
+        std::fs::create_dir_all(&scratch).unwrap();
+        let directory = tempfile::tempdir_in(scratch).unwrap();
+        let store_path = directory.path().join("made.sqlite3");
+        let principals_path = directory.path().join("principals.json");
+        std::fs::write(
+            &principals_path,
+            serde_json::to_vec(&serde_json::json!([{
+                "certificate_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                "principal_id": "compose-test-owner",
+                "principal_kind": "trusted_host"
+            }]))
+            .unwrap(),
+        )
+        .unwrap();
+        let policy_id = AuthorizationPolicyId::new("compose-test-policy").unwrap();
+        let owner = AuthenticatedPrincipal::new(
+            PrincipalId::new("compose-test-owner").unwrap(),
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::MutualTls,
+        )
+        .unwrap();
+        AuthorizationPolicyAdministrationService::new(
+            policy_id,
+            Arc::new(SqliteAuthorizationPolicyStore::open(&store_path).unwrap()),
+            Arc::new(SystemClock::new()),
+        )
+        .open(owner, Vec::new())
+        .await
+        .unwrap();
+
+        std::env::set_var("MADE_CEREMONY_STORE_PATH", &store_path);
+        std::env::set_var("MADE_GRPC_TLS_MODE", "mutual");
+        std::env::set_var("MADE_GRPC_TLS_CERT_PATH", "test-server-cert.pem");
+        std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "test-server-key.pem");
+        std::env::set_var("MADE_GRPC_TLS_CLIENT_CA_PATH", "test-client-ca.pem");
+        std::env::set_var("MADE_AUTH_POLICY_ID", "compose-test-policy");
+        std::env::set_var("MADE_AUTH_MTLS_PRINCIPALS_PATH", principals_path);
+        directory
+    }
 
     #[tokio::test]
     async fn compose_builds_application_with_nats_disabled() {
@@ -419,6 +467,7 @@ mod tests {
             }
         }
         std::env::set_var("MADE_NATS_ENABLED", "false");
+        let _authorization = configure_test_authorization().await;
 
         let app = compose().await.expect("compose should succeed");
         assert!(!app.service_config.nats_enabled);
@@ -505,6 +554,7 @@ mod tests {
         std::env::set_var("MADE_NATS_ENABLED", "false");
         std::env::set_var("MADE_EXECUTOR_KIND", "runtime");
         std::env::set_var("MADE_RUNTIME_GRPC_ENDPOINT", format!("http://{addr}"));
+        let _authorization = configure_test_authorization().await;
 
         let app = compose().await.expect("compose should succeed");
         assert!(!app.service_config.nats_enabled);

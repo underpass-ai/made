@@ -58,6 +58,15 @@ impl ArtifactStorePort for LocalArtifactStore {
             .await
     }
 
+    async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        let upload_id = upload_id.clone();
+        self.blocking(move |repository| repository.artifact_id_for_upload(&upload_id))
+            .await
+    }
+
     async fn commit_upload(
         &self,
         upload_id: &ArtifactUploadId,
