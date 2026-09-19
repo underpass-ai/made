@@ -8,8 +8,8 @@ use crate::value_objects::{
     AuthorizationDecisionKind, AuthorizationDecisionPlan, AuthorizationDecisionTtl,
     AuthorizationDenialReason, AuthorizationGrant, AuthorizationGrantId, AuthorizationPolicyId,
     AuthorizationPolicyVersion, AuthorizationRequest, AuthorizationRequestId,
-    AuthorizationRevocation, AuthorizationRevocationReason, AuthorizationScope, PrincipalId,
-    PrincipalKind, SeparationRule,
+    AuthorizationRevocation, AuthorizationRevocationReason, AuthorizationScope, PrincipalKind,
+    SeparationRule,
 };
 use crate::DomainError;
 
@@ -93,10 +93,25 @@ impl AuthorizationPolicy {
         now: OffsetDateTime,
         ttl: AuthorizationDecisionTtl,
     ) -> Result<AuthorizationDecisionPlan, DomainError> {
+        let existing = self.decisions_by_request.get(request.id());
+        let approval = request
+            .approval_decision_id()
+            .and_then(|id| self.decisions_by_id.get(id));
+        self.decide_authorize_with_decisions(request, existing, approval, now, ttl)
+    }
+
+    pub fn decide_authorize_with_decisions(
+        &self,
+        request: AuthorizationRequest,
+        existing: Option<&AuthorizationDecision>,
+        approval: Option<&AuthorizationDecision>,
+        now: OffsetDateTime,
+        ttl: AuthorizationDecisionTtl,
+    ) -> Result<AuthorizationDecisionPlan, DomainError> {
         let policy_id = self.id.clone().ok_or(DomainError::NotFound {
             what: "authorization_policy",
         })?;
-        if let Some(existing) = self.decisions_by_request.get(request.id()) {
+        if let Some(existing) = existing {
             if existing.request() == &request {
                 return Ok(AuthorizationDecisionPlan::new(existing.clone(), None));
             }
@@ -106,14 +121,11 @@ impl AuthorizationPolicy {
         }
 
         let grant = self.matching_grant(&request, now);
-        let owner = self
-            .owner
-            .as_ref()
-            .is_some_and(|value| value.id() == request.principal().id());
+        let owner = self.is_owner(request.principal());
         let denial = if !owner && grant.is_none() {
             Some(AuthorizationDenialReason::NoMatchingGrant)
         } else {
-            self.separation_denial(&request, now)
+            self.separation_denial(&request, approval, now)
         };
         let requested_until =
             now.checked_add(ttl.duration())
@@ -145,7 +157,7 @@ impl AuthorizationPolicy {
 
     pub fn decide_issue(
         &self,
-        issuer: &PrincipalId,
+        issuer: &AuthenticatedPrincipal,
         grant: AuthorizationGrant,
         now: OffsetDateTime,
     ) -> Result<Option<AuthorizationPolicyEvent>, DomainError> {
@@ -153,6 +165,7 @@ impl AuthorizationPolicy {
         let policy_id = self.id.clone().ok_or(DomainError::NotFound {
             what: "authorization_policy",
         })?;
+        issuer.validate()?;
         if grant.issued_by() != issuer {
             return Err(DomainError::InvariantViolated {
                 reason: "authorization grant issuer must be the authenticated principal",
@@ -186,7 +199,7 @@ impl AuthorizationPolicy {
 
     pub fn decide_revoke(
         &self,
-        issuer: &PrincipalId,
+        issuer: &AuthenticatedPrincipal,
         grant_id: &AuthorizationGrantId,
         reason: AuthorizationRevocationReason,
         now: OffsetDateTime,
@@ -200,6 +213,7 @@ impl AuthorizationPolicy {
         if self.revoked.contains(grant_id) {
             return Ok(None);
         }
+        issuer.validate()?;
         let allowed = self.is_owner(issuer)
             || grant.issued_by() == issuer
             || self.permits(
@@ -222,14 +236,14 @@ impl AuthorizationPolicy {
     #[must_use]
     pub fn permits(
         &self,
-        principal: &PrincipalId,
+        principal: &AuthenticatedPrincipal,
         action: AuthorizationAction,
         scope: &AuthorizationScope,
         now: OffsetDateTime,
     ) -> bool {
         self.is_owner(principal)
             || self.grants.values().any(|grant| {
-                grant.grantee() == principal
+                grant.grantee() == principal.id()
                     && grant.permits(action, scope, now)
                     && self.grant_chain_is_live(grant, now)
             })
@@ -268,76 +282,152 @@ impl AuthorizationPolicy {
             }
             AuthorizationPolicyEvent::GrantIssued {
                 grant, issued_at, ..
-            } => {
-                if self.id.is_none() {
-                    return Err(DomainError::NotFound {
-                        what: "authorization_policy",
-                    });
-                }
-                if self.grants.contains_key(grant.id()) {
-                    return Err(DomainError::AlreadyExists {
-                        what: "authorization_grant",
-                    });
-                }
-                grant.validate()?;
-                let authority_is_valid = if self.is_owner(grant.issued_by()) {
-                    grant.parent_grant_id().is_none()
-                } else {
-                    self.may_delegate(grant.issued_by(), &grant, issued_at)
-                };
-                if !authority_is_valid {
-                    return Err(DomainError::InvariantViolated {
-                        reason: "stored authorization grant has invalid delegation authority",
-                    });
-                }
-                self.grants.insert(grant.id().clone(), grant);
-            }
+            } => self.apply_grant(grant, issued_at)?,
             AuthorizationPolicyEvent::GrantRevoked { revocation, .. } => {
-                if !self.grants.contains_key(revocation.grant_id()) {
-                    return Err(DomainError::NotFound {
-                        what: "authorization_grant",
-                    });
-                }
-                if self.revoked.contains(revocation.grant_id()) {
-                    return Err(DomainError::AlreadyExists {
-                        what: "authorization_revocation",
-                    });
-                }
-                self.revoked.insert(revocation.grant_id().clone());
+                self.apply_revocation(&revocation)?;
             }
             AuthorizationPolicyEvent::DecisionRecorded { decision, .. } => {
-                decision.validate()?;
-                if decision.policy_version() != self.version.next() {
-                    return Err(DomainError::InvariantViolated {
-                        reason: "authorization decision carries the wrong policy version",
-                    });
-                }
-                if self
-                    .decisions_by_request
-                    .contains_key(decision.request().id())
-                    || self.decisions_by_id.contains_key(decision.id())
-                {
-                    return Err(DomainError::AlreadyExists {
-                        what: "authorization_decision",
-                    });
-                }
-                if !self.decision_authority_is_valid(&decision) {
-                    return Err(DomainError::InvariantViolated {
-                        reason: "stored authorization decision contradicts the active policy",
-                    });
-                }
-                self.decisions_by_request
-                    .insert(decision.request().id().clone(), decision.clone());
-                self.decisions_by_id.insert(decision.id().clone(), decision);
+                self.apply_decision(decision)?;
             }
         }
         self.version = self.version.next();
         Ok(())
     }
 
+    fn apply_grant(
+        &mut self,
+        grant: AuthorizationGrant,
+        issued_at: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        if self.id.is_none() {
+            return Err(DomainError::NotFound {
+                what: "authorization_policy",
+            });
+        }
+        if self.grants.contains_key(grant.id()) {
+            return Err(DomainError::AlreadyExists {
+                what: "authorization_grant",
+            });
+        }
+        grant.validate()?;
+        let authority_is_valid = if self.is_owner(grant.issued_by()) {
+            grant.parent_grant_id().is_none()
+        } else {
+            self.may_delegate(grant.issued_by(), &grant, issued_at)
+        };
+        if !authority_is_valid {
+            return Err(DomainError::InvariantViolated {
+                reason: "stored authorization grant has invalid delegation authority",
+            });
+        }
+        self.grants.insert(grant.id().clone(), grant);
+        Ok(())
+    }
+
+    fn apply_revocation(
+        &mut self,
+        revocation: &AuthorizationRevocation,
+    ) -> Result<(), DomainError> {
+        revocation.revoked_by().validate()?;
+        let grant = self
+            .grants
+            .get(revocation.grant_id())
+            .ok_or(DomainError::NotFound {
+                what: "authorization_grant",
+            })?;
+        if self.revoked.contains(revocation.grant_id()) {
+            return Err(DomainError::AlreadyExists {
+                what: "authorization_revocation",
+            });
+        }
+        let allowed = self.is_owner(revocation.revoked_by())
+            || grant.issued_by() == revocation.revoked_by()
+            || self.permits(
+                revocation.revoked_by(),
+                AuthorizationAction::RevokeAuthorizationGrant,
+                grant.scope(),
+                revocation.revoked_at(),
+            );
+        if !allowed {
+            return Err(DomainError::InvariantViolated {
+                reason: "stored authorization revocation has invalid authority",
+            });
+        }
+        self.revoked.insert(revocation.grant_id().clone());
+        Ok(())
+    }
+
+    fn apply_decision(&mut self, decision: AuthorizationDecision) -> Result<(), DomainError> {
+        decision.validate()?;
+        if decision.policy_version() != self.version.next() {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorization decision carries the wrong policy version",
+            });
+        }
+        if self
+            .decisions_by_request
+            .contains_key(decision.request().id())
+            || self.decisions_by_id.contains_key(decision.id())
+        {
+            return Err(DomainError::AlreadyExists {
+                what: "authorization_decision",
+            });
+        }
+        if !self.decision_authority_is_valid(&decision) {
+            return Err(DomainError::InvariantViolated {
+                reason: "stored authorization decision contradicts the active policy",
+            });
+        }
+        self.decisions_by_request
+            .insert(decision.request().id().clone(), decision.clone());
+        self.decisions_by_id.insert(decision.id().clone(), decision);
+        Ok(())
+    }
+
+    pub fn apply_projected(
+        &mut self,
+        event: AuthorizationPolicyEvent,
+        approval: Option<&AuthorizationDecision>,
+    ) -> Result<(), DomainError> {
+        let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = &event else {
+            return self.apply(event);
+        };
+        if self.id.as_ref() != Some(event.policy_id()) {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorization event belongs to another policy",
+            });
+        }
+        decision.validate()?;
+        if decision.policy_version() != self.version.next() {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorization decision carries the wrong policy version",
+            });
+        }
+        if !self.decision_authority_is_valid_with_approval(decision, approval) {
+            return Err(DomainError::InvariantViolated {
+                reason: "stored authorization decision contradicts the active policy",
+            });
+        }
+        self.version = self.version.next();
+        Ok(())
+    }
+
+    pub fn restore_version(
+        &mut self,
+        version: AuthorizationPolicyVersion,
+    ) -> Result<(), DomainError> {
+        if version < self.version {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorization projection version precedes its state",
+            });
+        }
+        self.version = version;
+        Ok(())
+    }
+
     fn may_delegate(
         &self,
-        issuer: &PrincipalId,
+        issuer: &AuthenticatedPrincipal,
         child: &AuthorizationGrant,
         now: OffsetDateTime,
     ) -> bool {
@@ -345,7 +435,7 @@ impl AuthorizationPolicy {
             return false;
         };
         self.grants.get(parent_id).is_some_and(|parent| {
-            parent.grantee() == issuer
+            parent.grantee() == issuer.id()
                 && self.grant_chain_is_live(parent, now)
                 && parent
                     .actions()
@@ -378,33 +468,32 @@ impl AuthorizationPolicy {
             return self.is_owner(grant.issued_by());
         };
         self.grants.get(parent_id).is_some_and(|parent| {
-            parent.grantee() == grant.issued_by() && self.grant_chain_is_live(parent, now)
+            parent.grantee() == grant.issued_by().id() && self.grant_chain_is_live(parent, now)
         })
     }
 
-    fn is_owner(&self, principal: &PrincipalId) -> bool {
-        self.owner
-            .as_ref()
-            .is_some_and(|owner| owner.id() == principal)
+    fn is_owner(&self, principal: &AuthenticatedPrincipal) -> bool {
+        self.owner.as_ref() == Some(principal)
     }
 
     fn separation_denial(
         &self,
         request: &AuthorizationRequest,
+        approval: Option<&AuthorizationDecision>,
         now: OffsetDateTime,
     ) -> Option<AuthorizationDenialReason> {
         let rule = self.separation_rules.get(&request.action())?;
         let Some(approval_id) = request.approval_decision_id() else {
             return Some(AuthorizationDenialReason::ApprovalRequired);
         };
-        let valid = self
-            .decisions_by_id
-            .get(approval_id)
+        let valid = approval
+            .filter(|approval| approval.id() == approval_id)
             .is_some_and(|approval| {
                 approval.kind() == AuthorizationDecisionKind::Allow
                     && approval.is_live_at(now)
+                    && self.decision_grant_is_live(approval, now)
                     && approval.request().action() == rule.approval_action()
-                    && approval.request().principal().id() != request.principal().id()
+                    && approval.request().principal() != request.principal()
                     && approval.request().scope().covers(request.scope())
                     && approval.request().target_digest() == request.target_digest()
             });
@@ -412,12 +501,24 @@ impl AuthorizationPolicy {
     }
 
     fn decision_authority_is_valid(&self, decision: &AuthorizationDecision) -> bool {
+        let approval = decision
+            .request()
+            .approval_decision_id()
+            .and_then(|id| self.decisions_by_id.get(id));
+        self.decision_authority_is_valid_with_approval(decision, approval)
+    }
+
+    fn decision_authority_is_valid_with_approval(
+        &self,
+        decision: &AuthorizationDecision,
+        approval: Option<&AuthorizationDecision>,
+    ) -> bool {
         let request = decision.request();
         let now = decision.decided_at();
         if decision.valid_until() - now > time::Duration::seconds(300) {
             return false;
         }
-        let owner = self.is_owner(request.principal().id());
+        let owner = self.is_owner(request.principal());
         let grant = decision
             .grant_id()
             .and_then(|grant_id| self.grants.get(grant_id));
@@ -430,7 +531,7 @@ impl AuthorizationPolicy {
                         .valid_until()
                         .is_none_or(|until| decision.valid_until() <= until)
             });
-        let separation_denial = self.separation_denial(request, now);
+        let separation_denial = self.separation_denial(request, approval, now);
         match decision.kind() {
             AuthorizationDecisionKind::Allow => granted && separation_denial.is_none(),
             AuthorizationDecisionKind::Deny => {
@@ -441,6 +542,20 @@ impl AuthorizationPolicy {
                 };
                 decision.grant_id().is_none() && decision.denial_reason() == expected
             }
+        }
+    }
+
+    fn decision_grant_is_live(
+        &self,
+        decision: &AuthorizationDecision,
+        now: OffsetDateTime,
+    ) -> bool {
+        match decision.grant_id() {
+            Some(grant_id) => self
+                .grants
+                .get(grant_id)
+                .is_some_and(|grant| self.grant_chain_is_live(grant, now)),
+            None => self.is_owner(decision.request().principal()),
         }
     }
 }

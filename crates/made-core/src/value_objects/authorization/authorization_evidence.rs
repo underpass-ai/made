@@ -44,6 +44,11 @@ impl AuthorizationEvidence {
     }
 
     #[must_use]
+    pub fn request_id(&self) -> &AuthorizationRequestId {
+        &self.request_id
+    }
+
+    #[must_use]
     pub fn principal_id(&self) -> &PrincipalId {
         &self.principal_id
     }

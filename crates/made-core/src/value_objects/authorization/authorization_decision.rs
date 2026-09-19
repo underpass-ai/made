@@ -166,7 +166,7 @@ impl AuthorizationDecision {
         Ok(AuthorizationEvidence::from_decision(self))
     }
 
-    pub(crate) fn validate(&self) -> Result<(), DomainError> {
+    pub fn validate(&self) -> Result<(), DomainError> {
         self.request.validate()?;
         let rebuilt = Self::build(
             self.request.clone(),

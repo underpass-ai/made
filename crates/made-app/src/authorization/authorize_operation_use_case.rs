@@ -64,6 +64,14 @@ impl AuthorizeOperationUseCase {
         request: AuthorizationRequest,
     ) -> Result<AuthorizationDecision, DomainError> {
         for _ in 0..MAX_CONFLICT_RETRIES {
+            let existing = self
+                .store
+                .decision_for_request(&self.policy_id, request.id())
+                .await?;
+            let approval = match request.approval_decision_id() {
+                Some(id) => self.store.decision(&self.policy_id, id).await?,
+                None => None,
+            };
             let snapshot =
                 self.store
                     .load(&self.policy_id)
@@ -71,10 +79,13 @@ impl AuthorizeOperationUseCase {
                     .ok_or(DomainError::NotFound {
                         what: "authorization_policy",
                     })?;
-            let plan =
-                snapshot
-                    .policy
-                    .decide_authorize(request.clone(), self.clock.now(), self.ttl)?;
+            let plan = snapshot.policy.decide_authorize_with_decisions(
+                request.clone(),
+                existing.as_ref(),
+                approval.as_ref(),
+                self.clock.now(),
+                self.ttl,
+            )?;
             let (decision, event) = plan.into_parts();
             let Some(event) = event else {
                 return Ok(decision);

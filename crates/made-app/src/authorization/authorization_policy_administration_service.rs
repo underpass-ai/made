@@ -4,7 +4,7 @@ use made_core::entities::AuthorizationPolicy;
 use made_core::ports::{AuthorizationPolicyAppendOutcome, AuthorizationPolicyStorePort, ClockPort};
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthorizationGrant, AuthorizationGrantId, AuthorizationPolicyId,
-    AuthorizationRevocationReason, PrincipalId, SeparationRule,
+    AuthorizationRevocationReason, SeparationRule,
 };
 use made_core::DomainError;
 
@@ -79,7 +79,7 @@ impl AuthorizationPolicyAdministrationService {
         principal: &AuthenticatedPrincipal,
         grant: AuthorizationGrant,
     ) -> Result<AuthorizationMutationOutcome, DomainError> {
-        self.mutate(principal.id(), |policy, issuer, now| {
+        self.mutate(principal, |policy, issuer, now| {
             policy.decide_issue(issuer, grant.clone(), now)
         })
         .await
@@ -91,7 +91,7 @@ impl AuthorizationPolicyAdministrationService {
         grant_id: &AuthorizationGrantId,
         reason: AuthorizationRevocationReason,
     ) -> Result<AuthorizationMutationOutcome, DomainError> {
-        self.mutate(principal.id(), |policy, issuer, now| {
+        self.mutate(principal, |policy, issuer, now| {
             policy.decide_revoke(issuer, grant_id, reason.clone(), now)
         })
         .await
@@ -99,13 +99,13 @@ impl AuthorizationPolicyAdministrationService {
 
     async fn mutate<F>(
         &self,
-        issuer: &PrincipalId,
+        issuer: &AuthenticatedPrincipal,
         decide: F,
     ) -> Result<AuthorizationMutationOutcome, DomainError>
     where
         F: Fn(
             &AuthorizationPolicy,
-            &PrincipalId,
+            &AuthenticatedPrincipal,
             time::OffsetDateTime,
         )
             -> Result<Option<made_core::entities::AuthorizationPolicyEvent>, DomainError>,

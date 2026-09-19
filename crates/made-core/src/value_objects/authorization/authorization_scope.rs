@@ -38,6 +38,9 @@ impl AuthorizationScope {
             | (Self::CeremonyTree { root_id: left }, Self::CeremonyTree { root_id: right }) => {
                 left == right
             }
+            (Self::CeremonyTree { root_id }, Self::Ceremony { ceremony_id }) => {
+                root_id == ceremony_id
+            }
             (
                 Self::Definition {
                     name: left_name,

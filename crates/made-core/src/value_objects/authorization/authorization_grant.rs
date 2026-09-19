@@ -76,8 +76,8 @@ impl AuthorizationGrant {
         self.delegation_depth
     }
     #[must_use]
-    pub fn issued_by(&self) -> &PrincipalId {
-        self.issuer.principal_id()
+    pub const fn issued_by(&self) -> &crate::value_objects::AuthenticatedPrincipal {
+        self.issuer.principal()
     }
     #[must_use]
     pub const fn parent_grant_id(&self) -> Option<&AuthorizationGrantId> {
@@ -98,6 +98,7 @@ impl AuthorizationGrant {
     }
 
     pub fn validate(&self) -> Result<(), DomainError> {
+        self.issuer.principal().validate()?;
         if self.actions.is_empty() {
             return Err(DomainError::EmptyCollection {
                 field: "authorization_grant.actions",

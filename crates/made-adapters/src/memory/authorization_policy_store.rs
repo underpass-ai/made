@@ -8,8 +8,8 @@ use made_core::ports::{
     AuthorizationPolicyStorePort,
 };
 use made_core::value_objects::{
-    AuthorizationDecisionId, AuthorizationDecisionPageLimit, AuthorizationPolicyId,
-    AuthorizationPolicyVersion,
+    AuthorizationDecision, AuthorizationDecisionId, AuthorizationDecisionPageLimit,
+    AuthorizationPolicyId, AuthorizationPolicyVersion, AuthorizationRequestId,
 };
 use made_core::DomainError;
 use tokio::sync::RwLock;
@@ -80,6 +80,46 @@ impl AuthorizationPolicyStorePort for InMemoryAuthorizationPolicyStore {
             .collect();
         Ok(AuthorizationDecisionPage::new(decisions))
     }
+
+    async fn decision(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        decision_id: &AuthorizationDecisionId,
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
+        let streams = self.streams.read().await;
+        find_decision(streams.get(policy_id), |decision| {
+            decision.id() == decision_id
+        })
+    }
+
+    async fn decision_for_request(
+        &self,
+        policy_id: &AuthorizationPolicyId,
+        request_id: &AuthorizationRequestId,
+    ) -> Result<Option<AuthorizationDecision>, DomainError> {
+        let streams = self.streams.read().await;
+        find_decision(streams.get(policy_id), |decision| {
+            decision.request().id() == request_id
+        })
+    }
+}
+
+fn find_decision(
+    events: Option<&Vec<AuthorizationPolicyEvent>>,
+    matches: impl Fn(&AuthorizationDecision) -> bool,
+) -> Result<Option<AuthorizationDecision>, DomainError> {
+    let Some(events) = events else {
+        return Ok(None);
+    };
+    for event in events.iter().rev() {
+        if let AuthorizationPolicyEvent::DecisionRecorded { decision, .. } = event {
+            decision.validate()?;
+            if matches(decision) {
+                return Ok(Some(decision.clone()));
+            }
+        }
+    }
+    Ok(None)
 }
 
 fn snapshot(

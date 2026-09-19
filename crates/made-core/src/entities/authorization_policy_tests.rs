@@ -5,8 +5,8 @@ use crate::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionKind,
     AuthorizationDecisionTtl, AuthorizationDenialReason, AuthorizationGrant, AuthorizationGrantId,
     AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationRequest, AuthorizationRequestId,
-    AuthorizationRevocationReason, AuthorizationScope, AuthorizationTargetDigest, DelegationDepth,
-    PrincipalId, PrincipalKind, SeparationRule,
+    AuthorizationRevocation, AuthorizationRevocationReason, AuthorizationScope,
+    AuthorizationTargetDigest, DelegationDepth, PrincipalId, PrincipalKind, SeparationRule,
 };
 use crate::DomainError;
 
@@ -27,17 +27,72 @@ fn policy_owner_must_be_an_explicit_trusted_host() {
 }
 
 #[test]
+fn matching_owner_id_with_another_authenticated_identity_has_no_owner_authority() {
+    let policy = opened_policy(Vec::new());
+    let outcome = policy
+        .decide_authorize(
+            request(
+                "owner-imposter",
+                human("trusted-host"),
+                AuthorizationAction::PauseCeremony,
+                b"ceremony",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap();
+    assert_eq!(outcome.decision().kind(), AuthorizationDecisionKind::Deny);
+    assert_eq!(
+        outcome.decision().denial_reason(),
+        Some(AuthorizationDenialReason::NoMatchingGrant)
+    );
+}
+
+#[test]
+fn forged_revocation_is_rejected_without_changing_rehydrated_state() {
+    let mut policy = opened_policy(Vec::new());
+    let grant = grant(
+        "protected-grant",
+        worker("worker").id().clone(),
+        [AuthorizationAction::PauseCeremony],
+        DelegationDepth::none(),
+        trusted_host(),
+        None,
+    );
+    let grant_id = grant.id().clone();
+    issue(&mut policy, &trusted_host(), grant);
+    let before = policy.clone();
+    let forged = AuthorizationPolicyEvent::GrantRevoked {
+        policy_id: policy_id(),
+        revocation: AuthorizationRevocation::new(
+            grant_id,
+            service("attacker"),
+            AuthorizationRevocationReason::new("forged").unwrap(),
+            NOW + Duration::seconds(1),
+        ),
+    };
+
+    assert_eq!(
+        policy.apply(forged).unwrap_err(),
+        DomainError::InvariantViolated {
+            reason: "stored authorization revocation has invalid authority"
+        }
+    );
+    assert_eq!(policy, before);
+}
+
+#[test]
 fn exact_request_retry_returns_the_sealed_decision_and_changed_target_conflicts() {
     let mut policy = opened_policy(Vec::new());
     issue(
         &mut policy,
-        trusted_host().id(),
+        &trusted_host(),
         grant(
             "grant-1",
             worker("worker").id().clone(),
             [AuthorizationAction::ClaimCeremonyStep],
             DelegationDepth::none(),
-            trusted_host().id().clone(),
+            trusted_host(),
             None,
         ),
     );
@@ -83,11 +138,11 @@ fn revoke_winner_blocks_new_authorization_but_does_not_rewrite_prior_allow() {
         worker("worker").id().clone(),
         [AuthorizationAction::CompleteCeremonyStep],
         DelegationDepth::none(),
-        trusted_host().id().clone(),
+        trusted_host(),
         None,
     );
     let grant_id = grant.id().clone();
-    issue(&mut policy, trusted_host().id(), grant);
+    issue(&mut policy, &trusted_host(), grant);
     let admitted = request(
         "admitted",
         worker("worker"),
@@ -101,7 +156,7 @@ fn revoke_winner_blocks_new_authorization_but_does_not_rewrite_prior_allow() {
     apply(&mut policy, event.unwrap());
     revoke(
         &mut policy,
-        trusted_host().id(),
+        &trusted_host(),
         &grant_id,
         NOW + Duration::seconds(1),
     );
@@ -139,22 +194,22 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
             AuthorizationAction::PauseCeremony,
         ],
         DelegationDepth::new(1).unwrap(),
-        trusted_host().id().clone(),
+        trusted_host(),
         Some(parent_until),
     );
-    issue(&mut policy, trusted_host().id(), parent);
+    issue(&mut policy, &trusted_host(), parent);
 
     let child = delegated_grant(
         "child",
         worker("worker").id().clone(),
         [AuthorizationAction::PauseCeremony],
         DelegationDepth::none(),
-        service("delegate").id().clone(),
+        service("delegate"),
         AuthorizationGrantId::new("parent").unwrap(),
         Some(parent_until),
     );
     assert!(policy
-        .decide_issue(service("delegate").id(), child, NOW)
+        .decide_issue(&service("delegate"), child, NOW)
         .unwrap()
         .is_some());
 
@@ -163,12 +218,12 @@ fn delegation_cannot_expand_actions_validity_or_depth() {
         worker("worker").id().clone(),
         [AuthorizationAction::CancelCeremony],
         DelegationDepth::none(),
-        service("delegate").id().clone(),
+        service("delegate"),
         AuthorizationGrantId::new("parent").unwrap(),
         Some(parent_until + Duration::seconds(1)),
     );
     assert!(policy
-        .decide_issue(service("delegate").id(), expanded, NOW)
+        .decide_issue(&service("delegate"), expanded, NOW)
         .is_err());
 }
 
@@ -186,7 +241,7 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
             human("approver").id().clone(),
             [AuthorizationAction::ApproveCeremonyGuard],
             DelegationDepth::none(),
-            trusted_host().id().clone(),
+            trusted_host(),
             None,
         ),
         grant(
@@ -194,11 +249,11 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
             worker("executor").id().clone(),
             [AuthorizationAction::CompleteCeremonyStep],
             DelegationDepth::none(),
-            trusted_host().id().clone(),
+            trusted_host(),
             None,
         ),
     ] {
-        issue(&mut policy, trusted_host().id(), grant);
+        issue(&mut policy, &trusted_host(), grant);
     }
 
     let approval = request(
@@ -244,6 +299,28 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
             .denial_reason(),
         Some(AuthorizationDenialReason::ApprovalInvalid)
     );
+
+    revoke(
+        &mut policy,
+        &trusted_host(),
+        &AuthorizationGrantId::new("approver").unwrap(),
+        NOW + Duration::seconds(1),
+    );
+    let revoked_approval = request(
+        "revoked-approval",
+        worker("executor"),
+        AuthorizationAction::CompleteCeremonyStep,
+        b"step-result",
+    )
+    .with_approval(approval.id().clone());
+    assert_eq!(
+        policy
+            .decide_authorize(revoked_approval, NOW + Duration::seconds(1), ttl())
+            .unwrap()
+            .decision()
+            .denial_reason(),
+        Some(AuthorizationDenialReason::ApprovalInvalid)
+    );
 }
 
 #[test]
@@ -254,10 +331,10 @@ fn expired_grant_is_a_persistable_denial() {
         worker("worker").id().clone(),
         [AuthorizationAction::ClaimCeremonyStep],
         DelegationDepth::none(),
-        trusted_host().id().clone(),
+        trusted_host(),
         Some(NOW + Duration::seconds(1)),
     );
-    issue(&mut policy, trusted_host().id(), expired);
+    issue(&mut policy, &trusted_host(), expired);
     let decision = policy
         .decide_authorize(
             request(
@@ -284,7 +361,11 @@ fn malformed_deserialized_grant_is_rejected_without_mutating_policy() {
         "valid_until": "2026-09-19T11:59:59Z",
         "delegation_depth": 0,
         "issuer": {
-            "principal_id": "trusted-host"
+            "principal": {
+                "id": "trusted-host",
+                "kind": "trusted_host",
+                "method": "local_host_policy"
+            }
         }
     }))
     .unwrap();
@@ -331,10 +412,10 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
             AuthorizationAction::PauseCeremony,
         ],
         DelegationDepth::new(2).unwrap(),
-        trusted_host().id().clone(),
+        trusted_host(),
         Some(NOW + Duration::minutes(10)),
     );
-    issue(&mut policy, trusted_host().id(), parent);
+    issue(&mut policy, &trusted_host(), parent);
     let child = delegated_grant(
         "child",
         worker("worker").id().clone(),
@@ -343,14 +424,14 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
             AuthorizationAction::PauseCeremony,
         ],
         DelegationDepth::new(1).unwrap(),
-        service("delegate").id().clone(),
+        service("delegate"),
         AuthorizationGrantId::new("parent").unwrap(),
         Some(NOW + Duration::minutes(5)),
     );
-    issue(&mut policy, service("delegate").id(), child);
+    issue(&mut policy, &service("delegate"), child);
     revoke(
         &mut policy,
-        trusted_host().id(),
+        &trusted_host(),
         &AuthorizationGrantId::new("parent").unwrap(),
         NOW + Duration::seconds(1),
     );
@@ -374,16 +455,12 @@ fn revoking_parent_grant_blocks_descendant_authority_and_further_delegation() {
         human("operator").id().clone(),
         [AuthorizationAction::PauseCeremony],
         DelegationDepth::none(),
-        worker("worker").id().clone(),
+        worker("worker"),
         AuthorizationGrantId::new("child").unwrap(),
         Some(NOW + Duration::minutes(2)),
     );
     assert!(policy
-        .decide_issue(
-            worker("worker").id(),
-            grandchild,
-            NOW + Duration::seconds(1)
-        )
+        .decide_issue(&worker("worker"), grandchild, NOW + Duration::seconds(1))
         .is_err());
 }
 
@@ -401,14 +478,18 @@ fn apply(policy: &mut AuthorizationPolicy, event: AuthorizationPolicyEvent) {
     policy.apply(event).unwrap();
 }
 
-fn issue(policy: &mut AuthorizationPolicy, issuer: &PrincipalId, grant: AuthorizationGrant) {
+fn issue(
+    policy: &mut AuthorizationPolicy,
+    issuer: &AuthenticatedPrincipal,
+    grant: AuthorizationGrant,
+) {
     let event = policy.decide_issue(issuer, grant, NOW).unwrap().unwrap();
     apply(policy, event);
 }
 
 fn revoke(
     policy: &mut AuthorizationPolicy,
-    issuer: &PrincipalId,
+    issuer: &AuthenticatedPrincipal,
     grant_id: &AuthorizationGrantId,
     now: OffsetDateTime,
 ) {
@@ -469,7 +550,7 @@ fn grant<const N: usize>(
     grantee: PrincipalId,
     actions: [AuthorizationAction; N],
     depth: DelegationDepth,
-    issued_by: PrincipalId,
+    issued_by: AuthenticatedPrincipal,
     valid_until: Option<OffsetDateTime>,
 ) -> AuthorizationGrant {
     AuthorizationGrant::new(
@@ -489,7 +570,7 @@ fn delegated_grant<const N: usize>(
     grantee: PrincipalId,
     actions: [AuthorizationAction; N],
     depth: DelegationDepth,
-    issued_by: PrincipalId,
+    issued_by: AuthenticatedPrincipal,
     parent: AuthorizationGrantId,
     valid_until: Option<OffsetDateTime>,
 ) -> AuthorizationGrant {
