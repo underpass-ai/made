@@ -16,14 +16,19 @@ pub(super) fn authority_is_valid(
         && accepted.kind() == AuthorizationDecisionKind::Allow
         && accepted.request().principal() == request.principal()
         && accepted.request().scope() == request.scope()
-        && request.action() == AuthorizationAction::RecoverCeremonyChildren
-        && matches!(
-            accepted.request().action(),
-            AuthorizationAction::RunCeremony
-                | AuthorizationAction::RunCeremonyStep
-                | AuthorizationAction::PrepareCeremonyChildren
-                | AuthorizationAction::RecoverCeremonyChildren
-        )
+        && match request.action() {
+            AuthorizationAction::RecoverCeremonyChildren => matches!(
+                accepted.request().action(),
+                AuthorizationAction::RunCeremony
+                    | AuthorizationAction::RunCeremonyStep
+                    | AuthorizationAction::PrepareCeremonyChildren
+                    | AuthorizationAction::RecoverCeremonyChildren
+            ),
+            AuthorizationAction::CompleteCeremonyStep => {
+                accepted.request().action() == AuthorizationAction::ClaimCeremonyStep
+            }
+            _ => false,
+        }
 }
 
 impl AuthorizationPolicy {

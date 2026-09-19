@@ -1,10 +1,11 @@
 use std::sync::Arc;
 
 use made_app::authorization::{
-    AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
-    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
-    ReadAuthorizationPolicyUseCase,
+    AcceptedStepCompletion, AuthorizationMutationOutcome, AuthorizationPolicyAdministrationService,
+    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
 };
+use made_app::services::SessionStream;
 use made_core::ports::{AuthorizationDecisionPage, AuthorizationPolicySnapshot};
 use made_core::value_objects::{
     AuthorizationAction, AuthorizationDecisionId, AuthorizationDecisionPageLimit,
@@ -18,6 +19,7 @@ pub(crate) struct EmbeddedAuthorizationServices {
     decisions: Arc<ReadAuthorizationDecisionsUseCase>,
     administration: Arc<AuthorizationPolicyAdministrationService>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    step_continuation: Arc<ContinueAcceptedStepClaimUseCase>,
 }
 
 impl EmbeddedAuthorizationServices {
@@ -26,13 +28,28 @@ impl EmbeddedAuthorizationServices {
         decisions: ReadAuthorizationDecisionsUseCase,
         administration: AuthorizationPolicyAdministrationService,
         continuation: ContinueAcceptedCeremonyWorkUseCase,
+        stream: Arc<SessionStream>,
+        clock: Arc<dyn made_core::ports::ClockPort>,
     ) -> Self {
+        let continuation = Arc::new(continuation);
         Self {
             policy: Arc::new(policy),
             decisions: Arc::new(decisions),
             administration: Arc::new(administration),
-            continuation: Arc::new(continuation),
+            step_continuation: Arc::new(ContinueAcceptedStepClaimUseCase::new(
+                stream,
+                continuation.clone(),
+                clock,
+            )),
+            continuation,
         }
+    }
+
+    pub(crate) async fn continue_step(
+        &self,
+        input: AcceptedStepCompletion,
+    ) -> Result<made_core::value_objects::AuthorizedOperation, DomainError> {
+        self.step_continuation.execute(input).await
     }
 
     pub(crate) fn continuation(&self) -> Arc<ContinueAcceptedCeremonyWorkUseCase> {

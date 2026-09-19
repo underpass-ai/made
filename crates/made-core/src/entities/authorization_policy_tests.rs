@@ -160,6 +160,85 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
 }
 
 #[test]
+fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
+    let mut policy = opened_policy(Vec::new());
+    let executor = worker("executor");
+    let claim_grant = grant(
+        "claim-grant",
+        executor.id().clone(),
+        [AuthorizationAction::ClaimCeremonyStep],
+        DelegationDepth::none(),
+        trusted_host(),
+        None,
+    );
+    let grant_id = claim_grant.id().clone();
+    issue(&mut policy, &trusted_host(), claim_grant);
+    let (accepted, event) = policy
+        .decide_authorize(
+            request(
+                "accepted-claim",
+                executor.clone(),
+                AuthorizationAction::ClaimCeremonyStep,
+                b"claim",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap()
+        .into_parts();
+    policy.apply(event.unwrap()).unwrap();
+    let revoke = policy
+        .decide_revoke(
+            &trusted_host(),
+            &grant_id,
+            AuthorizationRevocationReason::new("drain accepted claim only").unwrap(),
+            NOW + Duration::seconds(1),
+        )
+        .unwrap()
+        .unwrap();
+    policy.apply(revoke).unwrap();
+
+    let completion = request(
+        "complete-accepted-claim",
+        executor.clone(),
+        AuthorizationAction::CompleteCeremonyStep,
+        b"result",
+    )
+    .with_accepted_work(accepted.id().clone());
+    assert_eq!(
+        policy
+            .decide_accepted_work(
+                completion,
+                None,
+                &accepted,
+                NOW + Duration::seconds(2),
+                ttl(),
+            )
+            .unwrap()
+            .decision()
+            .kind(),
+        AuthorizationDecisionKind::Allow
+    );
+
+    let same_id_different_identity = request(
+        "complete-as-human",
+        human("executor"),
+        AuthorizationAction::CompleteCeremonyStep,
+        b"result",
+    )
+    .with_accepted_work(accepted.id().clone());
+    assert!(policy
+        .decide_accepted_work(
+            same_id_different_identity,
+            None,
+            &accepted,
+            NOW + Duration::seconds(2),
+            ttl(),
+        )
+        .is_err());
+}
+
+#[test]
 fn forged_revocation_is_rejected_without_changing_rehydrated_state() {
     let mut policy = opened_policy(Vec::new());
     let grant = grant(

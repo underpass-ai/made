@@ -2,8 +2,8 @@ use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::{
-    AuthorizationPolicyAdministrationService, ReadAuthorizationDecisionsUseCase,
-    ReadAuthorizationPolicyUseCase,
+    AuthorizationPolicyAdministrationService, ContinueAcceptedStepClaimUseCase,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
 };
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
@@ -46,6 +46,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) authorization_administration: Option<Arc<AuthorizationPolicyAdministrationService>>,
     pub(super) read_authorization_policy: Option<Arc<ReadAuthorizationPolicyUseCase>>,
     pub(super) read_authorization_decisions: Option<Arc<ReadAuthorizationDecisionsUseCase>>,
+    pub(super) continue_accepted_step_claim: Option<Arc<ContinueAcceptedStepClaimUseCase>>,
     pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
@@ -160,6 +161,11 @@ impl MadeGrpcServiceBuilder {
         read_authorization_decisions,
         ReadAuthorizationDecisionsUseCase,
         read_authorization_decisions
+    );
+    setter!(
+        continue_accepted_step_claim,
+        ContinueAcceptedStepClaimUseCase,
+        continue_accepted_step_claim
     );
     setter!(
         council_journal,
@@ -452,6 +458,7 @@ impl MadeGrpcServiceBuilder {
             authorization_administration: required!(self, authorization_administration),
             read_authorization_policy: required!(self, read_authorization_policy),
             read_authorization_decisions: required!(self, read_authorization_decisions),
+            continue_accepted_step_claim: required!(self, continue_accepted_step_claim),
             council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
