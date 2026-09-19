@@ -23,6 +23,9 @@ use made_app::usecases::{
     StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
     VerifyCeremonyJournalUseCase,
 };
+use made_app::workers::{
+    CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
+};
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
@@ -34,24 +37,27 @@ use tonic::{Request, Response, Status};
 use tracing::debug;
 
 use super::mappers::{
-    apply_ceremony_transition_input_from_proto, approve_ceremony_guard_input_from_proto,
-    artifact_chunk_to_proto, artifact_page_limit_from_proto, artifact_record_to_proto,
-    artifact_ref_to_proto, artifact_tombstone_to_proto, artifact_upload_status_to_proto,
+    adopt_execution_receipt_input_from_proto, apply_ceremony_transition_input_from_proto,
+    approve_ceremony_guard_input_from_proto, artifact_chunk_to_proto,
+    artifact_page_limit_from_proto, artifact_record_to_proto, artifact_ref_to_proto,
+    artifact_tombstone_to_proto, artifact_upload_status_to_proto,
     assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
     bind_ceremony_participants_input_from_proto, cancel_ceremony_input_from_proto,
     ceremony_definition_source_from_proto, ceremony_design_document_from_proto,
     ceremony_instance_state_from, child_completion_state_from,
     claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
-    council_summary_from, defer_ceremony_guard_input_from_proto, deliberate_response_from,
-    design_ceremony_response_from, diff_ceremony_definitions_response_from,
-    enforce_ceremony_deadlines_input_from_proto, explain_ceremony_draft_response_from,
-    generate_ceremony_report_response_from, get_ceremony_transcript_response_from,
-    orchestrate_response_from, output_contract_from_proto, output_contract_to_proto,
-    pause_ceremony_input_from_proto, publish_ceremony_definition_response_from,
-    pull_ceremony_events_response_from, put_artifact_chunk_from_proto,
-    read_artifact_chunk_from_proto, read_ceremony_events_response_from,
-    request_ceremony_intervention_input_from_proto,
+    complete_execution_receipt_input_from_proto, council_summary_from,
+    defer_ceremony_guard_input_from_proto, deliberate_response_from, design_ceremony_response_from,
+    diff_ceremony_definitions_response_from, enforce_ceremony_deadlines_input_from_proto,
+    execution_receipt_to_proto, execution_recovery_cursor_from_proto,
+    execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
+    explain_ceremony_draft_response_from, generate_ceremony_report_response_from,
+    get_ceremony_transcript_response_from, orchestrate_response_from, output_contract_from_proto,
+    output_contract_to_proto, pause_ceremony_input_from_proto,
+    publish_ceremony_definition_response_from, pull_ceremony_events_response_from,
+    put_artifact_chunk_from_proto, read_artifact_chunk_from_proto,
+    read_ceremony_events_response_from, request_ceremony_intervention_input_from_proto,
     respond_to_ceremony_intervention_input_from_proto, resume_ceremony_input_from_proto,
     run_ceremony_input_from_proto, run_ceremony_response_from, run_ceremony_step_input_from_proto,
     run_council_decision_input_from_proto, run_council_decision_response_from,
@@ -83,6 +89,7 @@ mod ceremony_lifecycle_handlers;
 mod council_handlers;
 mod council_journal_handlers;
 mod descriptor_error;
+mod execution_receipt_handlers;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
 mod rpc;
@@ -115,6 +122,9 @@ pub struct MadeGrpcService {
     pub(super) recover_ceremony_children: Arc<RecoverCeremonyChildrenUseCase>,
     pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
     pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
+    pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
+    pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
+    pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,
     pub(super) apply_ceremony_transition: Arc<ApplyCeremonyTransitionUseCase>,
     pub(super) pause_ceremony: Arc<PauseCeremonyUseCase>,
     pub(super) resume_ceremony: Arc<ResumeCeremonyUseCase>,

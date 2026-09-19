@@ -27,6 +27,7 @@ mod embedded_defer_ceremony_guard_request;
 mod embedded_deliberation_observer;
 mod embedded_design_ceremony_request;
 mod embedded_diff_ceremony_definitions_request;
+mod embedded_execution_receipt_request;
 mod embedded_generate_ceremony_report_request;
 mod embedded_get_status_request;
 mod embedded_pause_ceremony_request;
@@ -57,19 +58,20 @@ use crate::backend::{
     MadeMcpBackendInitializationFuture, MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext,
 };
 use crate::protocol::{
-    tool_success_result, ToolError, ACCEPT_CHILD_COMPLETION_TOOL, APPLY_CEREMONY_TRANSITION_TOOL,
-    APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL, BIND_CEREMONY_PARTICIPANTS_TOOL,
-    CANCEL_CEREMONY_TOOL, CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
-    COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL, DEFER_CEREMONY_GUARD_TOOL,
-    DESIGN_CEREMONY_TOOL, DIFF_CEREMONY_DEFINITIONS_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
-    PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL,
-    PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL,
-    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
-    RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL,
-    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
-    VERIFY_CEREMONY_JOURNAL_TOOL,
+    tool_success_result, ToolError, ACCEPT_CHILD_COMPLETION_TOOL, ADOPT_EXECUTION_RECEIPT_TOOL,
+    APPLY_CEREMONY_TRANSITION_TOOL, APPROVE_CEREMONY_GUARD_TOOL, ASSERT_CEREMONY_REASON_TOOL,
+    BIND_CEREMONY_PARTICIPANTS_TOOL, CANCEL_CEREMONY_TOOL, CLAIM_CEREMONY_STEP_TOOL,
+    CLOSE_CEREMONY_INTERVENTION_TOOL, COLLECT_CEREMONY_EVIDENCE_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
+    DIFF_CEREMONY_DEFINITIONS_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
+    GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL,
+    GET_EXECUTION_RECEIPT_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
+    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
+    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
+    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
@@ -97,6 +99,10 @@ use self::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepR
 use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardRequest;
 use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
 use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
+use self::embedded_execution_receipt_request::{
+    operation_id as execution_operation_id, present_receipt, present_recovery_page, recovery_page,
+    EmbeddedApplyExecutionReceiptRequest,
+};
 use self::embedded_generate_ceremony_report_request::EmbeddedGenerateCeremonyReportRequest;
 use self::embedded_get_status_request::EmbeddedGetStatusRequest;
 use self::embedded_pause_ceremony_request::EmbeddedPauseCeremonyRequest;
@@ -215,6 +221,10 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | RECOVER_CEREMONY_CHILDREN_TOOL
                 | CLAIM_CEREMONY_STEP_TOOL
                 | COMPLETE_CEREMONY_STEP_TOOL
+                | GET_EXECUTION_RECEIPT_TOOL
+                | INSPECT_EXECUTION_RECOVERY_TOOL
+                | COMPLETE_EXECUTION_RECEIPT_TOOL
+                | ADOPT_EXECUTION_RECEIPT_TOOL
                 | APPROVE_CEREMONY_GUARD_TOOL
                 | DEFER_CEREMONY_GUARD_TOOL
                 | APPLY_CEREMONY_TRANSITION_TOOL
@@ -377,6 +387,32 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
+                    self.present_instance(&ceremony_id).await
+                }
+                GET_EXECUTION_RECEIPT_TOOL => {
+                    let operation_id =
+                        execution_operation_id(arguments).map_err(ToolError::invalid_request)?;
+                    let receipt = self.made.get_execution_receipt(&operation_id).await?;
+                    Ok(tool_success_result(present_receipt(&receipt)))
+                }
+                INSPECT_EXECUTION_RECOVERY_TOOL => {
+                    let (after, limit) =
+                        recovery_page(arguments).map_err(ToolError::invalid_request)?;
+                    let page = self
+                        .made
+                        .inspect_execution_recovery(after.as_ref(), limit)
+                        .await?;
+                    Ok(tool_success_result(present_recovery_page(&page)))
+                }
+                COMPLETE_EXECUTION_RECEIPT_TOOL | ADOPT_EXECUTION_RECEIPT_TOOL => {
+                    let request = EmbeddedApplyExecutionReceiptRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let link_kind = if name == COMPLETE_EXECUTION_RECEIPT_TOOL {
+                        made_core::value_objects::ExecutionReceiptLinkKind::Direct
+                    } else {
+                        made_core::value_objects::ExecutionReceiptLinkKind::Adopted
+                    };
+                    let ceremony_id = request.execute(&self.made, link_kind).await?;
                     self.present_instance(&ceremony_id).await
                 }
                 APPROVE_CEREMONY_GUARD_TOOL => {

@@ -16,6 +16,11 @@ use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 mod artifact_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
+mod council_fixtures;
+use council_fixtures::{
+    deliberate_fixture, get_deliberation_fixture, orchestrate_fixture, stream_fixture,
+};
+mod execution_receipt_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
@@ -115,6 +120,10 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
                 "made_claim_ceremony_step" => ceremony_instance_fixture(),
                 "made_complete_ceremony_step" => ceremony_instance_fixture(),
+                "made_get_execution_receipt" => execution_receipt_fixtures::receipt(),
+                "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
+                "made_complete_execution_receipt" => ceremony_instance_fixture(),
+                "made_adopt_execution_receipt" => ceremony_instance_fixture(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -133,69 +142,6 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
 // reproducible. New fields appear here first, then in the real
 // adapter; tests in `tests/stdio_protocol.rs` pin the shape.
 // ---------------------------------------------------------------------------
-
-fn deliberate_fixture() -> Value {
-    json!({
-        "task_id": "task-fixture-1",
-        "winner_proposal_id": "proposal-fixture-a",
-        "duration_ms": 42,
-        "results": [
-            {
-                "rank": 0,
-                "proposal": {
-                    "proposal_id": "proposal-fixture-a",
-                    "author_agent_id": "agent-fixture-1",
-                    "content": "fixture answer",
-                    "metadata": {},
-                    "revision_count": 0
-                },
-                "validation": {
-                    "score": 1.0,
-                    "reports": [
-                        { "kind": "content-non-empty", "passed": true, "summary": "ok", "details": {} }
-                    ]
-                }
-            }
-        ],
-        "metadata": { "fixture": true }
-    })
-}
-
-fn stream_fixture() -> Value {
-    json!({
-        "task_id": "task-fixture-1",
-        "frames": [
-            { "phase": "DELIBERATION_PHASE_PROPOSING", "emitted_at": null, "payload": null },
-            { "phase": "DELIBERATION_PHASE_REVISING", "emitted_at": null, "payload": null },
-            { "phase": "DELIBERATION_PHASE_VALIDATING", "emitted_at": null, "payload": null },
-            { "phase": "DELIBERATION_PHASE_SCORING", "emitted_at": null, "payload": null },
-            {
-                "phase": "DELIBERATION_PHASE_COMPLETED",
-                "emitted_at": null,
-                "payload": { "kind": "result", "result": deliberate_fixture()["results"][0].clone() }
-            }
-        ],
-        "winner": deliberate_fixture()["results"][0].clone()
-    })
-}
-
-fn get_deliberation_fixture() -> Value {
-    json!({
-        "found": true,
-        "result": deliberate_fixture()
-    })
-}
-
-fn orchestrate_fixture() -> Value {
-    json!({
-        "task_id": "task-fixture-1",
-        "execution_id": "exec-fixture-1",
-        "duration_ms": 73,
-        "winner": deliberate_fixture()["results"][0].clone(),
-        "candidates": [],
-        "metadata": { "fixture": true }
-    })
-}
 
 fn create_council_fixture() -> Value {
     json!({

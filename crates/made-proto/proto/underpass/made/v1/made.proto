@@ -196,6 +196,10 @@ service MadeService {
   // session, like every other move.
   rpc ClaimCeremonyStep(ClaimCeremonyStepRequest) returns (ClaimCeremonyStepResponse);
   rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
+  rpc GetExecutionReceipt(GetExecutionReceiptRequest) returns (GetExecutionReceiptResponse);
+  rpc InspectExecutionRecovery(InspectExecutionRecoveryRequest) returns (InspectExecutionRecoveryResponse);
+  rpc CompleteExecutionReceipt(CompleteExecutionReceiptRequest) returns (CompleteExecutionReceiptResponse);
+  rpc AdoptExecutionReceipt(AdoptExecutionReceiptRequest) returns (AdoptExecutionReceiptResponse);
 
   // Design one. The caller says what the working session is for, who
   // sits at it and what each stage asks; the engine decides the
@@ -1646,6 +1650,87 @@ message CompleteCeremonyStepRequest {
 }
 
 message CompleteCeremonyStepResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+// An immutable terminal observation made by an execution connector. The
+// operation identity survives claim replacement; the producer fence does not
+// change when a later claim explicitly adopts the receipt.
+message ExecutionReceipt {
+  string receipt_id = 1;
+  string operation_id = 2;
+  string request_digest = 3;
+  string producer_claim_fence = 4;
+  string connector_id = 5;
+  optional string external_operation_id = 6;
+  string recovery_capability = 7;
+  ArtifactSourceKind source_kind = 8;
+  string status = 9;
+  google.protobuf.Struct output = 10;
+  optional string error = 11;
+  repeated ArtifactReference artifacts = 12;
+  google.protobuf.Timestamp observed_at = 13;
+}
+
+message ExecutionIntentSummary {
+  string claim_fence = 1;
+  string connector_id = 2;
+  string recovery_capability = 3;
+  ArtifactSourceKind source_kind = 4;
+  string actor_kind = 5;
+  google.protobuf.Timestamp recorded_at = 6;
+}
+
+message ExecutionRecoveryItem {
+  string operation_id = 1;
+  string ceremony_id = 2;
+  string step_id = 3;
+  string request_digest = 4;
+  repeated ExecutionIntentSummary intents = 5;
+  optional ExecutionReceipt receipt = 6;
+  optional string current_claim_fence = 7;
+}
+
+message GetExecutionReceiptRequest {
+  string operation_id = 1;
+}
+
+message GetExecutionReceiptResponse {
+  ExecutionReceipt receipt = 1;
+}
+
+message InspectExecutionRecoveryRequest {
+  optional string after = 1;
+  // Zero uses the bounded server default.
+  uint32 limit = 2;
+}
+
+message InspectExecutionRecoveryResponse {
+  repeated ExecutionRecoveryItem items = 1;
+  optional string next_cursor = 2;
+}
+
+message CompleteExecutionReceiptRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string operation_id = 3;
+  string claim_fence = 4;
+  string actor_kind = 5;
+}
+
+message CompleteExecutionReceiptResponse {
+  CeremonyInstanceState instance = 1;
+}
+
+message AdoptExecutionReceiptRequest {
+  string ceremony_id = 1;
+  string step_id = 2;
+  string operation_id = 3;
+  string claim_fence = 4;
+  string actor_kind = 5;
+}
+
+message AdoptExecutionReceiptResponse {
   CeremonyInstanceState instance = 1;
 }
 

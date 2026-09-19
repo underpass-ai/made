@@ -457,6 +457,29 @@ impl GrpcFixture {
                 wiring.clock(),
             )))
             .clock(wiring.clock());
+        let receipts = wiring.execution_receipts();
+        let complete_receipt = made_app::workers::CompleteExecutionReceiptUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            receipts.clone(),
+            wiring.clock(),
+        );
+        let complete_receipt = if let Some(store) = wiring.artifact_store() {
+            complete_receipt.with_artifacts(Arc::new(ArtifactService::new(store)))
+        } else {
+            complete_receipt
+        };
+        service_builder = service_builder
+            .get_execution_receipt(Arc::new(
+                made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),
+            ))
+            .inspect_execution_recovery(Arc::new(
+                made_app::workers::InspectExecutionRecoveryUseCase::new(
+                    ceremony_stream.clone(),
+                    receipts,
+                ),
+            ))
+            .complete_execution_receipt(Arc::new(complete_receipt));
         if let Some(store) = wiring.artifact_store() {
             service_builder = service_builder.artifacts(Arc::new(ArtifactService::new(store)));
         }

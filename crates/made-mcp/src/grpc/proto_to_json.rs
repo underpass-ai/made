@@ -12,6 +12,7 @@ use crate::renderers::StatisticsView;
 mod artifact;
 mod ceremony_history;
 mod ceremony_instance;
+mod execution_receipt;
 mod metrics;
 mod primitives;
 
@@ -27,6 +28,7 @@ pub(crate) use ceremony_instance::{
     ceremony_claim_to_json, ceremony_instance_listing_entry, ceremony_instance_state_to_json,
     child_completion_to_json,
 };
+pub(crate) use execution_receipt::{execution_receipt_to_json, execution_recovery_page_to_json};
 pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;
 pub(crate) use primitives::{optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339};

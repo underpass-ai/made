@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::error::DomainError;
+use made_core::value_objects::ExecutionReceiptLinkKind;
 
 use super::{
     CompleteExecutionReceiptInput, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationInput,
@@ -62,6 +63,7 @@ impl RecoverableCeremonyWorker {
                 step_id,
                 operation_id: receipt.operation_id().clone(),
                 claim_fence,
+                link_kind: ExecutionReceiptLinkKind::Direct,
                 actor_kind,
             })
             .await?;
@@ -96,6 +98,11 @@ impl RecoverableCeremonyWorker {
         };
         let applied_fence =
             current_claim_fence.unwrap_or_else(|| receipt.producer_claim_fence().clone());
+        let link_kind = if &applied_fence == receipt.producer_claim_fence() {
+            ExecutionReceiptLinkKind::Direct
+        } else {
+            ExecutionReceiptLinkKind::Adopted
+        };
         let actor_kind = intents
             .iter()
             .find(|candidate| candidate.claim_fence() == &applied_fence)
@@ -108,6 +115,7 @@ impl RecoverableCeremonyWorker {
                 step_id: operation.step_id().clone(),
                 operation_id: operation.operation_id().clone(),
                 claim_fence: applied_fence,
+                link_kind,
                 actor_kind,
             })
             .await?;
