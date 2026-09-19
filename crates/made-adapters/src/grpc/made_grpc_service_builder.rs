@@ -31,10 +31,13 @@ use made_core::ports::{
 };
 use made_core::value_objects::MaxParallel;
 
+use super::GrpcAuthorizationGate;
+
 /// Builder so composition-root wiring is readable even as the number
 /// of use cases grows.
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
+    pub(super) authorization: Option<Arc<GrpcAuthorizationGate>>,
     pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
@@ -133,6 +136,7 @@ macro_rules! setter {
 }
 
 impl MadeGrpcServiceBuilder {
+    setter!(authorization, GrpcAuthorizationGate, authorization);
     setter!(
         council_journal,
         made_app::services::CouncilJournalService,
@@ -415,6 +419,7 @@ impl MadeGrpcServiceBuilder {
             ))
         });
         Ok(MadeGrpcService {
+            authorization: required!(self, authorization, "gate"),
             council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),

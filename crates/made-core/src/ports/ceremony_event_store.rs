@@ -16,7 +16,9 @@ use async_trait::async_trait;
 use crate::entities::{AuditFact, AuditRecord};
 use crate::error::DomainError;
 use crate::ports::{AppendOutcome, PositionedRecord};
-use crate::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use crate::value_objects::{
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+};
 
 #[async_trait]
 pub trait CeremonyEventStorePort: Send + Sync {
@@ -35,6 +37,20 @@ pub trait CeremonyEventStorePort: Send + Sync {
         expected: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError>;
+
+    /// Seal an admitted operation's facts with its authorization evidence.
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        let _ = (stream, expected, facts, authorization);
+        Err(DomainError::InvariantViolated {
+            reason: "ceremony event store does not support authorized appends",
+        })
+    }
 
     /// The records of `stream` with a sequence above `after`, in order.
     /// `StreamVersion::EMPTY` reads the whole stream.
@@ -72,6 +88,7 @@ pub fn seal_continuation(
     stream: &CeremonyId,
     existing: &[AuditRecord],
     facts: Vec<AuditFact>,
+    authorization: Option<&AuthorizationEvidence>,
 ) -> Result<Vec<AuditRecord>, DomainError> {
     if facts.is_empty() {
         return Err(DomainError::EmptyCollection {
@@ -96,9 +113,15 @@ pub fn seal_continuation(
     let mut head = existing.last().cloned();
     let mut sealed = Vec::with_capacity(facts.len());
     for fact in facts {
-        let record = match &head {
-            Some(previous) => AuditRecord::following(fact, previous)?,
-            None => AuditRecord::first(fact)?,
+        let record = match (&head, authorization) {
+            (Some(previous), Some(evidence)) => {
+                AuditRecord::following_authorized(fact.authorized(evidence.clone()), previous)?
+            }
+            (None, Some(evidence)) => {
+                AuditRecord::first_authorized(fact.authorized(evidence.clone()))?
+            }
+            (Some(previous), None) => AuditRecord::following(fact, previous)?,
+            (None, None) => AuditRecord::first(fact)?,
         };
         head = Some(record.clone());
         sealed.push(record);
@@ -141,9 +164,14 @@ mod tests {
 
     #[test]
     fn a_batch_continues_the_existing_records_as_one_chain() {
-        let first = seal_continuation(&stream(), &[], vec![fact("c1", "e1")]).unwrap();
-        let rest =
-            seal_continuation(&stream(), &first, vec![fact("c1", "e2"), fact("c1", "e3")]).unwrap();
+        let first = seal_continuation(&stream(), &[], vec![fact("c1", "e1")], None).unwrap();
+        let rest = seal_continuation(
+            &stream(),
+            &first,
+            vec![fact("c1", "e2"), fact("c1", "e3")],
+            None,
+        )
+        .unwrap();
 
         let all: Vec<_> = first.into_iter().chain(rest).collect();
         assert_eq!(
@@ -156,7 +184,7 @@ mod tests {
     #[test]
     fn an_empty_batch_is_refused() {
         assert!(matches!(
-            seal_continuation(&stream(), &[], Vec::new()),
+            seal_continuation(&stream(), &[], Vec::new(), None),
             Err(DomainError::EmptyCollection { .. })
         ));
     }
@@ -164,7 +192,12 @@ mod tests {
     #[test]
     fn a_fact_of_another_ceremony_is_refused() {
         assert!(matches!(
-            seal_continuation(&stream(), &[], vec![fact("c1", "e1"), fact("c2", "e2")]),
+            seal_continuation(
+                &stream(),
+                &[],
+                vec![fact("c1", "e1"), fact("c2", "e2")],
+                None,
+            ),
             Err(DomainError::InvariantViolated { .. })
         ));
     }
@@ -172,13 +205,18 @@ mod tests {
     #[test]
     fn a_duplicate_event_id_is_refused_within_a_batch_and_against_the_stream() {
         assert!(matches!(
-            seal_continuation(&stream(), &[], vec![fact("c1", "e1"), fact("c1", "e1")]),
+            seal_continuation(
+                &stream(),
+                &[],
+                vec![fact("c1", "e1"), fact("c1", "e1")],
+                None,
+            ),
             Err(DomainError::AlreadyExists { .. })
         ));
 
-        let existing = seal_continuation(&stream(), &[], vec![fact("c1", "e1")]).unwrap();
+        let existing = seal_continuation(&stream(), &[], vec![fact("c1", "e1")], None).unwrap();
         assert!(matches!(
-            seal_continuation(&stream(), &existing, vec![fact("c1", "e1")]),
+            seal_continuation(&stream(), &existing, vec![fact("c1", "e1")], None),
             Err(DomainError::AlreadyExists { .. })
         ));
     }

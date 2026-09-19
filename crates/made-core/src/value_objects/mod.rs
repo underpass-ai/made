@@ -8,6 +8,7 @@ mod agent_kind;
 mod artifact;
 mod attributes;
 mod audit;
+mod authorization;
 mod budget;
 mod ceremony;
 mod ceremony_outcome;
@@ -75,6 +76,16 @@ pub use audit::{
     CeremonyEventCursorLease, CeremonyEventCursorLeaseId, CeremonyEventPageLimit,
     CeremonyEventQuarantineReason, CeremonyProgressWait, EventSchemaVersion, GlobalPosition,
     QuarantinedCeremonyEvent, StreamVersion,
+};
+pub use authorization::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecision,
+    AuthorizationDecisionId, AuthorizationDecisionKind, AuthorizationDecisionPageLimit,
+    AuthorizationDecisionPlan, AuthorizationDecisionTtl, AuthorizationDenialReason,
+    AuthorizationEvidence, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
+    AuthorizationPolicyId, AuthorizationPolicyVersion, AuthorizationRequest,
+    AuthorizationRequestId, AuthorizationRevocation, AuthorizationRevocationReason,
+    AuthorizationScope, AuthorizationTargetDigest, AuthorizedOperation, DelegationDepth,
+    PrincipalId, PrincipalKind, SeparationRule,
 };
 pub use budget::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,

@@ -32,7 +32,8 @@ use made_app::workers::{
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort};
 use made_core::value_objects::{
-    AgentId, CeremonyId, MaxParallel, OutputContractId, Specialty, TaskId,
+    AgentId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId, MaxParallel,
+    OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -75,7 +76,7 @@ use super::status::{artifact_error_to_status, budget_error_to_status, domain_err
 use super::tracecontext::{
     link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
 };
-use super::MadeGrpcServiceBuilder;
+use super::{GrpcAuthorizationGate, MadeGrpcServiceBuilder};
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
 
@@ -104,6 +105,7 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) authorization: Arc<GrpcAuthorizationGate>,
     pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
@@ -178,6 +180,39 @@ impl MadeGrpcService {
     #[must_use]
     pub fn builder() -> MadeGrpcServiceBuilder {
         MadeGrpcServiceBuilder::default()
+    }
+
+    /// Authorization boundary shared by every typed RPC handler.
+    #[must_use]
+    pub const fn authorization(&self) -> &Arc<GrpcAuthorizationGate> {
+        &self.authorization
+    }
+
+    async fn authorize_global<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+    ) -> Result<AuthorizedOperation, Status> {
+        self.authorization
+            .authorize(request, action, AuthorizationScope::Global, None)
+            .await
+    }
+
+    async fn authorize_ceremony<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        ceremony_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize(
+                request,
+                action,
+                AuthorizationScope::Ceremony { ceremony_id },
+                None,
+            )
+            .await
     }
 
     fn artifact_service(&self) -> Option<&ArtifactService> {

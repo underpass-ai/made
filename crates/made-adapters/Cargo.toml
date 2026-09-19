@@ -20,7 +20,7 @@ default = ["grpc", "nats", "runtime-grpc"]
 
 # Transports / infra. `grpc` is the inbound MADE service;
 # `runtime-grpc` is the independent outbound Runtime executor adapter.
-grpc = ["dep:made-proto", "dep:prost-types", "dep:tokio-stream", "dep:tonic"]
+grpc = ["dep:made-proto", "dep:prost", "dep:prost-types", "dep:tokio-stream", "dep:tonic"]
 nats = ["dep:async-nats", "dep:futures"]
 runtime-grpc = ["dep:made-proto", "dep:tokio-stream", "dep:tonic"]
 
@@ -81,6 +81,7 @@ jsonschema = { workspace = true }
 prometheus = { workspace = true }
 
 prost-types = { workspace = true, optional = true }
+prost = { workspace = true, optional = true }
 async-nats = { workspace = true, optional = true }
 reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
 url = { workspace = true, optional = true }

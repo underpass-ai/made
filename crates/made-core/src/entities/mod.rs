@@ -7,6 +7,9 @@
 mod audit_chain;
 mod audit_fact;
 mod audit_record;
+mod authorization_policy;
+mod authorization_policy_event;
+mod authorized_audit_fact;
 mod budget_ledger;
 mod budget_ledger_event;
 mod ceremony_command;
@@ -43,11 +46,16 @@ mod validation;
 mod validator_report;
 
 #[cfg(test)]
+mod authorization_policy_tests;
+#[cfg(test)]
 mod budget_ledger_tests;
 
 pub use audit_chain::AuditChain;
 pub use audit_fact::AuditFact;
 pub use audit_record::{AuditRecord, AUDIT_RECORD_SCHEMA_VERSION};
+pub use authorization_policy::AuthorizationPolicy;
+pub use authorization_policy_event::AuthorizationPolicyEvent;
+pub use authorized_audit_fact::AuthorizedAuditFact;
 pub use budget_ledger::BudgetLedger;
 pub use budget_ledger_event::BudgetLedgerEvent;
 pub use ceremony_command::CeremonyCommand;

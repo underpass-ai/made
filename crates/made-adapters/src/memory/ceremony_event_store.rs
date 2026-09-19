@@ -20,8 +20,8 @@ use made_core::ports::{
     CeremonyInstanceIndexPort, CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix, CeremonyInstancePageLimit,
-    GlobalPosition, StreamVersion,
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, GlobalPosition, StreamVersion,
 };
 use tokio::sync::RwLock;
 
@@ -42,15 +42,13 @@ impl InMemoryCeremonyEventStore {
     pub fn new() -> Self {
         Self::default()
     }
-}
 
-#[async_trait]
-impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
-    async fn append(
+    async fn append_with_authorization(
         &self,
         stream: &CeremonyId,
         expected: StreamVersion,
         facts: Vec<AuditFact>,
+        authorization: Option<&AuthorizationEvidence>,
     ) -> Result<AppendOutcome, DomainError> {
         let mut state = self.inner.write().await;
 
@@ -59,9 +57,7 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
         if actual != expected {
             return Ok(AppendOutcome::Conflict { expected, actual });
         }
-        // Sealed before anything is touched: a refused batch leaves the
-        // stream and the log exactly as they were.
-        let sealed = seal_continuation(stream, existing, facts)?;
+        let sealed = seal_continuation(stream, existing, facts, authorization)?;
 
         let first_position = state.next_position();
         let mut position = first_position;
@@ -80,6 +76,30 @@ impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
             records: sealed,
             first_position,
         })
+    }
+}
+
+#[async_trait]
+impl CeremonyEventStorePort for InMemoryCeremonyEventStore {
+    async fn append(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, None)
+            .await
+    }
+
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, Some(&authorization))
+            .await
     }
 
     async fn read(

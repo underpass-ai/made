@@ -1086,7 +1086,7 @@ impl CeremonyEventStorePort for EventStoreFake {
         if actual != expected {
             return Ok(AppendOutcome::Conflict { expected, actual });
         }
-        let sealed = seal_continuation(stream, existing, facts.clone())?;
+        let sealed = seal_continuation(stream, existing, facts.clone(), None)?;
         let mut log = self.log.write().await;
         let first_position = GlobalPosition::new(u64::try_from(log.len()).unwrap() + 1).unwrap();
         for record in &sealed {
