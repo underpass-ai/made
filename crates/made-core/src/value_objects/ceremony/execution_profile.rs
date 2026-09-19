@@ -1,19 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+use super::{ExecutionProfileFallbackPolicy, ExecutionProfileInheritance};
 use crate::error::DomainError;
 
 const MAX_PROFILE_TEXT: usize = 256;
-
-/// Closed provenance categories for inherited host profile values.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ExecutionProfileInheritance {
-    RoleDefault,
-    StepDefault,
-    CeremonyDefault,
-    HostDefault,
-    Checkpoint,
-}
 
 /// Host-owned execution selection recorded with a claimed step.
 ///
@@ -25,7 +15,7 @@ pub struct ExecutionProfile {
     requested_model: String,
     requested_reasoning_effort: String,
     required_capabilities: Vec<String>,
-    fallback_policy: String,
+    fallback_policy: ExecutionProfileFallbackPolicy,
     fallback_model: Option<String>,
     fallback_reasoning_effort: Option<String>,
     actual_model: String,
@@ -67,7 +57,7 @@ impl ExecutionProfile {
         requested_model: impl Into<String>,
         requested_reasoning_effort: impl Into<String>,
         required_capabilities: Vec<String>,
-        fallback_policy: impl Into<String>,
+        fallback_policy: ExecutionProfileFallbackPolicy,
         fallback_model: Option<String>,
         fallback_reasoning_effort: Option<String>,
         actual_model: impl Into<String>,
@@ -89,7 +79,7 @@ impl ExecutionProfile {
                 required_capabilities,
                 "execution_profile.required_capabilities",
             )?,
-            fallback_policy: clean(fallback_policy.into(), "execution_profile.fallback_policy")?,
+            fallback_policy,
             fallback_model: fallback_model
                 .map(|value| clean(value, "execution_profile.fallback_model"))
                 .transpose()?,
@@ -134,8 +124,8 @@ impl ExecutionProfile {
                     "actual execution profile capabilities do not satisfy required capabilities",
             });
         }
-        match self.fallback_policy.as_str() {
-            "reject"
+        match self.fallback_policy {
+            ExecutionProfileFallbackPolicy::Reject
                 if self.actual_model != self.requested_model
                     || self.actual_reasoning_effort != self.requested_reasoning_effort =>
             {
@@ -144,7 +134,7 @@ impl ExecutionProfile {
                         "requested execution profile is unsupported and fallback_policy is reject",
                 })
             }
-            "fallback" => {
+            ExecutionProfileFallbackPolicy::Fallback => {
                 if self.actual_model != self.requested_model
                     && self
                         .fallback_model
@@ -183,9 +173,7 @@ impl ExecutionProfile {
                 }
                 Ok(())
             }
-            _ => Err(DomainError::InvariantViolated {
-                reason: "execution profile fallback_policy must be reject or fallback",
-            }),
+            ExecutionProfileFallbackPolicy::Reject => Ok(()),
         }
     }
 
@@ -202,8 +190,8 @@ impl ExecutionProfile {
         &self.required_capabilities
     }
     #[must_use]
-    pub fn fallback_policy(&self) -> &str {
-        &self.fallback_policy
+    pub const fn fallback_policy(&self) -> ExecutionProfileFallbackPolicy {
+        self.fallback_policy
     }
     #[must_use]
     pub fn actual_model(&self) -> &str {
@@ -268,7 +256,10 @@ fn clean_list(values: Vec<String>, field: &'static str) -> Result<Vec<String>, D
 mod tests {
     use super::*;
 
-    fn profile(policy: &str, actual_model: &str) -> Result<ExecutionProfile, DomainError> {
+    fn profile(
+        policy: ExecutionProfileFallbackPolicy,
+        actual_model: &str,
+    ) -> Result<ExecutionProfile, DomainError> {
         ExecutionProfile::new(
             "strong-model",
             "high",
@@ -293,13 +284,13 @@ mod tests {
 
     #[test]
     fn fallback_is_explicit_and_actionable() {
-        assert!(profile("fallback", "balanced-model").is_ok());
-        assert!(profile("reject", "balanced-model").is_err());
+        assert!(profile(ExecutionProfileFallbackPolicy::Fallback, "balanced-model").is_ok());
+        assert!(profile(ExecutionProfileFallbackPolicy::Reject, "balanced-model").is_err());
     }
 
     #[test]
     fn requested_and_actual_identity_are_retained() {
-        let selected = profile("fallback", "balanced-model").unwrap();
+        let selected = profile(ExecutionProfileFallbackPolicy::Fallback, "balanced-model").unwrap();
         assert_eq!(selected.requested_model(), "strong-model");
         assert_eq!(selected.actual_model(), "balanced-model");
         assert_eq!(
@@ -315,7 +306,7 @@ mod tests {
             "strong-model",
             "high",
             vec!["reasoning".into(), "vision".into()],
-            "reject",
+            ExecutionProfileFallbackPolicy::Reject,
             None,
             None,
             "strong-model",
@@ -336,7 +327,7 @@ mod tests {
             "strong-model",
             "high",
             vec!["reasoning".into()],
-            "fallback",
+            ExecutionProfileFallbackPolicy::Fallback,
             Some("balanced-model".into()),
             Some("high".into()),
             "balanced-model",
@@ -357,7 +348,7 @@ mod tests {
             "strong-model",
             "high",
             vec!["reasoning".into()],
-            "fallback",
+            ExecutionProfileFallbackPolicy::Fallback,
             Some("balanced-model".into()),
             Some("medium".into()),
             "strong-model",

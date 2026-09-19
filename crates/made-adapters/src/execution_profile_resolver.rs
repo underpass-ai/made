@@ -58,13 +58,14 @@ impl ExecutionProfileResolverPort for StaticExecutionProfileResolver {
 mod tests {
     use super::*;
     use made_core::ports::ExecutionProfileResolverPort;
+    use made_core::value_objects::ExecutionProfileFallbackPolicy;
 
     fn profile() -> ExecutionProfile {
         ExecutionProfile::new(
             "strong",
             "high",
             vec!["review".into()],
-            "fallback",
+            ExecutionProfileFallbackPolicy::Fallback,
             Some("balanced".into()),
             Some("medium".into()),
             "balanced",
@@ -102,7 +103,7 @@ mod tests {
             "strong",
             "high",
             vec!["review".into()],
-            "fallback",
+            ExecutionProfileFallbackPolicy::Fallback,
             Some("balanced".into()),
             Some("medium".into()),
             "balanced",

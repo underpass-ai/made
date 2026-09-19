@@ -15,7 +15,7 @@ pub struct StepLease {
     #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    execution_profile: Option<ExecutionProfile>,
+    execution_profile: Option<Box<ExecutionProfile>>,
 }
 
 impl StepLease {
@@ -93,12 +93,12 @@ impl StepLease {
 
     #[must_use]
     pub fn execution_profile(&self) -> Option<&ExecutionProfile> {
-        self.execution_profile.as_ref()
+        self.execution_profile.as_deref()
     }
 
     #[must_use]
     pub fn with_execution_profile(mut self, profile: ExecutionProfile) -> Self {
-        self.execution_profile = Some(profile);
+        self.execution_profile = Some(Box::new(profile));
         self
     }
 
