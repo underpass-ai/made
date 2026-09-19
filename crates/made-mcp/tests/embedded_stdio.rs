@@ -576,7 +576,7 @@ async fn roundtable_fixed_order_design_executes_in_declared_participant_order() 
     .await
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    .stderr(Stdio::inherit())
     .kill_on_drop(true)
     .spawn()
     .unwrap();
@@ -1261,7 +1261,7 @@ async fn embedded_stdio_reports_the_step_counter_from_its_process_registry() {
     .await
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    .stderr(Stdio::inherit())
     .kill_on_drop(true)
     .spawn()
     .unwrap();
@@ -1338,7 +1338,7 @@ async fn embedded_binary_completes_incremental_human_authorization_over_stdio() 
     .await
     .stdin(Stdio::piped())
     .stdout(Stdio::piped())
-    .stderr(Stdio::piped())
+    .stderr(Stdio::inherit())
     .kill_on_drop(true)
     .spawn()
     .unwrap();
