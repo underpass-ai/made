@@ -28,6 +28,10 @@ impl PostgresArtifactStore {
         Self { pool }
     }
 
+    pub(super) fn pool(&self) -> &PostgresPool {
+        &self.pool
+    }
+
     async fn locked_upload(
         tx: &mut Transaction<'_, Postgres>,
         upload_id: &ArtifactUploadId,

@@ -8,9 +8,9 @@ use made_adapters::postgres::{
     PostgresArtifactStore, PostgresBackupService, PostgresConfig, PostgresPool,
 };
 use made_core::ports::{
-    ArtifactByteOffset, ArtifactIdempotencyKey, ArtifactRetentionActor, ArtifactRetentionPolicy,
-    ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload, PutArtifactChunk,
-    TombstoneArtifact,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
@@ -410,6 +410,28 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         target.get(artifact.artifact_id()).await.unwrap().artifact,
         artifact
     );
+    assert_eq!(
+        target
+            .list(None, ArtifactPageLimit::new(100).unwrap())
+            .await
+            .unwrap()
+            .items,
+        manifest.artifact_records
+    );
+    assert_eq!(
+        target
+            .read_chunk_for_backup(ReadArtifactChunk {
+                artifact_id: artifact.artifact_id().clone(),
+                offset: ArtifactByteOffset::ZERO,
+                max_bytes: ArtifactChunkLimit::default(),
+            })
+            .await
+            .unwrap()
+            .bytes,
+        b"service archive boundary"
+    );
+    assert!(!manifest.snapshot_id.is_empty());
+    assert!(!manifest.transaction_snapshot.is_empty());
     assert!(target
         .backup_content_available(artifact.artifact_id())
         .await
@@ -530,11 +552,20 @@ async fn postgres_backup_client_failures_keep_the_pin_and_never_publish_a_manife
         .unwrap()
         .iter()
         .any(|protection| protection.key == verify_key));
-    healthy
+    let owner_before: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(verify_failure.join("postgres-owner.json")).unwrap())
+            .unwrap();
+    let retry_without_dump = PostgresBackupService::new(store.clone(), url.clone())
+        .with_client_programs(&fail_dump, &restore);
+    let retry_manifest = retry_without_dump
         .backup_to(&verify_failure, verify_key.clone())
         .await
         .unwrap();
     assert!(verify_failure.join("postgres-manifest.json").exists());
+    assert_eq!(
+        retry_manifest.snapshot_id,
+        owner_before["snapshot_id"].as_str().unwrap()
+    );
     assert!(!store
         .active_protections()
         .await
