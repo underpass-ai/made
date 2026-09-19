@@ -41,10 +41,12 @@ impl CeremonyInstance {
                 };
             }
             self.require_admits_new_work("adopt_execution_receipt")?;
-            let original = original.ok_or(DomainError::NotFound {
-                what: "ceremony_instance.execution_receipt_link",
-            })?;
-            require_same_receipt(original, &command.receipt_link)?;
+            // The durable receipt may precede every ceremony link when its
+            // producer dies before completing the claim. In that case this
+            // adoption is the first observation; do not invent a direct one.
+            if let Some(original) = original {
+                require_same_receipt(original, &command.receipt_link)?;
+            }
         }
 
         let record = self
