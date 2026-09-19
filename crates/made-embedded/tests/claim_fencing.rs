@@ -94,8 +94,218 @@ fn completion(fence: &StepClaimFence) -> CompleteCeremonyStepInput {
         fence.clone(),
     )
 }
+
+fn renewal(
+    fence: &StepClaimFence,
+    renewal_id: &str,
+) -> made_app::workers::RenewCeremonyStepLeaseInput {
+    made_app::workers::RenewCeremonyStepLeaseInput {
+        ceremony_id: id(),
+        step_id: step(),
+        claim_fence: fence.clone(),
+        owner: LeaseOwnerId::new("worker-a").unwrap(),
+        request: made_core::value_objects::StepLeaseRenewalRequest {
+            id: IdempotencyKey::new(renewal_id).unwrap(),
+            ttl: DurationMs::from_millis(5000),
+        },
+    }
+}
+
+#[tokio::test]
+async fn renewal_response_loss_reopen_and_concurrent_retry_preserve_the_original_receipt() {
+    let (dir, store) = temporary_store();
+    let clock = Arc::new(ControlledClock::default());
+    let a = EmbeddedMade::builder()
+        .with_ceremony_store(store.clone())
+        .with_clock(clock.clone())
+        .build();
+    start(&a).await;
+    let claim = a.start_step(claim_input("worker-a")).await.unwrap();
+    let original = claim.instance().step_record(&step()).unwrap().clone();
+    let request = renewal(claim.claim_fence(), "heartbeat-1");
+    let accepted = a.renew_step_lease(request.clone()).await.unwrap();
+    clock.0.store(2, Ordering::SeqCst);
+    // The first reply may have been lost. Another process reopens the journal.
+    let b = EmbeddedMade::builder()
+        .with_ceremony_store(Arc::new(
+            SqliteCeremonyStore::open(dir.path().join("race.sqlite3")).unwrap(),
+        ))
+        .with_clock(clock.clone())
+        .build();
+    mount(&b).await;
+    let (left, right) = tokio::join!(
+        a.renew_step_lease(request.clone()),
+        b.renew_step_lease(request.clone())
+    );
+    assert_eq!(left.unwrap(), accepted);
+    assert_eq!(right.unwrap(), accepted);
+    let records = b.audit_records(&id()).await.unwrap();
+    assert_eq!(
+        records
+            .iter()
+            .filter(|r| r.event_type() == AuditEventType::StepLeaseRenewed)
+            .count(),
+        1
+    );
+    let current = b.instance(&id()).await.unwrap();
+    let record = current.step_record(&step()).unwrap();
+    assert_eq!(record.lease(), original.lease());
+    assert_eq!(record.attempt(), original.attempt());
+    assert_eq!(
+        record.budget_reservation_id(),
+        original.budget_reservation_id()
+    );
+    assert_eq!(
+        current.step_claim_fence(&step()).unwrap(),
+        *claim.claim_fence()
+    );
+    assert_eq!(
+        SessionStream::fold_records(&records).unwrap().instance,
+        current
+    );
+    assert!(AuditChain::verify(&records).is_intact());
+    let mut conflicting = request.clone();
+    conflicting.request.ttl = DurationMs::from_millis(6000);
+    assert!(b.renew_step_lease(conflicting).await.is_err());
+    assert_eq!(b.audit_records(&id()).await.unwrap(), records);
+    b.complete_step(completion(claim.claim_fence()))
+        .await
+        .unwrap();
+    // Replay remains a historical receipt, never a fresh extension or permission.
+    assert_eq!(b.renew_step_lease(request).await.unwrap(), accepted);
+    assert!(b
+        .renew_step_lease(renewal(claim.claim_fence(), "after-completion"))
+        .await
+        .is_err());
+}
+
+#[tokio::test]
+async fn simultaneous_new_renewals_seal_once_and_reject_foreign_expired_or_replaced_owners() {
+    let (dir, store) = temporary_store();
+    let clock = Arc::new(ControlledClock::default());
+    let a = EmbeddedMade::builder()
+        .with_ceremony_store(store)
+        .with_clock(clock.clone())
+        .build();
+    let b = EmbeddedMade::builder()
+        .with_ceremony_store(Arc::new(
+            SqliteCeremonyStore::open(dir.path().join("race.sqlite3")).unwrap(),
+        ))
+        .with_clock(clock.clone())
+        .build();
+    start(&a).await;
+    mount(&b).await;
+    let claim = a.start_step(claim_input("worker-a")).await.unwrap();
+    let request = renewal(claim.claim_fence(), "raced-heartbeat");
+    let (left, right) = tokio::join!(
+        a.renew_step_lease(request.clone()),
+        b.renew_step_lease(request)
+    );
+    assert_eq!(left.unwrap(), right.unwrap());
+    let mut foreign = renewal(claim.claim_fence(), "foreign");
+    foreign.owner = LeaseOwnerId::new("worker-b").unwrap();
+    assert!(a.renew_step_lease(foreign).await.is_err());
+    clock.0.store(6, Ordering::SeqCst);
+    assert!(a
+        .renew_step_lease(renewal(claim.claim_fence(), "expired"))
+        .await
+        .is_err());
+    let replacement = b.start_step(claim_input("worker-b")).await.unwrap();
+    let before = a.audit_records(&id()).await.unwrap();
+    assert!(a
+        .renew_step_lease(renewal(claim.claim_fence(), "replaced"))
+        .await
+        .is_err());
+    assert_eq!(before, a.audit_records(&id()).await.unwrap());
+    b.complete_step(completion(replacement.claim_fence()))
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+async fn pause_allows_accepted_renewal_but_cancellation_refuses_new_renewal() {
+    let (_dir, store) = temporary_store();
+    let a = EmbeddedMade::builder()
+        .with_ceremony_store(store)
+        .with_clock(Arc::new(ControlledClock::default()))
+        .build();
+    start(&a).await;
+    let claim = a.start_step(claim_input("worker-a")).await.unwrap();
+    a.pause_ceremony(made_app::usecases::PauseCeremonyInput::new(
+        id(),
+        "operator",
+        AuditActorKind::Service,
+        made_core::value_objects::LifecycleReason::new("pause admission").unwrap(),
+    ))
+    .await
+    .unwrap();
+    a.renew_step_lease(renewal(claim.claim_fence(), "paused"))
+        .await
+        .unwrap();
+    a.cancel_ceremony(made_app::usecases::CancelCeremonyInput::new(
+        id(),
+        "operator",
+        AuditActorKind::Service,
+        made_core::value_objects::LifecycleReason::new("cancel work").unwrap(),
+    ))
+    .await
+    .unwrap();
+    assert!(a
+        .renew_step_lease(renewal(claim.claim_fence(), "cancelled"))
+        .await
+        .is_err());
+}
 async fn mount(engine: &EmbeddedMade) {
     engine.mount_yaml(DEFINITION).await.unwrap();
+}
+
+#[tokio::test]
+async fn public_renewal_caps_at_each_absolute_deadline_without_shifting_it() {
+    for timeout in ["step_default", "state_default", "ceremony"] {
+        let (_dir, store) = temporary_store();
+        let clock = Arc::new(ControlledClock::default());
+        let a = EmbeddedMade::builder()
+            .with_ceremony_store(store)
+            .with_clock(clock.clone())
+            .build();
+        let yaml = format!("{DEFINITION}\ntimeouts:\n  {timeout}: 3\n");
+        let definition = a.mount_yaml(&yaml).await.unwrap().definitions()[0].clone();
+        a.start(StartCeremonyInput::new(
+            id(),
+            definition.name().clone(),
+            definition.version().clone(),
+            CeremonyContext::empty(),
+            "operator",
+            AuditActorKind::Service,
+        ))
+        .await
+        .unwrap();
+        let claim = a.start_step(claim_input("worker-a")).await.unwrap();
+        let receipt = a
+            .renew_step_lease(renewal(claim.claim_fence(), "capped"))
+            .await
+            .unwrap();
+        assert_eq!(receipt.expires_at.unix_timestamp(), 3, "{timeout}");
+        clock.0.store(2, Ordering::SeqCst);
+        let noop = a
+            .renew_step_lease(renewal(claim.claim_fence(), "at-cap"))
+            .await
+            .unwrap();
+        assert_eq!(noop.expires_at, receipt.expires_at);
+        assert_eq!(
+            a.renew_step_lease(renewal(claim.claim_fence(), "at-cap"))
+                .await
+                .unwrap(),
+            noop
+        );
+        clock.0.store(3, Ordering::SeqCst);
+        let before = a.audit_records(&id()).await.unwrap();
+        assert!(a
+            .renew_step_lease(renewal(claim.claim_fence(), "overdue"))
+            .await
+            .is_err());
+        assert_eq!(a.audit_records(&id()).await.unwrap(), before);
+    }
 }
 async fn start(engine: &EmbeddedMade) {
     let definition = engine.mount_yaml(DEFINITION).await.unwrap().definitions()[0].clone();

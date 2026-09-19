@@ -121,9 +121,9 @@ pub use ceremony::{
     RoleId, StateDeadline, StateExecution, StateId, StateIteration, StateRepeatPolicy,
     StateRepeatUntilCondition, StateTimeout, StateVisit, StepAttempt, StepClaimFence, StepDeadline,
     StepErrorMessage, StepExecutionRecord, StepFailureKind, StepHandlerConfig, StepHandlerKind,
-    StepId, StepInstructions, StepIteration, StepLease, StepOutput, StepOutputField,
-    StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, StepTimeout,
-    TransitionTrigger,
+    StepId, StepInstructions, StepIteration, StepLease, StepLeaseRenewalRequest, StepOutput,
+    StepOutputField, StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus,
+    StepTimeout, TransitionTrigger,
 };
 pub use ceremony::{CeremonyIdPrefix, CeremonyInstancePageLimit};
 pub use ceremony_outcome::CeremonyOutcome;

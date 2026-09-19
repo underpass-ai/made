@@ -10,6 +10,8 @@ use crate::protocol::{
 };
 
 mod budget;
+mod renewal;
+pub(in crate::grpc) use renewal::build_renew_step_lease_request;
 
 /// The runner the caller named, or the one this layer applies.
 ///

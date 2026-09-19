@@ -211,6 +211,15 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             started.iteration.get(),
             started.attempt.get(),
         ),
+        CeremonyEvent::StepLeaseRenewed(renewed) if renewed.request.is_some() => format!(
+            "renewal:{}",
+            renewed
+                .request
+                .as_ref()
+                .expect("checked request")
+                .id
+                .as_str()
+        ),
         CeremonyEvent::StepLeaseRenewed(renewed) => format!(
             "step:{}:claim:{}:expiry:{}",
             renewed.step_id,

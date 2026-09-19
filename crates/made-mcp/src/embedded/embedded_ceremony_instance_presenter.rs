@@ -272,6 +272,7 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                     .and_then(|profile| serde_json::to_value(profile).ok()),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
+                "effective_lease_expires_at": step.record().effective_lease_expires_at().map(|at| at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
                 "repeat_max_iterations": step
                     .step()
                     .repeat_policy()

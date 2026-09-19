@@ -75,6 +75,8 @@ mod execution_profile_inheritance;
 mod guard_condition;
 mod guard_name;
 mod idempotency_key;
+mod step_lease_renewal_request;
+pub use step_lease_renewal_request::StepLeaseRenewalRequest;
 mod input_name;
 mod input_requirement;
 mod intervention_role_ids;

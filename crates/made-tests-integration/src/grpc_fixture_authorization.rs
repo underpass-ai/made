@@ -133,6 +133,7 @@ fn fixture_actions() -> Vec<AuthorizationAction> {
         A::StartPublishedCeremony,
         A::RunCeremonyStep,
         A::ClaimCeremonyStep,
+        A::RenewCeremonyStepLease,
         A::CompleteCeremonyStep,
         A::GetExecutionReceipt,
         A::InspectExecutionRecovery,

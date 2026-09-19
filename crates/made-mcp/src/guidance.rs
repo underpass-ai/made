@@ -296,6 +296,9 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
         execution_paths.push(path);
     }
     let delegated_host_sequence = delegated_host_sequence(names);
+    if names.contains(crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL) {
+        preconditions.push("During long delegated work, call made_renew_ceremony_step_lease before effective expiry with the original owner/fence and a new renewal_id. Retry a lost response with the identical renewal_id and payload; it returns the earlier receipt, not new authority. Pause does not freeze deadlines. Renewal is not evidence of agent liveness.".to_owned());
+    }
     if !delegated_host_sequence.is_empty() {
         preconditions.push(format!(
             "For host-owned work, require both {CLAIM_CEREMONY_STEP_TOOL} and {COMPLETE_CEREMONY_STEP_TOOL}; a claim alone is not evidence of execution."

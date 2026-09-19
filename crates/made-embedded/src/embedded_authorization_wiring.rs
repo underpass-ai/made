@@ -39,7 +39,7 @@ pub(crate) fn wire(
     );
     stream.authorize_appends(Arc::new(
         made_app::authorization::AuthorizeCeremonyAppendUseCase::new(
-            authorize,
+            authorize.clone(),
             Arc::new(continuation.clone()),
             clock.clone(),
         ),
@@ -49,6 +49,7 @@ pub(crate) fn wire(
         ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
         AuthorizationPolicyAdministrationService::new(policy_id, store, clock),
         continuation,
+        authorize,
     );
     (memory_reader, services)
 }

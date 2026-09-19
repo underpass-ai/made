@@ -323,6 +323,14 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
+        let renew_ceremony_step_lease = Arc::new(
+            made_app::workers::RenewCeremonyStepLeaseUseCase::new(
+                ceremony_stream.clone(),
+                resolve_ceremony_definition.clone(),
+                clock.clone(),
+            )
+            .with_reauthorization(fixture_authorization.authorize.clone()),
+        );
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
@@ -463,6 +471,7 @@ impl GrpcFixture {
             .budgeted_step_claim(budgeted_step_claim)
             .budgets(Arc::new(budgets.clone()))
             .complete_ceremony_step(complete_ceremony_step)
+            .renew_ceremony_step_lease(renew_ceremony_step_lease)
             .apply_ceremony_transition(apply_ceremony_transition)
             .pause_ceremony(pause_ceremony)
             .resume_ceremony(resume_ceremony)
@@ -764,6 +773,14 @@ impl GrpcFixture {
             ceremony_stream.clone(),
             clock.clone(),
         ));
+        let renew_ceremony_step_lease = Arc::new(
+            made_app::workers::RenewCeremonyStepLeaseUseCase::new(
+                ceremony_stream.clone(),
+                resolve_ceremony_definition.clone(),
+                clock.clone(),
+            )
+            .with_reauthorization(fixture_authorization.authorize.clone()),
+        );
         let apply_ceremony_transition = Arc::new(ApplyCeremonyTransitionUseCase::new(
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
@@ -900,6 +917,7 @@ impl GrpcFixture {
             .recover_ceremony_children(recover_ceremony_children)
             .claim_ceremony_step(claim_ceremony_step)
             .complete_ceremony_step(complete_ceremony_step)
+            .renew_ceremony_step_lease(renew_ceremony_step_lease)
             .apply_ceremony_transition(apply_ceremony_transition)
             .pause_ceremony(pause_ceremony)
             .resume_ceremony(resume_ceremony)

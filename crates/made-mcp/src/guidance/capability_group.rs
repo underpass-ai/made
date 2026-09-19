@@ -84,6 +84,7 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
             PREPARE_CEREMONY_CHILDREN_TOOL,
             ACCEPT_CHILD_COMPLETION_TOOL,
             CLAIM_CEREMONY_STEP_TOOL,
+            crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL,
             COMPLETE_CEREMONY_STEP_TOOL,
             APPLY_CEREMONY_TRANSITION_TOOL,
             PAUSE_CEREMONY_TOOL,

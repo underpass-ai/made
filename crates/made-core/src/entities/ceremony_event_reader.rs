@@ -37,6 +37,7 @@ impl CeremonyEventReader {
             EventSchemaVersion::V2 => matches!(
                 event_type,
                 AuditEventType::CeremonyInstanceStarted
+                    | AuditEventType::StepLeaseRenewed
                     | AuditEventType::StepStarted
                     | AuditEventType::StepCompleted
                     | AuditEventType::StepFailed
@@ -46,7 +47,8 @@ impl CeremonyEventReader {
             ),
             EventSchemaVersion::V3 => matches!(
                 event_type,
-                AuditEventType::StepStarted
+                AuditEventType::CeremonyInstanceStarted
+                    | AuditEventType::StepStarted
                     | AuditEventType::StepCompleted
                     | AuditEventType::StepFailed
                     | AuditEventType::TransitionApplied

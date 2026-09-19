@@ -53,6 +53,8 @@ mod transitions;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct CeremonyInstance {
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    lease_renewals: BTreeMap<IdempotencyKey, super::ceremony_events::StepLeaseRenewed>,
     id: CeremonyId,
     definition_name: CeremonyName,
     definition_version: CeremonyVersion,

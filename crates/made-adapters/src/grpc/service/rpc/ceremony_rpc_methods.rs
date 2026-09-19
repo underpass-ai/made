@@ -105,6 +105,14 @@ macro_rules! ceremony_rpc_methods {
                 run_with_ceremony_trace(trace, self.handle_claim_ceremony_step(request))
             )
         }
+        async fn renew_ceremony_step_lease(
+            &self,
+            request: Request<pb::RenewCeremonyStepLeaseRequest>,
+        ) -> GrpcResult<pb::RenewCeremonyStepLeaseResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(self, request, RenewCeremonyStepLease,
+                run_with_ceremony_trace(trace, self.handle_renew_ceremony_step_lease(request)))
+        }
         async fn complete_ceremony_step(
             &self,
             request: Request<pb::CompleteCeremonyStepRequest>,

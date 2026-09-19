@@ -45,6 +45,19 @@ completion. New completion schemas require it. Never reload a newer claim's
 fence to attach an earlier result. A stale refusal changes no accepted work;
 refresh the instance and resolve ownership rather than bypassing it.
 
+For work that outlasts its claim TTL, first discover
+`made_renew_ceremony_step_lease` (source implementation #202; absent from the
+released 0.7.8 catalog). Before expiry, send the original `ceremony_id`,
+`step_id`, `claim_fence`, `lease_owner_id`, a unique `renewal_id` and positive
+`lease_ttl_ms`. Renew periodically only while the host still owns authorized
+work. Retry a lost response with the same id and identical payload; each new
+heartbeat needs a new id. Read the receipt and current step's
+`effective_lease_expires_at`. Renewal preserves the producer fence and budget
+reservation, and never extends absolute deadlines. A replay is the original
+receipt, not new authority. Pause permits accepted work to drain, while an
+expired/replaced claim, cancellation or authorization loss requires recovery.
+Do not report renewal as evidence that an external agent is alive.
+
 ## Start and progress
 
 For restart recovery, publish the reviewed definition and start by its

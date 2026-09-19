@@ -13,6 +13,7 @@ impl CeremonyInstance {
     #[must_use]
     pub fn from_started(started: &CeremonyInstanceStarted) -> Self {
         Self {
+            lease_renewals: BTreeMap::new(),
             id: started.ceremony_id.clone(),
             definition_name: started.definition_name.clone(),
             definition_version: started.definition_version.clone(),

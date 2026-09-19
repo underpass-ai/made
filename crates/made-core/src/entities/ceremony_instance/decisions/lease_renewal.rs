@@ -4,12 +4,35 @@ use crate::entities::{CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
 impl CeremonyInstance {
+    #[must_use]
+    pub fn lease_renewal(
+        &self,
+        id: &crate::value_objects::IdempotencyKey,
+    ) -> Option<&StepLeaseRenewed> {
+        self.lease_renewals.get(id)
+    }
+
     pub(super) fn decide_renew_step_lease(
         &self,
         command: &RenewStepLease,
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         self.require_definition(definition)?;
+        if let Some(request) = &command.request {
+            if let Some(accepted) = self.lease_renewal(&request.id) {
+                if accepted.request.as_ref() != Some(request)
+                    || accepted.step_id != command.step_id
+                    || accepted.claim_fence != command.claim_fence
+                    || accepted.lease_owner_id != command.lease_owner_id
+                {
+                    return Err(DomainError::Conflict {
+                        what: "step_lease_renewal_request",
+                    });
+                }
+                // Replay is a receipt of the earlier acceptance, not new authority.
+                return Ok(Vec::new());
+            }
+        }
         if self.is_ended() || self.is_terminal(definition) {
             return Err(DomainError::InvariantViolated {
                 reason: "ended ceremony cannot renew a lease",
@@ -59,10 +82,11 @@ impl CeremonyInstance {
                 reason: "renewal cannot exceed the absolute deadline",
             });
         }
-        if command.expires_at == command.expected_expires_at {
+        if command.expires_at == command.expected_expires_at && command.request.is_none() {
             return Ok(Vec::new());
         }
         Ok(vec![CeremonyEvent::StepLeaseRenewed(StepLeaseRenewed {
+            request: command.request.clone(),
             step_id: command.step_id.clone(),
             claim_fence: command.claim_fence.clone(),
             lease_owner_id: command.lease_owner_id.clone(),

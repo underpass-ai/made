@@ -248,6 +248,7 @@ fn record_ref_to_json(record: Option<pb::CeremonyRecordRefState>) -> Value {
 
 fn step_state_to_json(step: pb::CeremonyStepState) -> Value {
     json!({
+        "effective_lease_expires_at": empty_as_null(step.effective_lease_expires_at),
         "step_id": step.step_id,
         "state_id": step.state_id,
         "status": step.status,

@@ -193,6 +193,9 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
             rendered(build_recover_ceremony_children_request(arguments))
         }
         "made_claim_ceremony_step" => rendered(build_claim_ceremony_step_request(arguments)),
+        "made_renew_ceremony_step_lease" => rendered(
+            super::ceremony_requests::build_renew_step_lease_request(arguments),
+        ),
         "made_complete_ceremony_step" => rendered(build_complete_ceremony_step_request(arguments)),
         "made_apply_ceremony_transition" => {
             rendered(build_apply_ceremony_transition_request(arguments))

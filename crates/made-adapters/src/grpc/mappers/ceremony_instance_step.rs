@@ -1,10 +1,17 @@
+//! Step projection preserves original claim identity and reports effective expiry.
 use made_app::usecases::CeremonyStepView;
 use made_proto::v1 as pb;
 
 use super::attributes::{attributes_to_struct, struct_from_json};
+use super::ceremony_instance::moment;
 
 pub(super) fn step_state_from(step: &CeremonyStepView<'_>) -> pb::CeremonyStepState {
     pb::CeremonyStepState {
+        effective_lease_expires_at: step
+            .record()
+            .effective_lease_expires_at()
+            .map(moment)
+            .unwrap_or_default(),
         step_id: step.step().id().as_str().to_owned(),
         state_id: step.step().state_id().as_str().to_owned(),
         status: step.record().status().as_label().to_owned(),
