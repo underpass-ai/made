@@ -170,6 +170,8 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "docs/architecture/parity.tsv": EMBEDDED_DATA_GATES,
     "docs/architecture/struct-numbers.tsv": EMBEDDED_DATA_GATES,
     "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
+    # Parsed by ceremony_authoring_rpc as an executable authoring contract.
+    "docs/authoring/examples/integrator-delivery.yaml": EMBEDDED_DATA_GATES,
     # The rest of the manual E2E surface, named one by one rather than by a
     # `tests/e2e/` prefix: no CI job builds or runs this stack. The Compose
     # fixture is the narrow exception: the contract gate checks its required
