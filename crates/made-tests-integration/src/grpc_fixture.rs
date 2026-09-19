@@ -402,12 +402,15 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-        let authorization = match wiring.authorization() {
-            Some(authorization) => authorization,
-            None => fixture_authorization(clock.clone()).await,
-        };
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
+        let authorization = wiring
+            .authorization()
+            .unwrap_or_else(|| fixture_authorization.gate.clone());
         let mut service_builder = MadeGrpcService::builder()
             .authorization(authorization)
+            .authorization_administration(fixture_authorization.administration)
+            .read_authorization_policy(fixture_authorization.read_policy)
+            .read_authorization_decisions(fixture_authorization.read_decisions)
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -826,8 +829,12 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
         let svc = MadeGrpcService::builder()
-            .authorization(fixture_authorization(clock.clone()).await)
+            .authorization(fixture_authorization.gate)
+            .authorization_administration(fixture_authorization.administration)
+            .read_authorization_policy(fixture_authorization.read_policy)
+            .read_authorization_decisions(fixture_authorization.read_decisions)
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)

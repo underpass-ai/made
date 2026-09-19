@@ -5,16 +5,18 @@ use async_trait::async_trait;
 use made_app::services::AuthorizationOperationScope;
 use made_core::value_objects::AuthorizationAction;
 use made_proto::v1 as pb;
-use tonic::{Request, Status};
+use tonic::{Request, Response, Status};
 
 use super::{
     run_with_ceremony_trace, trace_context_from_metadata, GrpcResult, MadeGrpcService, MadeService,
 };
 
+mod authorization_rpc_methods;
 mod ceremony_rpc_methods;
 mod council_rpc_methods;
 mod resource_rpc_methods;
 
+use authorization_rpc_methods::authorization_rpc_methods;
 use ceremony_rpc_methods::ceremony_rpc_methods;
 use council_rpc_methods::council_rpc_methods;
 use resource_rpc_methods::resource_rpc_methods;
@@ -116,4 +118,4 @@ macro_rules! build_rpc_impl {
     };
 }
 
-council_rpc_methods!(build_rpc_impl);
+authorization_rpc_methods!(build_rpc_impl);

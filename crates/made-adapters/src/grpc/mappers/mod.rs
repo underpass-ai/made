@@ -12,6 +12,7 @@ mod actor_kind;
 mod agent;
 mod artifact;
 mod attributes;
+mod authorization;
 mod budget;
 mod ceremony_authoring;
 mod ceremony_delegation;
@@ -46,6 +47,9 @@ pub use artifact::{
     read_artifact_chunk_from_proto, tombstone_artifact_from_proto,
 };
 pub(super) use attributes::attributes_from_struct;
+pub use authorization::{
+    authorization_decision_to_proto, authorization_grant_from_proto, authorization_policy_to_proto,
+};
 pub use budget::{
     budget_balance_to_proto, budget_limits_from_proto, budget_reservation_estimate_from_proto,
     budget_reservation_to_proto,
@@ -97,4 +101,4 @@ pub(super) use run_council_decision::{
     run_council_decision_input_from_proto, run_council_decision_response_from,
 };
 pub(super) use task::task_from_proto;
-pub(super) use timestamp::offset_to_timestamp;
+pub(super) use timestamp::{offset_to_timestamp, timestamp_to_offset};

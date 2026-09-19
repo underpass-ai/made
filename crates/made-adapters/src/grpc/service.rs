@@ -4,6 +4,10 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
+};
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
@@ -89,6 +93,7 @@ use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
 mod artifact_handlers;
 mod authoring_handlers;
+mod authorization_handlers;
 mod budget_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
@@ -108,6 +113,9 @@ mod statistics_mapper;
 #[derive(Clone)]
 pub struct MadeGrpcService {
     pub(super) authorization: Arc<GrpcAuthorizationGate>,
+    pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
+    pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,
+    pub(super) read_authorization_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
     pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
