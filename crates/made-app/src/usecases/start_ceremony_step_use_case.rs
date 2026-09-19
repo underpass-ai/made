@@ -73,6 +73,12 @@ impl StartCeremonyStepUseCase {
             now,
             input.lease_ttl,
         )?;
+        let lease = input
+            .execution_profile
+            .clone()
+            .map_or(lease.clone(), |profile| {
+                lease.with_execution_profile(profile)
+            });
         let command = CeremonyCommand::StartStep(StartStep {
             role_id: requested_role_id,
             step_id: input.step_id.clone(),

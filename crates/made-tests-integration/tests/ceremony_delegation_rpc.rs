@@ -71,6 +71,7 @@ fn claim(ceremony_id: &str, step_id: &str, key: &str) -> ClaimCeremonyStepReques
         idempotency_key: key.to_owned(),
         lease_ttl_ms: 60_000,
         budget_reservation: None,
+        execution_profile: None,
     }
 }
 

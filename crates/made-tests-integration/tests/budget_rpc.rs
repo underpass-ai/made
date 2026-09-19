@@ -268,6 +268,7 @@ async fn budgeted_child_preparation_recovers_after_claim_before_plan() {
             idempotency_key: "budget-rpc-recovery".to_owned(),
             lease_ttl_ms: 60_000,
             budget_reservation: Some(estimate.clone()),
+            execution_profile: None,
         })
         .await
         .unwrap();
@@ -439,6 +440,7 @@ fn claim(ceremony_id: &str, key: &str, tokens: BudgetMeasurement) -> ClaimCeremo
             cost: Some(measurement("unknown", 0)),
             tool_calls: Some(measurement("unknown", 0)),
         }),
+        execution_profile: None,
     }
 }
 

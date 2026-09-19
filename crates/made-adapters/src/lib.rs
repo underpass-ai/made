@@ -48,6 +48,7 @@ pub mod config;
 pub mod connectors;
 pub mod event_sink;
 pub mod execution;
+pub mod execution_profile_resolver;
 pub mod memory;
 pub mod mermaid;
 pub mod metrics;

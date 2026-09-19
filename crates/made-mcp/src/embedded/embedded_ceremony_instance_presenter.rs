@@ -265,6 +265,11 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                 "iteration": step.record().iteration().get(),
                 "state_iteration": step.record().state_iteration().get(),
                 "state_visit": step.record().state_visit().get(),
+                "execution_profile": step
+                    .record()
+                    .lease()
+                    .and_then(|lease| lease.execution_profile())
+                    .and_then(|profile| serde_json::to_value(profile).ok()),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
                 "repeat_max_iterations": step

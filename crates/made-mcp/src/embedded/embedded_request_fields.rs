@@ -1,4 +1,6 @@
-use made_core::value_objects::{Attributes, AuditActorKind, CeremonyContext, CeremonyId, RoleId};
+use made_core::value_objects::{
+    Attributes, AuditActorKind, CeremonyContext, CeremonyId, ExecutionProfile, RoleId,
+};
 
 use crate::protocol::ToolError;
 use made_embedded::{EmbeddedCeremonyAuthority, EmbeddedMade};
@@ -75,6 +77,17 @@ pub(super) fn optional_attributes(
                 .map_err(|error| format!("invalid `{field}`: {error}"))
         },
     )
+}
+
+pub(super) fn optional_execution_profile(
+    object: &Map<String, Value>,
+) -> Result<Option<ExecutionProfile>, String> {
+    object
+        .get("execution_profile")
+        .filter(|value| !value.is_null())
+        .cloned()
+        .map(|value| ExecutionProfile::from_json(value).map_err(|error| error.to_string()))
+        .transpose()
 }
 
 pub(super) fn optional_role_ids(

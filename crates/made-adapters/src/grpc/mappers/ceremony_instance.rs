@@ -5,7 +5,7 @@
 //! what makes "the same working session over either transport" a
 //! property of the code rather than a promise in a document.
 
-use made_app::usecases::{CeremonyInstanceView, CeremonyStepView, CeremonyTransitionView};
+use made_app::usecases::{CeremonyInstanceView, CeremonyTransitionView};
 use made_core::entities::{CeremonyInstance, CeremonyIntervention};
 use made_core::value_objects::{
     CeremonyDefinitionDigest, CeremonyGuardDeferral, CeremonyId, CeremonyInterventionResponse,
@@ -18,6 +18,7 @@ use time::OffsetDateTime;
 use super::attributes::attributes_to_struct;
 use super::budget::budget_account_id_to_proto;
 use super::ceremony_instance_children::{child_group_state_from, lineage_state_from};
+use super::ceremony_instance_step::step_state_from;
 
 /// One instant, one rendering.
 ///
@@ -230,31 +231,6 @@ fn participant_binding_state_from(
         role_id: binding.role_id().as_str().to_owned(),
         specialty: binding.specialty().as_str().to_owned(),
         bound_at: moment(binding.bound_at()),
-    }
-}
-
-fn step_state_from(step: &CeremonyStepView<'_>) -> pb::CeremonyStepState {
-    pb::CeremonyStepState {
-        step_id: step.step().id().as_str().to_owned(),
-        state_id: step.step().state_id().as_str().to_owned(),
-        status: step.record().status().as_label().to_owned(),
-        attempt: step.record().attempt().get(),
-        output: Some(attributes_to_struct(step.record().output().attributes())),
-        error: step
-            .record()
-            .error_message()
-            .map(ToString::to_string)
-            .unwrap_or_default(),
-        iteration: step.record().iteration().get(),
-        repeat_condition_satisfied: step.repeat_condition_satisfied(),
-        repeat_limit_reached: step.repeat_limit_reached(),
-        repeat_max_iterations: step
-            .step()
-            .repeat_policy()
-            .map(|policy| policy.max_iterations().get())
-            .unwrap_or_default(),
-        state_visit: step.record().state_visit().get(),
-        state_iteration: step.record().state_iteration().get(),
     }
 }
 

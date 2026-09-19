@@ -95,6 +95,7 @@ async fn grpc_delivers_a_new_record_as_a_stream_frame_before_end() {
             idempotency_key: "progress-claim".to_owned(),
             lease_ttl_ms: 60_000,
             budget_reservation: None,
+            execution_profile: None,
         })
         .await
         .unwrap();

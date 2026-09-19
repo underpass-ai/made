@@ -178,6 +178,7 @@ pub(super) fn build_claim_ceremony_step_request(
             .get("budget_reservation")
             .map(budget::reservation_from_json)
             .transpose()?,
+        execution_profile: j2p::optional_pb_struct(obj, "execution_profile")?,
     })
 }
 

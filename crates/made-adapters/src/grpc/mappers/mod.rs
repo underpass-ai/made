@@ -23,6 +23,7 @@ mod ceremony_history;
 mod ceremony_human_verbs;
 mod ceremony_instance;
 mod ceremony_instance_children;
+mod ceremony_instance_step;
 mod ceremony_lifecycle;
 mod ceremony_progress;
 mod context;

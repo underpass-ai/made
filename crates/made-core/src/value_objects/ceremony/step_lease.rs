@@ -4,7 +4,7 @@ use time::{Duration, OffsetDateTime};
 use crate::error::DomainError;
 use crate::value_objects::DurationMs;
 
-use super::{IdempotencyKey, LeaseOwnerId};
+use super::{ExecutionProfile, IdempotencyKey, LeaseOwnerId};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StepLease {
@@ -14,6 +14,8 @@ pub struct StepLease {
     acquired_at: OffsetDateTime,
     #[serde(with = "time::serde::rfc3339")]
     expires_at: OffsetDateTime,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    execution_profile: Option<Box<ExecutionProfile>>,
 }
 
 impl StepLease {
@@ -33,6 +35,7 @@ impl StepLease {
             idempotency_key,
             acquired_at,
             expires_at,
+            execution_profile: None,
         })
     }
 
@@ -86,6 +89,17 @@ impl StepLease {
     #[must_use]
     pub fn expires_at(&self) -> OffsetDateTime {
         self.expires_at
+    }
+
+    #[must_use]
+    pub fn execution_profile(&self) -> Option<&ExecutionProfile> {
+        self.execution_profile.as_deref()
+    }
+
+    #[must_use]
+    pub fn with_execution_profile(mut self, profile: ExecutionProfile) -> Self {
+        self.execution_profile = Some(Box::new(profile));
+        self
     }
 
     #[must_use]

@@ -280,6 +280,7 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "Call {DISCOVER_CAPABILITIES_TOOL} and plan against its returned tools, backend, and version."
         ),
         "Preserve stable ceremony ids and actor identity across calls.".to_owned(),
+        "For delegated work, resolve an explicit host execution profile before claiming: keep requested and actual model/effort, capabilities, fallback, inheritance, and host incarnation separate from the ceremony definition.".to_owned(),
         "Have the exact definition, required context, and host permissions before starting."
             .to_owned(),
         "Treat isError=true, completed=false, and missing evidence as explicit non-success."
@@ -370,6 +371,10 @@ fn base_agent_authority_boundaries() -> Vec<Value> {
             "rule": "Integrator is a business responsibility, not a privilege; declared role actions and human guards still apply.",
             "forbidden_inference": "A role named integrator may approve for a person, bypass independent review, or prove host-agent activity."
         }),
+        json!({
+            "rule": "Execution profiles are host-owned evidence attached to delegated claims, not ceremony authority or provider identity.",
+            "forbidden_inference": "A requested model is the actual model, or a Codex/Claude agent id is a MADE role id."
+        }),
     ]
 }
 
@@ -409,7 +414,7 @@ fn delegated_host_sequence(names: &BTreeSet<String>) -> Vec<Value> {
         json!({
             "order": 2,
             "host_action": true,
-            "instruction": "Perform the stage's real work through the host's authorized worker and tools. Verify the resulting artifacts/evidence before recording success."
+            "instruction": "Resolve and retain the explicit host execution profile (requested versus actual model/effort, capabilities, fallback, host agent/incarnation and inheritance). Perform the stage's real work through that authorized worker and tools. A checkpoint or handoff records provenance for a later claim; it does not change a running agent's model."
         }),
         json!({
             "order": 3,
@@ -718,6 +723,8 @@ mod tests {
                     );
                     assert!(markdown.contains("Integrator is a business responsibility"));
                     assert!(markdown.contains("prove host-agent activity"));
+                    assert!(markdown.contains("requested and actual model/effort"));
+                    assert!(markdown.contains("Codex/Claude agent id is a MADE role id"));
                 }
             }
         }

@@ -76,6 +76,35 @@ pub(in crate::protocol) fn claim_ceremony_step_schema() -> Value {
                 "description": lease_ttl_rule(CLAIM_CEREMONY_STEP_LEASE_TTL_MS)
             },
             "budget_reservation": budget_reservation_schema()
+            ,"execution_profile": execution_profile_schema()
+        }
+    })
+}
+
+fn execution_profile_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+            "requested_model", "requested_reasoning_effort", "required_capabilities",
+            "fallback_policy", "actual_model", "actual_reasoning_effort",
+            "actual_capabilities", "host_agent_id", "host_agent_incarnation"
+        ],
+        "properties": {
+            "requested_model": string_schema("Host-requested model; not a ceremony-definition invariant."),
+            "requested_reasoning_effort": string_schema("Host-requested reasoning effort."),
+            "required_capabilities": {"type": "array", "items": string_schema("Required host capability.")},
+            "fallback_policy": {"type": "string", "enum": ["reject", "fallback"]},
+            "fallback_model": string_schema("Model to use when fallback is explicit."),
+            "fallback_reasoning_effort": string_schema("Reasoning effort to use when fallback is explicit."),
+            "actual_model": string_schema("Model actually selected by the host."),
+            "actual_reasoning_effort": string_schema("Reasoning effort actually selected by the host."),
+            "actual_capabilities": {"type": "array", "items": string_schema("Capability supplied by the host; it must be in the host inventory and include every required capability.")},
+            "host_agent_id": string_schema("Host-owned agent identity; distinct from MADE role and Codex/Claude ids."),
+            "host_agent_incarnation": string_schema("Host-owned incarnation identity."),
+            "inherited_from": {"type": "string", "enum": ["role-default", "step-default", "ceremony-default", "host-default", "checkpoint"], "description": "Closed source category for explicit profile inheritance."},
+            "checkpoint_id": string_schema("Checkpoint provenance for a resumed or handed-off step."),
+            "handoff_from": string_schema("Prior host agent/incarnation provenance; does not mutate a running model.")
         }
     })
 }
