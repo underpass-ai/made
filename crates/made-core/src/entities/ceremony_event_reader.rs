@@ -57,8 +57,9 @@ impl CeremonyEventReader {
                     | AuditEventType::StepStarted
                     | AuditEventType::StepFailed
             ),
-            EventSchemaVersion::V5 => event_type == AuditEventType::StepStarted,
-            EventSchemaVersion::V6 => event_type == AuditEventType::StepStarted,
+            EventSchemaVersion::V5 | EventSchemaVersion::V6 => {
+                event_type == AuditEventType::StepStarted
+            }
             _ => false,
         };
         if !supported {
