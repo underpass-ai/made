@@ -16,6 +16,10 @@ before the service starts, and uses the public mTLS administration RPC to issue
 an explicit grant for the operations exercised by the scenarios. MADE and the
 runner both run as non-root. The script also prepares a writable transient
 SQLite directory so the bootstrap process and service reopen the same policy.
+The Compose fixture also owns a stable, public test store identity and cursor
+HMAC key for the duration of the run. They exist only to exercise restart-safe
+paginated search; production deployments must supply their own identity and
+secret key.
 The exit trap removes both scratch directories and the Compose resources.
 
 `MADE_E2E_AUTH_DIR` and `MADE_E2E_STATE_DIR` may point at operator-managed

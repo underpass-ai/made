@@ -55,6 +55,9 @@ for fragment_name in roundtable_fixed_order broadcast_collect group_chat maker_c
   done
 done
 
+echo ">>> [contract-gate] protected Compose fixture has every required identity"
+python3 scripts/ci/e2e-compose-contract.py --self-test
+
 echo ">>> [contract-gate] asyncapi validate"
 asyncapi validate "${ASYNCAPI_SPEC}"
 

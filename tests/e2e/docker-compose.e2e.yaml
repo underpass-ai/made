@@ -63,6 +63,11 @@ services:
       MADE_GRPC_TLS_CLIENT_CA_PATH: "/etc/made/auth/ca.pem"
       MADE_AUTH_POLICY_ID: "made-e2e-policy"
       MADE_AUTH_MTLS_PRINCIPALS_PATH: "/etc/made/auth/principals.json"
+      # Public, fixture-only namespace and key. They stay stable for every
+      # service restart in this isolated run; production operators must use
+      # their own store identity and secret key.
+      MADE_CEREMONY_STORE_ID: "made-e2e-store"
+      MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY: "a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5"
       MADE_NATS_ENABLED: "true"
       MADE_NATS_URL: "nats://nats:4222"
       MADE_CEREMONY_STORE_PATH: "/var/lib/made/made-e2e.sqlite3"
