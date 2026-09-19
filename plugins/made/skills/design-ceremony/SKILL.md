@@ -21,6 +21,18 @@ provide `max_iterations` (1–1000), a top-level `output_field` and exact JSON
 `equals`. A repeat is different from retrying failed work. Add
 `final_approval` when a person's decision must gate completion.
 
+When the work has an integration responsibility, use an explicit business
+role such as `INTEGRATOR` and give it concrete integration steps and
+transitions. Keep implementers, an independent reviewer, and any human guard
+as separate declared responsibilities. Role names are vocabulary, not
+authority: the definition's allowed actions and guards remain the source of
+authorization, so an Integrator must not be presented as able to approve for a
+person, bypass review, or declare unverified work complete. Use the executable
+[integrator delivery example](../../../../docs/authoring/examples/integrator-delivery.yaml)
+as the reference shape. Do not imply that this vocabulary creates live agent
+rosters, activity reporting, or intervention delivery; those capabilities are
+separate future work.
+
 Treat returned YAML as a draft even when `publishable` is true. Inspect its
 analysis and explain ownership, sequence, outputs and approval boundary to
 the user. Revise with another design call; compare versions with
