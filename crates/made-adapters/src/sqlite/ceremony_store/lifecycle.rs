@@ -26,6 +26,7 @@ impl SqliteCeremonyStore {
         refuse_legacy_redb(path)?;
         let engine: Arc<dyn Engine> = Arc::new(SqliteEngine::open(path)?);
         let store = Self { engine };
+        store.backfill_stream_index()?;
         let stranded = store.legacy_instances_without_a_stream()?;
         if stranded > 0 {
             tracing::warn!(

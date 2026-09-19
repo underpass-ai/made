@@ -38,6 +38,33 @@ impl Ops<'_> {
             .map_err(|error| failure(&error, "scan rows"))
     }
 
+    pub(super) fn scan_str_page(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        prefix: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError> {
+        if table.key_shape() != KeyShape::Str {
+            return Err(scan_shape_mismatch(table, KeyShape::Str));
+        }
+        let sql = format!(
+            "SELECT k, v FROM \"{table}\" \
+             WHERE (?1 IS NULL OR k > ?1) \
+               AND (?2 IS NULL OR substr(k, 1, length(?2)) = ?2) \
+             ORDER BY k LIMIT ?3"
+        );
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = self.prepare(&sql)?;
+        let rows = statement
+            .query_map(params![after, prefix, limit], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, Vec<u8>>(1)?))
+            })
+            .map_err(|error| failure(&error, "scan string page"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error, "scan string page"))
+    }
+
     pub(super) fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
         if table.key_shape() != KeyShape::Bytes {
             return Err(scan_shape_mismatch(table, KeyShape::Bytes));

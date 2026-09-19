@@ -6,6 +6,13 @@ use super::{BytesRow, Key, StrRow, Table};
 pub(crate) trait ReadTx {
     fn get(&self, table: Table, key: Key<'_>) -> Result<Option<Vec<u8>>, DomainError>;
     fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError>;
+    fn scan_str_page(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        prefix: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError>;
     fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError>;
     fn scan_bytes_range(
         &self,

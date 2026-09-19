@@ -95,6 +95,7 @@ impl CeremonyEventStorePort for SqliteCeremonyStore {
                 last = next;
                 next = next.next();
             }
+            tx.insert(Table::StreamIndex, Key::Str(stream.as_str()), &[])?;
             tx.insert(
                 Table::Meta,
                 Key::Str(LAST_POSITION),

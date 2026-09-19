@@ -103,6 +103,7 @@ pub use ceremony::{
     StepRepeatExhaustedGuardCondition, StepRepeatPolicy, StepResult, StepStatus, StepTimeout,
     TransitionTrigger,
 };
+pub use ceremony::{CeremonyIdPrefix, CeremonyInstancePageLimit};
 pub use ceremony_outcome::CeremonyOutcome;
 pub use claim_text::ClaimText;
 pub use council_contract_id::CouncilContractId;

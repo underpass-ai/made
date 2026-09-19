@@ -18,6 +18,8 @@ pub(crate) enum Table {
     EventLog,
     /// Folded state, one row per `(ceremony_id, version)`.
     Snapshots,
+    /// Authoritative stream identities, one row per ceremony id.
+    StreamIndex,
     /// Store-wide counters the seam has no primitive for, such as the
     /// last global position.
     Meta,
@@ -32,7 +34,9 @@ pub(crate) enum Table {
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies | Table::Meta | Table::EventCursors => KeyShape::Str,
+            Table::Ceremonies | Table::StreamIndex | Table::Meta | Table::EventCursors => {
+                KeyShape::Str
+            }
             Table::Journal
             | Table::Publications
             | Table::Events
@@ -53,6 +57,7 @@ impl fmt::Display for Table {
             Table::Events => "ceremony_events",
             Table::EventLog => "ceremony_event_log",
             Table::Snapshots => "ceremony_snapshots",
+            Table::StreamIndex => "ceremony_stream_index",
             Table::Meta => "store_meta",
             Table::EventCursors => "ceremony_event_cursors",
             Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
