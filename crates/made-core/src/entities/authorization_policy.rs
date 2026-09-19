@@ -16,6 +16,8 @@ use crate::DomainError;
 
 #[path = "authorization_policy/accepted_work.rs"]
 mod accepted_work;
+#[path = "authorization_policy/separation.rs"]
+mod separation;
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct AuthorizationPolicy {
@@ -138,7 +140,8 @@ impl AuthorizationPolicy {
         let denial = if !owner && grant.is_none() {
             Some(AuthorizationDenialReason::NoMatchingGrant)
         } else {
-            self.separation_denial(&request, approval, now)
+            self.approval_intent_denial(&request)
+                .or_else(|| self.separation_denial(&request, approval, now))
         };
         let requested_until =
             now.checked_add(ttl.duration())
@@ -498,30 +501,6 @@ impl AuthorizationPolicy {
         self.owner.as_ref() == Some(principal)
     }
 
-    fn separation_denial(
-        &self,
-        request: &AuthorizationRequest,
-        approval: Option<&AuthorizationDecision>,
-        now: OffsetDateTime,
-    ) -> Option<AuthorizationDenialReason> {
-        let rule = self.separation_rules.get(&request.action())?;
-        let Some(approval_id) = request.approval_decision_id() else {
-            return Some(AuthorizationDenialReason::ApprovalRequired);
-        };
-        let valid = approval
-            .filter(|approval| approval.id() == approval_id)
-            .is_some_and(|approval| {
-                approval.kind() == AuthorizationDecisionKind::Allow
-                    && approval.is_live_at(now)
-                    && self.decision_grant_is_live(approval, now)
-                    && approval.request().action() == rule.approval_action()
-                    && approval.request().principal().id() != request.principal().id()
-                    && approval.request().scope().covers(request.scope())
-                    && approval.request().target_digest() == request.target_digest()
-            });
-        (!valid).then_some(AuthorizationDenialReason::ApprovalInvalid)
-    }
-
     fn decision_authority_is_valid(&self, decision: &AuthorizationDecision) -> bool {
         let approval = decision
             .request()
@@ -560,7 +539,9 @@ impl AuthorizationPolicy {
                         .valid_until()
                         .is_none_or(|until| decision.valid_until() <= until)
             });
-        let separation_denial = self.separation_denial(request, approval, now);
+        let separation_denial = self
+            .approval_intent_denial(request)
+            .or_else(|| self.separation_denial(request, approval, now));
         match decision.kind() {
             AuthorizationDecisionKind::Allow => {
                 continuation || granted && separation_denial.is_none()
@@ -576,7 +557,7 @@ impl AuthorizationPolicy {
         }
     }
 
-    fn decision_grant_is_live(
+    pub(super) fn decision_grant_is_live(
         &self,
         decision: &AuthorizationDecision,
         now: OffsetDateTime,

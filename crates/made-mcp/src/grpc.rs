@@ -100,6 +100,7 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
                 trace.traceparent(),
                 trace.authorization_request_id(),
                 &target_digest,
+                trace.approval_decision_id(),
             )
             .await?;
             Ok(crate::protocol::tool_success_result(structured))

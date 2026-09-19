@@ -43,7 +43,7 @@ pub(super) fn grant(args: &Value) -> Result<AuthorizationGrant, ToolError> {
     )?)
 }
 
-fn scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
+pub(super) fn scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
     Ok(match string(value, "kind")? {
         "global" => AuthorizationScope::Global,
         "ceremony" => AuthorizationScope::Ceremony {
@@ -73,6 +73,32 @@ fn scope(value: &Value) -> Result<AuthorizationScope, ToolError> {
             )))
         }
     })
+}
+
+pub(super) fn approval(
+    args: &Value,
+) -> Result<
+    (
+        AuthorizationAction,
+        AuthorizationAction,
+        AuthorizationScope,
+        made_core::value_objects::AuthorizationTargetDigest,
+    ),
+    ToolError,
+> {
+    let approval_action =
+        serde_json::from_value(Value::String(string(args, "approval_action")?.to_owned()))
+            .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let execution_action =
+        serde_json::from_value(Value::String(string(args, "execution_action")?.to_owned()))
+            .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+    let scope = scope(
+        args.get("scope")
+            .ok_or_else(|| ToolError::invalid_request("scope is required"))?,
+    )?;
+    let target_digest =
+        made_core::value_objects::AuthorizationTargetDigest::new(string(args, "target_digest")?)?;
+    Ok((approval_action, execution_action, scope, target_digest))
 }
 
 pub(super) fn string<'a>(value: &'a Value, field: &str) -> Result<&'a str, ToolError> {

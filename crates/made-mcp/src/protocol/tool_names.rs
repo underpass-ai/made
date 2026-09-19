@@ -55,7 +55,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 75] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 76] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -125,6 +125,7 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 75] = [
     READ_ARTIFACT_CHUNK_TOOL,
     TOMBSTONE_ARTIFACT_TOOL,
     "made_get_authorization_policy",
+    "made_approve_authorization_operation",
     "made_issue_authorization_grant",
     "made_revoke_authorization_grant",
     "made_list_authorization_decisions",

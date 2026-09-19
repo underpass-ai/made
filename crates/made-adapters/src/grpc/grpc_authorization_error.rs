@@ -25,6 +25,10 @@ pub enum GrpcAuthorizationError {
     InvalidTargetDigestEncoding,
     #[error("invalid x-made-target-digest: {0}")]
     InvalidTargetDigest(#[source] DomainError),
+    #[error("x-made-approval-decision-id must be printable ASCII")]
+    InvalidApprovalDecisionIdEncoding,
+    #[error("invalid x-made-approval-decision-id: {0}")]
+    InvalidApprovalDecisionId(#[source] DomainError),
     #[error(transparent)]
     MutualTls(#[from] MutualTlsAuthenticationError),
 }
@@ -37,7 +41,9 @@ impl From<GrpcAuthorizationError> for Status {
             | GrpcAuthorizationError::InvalidRequestIdEncoding
             | GrpcAuthorizationError::InvalidRequestId(_)
             | GrpcAuthorizationError::InvalidTargetDigestEncoding
-            | GrpcAuthorizationError::InvalidTargetDigest(_) => {
+            | GrpcAuthorizationError::InvalidTargetDigest(_)
+            | GrpcAuthorizationError::InvalidApprovalDecisionIdEncoding
+            | GrpcAuthorizationError::InvalidApprovalDecisionId(_) => {
                 Self::invalid_argument(error.to_string())
             }
             GrpcAuthorizationError::UntrustedTargetDigestProxy => {

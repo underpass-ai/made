@@ -19,6 +19,17 @@ An authorized policy administrator can resolve `decision_id` through the paged
 to the admission that originally accepted the work, even if its grant has
 subsequently been revoked.
 
+Separation rules are exercised through `ApproveAuthorizationOperation` (or
+`made_approve_authorization_operation`). The approver supplies the configured
+approval action, execution action, authoritative scope, and the SHA-256 digest
+of the exact execution request. The resulting decision records
+`approved_action`; the executor sends its id in
+`x-made-approval-decision-id`, or in MCP
+`_meta.made_approval_decision_id`. Admission requires a live approval grant,
+the configured action pair, the same target and covered scope, and a different
+principal id. Reusing an approval for another target, action, or principal is
+recorded as a denial before the domain operation runs.
+
 An exact `CompleteCeremonyStep` retry recovers the accepted response from the
 sealed journal, including its context writes and any reopened iteration. It
 does not append another result or include work admitted after that response.
