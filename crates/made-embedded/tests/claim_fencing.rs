@@ -220,13 +220,18 @@ async fn delegated_late_worker_cannot_finish_or_clear_replacement_lease() {
         .await
         .is_err());
     assert_unchanged(&b, &before, claim_b.claim_fence()).await;
-    b.complete_step(completion(claim_b.claim_fence()))
-        .await
-        .unwrap();
-    assert!(b
+    let accepted = b
         .complete_step(completion(claim_b.claim_fence()))
         .await
-        .is_err());
+        .unwrap();
+    let sealed = b.audit_records(&id()).await.unwrap();
+    assert_eq!(
+        b.complete_step(completion(claim_b.claim_fence()))
+            .await
+            .unwrap(),
+        accepted
+    );
+    assert_eq!(b.audit_records(&id()).await.unwrap(), sealed);
     assert_reopen(&b, &store, &path, midpoint).await;
 }
 
@@ -303,6 +308,12 @@ async fn app_owned_late_handler_cannot_rebind_to_replacement_claim() {
     let output = worker_b.await.unwrap().unwrap();
     assert_eq!(output.attempt().get(), 2);
     assert!(output.result().is_success());
-    assert!(b.complete_step(completion(&claim_b)).await.is_err());
+    let accepted = b.instance(&id()).await.unwrap();
+    let sealed = b.audit_records(&id()).await.unwrap();
+    assert_eq!(
+        b.complete_step(completion(&claim_b)).await.unwrap(),
+        accepted
+    );
+    assert_eq!(b.audit_records(&id()).await.unwrap(), sealed);
     assert_reopen(&b, &store, &path, midpoint).await;
 }
