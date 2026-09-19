@@ -149,6 +149,8 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     ".dockerignore": ("container",),
     "buf.yaml": ("contract",),
     "scripts/ci/container-image.sh": ("container",),
+    "scripts/ci/e2e-compose.sh": ("contract",),
+    "scripts/ci/e2e-compose-contract.py": ("contract",),
     "scripts/ci/build-provider-image.sh": ("container",),
     "scripts/ci/contract-gate.sh": ("contract",),
     "scripts/ci/install-buf.sh": ("contract",),
@@ -169,11 +171,12 @@ EXACT_ROUTES: dict[str, tuple[str, ...]] = {
     "docs/architecture/struct-numbers.tsv": EMBEDDED_DATA_GATES,
     "docs/operations/support-matrix.md": EMBEDDED_DATA_GATES,
     # The rest of the manual E2E surface, named one by one rather than by a
-    # `tests/e2e/` prefix: nothing in the workspace compiles or reads these
-    # and no CI job builds them, but a new directory or Dockerfile there
-    # must fail closed to the full matrix rather than inherit an empty
-    # route from its parent.
-    "tests/e2e/docker-compose.e2e.yaml": (),
+    # `tests/e2e/` prefix: no CI job builds or runs this stack. The Compose
+    # fixture is the narrow exception: the contract gate checks its required
+    # startup identities without starting containers. A new directory or
+    # Dockerfile must still fail closed to the full matrix rather than inherit
+    # an empty route from its parent.
+    "tests/e2e/docker-compose.e2e.yaml": ("contract",),
     "tests/e2e/provider-runner.Dockerfile": (),
     "tests/e2e/runner.Dockerfile": (),
     "tests/e2e/stub-llm.Dockerfile": (),
@@ -606,12 +609,17 @@ SELF_TEST_CASES: tuple[tuple[str, list[str], dict[str, object]], ...] = (
         },
     ),
     (
-        "the manual E2E surface still gates nothing",
+        "the protected Compose fixture reaches its contract checker",
         [
-            "tests/e2e/kubernetes/runner-job.yaml",
             "tests/e2e/docker-compose.e2e.yaml",
-            "tests/e2e/runner.Dockerfile",
+            "scripts/ci/e2e-compose.sh",
+            "scripts/ci/e2e-compose-contract.py",
         ],
+        {"contract": True, "clippy": False, "test": False, "full": False},
+    ),
+    (
+        "the remaining manual E2E surface still gates nothing",
+        ["tests/e2e/kubernetes/runner-job.yaml", "tests/e2e/runner.Dockerfile"],
         {gate: False for gate in GATES} | {"full": False},
     ),
     (

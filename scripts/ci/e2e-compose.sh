@@ -25,9 +25,13 @@ export COMPOSE_PROJECT_NAME
 cd "${ROOT_DIR}"
 
 if [ ! -f "${COMPOSE_FILE}" ]; then
-  echo "::warning::${COMPOSE_FILE} not present yet; E2E placeholder"
-  exit 0
+  echo "required Compose fixture is missing: ${COMPOSE_FILE}" >&2
+  exit 1
 fi
+
+# Keep configuration drift from reaching a container startup (and, on a
+# release tag, from discovering it only after publication has begun).
+python3 scripts/ci/e2e-compose-contract.py
 
 select_compose() {
   case "${CONTAINER_RUNTIME}" in
