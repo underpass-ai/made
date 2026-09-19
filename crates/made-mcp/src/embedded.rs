@@ -6,6 +6,10 @@ mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_artifact_dispatch;
 mod embedded_assert_ceremony_reason_request;
+mod embedded_authorization_dispatch;
+mod embedded_authorization_presenter;
+mod embedded_authorization_request;
+mod embedded_backend_authorization;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_dispatch;
 mod embedded_budget_fields;
@@ -52,8 +56,9 @@ mod embedded_service_observability_presenter;
 mod embedded_start_ceremony_request;
 mod embedded_start_published_ceremony_request;
 mod embedded_stream_ceremony_request;
+mod embedded_tool_authorizer;
 
-use made_app::services::CeremonyTraceScope;
+use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_app::usecases::CeremonyDraftView;
 use made_core::value_objects::{
     AuthorizationRequestId, CeremonyEventPageLimit, CeremonyId, TraceContext,
@@ -132,21 +137,22 @@ use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
 
-/// What this backend calls itself. Shared with the default lease owner
-/// rule, so the id an omitted `lease_owner_id` becomes cannot drift from
-/// the name `initialize` advertises.
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 
 /// MCP adapter that executes ceremonies inside the host process.
 #[derive(Clone, Debug, Default)]
 pub struct EmbeddedMadeMcpBackend {
     made: EmbeddedMade,
+    authorization: Option<embedded_tool_authorizer::EmbeddedToolAuthorizer>,
 }
 
 impl EmbeddedMadeMcpBackend {
     #[must_use]
     pub fn new(made: EmbeddedMade) -> Self {
-        Self { made }
+        Self {
+            made,
+            authorization: None,
+        }
     }
 
     async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, ToolError> {
@@ -163,6 +169,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
 
     fn initialize(&self) -> MadeMcpBackendInitializationFuture<'_> {
         Box::pin(async {
+            if let Some(authorization) = &self.authorization {
+                authorization.validate_configuration().await?;
+            }
             self.made
                 .recover_event_publication()
                 .await
@@ -578,21 +587,30 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         trace: &'a ToolTraceContext,
     ) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
-            let authorization_request_id =
-                AuthorizationRequestId::new(trace.authorization_request_id().to_owned())
-                    .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+            let request_id = trace.authorization_request_id();
+            let authorization_request_id = AuthorizationRequestId::new(request_id.to_owned())
+                .map_err(|error| ToolError::invalid_request(error.to_string()))?;
             let trace = TraceContext::parse(trace.traceparent())
                 .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-            CeremonyTraceScope::run(trace, async {
-                if name == SEARCH_CEREMONY_INSTANCES_TOOL {
-                    return EmbeddedCeremonySearchRequest::try_from(arguments)
-                        .map_err(ToolError::invalid_request)?
-                        .execute_and_present(&self.made, authorization_request_id)
-                        .await;
-                }
-                self.call_tool(name, arguments).await
-            })
-            .await
+            let dispatch = async {
+                let Some(authorization) = &self.authorization else {
+                    return self.call_tool(name, arguments).await;
+                };
+                let operation = authorization
+                    .authorize(&self.made, name, arguments, request_id)
+                    .await?;
+                AuthorizationOperationScope::run(operation, async {
+                    if name == SEARCH_CEREMONY_INSTANCES_TOOL {
+                        return EmbeddedCeremonySearchRequest::try_from(arguments)
+                            .map_err(ToolError::invalid_request)?
+                            .execute_and_present(&self.made, authorization_request_id)
+                            .await;
+                    }
+                    self.call_tool(name, arguments).await
+                })
+                .await
+            };
+            CeremonyTraceScope::run(trace, dispatch).await
         })
     }
 }

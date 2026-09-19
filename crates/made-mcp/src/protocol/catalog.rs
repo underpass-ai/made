@@ -46,6 +46,7 @@ use super::tool_names::{
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod authorization_catalog;
 mod budget_catalog;
 mod council_catalog;
 mod council_journal_catalog;
@@ -394,5 +395,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
         ),
     ]);
     budget_catalog::insert_budget_tools(&mut tools);
+    authorization_catalog::insert_authorization_tools(&mut tools);
     tools
 }

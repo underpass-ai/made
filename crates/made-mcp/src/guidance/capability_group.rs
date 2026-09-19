@@ -125,6 +125,11 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
         ],
     },
     CapabilityGroup {
+        id: "authorization_administration",
+        description: "Inspect policy and decision evidence, issue scoped grants, and revoke authority.",
+        tools: &["made_get_authorization_policy", "made_issue_authorization_grant", "made_revoke_authorization_grant", "made_list_authorization_decisions"],
+    },
+    CapabilityGroup {
         id: "service_observability",
         description: "Inspect service health and statistics.",
         tools: &[GET_STATUS_TOOL, GET_METRICS_TOOL],

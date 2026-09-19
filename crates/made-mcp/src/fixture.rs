@@ -141,6 +141,12 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
                 "made_complete_execution_receipt" => ceremony_instance_fixture(),
                 "made_adopt_execution_receipt" => ceremony_instance_fixture(),
+                "made_get_authorization_policy" => authorization_policy_fixture(),
+                "made_issue_authorization_grant" => json!({"version":2,"existing":false}),
+                "made_revoke_authorization_grant" => json!({"version":3,"existing":false}),
+                "made_list_authorization_decisions" => {
+                    json!({"decisions":[],"next_after_decision_id":null})
+                }
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
@@ -566,6 +572,14 @@ fn publish_definition_fixture() -> Value {
         "version": "1.0",
         "digest": "3f786850e387550fdab836ed7e6dc881de23001b"
     })
+}
+
+fn authorization_policy_fixture() -> Value {
+    json!({"policy":{
+        "policy_id":"fixture-policy","version":1,
+        "owner":{"principal_id":"fixture-host","kind":"trusted_host","authentication_method":"local_host_policy"},
+        "grants":[],"revocations":[],"separation_rules":[]
+    }})
 }
 
 #[cfg(test)]

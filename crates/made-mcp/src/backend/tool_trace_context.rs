@@ -2,6 +2,9 @@ use serde_json::Value;
 use sha2::{Digest, Sha256};
 use uuid::Uuid;
 
+#[cfg(feature = "embedded")]
+use made_core::value_objects::AuthorizationTargetDigest;
+
 /// Trace and idempotency identity carried by one MCP tool invocation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ToolTraceContext {
@@ -54,6 +57,25 @@ impl ToolTraceContext {
     pub fn authorization_request_id(&self) -> &str {
         &self.authorization_request_id
     }
+
+    /// Digest of the transport-neutral MCP invocation target.
+    ///
+    /// `_meta` carries transport controls such as retry and tracing identities;
+    /// it is deliberately outside the business target. Object keys are sorted
+    /// recursively while arrays retain their order, so equivalent JSON objects
+    /// produce the same digest on every host.
+    #[cfg(feature = "embedded")]
+    #[must_use]
+    pub fn authorization_target_digest(
+        tool_name: &str,
+        arguments: &Value,
+    ) -> AuthorizationTargetDigest {
+        let target = Value::Object(serde_json::Map::from_iter([
+            ("tool".to_owned(), Value::String(tool_name.to_owned())),
+            ("args".to_owned(), without_transport_meta(arguments)),
+        ]));
+        AuthorizationTargetDigest::for_bytes(canonical_json(&target).as_bytes())
+    }
 }
 
 fn validate_explicit_namespace(value: &str) -> Result<(), String> {
@@ -90,11 +112,28 @@ fn derive_request_id(
 }
 
 fn canonical_json(value: &Value) -> String {
+    serde_json::to_string(&canonical_value(value)).expect("JSON values always serialize")
+}
+
+fn without_transport_meta(value: &Value) -> Value {
     let mut value = value.clone();
     if let Some(object) = value.as_object_mut() {
         object.remove("_meta");
     }
-    serde_json::to_string(&value).expect("JSON values always serialize")
+    value
+}
+
+fn canonical_value(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => Value::Object(
+            object
+                .iter()
+                .map(|(key, value)| (key.clone(), canonical_value(value)))
+                .collect(),
+        ),
+        Value::Array(values) => Value::Array(values.iter().map(canonical_value).collect()),
+        value => value.clone(),
+    }
 }
 
 fn hash_field(digest: &mut Sha256, value: &[u8]) {
@@ -219,6 +258,32 @@ mod tests {
             Some(" bad")
         )
         .is_err());
+    }
+
+    #[cfg(feature = "embedded")]
+    #[test]
+    fn target_digest_is_recursive_and_excludes_transport_metadata() {
+        let left = json!({
+            "nested": {"b": 2, "a": 1},
+            "ordered": [2, 1],
+            "_meta": {"made_request_id": "retry-a"}
+        });
+        let right = json!({
+            "ordered": [2, 1],
+            "nested": {"a": 1, "b": 2},
+            "_meta": {"made_request_id": "retry-b"}
+        });
+        assert_eq!(
+            ToolTraceContext::authorization_target_digest("made_test", &left),
+            ToolTraceContext::authorization_target_digest("made_test", &right)
+        );
+        assert_ne!(
+            ToolTraceContext::authorization_target_digest("made_test", &left),
+            ToolTraceContext::authorization_target_digest(
+                "made_test",
+                &json!({"nested": {"a": 1, "b": 2}, "ordered": [1, 2]})
+            )
+        );
     }
 
     fn invocation(

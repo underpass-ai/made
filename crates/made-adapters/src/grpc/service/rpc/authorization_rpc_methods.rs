@@ -63,18 +63,20 @@ macro_rules! authorization_rpc_methods {
                 .policy
                 .grants()
                 .find(|grant| grant.id() == &grant_id)
-                .map(|grant| grant.scope().clone())
-                .ok_or_else(|| tonic::Status::not_found("authorization grant not found"))?;
+                .map(|grant| grant.scope().clone());
             let authorization = self
                 .authorization
                 .authorize_authenticated(
                     &request,
                     principal.clone(),
                     AuthorizationAction::RevokeAuthorizationGrant,
-                    scope,
+                    scope.clone().unwrap_or(AuthorizationScope::Global),
                     None,
                 )
                 .await?;
+            if scope.is_none() {
+                return Err(tonic::Status::not_found("authorization grant not found"));
+            }
             AuthorizationOperationScope::run(
                 authorization,
                 self.handle_revoke_authorization_grant(&principal, request.into_inner()),
