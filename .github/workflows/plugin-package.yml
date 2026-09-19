@@ -25,8 +25,15 @@ on:
       - "scripts/ci/made-plugin-bootstrap.sh"
       - "scripts/ci/made-plugin-bootstrap-windows.ps1"
       - "scripts/ci/made-plugin-smoke.sh"
+      - "scripts/ci/package-made-console.sh"
+      - "scripts/ci/install-protoc.sh"
       - "tests/plugin/**"
       - "crates/made-mcp/**"
+      - "crates/made-client/**"
+      - "crates/made-console/**"
+      - "crates/made-proto/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
       # …but not its prose. A README cannot change the binary the bundle
       # ships, and waking four hosts for one is the opposite of a fast
       # loop. The exclusion is deliberately narrow: the markdown under
@@ -83,6 +90,10 @@ jobs:
         with:
           toolchain: 1.97.1
 
+      - name: Install protoc
+        shell: bash
+        run: bash scripts/ci/install-protoc.sh
+
       - name: Cache Rust build artifacts
         uses: Swatinem/rust-cache@779680da715d629ac1d338a641029a2f4372abb5
         with:
@@ -112,11 +123,22 @@ jobs:
       - name: Package the plugin bundle
         run: bash scripts/plugin/package-made-plugin.sh
 
+      - name: Build and smoke-test the operator console candidate
+        shell: bash
+        run: bash scripts/ci/package-made-console.sh
+
       - name: Upload package as workflow artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: made-plugin-${{ matrix.label }}
           path: dist/plugin/*
+          if-no-files-found: error
+
+      - name: Upload console candidate as workflow artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: made-console-${{ matrix.label }}
+          path: dist/console/*
           if-no-files-found: error
 
   # The one job that writes to the repository, and the only one that runs

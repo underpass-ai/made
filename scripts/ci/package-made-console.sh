@@ -65,7 +65,7 @@ if [[ ! -f "${BINARY}" ]]; then
 fi
 
 "${BINARY}" --version | grep -Fx "made-console ${WORKSPACE_VERSION}" >/dev/null
-"${BINARY}" --help | grep -F "Operate MADE through its public gRPC API" >/dev/null
+"${BINARY}" --help | grep -F "Usage: made-console" >/dev/null
 "${BINARY}" artifact --help | grep -F "export" >/dev/null
 
 ASSET_NAME="made-console-v${PACKAGE_VERSION}-${TARGET_TRIPLE}"

@@ -481,6 +481,19 @@ def validate(sources: dict[str, str]) -> list[str]:
             f"{PLUGIN_PACKAGE} job {PACKAGING_JOB} no longer names its "
             "permissions, so it inherits whatever the repository grants"
         )
+    else:
+        if "bash scripts/ci/package-made-console.sh" not in packaging:
+            failures.append(
+                f"{PLUGIN_PACKAGE} packaging matrix no longer builds and smokes made-console"
+            )
+        if "name: made-console-${{ matrix.label }}" not in packaging:
+            failures.append(
+                f"{PLUGIN_PACKAGE} packaging matrix no longer names per-platform console artifacts"
+            )
+        if "path: dist/console/*" not in packaging:
+            failures.append(
+                f"{PLUGIN_PACKAGE} packaging matrix no longer uploads console candidates"
+            )
 
     if '- "!crates/made-mcp/**/*.md"' not in trigger_block(sources[PLUGIN_PACKAGE]):
         failures.append(
@@ -783,6 +796,11 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         PLUGIN_PACKAGE,
         '      - "!crates/made-mcp/**/*.md"\n',
         "",
+    ),
+    "the packaging matrix stops smoking made-console": (
+        PLUGIN_PACKAGE,
+        "        run: bash scripts/ci/package-made-console.sh\n",
+        "        run: echo console-smoke-removed\n",
     ),
     "the container suites burn runners on drafts": (
         INTEGRATION,
