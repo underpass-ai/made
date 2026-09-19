@@ -1,8 +1,10 @@
 # Execute and resume a ceremony
 
 A host drives the work. MADE accepts claims, validates results and records
-progress. This guide describes the 0.6.0 contract; fencing,
-durable visits and strict list validation are absent from v0.5.0.
+progress. This guide describes the 0.7 contract. Fencing, durable visits and
+strict list validation are absent from v0.5.0; authorization, lifecycle,
+budgets, recoverable receipts and durable artifacts are part of the 0.7
+boundary.
 Neither a claimed step nor a successful no-op is evidence that an
 agent called a tool, produced a file or changed an external system.
 
@@ -20,10 +22,12 @@ restart on one host. A configured `MADE_POSTGRES_URL` selects the shared
 transactional adapter suitable for replicas. The service leaves artifact
 tools unavailable when neither is configured. Default chunks are 64 KiB,
 the hard chunk limit is 1 MiB, the artifact limit is 1 GiB, and list pages
-default to 50 with a maximum of 100. Tombstoning retains digest, actor, policy
-and time for audit while denying content reads. The caller supplies actor and
-provenance assertions; host authentication and authorization remain the trust
-boundary until the principal policy layer is added.
+default to 50 with a maximum of 100. Tombstoning retains digest, declared
+actor, authorization evidence and time for audit while denying content reads.
+Actor and provenance fields are assertions, never credentials. Protected
+gRPC, MCP and embedded-facade compositions authenticate the principal at their
+boundary and authorize the operation against the authoritative artifact scope
+before mutation; a payload cannot replace that principal or widen its grant.
 
 ## Pause, resume, cancel and deadlines
 

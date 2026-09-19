@@ -76,9 +76,11 @@ survive publication and SQLite reopen. Published v0.5.0 predates that fix:
 validation alone there does not prove the definition can be published.
 
 `change_summary` satisfies the definition's required input. The opening actor
-is the actual caller, not necessarily a role at the table. Inspect the
-instance, claim `inspect_api` as `API_REVIEWER` and `inspect_storage` as
-`DATA_REVIEWER`, and use the [claim/work/complete loop](../runtime/README.md).
+is caller-declared provenance, not necessarily a role at the table. On a
+protected surface the authenticated principal is separate; actor-shaped fields
+cannot replace that principal or widen its grant. Inspect the instance, claim
+`inspect_api` as `API_REVIEWER` and `inspect_storage` as `DATA_REVIEWER`, and
+use the [claim/work/complete loop](../runtime/README.md).
 Only apply `finish` when the returned transition is enabled. Reusing
 `review-1` is not a request to create an unrelated replacement session.
 
