@@ -27,7 +27,7 @@ pub(super) fn decode<T: for<'de> Deserialize<'de>>(
     bytes: &[u8],
     operation: &'static str,
 ) -> Result<T, DomainError> {
-    serde_json::from_slice(bytes).map_err(|error| encoding_error(&error, operation))
+    serde_json::from_slice(bytes).map_err(|error| decoding_error(&error, operation))
 }
 
 pub(super) fn sqlx_error(error: sqlx::Error, operation: &'static str) -> DomainError {
@@ -42,6 +42,13 @@ fn encoding_error(error: &serde_json::Error, operation: &'static str) -> DomainE
     tracing::error!(%error, operation, "postgres ceremony store payload failed validation");
     DomainError::InvariantViolated {
         reason: "postgres: ceremony payload could not be serialized",
+    }
+}
+
+fn decoding_error(error: &serde_json::Error, operation: &'static str) -> DomainError {
+    tracing::error!(%error, operation, "postgres ceremony store payload failed validation");
+    DomainError::InvariantViolated {
+        reason: "postgres: ceremony payload could not be deserialized",
     }
 }
 
