@@ -3,6 +3,29 @@
 `made-console` is a stateless operator CLI over `made-client`. Set
 `MADE_ENDPOINT` or pass `--endpoint`.
 
+Install the released CLI from crates.io:
+
+```bash
+cargo install made-console --locked
+made-console --version
+```
+
+To test an unreleased checkout without changing the repository, install from
+its path into a temporary root:
+
+```bash
+cargo install --path crates/made-console --locked --root ./tmp/made-console
+./tmp/made-console/bin/made-console --help
+```
+
+The CLI connects to an already running MADE gRPC service. Point it at that
+public endpoint before issuing reads or actions:
+
+```bash
+export MADE_ENDPOINT=http://127.0.0.1:50055
+made-console get ceremony-123
+```
+
 ```bash
 made-console get ceremony-123
 made-console tree ceremony-123 --max-nodes 100

@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Publish dry-run gate for the two crates that ship to crates.io:
+# Publish dry-run gate for the operator crates and the standalone MCP crates:
+#   - `made-client`    (public gRPC client)
+#   - `made-console`   (operator CLI)
 #   - `made-mcp-proto` (vendored proto crate)
 #   - `made-mcp`       (stdio MCP adapter)
 #
@@ -11,14 +13,12 @@
 # `made-mcp-proto` uses the full `cargo publish --dry-run` flow:
 # compiles the staged tarball as a stand-alone crate.
 #
-# `made-mcp` does NOT — it depends on `made-mcp-proto` which is
-# not yet on the registry, so cargo's pre-publish verify step would
-# always fail. The real publish-distribution workflow serializes the
-# two jobs (proto first, then mcp with a 30s wait for index
-# propagation), which is the only way registry-order deps can land.
-# Here we run `cargo package -l` to validate the file list + the
-# `Cargo.toml` metadata; that catches missing keys / accidental
-# excludes without the registry round-trip.
+# The three downstream crates use `cargo package -l`: `made-client` depends on
+# the workspace's `made-proto`, `made-console` on `made-client`, and `made-mcp`
+# on `made-mcp-proto`. A first publication cannot resolve those exact versions
+# from the registry yet. The real workflow serializes them in dependency order.
+# Listing each package still validates metadata, dependency rewriting and the
+# staged file set without a registry round-trip.
 #
 # No CARGO_REGISTRY_TOKEN required — neither command uploads.
 
@@ -29,6 +29,14 @@ cd "${ROOT_DIR}"
 
 echo "::group::cargo publish --dry-run -p made-mcp-proto"
 cargo publish --dry-run -p made-mcp-proto
+echo "::endgroup::"
+
+echo "::group::cargo package -l -p made-client"
+cargo package --list -p made-client
+echo "::endgroup::"
+
+echo "::group::cargo package -l -p made-console"
+cargo package --list -p made-console
 echo "::endgroup::"
 
 echo "::group::cargo package -l -p made-mcp"

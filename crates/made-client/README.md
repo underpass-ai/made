@@ -3,6 +3,12 @@
 `made-client` is the reusable operator client for MADE's public gRPC API. It
 does not open a MADE store or depend on service composition.
 
+Add the released client to a Rust application with:
+
+```bash
+cargo add made-client
+```
+
 ```rust,no_run
 use made_client::{MadeClient, ProgressCheckpoint};
 

@@ -7,6 +7,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Reusable operator client for MADE's public gRPC API."
+readme = "README.md"
+keywords = ["made", "grpc", "client", "orchestration"]
+categories = ["api-bindings"]
+publish = true
+include = ["src/**/*.rs", "Cargo.toml", "README.md"]
 
 [lints]
 workspace = true

@@ -57,6 +57,20 @@ The public crate order is encoded in
 published versions so a partially completed run can resume; do not change
 the tag or republish different bytes under an existing version.
 
+`made-client` is published after `made-proto`, and `made-console` after the
+client. Before a release, run the non-publishing native console candidate on
+each supported host:
+
+```bash
+bash scripts/ci/package-made-console.sh
+```
+
+The command packages both crate manifests, builds the CLI, checks its version
+and help surface, and produces a checksummed candidate under `dist/console/`.
+The supported release matrix is Linux x86_64, Linux arm64, macOS arm64 and
+Windows x86_64. Candidate output is evidence for review; it is not a release
+asset until the tag-gated workflow publishes that exact commit.
+
 ## Recover
 
 For an unpublished failure, repair the workflow or complete the existing

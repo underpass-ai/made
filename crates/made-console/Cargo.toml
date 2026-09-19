@@ -7,6 +7,11 @@ license.workspace = true
 authors.workspace = true
 repository.workspace = true
 description = "Operator CLI for MADE's public API."
+readme = "README.md"
+keywords = ["made", "cli", "grpc", "orchestration"]
+categories = ["command-line-utilities"]
+publish = true
+include = ["src/**/*.rs", "Cargo.toml", "README.md"]
 
 [lints]
 workspace = true

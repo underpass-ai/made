@@ -4,6 +4,37 @@ The `made-console` binary reads and acts through MADE's public gRPC contract.
 It never opens SQLite, Postgres, artifact paths or internal service endpoints.
 Its reusable transport lives in `made-client`.
 
+## Install and connect
+
+Install a published version with Cargo and verify the binary before using it:
+
+```bash
+cargo install made-console --locked
+made-console --version
+made-console --help
+```
+
+For an unreleased source candidate, use an isolated install root inside the
+checkout:
+
+```bash
+cargo install --path crates/made-console --locked --root ./tmp/made-console
+./tmp/made-console/bin/made-console --version
+```
+
+On Windows the installed program is `made-console.exe`. The console does not
+start a MADE service; configure the service's public gRPC endpoint explicitly:
+
+```bash
+export MADE_ENDPOINT=http://127.0.0.1:50055
+made-console get CEREMONY_ID
+```
+
+`scripts/ci/package-made-console.sh` builds a native release candidate,
+checks its package manifests, version, top-level help and artifact subcommands,
+then writes the binary and SHA-256 file under `dist/console/`. It never uploads
+or creates a tag.
+
 The useful recovery path is `watch --cursor-file PATH --follow`. The cursor
 file contains the ceremony id and last confirmed G6 sequence. On restart the
 console checks the ceremony scope, replays from that sequence and deduplicates

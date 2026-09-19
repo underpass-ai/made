@@ -24,6 +24,8 @@ CRATES=(
   made-core
   made-api
   made-proto
+  made-client
+  made-console
   made-app
   made-adapters
   made-embedded
