@@ -11,6 +11,12 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.2 — 2026-09-19
+
+- Harden the plugin publication checks across macOS and native Windows so the
+  private embedded setup configuration is verified with portable file and ACL
+  checks.
+
 ## 0.7.1 — 2026-09-19
 
 - Automate embedded plugin setup for Codex and Claude: `made-setup` now

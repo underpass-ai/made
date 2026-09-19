@@ -75,6 +75,9 @@ try {
     }
     $ConfigFile = Get-ChildItem -Path $env:MADE_SETUP_CONFIG_ROOT -Filter *.env -Recurse | Select-Object -First 1
     if (-not $ConfigFile) { throw "MADE Windows bootstrap: setup did not persist private host configuration" }
+    if (-not (Get-Acl -LiteralPath $ConfigFile.FullName).AreAccessRulesProtected) {
+        throw "MADE Windows bootstrap: private host configuration still inherits permissions"
+    }
     $Initialize = '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
     $Response = $Initialize | & (Join-Path $TestPlugin "scripts\run-embedded-mcp.cmd")
     if (($LASTEXITCODE -ne 0) -or -not (($Response | ConvertFrom-Json).result.serverInfo)) {

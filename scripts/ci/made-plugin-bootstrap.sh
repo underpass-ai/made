@@ -79,10 +79,17 @@ CONFIG_FILE="$(find "${SCRATCH}/host-config" -type f -name '*.env' -print -quit)
   echo "MADE plugin bootstrap: setup did not persist private host configuration" >&2
   exit 1
 }
-[[ "$(stat -c '%a' "${CONFIG_FILE}" 2>/dev/null || stat -f '%Lp' "${CONFIG_FILE}")" == "600" ]] || {
-  echo "MADE plugin bootstrap: private host configuration is not owner-only" >&2
-  exit 1
-}
+if command -v cygpath >/dev/null 2>&1; then
+  [[ -f "${CONFIG_FILE}" ]] || {
+    echo "MADE plugin bootstrap: private host configuration is not a regular file" >&2
+    exit 1
+  }
+else
+  [[ "$(stat -c '%a' "${CONFIG_FILE}" 2>/dev/null || stat -f '%Lp' "${CONFIG_FILE}")" == "600" ]] || {
+    echo "MADE plugin bootstrap: private host configuration is not owner-only" >&2
+    exit 1
+  }
+fi
 CURSOR_KEY="$(sed -n 's/^MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
 [[ "${#CURSOR_KEY}" -eq 64 ]] || {
   echo "MADE plugin bootstrap: setup did not persist a 32-byte cursor key" >&2
@@ -114,7 +121,10 @@ if "${SCRATCH}/made/scripts/run-embedded-mcp.sh" </dev/null >/dev/null 2>&1; the
   echo "MADE plugin bootstrap: accepted malformed private configuration" >&2
   exit 1
 fi
-sed -i '$d' "${CONFIG_FILE}"
+CONFIG_CLEAN="${CONFIG_FILE}.clean"
+sed '$d' "${CONFIG_FILE}" >"${CONFIG_CLEAN}"
+chmod 600 "${CONFIG_CLEAN}" 2>/dev/null || true
+mv "${CONFIG_CLEAN}" "${CONFIG_FILE}"
 
 RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
   "${SCRATCH}/made/scripts/run-embedded-mcp.sh")"
