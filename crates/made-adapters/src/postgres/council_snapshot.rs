@@ -4,6 +4,7 @@ use super::PostgresPool;
 use crate::council_data_snapshot::CouncilDataSnapshot;
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord, CouncilSnapshotProvenance};
 use made_core::error::DomainError;
+use made_core::value_objects::AuthorizationEvidence;
 use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
@@ -38,6 +39,13 @@ impl PostgresCouncilSnapshot {
     pub async fn import(
         &self,
         snapshot: CouncilDataSnapshot,
+    ) -> Result<CouncilJournalRecord, DomainError> {
+        self.import_authorized(snapshot, None).await
+    }
+    pub async fn import_authorized(
+        &self,
+        snapshot: CouncilDataSnapshot,
+        authorization: Option<AuthorizationEvidence>,
     ) -> Result<CouncilJournalRecord, DomainError> {
         let snapshot = snapshot.canonicalized();
         snapshot.encode()?;
@@ -74,6 +82,7 @@ impl PostgresCouncilSnapshot {
         let record = append(
             &mut tx,
             CouncilJournalEvent::SnapshotImported(snapshot.provenance.clone()),
+            authorization,
         )
         .await?;
         sqlx::query(

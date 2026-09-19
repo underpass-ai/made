@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::entities::{Task, TaskMetadata};
 use made_core::error::DomainError;
 use made_core::events::{EventEnvelope, TaskCompletedEvent, TaskDispatchedEvent, TaskFailedEvent};
@@ -126,7 +127,11 @@ impl OrchestrateUseCase {
                 // which for the noop executor is just the executor
                 // call's reported duration.
                 self.statistics
-                    .record_orchestration(execution.duration())
+                    .record_orchestration_authorized(
+                        execution.duration(),
+                        AuthorizationOperationScope::current()
+                            .map(|operation| operation.evidence().clone()),
+                    )
                     .await?;
 
                 if execution.status().is_success() {

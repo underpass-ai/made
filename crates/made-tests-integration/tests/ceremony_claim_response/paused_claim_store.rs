@@ -7,8 +7,8 @@ use made_core::ports::{
     CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix, CeremonyInstancePageLimit,
-    GlobalPosition, StreamVersion,
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, GlobalPosition, StreamVersion,
 };
 use tokio::sync::Notify;
 
@@ -33,6 +33,28 @@ impl CeremonyEventStorePort for PausedClaimStore {
                 if event.lease.idempotency_key().as_str() == "worker-a")
         });
         let outcome = self.inner.append(stream, expected, facts).await?;
+        if first_claim && matches!(outcome, AppendOutcome::Appended { .. }) {
+            self.committed.notify_one();
+            self.resume.notified().await;
+        }
+        Ok(outcome)
+    }
+
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        let first_claim = facts.iter().any(|fact| {
+            matches!(&fact.event, CeremonyEvent::StepStarted(event)
+                if event.lease.idempotency_key().as_str() == "worker-a")
+        });
+        let outcome = self
+            .inner
+            .append_authorized(stream, expected, facts, authorization)
+            .await?;
         if first_claim && matches!(outcome, AppendOutcome::Appended { .. }) {
             self.committed.notify_one();
             self.resume.notified().await;

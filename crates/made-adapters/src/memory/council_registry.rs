@@ -7,15 +7,17 @@ use async_trait::async_trait;
 use made_core::entities::Council;
 use made_core::error::DomainError;
 use made_core::ports::CouncilRegistryPort;
-use made_core::value_objects::Specialty;
+use made_core::value_objects::{AuthorizationEvidence, Specialty};
 use tokio::sync::RwLock;
+
+type CouncilRegistryState = (BTreeMap<Specialty, Council>, Vec<AuthorizationEvidence>);
 
 /// In-memory council registry keyed by [`Specialty`].
 ///
 /// Cheap to `Clone`; internal state is shared through `Arc<RwLock>`.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryCouncilRegistry {
-    inner: Arc<RwLock<BTreeMap<Specialty, Council>>>,
+    inner: Arc<RwLock<CouncilRegistryState>>,
 }
 
 impl InMemoryCouncilRegistry {
@@ -27,31 +29,49 @@ impl InMemoryCouncilRegistry {
     /// Number of councils currently registered. Read-only helper for
     /// diagnostics and tests.
     pub async fn len(&self) -> usize {
-        self.inner.read().await.len()
+        self.inner.read().await.0.len()
     }
 
     pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
+        self.inner.read().await.0.is_empty()
     }
 }
 
 #[async_trait]
 impl CouncilRegistryPort for InMemoryCouncilRegistry {
     async fn register(&self, council: Council) -> Result<(), DomainError> {
+        self.register_authorized(council, None).await
+    }
+
+    async fn register_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut map = self.inner.write().await;
-        if map.contains_key(council.specialty()) {
+        if map.0.contains_key(council.specialty()) {
             return Err(DomainError::AlreadyExists { what: "council" });
         }
-        map.insert(council.specialty().clone(), council);
+        map.0.insert(council.specialty().clone(), council);
+        map.1.extend(authorization);
         Ok(())
     }
 
     async fn replace(&self, council: Council) -> Result<(), DomainError> {
+        self.replace_authorized(council, None).await
+    }
+
+    async fn replace_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut map = self.inner.write().await;
-        if !map.contains_key(council.specialty()) {
+        if !map.0.contains_key(council.specialty()) {
             return Err(DomainError::NotFound { what: "council" });
         }
-        map.insert(council.specialty().clone(), council);
+        map.0.insert(council.specialty().clone(), council);
+        map.1.extend(authorization);
         Ok(())
     }
 
@@ -59,26 +79,36 @@ impl CouncilRegistryPort for InMemoryCouncilRegistry {
         self.inner
             .read()
             .await
+            .0
             .get(specialty)
             .cloned()
             .ok_or(DomainError::NotFound { what: "council" })
     }
 
     async fn list(&self) -> Result<Vec<Council>, DomainError> {
-        Ok(self.inner.read().await.values().cloned().collect())
+        Ok(self.inner.read().await.0.values().cloned().collect())
     }
 
     async fn delete(&self, specialty: &Specialty) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
+        self.delete_authorized(specialty, None).await
+    }
+
+    async fn delete_authorized(
+        &self,
+        specialty: &Specialty,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state
+            .0
             .remove(specialty)
-            .map(|_| ())
-            .ok_or(DomainError::NotFound { what: "council" })
+            .ok_or(DomainError::NotFound { what: "council" })?;
+        state.1.extend(authorization);
+        Ok(())
     }
 
     async fn contains(&self, specialty: &Specialty) -> Result<bool, DomainError> {
-        Ok(self.inner.read().await.contains_key(specialty))
+        Ok(self.inner.read().await.0.contains_key(specialty))
     }
 }
 
@@ -86,6 +116,7 @@ impl CouncilRegistryPort for InMemoryCouncilRegistry {
 mod tests {
     use super::*;
     use made_core::value_objects::{AgentId, CouncilId};
+    use serde_json::json;
     use time::macros::datetime;
 
     fn council(specialty: &str) -> Council {
@@ -95,6 +126,21 @@ mod tests {
             vec![AgentId::new("a").unwrap()],
             datetime!(2026-04-15 12:00:00 UTC),
         )
+        .unwrap()
+    }
+
+    fn evidence(request_id: &str) -> AuthorizationEvidence {
+        serde_json::from_value(json!({
+            "decision_id": "a".repeat(64),
+            "request_id": request_id,
+            "principal_id": "council-owner",
+            "action": "create_council",
+            "scope": {"kind": "global"},
+            "target_digest": "b".repeat(64),
+            "policy_version": 1,
+            "admitted_at": "2026-09-19T12:00:00Z",
+            "valid_until": "2026-09-19T12:01:00Z"
+        }))
         .unwrap()
     }
 
@@ -112,6 +158,23 @@ mod tests {
         reg.register(council("x")).await.unwrap();
         let err = reg.register(council("x")).await.unwrap_err();
         assert!(matches!(err, DomainError::AlreadyExists { .. }));
+    }
+
+    #[tokio::test]
+    async fn authorized_mutation_retains_exact_evidence_only_when_it_lands() {
+        let reg = InMemoryCouncilRegistry::new();
+        let accepted = evidence("accepted-council-request");
+        reg.register_authorized(council("x"), Some(accepted.clone()))
+            .await
+            .unwrap();
+
+        let rejected = evidence("rejected-council-request");
+        assert!(matches!(
+            reg.register_authorized(council("x"), Some(rejected)).await,
+            Err(DomainError::AlreadyExists { what: "council" })
+        ));
+
+        assert_eq!(reg.inner.read().await.1, vec![accepted]);
     }
 
     #[tokio::test]

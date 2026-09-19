@@ -99,7 +99,7 @@ impl MadeGrpcService {
             .await
             .map_err(artifact_error_to_status)?;
         Ok(Response::new(pb::GetArtifactResponse {
-            record: Some(artifact_record_to_proto(&record)),
+            record: Some(artifact_record_to_proto(&record).map_err(domain_error_to_status)?),
         }))
     }
 
@@ -124,7 +124,12 @@ impl MadeGrpcService {
             .await
             .map_err(artifact_error_to_status)?;
         Ok(Response::new(pb::ListArtifactsResponse {
-            artifacts: listing.items.iter().map(artifact_record_to_proto).collect(),
+            artifacts: listing
+                .items
+                .iter()
+                .map(artifact_record_to_proto)
+                .collect::<Result<_, _>>()
+                .map_err(domain_error_to_status)?,
             next_cursor: listing.next_cursor.map(|cursor| cursor.as_str().to_owned()),
         }))
     }
@@ -161,7 +166,9 @@ impl MadeGrpcService {
             .await
             .map_err(artifact_error_to_status)?;
         Ok(Response::new(pb::TombstoneArtifactResponse {
-            tombstone: Some(artifact_tombstone_to_proto(&tombstone)),
+            tombstone: Some(
+                artifact_tombstone_to_proto(&tombstone).map_err(domain_error_to_status)?,
+            ),
         }))
     }
 }

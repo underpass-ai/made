@@ -11,12 +11,12 @@ use async_trait::async_trait;
 use made_core::entities::Statistics;
 use made_core::error::DomainError;
 use made_core::ports::StatisticsPort;
-use made_core::value_objects::{DurationMs, Specialty};
+use made_core::value_objects::{AuthorizationEvidence, DurationMs, Specialty};
 use tokio::sync::RwLock;
 
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryStatistics {
-    inner: Arc<RwLock<Statistics>>,
+    inner: Arc<RwLock<(Statistics, Vec<AuthorizationEvidence>)>>,
 }
 
 impl InMemoryStatistics {
@@ -33,20 +33,39 @@ impl StatisticsPort for InMemoryStatistics {
         specialty: &Specialty,
         duration: DurationMs,
     ) -> Result<(), DomainError> {
-        self.inner
-            .write()
+        self.record_deliberation_authorized(specialty, duration, None)
             .await
-            .record_deliberation(specialty, duration);
+    }
+
+    async fn record_deliberation_authorized(
+        &self,
+        specialty: &Specialty,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state.0.record_deliberation(specialty, duration);
+        state.1.extend(authorization);
         Ok(())
     }
 
     async fn record_orchestration(&self, duration: DurationMs) -> Result<(), DomainError> {
-        self.inner.write().await.record_orchestration(duration);
+        self.record_orchestration_authorized(duration, None).await
+    }
+
+    async fn record_orchestration_authorized(
+        &self,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state.0.record_orchestration(duration);
+        state.1.extend(authorization);
         Ok(())
     }
 
     async fn snapshot(&self) -> Result<Statistics, DomainError> {
-        Ok(self.inner.read().await.clone())
+        Ok(self.inner.read().await.0.clone())
     }
 }
 

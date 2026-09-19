@@ -6,15 +6,20 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::ContractRegistryPort;
-use made_core::value_objects::{OutputContract, OutputContractId};
+use made_core::value_objects::{AuthorizationEvidence, OutputContract, OutputContractId};
 use tokio::sync::RwLock;
+
+type ContractRegistryState = (
+    BTreeMap<OutputContractId, OutputContract>,
+    Vec<AuthorizationEvidence>,
+);
 
 /// In-memory contract registry keyed by `contract_id`.
 ///
 /// Cheap to `Clone`; internal state is shared through `Arc<RwLock>`.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryContractRegistry {
-    inner: Arc<RwLock<BTreeMap<OutputContractId, OutputContract>>>,
+    inner: Arc<RwLock<ContractRegistryState>>,
 }
 
 impl InMemoryContractRegistry {
@@ -26,22 +31,31 @@ impl InMemoryContractRegistry {
     /// Number of contracts currently registered. Read-only helper for
     /// diagnostics and tests.
     pub async fn len(&self) -> usize {
-        self.inner.read().await.len()
+        self.inner.read().await.0.len()
     }
 
     pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
+        self.inner.read().await.0.is_empty()
     }
 }
 
 #[async_trait]
 impl ContractRegistryPort for InMemoryContractRegistry {
     async fn register(&self, contract: OutputContract) -> Result<(), DomainError> {
+        self.register_authorized(contract, None).await
+    }
+
+    async fn register_authorized(
+        &self,
+        contract: OutputContract,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut map = self.inner.write().await;
-        if map.contains_key(contract.contract_id()) {
+        if map.0.contains_key(contract.contract_id()) {
             return Err(DomainError::AlreadyExists { what: "contract" });
         }
-        map.insert(contract.contract_id().to_owned(), contract);
+        map.0.insert(contract.contract_id().to_owned(), contract);
+        map.1.extend(authorization);
         Ok(())
     }
 
@@ -49,26 +63,36 @@ impl ContractRegistryPort for InMemoryContractRegistry {
         self.inner
             .read()
             .await
+            .0
             .get(contract_id)
             .cloned()
             .ok_or(DomainError::NotFound { what: "contract" })
     }
 
     async fn list(&self) -> Result<Vec<OutputContract>, DomainError> {
-        Ok(self.inner.read().await.values().cloned().collect())
+        Ok(self.inner.read().await.0.values().cloned().collect())
     }
 
     async fn delete(&self, contract_id: &OutputContractId) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
+        self.delete_authorized(contract_id, None).await
+    }
+
+    async fn delete_authorized(
+        &self,
+        contract_id: &OutputContractId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state
+            .0
             .remove(contract_id)
-            .map(|_| ())
-            .ok_or(DomainError::NotFound { what: "contract" })
+            .ok_or(DomainError::NotFound { what: "contract" })?;
+        state.1.extend(authorization);
+        Ok(())
     }
 
     async fn contains(&self, contract_id: &OutputContractId) -> Result<bool, DomainError> {
-        Ok(self.inner.read().await.contains_key(contract_id))
+        Ok(self.inner.read().await.0.contains_key(contract_id))
     }
 }
 

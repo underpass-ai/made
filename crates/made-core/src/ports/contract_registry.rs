@@ -11,7 +11,7 @@
 use async_trait::async_trait;
 
 use crate::error::DomainError;
-use crate::value_objects::{OutputContract, OutputContractId};
+use crate::value_objects::{AuthorizationEvidence, OutputContract, OutputContractId};
 
 #[async_trait]
 pub trait ContractRegistryPort: Send + Sync {
@@ -19,6 +19,14 @@ pub trait ContractRegistryPort: Send + Sync {
     /// [`DomainError::AlreadyExists`] if a contract for the same
     /// `contract_id` already exists.
     async fn register(&self, contract: OutputContract) -> Result<(), DomainError>;
+    async fn register_authorized(
+        &self,
+        contract: OutputContract,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.register(contract).await
+    }
 
     /// Fetch the contract for an id. Returns
     /// [`DomainError::NotFound`] when absent.
@@ -30,7 +38,24 @@ pub trait ContractRegistryPort: Send + Sync {
     /// Remove the contract for an id. Returns
     /// [`DomainError::NotFound`] when absent.
     async fn delete(&self, contract_id: &OutputContractId) -> Result<(), DomainError>;
+    async fn delete_authorized(
+        &self,
+        contract_id: &OutputContractId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.delete(contract_id).await
+    }
 
     /// Cheap existence check that avoids materialising the contract.
     async fn contains(&self, contract_id: &OutputContractId) -> Result<bool, DomainError>;
+}
+
+fn reject_unsupported(authorization: Option<&AuthorizationEvidence>) -> Result<(), DomainError> {
+    if authorization.is_some() {
+        return Err(DomainError::InvariantViolated {
+            reason: "contract registry adapter cannot persist authorization evidence",
+        });
+    }
+    Ok(())
 }

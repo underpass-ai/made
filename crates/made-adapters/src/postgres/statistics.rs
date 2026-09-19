@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use made_core::entities::{CouncilJournalEvent, Statistics};
 use made_core::error::DomainError;
 use made_core::ports::StatisticsPort;
-use made_core::value_objects::{DurationMs, Specialty};
+use made_core::value_objects::{AuthorizationEvidence, DurationMs, Specialty};
 use sqlx::Row;
 
 use super::error::sqlx_to_domain;
@@ -48,6 +48,16 @@ impl StatisticsPort for PostgresStatistics {
         &self,
         specialty: &Specialty,
         duration: DurationMs,
+    ) -> Result<(), DomainError> {
+        self.record_deliberation_authorized(specialty, duration, None)
+            .await
+    }
+
+    async fn record_deliberation_authorized(
+        &self,
+        specialty: &Specialty,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
     ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
 
@@ -88,6 +98,7 @@ impl StatisticsPort for PostgresStatistics {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::StatisticsRecorded(snapshot),
+            authorization,
         )
         .await?;
         tx.commit()
@@ -97,6 +108,14 @@ impl StatisticsPort for PostgresStatistics {
     }
 
     async fn record_orchestration(&self, duration: DurationMs) -> Result<(), DomainError> {
+        self.record_orchestration_authorized(duration, None).await
+    }
+
+    async fn record_orchestration_authorized(
+        &self,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let duration_ms = i64::try_from(duration.get()).unwrap_or(i64::MAX);
         sqlx::query(
@@ -119,6 +138,7 @@ impl StatisticsPort for PostgresStatistics {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::StatisticsRecorded(snapshot),
+            authorization,
         )
         .await?;
         tx.commit()

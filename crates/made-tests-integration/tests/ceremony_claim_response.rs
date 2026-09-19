@@ -148,10 +148,14 @@ async fn claim_response_keeps_accepted_snapshot_and_audit_identity_after_replace
         .unwrap();
     assert_eq!(completed.steps[0].attempt, 2);
     assert_eq!(completed.steps[0].status, "completed");
-    assert!(b
+    let retried = b
         .complete_ceremony_step(complete(second.claim_fence))
         .await
-        .is_err());
+        .unwrap()
+        .into_inner()
+        .instance
+        .unwrap();
+    assert_eq!(retried, completed);
     let final_records = store
         .read(&id, StreamVersion::EMPTY, CeremonyEventPageLimit::DEFAULT)
         .await

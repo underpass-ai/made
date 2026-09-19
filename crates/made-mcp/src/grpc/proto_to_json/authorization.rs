@@ -19,7 +19,7 @@ pub(crate) fn scope(value: &pb::AuthorizationScope) -> Value {
     }
 }
 
-pub(super) fn evidence(value: &pb::CeremonyAuthorizationEvidence) -> Value {
+pub(crate) fn evidence(value: &pb::CeremonyAuthorizationEvidence) -> Value {
     json!({
         "decision_id":value.decision_id,"request_id":value.request_id,
         "principal_id":value.principal_id,"action":value.action,

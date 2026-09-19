@@ -7,15 +7,17 @@ use async_trait::async_trait;
 use made_core::entities::Deliberation;
 use made_core::error::DomainError;
 use made_core::ports::DeliberationRepositoryPort;
-use made_core::value_objects::TaskId;
+use made_core::value_objects::{AuthorizationEvidence, TaskId};
 use tokio::sync::RwLock;
+
+type DeliberationRepositoryState = (BTreeMap<TaskId, Deliberation>, Vec<AuthorizationEvidence>);
 
 /// In-memory deliberation repository keyed by [`TaskId`].
 ///
 /// Insertions keep the latest persisted value per task id.
 #[derive(Debug, Default, Clone)]
 pub struct InMemoryDeliberationRepository {
-    inner: Arc<RwLock<BTreeMap<TaskId, Deliberation>>>,
+    inner: Arc<RwLock<DeliberationRepositoryState>>,
 }
 
 impl InMemoryDeliberationRepository {
@@ -25,21 +27,30 @@ impl InMemoryDeliberationRepository {
     }
 
     pub async fn len(&self) -> usize {
-        self.inner.read().await.len()
+        self.inner.read().await.0.len()
     }
 
     pub async fn is_empty(&self) -> bool {
-        self.inner.read().await.is_empty()
+        self.inner.read().await.0.is_empty()
     }
 }
 
 #[async_trait]
 impl DeliberationRepositoryPort for InMemoryDeliberationRepository {
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError> {
-        self.inner
-            .write()
-            .await
+        self.save_authorized(deliberation, None).await
+    }
+
+    async fn save_authorized(
+        &self,
+        deliberation: &Deliberation,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        let mut state = self.inner.write().await;
+        state
+            .0
             .insert(deliberation.task_id().clone(), deliberation.clone());
+        state.1.extend(authorization);
         Ok(())
     }
 
@@ -47,6 +58,7 @@ impl DeliberationRepositoryPort for InMemoryDeliberationRepository {
         self.inner
             .read()
             .await
+            .0
             .get(task_id)
             .cloned()
             .ok_or(DomainError::NotFound {
@@ -55,7 +67,7 @@ impl DeliberationRepositoryPort for InMemoryDeliberationRepository {
     }
 
     async fn exists(&self, task_id: &TaskId) -> Result<bool, DomainError> {
-        Ok(self.inner.read().await.contains_key(task_id))
+        Ok(self.inner.read().await.0.contains_key(task_id))
     }
 }
 

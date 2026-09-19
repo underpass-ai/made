@@ -6,8 +6,8 @@ use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
 use made_core::ports::CouncilJournalPort;
 use made_core::value_objects::{
-    CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId, CouncilJournalPageLimit,
-    CouncilJournalPosition, DurationMs,
+    AuthorizationEvidence, CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId,
+    CouncilJournalPageLimit, CouncilJournalPosition, DurationMs,
 };
 use serde_json::Value;
 use sqlx::Row;
@@ -29,13 +29,20 @@ impl CouncilJournalPort for PostgresCouncilJournal {
         &self,
         event: CouncilJournalEvent,
     ) -> Result<CouncilJournalRecord, DomainError> {
+        self.publish_authorized(event, None).await
+    }
+    async fn publish_authorized(
+        &self,
+        event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CouncilJournalRecord, DomainError> {
         if event.publication_id().is_none() {
             return Err(DomainError::InvariantViolated {
                 reason: "council publication requires an original event id",
             });
         }
         let mut tx = begin(&self.pool).await?;
-        let record = append(&mut tx, event).await?;
+        let record = append(&mut tx, event, authorization).await?;
         tx.commit()
             .await
             .map_err(|e| sqlx_to_domain(e, "commit council publication"))?;

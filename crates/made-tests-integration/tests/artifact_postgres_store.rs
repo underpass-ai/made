@@ -5,6 +5,8 @@ use std::time::Duration;
 
 use made_adapters::artifacts::{ArtifactBackupService, LocalArtifactStore};
 use made_adapters::postgres::{PostgresArtifactStore, PostgresConfig, PostgresPool};
+use made_app::artifacts::ArtifactService;
+use made_app::services::AuthorizationOperationScope;
 use made_core::ports::{
     ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactRetentionActor,
     ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload,
@@ -12,6 +14,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactRef, ArtifactSizeBytes,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence, AuthorizedOperation,
+    PrincipalId, PrincipalKind,
 };
 use sha2::{Digest, Sha256};
 use testcontainers::{
@@ -34,6 +38,28 @@ fn begin(bytes: &[u8], key: &str) -> BeginArtifactUpload {
         provenance: ArtifactProvenance::generated_report(OffsetDateTime::UNIX_EPOCH),
         idempotency_key: ArtifactIdempotencyKey::new(key).unwrap(),
     }
+}
+
+fn authorized_operation(id: &str, action: &str, decision: char) -> AuthorizedOperation {
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new(id).unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::MutualTls,
+    )
+    .unwrap();
+    let evidence: AuthorizationEvidence = serde_json::from_value(serde_json::json!({
+        "decision_id": decision.to_string().repeat(64),
+        "request_id": format!("postgres-{action}"),
+        "principal_id": id,
+        "action": action,
+        "scope": { "kind": "global" },
+        "target_digest": "b".repeat(64),
+        "policy_version": 1,
+        "admitted_at": "2026-09-19T12:00:00Z",
+        "valid_until": "2026-09-19T12:01:00Z"
+    }))
+    .unwrap();
+    AuthorizedOperation::new(principal, evidence).unwrap()
 }
 
 async fn postgres() -> (
@@ -127,7 +153,23 @@ async fn resume_and_commit(
         })
         .await
         .unwrap();
-    let artifact = store.commit_upload(&resumed.upload_id).await.unwrap();
+    let artifact = AuthorizationOperationScope::run(
+        authorized_operation("artifact-writer", "commit_artifact_upload", 'a'),
+        ArtifactService::new(store.clone()).commit_upload(&resumed.upload_id),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        store
+            .get(artifact.artifact_id())
+            .await
+            .unwrap()
+            .authorization
+            .unwrap()
+            .principal_id()
+            .as_str(),
+        "artifact-writer"
+    );
     let crossing = store
         .read_chunk(ReadArtifactChunk {
             artifact_id: artifact.artifact_id().clone(),
@@ -199,19 +241,38 @@ async fn assert_incomplete_and_limits(store: &PostgresArtifactStore, artifact: &
 }
 
 async fn assert_tombstone_survives_recommit(
-    store: &PostgresArtifactStore,
+    store: &Arc<PostgresArtifactStore>,
     bytes: &[u8],
     artifact: &ArtifactRef,
 ) {
-    let tombstone = store
-        .tombstone(TombstoneArtifact {
-            artifact_id: artifact.artifact_id().clone(),
-            actor: ArtifactRetentionActor::new("host:postgres-test").unwrap(),
-            policy: ArtifactRetentionPolicy::new("expired").unwrap(),
-            retired_at: OffsetDateTime::UNIX_EPOCH,
-        })
-        .await
-        .unwrap();
+    let retirement = TombstoneArtifact {
+        artifact_id: artifact.artifact_id().clone(),
+        actor: ArtifactRetentionActor::new("host:postgres-test").unwrap(),
+        policy: ArtifactRetentionPolicy::new("expired").unwrap(),
+        retired_at: OffsetDateTime::UNIX_EPOCH,
+    };
+    let tombstone = AuthorizationOperationScope::run(
+        authorized_operation("retention-host", "tombstone_artifact", 'c'),
+        ArtifactService::new(store.clone()).tombstone(retirement.clone()),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        tombstone
+            .authorization
+            .as_ref()
+            .unwrap()
+            .principal_id()
+            .as_str(),
+        "retention-host"
+    );
+    let retry = AuthorizationOperationScope::run(
+        authorized_operation("replacement-host", "tombstone_artifact", 'd'),
+        ArtifactService::new(store.clone()).tombstone(retirement),
+    )
+    .await
+    .unwrap();
+    assert_eq!(retry, tombstone, "PostgreSQL keeps the first evidence");
     let mut same_id = begin(bytes, "postgres-same-id");
     same_id.requested_artifact_id = Some(artifact.artifact_id().clone());
     let upload = store.begin_upload(same_id).await.unwrap();

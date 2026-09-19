@@ -2,6 +2,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::error::DomainError;
 use made_core::ports::CouncilRegistryPort;
 use made_core::value_objects::Specialty;
@@ -29,7 +30,11 @@ impl DeleteCouncilUseCase {
         fields(specialty = %specialty)
     )]
     pub async fn execute(&self, specialty: &Specialty) -> Result<(), DomainError> {
-        self.registry.delete(specialty).await?;
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        self.registry
+            .delete_authorized(specialty, authorization)
+            .await?;
         info!(specialty = specialty.as_str(), "council removed");
         Ok(())
     }
