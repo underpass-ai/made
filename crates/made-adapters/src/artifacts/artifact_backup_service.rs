@@ -1,4 +1,4 @@
-use std::fs::{self, File};
+use std::fs::{self, File, OpenOptions};
 use std::io::{Read, Seek, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -9,11 +9,13 @@ use made_core::ports::{
     ReadArtifactChunk, TombstoneArtifact, ARTIFACT_DEFAULT_CHUNK_BYTES,
 };
 use made_core::value_objects::ArtifactDigest;
-use uuid::Uuid;
 
 use super::artifact_backup_entry::ArtifactBackupEntry;
-use super::artifact_backup_manifest::ArtifactBackupManifest;
+use super::artifact_backup_manifest::{
+    ArtifactBackupManifest, ArtifactBackupPlan, ARTIFACT_BACKUP_VERSION,
+};
 use super::hashing::{digest_bytes, digest_reader, stable_key};
+use super::local_artifact_io::write_json_atomic;
 
 /// Filesystem backup/restore composed only from bounded artifact-store calls.
 #[derive(Debug)]
@@ -30,45 +32,8 @@ where
         Self { store }
     }
 
-    pub async fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ArtifactStoreError> {
-        let destination = destination.as_ref();
-        if destination.exists() {
-            return Err(ArtifactStoreError::IdempotencyConflict);
-        }
-        let parent = destination
-            .parent()
-            .ok_or(ArtifactStoreError::InvalidBackup)?;
-        fs::create_dir_all(parent).map_err(storage_failure)?;
-        let temporary = parent.join(format!(".artifact-backup-{}", Uuid::new_v4()));
-        fs::create_dir(&temporary).map_err(storage_failure)?;
-        fs::create_dir(temporary.join("blobs")).map_err(storage_failure)?;
-
-        let result = self.write_backup(&temporary).await;
-        if let Err(error) = result {
-            let _ = fs::remove_dir_all(&temporary);
-            return Err(error);
-        }
-        fs::rename(&temporary, destination).map_err(storage_failure)?;
-        sync_directory(parent)
-    }
-
-    pub async fn restore_from(&self, source: impl AsRef<Path>) -> Result<(), ArtifactStoreError> {
-        let source = source.as_ref();
-        let manifest: ArtifactBackupManifest = read_json(&source.join("manifest.json"))?;
-        if manifest.version != 1 {
-            return Err(ArtifactStoreError::InvalidBackup);
-        }
-
-        for entry in &manifest.entries {
-            verify_backup_blob(source, entry)?;
-        }
-        for entry in manifest.entries {
-            self.restore_entry(source, entry).await?;
-        }
-        Ok(())
-    }
-
-    async fn write_backup(&self, root: &Path) -> Result<(), ArtifactStoreError> {
+    /// Build the immutable, stable-order selection used by a backup.
+    pub async fn plan(&self) -> Result<ArtifactBackupPlan, ArtifactStoreError> {
         let mut entries = Vec::new();
         let mut after = None;
         loop {
@@ -76,63 +41,172 @@ where
                 .store
                 .list(after.as_ref(), ArtifactPageLimit::default())
                 .await?;
-            for record in page.items {
-                let path = blob_path(root, record.artifact.artifact_id().as_str());
-                let mut file = File::create(&path).map_err(storage_failure)?;
-                let mut offset = 0_u64;
-                loop {
-                    let chunk = self
-                        .store
-                        .read_chunk_for_backup(ReadArtifactChunk {
-                            artifact_id: record.artifact.artifact_id().clone(),
-                            offset: ArtifactByteOffset::new(offset),
-                            max_bytes: ArtifactChunkLimit::DEFAULT,
-                        })
-                        .await?;
-                    if digest_bytes(&chunk.bytes) != chunk.chunk_digest {
-                        return Err(ArtifactStoreError::InvalidBackup);
-                    }
-                    file.write_all(&chunk.bytes).map_err(storage_failure)?;
-                    offset = chunk.next_offset.get();
-                    if chunk.is_complete() {
-                        break;
-                    }
-                }
-                file.sync_all().map_err(storage_failure)?;
-                verify_blob(
-                    &path,
-                    record.artifact.digest(),
-                    record.artifact.size_bytes().get(),
-                )?;
-                entries.push(ArtifactBackupEntry { record });
-            }
+            entries.extend(
+                page.items
+                    .into_iter()
+                    .map(|record| ArtifactBackupEntry { record }),
+            );
             match page.next_after {
                 Some(cursor) => after = Some(cursor),
                 None => break,
             }
         }
-        write_json_durable(
-            &root.join("manifest.json"),
-            &ArtifactBackupManifest {
-                version: 1,
-                entries,
-            },
-        )?;
-        sync_directory(&root.join("blobs"))?;
+        ArtifactBackupPlan::from_entries(entries)
+            .map_err(|_| ArtifactStoreError::StorageUnavailable)
+    }
+
+    /// Prepare a resumable backup directory and persist its immutable plan.
+    pub async fn prepare(
+        &self,
+        destination: impl AsRef<Path>,
+    ) -> Result<ArtifactBackupPlan, ArtifactStoreError> {
+        let root = destination.as_ref();
+        fs::create_dir_all(root).map_err(storage_failure)?;
+        fs::create_dir_all(root.join("blobs")).map_err(storage_failure)?;
+        let manifest_path = root.join("manifest.json");
+        if manifest_path.exists() {
+            let manifest: ArtifactBackupManifest = read_json(&manifest_path)?;
+            if !manifest.validate() {
+                return Err(ArtifactStoreError::InvalidBackup);
+            }
+            return Ok(manifest.plan);
+        }
+        let plan = self.plan().await?;
+        let manifest = ArtifactBackupManifest {
+            version: ARTIFACT_BACKUP_VERSION,
+            plan: plan.clone(),
+            completed: Vec::new(),
+            complete: false,
+        };
+        write_json_durable(&root.join("plan.json"), &plan)?;
+        write_json_durable(&manifest_path, &manifest)?;
+        sync_directory(root.join("blobs").as_path())?;
+        sync_directory(root)?;
+        Ok(plan)
+    }
+
+    /// Create or resume a deterministic local backup. Repeating a completed
+    /// call verifies and returns success without rewriting it.
+    pub async fn backup_to(&self, destination: impl AsRef<Path>) -> Result<(), ArtifactStoreError> {
+        let destination = destination.as_ref();
+        if destination.exists() && !destination.join("manifest.json").exists() {
+            return Err(ArtifactStoreError::IdempotencyConflict);
+        }
+        let root = if destination.exists() {
+            destination.to_path_buf()
+        } else {
+            let staging = staging_path(destination);
+            fs::create_dir_all(&staging).map_err(storage_failure)?;
+            staging
+        };
+        self.prepare(&root).await?;
+        let result = self.resume_backup(&root).await;
+        if result.is_err() && root != destination {
+            // Keep the staging directory: a later invocation can resume it.
+        }
+        result?;
+        if root != destination {
+            fs::rename(&root, destination).map_err(storage_failure)?;
+            sync_directory(destination.parent().unwrap_or_else(|| Path::new(".")))?;
+        }
+        Ok(())
+    }
+
+    pub fn inspect_manifest(
+        source: impl AsRef<Path>,
+    ) -> Result<ArtifactBackupManifest, ArtifactStoreError> {
+        let manifest: ArtifactBackupManifest = read_json(&source.as_ref().join("manifest.json"))?;
+        if !manifest.validate() || !manifest.complete {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
+        for entry in &manifest.plan.entries {
+            verify_backup_blob(source.as_ref(), entry)?;
+        }
+        Ok(manifest)
+    }
+
+    /// Verify the complete source before mutating the target, then restore it
+    /// through the same resumable upload boundary used by normal writes.
+    pub async fn restore_from(&self, source: impl AsRef<Path>) -> Result<(), ArtifactStoreError> {
+        let source = source.as_ref();
+        let manifest = Self::inspect_manifest(source)?;
+        for entry in &manifest.plan.entries {
+            self.validate_target(entry).await?;
+        }
+        for entry in &manifest.plan.entries {
+            self.restore_entry(source, entry).await?;
+        }
+        Ok(())
+    }
+
+    async fn resume_backup(&self, root: &Path) -> Result<(), ArtifactStoreError> {
+        let manifest_path = root.join("manifest.json");
+        let mut manifest: ArtifactBackupManifest = read_json(&manifest_path)?;
+        if !manifest.validate() {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
+        if manifest.complete {
+            for entry in &manifest.plan.entries {
+                verify_backup_blob(root, entry)?;
+            }
+            return Ok(());
+        }
+
+        for entry in &manifest.plan.entries {
+            if manifest
+                .completed
+                .iter()
+                .any(|id| id == entry.artifact_id())
+            {
+                verify_backup_blob(root, entry)?;
+                continue;
+            }
+            let path = blob_path(root, entry.artifact_id().as_str());
+            write_backup_blob(self.store.as_ref(), &path, entry).await?;
+            verify_blob(
+                &path,
+                entry.record.artifact.digest(),
+                entry.record.artifact.size_bytes().get(),
+            )?;
+            manifest.completed.push(entry.artifact_id().clone());
+            manifest.completed.sort();
+            write_json_durable(&manifest_path, &manifest)?;
+        }
+        sync_directory(root.join("blobs").as_path())?;
+        manifest.complete = true;
+        write_json_durable(&manifest_path, &manifest)?;
         sync_directory(root)
+    }
+
+    async fn validate_target(&self, entry: &ArtifactBackupEntry) -> Result<(), ArtifactStoreError> {
+        match self.store.get(entry.artifact_id()).await {
+            Ok(existing) if existing.artifact == entry.record.artifact => {
+                if let (Some(expected), Some(actual)) =
+                    (&entry.record.tombstone, &existing.tombstone)
+                {
+                    if expected != actual {
+                        return Err(ArtifactStoreError::IdempotencyConflict);
+                    }
+                }
+                Ok(())
+            }
+            Ok(_) => Err(ArtifactStoreError::IdempotencyConflict),
+            Err(ArtifactStoreError::NotFound) => Ok(()),
+            Err(error) => Err(error),
+        }
     }
 
     async fn restore_entry(
         &self,
         root: &Path,
-        entry: ArtifactBackupEntry,
+        entry: &ArtifactBackupEntry,
     ) -> Result<(), ArtifactStoreError> {
         let reference = &entry.record.artifact;
-        let artifact_authorization = entry.record.authorization.clone();
         let key = ArtifactIdempotencyKey::new(format!(
-            "backup-v1:{}:{}",
+            "backup-v2:{}:{}:{}",
             reference.artifact_id(),
-            reference.digest()
+            reference.digest(),
+            digest_bytes(reference.artifact_id().as_str().as_bytes())
         ))?;
         let upload = self
             .store
@@ -147,6 +221,9 @@ where
             .await?;
         let mut file = File::open(blob_path(root, reference.artifact_id().as_str()))
             .map_err(storage_failure)?;
+        if upload.next_offset.get() > reference.size_bytes().get() {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
         let mut offset = upload.next_offset.get();
         file.seek(std::io::SeekFrom::Start(offset))
             .map_err(storage_failure)?;
@@ -166,26 +243,28 @@ where
                     bytes: chunk,
                 })
                 .await?;
+            if status.next_offset.get() <= offset {
+                return Err(ArtifactStoreError::InvalidBackup);
+            }
             offset = status.next_offset.get();
         }
         let restored = self
             .store
-            .commit_upload_authorized(&upload.upload_id, artifact_authorization)
+            .commit_upload_authorized(&upload.upload_id, entry.record.authorization.clone())
             .await?;
         if restored != *reference {
             return Err(ArtifactStoreError::InvalidBackup);
         }
-        if let Some(tombstone) = entry.record.tombstone {
-            let authorization = tombstone.authorization.clone();
+        if let Some(tombstone) = &entry.record.tombstone {
             self.store
                 .tombstone_authorized(
                     TombstoneArtifact {
                         artifact_id: reference.artifact_id().clone(),
-                        actor: tombstone.actor,
-                        policy: tombstone.policy,
+                        actor: tombstone.actor.clone(),
+                        policy: tombstone.policy.clone(),
                         retired_at: tombstone.retired_at,
                     },
-                    authorization,
+                    tombstone.authorization.clone(),
                 )
                 .await?;
         }
@@ -193,10 +272,44 @@ where
     }
 }
 
+async fn write_backup_blob<S: ArtifactStorePort>(
+    store: &S,
+    path: &Path,
+    entry: &ArtifactBackupEntry,
+) -> Result<(), ArtifactStoreError> {
+    let temporary = path.with_extension("part");
+    let mut file = OpenOptions::new()
+        .create(true)
+        .truncate(true)
+        .write(true)
+        .open(&temporary)
+        .map_err(storage_failure)?;
+    let mut offset = 0_u64;
+    loop {
+        let chunk = store
+            .read_chunk_for_backup(ReadArtifactChunk {
+                artifact_id: entry.artifact_id().clone(),
+                offset: ArtifactByteOffset::new(offset),
+                max_bytes: ArtifactChunkLimit::DEFAULT,
+            })
+            .await?;
+        if digest_bytes(&chunk.bytes) != chunk.chunk_digest {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
+        file.write_all(&chunk.bytes).map_err(storage_failure)?;
+        offset = chunk.next_offset.get();
+        if chunk.is_complete() {
+            break;
+        }
+    }
+    file.sync_all().map_err(storage_failure)?;
+    fs::rename(&temporary, path).map_err(storage_failure)
+}
+
 fn verify_backup_blob(root: &Path, entry: &ArtifactBackupEntry) -> Result<(), ArtifactStoreError> {
     let reference = &entry.record.artifact;
     verify_blob(
-        &blob_path(root, reference.artifact_id().as_str()),
+        &blob_path(root, entry.artifact_id().as_str()),
         reference.digest(),
         reference.size_bytes().get(),
     )
@@ -219,6 +332,16 @@ fn blob_path(root: &Path, artifact_id: &str) -> PathBuf {
     root.join("blobs").join(stable_key(artifact_id))
 }
 
+fn staging_path(destination: &Path) -> PathBuf {
+    destination.with_file_name(format!(
+        ".{}-in-progress",
+        destination
+            .file_name()
+            .and_then(|name| name.to_str())
+            .unwrap_or("artifact-backup")
+    ))
+}
+
 fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, ArtifactStoreError> {
     let bytes = fs::read(path).map_err(|_| ArtifactStoreError::InvalidBackup)?;
     serde_json::from_slice(&bytes).map_err(|_| ArtifactStoreError::InvalidBackup)
@@ -228,11 +351,9 @@ fn write_json_durable(
     path: &Path,
     value: &impl serde::Serialize,
 ) -> Result<(), ArtifactStoreError> {
-    let bytes =
-        serde_json::to_vec_pretty(value).map_err(|_| ArtifactStoreError::StorageUnavailable)?;
-    let mut file = File::create(path).map_err(storage_failure)?;
-    file.write_all(&bytes)
-        .and_then(|()| file.sync_all())
+    write_json_atomic(path, value)?;
+    File::open(path)
+        .and_then(|file| file.sync_all())
         .map_err(storage_failure)
 }
 

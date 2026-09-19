@@ -8,7 +8,9 @@ use made_core::ports::{
     BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
 };
 use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
+use time::OffsetDateTime;
 
+use super::artifact_gc::{ArtifactGcPlan, ArtifactGcReport};
 use super::local_artifact_repository::LocalArtifactRepository;
 
 /// Durable single-host artifact store with cross-process serialization.
@@ -22,6 +24,51 @@ impl LocalArtifactStore {
         Ok(Self {
             repository: Arc::new(LocalArtifactRepository::open(root)?),
         })
+    }
+
+    pub async fn plan_gc(
+        &self,
+        retire_before: OffsetDateTime,
+        lease: made_core::value_objects::StepLease,
+    ) -> Result<ArtifactGcPlan, ArtifactStoreError> {
+        self.blocking(move |repository| repository.plan_gc(retire_before, lease))
+            .await
+    }
+
+    pub async fn apply_gc(
+        &self,
+        plan: &ArtifactGcPlan,
+        now: OffsetDateTime,
+    ) -> Result<ArtifactGcReport, ArtifactStoreError> {
+        let plan = plan.clone();
+        self.blocking(move |repository| repository.apply_gc(&plan, now))
+            .await
+    }
+
+    #[must_use]
+    pub fn dry_run_gc(plan: &ArtifactGcPlan) -> ArtifactGcReport {
+        ArtifactGcReport::dry_run(plan)
+    }
+
+    pub async fn plan_garbage_collection(
+        &self,
+        retire_before: OffsetDateTime,
+        lease: made_core::value_objects::StepLease,
+    ) -> Result<ArtifactGcPlan, ArtifactStoreError> {
+        self.plan_gc(retire_before, lease).await
+    }
+
+    pub async fn apply_garbage_collection(
+        &self,
+        plan: &ArtifactGcPlan,
+        now: OffsetDateTime,
+    ) -> Result<ArtifactGcReport, ArtifactStoreError> {
+        self.apply_gc(plan, now).await
+    }
+
+    #[must_use]
+    pub fn dry_run_garbage_collection(plan: &ArtifactGcPlan) -> ArtifactGcReport {
+        Self::dry_run_gc(plan)
     }
 
     async fn blocking<T: Send + 'static>(

@@ -45,6 +45,7 @@ pub mod ceremony;
 mod ceremony_event_wire;
 pub mod clock;
 pub mod config;
+pub mod connectors;
 pub mod event_sink;
 pub mod execution;
 pub mod memory;
@@ -52,6 +53,7 @@ pub mod mermaid;
 pub mod metrics;
 pub mod noop;
 pub mod progress;
+pub mod providers;
 #[cfg(feature = "runtime-grpc")]
 pub mod runtime;
 pub mod scoring;
