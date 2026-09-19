@@ -158,7 +158,7 @@ impl EmbeddedMade {
         &self,
         limit: CeremonyEventPageLimit,
     ) -> Result<RecoverCeremonyChildrenRound, DomainError> {
-        RecoverCeremonyChildrenUseCase::new(
+        let recovery = RecoverCeremonyChildrenUseCase::new(
             self.events.clone(),
             self.cursors.clone(),
             self.stream.clone(),
@@ -166,9 +166,13 @@ impl EmbeddedMade {
             self.child_completion_acceptor(),
             self.clock.clone(),
             CeremonyEventConsumer::new("made.children.recovery.v1")?,
-        )
-        .execute(limit)
-        .await
+        );
+        let recovery = if let Some(authorization) = &self.authorization {
+            recovery.with_authorization_continuation(authorization.continuation())
+        } else {
+            recovery
+        };
+        recovery.execute(limit).await
     }
 
     fn child_orchestrator(&self) -> Arc<PrepareCeremonyChildrenUseCase> {

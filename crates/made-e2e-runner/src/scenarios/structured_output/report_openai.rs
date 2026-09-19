@@ -2,14 +2,12 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::run_council_decision_request::Selector as RunCouncilSelector;
 use made_proto::v1::{
     AgentSummary, CreateCouncilRequest, OutputContract, OutputFormat, RegisterAgentRequest,
     RegisterContractRequest, RunCouncilDecisionRequest, ValidationMode,
 };
 use prost_types::value::Kind as PbKind;
-use tonic::transport::Channel;
 use tonic::Code;
 use tracing::{info, warn};
 
@@ -45,7 +43,7 @@ use super::super::pb_struct_from_pairs;
 ///    so an absence is the contract, not an empty string).
 #[allow(clippy::too_many_lines)] // single end-to-end scenario; splitting fragments the assertion
 pub(crate) async fn verify_structured_output_against_stub_llm(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     const CONTRACT_ID: &str = "scenario-8-report";
     // Must match the id pattern the CreateCouncil handler mints
@@ -97,10 +95,8 @@ pub(crate) async fn verify_structured_output_against_stub_llm(
     // 3. Register the openai-kind agent pointing at the stub-llm
     // sidecar. The attribute keys mirror `DispatchingAgentFactory`'s
     // recognised overrides (`provider.endpoint`, `provider.model`).
-    // The api_key attribute is NOT consumed by the factory (which
-    // demands a base config from env) — it's carried purely as a
-    // forward-compatible marker. compose sets a dummy
-    // `MADE_OPENAI_API_KEY` so the factory has a base config.
+    // Credentials remain host configuration. Durable descriptors accept only
+    // the non-secret endpoint and model overrides.
     let agent_attrs = pb_struct_from_pairs([
         (
             "provider.endpoint",
@@ -109,10 +105,6 @@ pub(crate) async fn verify_structured_output_against_stub_llm(
         (
             "provider.model",
             PbKind::StringValue("stub-report-v1".to_owned()),
-        ),
-        (
-            "provider.api_key",
-            PbKind::StringValue("stub-key-not-used".to_owned()),
         ),
     ]);
     let register_agent = client

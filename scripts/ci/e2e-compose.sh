@@ -93,15 +93,46 @@ compose_logs() {
 cleanup() {
   compose_logs > tests/e2e/compose.log 2>&1 || true
   "${COMPOSE[@]}" -f "${COMPOSE_FILE}" down --volumes --remove-orphans || true
+  if [[ "${AUTH_DIR_OWNED}" == true && -n "${MADE_E2E_AUTH_DIR:-}" ]]; then
+    rm -rf "${MADE_E2E_AUTH_DIR}"
+  fi
+  if [[ "${STATE_DIR_OWNED}" == true && -n "${MADE_E2E_STATE_DIR:-}" ]]; then
+    rm -rf "${MADE_E2E_STATE_DIR}"
+  fi
 }
+AUTH_DIR_OWNED=false
+STATE_DIR_OWNED=false
 trap cleanup EXIT
+
+if [[ -z "${MADE_E2E_AUTH_DIR:-}" ]]; then
+  mkdir -p "${ROOT_DIR}/tmp"
+  MADE_E2E_AUTH_DIR="$(mktemp -d "${ROOT_DIR}/tmp/e2e-auth.XXXXXX")"
+  AUTH_DIR_OWNED=true
+fi
+export MADE_E2E_AUTH_DIR
+"${ROOT_DIR}/tests/e2e/prepare-auth.sh" "${MADE_E2E_AUTH_DIR}"
+
+if [[ -z "${MADE_E2E_STATE_DIR:-}" ]]; then
+  mkdir -p "${ROOT_DIR}/tmp"
+  MADE_E2E_STATE_DIR="$(mktemp -d "${ROOT_DIR}/tmp/e2e-state.XXXXXX")"
+  STATE_DIR_OWNED=true
+  # The distroless image runs as uid/gid 65532. The scratch directory holds
+  # only this run's SQLite state and is removed by the exit trap.
+  chmod 0777 "${MADE_E2E_STATE_DIR}"
+fi
+export MADE_E2E_STATE_DIR
 
 if [[ -v MADE_E2E_BUILD_SERVICES ]]; then
   if [[ -n "${MADE_E2E_BUILD_SERVICES}" ]]; then
     read -r -a BUILD_SERVICES <<<"${MADE_E2E_BUILD_SERVICES}"
     "${COMPOSE[@]}" -f "${COMPOSE_FILE}" build "${BUILD_SERVICES[@]}"
   fi
-  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --no-build --abort-on-container-exit --exit-code-from e2e-runner
 else
-  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --build --abort-on-container-exit --exit-code-from e2e-runner
+  "${COMPOSE[@]}" -f "${COMPOSE_FILE}" build
 fi
+
+"${COMPOSE[@]}" -f "${COMPOSE_FILE}" run --rm --no-deps made \
+  bootstrap-authorization --policy-id made-e2e-policy \
+  --trusted-host-id made-e2e-owner
+
+"${COMPOSE[@]}" -f "${COMPOSE_FILE}" up --no-build --abort-on-container-exit --exit-code-from e2e-runner

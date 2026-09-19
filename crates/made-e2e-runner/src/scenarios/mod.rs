@@ -1,3 +1,4 @@
+mod authorization_setup;
 mod ceremony_children;
 mod ceremony_diagram;
 mod ceremony_progress;
@@ -7,6 +8,7 @@ mod ceremony_vllm_provider_config;
 mod children_ceremony_definitions;
 mod connectivity;
 mod daily_standup;
+pub(crate) mod e2e_request_id_interceptor;
 mod nats_subscription_ready;
 mod pattern_ceremony_definition;
 mod pattern_composition;
@@ -21,9 +23,13 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use prost_types::{value::Kind as PbKind, Struct as PbStruct, Value as PbValue};
-use tonic::transport::{Channel, Endpoint};
+use tonic::service::interceptor::InterceptedService;
+use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tracing::{info, warn};
 
+use e2e_request_id_interceptor::E2eRequestIdInterceptor;
+
+pub(crate) use authorization_setup::provision_compose_business_grant;
 pub(crate) use ceremony_children::verify_durable_children_over_public_rpc;
 pub(crate) use ceremony_diagram::verify_editorial_meeting_ceremony_diagram;
 pub(crate) use ceremony_progress::verify_live_ceremony_progress;
@@ -46,21 +52,27 @@ pub(crate) use structured_output::{
 };
 pub(crate) use technical_debate::verify_technical_debate_ceremony;
 
+pub(crate) type E2eClient = MadeServiceClient<InterceptedService<Channel, E2eRequestIdInterceptor>>;
+
 pub(crate) async fn connect_with_retry(
     endpoint: &str,
     total_budget: Duration,
-) -> Result<MadeServiceClient<Channel>> {
+) -> Result<E2eClient> {
     let deadline = std::time::Instant::now() + total_budget;
     let endpoint_parsed: Endpoint = endpoint
         .parse()
         .with_context(|| format!("invalid gRPC endpoint: {endpoint}"))?;
+    let endpoint_parsed = configure_tls(endpoint_parsed, endpoint)?;
 
     let mut last_err: Option<tonic::transport::Error> = None;
     while std::time::Instant::now() < deadline {
-        match MadeServiceClient::connect(endpoint_parsed.clone()).await {
-            Ok(c) => {
+        match endpoint_parsed.clone().connect().await {
+            Ok(channel) => {
                 info!(endpoint, "connected");
-                return Ok(c);
+                return Ok(MadeServiceClient::with_interceptor(
+                    channel,
+                    E2eRequestIdInterceptor,
+                ));
             }
             Err(err) => {
                 warn!(endpoint, error = %err, "not ready yet; will retry");
@@ -72,6 +84,41 @@ pub(crate) async fn connect_with_retry(
     Err(anyhow!(
         "could not connect to {endpoint} within {total_budget:?}: {last_err:?}"
     ))
+}
+
+fn configure_tls(endpoint: Endpoint, endpoint_text: &str) -> Result<Endpoint> {
+    let ca_path = std::env::var("MADE_CLIENT_TLS_CA_PATH").ok();
+    let cert_path = std::env::var("MADE_CLIENT_TLS_CERT_PATH").ok();
+    let key_path = std::env::var("MADE_CLIENT_TLS_KEY_PATH").ok();
+    let configured = [ca_path.as_ref(), cert_path.as_ref(), key_path.as_ref()]
+        .iter()
+        .filter(|value| value.is_some())
+        .count();
+    if configured == 0 {
+        if endpoint_text.starts_with("https://") {
+            return Err(anyhow!(
+                "https MADE_ENDPOINT requires client CA, certificate, and key paths"
+            ));
+        }
+        return Ok(endpoint);
+    }
+    if configured != 3 {
+        return Err(anyhow!(
+            "MADE_CLIENT_TLS_CA_PATH, MADE_CLIENT_TLS_CERT_PATH, and MADE_CLIENT_TLS_KEY_PATH must be set together"
+        ));
+    }
+    let ca = std::fs::read(ca_path.unwrap()).context("read MADE client CA")?;
+    let certificate = std::fs::read(cert_path.unwrap()).context("read MADE client certificate")?;
+    let key = std::fs::read(key_path.unwrap()).context("read MADE client key")?;
+    let domain = std::env::var("MADE_CLIENT_TLS_DOMAIN").unwrap_or_else(|_| "made".to_owned());
+    endpoint
+        .tls_config(
+            ClientTlsConfig::new()
+                .ca_certificate(Certificate::from_pem(ca))
+                .identity(Identity::from_pem(certificate, key))
+                .domain_name(domain),
+        )
+        .context("configure MADE client mTLS")
 }
 
 fn pb_struct_from_pairs<'a>(pairs: impl IntoIterator<Item = (&'a str, PbKind)>) -> PbStruct {

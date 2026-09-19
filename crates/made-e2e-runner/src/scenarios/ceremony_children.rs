@@ -2,7 +2,6 @@ use std::collections::BTreeMap;
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
     ApplyCeremonyTransitionRequest, CeremonyEventRecord, CeremonyInstanceState,
     GenerateCeremonyReportRequest, GetCeremonyInstanceRequest, PublishCeremonyDefinitionRequest,
@@ -10,7 +9,6 @@ use made_proto::v1::{
     VerifyCeremonyJournalRequest,
 };
 use prost_types::{value::Kind, Struct, Value};
-use tonic::transport::Channel;
 use tracing::info;
 
 use super::children_ceremony_definitions::ChildrenCeremonyDefinitions;
@@ -19,7 +17,7 @@ const PARENT_ID: &str = "e2e-children-parent";
 const SPAWN_STEP: &str = "spawn_reviews";
 
 pub(crate) async fn verify_durable_children_over_public_rpc(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
 ) -> Result<()> {
     publish(client, ChildrenCeremonyDefinitions::child()).await?;
     publish(client, ChildrenCeremonyDefinitions::parent()).await?;
@@ -124,7 +122,7 @@ pub(crate) async fn verify_durable_children_over_public_rpc(
     Ok(())
 }
 
-async fn publish(client: &mut MadeServiceClient<Channel>, yaml: &str) -> Result<()> {
+async fn publish(client: &mut crate::scenarios::E2eClient, yaml: &str) -> Result<()> {
     let response = client
         .publish_ceremony_definition(PublishCeremonyDefinitionRequest {
             definition_yaml: yaml.to_owned(),
@@ -142,7 +140,7 @@ async fn publish(client: &mut MadeServiceClient<Channel>, yaml: &str) -> Result<
 }
 
 async fn run_child_to_terminal(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     child_id: &str,
     position: usize,
 ) -> Result<()> {
@@ -185,7 +183,7 @@ async fn run_child_to_terminal(
 }
 
 async fn wait_for_parent_completions(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     expected: usize,
 ) -> Result<CeremonyInstanceState> {
     let deadline = tokio::time::Instant::now() + Duration::from_secs(15);
@@ -206,7 +204,7 @@ async fn wait_for_parent_completions(
 }
 
 async fn get_instance(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     ceremony_id: &str,
 ) -> Result<CeremonyInstanceState> {
     client
@@ -221,7 +219,7 @@ async fn get_instance(
 }
 
 async fn read_events(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     ceremony_id: &str,
 ) -> Result<Vec<CeremonyEventRecord>> {
     let response = client
@@ -239,7 +237,7 @@ async fn read_events(
     Ok(response.records)
 }
 
-async fn verify_journal(client: &mut MadeServiceClient<Channel>, ceremony_id: &str) -> Result<()> {
+async fn verify_journal(client: &mut crate::scenarios::E2eClient, ceremony_id: &str) -> Result<()> {
     let journal = client
         .verify_ceremony_journal(VerifyCeremonyJournalRequest {
             ceremony_id: ceremony_id.to_owned(),
@@ -257,7 +255,7 @@ async fn verify_journal(client: &mut MadeServiceClient<Channel>, ceremony_id: &s
 }
 
 async fn assert_report(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     child_ids: &[String],
 ) -> Result<()> {
     let ceremony_ids = std::iter::once(PARENT_ID.to_owned())
