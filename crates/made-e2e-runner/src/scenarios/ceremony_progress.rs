@@ -63,6 +63,7 @@ async fn assert_idle_at_head(client: &mut crate::scenarios::E2eClient, head: u64
             after_sequence: head,
             max_events: 100,
             wait_timeout_ms: Some(0),
+            ..Default::default()
         },
     )
     .await?;
@@ -85,6 +86,7 @@ async fn follow_to_terminal(
             after_sequence,
             max_events: 100,
             wait_timeout_ms: Some(15_000),
+            ..Default::default()
         })
         .await
         .context("StreamCeremony failed to open the live stream")?
@@ -104,6 +106,9 @@ async fn follow_to_terminal(
         {
             Frame::Record(record) => records.push(record),
             Frame::End(end) => break end,
+            Frame::AgentSnapshot(_) | Frame::AgentActivity(_) => {
+                bail!("plain live progress returned unrequested agent activity")
+            }
         }
     };
     drive.await.context("progress driver task panicked")??;
@@ -127,6 +132,7 @@ async fn assert_resumable_replay(
             after_sequence: 0,
             max_events: 2,
             wait_timeout_ms: Some(0),
+            ..Default::default()
         },
     )
     .await?;
@@ -143,6 +149,7 @@ async fn assert_resumable_replay(
             after_sequence: limited.resume_after_sequence,
             max_events: 1_000,
             wait_timeout_ms: Some(0),
+            ..Default::default()
         },
     )
     .await?;
@@ -256,6 +263,9 @@ async fn stream(
         match response.frame.context("progress response has no frame")? {
             Frame::Record(record) => records.push(record),
             Frame::End(end) => return Ok((records, end)),
+            Frame::AgentSnapshot(_) | Frame::AgentActivity(_) => {
+                bail!("plain progress scenario received unrequested agent activity")
+            }
         }
     }
 }

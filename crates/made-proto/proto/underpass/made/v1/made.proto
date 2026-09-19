@@ -1726,6 +1726,9 @@ message CeremonyAgentStatus {
   optional string requested_reasoning_effort = 15;
   optional string actual_model = 16;
   optional string actual_reasoning_effort = 17;
+  // Bounded public label. Known values such as checkpoint_available,
+  // intervention_delivered, intervention_answered, input_requested, failed and
+  // heartbeat receive dedicated activity-stream kinds. Never raw logs/reasoning.
   string activity = 18;
   optional string blocker = 19;
   optional string dependency = 20;
@@ -2261,13 +2264,60 @@ message StreamCeremonyRequest {
   uint32 max_events = 3;
   // Absent takes 1000 ms. Present zero performs replay without waiting.
   optional uint32 wait_timeout_ms = 4;
+  // Include bounded host activity alongside sealed engine records.
+  bool include_agent_activity = 5;
+  // Global activity sequence already processed. Zero returns an atomic current
+  // snapshot at the activity head; only activity after that boundary follows.
+  // Filters never renumber it.
+  uint64 after_activity_sequence = 6;
+  optional string role_id = 7;
+  optional string step_id = 8;
+  optional string agent_execution_id = 9;
 }
 
 message StreamCeremonyResponse {
   oneof frame {
     CeremonyEventRecord record = 1;
     StreamCeremonyEnd end = 2;
+    CeremonyAgentActivitySnapshot agent_snapshot = 3;
+    CeremonyAgentActivity agent_activity = 4;
   }
+  CeremonyProgressSource source = 5;
+}
+
+enum CeremonyProgressSource {
+  CEREMONY_PROGRESS_SOURCE_UNSPECIFIED = 0;
+  CEREMONY_PROGRESS_SOURCE_HOST_ASSERTION = 1;
+  CEREMONY_PROGRESS_SOURCE_ENGINE_TRANSITION = 2;
+  CEREMONY_PROGRESS_SOURCE_ACCEPTED_RESULT = 3;
+}
+
+enum CeremonyAgentActivityKind {
+  CEREMONY_AGENT_ACTIVITY_KIND_UNSPECIFIED = 0;
+  CEREMONY_AGENT_ACTIVITY_KIND_ACTIVITY_CHANGED = 1;
+  CEREMONY_AGENT_ACTIVITY_KIND_BLOCKER_OPENED = 2;
+  CEREMONY_AGENT_ACTIVITY_KIND_BLOCKER_RESOLVED = 3;
+  CEREMONY_AGENT_ACTIVITY_KIND_CHECKPOINT_AVAILABLE = 4;
+  CEREMONY_AGENT_ACTIVITY_KIND_INTERVENTION_DELIVERED = 5;
+  CEREMONY_AGENT_ACTIVITY_KIND_INTERVENTION_ANSWERED = 6;
+  CEREMONY_AGENT_ACTIVITY_KIND_INPUT_REQUESTED = 7;
+  CEREMONY_AGENT_ACTIVITY_KIND_AGENT_REPLACED = 8;
+  CEREMONY_AGENT_ACTIVITY_KIND_STALE = 9;
+  CEREMONY_AGENT_ACTIVITY_KIND_COMPLETED = 10;
+  CEREMONY_AGENT_ACTIVITY_KIND_FAILED = 11;
+  CEREMONY_AGENT_ACTIVITY_KIND_HEARTBEAT = 12;
+}
+
+message CeremonyAgentActivitySnapshot {
+  repeated CeremonyAgentStatus agents = 1;
+  uint64 activity_head_sequence = 2;
+  bool complete = 3;
+}
+
+message CeremonyAgentActivity {
+  uint64 sequence = 1;
+  CeremonyAgentActivityKind kind = 2;
+  CeremonyAgentStatus status = 3;
 }
 
 message StreamCeremonyEnd {
@@ -2275,6 +2325,8 @@ message StreamCeremonyEnd {
   uint64 resume_after_sequence = 1;
   uint64 head_sequence = 2;
   StreamCeremonyEndReason reason = 3;
+  uint64 resume_after_activity_sequence = 4;
+  uint64 activity_head_sequence = 5;
 }
 
 enum StreamCeremonyEndReason {

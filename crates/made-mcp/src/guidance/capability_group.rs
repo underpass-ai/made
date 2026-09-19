@@ -109,7 +109,7 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
     },
     CapabilityGroup {
         id: "ceremony_agent_visibility",
-        description: "Read and report bounded live ceremony-agent status with separate execution and liveness provenance.",
+        description: "Read/report bounded live agent status; ceremony history can follow its filtered, resumable activity beside sealed engine progress.",
         tools: &["made_list_ceremony_agents", "made_get_ceremony_agent", "made_report_ceremony_agent_status"],
     },
     CapabilityGroup {
@@ -149,7 +149,7 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
     CapabilityGroup {
         id: "ceremony_history",
         description:
-            "Read the sealed event stream and the transcript a ceremony produced, and verify the chain that seals them.",
+            "Read sealed engine progress, follow bounded live agent activity, inspect the transcript, and verify the chain that seals engine records.",
         tools: &[
             READ_CEREMONY_EVENTS_TOOL,
             STREAM_CEREMONY_TOOL,

@@ -81,6 +81,7 @@ async fn grpc_delivers_a_new_record_as_a_stream_frame_before_end() {
             after_sequence: 1,
             max_events: 1,
             wait_timeout_ms: Some(30_000),
+            ..Default::default()
         })
         .await
         .unwrap()
@@ -151,6 +152,7 @@ async fn grpc_stream_pages_lifecycle_events_with_an_exact_resume_cursor() {
             after_sequence: 1,
             max_events: 3,
             wait_timeout_ms: Some(0),
+            ..Default::default()
         })
         .await
         .unwrap()
@@ -161,6 +163,10 @@ async fn grpc_stream_pages_lifecycle_events_with_an_exact_resume_cursor() {
         match frame.frame.unwrap() {
             stream_ceremony_response::Frame::Record(record) => event_types.push(record.event_type),
             stream_ceremony_response::Frame::End(end) => break end.resume_after_sequence,
+            stream_ceremony_response::Frame::AgentSnapshot(_)
+            | stream_ceremony_response::Frame::AgentActivity(_) => {
+                panic!("plain stream returned unrequested activity")
+            }
         }
     };
     assert_eq!(
@@ -175,6 +181,7 @@ async fn grpc_stream_pages_lifecycle_events_with_an_exact_resume_cursor() {
             after_sequence: resume_after,
             max_events: 3,
             wait_timeout_ms: Some(0),
+            ..Default::default()
         })
         .await
         .unwrap()

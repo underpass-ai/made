@@ -13,7 +13,9 @@ use serde_json::{json, Value};
 use tonic::Streaming;
 
 use super::proto_to_json::ceremony_event_record_view;
-use super::proto_to_json::{deliberation_result_to_json, deliberation_update_to_json};
+use super::proto_to_json::{
+    ceremony_agent_status_to_json, deliberation_result_to_json, deliberation_update_to_json,
+};
 
 /// Collect a `StreamDeliberation` server stream into a single JSON
 /// response. Errors mid-stream surface as a tool error; partial
@@ -70,12 +72,38 @@ where
     S: futures::Stream<Item = Result<pb::StreamCeremonyResponse, String>> + Unpin,
 {
     let mut records = Vec::new();
+    let mut agent_snapshot = None;
+    let mut agent_activity = Vec::new();
     let mut ending = None;
     while let Some(item) = stream.next().await {
         let response = item?;
         match response.frame {
             Some(pb::stream_ceremony_response::Frame::Record(record)) if ending.is_none() => {
                 records.push(ceremony_event_record_view(record, None).to_json());
+            }
+            Some(pb::stream_ceremony_response::Frame::AgentSnapshot(snapshot))
+                if ending.is_none() =>
+            {
+                agent_snapshot = Some(json!({
+                    "agents": snapshot.agents.iter().map(ceremony_agent_status_to_json).collect::<Vec<_>>(),
+                    "activity_head_sequence": snapshot.activity_head_sequence,
+                    "complete": snapshot.complete,
+                }));
+            }
+            Some(pb::stream_ceremony_response::Frame::AgentActivity(activity))
+                if ending.is_none() =>
+            {
+                let kind = pb::CeremonyAgentActivityKind::try_from(activity.kind)
+                    .unwrap_or(pb::CeremonyAgentActivityKind::Unspecified)
+                    .as_str_name()
+                    .trim_start_matches("CEREMONY_AGENT_ACTIVITY_KIND_")
+                    .to_ascii_lowercase();
+                agent_activity.push(json!({
+                    "sequence": activity.sequence,
+                    "kind": kind,
+                    "source": "host_assertion",
+                    "status": activity.status.as_ref().map(ceremony_agent_status_to_json),
+                }));
             }
             Some(pb::stream_ceremony_response::Frame::End(end)) if ending.is_none() => {
                 ending = Some(end);
@@ -98,8 +126,12 @@ where
     };
     Ok(json!({
         "records": records,
+        "agent_snapshot": agent_snapshot,
+        "agent_activity": agent_activity,
         "resume_after_sequence": end.resume_after_sequence,
         "head_sequence": end.head_sequence,
+        "resume_after_activity_sequence": end.resume_after_activity_sequence,
+        "activity_head_sequence": end.activity_head_sequence,
         "end_reason": reason,
     }))
 }

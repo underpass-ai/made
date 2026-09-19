@@ -35,6 +35,14 @@ pub(super) fn build_stream_ceremony_request(
         after_sequence: j2p::optional_u64(obj, "after_sequence")?,
         max_events: j2p::optional_u32(obj, "max_events")?,
         wait_timeout_ms,
+        include_agent_activity: obj
+            .get("include_agent_activity")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        after_activity_sequence: j2p::optional_u64(obj, "after_activity_sequence")?,
+        role_id: j2p::optional_str(obj, "role_id").map(str::to_owned),
+        step_id: j2p::optional_str(obj, "step_id").map(str::to_owned),
+        agent_execution_id: j2p::optional_str(obj, "agent_execution_id").map(str::to_owned),
     })
 }
 

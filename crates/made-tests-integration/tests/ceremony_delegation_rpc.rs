@@ -12,9 +12,11 @@ use made_core::value_objects::{
 };
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    CeremonyAgentStatus, CeremonyInstanceState, ClaimCeremonyStepRequest,
+    stream_ceremony_response, CeremonyAgentActivityKind, CeremonyAgentStatus,
+    CeremonyInstanceState, CeremonyProgressSource, ClaimCeremonyStepRequest,
     CompleteCeremonyStepRequest, GetCeremonyAgentRequest, GetCeremonyInstanceRequest,
     ListCeremonyAgentsRequest, ReportCeremonyAgentStatusRequest, StartCeremonyRequest,
+    StreamCeremonyRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use prost_types::Timestamp;
@@ -181,6 +183,7 @@ fn reported_agent_status(
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // one causal claim/report/follow/reconnect flow
 async fn public_agent_status_follows_a_real_claim_and_is_readable() {
     let fixture = GrpcFixture::start().await;
     let mut client = MadeServiceClient::new(fixture.channel);
@@ -258,6 +261,124 @@ async fn public_agent_status_follows_a_real_claim_and_is_readable() {
             .len(),
         1
     );
+
+    let mut progress = client
+        .stream_ceremony(StreamCeremonyRequest {
+            ceremony_id: ceremony_id.into(),
+            after_sequence: 0,
+            max_events: 100,
+            wait_timeout_ms: Some(0),
+            include_agent_activity: true,
+            after_activity_sequence: 0,
+            role_id: Some("facilitator".into()),
+            step_id: Some("open_room".into()),
+            agent_execution_id: Some("worker-execution".into()),
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let mut snapshot_count = 0;
+    let mut activity_sequences = Vec::new();
+    let end = loop {
+        let response = progress.message().await.unwrap().unwrap();
+        match response.frame.unwrap() {
+            stream_ceremony_response::Frame::AgentSnapshot(snapshot) => {
+                assert_eq!(
+                    response.source,
+                    CeremonyProgressSource::HostAssertion as i32
+                );
+                assert_eq!(snapshot.agents.len(), 1);
+                assert!(snapshot.complete);
+                snapshot_count += 1;
+            }
+            stream_ceremony_response::Frame::AgentActivity(activity) => {
+                assert_eq!(
+                    response.source,
+                    CeremonyProgressSource::HostAssertion as i32
+                );
+                activity_sequences.push(activity.sequence);
+            }
+            stream_ceremony_response::Frame::Record(_) => {
+                assert_ne!(
+                    response.source,
+                    CeremonyProgressSource::HostAssertion as i32
+                );
+            }
+            stream_ceremony_response::Frame::End(end) => break end,
+        }
+    };
+    assert_eq!(snapshot_count, 1);
+    assert!(activity_sequences.is_empty());
+    assert_eq!(end.resume_after_activity_sequence, 1);
+
+    let mut resumed = client
+        .stream_ceremony(StreamCeremonyRequest {
+            ceremony_id: ceremony_id.into(),
+            after_sequence: end.resume_after_sequence,
+            max_events: 100,
+            wait_timeout_ms: Some(0),
+            include_agent_activity: true,
+            after_activity_sequence: end.resume_after_activity_sequence,
+            role_id: Some("facilitator".into()),
+            step_id: None,
+            agent_execution_id: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let resumed_end = resumed.message().await.unwrap().unwrap();
+    assert!(matches!(
+        resumed_end.frame,
+        Some(stream_ceremony_response::Frame::End(_))
+    ));
+    assert!(resumed.message().await.unwrap().is_none());
+
+    let mut reporter = client.clone();
+    let mut live = client
+        .stream_ceremony(StreamCeremonyRequest {
+            ceremony_id: ceremony_id.into(),
+            after_sequence: end.resume_after_sequence,
+            max_events: 100,
+            wait_timeout_ms: Some(30_000),
+            include_agent_activity: true,
+            after_activity_sequence: end.resume_after_activity_sequence,
+            role_id: None,
+            step_id: None,
+            agent_execution_id: None,
+        })
+        .await
+        .unwrap()
+        .into_inner();
+    let mut checkpoint = retained.clone();
+    checkpoint.activity = "checkpoint_available".into();
+    checkpoint.report_sequence = 2;
+    checkpoint.idempotency_key = "checkpoint-status-report".into();
+    reporter
+        .report_ceremony_agent_status(ReportCeremonyAgentStatusRequest {
+            status: Some(checkpoint.clone()),
+        })
+        .await
+        .unwrap();
+    let update = live.message().await.unwrap().unwrap();
+    let Some(stream_ceremony_response::Frame::AgentActivity(activity)) = update.frame else {
+        panic!("live observer did not receive host activity");
+    };
+    assert_eq!(activity.sequence, 2);
+    assert_eq!(
+        activity.kind,
+        CeremonyAgentActivityKind::CheckpointAvailable as i32
+    );
+    drop(live);
+
+    checkpoint.activity = "input_requested".into();
+    checkpoint.report_sequence = 3;
+    checkpoint.idempotency_key = "input-status-report".into();
+    reporter
+        .report_ceremony_agent_status(ReportCeremonyAgentStatusRequest {
+            status: Some(checkpoint),
+        })
+        .await
+        .expect("disconnecting an observer must not stop worker reporting");
 }
 
 fn step<'a>(

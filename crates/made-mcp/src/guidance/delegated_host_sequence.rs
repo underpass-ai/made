@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 
 use crate::protocol::{
     APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL, STREAM_CEREMONY_TOOL,
 };
 
 pub(super) fn delegated_host_sequence(names: &BTreeSet<String>) -> Vec<Value> {
@@ -41,11 +41,16 @@ pub(super) fn delegated_host_sequence(names: &BTreeSet<String>) -> Vec<Value> {
         }),
         json!({
             "order": 5,
+            "tool": STREAM_CEREMONY_TOOL,
+            "instruction": "Follow with include_agent_activity=true. Persist both resume_after_sequence and resume_after_activity_sequence; reconnect with both unchanged and keep the same role/step/agent filters. Host assertions are not engine-confirmed transitions or accepted results."
+        }),
+        json!({
+            "order": 6,
             "tool": GET_CEREMONY_INSTANCE_TOOL,
             "instruction": "Refresh the instance and verify the persisted step status and output."
         }),
         json!({
-            "order": 6,
+            "order": 7,
             "tool": APPLY_CEREMONY_TRANSITION_TOOL,
             "instruction": "Apply only a transition reported as enabled; pause for unresolved guards or interventions."
         }),

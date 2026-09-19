@@ -287,11 +287,14 @@ impl EmbeddedMade {
             )) as Arc<dyn CeremonyEventSubscriberPort>
         });
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
-        let progress_stream = Arc::new(StreamCeremonyUseCase::with_settings(
-            events.clone(),
-            progress_notifier.clone(),
-            progress_settings,
-        ));
+        let progress_stream = Arc::new(
+            StreamCeremonyUseCase::with_settings(
+                events.clone(),
+                progress_notifier.clone(),
+                progress_settings,
+            )
+            .with_agent_activity(agent_status_port.clone()),
+        );
         let mut subscribers: Vec<Arc<dyn CeremonyEventSubscriberPort>> = vec![
             session_memory,
             progress_notifier,

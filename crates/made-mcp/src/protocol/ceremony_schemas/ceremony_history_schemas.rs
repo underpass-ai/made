@@ -108,7 +108,12 @@ pub(crate) fn stream_ceremony_schema() -> Value {
                 "minimum": 0,
                 "maximum": 30000,
                 "description": "How long to wait for sealed events after replay. Omitted takes 1000 ms; 0 performs replay without waiting. Delivery to a slow client can finish after this wait has elapsed."
-            }
+            },
+            "include_agent_activity": {"type": "boolean", "description": "Include the current filtered agent snapshot and bounded host activity feed."},
+            "after_activity_sequence": {"type": "integer", "minimum": 0, "description": "Last global agent activity sequence processed. Zero returns an atomic current snapshot and follows only activity after that boundary. Send resume_after_activity_sequence back unchanged, including when filters are used."},
+            "role_id": string_schema("Optional agent activity role filter."),
+            "step_id": string_schema("Optional agent activity step filter."),
+            "agent_execution_id": string_schema("Optional concrete agent execution filter.")
         }
     })
 }

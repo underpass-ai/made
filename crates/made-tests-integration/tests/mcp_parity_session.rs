@@ -1559,6 +1559,16 @@ fn session_script() -> Vec<(&'static str, Value)> {
             "made_stream_ceremony",
             json!({
                 "ceremony_id": SESSION_ID,
+                "include_agent_activity": true,
+                "after_activity_sequence": 0,
+                "role_id": "FACILITATOR",
+                "wait_timeout_ms": 0,
+            }),
+        ),
+        (
+            "made_stream_ceremony",
+            json!({
+                "ceremony_id": SESSION_ID,
                 "after_sequence": 2,
                 "max_events": 3,
                 "wait_timeout_ms": 0,
@@ -1675,6 +1685,16 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({
                 "ceremony_id": AGENT_STATUS_SESSION_ID,
                 "agent_execution_id": "parity-agent-execution"
+            }),
+        ),
+        (
+            "made_stream_ceremony",
+            json!({
+                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "include_agent_activity": true,
+                "after_activity_sequence": 0,
+                "role_id": "FACILITATOR",
+                "wait_timeout_ms": 0,
             }),
         ),
         // Budget admission uses a separate published ceremony after the

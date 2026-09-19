@@ -8,6 +8,7 @@
 mod agent_registry;
 mod authorization_policy_store;
 mod budget_ledger_store;
+mod ceremony_agent_activity_subscription;
 mod ceremony_agent_status;
 mod ceremony_definition_publications;
 mod ceremony_definition_repository;

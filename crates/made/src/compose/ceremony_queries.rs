@@ -9,8 +9,8 @@ use made_app::usecases::{
     SearchCeremonyInstancesUseCase, StreamCeremonyUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonyInstanceIndexPort, CeremonyProgressNotifierPort,
+    CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonyInstanceIndexPort, CeremonyProgressNotifierPort,
 };
 use std::sync::Arc;
 
@@ -28,6 +28,7 @@ pub(super) fn wire(
     events: Arc<dyn CeremonyEventStorePort>,
     cursors: Arc<dyn CeremonyEventCursorPort>,
     progress_notifier: Arc<dyn CeremonyProgressNotifierPort>,
+    agent_status: Arc<dyn CeremonyAgentStatusPort>,
     publications: Arc<dyn CeremonyDefinitionPublicationPort>,
 ) -> Result<MadeGrpcServiceBuilder, ComposeError> {
     let search_ceremony_instances = Arc::new(SearchCeremonyInstancesUseCase::new(
@@ -44,10 +45,10 @@ pub(super) fn wire(
     let get_ceremony_instance = Arc::new(GetCeremonyInstanceUseCase::new(stream.clone()));
     let list_ceremony_instances = Arc::new(ListCeremonyInstancesUseCase::new(stream));
     let read_events = Arc::new(ReadCeremonyEventsUseCase::new(events.clone()));
-    let stream_ceremony = Arc::new(StreamCeremonyUseCase::new(
-        events.clone(),
-        progress_notifier,
-    ));
+    let stream_ceremony = Arc::new(
+        StreamCeremonyUseCase::new(events.clone(), progress_notifier)
+            .with_agent_activity(agent_status),
+    );
     let pull_events = Arc::new(PullCeremonyEventsUseCase::new(events.clone(), cursors));
     let verify_ceremony_journal = Arc::new(VerifyCeremonyJournalUseCase::new(events.clone()));
     let get_ceremony_transcript = Arc::new(GetCeremonyTranscriptUseCase::new(events.clone()));

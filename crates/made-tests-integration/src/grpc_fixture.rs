@@ -177,6 +177,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
+        let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
         let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             wiring.ceremony_snapshots(),
@@ -501,10 +502,10 @@ impl GrpcFixture {
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
             )))
-            .stream_ceremony(Arc::new(StreamCeremonyUseCase::new(
-                ceremony_store.clone(),
-                progress_notifier,
-            )))
+            .stream_ceremony(Arc::new(
+                StreamCeremonyUseCase::new(ceremony_store.clone(), progress_notifier)
+                    .with_agent_activity(agent_status.clone()),
+            ))
             .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
                 ceremony_cursors,
@@ -547,7 +548,7 @@ impl GrpcFixture {
         service_builder = service_builder
             .ceremony_agent_status(Arc::new(
                 CeremonyAgentStatusService::new(
-                    Arc::new(InMemoryCeremonyAgentStatus::new()),
+                    agent_status,
                     wiring.clock(),
                     time::Duration::seconds(60),
                 )
@@ -654,6 +655,7 @@ impl GrpcFixture {
             PrometheusMetricsRecorder::new().expect("fixture metrics registry should build"),
         );
         let progress_notifier = Arc::new(CeremonyProgressNotifier::new());
+        let agent_status = Arc::new(InMemoryCeremonyAgentStatus::new());
         let ceremony_stream = Arc::new(SessionStream::new_authorized(
             ceremony_store.clone(),
             ceremony_store.clone(),
@@ -959,10 +961,10 @@ impl GrpcFixture {
             .read_ceremony_events(Arc::new(ReadCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
             )))
-            .stream_ceremony(Arc::new(StreamCeremonyUseCase::new(
-                ceremony_store.clone(),
-                progress_notifier,
-            )))
+            .stream_ceremony(Arc::new(
+                StreamCeremonyUseCase::new(ceremony_store.clone(), progress_notifier)
+                    .with_agent_activity(agent_status.clone()),
+            ))
             .pull_ceremony_events(Arc::new(PullCeremonyEventsUseCase::new(
                 ceremony_store.clone(),
                 ceremony_cursors,
