@@ -19,14 +19,14 @@ use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
     AgentFactoryPort, AgentRegistryPort, AgentResolverPort, ArtifactStorePort,
-    BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
-    CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
-    CeremonyEventTransportPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
-    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
-    CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort, CouncilRegistryPort,
-    DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort, MemoryReaderPort,
-    MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
-    NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
+    BudgetLedgerStorePort, CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
+    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceRequest,
+    CeremonyEvidenceSourcePort, CeremonyInstanceIndexPort, CeremonySnapshotStorePort,
+    CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort,
+    CouncilRegistryPort, DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort,
+    MemoryReaderPort, MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort,
+    NoopMetricsRecorder, NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -76,6 +76,7 @@ pub struct EmbeddedMadeBuilder {
     budget_ledger: Option<Arc<dyn BudgetLedgerStorePort>>,
     ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
     authorization: Option<Arc<TrustedHostAuthorizationGate>>,
+    agent_status: Option<Arc<dyn CeremonyAgentStatusPort>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -184,6 +185,12 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_authorization(mut self, authorization: Arc<TrustedHostAuthorizationGate>) -> Self {
         self.authorization = Some(authorization);
+        self
+    }
+
+    #[must_use]
+    pub fn with_agent_status_port(mut self, adapter: Arc<dyn CeremonyAgentStatusPort>) -> Self {
+        self.agent_status = Some(adapter);
         self
     }
 
@@ -517,6 +524,10 @@ impl EmbeddedMadeBuilder {
         });
         let budgets = BudgetLedgerService::new(budget_ledger, clock.clone());
 
+        let agent_status = self.agent_status.take().unwrap_or_else(|| {
+            Arc::new(made_adapters::memory::InMemoryCeremonyAgentStatus::new())
+                as Arc<dyn CeremonyAgentStatusPort>
+        });
         EmbeddedMade::new(
             definitions,
             publications,
@@ -542,6 +553,7 @@ impl EmbeddedMadeBuilder {
             budgets,
             self.ceremony_search_cursors,
             self.authorization,
+            agent_status,
         )
     }
 }

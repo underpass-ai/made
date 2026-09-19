@@ -10,6 +10,7 @@ use super::struct_numbers::STRUCT_NUMBER_RULE;
 mod budgeted_execution_schemas;
 mod ceremony_history_schemas;
 mod ceremony_participation_schemas;
+mod live_agent_status_schema;
 
 pub(super) use budgeted_execution_schemas::{
     claim_ceremony_step_schema, run_ceremony_schema, start_published_ceremony_schema,
@@ -23,6 +24,9 @@ pub(super) use ceremony_history_schemas::{
 pub(super) use ceremony_participation_schemas::{
     ceremony_reason_schema, close_ceremony_intervention_schema, collect_ceremony_evidence_schema,
     request_ceremony_intervention_schema, respond_to_ceremony_intervention_schema,
+};
+pub(super) use live_agent_status_schema::{
+    get_ceremony_agent_schema, list_ceremony_agents_schema, report_ceremony_agent_status_schema,
 };
 
 /// Either a published version, named, or a document supplied for the

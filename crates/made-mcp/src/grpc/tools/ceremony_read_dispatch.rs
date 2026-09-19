@@ -5,7 +5,7 @@ use tonic::transport::Channel;
 
 use crate::protocol::ToolError;
 
-use super::{bad_request, budget_dispatch, j2p, p2j};
+use super::{bad_request, budget_dispatch, ceremony_agent_status_requests as requests, j2p, p2j};
 
 pub(super) fn handles(name: &str) -> bool {
     budget_dispatch::handles(name)
@@ -14,6 +14,9 @@ pub(super) fn handles(name: &str) -> bool {
             "made_get_ceremony_instance"
                 | "made_list_ceremony_instances"
                 | "made_search_ceremony_instances"
+                | "made_list_ceremony_agents"
+                | "made_get_ceremony_agent"
+                | "made_report_ceremony_agent_status"
         )
 }
 
@@ -26,6 +29,14 @@ pub(super) async fn dispatch(
 ) -> Result<Value, ToolError> {
     if budget_dispatch::handles(name) {
         return budget_dispatch::dispatch(client, name, arguments).await;
+    }
+    if matches!(
+        name,
+        "made_list_ceremony_agents"
+            | "made_get_ceremony_agent"
+            | "made_report_ceremony_agent_status"
+    ) {
+        return dispatch_agent_status(client, name, arguments).await;
     }
     match name {
         "made_get_ceremony_instance" => {
@@ -97,5 +108,43 @@ pub(super) async fn dispatch(
         other => Err(ToolError::invalid_request(format!(
             "unknown ceremony read tool `{other}`"
         ))),
+    }
+}
+
+async fn dispatch_agent_status(
+    client: &mut MadeServiceClient<
+        tonic::service::interceptor::InterceptedService<Channel, impl tonic::service::Interceptor>,
+    >,
+    name: &str,
+    arguments: &Value,
+) -> Result<Value, ToolError> {
+    match name {
+        "made_list_ceremony_agents" => {
+            let response = client
+                .list_ceremony_agents(requests::list(arguments).map_err(bad_request)?)
+                .await?
+                .into_inner();
+            Ok(serde_json::json!({
+                "agents": response.agents.iter().map(p2j::ceremony_agent_status_to_json).collect::<Vec<_>>(),
+                "next_cursor": response.next_cursor,
+            }))
+        }
+        "made_get_ceremony_agent" => client
+            .get_ceremony_agent(requests::get(arguments).map_err(bad_request)?)
+            .await?
+            .into_inner()
+            .agent
+            .as_ref()
+            .map(p2j::ceremony_agent_status_to_json)
+            .ok_or_else(|| ToolError::refused("made returned no ceremony agent status")),
+        "made_report_ceremony_agent_status" => client
+            .report_ceremony_agent_status(requests::report(arguments).map_err(bad_request)?)
+            .await?
+            .into_inner()
+            .status
+            .as_ref()
+            .map(p2j::ceremony_agent_status_to_json)
+            .ok_or_else(|| ToolError::refused("made returned no ceremony agent status")),
+        _ => unreachable!("agent status dispatch is pre-filtered"),
     }
 }

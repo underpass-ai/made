@@ -8,6 +8,7 @@ use made_app::authorization::{
     TrustedHostAuthorizationGate,
 };
 use made_app::services::AuthorizationOperationScope;
+use made_core::ports::CeremonyAgentStatusQuery;
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
@@ -90,6 +91,30 @@ async fn direct_facade_requires_exact_typed_approval_action_and_scope() {
     assert!(neighbor
         .to_string()
         .contains("does not admit this definition"));
+}
+
+#[tokio::test]
+async fn live_agent_reads_are_refused_without_their_own_authorization() {
+    let (engine, executor_gate, _) = fixture().await;
+    let query = CeremonyAgentStatusQuery::new("ceremony-live", None, 10, None).unwrap();
+
+    let missing = engine.list_agents(query.clone()).await.unwrap_err();
+    assert!(missing.to_string().contains("authorized operation context"));
+
+    let unrelated = executor_gate
+        .authorize(
+            AuthorizationRequestId::new("agent-status-wrong-action").unwrap(),
+            AuthorizationAction::ListCeremonyDefinitions,
+            AuthorizationScope::Global,
+            AuthorizationTargetDigest::for_bytes(b"agent-status"),
+            None,
+        )
+        .await
+        .unwrap();
+    let wrong_action = AuthorizationOperationScope::run(unrelated, engine.list_agents(query))
+        .await
+        .unwrap_err();
+    assert!(wrong_action.to_string().contains("action does not match"));
 }
 
 async fn fixture() -> (

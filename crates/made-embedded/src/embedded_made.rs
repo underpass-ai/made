@@ -31,7 +31,7 @@ use made_app::usecases::{
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
-    AuthorizationPolicyStorePort, CeremonyDefinitionPublicationPort,
+    AuthorizationPolicyStorePort, CeremonyAgentStatusPort, CeremonyDefinitionPublicationPort,
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
     CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
@@ -46,6 +46,7 @@ use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod agent_status;
 mod artifacts;
 mod authorization;
 mod authorization_guards;
@@ -101,6 +102,7 @@ pub struct EmbeddedMade {
     execution_receipts: Arc<dyn ExecutionReceiptStorePort>,
     budgets: BudgetLedgerService,
     authorization: Option<EmbeddedAuthorizationServices>,
+    agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
 }
 
 impl EmbeddedMade {
@@ -259,6 +261,7 @@ impl EmbeddedMade {
         budgets: BudgetLedgerService,
         ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
         ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
+        agent_status_port: Arc<dyn CeremonyAgentStatusPort>,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -303,6 +306,15 @@ impl EmbeddedMade {
         subscribers.extend(publisher_subscriber);
         subscribers.extend(subscriber);
         let subscribers = Arc::new(CeremonyEventFanout::new(subscribers));
+        let stream = Arc::new(SessionStream::new(events.clone(), snapshots, subscribers));
+        let agent_status = Arc::new(
+            made_app::usecases::CeremonyAgentStatusService::new(
+                agent_status_port,
+                clock.clone(),
+                time::Duration::seconds(60),
+            )
+            .with_journal_claims(stream.clone()),
+        );
         Self {
             definitions,
             publications,
@@ -310,7 +322,7 @@ impl EmbeddedMade {
             ceremony_search_cursors,
             ceremony_search_authorization,
             progress_stream,
-            stream: Arc::new(SessionStream::new(events.clone(), snapshots, subscribers)),
+            stream,
             events,
             cursors,
             step_handler,
@@ -328,6 +340,7 @@ impl EmbeddedMade {
             execution_receipts,
             budgets,
             authorization: None,
+            agent_status,
         }
     }
 

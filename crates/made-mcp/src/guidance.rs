@@ -14,16 +14,19 @@ use crate::protocol::{
     available_tool_catalog, design_pattern_catalog, ADOPT_EXECUTION_RECEIPT_TOOL,
     APPLY_CEREMONY_TRANSITION_TOOL, CLAIM_CEREMONY_STEP_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     COMPLETE_EXECUTION_RECEIPT_TOOL, DESIGN_CEREMONY_TOOL, DISCOVER_CAPABILITIES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
-    GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
-    LIST_CEREMONY_INSTANCES_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL,
+    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_CEREMONY_AGENT_TOOL,
+    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_HELP_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL, LIST_CEREMONY_AGENTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, READ_CEREMONY_EVENTS_TOOL, REPORT_CEREMONY_AGENT_STATUS_TOOL,
     RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
     VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 pub(crate) mod capability_group;
+mod delegated_host_sequence;
 
 use capability_group::CAPABILITY_GROUPS;
+use delegated_host_sequence::delegated_host_sequence;
 
 const SCHEMA_VERSION: &str = "1.0";
 
@@ -313,6 +316,18 @@ fn agent_help(workflows: &[Value], names: &BTreeSet<String>) -> Value {
             "when": "Use when the MCP host, its worker, or an external tool must perform the real stage work.",
             "sequence": delegated_host_sequence.clone(),
         }));
+        if names.contains(LIST_CEREMONY_AGENTS_TOOL)
+            && names.contains(GET_CEREMONY_AGENT_TOOL)
+            && names.contains(REPORT_CEREMONY_AGENT_STATUS_TOOL)
+        {
+            preconditions.push(format!(
+                "Use {LIST_CEREMONY_AGENTS_TOOL}/{GET_CEREMONY_AGENT_TOOL} for bounded authorized live visibility and {REPORT_CEREMONY_AGENT_STATUS_TOOL} only from an authenticated host claim; execution status and fresh/stale/unreachable liveness are separate."
+            ));
+            authority_boundaries.push(json!({
+                "rule": "Host disappearance yields stale or unknown telemetry, never invented completion or failure; host discovery limitations are explicit.",
+                "forbidden_inference": "A valid MADE lease proves an external agent is alive."
+            }));
+        }
     }
     if names.contains(INSPECT_EXECUTION_RECOVERY_TOOL) {
         preconditions.push(format!(
@@ -395,46 +410,6 @@ fn server_owned_execution_path(names: &BTreeSet<String>) -> Option<Value> {
             }]
         })
     })
-}
-
-fn delegated_host_sequence(names: &BTreeSet<String>) -> Vec<Value> {
-    let required = [
-        CLAIM_CEREMONY_STEP_TOOL,
-        COMPLETE_CEREMONY_STEP_TOOL,
-        GET_CEREMONY_INSTANCE_TOOL,
-        APPLY_CEREMONY_TRANSITION_TOOL,
-    ];
-    if !required.iter().all(|tool| names.contains(*tool)) {
-        return Vec::new();
-    }
-
-    vec![
-        json!({
-            "order": 1,
-            "tool": CLAIM_CEREMONY_STEP_TOOL,
-            "instruction": "Claim the exact next_step_id with stable lease owner and idempotency key. This acquires a lease; it performs no stage work."
-        }),
-        json!({
-            "order": 2,
-            "host_action": true,
-            "instruction": "Resolve and retain the explicit host execution profile (requested versus actual model/effort, capabilities, fallback, host agent/incarnation and inheritance). Perform the stage's real work through that authorized worker and tools. A checkpoint or handoff records provenance for a later claim; it does not change a running agent's model."
-        }),
-        json!({
-            "order": 3,
-            "tool": COMPLETE_CEREMONY_STEP_TOOL,
-            "instruction": "Only after real work finishes, record its observable status and structured output with evidence/artifact references. Never file attempted or simulated work as completed."
-        }),
-        json!({
-            "order": 4,
-            "tool": GET_CEREMONY_INSTANCE_TOOL,
-            "instruction": "Refresh the instance and verify the persisted step status and output."
-        }),
-        json!({
-            "order": 5,
-            "tool": APPLY_CEREMONY_TRANSITION_TOOL,
-            "instruction": "Apply only a transition reported as enabled; pause for unresolved guards or interventions."
-        }),
-    ]
 }
 
 fn render_help_markdown(help: &Value) -> String {

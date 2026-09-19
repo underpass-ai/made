@@ -15,6 +15,7 @@ use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 
 mod artifact_fixtures;
 mod authorization_fixtures;
+mod ceremony_agent_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
 mod council_fixtures;
@@ -56,7 +57,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
     // `grpc_dispatch_and_fixture_cover_every_catalog_tool` reads this
     // file to check that no tool is missing a response, and a merged
     // arm would hide the ones folded into it.
-    #[allow(clippy::match_same_arms)]
+    #[allow(clippy::match_same_arms, clippy::too_many_lines)]
     fn call_tool<'a>(&'a self, name: &'a str, _arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
             let structured = match name {
@@ -81,6 +82,9 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_delete_contract" => delete_contract_fixture(),
                 "made_run_ceremony" => run_ceremony_fixture(),
                 "made_get_ceremony_instance" => ceremony_instance_fixture(),
+                "made_list_ceremony_agents" => ceremony_agent_fixtures::list(),
+                "made_get_ceremony_agent" => ceremony_agent_fixtures::one(),
+                "made_report_ceremony_agent_status" => ceremony_agent_fixtures::one(),
                 "made_start_ceremony" => ceremony_instance_fixture(),
                 "made_start_published_ceremony" => ceremony_instance_fixture(),
                 "made_run_ceremony_step" => ceremony_instance_fixture(),

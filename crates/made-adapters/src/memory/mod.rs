@@ -8,6 +8,7 @@
 mod agent_registry;
 mod authorization_policy_store;
 mod budget_ledger_store;
+mod ceremony_agent_status;
 mod ceremony_definition_publications;
 mod ceremony_definition_repository;
 mod ceremony_event_cursor;
@@ -26,6 +27,7 @@ mod statistics;
 pub use agent_registry::InMemoryAgentRegistry;
 pub use authorization_policy_store::InMemoryAuthorizationPolicyStore;
 pub use budget_ledger_store::InMemoryBudgetLedgerStore;
+pub use ceremony_agent_status::InMemoryCeremonyAgentStatus;
 pub use ceremony_definition_publications::InMemoryCeremonyDefinitionPublications;
 pub use ceremony_definition_repository::InMemoryCeremonyDefinitionRepository;
 pub use ceremony_event_cursor::InMemoryCeremonyEventCursor;

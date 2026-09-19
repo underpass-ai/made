@@ -201,6 +201,9 @@ service MadeService {
   rpc CompleteCeremonyStep(CompleteCeremonyStepRequest) returns (CompleteCeremonyStepResponse);
   // Extend the same fenced claim; identical renewal identities replay a durable receipt.
   rpc RenewCeremonyStepLease(RenewCeremonyStepLeaseRequest) returns (RenewCeremonyStepLeaseResponse);
+  rpc ListCeremonyAgents(ListCeremonyAgentsRequest) returns (ListCeremonyAgentsResponse);
+  rpc GetCeremonyAgent(GetCeremonyAgentRequest) returns (GetCeremonyAgentResponse);
+  rpc ReportCeremonyAgentStatus(ReportCeremonyAgentStatusRequest) returns (ReportCeremonyAgentStatusResponse);
   rpc GetExecutionReceipt(GetExecutionReceiptRequest) returns (GetExecutionReceiptResponse);
   rpc InspectExecutionRecovery(InspectExecutionRecoveryRequest) returns (InspectExecutionRecoveryResponse);
   rpc CompleteExecutionReceipt(CompleteExecutionReceiptRequest) returns (CompleteExecutionReceiptResponse);
@@ -1699,6 +1702,70 @@ message ClaimCeremonyStepResponse {
   // Capture this opaque identity before work; return it unchanged to complete.
   string claim_fence = 2;
   BudgetClaimAdmission budget = 3;
+}
+
+message CeremonyAgentStatus {
+  string ceremony_id = 1;
+  string agent_execution_id = 2;
+  // Stable id of the claimed external operation; distinct from the logical worker execution.
+  string operation_id = 29;
+  // Durable step-lease owner that is also the authenticated reporting principal.
+  string claim_owner_id = 30;
+  string logical_worker_id = 3;
+  string host_agent_id = 4;
+  string host_agent_incarnation = 5;
+  optional string previous_host_agent_id = 6;
+  optional string previous_host_agent_incarnation = 7;
+  string role_id = 8;
+  string step_id = 9;
+  uint32 attempt = 10;
+  string execution_status = 11;
+  string liveness = 12;
+  string source = 13;
+  optional string requested_model = 14;
+  optional string requested_reasoning_effort = 15;
+  optional string actual_model = 16;
+  optional string actual_reasoning_effort = 17;
+  string activity = 18;
+  optional string blocker = 19;
+  optional string dependency = 20;
+  string task_summary = 21;
+  repeated string evidence_references = 22;
+  optional string usage_kind = 23;
+  optional uint64 usage_value = 24;
+  google.protobuf.Timestamp observed_at = 25;
+  uint64 report_sequence = 26;
+  string idempotency_key = 27;
+  string claim_fence = 28;
+}
+
+message ListCeremonyAgentsRequest {
+  string ceremony_id = 1;
+  optional string execution_status = 2;
+  optional string cursor = 3;
+  uint32 limit = 4;
+}
+
+message ListCeremonyAgentsResponse {
+  repeated CeremonyAgentStatus agents = 1;
+  optional string next_cursor = 2;
+}
+
+message GetCeremonyAgentRequest {
+  string ceremony_id = 1;
+  string agent_execution_id = 2;
+}
+
+message GetCeremonyAgentResponse {
+  CeremonyAgentStatus agent = 1;
+}
+
+message ReportCeremonyAgentStatusRequest {
+  CeremonyAgentStatus status = 1;
+}
+
+message ReportCeremonyAgentStatusResponse {
+  CeremonyAgentStatus status = 1;
 }
 
 message CompleteCeremonyStepRequest {

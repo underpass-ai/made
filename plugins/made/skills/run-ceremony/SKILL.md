@@ -35,6 +35,15 @@ checkpoint/handoff is provenance for later work, and the next claim identifies
 the new host incarnation. Host agent ids and MADE role ids remain separate,
 and an execution profile never widens ceremony authority.
 
+For live delegated visibility, report bounded status against the accepted
+claim. `running`, `waiting`, `blocked` and `finished` describe execution;
+`fresh`, `stale`, `unreachable` and `unknown` describe host observation.
+List/get reads are authorized and paginated. Reports carry logical worker,
+host agent/incarnation, sequence, idempotency key and claim fence. A handoff
+keeps previous executor provenance; missing reports become stale/unknown,
+never invented completion or failure. Hosts that cannot discover runtime
+status advertise that limitation explicitly.
+
 The bundled handler may be `NoopCeremonyStepHandler`. Empty no-op completion
 proves wiring only. A claim performs no work and grants no external authority.
 Never report simulated, inaccessible or unperformed work as completed evidence.

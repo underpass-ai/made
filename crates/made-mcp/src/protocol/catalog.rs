@@ -18,7 +18,6 @@ use super::ceremony_schemas::{
     recover_ceremony_children_schema, request_ceremony_intervention_schema,
     respond_to_ceremony_intervention_schema, run_ceremony_schema, run_ceremony_step_schema,
     start_ceremony_schema, start_published_ceremony_schema, stream_ceremony_schema,
-    verify_ceremony_journal_schema,
 };
 use super::general_schemas::{
     agent_summary_schema, empty_object_schema, help_schema, output_contract_schema,
@@ -43,16 +42,19 @@ use super::tool_names::{
     RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
     SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
     STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
-    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 mod authorization_catalog;
 mod budget_catalog;
+mod ceremony_agent_catalog;
+mod ceremony_history_catalog;
 mod council_catalog;
 mod council_journal_catalog;
 mod definition_diff_catalog;
 mod renewal_catalog;
 
+use ceremony_agent_catalog::ceremony_agent_tool_catalog;
+use ceremony_history_catalog::verify_ceremony_journal_tool;
 use council_catalog::council_tool_catalog;
 
 /// `tools/list` result filtered to capabilities honored by the active
@@ -263,6 +265,9 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             complete_ceremony_step_schema(),
         ),
         renewal_catalog::renewal_tool(),
+    ]);
+    tools.extend(ceremony_agent_tool_catalog());
+    tools.extend([
         tool_def(
             GET_EXECUTION_RECEIPT_TOOL,
             "Read one immutable terminal execution receipt by its stable operation identity.",
@@ -376,15 +381,8 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
                 "properties": {}
             }),
         ),
-        // Last, because the catalog is the contract's own order and
-        // this is the contract's newest RPC. Its capability group puts
-        // it beside the reads, where a reader looks for it.
-        tool_def(
-            VERIFY_CEREMONY_JOURNAL_TOOL,
-            "Verify the hash chain of a ceremony's journal: whether every record is sealed, positioned and linked as written, and where it stopped being trustworthy if it is not. Read-only. A broken chain is an answer, not an error.",
-            verify_ceremony_journal_schema(),
-        ),
     ]);
+    tools.push(verify_ceremony_journal_tool());
     budget_catalog::insert_budget_tools(&mut tools);
     authorization_catalog::insert_authorization_tools(&mut tools);
     tools

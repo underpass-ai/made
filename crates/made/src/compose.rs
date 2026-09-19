@@ -6,7 +6,6 @@ use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::EnvConfiguration;
-use made_adapters::memory::InMemoryCeremonyDefinitionRepository;
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::progress::CeremonyProgressNotifier;
 
@@ -17,9 +16,7 @@ use made_app::usecases::{
     RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase,
 };
-use made_core::ports::{
-    AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
-};
+use made_core::ports::{AgentFactoryPort, CeremonyStepHandlerPort, ScoringPort};
 
 use crate::{Application, ComposeError};
 
@@ -32,6 +29,8 @@ use persistence_handles::Persistence;
 mod artifact_storage;
 mod authorization;
 mod budget_operations;
+mod ceremony_agent_status;
+mod ceremony_definitions;
 mod ceremony_lifecycle;
 mod ceremony_operations;
 mod ceremony_persistence;
@@ -84,8 +83,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let authorization_continuation = authorization.continuation.clone();
     let renewal_authorization = authorization.authorize.clone();
 
-    let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
-        Arc::new(InMemoryCeremonyDefinitionRepository::new());
+    let ceremony_definitions = ceremony_definitions::wire();
     let CeremonyPersistence {
         events: ceremony_events,
         index: ceremony_index,
@@ -169,7 +167,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         deliberate.clone(),
         repository.clone(),
     ));
-    // Resolve bound definitions from the catalog and unbound definitions from the repository.
     let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
@@ -331,6 +328,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
+    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status::wire(
+        clock.clone(),
+        ceremony_stream.clone(),
+    ));
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
     grpc_builder = ceremony_queries::wire(

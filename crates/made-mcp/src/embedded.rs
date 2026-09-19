@@ -1,6 +1,7 @@
 //! Embedded MCP backend.
 mod domain_tool_error;
 mod embedded_accept_child_completion_request;
+mod embedded_agent_status_dispatch;
 mod embedded_apply_ceremony_transition_request;
 mod embedded_approve_ceremony_guard_request;
 mod embedded_artifact_dispatch;

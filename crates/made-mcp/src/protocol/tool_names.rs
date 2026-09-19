@@ -55,8 +55,11 @@ pub(crate) const BIND_CEREMONY_PARTICIPANTS_TOOL: &str = "made_bind_ceremony_par
 pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_ceremony";
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
+pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
+pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
+pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 77] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 80] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -106,6 +109,9 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 77] = [
     CLAIM_CEREMONY_STEP_TOOL,
     COMPLETE_CEREMONY_STEP_TOOL,
     RENEW_CEREMONY_STEP_LEASE_TOOL,
+    LIST_CEREMONY_AGENTS_TOOL,
+    GET_CEREMONY_AGENT_TOOL,
+    REPORT_CEREMONY_AGENT_STATUS_TOOL,
     GET_EXECUTION_RECEIPT_TOOL,
     INSPECT_EXECUTION_RECOVERY_TOOL,
     COMPLETE_EXECUTION_RECEIPT_TOOL,

@@ -14,6 +14,7 @@ mod artifact;
 mod attributes;
 mod authorization;
 mod budget;
+mod ceremony_agent_status;
 mod ceremony_authoring;
 mod ceremony_authorization;
 mod ceremony_delegation;
@@ -56,6 +57,12 @@ pub use authorization::{
 pub use budget::{
     budget_balance_to_proto, budget_limits_from_proto, budget_reservation_estimate_from_proto,
     budget_reservation_to_proto,
+};
+pub use ceremony_agent_status::{
+    page_to_proto as ceremony_agent_status_page_to_proto,
+    query_from_proto as ceremony_agent_status_query_from_proto,
+    status_from_proto as ceremony_agent_status_from_proto,
+    status_to_proto as ceremony_agent_status_to_proto,
 };
 pub use ceremony_authoring::{
     ceremony_definition_source_from_proto, diff_ceremony_definitions_response_from,

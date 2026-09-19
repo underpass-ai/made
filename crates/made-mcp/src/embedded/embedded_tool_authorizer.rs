@@ -252,6 +252,19 @@ async fn scope_for_tool(
             .map_err(Into::into);
     }
 
+    if tool_name == "made_report_ceremony_agent_status" {
+        let status = object
+            .get("status")
+            .and_then(Value::as_object)
+            .ok_or_else(|| ToolError::invalid_request("field `status` is required"))?;
+        let raw = string_field(status, "ceremony_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `status.ceremony_id` is required"))?;
+        return scopes
+            .ceremony_scope(&CeremonyId::new(raw)?)
+            .await
+            .map_err(Into::into);
+    }
+
     if is_definition_action(action) {
         let (name, version) = definition_identity(object)?;
         return Ok(AuthorizationScope::Definition { name, version });

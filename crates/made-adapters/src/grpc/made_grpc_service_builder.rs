@@ -13,13 +13,13 @@ use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
-    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    CeremonyAgentStatusService, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
+    CompleteCeremonyStepUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
+    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
+    EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
+    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
+    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
+    PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
     PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
@@ -88,6 +88,7 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
+    pub(super) ceremony_agent_status: Option<Arc<CeremonyAgentStatusService>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
     pub(super) stream_ceremony: Option<Arc<StreamCeremonyUseCase>>,
     pub(super) pull_ceremony_events: Option<Arc<PullCeremonyEventsUseCase>>,
@@ -304,6 +305,11 @@ impl MadeGrpcServiceBuilder {
         collect_ceremony_evidence
     );
     setter!(
+        ceremony_agent_status,
+        CeremonyAgentStatusService,
+        ceremony_agent_status
+    );
+    setter!(
         read_ceremony_events,
         ReadCeremonyEventsUseCase,
         read_ceremony_events
@@ -460,6 +466,15 @@ impl MadeGrpcServiceBuilder {
                 clock.clone(),
             ))
         });
+        let ceremony_agent_status = self.ceremony_agent_status.unwrap_or_else(|| {
+            // A default service remains fail-closed for reports until the
+            // composition root supplies the journal-bound service.
+            Arc::new(CeremonyAgentStatusService::new(
+                Arc::new(crate::memory::InMemoryCeremonyAgentStatus::new()),
+                clock.clone(),
+                time::Duration::seconds(60),
+            ))
+        });
         Ok(MadeGrpcService {
             authorization: required!(self, authorization, "gate"),
             authorization_administration: required!(self, authorization_administration),
@@ -508,6 +523,7 @@ impl MadeGrpcServiceBuilder {
             respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
+            ceremony_agent_status,
             read_ceremony_events: required!(self, read_ceremony_events),
             stream_ceremony: required!(self, stream_ceremony),
             pull_ceremony_events: required!(self, pull_ceremony_events),
