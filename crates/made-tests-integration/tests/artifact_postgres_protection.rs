@@ -5,16 +5,23 @@ use std::sync::Arc;
 
 use made_adapters::artifacts::ArtifactGcExclusionReason;
 use made_adapters::postgres::{
-    PostgresArtifactStore, PostgresBackupService, PostgresConfig, PostgresPool,
+    PostgresArtifactStore, PostgresBackupService, PostgresCeremonyStore, PostgresConfig,
+    PostgresPool,
 };
+use made_app::artifacts::ArtifactService;
 use made_core::ports::{
     ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
     ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
-    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
+    BeginArtifactUpload, ExecutionReceiptStorePort, PutArtifactChunk, ReadArtifactChunk,
+    TombstoneArtifact,
 };
 use made_core::value_objects::{
-    ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
-    DurationMs, IdempotencyKey, LeaseOwnerId, StepLease,
+    ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactRef,
+    ArtifactSizeBytes, ArtifactSourceKind, AuditActorKind, CeremonyId, DurationMs,
+    ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
+    ExecutionReceiptId, ExecutionRecoveryCapability, ExecutionRequestBytes, IdempotencyKey,
+    LeaseOwnerId, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration, StepLease,
+    StepOutput, StepResult,
 };
 use made_tests_integration::postgres_fixture::start_with_url;
 use sha2::{Digest, Sha256};
@@ -26,6 +33,49 @@ use std::os::unix::fs::PermissionsExt;
 
 fn digest(bytes: &[u8]) -> ArtifactDigest {
     ArtifactDigest::new(format!("sha256:{:x}", Sha256::digest(bytes))).unwrap()
+}
+
+fn operation_fixture(ceremony: &str) -> (ExecutionOperation, ExecutionIntent, StepClaimFence) {
+    let operation = ExecutionOperation::new(
+        CeremonyId::new(ceremony).unwrap(),
+        StepId::new("write_artifact").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+        ExecutionRequestBytes::new(b"postgres receipt request".to_vec()).unwrap(),
+    );
+    let claim_fence = StepClaimFence::new("4".repeat(64)).unwrap();
+    let intent = ExecutionIntent::new(
+        operation.clone(),
+        claim_fence.clone(),
+        ExecutionConnectorId::new("postgres.noop").unwrap(),
+        ExecutionRecoveryCapability::IdempotentByOperationId,
+        ArtifactSourceKind::NoOp,
+        AuditActorKind::Engine,
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap();
+    (operation, intent, claim_fence)
+}
+
+fn receipt_fixture(
+    operation: &ExecutionOperation,
+    claim_fence: StepClaimFence,
+    artifact: ArtifactRef,
+) -> ExecutionReceipt {
+    ExecutionReceipt::new(
+        operation.operation_id().clone(),
+        operation.request_digest().clone(),
+        claim_fence,
+        ExecutionConnectorId::new("postgres.noop").unwrap(),
+        None,
+        ExecutionRecoveryCapability::IdempotentByOperationId,
+        ArtifactSourceKind::NoOp,
+        StepResult::completed(StepOutput::empty()).unwrap(),
+        vec![artifact],
+        OffsetDateTime::UNIX_EPOCH,
+    )
+    .unwrap()
 }
 
 async fn upload(
@@ -53,6 +103,47 @@ async fn upload(
             offset: ArtifactByteOffset::ZERO,
             bytes: bytes.to_vec(),
             chunk_digest: digest(bytes),
+        })
+        .await
+        .unwrap();
+    store.commit_upload(&upload.upload_id).await.unwrap()
+}
+
+async fn upload_receipt_artifact(
+    store: &PostgresArtifactStore,
+    bytes: &[u8],
+    operation: &ExecutionOperation,
+    claim_fence: &StepClaimFence,
+) -> ArtifactRef {
+    let artifact_digest = digest(bytes);
+    let upload = store
+        .begin_upload(BeginArtifactUpload {
+            requested_artifact_id: None,
+            expected_digest: artifact_digest.clone(),
+            size_bytes: ArtifactSizeBytes::new(bytes.len() as u64),
+            media_type: ArtifactMediaType::new("application/octet-stream").unwrap(),
+            provenance: ArtifactProvenance::execution(
+                ArtifactSourceKind::NoOp,
+                ExecutionReceiptId::for_operation(operation.operation_id()),
+                operation.operation_id().clone(),
+                claim_fence.clone(),
+                OffsetDateTime::UNIX_EPOCH,
+            )
+            .unwrap(),
+            idempotency_key: ArtifactIdempotencyKey::new(format!(
+                "postgres-receipt-upload-{:x}",
+                Sha256::digest(bytes)
+            ))
+            .unwrap(),
+        })
+        .await
+        .unwrap();
+    store
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            bytes: bytes.to_vec(),
+            chunk_digest: artifact_digest,
         })
         .await
         .unwrap();
@@ -310,6 +401,138 @@ async fn postgres_protection_survives_processes_and_full_dump_restores_state_and
         &digest(racing_bytes)
     );
     assert!(reopened.backup_content_available(&live_id).await.unwrap());
+}
+
+#[tokio::test]
+async fn postgres_receipt_requires_content_and_survives_reopen() {
+    let (pool, url, _container) = start_with_url().await;
+    let store = PostgresArtifactStore::new(pool.clone());
+    let artifact_service = ArtifactService::new(Arc::new(store.clone()));
+
+    let collected_bytes = b"receipt bytes collected by postgres gc";
+    let (collected_operation, _, collected_fence) = operation_fixture("postgres-receipt-collected");
+    let collected = upload_receipt_artifact(
+        &store,
+        collected_bytes,
+        &collected_operation,
+        &collected_fence,
+    )
+    .await;
+    store
+        .tombstone(TombstoneArtifact {
+            artifact_id: collected.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("postgres-receipt-gc").unwrap(),
+            policy: ArtifactRetentionPolicy::new("postgres-receipt-gc").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    let cutoff = OffsetDateTime::UNIX_EPOCH + time::Duration::days(1);
+    let collect_lease = StepLease::acquire(
+        LeaseOwnerId::new("postgres-receipt-collector").unwrap(),
+        IdempotencyKey::new("postgres-receipt-collector").unwrap(),
+        OffsetDateTime::now_utc(),
+        DurationMs::from_millis(300_000),
+    )
+    .unwrap();
+    let collect_plan = store.plan_gc(cutoff, collect_lease).await.unwrap();
+    store.apply_gc(&collect_plan, cutoff).await.unwrap();
+    let collected_receipt = receipt_fixture(&collected_operation, collected_fence, collected);
+    assert!(artifact_service
+        .protect_execution_receipt(&collected_receipt)
+        .await
+        .is_err());
+
+    let protected_bytes = b"receipt bytes protected by postgres receipt";
+    let (operation, intent, claim_fence) = operation_fixture("postgres-receipt-content");
+    let protected =
+        upload_receipt_artifact(&store, protected_bytes, &operation, &claim_fence).await;
+    store
+        .tombstone(TombstoneArtifact {
+            artifact_id: protected.artifact_id().clone(),
+            actor: ArtifactRetentionActor::new("postgres-receipt-pin").unwrap(),
+            policy: ArtifactRetentionPolicy::new("postgres-receipt-pin").unwrap(),
+            retired_at: OffsetDateTime::UNIX_EPOCH,
+        })
+        .await
+        .unwrap();
+    let pin_lease = StepLease::acquire(
+        LeaseOwnerId::new("postgres-receipt-pin-plan").unwrap(),
+        IdempotencyKey::new("postgres-receipt-pin-plan").unwrap(),
+        OffsetDateTime::now_utc(),
+        DurationMs::from_millis(300_000),
+    )
+    .unwrap();
+    let stale_plan = store.plan_gc(cutoff, pin_lease).await.unwrap();
+    let receipt = receipt_fixture(&operation, claim_fence, protected.clone());
+    let ceremony = PostgresCeremonyStore::new(pool);
+    ceremony.record_intent(intent).await.unwrap();
+    artifact_service
+        .protect_execution_receipt(&receipt)
+        .await
+        .unwrap();
+    ceremony.record_receipt(receipt.clone()).await.unwrap();
+    assert_eq!(
+        ceremony.receipt(operation.operation_id()).await.unwrap(),
+        Some(receipt.clone())
+    );
+
+    let reopened_pool = PostgresPool::connect(&PostgresConfig::from_url(url.clone()))
+        .await
+        .unwrap();
+    let reopened = PostgresArtifactStore::new(reopened_pool.clone());
+    let reopened_ceremony = PostgresCeremonyStore::new(reopened_pool);
+    assert_eq!(
+        reopened_ceremony
+            .receipt(operation.operation_id())
+            .await
+            .unwrap(),
+        Some(receipt.clone())
+    );
+    let reopened_record = reopened.get(protected.artifact_id()).await.unwrap();
+    let active = reopened.active_protections().await.unwrap();
+    assert!(active.iter().any(|snapshot| {
+        snapshot.key.as_str() == format!("receipt:{}", receipt.receipt_id())
+            && snapshot.records == vec![reopened_record.clone()]
+    }));
+    assert_eq!(
+        reopened
+            .apply_gc(&stale_plan, OffsetDateTime::now_utc())
+            .await,
+        Err(ArtifactStoreError::IdempotencyConflict)
+    );
+    assert!(reopened
+        .plan_gc(
+            cutoff,
+            StepLease::acquire(
+                LeaseOwnerId::new("postgres-receipt-reopen").unwrap(),
+                IdempotencyKey::new("postgres-receipt-reopen").unwrap(),
+                OffsetDateTime::UNIX_EPOCH,
+                DurationMs::from_millis(300_000),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap()
+        .candidates
+        .is_empty());
+    let page = reopened
+        .read_chunk_for_backup(ReadArtifactChunk {
+            artifact_id: protected.artifact_id().clone(),
+            offset: ArtifactByteOffset::ZERO,
+            max_bytes: ArtifactChunkLimit::default(),
+        })
+        .await
+        .unwrap();
+    assert_eq!(reopened_record.artifact, protected);
+    assert_eq!(
+        reopened_record.artifact.size_bytes().get(),
+        protected_bytes.len() as u64
+    );
+    assert_eq!(reopened_record.artifact.digest(), &digest(protected_bytes));
+    assert_eq!(page.bytes, protected_bytes);
+    assert_eq!(page.chunk_digest, digest(protected_bytes));
+    assert!(page.is_complete());
 }
 
 #[cfg(unix)]
