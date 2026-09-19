@@ -55,11 +55,20 @@ with effect.open("rb") as stored: os.fsync(stored.fileno())
 os._exit(17)
 "#;
 
-const DESCENDANT_SCRIPT: &str = r"#!/bin/sh
-sleep 120 &
-echo $! > child.pid
-wait
-";
+const DESCENDANT_SCRIPT: &str = r#"#!/usr/bin/env python3
+import pathlib, subprocess, sys, time
+repository = pathlib.Path(__file__).parent
+marker = repository / "descendant-survived-cancellation"
+child = subprocess.Popen([
+    sys.executable,
+    "-c",
+    "import pathlib, sys, time; time.sleep(0.5); pathlib.Path(sys.argv[1]).write_text('survived')",
+    str(marker),
+])
+(repository / "child.pid").write_text(str(child.pid))
+while True:
+    time.sleep(1)
+"#;
 
 fn request() -> CeremonyExecutionRequest {
     let handler = CeremonyStepHandlerRequest::new(
@@ -206,6 +215,7 @@ async fn cancellation_kills_and_reaps_the_owned_process_group() {
     let cancellation = ExecutionCancellation::new();
     let trigger = cancellation.clone();
     let repository_path = repository.path().canonicalize().unwrap();
+    let survived_marker = repository.path().join("descendant-survived-cancellation");
     let connector = connector(repository.path(), operation_root.path());
     let cancel = tokio::spawn(async move {
         let child_path = repository_path.join("child.pid");
@@ -229,13 +239,9 @@ async fn cancellation_kills_and_reaps_the_owned_process_group() {
         outcome.unwrap(),
         CeremonyExecutionConnectorOutcome::ReconciliationRequired(_)
     ));
-    let child = fs::read_to_string(repository.path().join("child.pid")).unwrap();
-    let status = std::process::Command::new("/bin/kill")
-        .args(["-0", child.trim()])
-        .status()
-        .unwrap();
+    tokio::time::sleep(Duration::from_millis(700)).await;
     assert!(
-        !status.success(),
+        !survived_marker.exists(),
         "descendant process survived cancellation"
     );
 }
