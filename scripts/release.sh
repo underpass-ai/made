@@ -128,9 +128,10 @@ for manifest in manifests:
         sys.exit(f"{manifest}: no version line matched")
     manifest.write_text(text)
 
-# Claude clones the plugin from an immutable tag. Move that reference with
-# every version source; leaving it behind would make the repository advertise
-# the prior plugin even after the manifests and binaries moved on.
+# Claude clones the stable plugin from an immutable tag. Release candidates
+# carry their own manifest version and assets, while the stable catalogue stays
+# on the last promoted release until a stable publication explicitly advances
+# it.
 catalog = pathlib.Path(".claude-plugin/marketplace.json")
 payload = __import__("json").loads(catalog.read_text())
 plugins = [entry for entry in payload.get("plugins", []) if entry.get("name") == "made"]
@@ -139,12 +140,14 @@ if len(plugins) != 1:
 source = plugins[0].get("source")
 if not isinstance(source, dict) or "ref" not in source:
     sys.exit(".claude-plugin/marketplace.json made source has no ref")
-source["ref"] = f"v{version}"
-catalog.write_text(__import__("json").dumps(payload, indent=2) + "\n")
+if "-" not in version:
+    source["ref"] = f"v{version}"
+    catalog.write_text(__import__("json").dumps(payload, indent=2) + "\n")
 
 print(
     f"bumped to {version}: Cargo.toml, charts/made/Chart.yaml, "
-    f"{len(manifests)} plugin manifests, Claude marketplace ref"
+    f"{len(manifests)} plugin manifests; "
+    + ("Claude marketplace ref" if "-" not in version else "stable marketplace unchanged")
 )
 PY
 
