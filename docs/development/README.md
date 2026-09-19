@@ -58,6 +58,10 @@ ceremony fragment copies. Parity tests compare the four ceremony surfaces
 with [parity.tsv](../architecture/parity.tsv), then compare complete sessions
 across both MCP backends. The support table is an `include_str!` test input.
 Architecture conformance and coverage floors have separate checked ledgers.
+`bash scripts/ci/rust-coverage.sh` combines workspace tests with the same
+PostgreSQL acceptance suite used by integration CI before checking those
+floors. It requires a running Docker-compatible daemon; missing container
+support fails the gate instead of silently omitting adapter coverage.
 
 For persistence changes, test historical event bytes/hashes, full fold,
 snapshot tails and reopen. For concurrency changes, use real competing

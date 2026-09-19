@@ -54,9 +54,7 @@ async fn sqlite_bootstrap_persists_explicit_separation_rules() {
     )
     .unwrap();
 
-    let output = Command::new(env!("CARGO_BIN_EXE_made"))
-        .env_clear()
-        .env("PATH", std::env::var("PATH").unwrap())
+    let output = bootstrap_command()
         .env("MADE_CEREMONY_STORE_PATH", &store)
         .args([
             "bootstrap-authorization",
@@ -83,9 +81,7 @@ async fn sqlite_bootstrap_persists_explicit_separation_rules() {
 }
 
 fn invoke(store: &Path, policy_id: &str, owner_id: &str) -> Output {
-    Command::new(env!("CARGO_BIN_EXE_made"))
-        .env_clear()
-        .env("PATH", std::env::var("PATH").unwrap())
+    bootstrap_command()
         .env("MADE_CEREMONY_STORE_PATH", store)
         .args([
             "bootstrap-authorization",
@@ -102,4 +98,16 @@ fn scratch_directory() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("../../tmp")
         .join(format!("authorization-bootstrap-{}", Uuid::new_v4()))
+}
+
+fn bootstrap_command() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_made"));
+    command
+        .env_clear()
+        .env("PATH", std::env::var("PATH").unwrap());
+    // Keep product configuration isolated while collecting child-process coverage.
+    if let Some(profile) = std::env::var_os("LLVM_PROFILE_FILE") {
+        command.env("LLVM_PROFILE_FILE", profile);
+    }
+    command
 }
