@@ -1,6 +1,6 @@
 use made_core::value_objects::{
-    BudgetLimits, BudgetMeasurement, BudgetQuantities, BudgetReservationEstimate, BudgetTokenCount,
-    CostMicros, CurrencyCode, ExecutionDuration, ToolCallCount,
+    BudgetLimits, BudgetMeasurement, BudgetReservationEstimate, BudgetTokenCount, CostMicros,
+    CurrencyCode, ExecutionDuration, ToolCallCount,
 };
 use serde_json::{Map, Value};
 
@@ -19,14 +19,6 @@ pub(super) fn reservation(
 
 fn parse_limits(value: &Value) -> Result<BudgetLimits, String> {
     let object = parse_object(value, "budget_limits")?;
-    let quantities = BudgetQuantities::new(
-        ExecutionDuration::from_micros(
-            optional_u64(object, "duration_micros")?.unwrap_or_default(),
-        ),
-        BudgetTokenCount::new(optional_u64(object, "tokens")?.unwrap_or_default()),
-        CostMicros::new(optional_u64(object, "cost_micros")?.unwrap_or_default()),
-        ToolCallCount::new(optional_u64(object, "tool_calls")?.unwrap_or_default()),
-    );
     let currency = object
         .get("currency")
         .map(|value| {
@@ -36,7 +28,14 @@ fn parse_limits(value: &Value) -> Result<BudgetLimits, String> {
                 .and_then(|value| CurrencyCode::new(value).map_err(|error| error.to_string()))
         })
         .transpose()?;
-    BudgetLimits::new(quantities, currency).map_err(|error| error.to_string())
+    BudgetLimits::from_optional(
+        optional_u64(object, "duration_micros")?.map(ExecutionDuration::from_micros),
+        optional_u64(object, "tokens")?.map(BudgetTokenCount::new),
+        optional_u64(object, "cost_micros")?.map(CostMicros::new),
+        optional_u64(object, "tool_calls")?.map(ToolCallCount::new),
+        currency,
+    )
+    .map_err(|error| error.to_string())
 }
 
 fn parse_reservation(value: &Value) -> Result<BudgetReservationEstimate, String> {
@@ -62,11 +61,15 @@ fn measurement<T>(
         .get("quality")
         .and_then(Value::as_str)
         .ok_or_else(|| format!("field `{field}.quality` must be a string"))?;
-    let amount = optional_u64(measurement, "amount")?.unwrap_or_default();
+    let amount = optional_u64(measurement, "amount")?;
     match quality {
-        "observed" => Ok(BudgetMeasurement::Observed(construct(amount))),
-        "estimated" => Ok(BudgetMeasurement::Estimated(construct(amount))),
-        "unknown" if amount == 0 => Ok(BudgetMeasurement::Unknown),
+        "observed" => amount
+            .map(|amount| BudgetMeasurement::Observed(construct(amount)))
+            .ok_or_else(|| format!("field `{field}.amount` is required for observed quality")),
+        "estimated" => amount
+            .map(|amount| BudgetMeasurement::Estimated(construct(amount)))
+            .ok_or_else(|| format!("field `{field}.amount` is required for estimated quality")),
+        "unknown" if amount.is_none() || amount == Some(0) => Ok(BudgetMeasurement::Unknown),
         _ => Err(format!("field `{field}.quality` is invalid")),
     }
 }

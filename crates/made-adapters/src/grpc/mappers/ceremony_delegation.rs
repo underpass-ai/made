@@ -153,6 +153,7 @@ mod tests {
             lease_owner_id: String::new(),
             idempotency_key: String::new(),
             lease_ttl_ms: 0,
+            budget_reservation: None,
         }
     }
 

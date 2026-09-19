@@ -244,6 +244,7 @@ async fn a_published_version_is_something_an_instance_can_be_started_from() {
             ceremony: "authored_ceremony".to_owned(),
             version: "1.0".to_owned(),
             context: None,
+            budget_limits: None,
         })
         .await
         .expect("StartPublishedCeremony should succeed")

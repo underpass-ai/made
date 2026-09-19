@@ -213,6 +213,7 @@ async fn direct_proto_and_facade_share_the_same_refusal_for_every_opening() {
             actor_id: "operator".into(),
             actor_kind: "human".into(),
             context: None,
+            budget_limits: None,
         })
         .await
         .unwrap_err();
@@ -233,10 +234,7 @@ async fn direct_proto_and_facade_share_the_same_refusal_for_every_opening() {
     ] {
         assert_eq!(status.code(), Code::InvalidArgument);
         assert_eq!(status.message(), REASON);
-        assert_eq!(
-            remote_store.head(&id(name)).await.unwrap(),
-            StreamVersion::EMPTY
-        );
+        assert_stream_empty(&remote_store, name).await;
     }
     let store = Arc::new(InMemoryCeremonyEventStore::new());
     let facade = EmbeddedMade::builder()
@@ -282,6 +280,10 @@ async fn direct_proto_and_facade_share_the_same_refusal_for_every_opening() {
     );
     assert_eq!(facade.run(run).await.unwrap_err().to_string(), REASON);
     for name in ["facade-start", "facade-published", "facade-run"] {
-        assert_eq!(store.head(&id(name)).await.unwrap(), StreamVersion::EMPTY);
+        assert_stream_empty(&store, name).await;
     }
+}
+
+async fn assert_stream_empty(store: &InMemoryCeremonyEventStore, name: &str) {
+    assert_eq!(store.head(&id(name)).await.unwrap(), StreamVersion::EMPTY);
 }

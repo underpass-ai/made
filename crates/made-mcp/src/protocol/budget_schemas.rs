@@ -24,7 +24,10 @@ pub(super) fn budget_reservation_schema() -> Value {
         "properties":{
             "quality":{"type":"string","enum":["observed","estimated","unknown"]},
             "amount":{"type":"integer","minimum":0}
-        }
+        },
+        "if":{"properties":{"quality":{"enum":["observed","estimated"]}}},
+        "then":{"required":["amount"]},
+        "else":{"properties":{"amount":{"const":0}}}
     });
     json!({
         "type":"object", "additionalProperties":false,

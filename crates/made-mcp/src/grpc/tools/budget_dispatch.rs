@@ -24,7 +24,7 @@ pub(super) async fn dispatch(
 ) -> Result<Value, ToolError> {
     let object = j2p::require_object(arguments, "tools/call.arguments").map_err(bad_request)?;
     match name {
-        GET_BUDGET_REPORT_TOOL => {
+        "made_get_budget_report" => {
             let response = client
                 .get_budget_report(pb::GetBudgetReportRequest {
                     ceremony_id: j2p::require_str(object, "ceremony_id")
@@ -33,9 +33,9 @@ pub(super) async fn dispatch(
                 })
                 .await?
                 .into_inner();
-            Ok(p2j::budget_report_to_json(response))
+            Ok(p2j::budget_report_to_json(&response))
         }
-        LIST_PENDING_BUDGET_RESERVATIONS_TOOL => {
+        "made_list_pending_budget_reservations" => {
             let response = client
                 .list_pending_budget_reservations(pb::ListPendingBudgetReservationsRequest {
                     after_reservation_id: j2p::optional_str(object, "after_reservation_id")
@@ -45,7 +45,7 @@ pub(super) async fn dispatch(
                 })
                 .await?
                 .into_inner();
-            Ok(p2j::pending_budget_reservations_to_json(response))
+            Ok(p2j::pending_budget_reservations_to_json(&response))
         }
         _ => Err(ToolError::invalid_request(format!(
             "unknown budget tool `{name}`"

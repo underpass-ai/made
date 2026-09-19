@@ -1,22 +1,26 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetQuantities, BudgetReservation,
-    BudgetReservationEstimate, BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration,
-    ToolCallCount,
+    BudgetAccountId, BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetQuantities,
+    BudgetReservation, BudgetReservationEstimate, BudgetTokenCount, CostMicros, CurrencyCode,
+    ExecutionDuration, ToolCallCount,
 };
+
+pub(super) fn budget_account_id_to_proto(value: Option<&BudgetAccountId>) -> String {
+    value.map_or_else(String::new, |account| account.as_str().to_owned())
+}
 use made_proto::v1 as pb;
 
 pub fn budget_limits_from_proto(value: pb::BudgetLimits) -> Result<BudgetLimits, DomainError> {
-    let quantities = BudgetQuantities::new(
-        ExecutionDuration::from_micros(value.duration_micros.unwrap_or_default()),
-        BudgetTokenCount::new(value.tokens.unwrap_or_default()),
-        CostMicros::new(value.cost_micros.unwrap_or_default()),
-        ToolCallCount::new(value.tool_calls.unwrap_or_default()),
-    );
     let currency = (!value.currency.trim().is_empty())
         .then(|| CurrencyCode::new(value.currency))
         .transpose()?;
-    BudgetLimits::new(quantities, currency)
+    BudgetLimits::from_optional(
+        value.duration_micros.map(ExecutionDuration::from_micros),
+        value.tokens.map(BudgetTokenCount::new),
+        value.cost_micros.map(CostMicros::new),
+        value.tool_calls.map(ToolCallCount::new),
+        currency,
+    )
 }
 
 pub fn budget_reservation_estimate_from_proto(
@@ -38,9 +42,21 @@ fn measurement<T>(
         return Ok(BudgetMeasurement::Unknown);
     };
     match value.quality.as_str() {
-        "observed" => Ok(BudgetMeasurement::Observed(construct(value.amount))),
-        "estimated" => Ok(BudgetMeasurement::Estimated(construct(value.amount))),
-        "unknown" if value.amount == 0 => Ok(BudgetMeasurement::Unknown),
+        "observed" => value
+            .amount
+            .map(|amount| BudgetMeasurement::Observed(construct(amount)))
+            .ok_or(DomainError::InvalidCharacters {
+                field: "budget_measurement.amount",
+            }),
+        "estimated" => value
+            .amount
+            .map(|amount| BudgetMeasurement::Estimated(construct(amount)))
+            .ok_or(DomainError::InvalidCharacters {
+                field: "budget_measurement.amount",
+            }),
+        "unknown" if value.amount.is_none() || value.amount == Some(0) => {
+            Ok(BudgetMeasurement::Unknown)
+        }
         _ => Err(DomainError::InvalidCharacters {
             field: "budget_measurement.quality",
         }),
@@ -116,15 +132,15 @@ fn measurement_to_proto<T: Copy>(
     match value {
         BudgetMeasurement::Observed(value) => pb::BudgetMeasurement {
             quality: "observed".to_owned(),
-            amount: amount(value),
+            amount: Some(amount(value)),
         },
         BudgetMeasurement::Estimated(value) => pb::BudgetMeasurement {
             quality: "estimated".to_owned(),
-            amount: amount(value),
+            amount: Some(amount(value)),
         },
         BudgetMeasurement::Unknown => pb::BudgetMeasurement {
             quality: "unknown".to_owned(),
-            amount: 0,
+            amount: None,
         },
     }
 }
