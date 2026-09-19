@@ -9,6 +9,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::error::DomainError;
 use made_core::ports::AgentRegistryPort;
 use made_core::value_objects::AgentId;
@@ -36,7 +37,11 @@ impl UnregisterAgentUseCase {
         fields(agent_id = %id)
     )]
     pub async fn execute(&self, id: &AgentId) -> Result<(), DomainError> {
-        self.registry.unregister(id).await?;
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        self.registry
+            .unregister_authorized(id, authorization)
+            .await?;
         info!(agent_id = id.as_str(), "agent unregistered");
         Ok(())
     }

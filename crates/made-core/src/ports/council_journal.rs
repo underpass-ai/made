@@ -1,8 +1,8 @@
 use crate::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use crate::error::DomainError;
 use crate::value_objects::{
-    CouncilJournalConsumer, CouncilJournalLease, CouncilJournalPageLimit, CouncilJournalPosition,
-    DurationMs,
+    AuthorizationEvidence, CouncilJournalConsumer, CouncilJournalLease, CouncilJournalPageLimit,
+    CouncilJournalPosition, DurationMs,
 };
 use async_trait::async_trait;
 use time::OffsetDateTime;
@@ -18,6 +18,18 @@ pub trait CouncilJournalPort: Send + Sync {
         &self,
         event: CouncilJournalEvent,
     ) -> Result<CouncilJournalRecord, DomainError>;
+    async fn publish_authorized(
+        &self,
+        event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CouncilJournalRecord, DomainError> {
+        if authorization.is_some() {
+            return Err(DomainError::InvariantViolated {
+                reason: "council journal adapter cannot persist authorization evidence",
+            });
+        }
+        self.publish(event).await
+    }
     async fn read(
         &self,
         after: Option<CouncilJournalPosition>,

@@ -8,8 +8,8 @@ use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
 use made_core::ports::CouncilJournalPort;
 use made_core::value_objects::{
-    CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId, CouncilJournalPageLimit,
-    CouncilJournalPosition, DurationMs,
+    AuthorizationEvidence, CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId,
+    CouncilJournalPageLimit, CouncilJournalPosition, DurationMs,
 };
 use time::OffsetDateTime;
 
@@ -52,13 +52,18 @@ impl CouncilJournalPort for SqliteCouncilJournal {
         &self,
         event: CouncilJournalEvent,
     ) -> Result<CouncilJournalRecord, DomainError> {
+        self.publish_authorized(event, None).await
+    }
+    async fn publish_authorized(
+        &self,
+        event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CouncilJournalRecord, DomainError> {
         if event.publication_id().is_none() {
             return Err(DomainError::InvariantViolated {
                 reason: "council publication requires an original event id",
             });
         }
-        let authorization = made_app::services::AuthorizationOperationScope::current()
-            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;

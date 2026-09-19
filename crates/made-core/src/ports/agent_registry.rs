@@ -17,13 +17,21 @@ use async_trait::async_trait;
 use crate::error::DomainError;
 use crate::ports::agent::AgentPort;
 use crate::ports::AgentDescriptor;
-use crate::value_objects::AgentId;
+use crate::value_objects::{AgentId, AuthorizationEvidence};
 
 #[async_trait]
 pub trait AgentRegistryPort: Send + Sync {
     /// Register `agent` under its [`AgentPort::id`]. Returns
     /// [`DomainError::AlreadyExists`] if the id is taken.
     async fn register(&self, agent: Arc<dyn AgentPort>) -> Result<(), DomainError>;
+    async fn register_authorized(
+        &self,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.register(agent).await
+    }
 
     /// Register the original, non-secret construction descriptor with its live handle.
     /// Durable implementations preserve the descriptor; in-memory registries only
@@ -40,8 +48,39 @@ pub trait AgentRegistryPort: Send + Sync {
         }
         self.register(agent).await
     }
+    async fn register_described_authorized(
+        &self,
+        descriptor: AgentDescriptor,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
+            return Err(DomainError::InvariantViolated {
+                reason: "agent descriptor and materialized identity differ",
+            });
+        }
+        reject_unsupported(authorization.as_ref())?;
+        self.register_described(descriptor, agent).await
+    }
 
     /// Unregister the agent with `id`. Returns
     /// [`DomainError::NotFound`] when no such agent is present.
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError>;
+    async fn unregister_authorized(
+        &self,
+        id: &AgentId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.unregister(id).await
+    }
+}
+
+fn reject_unsupported(authorization: Option<&AuthorizationEvidence>) -> Result<(), DomainError> {
+    if authorization.is_some() {
+        return Err(DomainError::InvariantViolated {
+            reason: "agent registry adapter cannot persist authorization evidence",
+        });
+    }
+    Ok(())
 }

@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use made_core::entities::{CouncilJournalEvent, Deliberation};
 use made_core::error::DomainError;
 use made_core::ports::DeliberationRepositoryPort;
-use made_core::value_objects::TaskId;
+use made_core::value_objects::{AuthorizationEvidence, TaskId};
 
 #[derive(Debug, Clone)]
 pub struct SqliteDeliberationRepository {
@@ -21,9 +21,14 @@ impl SqliteDeliberationRepository {
 #[async_trait]
 impl DeliberationRepositoryPort for SqliteDeliberationRepository {
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError> {
+        self.save_authorized(deliberation, None).await
+    }
+    async fn save_authorized(
+        &self,
+        deliberation: &Deliberation,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let deliberation = deliberation.clone();
-        let authorization = made_app::services::AuthorizationOperationScope::current()
-            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;

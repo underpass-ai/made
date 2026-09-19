@@ -5,12 +5,24 @@ use async_trait::async_trait;
 
 use crate::entities::Deliberation;
 use crate::error::DomainError;
-use crate::value_objects::TaskId;
+use crate::value_objects::{AuthorizationEvidence, TaskId};
 
 #[async_trait]
 pub trait DeliberationRepositoryPort: Send + Sync {
     /// Persist (or update) a deliberation keyed by its task id.
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError>;
+    async fn save_authorized(
+        &self,
+        deliberation: &Deliberation,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        if authorization.is_some() {
+            return Err(DomainError::InvariantViolated {
+                reason: "deliberation repository cannot persist authorization evidence",
+            });
+        }
+        self.save(deliberation).await
+    }
 
     /// Fetch a deliberation by task id. Returns
     /// [`DomainError::NotFound`] when absent.

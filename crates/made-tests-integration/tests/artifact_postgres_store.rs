@@ -245,14 +245,15 @@ async fn assert_tombstone_survives_recommit(
     bytes: &[u8],
     artifact: &ArtifactRef,
 ) {
+    let retirement = TombstoneArtifact {
+        artifact_id: artifact.artifact_id().clone(),
+        actor: ArtifactRetentionActor::new("host:postgres-test").unwrap(),
+        policy: ArtifactRetentionPolicy::new("expired").unwrap(),
+        retired_at: OffsetDateTime::UNIX_EPOCH,
+    };
     let tombstone = AuthorizationOperationScope::run(
         authorized_operation("retention-host", "tombstone_artifact", 'c'),
-        ArtifactService::new(store.clone()).tombstone(TombstoneArtifact {
-            artifact_id: artifact.artifact_id().clone(),
-            actor: ArtifactRetentionActor::new("host:postgres-test").unwrap(),
-            policy: ArtifactRetentionPolicy::new("expired").unwrap(),
-            retired_at: OffsetDateTime::UNIX_EPOCH,
-        }),
+        ArtifactService::new(store.clone()).tombstone(retirement.clone()),
     )
     .await
     .unwrap();
@@ -265,6 +266,13 @@ async fn assert_tombstone_survives_recommit(
             .as_str(),
         "retention-host"
     );
+    let retry = AuthorizationOperationScope::run(
+        authorized_operation("replacement-host", "tombstone_artifact", 'd'),
+        ArtifactService::new(store.clone()).tombstone(retirement),
+    )
+    .await
+    .unwrap();
+    assert_eq!(retry, tombstone, "PostgreSQL keeps the first evidence");
     let mut same_id = begin(bytes, "postgres-same-id");
     same_id.requested_artifact_id = Some(artifact.artifact_id().clone());
     let upload = store.begin_upload(same_id).await.unwrap();

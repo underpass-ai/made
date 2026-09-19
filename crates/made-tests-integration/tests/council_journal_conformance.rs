@@ -7,7 +7,6 @@ use made_adapters::sqlite::{
     SqliteContractRegistry, SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStatistics,
     SqliteCouncilStore, SqliteDeliberationRepository,
 };
-use made_app::services::AuthorizationOperationScope;
 use made_core::entities::{Council, CouncilJournalEvent, CouncilJournalRecord, Deliberation};
 use made_core::events::{EventEnvelope, PhaseChangedEvent};
 use made_core::ports::{
@@ -66,6 +65,7 @@ async fn exercise_registries(
     deliberations: &dyn DeliberationRepositoryPort,
     statistics: &dyn StatisticsPort,
     journal: &dyn CouncilJournalPort,
+    authorization: AuthorizationEvidence,
 ) -> Vec<CouncilJournalRecord> {
     let specialty = Specialty::new("research").unwrap();
     let council = Council::new(
@@ -75,13 +75,22 @@ async fn exercise_registries(
         NOW,
     )
     .unwrap();
-    councils.register(council.clone()).await.unwrap();
+    councils
+        .register_authorized(council.clone(), Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(councils.register(council.clone()).await.is_err());
     assert_eq!(councils.get(&specialty).await.unwrap(), council);
-    councils.replace(council).await.unwrap();
+    councils
+        .replace_authorized(council, Some(authorization.clone()))
+        .await
+        .unwrap();
     let contract =
         OutputContract::new("report-v1", OutputFormat::JsonObject, BTreeMap::new()).unwrap();
-    contracts.register(contract.clone()).await.unwrap();
+    contracts
+        .register_authorized(contract.clone(), Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(contracts.register(contract.clone()).await.is_err());
     assert_eq!(
         contracts.get(contract.contract_id()).await.unwrap(),
@@ -93,18 +102,25 @@ async fn exercise_registries(
         Rounds::default(),
         NOW,
     );
-    deliberations.save(&deliberation).await.unwrap();
+    deliberations
+        .save_authorized(&deliberation, Some(authorization.clone()))
+        .await
+        .unwrap();
     deliberations.save(&deliberation).await.unwrap();
     assert_eq!(
         deliberations.get(deliberation.task_id()).await.unwrap(),
         deliberation
     );
     statistics
-        .record_deliberation(&specialty, DurationMs::from_millis(11))
+        .record_deliberation_authorized(
+            &specialty,
+            DurationMs::from_millis(11),
+            Some(authorization.clone()),
+        )
         .await
         .unwrap();
     statistics
-        .record_orchestration(DurationMs::from_millis(29))
+        .record_orchestration_authorized(DurationMs::from_millis(29), Some(authorization.clone()))
         .await
         .unwrap();
     assert_eq!(
@@ -112,7 +128,10 @@ async fn exercise_registries(
         40
     );
     let record = journal
-        .publish(publication("event-1", "reviewing"))
+        .publish_authorized(
+            publication("event-1", "reviewing"),
+            Some(authorization.clone()),
+        )
         .await
         .unwrap();
     assert_eq!(
@@ -126,9 +145,15 @@ async fn exercise_registries(
         .publish(publication("event-1", "failed"))
         .await
         .is_err());
-    councils.delete(&specialty).await.unwrap();
+    councils
+        .delete_authorized(&specialty, Some(authorization.clone()))
+        .await
+        .unwrap();
     assert!(councils.delete(&specialty).await.is_err());
-    contracts.delete(contract.contract_id()).await.unwrap();
+    contracts
+        .delete_authorized(contract.contract_id(), Some(authorization))
+        .await
+        .unwrap();
     assert!(contracts.delete(contract.contract_id()).await.is_err());
     assert!(councils.list().await.unwrap().is_empty());
     assert!(contracts.list().await.unwrap().is_empty());
@@ -142,30 +167,26 @@ async fn exercise_registries(
 async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repositories() {
     let (pool, _container) = postgres_fixture::start().await;
     let pg = PostgresCouncilJournal::new(pool.clone());
-    let expected = AuthorizationOperationScope::run(
-        authorized_operation(),
-        exercise_registries(
-            &PostgresCouncilRegistry::new(pool.clone()),
-            &PostgresContractRegistry::new(pool.clone()),
-            &PostgresDeliberationRepository::new(pool.clone()),
-            &PostgresStatistics::new(pool.clone()),
-            &pg,
-        ),
+    let expected = exercise_registries(
+        &PostgresCouncilRegistry::new(pool.clone()),
+        &PostgresContractRegistry::new(pool.clone()),
+        &PostgresDeliberationRepository::new(pool.clone()),
+        &PostgresStatistics::new(pool.clone()),
+        &pg,
+        authorized_operation().evidence().clone(),
     )
     .await;
     let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
     std::fs::create_dir_all(&scratch).unwrap();
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let local = SqliteCouncilStore::open(directory.path().join("compare.sqlite3")).unwrap();
-    let actual = AuthorizationOperationScope::run(
-        authorized_operation(),
-        exercise_registries(
-            &SqliteCouncilRegistry::new(local.clone()),
-            &SqliteContractRegistry::new(local.clone()),
-            &SqliteDeliberationRepository::new(local.clone()),
-            &SqliteCouncilStatistics::new(local.clone()),
-            &SqliteCouncilJournal::new(local),
-        ),
+    let actual = exercise_registries(
+        &SqliteCouncilRegistry::new(local.clone()),
+        &SqliteContractRegistry::new(local.clone()),
+        &SqliteDeliberationRepository::new(local.clone()),
+        &SqliteCouncilStatistics::new(local.clone()),
+        &SqliteCouncilJournal::new(local),
+        authorized_operation().evidence().clone(),
     )
     .await;
     assert_eq!(actual, expected);

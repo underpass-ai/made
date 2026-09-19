@@ -7,6 +7,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::entities::Council;
 use made_core::error::DomainError;
 use made_core::ports::{AgentResolverPort, ClockPort, CouncilRegistryPort};
@@ -63,7 +64,11 @@ impl CreateCouncilUseCase {
             input.agents.clone(),
             self.clock.now(),
         )?;
-        self.registry.register(council.clone()).await?;
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        self.registry
+            .register_authorized(council.clone(), authorization)
+            .await?;
 
         info!(
             specialty = council.specialty().as_str(),

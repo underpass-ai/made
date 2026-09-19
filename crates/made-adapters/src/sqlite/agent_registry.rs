@@ -6,7 +6,7 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentDescriptor, AgentFactoryPort, AgentPort, AgentRegistryPort, AgentResolverPort,
 };
-use made_core::value_objects::AgentId;
+use made_core::value_objects::{AgentId, AuthorizationEvidence};
 use std::sync::Arc;
 
 #[derive(Clone)]
@@ -43,6 +43,15 @@ impl AgentRegistryPort for SqliteAgentRegistry {
         descriptor: AgentDescriptor,
         agent: Arc<dyn AgentPort>,
     ) -> Result<(), DomainError> {
+        self.register_described_authorized(descriptor, agent, None)
+            .await
+    }
+    async fn register_described_authorized(
+        &self,
+        descriptor: AgentDescriptor,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
             return Err(DomainError::InvariantViolated {
                 reason: "agent descriptor and materialized identity differ",
@@ -56,16 +65,25 @@ impl AgentRegistryPort for SqliteAgentRegistry {
                 descriptor.clone(),
                 "agent",
                 CouncilJournalEvent::AgentRegistered(descriptor),
+                authorization,
             )
             .await
     }
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
+        self.unregister_authorized(id, None).await
+    }
+    async fn unregister_authorized(
+        &self,
+        id: &AgentId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .delete(
                 Table::CouncilAgents,
                 id.to_string(),
                 "agent",
                 CouncilJournalEvent::AgentUnregistered(id.clone()),
+                authorization,
             )
             .await
     }

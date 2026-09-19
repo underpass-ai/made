@@ -4,8 +4,8 @@ use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
 use made_core::ports::CouncilJournalPort;
 use made_core::value_objects::{
-    CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId, CouncilJournalPageLimit,
-    CouncilJournalPosition, DurationMs,
+    AuthorizationEvidence, CouncilJournalConsumer, CouncilJournalLease, CouncilJournalLeaseId,
+    CouncilJournalPageLimit, CouncilJournalPosition, DurationMs,
 };
 use std::sync::{Arc, Mutex, MutexGuard};
 use time::OffsetDateTime;
@@ -34,6 +34,13 @@ impl CouncilJournalPort for InMemoryCouncilJournal {
         &self,
         event: CouncilJournalEvent,
     ) -> Result<CouncilJournalRecord, DomainError> {
+        self.publish_authorized(event, None).await
+    }
+    async fn publish_authorized(
+        &self,
+        event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CouncilJournalRecord, DomainError> {
         let id = event
             .publication_id()
             .ok_or(DomainError::InvariantViolated {
@@ -54,10 +61,8 @@ impl CouncilJournalPort for InMemoryCouncilJournal {
             Some(record) => record.position().checked_next()?,
             None => CouncilJournalPosition::FIRST,
         };
-        let record = match made_app::services::AuthorizationOperationScope::current() {
-            Some(operation) => {
-                CouncilJournalRecord::authorized(position, event, operation.evidence().clone())
-            }
+        let record = match authorization {
+            Some(authorization) => CouncilJournalRecord::authorized(position, event, authorization),
             None => CouncilJournalRecord::new(position, event),
         };
         state.records.push(record.clone());

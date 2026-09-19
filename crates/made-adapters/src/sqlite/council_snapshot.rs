@@ -5,6 +5,7 @@ use crate::council_data_snapshot::CouncilDataSnapshot;
 use crate::engine::{Key, ReadTx, Table, WriteTx};
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord, CouncilSnapshotProvenance};
 use made_core::error::DomainError;
+use made_core::value_objects::AuthorizationEvidence;
 use serde::{de::DeserializeOwned, Serialize};
 
 /// Offline migration boundary; an import commits all rows and one provenance
@@ -35,10 +36,15 @@ impl SqliteCouncilSnapshot {
         &self,
         snapshot: CouncilDataSnapshot,
     ) -> Result<CouncilJournalRecord, DomainError> {
+        self.import_authorized(snapshot, None).await
+    }
+    pub async fn import_authorized(
+        &self,
+        snapshot: CouncilDataSnapshot,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<CouncilJournalRecord, DomainError> {
         let snapshot = snapshot.canonicalized();
         let bytes = snapshot.encode()?;
-        let authorization = made_app::services::AuthorizationOperationScope::current()
-            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;

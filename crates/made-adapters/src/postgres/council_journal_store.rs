@@ -3,7 +3,9 @@ use super::PostgresPool;
 use crate::stored_council_cursor::StoredCouncilCursor;
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
-use made_core::value_objects::{CouncilJournalConsumer, CouncilJournalPosition};
+use made_core::value_objects::{
+    AuthorizationEvidence, CouncilJournalConsumer, CouncilJournalPosition,
+};
 use serde_json::Value;
 use sqlx::{Postgres, Row, Transaction};
 
@@ -25,6 +27,7 @@ pub(super) async fn begin(pool: &PostgresPool) -> Result<Transaction<'_, Postgre
 pub(super) async fn append(
     tx: &mut Transaction<'_, Postgres>,
     event: CouncilJournalEvent,
+    authorization: Option<AuthorizationEvidence>,
 ) -> Result<CouncilJournalRecord, DomainError> {
     if let Some(id) = event.publication_id() {
         let existing: Option<Value> =
@@ -59,10 +62,8 @@ pub(super) async fn append(
             reason: "council journal position is corrupt",
         }
     })?)?;
-    let record = match made_app::services::AuthorizationOperationScope::current() {
-        Some(operation) => {
-            CouncilJournalRecord::authorized(position, event, operation.evidence().clone())
-        }
+    let record = match authorization {
+        Some(authorization) => CouncilJournalRecord::authorized(position, event, authorization),
         None => CouncilJournalRecord::new(position, event),
     };
     let encoded =

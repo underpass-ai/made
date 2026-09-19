@@ -4,6 +4,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::entities::Council;
 use made_core::error::DomainError;
 use made_core::ports::{AgentFactoryPort, AgentRegistryPort, ClockPort, CouncilRegistryPort};
@@ -52,6 +53,8 @@ impl PrepareCeremonyParticipantsUseCase {
         input: PrepareCeremonyParticipantsInput,
     ) -> Result<(), DomainError> {
         let mut councils = BTreeMap::<Specialty, BTreeSet<AgentId>>::new();
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
 
         for participant in input.into_participants() {
             let id = participant.id().clone();
@@ -61,7 +64,7 @@ impl PrepareCeremonyParticipantsUseCase {
             let agent = self.agent_factory.create(descriptor.clone()).await?;
             match self
                 .agent_registry
-                .register_described(descriptor, agent)
+                .register_described_authorized(descriptor, agent, authorization.clone())
                 .await
             {
                 Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
@@ -82,7 +85,11 @@ impl PrepareCeremonyParticipantsUseCase {
                 agent_ids,
                 self.clock.now(),
             )?;
-            match self.council_registry.register(council).await {
+            match self
+                .council_registry
+                .register_authorized(council, authorization.clone())
+                .await
+            {
                 Ok(()) | Err(DomainError::AlreadyExists { .. }) => {}
                 Err(error) => return Err(error),
             }

@@ -1,6 +1,5 @@
 //! The two MCP routes operate the same durable council cursor over separate handles.
 use made_adapters::sqlite::{SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStore};
-use made_app::services::AuthorizationOperationScope;
 use made_core::entities::{Council, CouncilJournalEvent};
 use made_core::events::{EventEnvelope, PhaseChangedEvent};
 use made_core::ports::{CouncilJournalPort, CouncilRegistryPort};
@@ -67,9 +66,8 @@ async fn clients(
 async fn seed(path: &std::path::Path) {
     let store = SqliteCouncilStore::open(path).unwrap();
     let now = time::OffsetDateTime::now_utc();
-    AuthorizationOperationScope::run(
-        authorization("register-council-surface"),
-        SqliteCouncilRegistry::new(store.clone()).register(
+    SqliteCouncilRegistry::new(store.clone())
+        .register_authorized(
             Council::new(
                 CouncilId::new("research").unwrap(),
                 Specialty::new("research").unwrap(),
@@ -77,24 +75,26 @@ async fn seed(path: &std::path::Path) {
                 now,
             )
             .unwrap(),
-        ),
-    )
-    .await
-    .unwrap();
-    AuthorizationOperationScope::run(
-        authorization("publish-council-surface"),
-        SqliteCouncilJournal::new(store).publish(CouncilJournalEvent::PhaseChanged(
-            PhaseChangedEvent::new(
-                EventEnvelope::new(EventId::new("phase-1").unwrap(), now, "fixture", None).unwrap(),
-                TaskId::new("task-1").unwrap(),
-                "proposing",
-                "reviewing",
-            )
-            .unwrap(),
-        )),
-    )
-    .await
-    .unwrap();
+            Some(authorization("register-council-surface").evidence().clone()),
+        )
+        .await
+        .unwrap();
+    SqliteCouncilJournal::new(store)
+        .publish_authorized(
+            CouncilJournalEvent::PhaseChanged(
+                PhaseChangedEvent::new(
+                    EventEnvelope::new(EventId::new("phase-1").unwrap(), now, "fixture", None)
+                        .unwrap(),
+                    TaskId::new("task-1").unwrap(),
+                    "proposing",
+                    "reviewing",
+                )
+                .unwrap(),
+            ),
+            Some(authorization("publish-council-surface").evidence().clone()),
+        )
+        .await
+        .unwrap();
 }
 
 async fn assert_restart_preserves_cursor_and_authorized_tail(path: &std::path::Path) {

@@ -1,7 +1,6 @@
 #![cfg(feature = "sqlite")]
 use made_adapters::memory::InMemoryCouncilJournal;
 use made_adapters::sqlite::{SqliteCouncilJournal, SqliteCouncilStore};
-use made_app::services::AuthorizationOperationScope;
 use made_core::entities::CouncilJournalEvent;
 use made_core::events::{EventEnvelope, PhaseChangedEvent};
 use made_core::ports::CouncilJournalPort;
@@ -110,10 +109,13 @@ fn authorized_operation() -> AuthorizedOperation {
 
 async fn authorization_conformance(journal: &dyn CouncilJournalPort) {
     let event = publication("authorized-phase", "reviewing");
-    let first =
-        AuthorizationOperationScope::run(authorized_operation(), journal.publish(event.clone()))
-            .await
-            .unwrap();
+    let first = journal
+        .publish_authorized(
+            event.clone(),
+            Some(authorized_operation().evidence().clone()),
+        )
+        .await
+        .unwrap();
     assert_eq!(
         first.authorization().unwrap().principal_id().as_str(),
         "council-worker"

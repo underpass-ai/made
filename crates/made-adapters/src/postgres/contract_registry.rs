@@ -5,7 +5,7 @@ use async_trait::async_trait;
 use made_core::entities::CouncilJournalEvent;
 use made_core::error::DomainError;
 use made_core::ports::ContractRegistryPort;
-use made_core::value_objects::{OutputContract, OutputContractId};
+use made_core::value_objects::{AuthorizationEvidence, OutputContract, OutputContractId};
 use serde_json::Value;
 
 #[derive(Debug, Clone)]
@@ -21,6 +21,13 @@ impl PostgresContractRegistry {
 #[async_trait]
 impl ContractRegistryPort for PostgresContractRegistry {
     async fn register(&self, contract: OutputContract) -> Result<(), DomainError> {
+        self.register_authorized(contract, None).await
+    }
+    async fn register_authorized(
+        &self,
+        contract: OutputContract,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = begin(&self.pool).await?;
         let body =
             serde_json::to_value(&contract).map_err(|e| serde_to_domain(&e, "encode contract"))?;
@@ -30,7 +37,12 @@ impl ContractRegistryPort for PostgresContractRegistry {
         if result.rows_affected() == 0 {
             return Err(DomainError::AlreadyExists { what: "contract" });
         }
-        append(&mut tx, CouncilJournalEvent::ContractRegistered(contract)).await?;
+        append(
+            &mut tx,
+            CouncilJournalEvent::ContractRegistered(contract),
+            authorization,
+        )
+        .await?;
         tx.commit()
             .await
             .map_err(|e| sqlx_to_domain(e, "commit contract"))
@@ -59,6 +71,13 @@ impl ContractRegistryPort for PostgresContractRegistry {
             .collect()
     }
     async fn delete(&self, id: &OutputContractId) -> Result<(), DomainError> {
+        self.delete_authorized(id, None).await
+    }
+    async fn delete_authorized(
+        &self,
+        id: &OutputContractId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM council_contracts WHERE contract_id = $1")
             .bind(id.as_str())
@@ -68,7 +87,12 @@ impl ContractRegistryPort for PostgresContractRegistry {
         if result.rows_affected() == 0 {
             return Err(DomainError::NotFound { what: "contract" });
         }
-        append(&mut tx, CouncilJournalEvent::ContractDeleted(id.clone())).await?;
+        append(
+            &mut tx,
+            CouncilJournalEvent::ContractDeleted(id.clone()),
+            authorization,
+        )
+        .await?;
         tx.commit()
             .await
             .map_err(|e| sqlx_to_domain(e, "commit contract deletion"))

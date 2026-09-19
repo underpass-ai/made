@@ -19,7 +19,7 @@ use made_core::error::DomainError;
 use made_core::ports::{
     AgentDescriptor, AgentFactoryPort, AgentPort, AgentRegistryPort, AgentResolverPort,
 };
-use made_core::value_objects::{AgentId, AgentKind, Attributes, Specialty};
+use made_core::value_objects::{AgentId, AgentKind, Attributes, AuthorizationEvidence, Specialty};
 use serde_json::Value as JsonValue;
 use sqlx::Row;
 
@@ -46,6 +46,14 @@ impl PostgresAgentRegistry {
 
     /// Persist validated provider construction options; credentials remain host-side.
     pub async fn insert_descriptor(&self, descriptor: &AgentDescriptor) -> Result<(), DomainError> {
+        self.insert_descriptor_authorized(descriptor, None).await
+    }
+
+    async fn insert_descriptor_authorized(
+        &self,
+        descriptor: &AgentDescriptor,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         crate::persisted_agent_descriptor::validate(descriptor)?;
         let attributes: JsonValue = serde_json::to_value(&descriptor.attributes)
@@ -70,6 +78,7 @@ impl PostgresAgentRegistry {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::AgentRegistered(descriptor.clone()),
+            authorization,
         )
         .await?;
         tx.commit()
@@ -105,15 +114,34 @@ impl AgentRegistryPort for PostgresAgentRegistry {
         descriptor: AgentDescriptor,
         agent: Arc<dyn AgentPort>,
     ) -> Result<(), DomainError> {
+        self.register_described_authorized(descriptor, agent, None)
+            .await
+    }
+
+    async fn register_described_authorized(
+        &self,
+        descriptor: AgentDescriptor,
+        agent: Arc<dyn AgentPort>,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         if descriptor.id != *agent.id() || descriptor.specialty != *agent.specialty() {
             return Err(DomainError::InvariantViolated {
                 reason: "agent descriptor and materialized identity differ",
             });
         }
-        self.insert_descriptor(&descriptor).await
+        self.insert_descriptor_authorized(&descriptor, authorization)
+            .await
     }
 
     async fn unregister(&self, id: &AgentId) -> Result<(), DomainError> {
+        self.unregister_authorized(id, None).await
+    }
+
+    async fn unregister_authorized(
+        &self,
+        id: &AgentId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM agents WHERE agent_id = $1")
             .bind(id.as_str())
@@ -126,6 +154,7 @@ impl AgentRegistryPort for PostgresAgentRegistry {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::AgentUnregistered(id.clone()),
+            authorization,
         )
         .await?;
         tx.commit()

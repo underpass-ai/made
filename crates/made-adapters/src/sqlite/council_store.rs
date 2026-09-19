@@ -75,9 +75,8 @@ impl SqliteCouncilStore {
         value: T,
         what: &'static str,
         event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
     ) -> Result<(), DomainError> {
-        let authorization = made_app::services::AuthorizationOperationScope::current()
-            .map(|operation| operation.evidence().clone());
         self.blocking(move |engine| {
             let mut tx = engine.begin_write()?;
             if tx.get(table, Key::Str(&key))?.is_some() {
@@ -99,9 +98,8 @@ impl SqliteCouncilStore {
         key: String,
         what: &'static str,
         event: CouncilJournalEvent,
+        authorization: Option<AuthorizationEvidence>,
     ) -> Result<(), DomainError> {
-        let authorization = made_app::services::AuthorizationOperationScope::current()
-            .map(|operation| operation.evidence().clone());
         self.blocking(move |engine| {
             let mut tx = engine.begin_write()?;
             if tx.get(table, Key::Str(&key))?.is_none() {
