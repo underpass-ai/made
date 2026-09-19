@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::schema_primitives::string_schema;
+use super::{authorization_actions::GRANT_ACTIONS, schema_primitives::string_schema};
 
 pub(super) fn grant_schema() -> Value {
     json!({
@@ -9,7 +9,7 @@ pub(super) fn grant_schema() -> Value {
         "properties":{
             "grant_id":string_schema("Stable grant identity; retries must preserve its contents."),
             "grantee_id":string_schema("Principal receiving authority. Issuer identity comes from the authenticated channel."),
-            "actions":{"type":"array","minItems":1,"maxItems":100,"uniqueItems":true,"items":{"type":"string","minLength":1}},
+            "actions":{"type":"array","minItems":1,"maxItems":100,"uniqueItems":true,"items":{"type":"string","enum":GRANT_ACTIONS}},
             "scope":scope_schema(),
             "valid_from":string_schema("Inclusive RFC3339 validity start."),
             "valid_until":string_schema("Exclusive RFC3339 validity end; omit for no expiry."),

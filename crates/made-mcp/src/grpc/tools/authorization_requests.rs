@@ -176,6 +176,9 @@ mod tests {
         args["delegation_depth"] = json!(9);
         assert!(grant(&args).is_err());
         args = grant_args();
+        args["actions"] = json!(["invented_admin"]);
+        assert!(validate_tool_request("made_issue_authorization_grant", &args, |_| true).is_err());
+        args = grant_args();
         args["actions"] = json!(["claim_ceremony_step", "claim_ceremony_step"]);
         assert!(validate_tool_request("made_issue_authorization_grant", &args, |_| true).is_err());
     }
