@@ -813,7 +813,7 @@ message RunCeremonyResponse {
 // trace would never contain.
 message CeremonyStepState {
   // Effective expiry includes durable renewals; empty when there is no lease.
-  string effective_lease_expires_at = 13;
+  string effective_lease_expires_at = 14;
   string step_id = 1;
   string state_id = 2;
   string status = 3;
