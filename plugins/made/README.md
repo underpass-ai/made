@@ -56,6 +56,21 @@ on native Windows it is `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`
 (with a `%USERPROFILE%\.local\state` fallback if `LOCALAPPDATA` is absent).
 A catalogue rename does not rename that data directory.
 
+Embedded startup also requires `MADE_AUTH_POLICY_ID` and
+`MADE_AUTH_TRUSTED_HOST_ID` in the MCP launch environment. Before the first
+start, bootstrap that exact store explicitly:
+
+```bash
+made-mcp bootstrap-authorization "$MADE_MCP_STORE_PATH" \
+  --policy-id "$MADE_AUTH_POLICY_ID" \
+  --trusted-host-id "$MADE_AUTH_TRUSTED_HOST_ID"
+```
+
+Bootstrap is idempotent for the same values. It creates the administrative
+owner boundary; business capabilities still require explicit grants. The
+launcher refuses missing authorization configuration and never creates an
+anonymous owner or a replacement store.
+
 The included `.mcp.json` points to `scripts/run-embedded-mcp.sh`. On native
 Windows without Bash, replace that command in the existing `made` MCP
 registration with the plugin's absolute `scripts\run-embedded-mcp.cmd` path

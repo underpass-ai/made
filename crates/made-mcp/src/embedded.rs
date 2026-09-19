@@ -20,6 +20,7 @@ mod embedded_ceremony_draft_request;
 mod embedded_ceremony_history_presenter;
 mod embedded_ceremony_id_request;
 mod embedded_ceremony_instance_presenter;
+mod embedded_ceremony_search_request;
 mod embedded_children_request;
 mod embedded_claim_ceremony_step_request;
 mod embedded_close_ceremony_intervention_request;
@@ -59,7 +60,7 @@ mod embedded_tool_authorizer;
 
 use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{CeremonyEventPageLimit, TraceContext};
+use made_core::value_objects::{AuthorizationRequestId, CeremonyEventPageLimit, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -79,8 +80,9 @@ use crate::protocol::{
     PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, READ_CEREMONY_EVENTS_TOOL,
     RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    RUN_CEREMONY_TOOL, SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL,
+    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 use self::embedded_accept_child_completion_request::EmbeddedAcceptChildCompletionRequest;
@@ -99,6 +101,7 @@ use self::embedded_ceremony_history_presenter::{
 };
 use self::embedded_ceremony_id_request::EmbeddedCeremonyIdRequest;
 use self::embedded_ceremony_instance_presenter::EmbeddedCeremonyInstancePresenter;
+use self::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
 use self::embedded_children_request::EmbeddedPrepareCeremonyChildrenRequest;
 use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest;
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
@@ -211,6 +214,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | ENFORCE_CEREMONY_DEADLINES_TOOL
                 | GET_CEREMONY_INSTANCE_TOOL
                 | LIST_CEREMONY_INSTANCES_TOOL
+                | SEARCH_CEREMONY_INSTANCES_TOOL
                 | REQUEST_CEREMONY_INTERVENTION_TOOL
                 | RESPOND_TO_CEREMONY_INTERVENTION_TOOL
                 | CLOSE_CEREMONY_INTERVENTION_TOOL
@@ -524,6 +528,18 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     Ok(tool_success_result(present_service_metrics(&metrics)))
                 }
                 LIST_CEREMONY_INSTANCES_TOOL => self.present_instances().await,
+                SEARCH_CEREMONY_INSTANCES_TOOL => {
+                    let request = EmbeddedCeremonySearchRequest::try_from(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let request_id = AuthorizationRequestId::new(
+                        ToolTraceContext::for_direct_call(name, arguments)
+                            .authorization_request_id()
+                            .to_owned(),
+                    )
+                    .map_err(|error| ToolError::invalid_request(error.to_string()))?;
+                    let page = request.execute(&self.made, request_id).await?;
+                    self.present_search_page(&page).await
+                }
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {
                     let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
@@ -563,6 +579,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     ) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
             let tool_trace = trace;
+            let authorization_request_id =
+                AuthorizationRequestId::new(tool_trace.authorization_request_id().to_owned())
+                    .map_err(|error| ToolError::invalid_request(error.to_string()))?;
             let trace = TraceContext::parse(tool_trace.traceparent())
                 .map_err(|error| ToolError::invalid_request(error.to_string()))?;
             let dispatch = async {
@@ -572,7 +591,17 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 let operation = authorization
                     .authorize(&self.made, name, arguments, tool_trace)
                     .await?;
-                AuthorizationOperationScope::run(operation, self.call_tool(name, arguments)).await
+                AuthorizationOperationScope::run(operation, async {
+                    if name == SEARCH_CEREMONY_INSTANCES_TOOL {
+                        let page = EmbeddedCeremonySearchRequest::try_from(arguments)
+                            .map_err(ToolError::invalid_request)?
+                            .execute(&self.made, authorization_request_id)
+                            .await?;
+                        return self.present_search_page(&page).await;
+                    }
+                    self.call_tool(name, arguments).await
+                })
+                .await
             };
             CeremonyTraceScope::run(trace, dispatch).await
         })

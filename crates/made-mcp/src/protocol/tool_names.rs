@@ -20,6 +20,7 @@ pub(crate) const ENFORCE_CEREMONY_DEADLINES_TOOL: &str = "made_enforce_ceremony_
 pub(crate) const ASSERT_CEREMONY_REASON_TOOL: &str = "made_assert_ceremony_reason";
 pub(crate) const GET_CEREMONY_INSTANCE_TOOL: &str = "made_get_ceremony_instance";
 pub(crate) const LIST_CEREMONY_INSTANCES_TOOL: &str = "made_list_ceremony_instances";
+pub(crate) const SEARCH_CEREMONY_INSTANCES_TOOL: &str = "made_search_ceremony_instances";
 pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "made_request_ceremony_intervention";
 pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "made_respond_to_ceremony_intervention";
@@ -54,7 +55,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 74] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 75] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -77,6 +78,7 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 74] = [
     RUN_CEREMONY_TOOL,
     GET_CEREMONY_INSTANCE_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL,
+    SEARCH_CEREMONY_INSTANCES_TOOL,
     START_CEREMONY_TOOL,
     START_PUBLISHED_CEREMONY_TOOL,
     RUN_CEREMONY_STEP_TOOL,

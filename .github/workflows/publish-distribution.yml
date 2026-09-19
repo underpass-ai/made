@@ -43,6 +43,34 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  release-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_ref: ${{ steps.release.outputs.release_ref }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - name: Checkout release identity
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Verify one release identity before publication
+        id: release
+        shell: bash
+        run: |
+          python3 scripts/ci/release-preflight.py --self-test
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            mode=--require-release-tag
+          else
+            mode=--allow-unpublished-tag
+          fi
+          python3 scripts/ci/release-preflight.py "${mode}" \
+            --github-output "${GITHUB_OUTPUT}"
+
   # Tag-only smoke gate: resolves exact-commit images (or explicitly builds
   # them from source) and runs the full compose e2e-runner end-to-end before
   # any image / chart push.
@@ -51,6 +79,7 @@ jobs:
   # the publish jobs below have to say out loud that a skipped gate is
   # acceptable and a failed one is not.
   compose-smoke:
+    needs: [release-preflight]
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -196,8 +225,8 @@ jobs:
 
   publish-image:
     name: publish-image (${{ matrix.name }})
-    needs: [compose-smoke]
-    if: ${{ !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) && (github.event_name != 'workflow_dispatch' || inputs.publish_after_smoke) }}
+    needs: [release-preflight, compose-smoke]
+    if: ${{ !cancelled() && needs.release-preflight.result == 'success' && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) && !startsWith(github.ref, 'refs/tags/v') && (github.event_name != 'workflow_dispatch' || inputs.publish_after_smoke) }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     strategy:
@@ -249,7 +278,6 @@ jobs:
           tags: |
             type=raw,value=${{ matrix.floating_tag }},enable={{is_default_branch}}
             type=ref,event=branch
-            type=ref,event=tag
             type=sha,format=short,prefix=sha-
 
       - name: Build and push image
@@ -263,11 +291,93 @@ jobs:
           cache-from: type=gha,scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1
           cache-to: type=gha,mode=max,scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1
 
+  promote-release-image:
+    name: promote-release-image (${{ matrix.name }})
+    needs: [release-preflight, compose-smoke]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-preflight.result == 'success' && needs.compose-smoke.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: made
+            image: ghcr.io/underpass-ai/made
+          - name: e2e-runner
+            image: ghcr.io/underpass-ai/made-e2e-runner
+          - name: stub-runtime
+            image: ghcr.io/underpass-ai/made-e2e-stub-runtime
+          - name: stub-llm
+            image: ghcr.io/underpass-ai/made-e2e-stub-llm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout verification code
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@988b5a0280414f521da01fcc63a27aeeb4b104db
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ secrets.GHCR_USERNAME != '' && secrets.GHCR_USERNAME || github.actor }}
+          password: ${{ secrets.GHCR_TOKEN != '' && secrets.GHCR_TOKEN || secrets.GITHUB_TOKEN }}
+
+      - name: Promote the verified commit digest without rebuilding
+        shell: bash
+        env:
+          IMAGE: ${{ matrix.image }}
+          RELEASE_REF: ${{ needs.release-preflight.outputs.release_ref }}
+        run: |
+          source_tag="${IMAGE}:sha-${GITHUB_SHA:0:7}"
+          target_tag="${IMAGE}:${RELEASE_REF}"
+          bash scripts/ci/verify-commit-image.sh "${GITHUB_SHA}" "${source_tag}"
+
+          # verify-commit-image just pulled this exact source and checked its
+          # full revision label. Reuse that local RepoDigest so a later move of
+          # the sha-* locator cannot change what is promoted.
+          source_ref="$(docker image inspect --format '{{ index .RepoDigests 0 }}' "${source_tag}")"
+          source_digest="${source_ref##*@}"
+
+          set +e
+          target_probe="$(docker buildx imagetools inspect "${target_tag}" \
+            --format '{{json .Manifest}}' 2>&1)"
+          target_status=$?
+          set -e
+          if [[ ${target_status} -eq 0 ]]; then
+            target_digest="$(python3 -c \
+              'import json,sys; print(json.load(sys.stdin)["digest"])' \
+              <<<"${target_probe}")"
+            if [[ "${target_digest}" != "${source_digest}" ]]; then
+              echo "error: immutable ${target_tag} already points at ${target_digest}" >&2
+              echo "expected verified commit digest ${source_digest}" >&2
+              exit 1
+            fi
+            echo "${target_tag} already promotes ${source_ref}"
+          elif grep -Eqi 'not found|manifest unknown|404' <<<"${target_probe}"; then
+            docker buildx imagetools create --tag "${target_tag}" "${source_ref}"
+          else
+            echo "${target_probe}" >&2
+            echo "error: target registry probe failed; refusing to infer absence" >&2
+            exit 1
+          fi
+
+          promoted_digest="$(docker buildx imagetools inspect "${target_tag}" \
+            --format '{{json .Manifest}}' \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["digest"])')"
+          if [[ "${promoted_digest}" != "${source_digest}" ]]; then
+            echo "error: promoted digest ${promoted_digest} differs from ${source_digest}" >&2
+            exit 1
+          fi
+
   publish-helm-chart:
-    needs: [compose-smoke]
+    needs: [release-preflight, compose-smoke, promote-release-image]
     # Chart versions are immutable release artifacts. Main and manual runs may
-    # refresh development images, but only a release tag may claim X.Y.Z in OCI.
-    if: ${{ startsWith(github.ref, 'refs/tags/v') && !cancelled() && contains(fromJSON('["success","skipped"]'), needs.compose-smoke.result) }}
+    # refresh development images, but only a release tag may claim SEMVER in OCI.
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-preflight.result == 'success' && needs.compose-smoke.result == 'success' && needs.promote-release-image.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     permissions:
@@ -288,7 +398,38 @@ jobs:
           mkdir -p dist
           helm package "${CHART_PATH}" --destination dist
 
-      - name: Push Helm chart
+      - name: Refuse to overwrite a different chart version
+        id: chart
+        shell: bash
+        env:
+          VERSION: ${{ needs.release-preflight.outputs.version }}
+        run: |
+          set +e
+          probe="$(helm show chart "${CHART_REGISTRY}/${CHART_NAME}" \
+            --version "${VERSION}" 2>&1)"
+          status=$?
+          set -e
+          if [[ ${status} -eq 0 ]]; then
+            mkdir -p dist/existing dist/local-tree dist/remote-tree
+            helm pull "${CHART_REGISTRY}/${CHART_NAME}" \
+              --version "${VERSION}" --destination dist/existing
+            tar -xzf "dist/${CHART_NAME}-${VERSION}.tgz" -C dist/local-tree
+            tar -xzf "dist/existing/${CHART_NAME}-${VERSION}.tgz" -C dist/remote-tree
+            if ! diff -ru dist/local-tree dist/remote-tree; then
+              echo "error: immutable chart ${CHART_NAME}:${VERSION} has different content" >&2
+              exit 1
+            fi
+            echo "push=false" >> "${GITHUB_OUTPUT}"
+          elif grep -Eqi 'not found|manifest unknown|404' <<<"${probe}"; then
+            echo "push=true" >> "${GITHUB_OUTPUT}"
+          else
+            echo "${probe}" >&2
+            echo "error: registry probe failed; refusing to infer absence" >&2
+            exit 1
+          fi
+
+      - name: Push new Helm chart
+        if: steps.chart.outputs.push == 'true'
         run: |
           for archive in dist/*.tgz; do
             helm push "${archive}" "${CHART_REGISTRY}"
@@ -303,8 +444,8 @@ jobs:
   # of failing the release over it. Tag-only on purpose: `workflow_dispatch`
   # re-rolls are not allowed to mutate the registry.
   publish-crates:
-    needs: [compose-smoke]
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [release-preflight, compose-smoke]
+    if: ${{ startsWith(github.ref, 'refs/tags/v') && needs.release-preflight.result == 'success' && needs.compose-smoke.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 90
     permissions:
@@ -329,4 +470,6 @@ jobs:
       - name: Publish crates
         env:
           CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
-        run: bash scripts/ci/publish-crates.sh
+        run: |
+          bash scripts/ci/publish-crates.sh --self-test
+          bash scripts/ci/publish-crates.sh

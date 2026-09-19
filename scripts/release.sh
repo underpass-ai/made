@@ -4,12 +4,12 @@ set -euo pipefail
 # Release helper for MADE.
 #
 # Two verbs:
-#   version <X.Y.Z>   — rewrite every versioned artefact in the repo
+#   version <SEMVER>  — rewrite every versioned artefact in the repo
 #                       so Cargo.toml and Chart.yaml stay in lockstep.
 #                       Idempotent; safe to re-run.
 #
-#   release <X.Y.Z>   — verify the tree is clean + versions already
-#                       point at X.Y.Z, create an annotated `vX.Y.Z`
+#   release <SEMVER>  — verify the tree is clean + versions already
+#                       point at SEMVER, create an annotated `vSEMVER`
 #                       tag at HEAD, wait for the complete public release,
 #                       then fast-forward the `marketplace` branch.
 #
@@ -27,18 +27,30 @@ set -euo pipefail
 
 usage() {
     cat <<'USAGE' >&2
-release.sh version <X.Y.Z>
-release.sh release <X.Y.Z>
+release.sh version <SEMVER>
+release.sh release <SEMVER>
 USAGE
     exit 2
 }
 
 semver_check() {
     local version="$1"
-    if ! echo "${version}" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?$'; then
-        echo "error: version '${version}' is not valid semver" >&2
-        exit 1
-    fi
+    python3 - "${version}" <<'PY'
+import re
+import sys
+
+value = sys.argv[1]
+match = re.fullmatch(
+    r"(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)"
+    r"(?:-([0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*))?",
+    value,
+)
+if match is None or any(
+    item.isdigit() and len(item) > 1 and item.startswith("0")
+    for item in (match.group(1) or "").split(".")
+):
+    raise SystemExit(f"error: version {value!r} is not supported SemVer")
+PY
 }
 
 cmd_version() {
@@ -141,6 +153,8 @@ PY
     # the very next `cargo test --locked` — which is what CI runs — fails
     # with "cannot update the lock file because --locked was passed".
     cargo metadata --format-version 1 >/dev/null
+    python3 scripts/ci/release-preflight.py --allow-unpublished-tag \
+        --expect-version "${version}"
 
     git --no-pager diff --stat -- Cargo.toml Cargo.lock charts/made/Chart.yaml \
         plugins/made/.claude-plugin/plugin.json plugins/made/.codex-plugin/plugin.json \
@@ -163,21 +177,10 @@ cmd_release() {
         exit 1
     fi
 
-    # Versions must already match — the `version` verb is where you
-    # bump; `release` only tags.
-    local cargo_version chart_version chart_app_version
-    cargo_version="$(grep -m1 '^version = ' Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
-    chart_version="$(grep -m1 '^version:' charts/made/Chart.yaml | awk '{print $2}')"
-    chart_app_version="$(grep -m1 '^appVersion:' charts/made/Chart.yaml | awk '{print $2}' | tr -d '"')"
-
-    for field in cargo_version chart_version chart_app_version; do
-        if [ "${!field}" != "${version}" ]; then
-            echo "error: ${field}='${!field}' does not match target '${version}'" >&2
-            echo "  hint: run 'just version ${version}' and commit before releasing" >&2
-            exit 1
-        fi
-    done
-
+    # The same preflight used by both publication workflows verifies every
+    # version carrier before the first irreversible action (the tag push).
+    python3 scripts/ci/release-preflight.py --allow-unpublished-tag \
+        --expect-version "${version}"
     python3 scripts/ci/made-marketplace-contract.py --allow-unpublished-tag
 
     local tag="v${version}"
@@ -201,9 +204,15 @@ cmd_release() {
         echo "tag ${tag} already exists at HEAD; resuming publication"
     else
         git tag -a "${tag}" -m "Release ${tag}"
-        git push origin "${tag}"
-        echo "tagged ${tag} and pushed; waiting for public release assets"
+        echo "created annotated tag ${tag}"
     fi
+
+    python3 scripts/ci/release-preflight.py --require-release-tag \
+        --expect-version "${version}"
+    # Pushing an identical existing tag is idempotent. If the remote identity
+    # differs, Git refuses the update; the helper never moves it.
+    git push origin "${tag}"
+    echo "pushed ${tag}; waiting for the complete public distribution"
 
     bash scripts/release/advance-marketplace.sh "${version}"
 }

@@ -30,10 +30,11 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AuditActorKind, BudgetLimits, BudgetMeasurement, BudgetQuantities, BudgetReservationEstimate,
-    BudgetReservationRequest, BudgetTokenCount, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyVersion, CostMicros, CurrencyCode, DurationMs, ExecutionDuration, ExecutionOperationId,
-    ExecutionRecoveryPageLimit, IdempotencyKey, LeaseOwnerId, MaxParallel, RoleId,
-    StepHandlerConfig, StepHandlerKind, StepId, StepStatus, ToolCallCount,
+    BudgetReservationRequest, BudgetTokenCount, CeremonyContext, CeremonyId,
+    CeremonyInstancePageLimit, CeremonyName, CeremonyVersion, CostMicros, CurrencyCode, DurationMs,
+    ExecutionDuration, ExecutionOperationId, ExecutionRecoveryPageLimit, IdempotencyKey,
+    LeaseOwnerId, MaxParallel, RoleId, StepHandlerConfig, StepHandlerKind, StepId, StepStatus,
+    ToolCallCount,
 };
 use time::OffsetDateTime;
 
@@ -211,7 +212,7 @@ async fn expired_step_is_sealed_before_the_driver_can_admit_external_work() {
     let events = Arc::new(InMemoryCeremonyEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
-        events,
+        events.clone(),
         Arc::new(NoopCeremonyEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
@@ -312,7 +313,7 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
     let events = Arc::new(InMemoryCeremonyEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
-        events,
+        events.clone(),
         Arc::new(NoopCeremonyEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
@@ -349,6 +350,7 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
         ExecutionRecoveryPageLimit::new(1).unwrap(),
     );
     let claims = Arc::new(ClaimCeremonyWorkUseCase::new(
+        events,
         stream.clone(),
         resolver.clone(),
         deadlines.clone(),
@@ -372,7 +374,7 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
     let first = host
         .run_claim_page(ClaimCeremonyWorkInput::new(
             None,
-            ExecutionRecoveryPageLimit::new(1).unwrap(),
+            CeremonyInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("reference-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,
@@ -382,7 +384,7 @@ async fn reference_host_discovers_claims_and_drains_one_public_step() {
     let second = host
         .run_claim_page(ClaimCeremonyWorkInput::new(
             first.next_cursor().cloned(),
-            ExecutionRecoveryPageLimit::new(1).unwrap(),
+            CeremonyInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("reference-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,
@@ -405,7 +407,7 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     let events = Arc::new(InMemoryCeremonyEventStore::new());
     let stream = Arc::new(SessionStream::new(
         events.clone(),
-        events,
+        events.clone(),
         Arc::new(NoopCeremonyEventSubscriber),
     ));
     let clock = Arc::new(MutableClock::new(OffsetDateTime::UNIX_EPOCH));
@@ -435,6 +437,7 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     );
     let claims = Arc::new(
         ClaimCeremonyWorkUseCase::new(
+            events,
             stream.clone(),
             resolver.clone(),
             deadlines.clone(),
@@ -470,7 +473,7 @@ async fn unknown_limited_estimate_stops_before_claim_intent_or_effect() {
     let outcome = host
         .run_claim_page(ClaimCeremonyWorkInput::new(
             None,
-            ExecutionRecoveryPageLimit::new(1).unwrap(),
+            CeremonyInstancePageLimit::new(1).unwrap(),
             LeaseOwnerId::new("budget-host").unwrap(),
             DurationMs::from_millis(60_000),
             AuditActorKind::Engine,

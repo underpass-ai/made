@@ -273,6 +273,17 @@ macro_rules! resource_rpc_methods {
                 self.handle_list_ceremony_instances(request)
             )
         }
+        async fn search_ceremony_instances(
+            &self,
+            request: Request<pb::SearchCeremonyInstancesRequest>,
+        ) -> GrpcResult<pb::SearchCeremonyInstancesResponse> {
+            authorized_global!(
+                self,
+                request,
+                SearchCeremonyInstances,
+                self.handle_search_ceremony_instances(request)
+            )
+        }
         async fn get_status(
             &self,
             request: Request<pb::GetStatusRequest>,

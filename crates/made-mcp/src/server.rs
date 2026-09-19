@@ -33,6 +33,9 @@ use crate::protocol::{
 };
 
 #[cfg(feature = "embedded")]
+mod embedded_step_continuation;
+
+#[cfg(feature = "embedded")]
 const AUTH_POLICY_ID_ENV: &str = "MADE_AUTH_POLICY_ID";
 #[cfg(feature = "embedded")]
 const AUTH_TRUSTED_HOST_ID_ENV: &str = "MADE_AUTH_TRUSTED_HOST_ID";
@@ -143,7 +146,6 @@ impl MadeMcpServer {
         use made_adapters::artifacts::LocalArtifactStore;
         use made_adapters::clock::SystemClock;
         use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
-        use made_adapters::sqlite::SqliteCeremonyStore;
         use made_app::authorization::{
             AuthorizeOperationUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
         };
@@ -198,17 +200,16 @@ impl MadeMcpServer {
         let authorize = Arc::new(AuthorizeOperationUseCase::new(
             policy_id.clone(),
             store.clone(),
-            clock,
+            clock.clone(),
             AuthorizationDecisionTtl::from_seconds(60).expect("fixed TTL is valid"),
         ));
         let gate = TrustedHostAuthorizationGate::new(authorize, principal)
             .map_err(|error| error.to_string())?;
         let read_policy = ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone());
+        let (step_continuation, ceremony_store) =
+            embedded_step_continuation::wire(path, policy_id.clone(), store.clone(), clock)?;
         let made = made.with_authorization_policy(policy_id, store);
-        let receipts: Arc<dyn ExecutionReceiptStorePort> = Arc::new(
-            SqliteCeremonyStore::open(path)
-                .map_err(|error| format!("failed to open execution receipt store: {error}"))?,
-        );
+        let receipts: Arc<dyn ExecutionReceiptStorePort> = ceremony_store;
         let mut artifact_root = path.as_os_str().to_owned();
         artifact_root.push(".artifacts");
         let artifacts: Arc<dyn ArtifactStorePort> = Arc::new(
@@ -221,6 +222,7 @@ impl MadeMcpServer {
                 made,
                 gate,
                 read_policy,
+                step_continuation,
                 artifacts,
                 receipts,
             ),
@@ -633,7 +635,7 @@ mod tests {
         let parsed: Value = serde_json::from_str(&response).unwrap();
         let tools = parsed["result"]["tools"].as_array().unwrap();
         // One per RPC plus backend-independent discovery and help.
-        assert_eq!(tools.len(), 76);
+        assert_eq!(tools.len(), 77);
         assert!(tools
             .iter()
             .any(|tool| tool["name"] == DISCOVER_CAPABILITIES_TOOL));

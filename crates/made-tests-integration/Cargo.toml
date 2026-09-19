@@ -59,6 +59,7 @@ serde_json = { workspace = true }
 sqlx = { workspace = true }
 
 [dev-dependencies]
+made-client = { workspace = true }
 # Both backends at once, on purpose: the parity test is the only place
 # that can compare what one MCP tool answers depending on how it
 # reached the engine.

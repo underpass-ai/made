@@ -13,6 +13,8 @@ members = [
     "crates/made-e2e-runner",
     "crates/made-mcp",
     "crates/made-consumer-smoke",
+    "crates/made-client",
+    "crates/made-console",
 ]
 
 [workspace.package]
@@ -115,6 +117,7 @@ tokio-test = "0.4"
 criterion = { version = "0.5", features = ["async_tokio"] }
 
 # crypto / hashing
+hmac = "0.12"
 sha2 = "0.10"
 
 # schema validation
@@ -130,6 +133,7 @@ made-proto = { path = "crates/made-proto", version = "0.6.0" }
 made-mcp = { path = "crates/made-mcp", version = "0.6.0", default-features = false }
 made-mcp-proto = { path = "crates/made-mcp-proto", version = "0.6.0" }
 made-tests-integration = { path = "crates/made-tests-integration", version = "0.6.0" }
+made-client = { path = "crates/made-client", version = "0.6.0" }
 
 [profile.release]
 lto = "thin"

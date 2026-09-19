@@ -136,6 +136,7 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_run_ceremony",
         "made_get_ceremony_instance",
         "made_list_ceremony_instances",
+        "made_search_ceremony_instances",
         "made_start_ceremony",
         "made_start_published_ceremony",
         "made_run_ceremony_step",

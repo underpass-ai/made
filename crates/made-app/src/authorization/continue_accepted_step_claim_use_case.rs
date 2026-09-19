@@ -35,7 +35,6 @@ impl ContinueAcceptedStepClaimUseCase {
     ) -> Result<AuthorizedOperation, DomainError> {
         let records = self.stream.records(&input.ceremony_id).await?;
         let session = SessionStream::fold_records(&records)?;
-        require_live_claim(&session, &input, self.clock.now())?;
         let source = records
             .iter()
             .rev()
@@ -50,6 +49,20 @@ impl ContinueAcceptedStepClaimUseCase {
             .ok_or(DomainError::NotFound {
                 what: "accepted_step_claim_record",
             })?;
+        if let Some(existing) = self
+            .continuation
+            .existing_for(
+                source,
+                input.request_id.clone(),
+                AuthorizationAction::CompleteCeremonyStep,
+                input.target_digest.clone(),
+                Some(&input.principal),
+            )
+            .await?
+        {
+            return Ok(existing);
+        }
+        require_live_claim(&session, &input, self.clock.now())?;
         self.continuation
             .execute_for(
                 source,

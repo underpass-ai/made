@@ -69,6 +69,8 @@ allowed_internal = {
         "made-embedded",
         "made-mcp-proto",
     },
+    "made-client": {"made-proto"},
+    "made-console": {"made-client"},
 }
 
 packages = workspace_packages()

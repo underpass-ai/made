@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use made_core::entities::AuditRecord;
 use made_core::ports::{AuthorizationPolicyAppendOutcome, AuthorizationPolicyStorePort, ClockPort};
+use made_core::value_objects::AuthorizationDecision;
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthorizationAction, AuthorizationDecisionTtl, AuthorizationPolicyId,
     AuthorizationRequest, AuthorizationRequestId, AuthorizationTargetDigest, AuthorizedOperation,
@@ -68,6 +69,62 @@ impl ContinueAcceptedCeremonyWorkUseCase {
         target_digest: AuthorizationTargetDigest,
         expected_principal: Option<&AuthenticatedPrincipal>,
     ) -> Result<AuthorizedOperation, DomainError> {
+        let (accepted, request) = self
+            .accepted_request(
+                source,
+                request_id,
+                action,
+                target_digest,
+                expected_principal,
+            )
+            .await?;
+        self.decide(request, &accepted).await
+    }
+
+    pub async fn existing_for(
+        &self,
+        source: &AuditRecord,
+        request_id: AuthorizationRequestId,
+        action: AuthorizationAction,
+        target_digest: AuthorizationTargetDigest,
+        expected_principal: Option<&AuthenticatedPrincipal>,
+    ) -> Result<Option<AuthorizedOperation>, DomainError> {
+        let (_, request) = self
+            .accepted_request(
+                source,
+                request_id,
+                action,
+                target_digest,
+                expected_principal,
+            )
+            .await?;
+        let Some(existing) = self
+            .store
+            .decision_for_request(&self.policy_id, request.id())
+            .await?
+        else {
+            return Ok(None);
+        };
+        if existing.request() != &request {
+            return Err(DomainError::Conflict {
+                what: "authorization_request",
+            });
+        }
+        let evidence = existing.evidence(self.clock.now())?;
+        Ok(Some(AuthorizedOperation::new(
+            request.principal().clone(),
+            evidence,
+        )?))
+    }
+
+    async fn accepted_request(
+        &self,
+        source: &AuditRecord,
+        request_id: AuthorizationRequestId,
+        action: AuthorizationAction,
+        target_digest: AuthorizationTargetDigest,
+        expected_principal: Option<&AuthenticatedPrincipal>,
+    ) -> Result<(AuthorizationDecision, AuthorizationRequest), DomainError> {
         let source_evidence =
             source
                 .authorization_evidence()
@@ -99,7 +156,14 @@ impl ContinueAcceptedCeremonyWorkUseCase {
             target_digest,
         )
         .with_accepted_work(accepted.id().clone());
+        Ok((accepted, request))
+    }
 
+    async fn decide(
+        &self,
+        request: AuthorizationRequest,
+        accepted: &AuthorizationDecision,
+    ) -> Result<AuthorizedOperation, DomainError> {
         for _ in 0..MAX_CONFLICT_RETRIES {
             let existing = self
                 .store
@@ -115,7 +179,7 @@ impl ContinueAcceptedCeremonyWorkUseCase {
             let plan = snapshot.policy.decide_accepted_work(
                 request.clone(),
                 existing.as_ref(),
-                &accepted,
+                accepted,
                 self.clock.now(),
                 self.ttl,
             )?;
