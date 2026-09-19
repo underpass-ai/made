@@ -40,6 +40,7 @@ use made_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::AuthorizedMemoryReader;
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
@@ -190,6 +191,12 @@ impl GrpcFixture {
                     metrics.clone(),
                 )),
             ])),
+        ));
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
+        let memory_reader = Arc::new(AuthorizedMemoryReader::new(
+            memory_reader,
+            fixture_authorization.authorize.clone(),
+            ceremony_stream.clone(),
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
@@ -420,7 +427,6 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-        let fixture_authorization = fixture_authorization(clock.clone()).await;
         let authorization = wiring
             .authorization()
             .unwrap_or_else(|| fixture_authorization.gate.clone());
@@ -646,6 +652,12 @@ impl GrpcFixture {
                 )),
             ])),
         ));
+        let fixture_authorization = fixture_authorization(clock.clone()).await;
+        let memory_reader = Arc::new(AuthorizedMemoryReader::new(
+            memory_reader,
+            fixture_authorization.authorize.clone(),
+            ceremony_stream.clone(),
+        ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
         let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
@@ -856,7 +868,6 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
-        let fixture_authorization = fixture_authorization(clock.clone()).await;
         fixture_authorization
             .gate
             .protect_session_stream(&ceremony_stream);

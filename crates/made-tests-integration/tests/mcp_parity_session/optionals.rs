@@ -66,7 +66,15 @@ pub(super) async fn checked(arms: &ParityArms, id: u64, tool: &str, arguments: V
         !failed(&embedded),
         "{tool} embedded refused {arguments}: {embedded:#}"
     );
-    assert_same_answer(tool, &wire, &embedded);
+    if tool == "made_list_authorization_decisions" {
+        assert_authorization_decisions(
+            &wire,
+            &embedded,
+            &arms.opaque_authorization_targets.lock().unwrap(),
+        );
+    } else {
+        assert_same_answer(tool, &wire, &embedded);
+    }
     embedded
 }
 
