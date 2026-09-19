@@ -1,14 +1,16 @@
 use std::sync::Arc;
 
 use made_core::entities::ceremony_commands::StartStep;
-use made_core::entities::CeremonyCommand;
+use made_core::entities::{CeremonyCommand, CeremonyEvent};
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
     BudgetOperationId, BudgetReservationId, ExecutionOperationId, MaxParallel, StepLease,
 };
 use made_core::BudgetError;
 
-use super::{BudgetLedgerService, BudgetedStepClaimInput, BudgetedStepClaimOutput};
+use super::{
+    BudgetLedgerService, BudgetMutationOutcome, BudgetedStepClaimInput, BudgetedStepClaimOutput,
+};
 use crate::services::{session_facts, ConflictPolicy, SessionStream};
 use crate::usecases::{ResolveCeremonyDefinitionUseCase, StartCeremonyStepOutput};
 
@@ -79,11 +81,25 @@ impl BudgetedStepClaimUseCase {
 
         // This durable admission precedes the ceremony append. A losing claimant never releases
         // it: the winning claimant has the same operation identity and may already be using it.
-        self.budgets
+        let reservation = self
+            .budgets
             .reserve(&account_id, budget_operation, input.reservation)
             .await?;
 
         let now = self.clock.now();
+        if matches!(reservation, BudgetMutationOutcome::Existing { .. }) {
+            if let Some(claim) = self
+                .exact_existing_claim(&loaded, &input, &reservation_id, now)
+                .await?
+            {
+                return Ok(BudgetedStepClaimOutput::new(
+                    claim,
+                    account_id,
+                    operation_id,
+                    reservation_id,
+                ));
+            }
+        }
         let command = CeremonyCommand::StartStep(StartStep {
             role_id: input.claim.requested_role_id(),
             step_id: input.claim.step_id.clone(),
@@ -126,5 +142,54 @@ impl BudgetedStepClaimUseCase {
             operation_id,
             reservation_id,
         ))
+    }
+
+    async fn exact_existing_claim(
+        &self,
+        loaded: &crate::services::LoadedSession,
+        input: &BudgetedStepClaimInput,
+        reservation_id: &BudgetReservationId,
+        now: time::OffsetDateTime,
+    ) -> Result<Option<StartCeremonyStepOutput>, BudgetError> {
+        let current = loaded.instance.step_record(&input.claim.step_id).ok_or(
+            made_core::DomainError::NotFound {
+                what: "ceremony_step",
+            },
+        )?;
+        let requested_ttl =
+            time::Duration::milliseconds(i64::try_from(input.claim.lease_ttl.get()).map_err(
+                |_| made_core::DomainError::OutOfRange {
+                    field: "step_lease.ttl_ms",
+                    value: input.claim.lease_ttl.get() as f64,
+                    min: 0.0,
+                    max: i64::MAX as f64,
+                },
+            )?);
+        let records = self.stream.records(loaded.instance.id()).await?;
+        let Some(position) = records.iter().position(|record| {
+            let Some(CeremonyEvent::StepStarted(started)) = record.event() else {
+                return false;
+            };
+            started.step_id == input.claim.step_id
+                && started.state_visit() == current.state_visit()
+                && started.state_iteration() == current.state_iteration()
+                && started.iteration == current.iteration()
+                && started.attempt == current.attempt()
+                && started.lease.owner_id() == &input.claim.lease_owner_id
+                && started.lease.idempotency_key() == &input.claim.idempotency_key
+                && started.lease.expires_at() - started.lease.acquired_at() == requested_ttl
+                && !started.lease.is_expired_at(now)
+                && started.budget_reservation_id.as_ref() == Some(reservation_id)
+        }) else {
+            return Ok(None);
+        };
+        let accepted = crate::services::SessionStream::fold_records(&records[..=position])?;
+        let claim_fence = accepted.instance.step_claim_fence(&input.claim.step_id)?;
+        Ok(Some(StartCeremonyStepOutput::new(
+            accepted.instance,
+            current.attempt(),
+            claim_fence,
+            accepted.version,
+        )))
     }
 }

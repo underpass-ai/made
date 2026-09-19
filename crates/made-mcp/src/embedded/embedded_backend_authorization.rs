@@ -1,4 +1,6 @@
-use made_app::authorization::{ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate};
+use made_app::authorization::{
+    ContinueAcceptedStepClaimUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+};
 use made_core::ports::{ArtifactStorePort, ExecutionReceiptStorePort};
 use made_embedded::EmbeddedMade;
 
@@ -11,6 +13,7 @@ impl EmbeddedMadeMcpBackend {
         made: EmbeddedMade,
         gate: TrustedHostAuthorizationGate,
         read_policy: ReadAuthorizationPolicyUseCase,
+        step_continuation: std::sync::Arc<ContinueAcceptedStepClaimUseCase>,
         artifacts: std::sync::Arc<dyn ArtifactStorePort>,
         execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
@@ -19,6 +22,7 @@ impl EmbeddedMadeMcpBackend {
             authorization: Some(EmbeddedToolAuthorizer::new(
                 gate,
                 read_policy,
+                step_continuation,
                 artifacts,
                 execution_receipts,
             )),

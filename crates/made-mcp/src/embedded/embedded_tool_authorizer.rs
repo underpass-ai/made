@@ -1,4 +1,6 @@
-use made_app::authorization::{ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate};
+use made_app::authorization::{
+    ContinueAcceptedStepClaimUseCase, ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+};
 use made_core::ports::{ArtifactStorePort, ArtifactUploadId, ExecutionReceiptStorePort};
 use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
@@ -17,6 +19,7 @@ use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
 pub(super) struct EmbeddedToolAuthorizer {
     gate: TrustedHostAuthorizationGate,
     read_policy: ReadAuthorizationPolicyUseCase,
+    step_continuation: std::sync::Arc<ContinueAcceptedStepClaimUseCase>,
     artifacts: std::sync::Arc<dyn ArtifactStorePort>,
     execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
 }
@@ -34,12 +37,14 @@ impl EmbeddedToolAuthorizer {
     pub(super) const fn new(
         gate: TrustedHostAuthorizationGate,
         read_policy: ReadAuthorizationPolicyUseCase,
+        step_continuation: std::sync::Arc<ContinueAcceptedStepClaimUseCase>,
         artifacts: std::sync::Arc<dyn ArtifactStorePort>,
         execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
         Self {
             gate,
             read_policy,
+            step_continuation,
             artifacts,
             execution_receipts,
         }
@@ -90,13 +95,14 @@ impl EmbeddedToolAuthorizer {
             Err(_) if action == AuthorizationAction::CompleteCeremonyStep => {
                 let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
                     .map_err(ToolError::invalid_request)?;
-                made.continue_accepted_step(request.accepted_completion(
-                    self.gate.principal().clone(),
-                    &request_id,
-                    target_digest,
-                )?)
-                .await
-                .map_err(Into::into)
+                self.step_continuation
+                    .execute(request.accepted_completion(
+                        self.gate.principal().clone(),
+                        &request_id,
+                        target_digest,
+                    )?)
+                    .await
+                    .map_err(Into::into)
             }
             Err(error) => Err(error.into()),
         }

@@ -10,11 +10,9 @@ use super::{
     StartCeremonyFromYaml,
 };
 use made_app::usecases::AcceptChildCompletionInput;
-use made_core::error::DomainError;
-use made_core::value_objects::{
-    CeremonyEventPageLimit, ChildGroupId, ChildSpawnCoordinates, EventId, StepId,
-};
+use made_core::value_objects::{CeremonyEventPageLimit, EventId};
 
+mod budgeted_prepare;
 mod budgeted_start;
 
 impl MadeGrpcService {
@@ -113,64 +111,6 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::RunCeremonyStepResponse {
             instance: Some(self.render(output.instance(), &definition).await?),
-        }))
-    }
-
-    #[tracing::instrument(name = "rpc.prepare_ceremony_children", skip_all)]
-    pub(super) async fn handle_prepare_ceremony_children(
-        &self,
-        request: Request<pb::PrepareCeremonyChildrenRequest>,
-    ) -> GrpcResult<pb::PrepareCeremonyChildrenResponse> {
-        link_span_to_metadata(&request);
-        let request = request.into_inner();
-        let ceremony_id =
-            CeremonyId::new(request.ceremony_id.clone()).map_err(domain_error_to_status)?;
-        let step_id = StepId::new(request.step_id.clone()).map_err(domain_error_to_status)?;
-        let (instance, definition) = self.session(&ceremony_id).await?;
-        let input = run_ceremony_step_input_from_proto(
-            pb::RunCeremonyStepRequest {
-                ceremony_id: request.ceremony_id,
-                step_id: request.step_id,
-                actor_kind: request.actor_kind,
-                lease_owner_id: request.lease_owner_id,
-                idempotency_key: request.idempotency_key,
-                lease_ttl_ms: request.lease_ttl_ms,
-            },
-            &definition,
-            &instance,
-        )
-        .map_err(domain_error_to_status)?;
-        let output = self
-            .run_ceremony_step
-            .execute(input)
-            .await
-            .map_err(domain_error_to_status)?;
-        let record = output.instance().step_record(&step_id).ok_or_else(|| {
-            domain_error_to_status(DomainError::NotFound {
-                what: "ceremony_step_record",
-            })
-        })?;
-        let coordinates = ChildSpawnCoordinates::new(
-            step_id,
-            output.instance().current_state_visit(),
-            output.instance().current_state_iteration(),
-            record.iteration(),
-        );
-        let group_id = ChildGroupId::derive(output.instance().id(), &coordinates);
-        let group = output.instance().child_group(&group_id).ok_or_else(|| {
-            domain_error_to_status(DomainError::NotFound {
-                what: "child_spawn_group",
-            })
-        })?;
-        Ok(Response::new(pb::PrepareCeremonyChildrenResponse {
-            instance: Some(self.render(output.instance(), &definition).await?),
-            child_group_id: group_id.as_str().to_owned(),
-            child_ids: group
-                .plan()
-                .children()
-                .iter()
-                .map(|child| child.child_id().as_str().to_owned())
-                .collect(),
         }))
     }
 
