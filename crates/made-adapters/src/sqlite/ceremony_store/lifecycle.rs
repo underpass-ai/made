@@ -1,4 +1,3 @@
-use std::io::Read;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -11,16 +10,15 @@ use crate::sqlite::keys::scoped;
 
 use super::SqliteCeremonyStore;
 
-const LEGACY_REDB_HEADER: &[u8] = b"redb";
 const LEGACY_STORE_REASON: &str =
     "legacy redb ceremony store detected; convert it with made-mcp v0.2.0 before upgrading";
 
 impl SqliteCeremonyStore {
     /// Open the canonical WAL-mode SQLite store, creating it when absent.
     ///
-    /// A legacy Redb path or file is refused before SQLite can create or
-    /// overwrite anything beside it. Operators must convert with the last
-    /// dual-engine release first.
+    /// A legacy Redb path is refused immediately. SQLite validates other
+    /// existing files through its own VFS without replacing their contents.
+    /// Operators must convert Redb with the last dual-engine release first.
     pub fn open(path: impl AsRef<Path>) -> Result<Self, DomainError> {
         let path = path.as_ref();
         refuse_legacy_redb(path)?;
@@ -72,13 +70,10 @@ fn refuse_legacy_redb(path: &Path) -> Result<(), DomainError> {
         return legacy_store_error(path);
     }
 
-    let Ok(mut file) = std::fs::File::open(path) else {
-        return Ok(());
-    };
-    let mut header = [0_u8; LEGACY_REDB_HEADER.len()];
-    if file.read_exact(&mut header).is_ok() && header == LEGACY_REDB_HEADER {
-        return legacy_store_error(path);
-    }
+    // Do not sniff the header through std::fs here. Closing any ordinary file
+    // descriptor for this inode releases this process's POSIX locks, including
+    // locks owned by an already-open SQLite adapter. Format validation belongs
+    // to SQLite's VFS, which coordinates descriptor lifetimes across handles.
     Ok(())
 }
 
@@ -197,5 +192,6 @@ mod tests {
 
         assert!(error.to_string().contains("made-mcp v0.2.0"));
         assert_eq!(std::fs::read(&path).unwrap(), before);
+        assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
     }
 }

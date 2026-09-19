@@ -226,6 +226,12 @@ fn poisoned() -> DomainError {
 fn failure(error: &rusqlite::Error, op: &'static str) -> DomainError {
     let rendered = error.to_string();
     tracing::error!(error = %rendered, sqlite_extended_code = error.sqlite_error().map(|value| value.extended_code), operation = op, "sqlite operation failed");
+    if error.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) {
+        return DomainError::InvariantViolated {
+            reason: "sqlite: file is not a SQLite database; if this is a legacy Redb store, \
+                     convert it with made-mcp v0.2.0 before upgrading",
+        };
+    }
     if rendered.contains("database is locked") {
         return DomainError::InvariantViolated {
             reason: "sqlite: the store is busy and did not free within the wait",
