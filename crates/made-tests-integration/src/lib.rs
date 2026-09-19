@@ -11,6 +11,7 @@
 pub mod postgres_fixture;
 
 pub mod grpc_fixture;
+mod grpc_fixture_authorization;
 pub mod grpc_fixture_wiring;
 pub mod parity_clock;
 pub mod parity_evidence_source;

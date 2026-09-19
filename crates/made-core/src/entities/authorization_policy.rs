@@ -121,7 +121,7 @@ impl AuthorizationPolicy {
         }
 
         let grant = self.matching_grant(&request, now);
-        let owner = self.is_owner(request.principal());
+        let owner = self.is_owner(request.principal()) && owner_permits(request.action());
         let denial = if !owner && grant.is_none() {
             Some(AuthorizationDenialReason::NoMatchingGrant)
         } else {
@@ -241,7 +241,7 @@ impl AuthorizationPolicy {
         scope: &AuthorizationScope,
         now: OffsetDateTime,
     ) -> bool {
-        self.is_owner(principal)
+        (self.is_owner(principal) && owner_permits(action))
             || self.grants.values().any(|grant| {
                 grant.grantee() == principal.id()
                     && grant.permits(action, scope, now)
@@ -493,7 +493,7 @@ impl AuthorizationPolicy {
                     && approval.is_live_at(now)
                     && self.decision_grant_is_live(approval, now)
                     && approval.request().action() == rule.approval_action()
-                    && approval.request().principal() != request.principal()
+                    && approval.request().principal().id() != request.principal().id()
                     && approval.request().scope().covers(request.scope())
                     && approval.request().target_digest() == request.target_digest()
             });
@@ -518,7 +518,7 @@ impl AuthorizationPolicy {
         if decision.valid_until() - now > time::Duration::seconds(300) {
             return false;
         }
-        let owner = self.is_owner(request.principal());
+        let owner = self.is_owner(request.principal()) && owner_permits(request.action());
         let grant = decision
             .grant_id()
             .and_then(|grant_id| self.grants.get(grant_id));
@@ -555,7 +555,10 @@ impl AuthorizationPolicy {
                 .grants
                 .get(grant_id)
                 .is_some_and(|grant| self.grant_chain_is_live(grant, now)),
-            None => self.is_owner(decision.request().principal()),
+            None => {
+                self.is_owner(decision.request().principal())
+                    && owner_permits(decision.request().action())
+            }
         }
     }
 }
@@ -566,6 +569,16 @@ fn validity_contains(parent: Option<OffsetDateTime>, child: Option<OffsetDateTim
         (Some(_), None) => false,
         (Some(parent), Some(child)) => child <= parent,
     }
+}
+
+fn owner_permits(action: AuthorizationAction) -> bool {
+    matches!(
+        action,
+        AuthorizationAction::ReadAuthorizationPolicy
+            | AuthorizationAction::IssueAuthorizationGrant
+            | AuthorizationAction::RevokeAuthorizationGrant
+            | AuthorizationAction::ReadAuthorizationDecisions
+    )
 }
 
 fn separation_rule_map(

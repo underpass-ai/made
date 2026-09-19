@@ -49,6 +49,41 @@ fn matching_owner_id_with_another_authenticated_identity_has_no_owner_authority(
 }
 
 #[test]
+fn policy_owner_administers_policy_but_needs_grants_for_business_actions() {
+    let policy = opened_policy(Vec::new());
+    let business = policy
+        .decide_authorize(
+            request(
+                "owner-business",
+                trusted_host(),
+                AuthorizationAction::PauseCeremony,
+                b"ceremony",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap();
+    assert_eq!(business.decision().kind(), AuthorizationDecisionKind::Deny);
+
+    let administration = policy
+        .decide_authorize(
+            request(
+                "owner-administration",
+                trusted_host(),
+                AuthorizationAction::IssueAuthorizationGrant,
+                b"policy",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap();
+    assert_eq!(
+        administration.decision().kind(),
+        AuthorizationDecisionKind::Allow
+    );
+}
+
+#[test]
 fn forged_revocation_is_rejected_without_changing_rehydrated_state() {
     let mut policy = opened_policy(Vec::new());
     let grant = grant(
@@ -316,6 +351,61 @@ fn separation_requires_a_live_approval_from_another_principal_for_the_same_targe
     assert_eq!(
         policy
             .decide_authorize(revoked_approval, NOW + Duration::seconds(1), ttl())
+            .unwrap()
+            .decision()
+            .denial_reason(),
+        Some(AuthorizationDenialReason::ApprovalInvalid)
+    );
+}
+
+#[test]
+fn separation_does_not_treat_another_kind_with_the_same_principal_id_as_another_person() {
+    let rule = SeparationRule::new(
+        AuthorizationAction::ApproveCeremonyGuard,
+        AuthorizationAction::CompleteCeremonyStep,
+    )
+    .unwrap();
+    let mut policy = opened_policy(vec![rule]);
+    issue(
+        &mut policy,
+        &trusted_host(),
+        grant(
+            "dual-role",
+            human("dual-role").id().clone(),
+            [
+                AuthorizationAction::ApproveCeremonyGuard,
+                AuthorizationAction::CompleteCeremonyStep,
+            ],
+            DelegationDepth::none(),
+            trusted_host(),
+            None,
+        ),
+    );
+    let (approval, event) = policy
+        .decide_authorize(
+            request(
+                "same-id-approval",
+                human("dual-role"),
+                AuthorizationAction::ApproveCeremonyGuard,
+                b"step-result",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap()
+        .into_parts();
+    apply(&mut policy, event.unwrap());
+
+    let execution = request(
+        "same-id-execution",
+        worker("dual-role"),
+        AuthorizationAction::CompleteCeremonyStep,
+        b"step-result",
+    )
+    .with_approval(approval.id().clone());
+    assert_eq!(
+        policy
+            .decide_authorize(execution, NOW, ttl())
             .unwrap()
             .decision()
             .denial_reason(),

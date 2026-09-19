@@ -34,6 +34,7 @@ use persistence::wire_persistence;
 use persistence_handles::Persistence;
 
 mod artifact_storage;
+mod authorization;
 mod budget_operations;
 mod ceremony_lifecycle;
 mod ceremony_operations;
@@ -56,12 +57,10 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One Prometheus registry for use cases and the health endpoint. Fails
-    // fast if a metric is malformed (a wiring bug).
+    // One registry serves use cases and health; malformed metrics fail startup.
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators = validators::wire(metrics_recorder.clone())?;
-    // Choose scoring, and when an LLM judge is configured append it to
-    // the validator chain so its verdict drives the ranking.
+    // An optional LLM judge joins validators so its verdict drives ranking.
     let scoring: Arc<dyn ScoringPort> = scoring::wire(&mut validators, metrics_recorder.clone())?;
     let executor = executor::wire().await?;
     let dispatching_factory =
@@ -81,6 +80,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         pool: postgres_pool,
     } = wire_persistence(&service_config, agent_factory.clone()).await?;
     let artifacts = artifact_storage::wire(&service_config, postgres_pool.as_ref())?;
+    let authorization =
+        authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
 
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
@@ -94,8 +95,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         receipts: execution_receipts,
         budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config, postgres_pool.as_ref())?;
-    // The writer is a subscriber of the stream: memory is a projection
-    // of sealed events, outside the ceremony transaction (ADR-012/013).
+    // Memory projects sealed events outside the ceremony transaction (ADR-012/013).
     let session_memory = Arc::new(SessionMemoryRecorder::new(
         memory_writer,
         ceremony_events.clone(),
@@ -292,13 +292,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
     .await?;
     crate::seeding::apply_contract_seeding(contract_registry.as_ref()).await?;
 
-    // Now that the auto-dispatch service exists, the subscriber
-    // factory can finish wiring.
+    // Auto-dispatch completes subscriber wiring.
     let nats_subscriber = nats_subscriber_factory.map(|factory| factory(auto_dispatch.clone()));
     let nats_ceremony_recovery =
         ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
     let mut grpc_builder = made_adapters::grpc::MadeGrpcService::builder()
+        .authorization(authorization)
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .create_council(create_council)
@@ -325,8 +325,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
-        // The same registry the use cases record into and `/metrics`
-        // renders, so `GetStatus` names what is actually recording.
+        // Status and `/metrics` read the same registry use cases write.
         .observability(metrics_recorder.clone())
         .service_version(env!("CARGO_PKG_VERSION"))
         .council_journal(Arc::new(made_app::services::CouncilJournalService::new(

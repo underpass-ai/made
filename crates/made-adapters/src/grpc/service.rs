@@ -75,7 +75,7 @@ use super::status::{artifact_error_to_status, budget_error_to_status, domain_err
 use super::tracecontext::{
     link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
 };
-use super::MadeGrpcServiceBuilder;
+use super::{GrpcAuthorizationGate, MadeGrpcServiceBuilder};
 use crate::ceremony::CeremonyParticipantPlanAdapter;
 use crate::yaml::CeremonyDefinitionYaml;
 
@@ -104,6 +104,7 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) authorization: Arc<GrpcAuthorizationGate>,
     pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
@@ -178,6 +179,12 @@ impl MadeGrpcService {
     #[must_use]
     pub fn builder() -> MadeGrpcServiceBuilder {
         MadeGrpcServiceBuilder::default()
+    }
+
+    /// Authorization boundary shared by every typed RPC handler.
+    #[must_use]
+    pub const fn authorization(&self) -> &Arc<GrpcAuthorizationGate> {
+        &self.authorization
     }
 
     fn artifact_service(&self) -> Option<&ArtifactService> {

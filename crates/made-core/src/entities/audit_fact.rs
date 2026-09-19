@@ -2,8 +2,11 @@ use time::OffsetDateTime;
 
 use crate::entities::CeremonyEvent;
 use crate::value_objects::{
-    AuditActor, CeremonyId, CeremonyName, CeremonyVersion, EventId, TraceContext,
+    AuditActor, AuthorizationEvidence, CeremonyId, CeremonyName, CeremonyVersion, EventId,
+    TraceContext,
 };
+
+use super::AuthorizedAuditFact;
 
 /// Everything an audit record states before the journal assigns its position.
 ///
@@ -23,4 +26,15 @@ pub struct AuditFact {
     pub correlation_id: Option<EventId>,
     pub causation_id: Option<EventId>,
     pub trace: Option<TraceContext>,
+}
+
+impl AuditFact {
+    /// Bind a successful admission decision to this fact.
+    ///
+    /// The wrapper makes authorization-bearing records explicit without adding
+    /// an optional field to every historical and unauthorised fact builder.
+    #[must_use]
+    pub fn authorized(self, evidence: AuthorizationEvidence) -> AuthorizedAuditFact {
+        AuthorizedAuditFact::new(self, evidence)
+    }
 }

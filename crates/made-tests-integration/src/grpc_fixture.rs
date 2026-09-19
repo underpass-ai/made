@@ -71,6 +71,8 @@ use made_core::value_objects::CeremonyEventConsumer;
 use tokio::sync::oneshot;
 use tonic::transport::{Certificate, Channel, Endpoint, Identity, Server, ServerTlsConfig};
 
+use crate::grpc_fixture_authorization::fixture_authorization;
+
 pub use crate::grpc_fixture_wiring::GrpcFixtureWiring;
 pub use crate::tls_server_setup::TlsServerSetup;
 
@@ -401,6 +403,7 @@ impl GrpcFixture {
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
         let mut service_builder = MadeGrpcService::builder()
+            .authorization(fixture_authorization(clock.clone()).await)
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
@@ -820,6 +823,7 @@ impl GrpcFixture {
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
         let svc = MadeGrpcService::builder()
+            .authorization(fixture_authorization(clock.clone()).await)
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)
