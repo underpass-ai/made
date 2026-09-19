@@ -32,6 +32,8 @@ impl CouncilRegistryPort for SqliteCouncilRegistry {
             .await
     }
     async fn replace(&self, council: Council) -> Result<(), DomainError> {
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
@@ -44,7 +46,11 @@ impl CouncilRegistryPort for SqliteCouncilRegistry {
                     Key::Str(key),
                     &encode(&council, "replace council")?,
                 )?;
-                append(tx.as_mut(), CouncilJournalEvent::CouncilReplaced(council))?;
+                append(
+                    tx.as_mut(),
+                    CouncilJournalEvent::CouncilReplaced(council),
+                    authorization,
+                )?;
                 tx.commit()
             })
             .await

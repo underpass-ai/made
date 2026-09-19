@@ -1,6 +1,6 @@
 use async_trait::async_trait;
 
-use crate::value_objects::{ArtifactId, ArtifactRef};
+use crate::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 
 use super::{
     ArtifactChunkPage, ArtifactPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError,
@@ -28,6 +28,13 @@ pub trait ArtifactStorePort: Send + Sync {
         &self,
         upload_id: &ArtifactUploadId,
     ) -> Result<ArtifactRef, ArtifactStoreError>;
+    async fn commit_upload_authorized(
+        &self,
+        upload_id: &ArtifactUploadId,
+        _authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
+        self.commit_upload(upload_id).await
+    }
     async fn abort_upload(&self, upload_id: &ArtifactUploadId) -> Result<(), ArtifactStoreError>;
     async fn get(&self, artifact_id: &ArtifactId) -> Result<ArtifactRecord, ArtifactStoreError>;
     async fn list(
@@ -48,4 +55,11 @@ pub trait ArtifactStorePort: Send + Sync {
         &self,
         command: TombstoneArtifact,
     ) -> Result<ArtifactTombstone, ArtifactStoreError>;
+    async fn tombstone_authorized(
+        &self,
+        command: TombstoneArtifact,
+        _authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
+        self.tombstone(command).await
+    }
 }

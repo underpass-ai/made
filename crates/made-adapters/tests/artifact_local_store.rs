@@ -4,6 +4,7 @@ use std::sync::Arc;
 
 use made_adapters::artifacts::{ArtifactBackupService, LocalArtifactStore};
 use made_app::artifacts::ArtifactService;
+use made_app::services::AuthorizationOperationScope;
 use made_core::ports::{
     ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
     ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
@@ -12,6 +13,8 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence, AuthorizedOperation,
+    PrincipalId, PrincipalKind,
 };
 use sha2::{Digest, Sha256};
 use tempfile::TempDir;
@@ -30,6 +33,28 @@ fn begin(bytes: &[u8], key: &str) -> BeginArtifactUpload {
         provenance: ArtifactProvenance::generated_report(OffsetDateTime::UNIX_EPOCH),
         idempotency_key: ArtifactIdempotencyKey::new(key).unwrap(),
     }
+}
+
+fn authorized_operation(id: &str, action: &str, decision: char) -> AuthorizedOperation {
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new(id).unwrap(),
+        PrincipalKind::Worker,
+        AuthenticationMethod::MutualTls,
+    )
+    .unwrap();
+    let evidence: AuthorizationEvidence = serde_json::from_value(serde_json::json!({
+        "decision_id": decision.to_string().repeat(64),
+        "request_id": format!("request-{id}-{action}"),
+        "principal_id": id,
+        "action": action,
+        "scope": { "kind": "global" },
+        "target_digest": "b".repeat(64),
+        "policy_version": 1,
+        "admitted_at": "2026-09-19T12:00:00Z",
+        "valid_until": "2026-09-19T12:01:00Z"
+    }))
+    .unwrap();
+    AuthorizedOperation::new(principal, evidence).unwrap()
 }
 
 async fn upload(
@@ -258,6 +283,81 @@ async fn generated_report_is_saved_through_the_public_application_facade() {
         store.get(report.artifact_id()).await.unwrap().artifact,
         report
     );
+}
+
+#[tokio::test]
+async fn public_commit_and_tombstone_preserve_their_authorization_after_reopen() {
+    let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
+    fs::create_dir_all(&scratch).unwrap();
+    let directory = tempfile::tempdir_in(scratch).unwrap();
+    let store = Arc::new(LocalArtifactStore::open(directory.path()).unwrap());
+    let service = ArtifactService::new(store.clone());
+    let bytes = b"authorized artifact";
+    let upload = service
+        .begin_upload(begin(bytes, "authorized"))
+        .await
+        .unwrap();
+    service
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            bytes: bytes.to_vec(),
+            chunk_digest: digest(bytes),
+        })
+        .await
+        .unwrap();
+    let artifact = AuthorizationOperationScope::run(
+        authorized_operation("artifact-writer", "commit_artifact_upload", 'a'),
+        service.commit_upload(&upload.upload_id),
+    )
+    .await
+    .unwrap();
+    let retirement = TombstoneArtifact {
+        artifact_id: artifact.artifact_id().clone(),
+        actor: ArtifactRetentionActor::new("host:retention").unwrap(),
+        policy: ArtifactRetentionPolicy::new("incident-closed").unwrap(),
+        retired_at: OffsetDateTime::UNIX_EPOCH,
+    };
+    let tombstone = AuthorizationOperationScope::run(
+        authorized_operation("retention-host", "tombstone_artifact", 'c'),
+        service.tombstone(retirement.clone()),
+    )
+    .await
+    .unwrap();
+    let retried = AuthorizationOperationScope::run(
+        authorized_operation("another-retention-host", "tombstone_artifact", 'd'),
+        service.tombstone(retirement),
+    )
+    .await
+    .unwrap();
+    assert_eq!(retried, tombstone, "the first evidence stays immutable");
+    drop(service);
+    drop(store);
+
+    let record = LocalArtifactStore::open(directory.path())
+        .unwrap()
+        .get(artifact.artifact_id())
+        .await
+        .unwrap();
+    assert_eq!(
+        record
+            .authorization
+            .as_ref()
+            .unwrap()
+            .principal_id()
+            .as_str(),
+        "artifact-writer"
+    );
+    assert_eq!(
+        tombstone
+            .authorization
+            .as_ref()
+            .unwrap()
+            .principal_id()
+            .as_str(),
+        "retention-host"
+    );
+    assert_eq!(record.tombstone, Some(tombstone));
 }
 
 #[tokio::test]

@@ -1,3 +1,4 @@
+use crate::grpc::proto_to_json::authorization_evidence_to_json;
 use crate::protocol::ToolError;
 use made_mcp_proto::v1::{self as pb, made_service_client::MadeServiceClient};
 use serde_json::{json, Value};
@@ -71,7 +72,16 @@ pub(super) async fn dispatch(
                         serde_json::from_str(&record.event_json).map_err(|error| {
                             ToolError::refused(format!("invalid council journal event: {error}"))
                         })?;
-                    Ok(json!({"position":record.position,"event":event}))
+                    let mut value = json!({"position":record.position,"event":event});
+                    if let (Some(object), Some(authorization)) =
+                        (value.as_object_mut(), record.authorization.as_ref())
+                    {
+                        object.insert(
+                            "authorization".to_owned(),
+                            authorization_evidence_to_json(authorization),
+                        );
+                    }
+                    Ok(value)
                 })
                 .collect::<Result<Vec<_>, ToolError>>()?;
             Ok(json!({"records":records,"next_after":response.next_after}))

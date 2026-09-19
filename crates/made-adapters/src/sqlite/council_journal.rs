@@ -57,10 +57,12 @@ impl CouncilJournalPort for SqliteCouncilJournal {
                 reason: "council publication requires an original event id",
             });
         }
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
-                let record = append(tx.as_mut(), event)?;
+                let record = append(tx.as_mut(), event, authorization)?;
                 tx.commit()?;
                 Ok(record)
             })

@@ -76,6 +76,14 @@ async fn bounded_artifact_lifecycle_crosses_the_public_grpc_surface() {
         .unwrap()
         .into_inner();
     assert_eq!(listed.artifacts.len(), 1);
+    assert_eq!(
+        listed.artifacts[0]
+            .authorization
+            .as_ref()
+            .unwrap()
+            .principal_id,
+        "grpc-fixture-host"
+    );
 
     let chunk = client
         .read_artifact_chunk(pb::ReadArtifactChunkRequest {
@@ -106,6 +114,10 @@ async fn bounded_artifact_lifecycle_crosses_the_public_grpc_surface() {
         .tombstone
         .unwrap();
     assert_eq!(tombstone.digest, DIGEST);
+    assert_eq!(
+        tombstone.authorization.unwrap().principal_id,
+        "grpc-fixture-host"
+    );
     assert!(client
         .read_artifact_chunk(pb::ReadArtifactChunkRequest {
             artifact_id: artifact.artifact_id,

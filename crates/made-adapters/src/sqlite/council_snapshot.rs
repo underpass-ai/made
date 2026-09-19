@@ -37,6 +37,8 @@ impl SqliteCouncilSnapshot {
     ) -> Result<CouncilJournalRecord, DomainError> {
         let snapshot = snapshot.canonicalized();
         let bytes = snapshot.encode()?;
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
@@ -60,6 +62,7 @@ impl SqliteCouncilSnapshot {
                 let record = append(
                     tx.as_mut(),
                     CouncilJournalEvent::SnapshotImported(snapshot.provenance.clone()),
+                    authorization,
                 )?;
                 let original: CouncilDataSnapshot = decode(&bytes, "seal council import")?;
                 tx.insert(

@@ -22,6 +22,8 @@ impl SqliteDeliberationRepository {
 impl DeliberationRepositoryPort for SqliteDeliberationRepository {
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError> {
         let deliberation = deliberation.clone();
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
@@ -34,6 +36,7 @@ impl DeliberationRepositoryPort for SqliteDeliberationRepository {
                 append(
                     tx.as_mut(),
                     CouncilJournalEvent::DeliberationSnapshotSaved(deliberation),
+                    authorization,
                 )?;
                 tx.commit()
             })

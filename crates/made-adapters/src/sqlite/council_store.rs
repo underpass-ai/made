@@ -4,7 +4,7 @@ use super::SqliteCeremonyStore;
 use crate::engine::{Engine, Key, Table, WriteTx};
 use made_core::entities::{CouncilJournalEvent, CouncilJournalRecord};
 use made_core::error::DomainError;
-use made_core::value_objects::CouncilJournalPosition;
+use made_core::value_objects::{AuthorizationEvidence, CouncilJournalPosition};
 use serde::{de::DeserializeOwned, Serialize};
 use std::sync::Arc;
 
@@ -76,6 +76,8 @@ impl SqliteCouncilStore {
         what: &'static str,
         event: CouncilJournalEvent,
     ) -> Result<(), DomainError> {
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.blocking(move |engine| {
             let mut tx = engine.begin_write()?;
             if tx.get(table, Key::Str(&key))?.is_some() {
@@ -86,7 +88,7 @@ impl SqliteCouncilStore {
                 Key::Str(&key),
                 &encode(&value, "insert council value")?,
             )?;
-            append(tx.as_mut(), event)?;
+            append(tx.as_mut(), event, authorization)?;
             tx.commit()
         })
         .await
@@ -98,13 +100,15 @@ impl SqliteCouncilStore {
         what: &'static str,
         event: CouncilJournalEvent,
     ) -> Result<(), DomainError> {
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.blocking(move |engine| {
             let mut tx = engine.begin_write()?;
             if tx.get(table, Key::Str(&key))?.is_none() {
                 return Err(DomainError::NotFound { what });
             }
             tx.remove(table, Key::Str(&key))?;
-            append(tx.as_mut(), event)?;
+            append(tx.as_mut(), event, authorization)?;
             tx.commit()
         })
         .await
@@ -114,6 +118,7 @@ impl SqliteCouncilStore {
 pub(super) fn append(
     tx: &mut dyn WriteTx,
     event: CouncilJournalEvent,
+    authorization: Option<AuthorizationEvidence>,
 ) -> Result<CouncilJournalRecord, DomainError> {
     if let Some(id) = event.publication_id() {
         if let Some(bytes) = tx.get(Table::CouncilJournalIds, Key::Str(id.as_str()))? {
@@ -132,7 +137,10 @@ pub(super) fn append(
         }
         None => CouncilJournalPosition::FIRST,
     };
-    let record = CouncilJournalRecord::new(position, event);
+    let record = match authorization {
+        Some(authorization) => CouncilJournalRecord::authorized(position, event, authorization),
+        None => CouncilJournalRecord::new(position, event),
+    };
     let bytes = encode(&record, "write council record")?;
     tx.insert(
         Table::CouncilJournal,

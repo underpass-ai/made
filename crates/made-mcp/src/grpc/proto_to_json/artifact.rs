@@ -3,7 +3,7 @@ use base64::Engine;
 use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 
-use super::timestamp_to_rfc3339;
+use super::{authorization_evidence_to_json, timestamp_to_rfc3339};
 
 pub(crate) fn artifact_upload_status_to_json(
     status: Option<pb::ArtifactUploadStatus>,
@@ -88,19 +88,35 @@ fn provenance(value: &pb::ArtifactProvenance) -> Value {
 }
 
 fn artifact_record(record: &pb::ArtifactRecord) -> Value {
-    json!({
+    let mut value = json!({
         "artifact": record.artifact.as_ref().map(artifact_ref),
         "tombstone": record.tombstone.as_ref().map(artifact_tombstone),
-    })
+    });
+    insert_authorization(&mut value, record.authorization.as_ref());
+    value
 }
 
 fn artifact_tombstone(tombstone: &pb::ArtifactTombstoneRecord) -> Value {
-    json!({
+    let mut value = json!({
         "actor": tombstone.actor,
         "policy": tombstone.policy,
         "retired_at": timestamp_to_rfc3339(tombstone.retired_at.as_ref()),
         "digest": tombstone.digest,
-    })
+    });
+    insert_authorization(&mut value, tombstone.authorization.as_ref());
+    value
+}
+
+fn insert_authorization(
+    value: &mut Value,
+    authorization: Option<&pb::CeremonyAuthorizationEvidence>,
+) {
+    if let (Some(object), Some(authorization)) = (value.as_object_mut(), authorization) {
+        object.insert(
+            "authorization".to_owned(),
+            authorization_evidence_to_json(authorization),
+        );
+    }
 }
 
 fn missing(what: &str) -> crate::protocol::ToolError {

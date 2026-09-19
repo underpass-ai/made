@@ -54,7 +54,12 @@ impl CouncilJournalPort for InMemoryCouncilJournal {
             Some(record) => record.position().checked_next()?,
             None => CouncilJournalPosition::FIRST,
         };
-        let record = CouncilJournalRecord::new(position, event);
+        let record = match made_app::services::AuthorizationOperationScope::current() {
+            Some(operation) => {
+                CouncilJournalRecord::authorized(position, event, operation.evidence().clone())
+            }
+            None => CouncilJournalRecord::new(position, event),
+        };
         state.records.push(record.clone());
         state.publications.insert(id, record.clone());
         Ok(record)

@@ -8,7 +8,7 @@ use made_core::ports::{
     ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload, PutArtifactChunk,
     ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef};
+use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use uuid::Uuid;
 
 use super::hashing::{digest_bytes, digest_reader};
@@ -198,20 +198,30 @@ impl LocalArtifactRepository {
         &self,
         upload_id: &ArtifactUploadId,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
-        self.commit_observing(upload_id, |_| Ok(()))
+        self.commit_authorized(upload_id, None)
     }
 
+    pub(super) fn commit_authorized(
+        &self,
+        upload_id: &ArtifactUploadId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
+        self.locked(|| self.commit_locked(upload_id, authorization, &mut |_| Ok(())))
+    }
+
+    #[cfg(test)]
     pub(super) fn commit_observing(
         &self,
         upload_id: &ArtifactUploadId,
         mut observer: impl FnMut(&'static str) -> Result<(), ArtifactStoreError>,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
-        self.locked(|| self.commit_locked(upload_id, &mut observer))
+        self.locked(|| self.commit_locked(upload_id, None, &mut observer))
     }
 
     fn commit_locked(
         &self,
         upload_id: &ArtifactUploadId,
+        authorization: Option<AuthorizationEvidence>,
         observer: &mut impl FnMut(&'static str) -> Result<(), ArtifactStoreError>,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
         let mut manifest = self.load_upload(upload_id)?;
@@ -230,6 +240,7 @@ impl LocalArtifactRepository {
             Err(ArtifactStoreError::NotFound) => ArtifactRecord {
                 artifact: artifact.clone(),
                 tombstone: None,
+                authorization,
             },
             Err(error) => return Err(error),
         };
@@ -392,6 +403,14 @@ impl LocalArtifactRepository {
         &self,
         command: TombstoneArtifact,
     ) -> Result<ArtifactTombstone, ArtifactStoreError> {
+        self.tombstone_authorized(command, None)
+    }
+
+    pub(super) fn tombstone_authorized(
+        &self,
+        command: TombstoneArtifact,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
         self.locked(|| {
             let mut record = self.load_record(&command.artifact_id)?;
             let tombstone = ArtifactTombstone {
@@ -399,9 +418,10 @@ impl LocalArtifactRepository {
                 policy: command.policy,
                 retired_at: command.retired_at,
                 digest: record.artifact.digest().clone(),
+                authorization,
             };
             if let Some(existing) = &record.tombstone {
-                return if existing == &tombstone {
+                return if existing.same_retirement_as(&tombstone) {
                     Ok(existing.clone())
                 } else {
                     Err(ArtifactStoreError::IdempotencyConflict)

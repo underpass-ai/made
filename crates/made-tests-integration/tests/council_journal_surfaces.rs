@@ -1,9 +1,13 @@
 //! The two MCP routes operate the same durable council cursor over separate handles.
 use made_adapters::sqlite::{SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStore};
+use made_app::services::AuthorizationOperationScope;
 use made_core::entities::{Council, CouncilJournalEvent};
 use made_core::events::{EventEnvelope, PhaseChangedEvent};
 use made_core::ports::{CouncilJournalPort, CouncilRegistryPort};
-use made_core::value_objects::{AgentId, CouncilId, EventId, Specialty, TaskId};
+use made_core::value_objects::{
+    AgentId, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence,
+    AuthorizedOperation, CouncilId, EventId, PrincipalId, PrincipalKind, Specialty, TaskId,
+};
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, MadeMcpToolBackend};
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend};
@@ -22,6 +26,27 @@ fn journal(path: &std::path::Path) -> Arc<SqliteCouncilJournal> {
     Arc::new(SqliteCouncilJournal::new(
         SqliteCouncilStore::open(path).unwrap(),
     ))
+}
+fn authorization(request: &str) -> AuthorizedOperation {
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("council-surface-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::MutualTls,
+    )
+    .unwrap();
+    let evidence: AuthorizationEvidence = serde_json::from_value(json!({
+        "decision_id": "a".repeat(64),
+        "request_id": request,
+        "principal_id": "council-surface-host",
+        "action": "process_trigger_event",
+        "scope": {"kind":"global"},
+        "target_digest": "b".repeat(64),
+        "policy_version": 1,
+        "admitted_at": "2026-09-19T12:00:00Z",
+        "valid_until": "2026-09-19T12:01:00Z"
+    }))
+    .unwrap();
+    AuthorizedOperation::new(principal, evidence).unwrap()
 }
 async fn clients(
     path: &std::path::Path,
@@ -42,8 +67,9 @@ async fn clients(
 async fn seed(path: &std::path::Path) {
     let store = SqliteCouncilStore::open(path).unwrap();
     let now = time::OffsetDateTime::now_utc();
-    SqliteCouncilRegistry::new(store.clone())
-        .register(
+    AuthorizationOperationScope::run(
+        authorization("register-council-surface"),
+        SqliteCouncilRegistry::new(store.clone()).register(
             Council::new(
                 CouncilId::new("research").unwrap(),
                 Specialty::new("research").unwrap(),
@@ -51,11 +77,13 @@ async fn seed(path: &std::path::Path) {
                 now,
             )
             .unwrap(),
-        )
-        .await
-        .unwrap();
-    SqliteCouncilJournal::new(store)
-        .publish(CouncilJournalEvent::PhaseChanged(
+        ),
+    )
+    .await
+    .unwrap();
+    AuthorizationOperationScope::run(
+        authorization("publish-council-surface"),
+        SqliteCouncilJournal::new(store).publish(CouncilJournalEvent::PhaseChanged(
             PhaseChangedEvent::new(
                 EventEnvelope::new(EventId::new("phase-1").unwrap(), now, "fixture", None).unwrap(),
                 TaskId::new("task-1").unwrap(),
@@ -63,9 +91,10 @@ async fn seed(path: &std::path::Path) {
                 "reviewing",
             )
             .unwrap(),
-        ))
-        .await
-        .unwrap();
+        )),
+    )
+    .await
+    .unwrap();
 }
 
 #[tokio::test]
@@ -83,6 +112,10 @@ async fn public_consumers_share_fencing_and_resume_after_restart_without_changin
         call(&remote, "made_read_council_events", json!({"limit":1})).await
     );
     assert_eq!(first["records"][0]["event"]["kind"], "council_registered");
+    assert_eq!(
+        first["records"][0]["authorization"]["principal_id"],
+        "council-surface-host"
+    );
     assert_eq!(first["next_after"], 1);
     let consumer = json!({"consumer":"public-reader"});
     assert_eq!(
@@ -162,6 +195,10 @@ async fn public_consumers_share_fencing_and_resume_after_restart_without_changin
         .await
     );
     assert_eq!(second["records"][0]["event"]["kind"], "phase_changed");
+    assert_eq!(
+        second["records"][0]["authorization"]["principal_id"],
+        "council-surface-host"
+    );
     assert_eq!(second["next_after"], 2);
     assert_eq!(
         call(&remote, "made_read_council_events", json!({"after":2})).await,

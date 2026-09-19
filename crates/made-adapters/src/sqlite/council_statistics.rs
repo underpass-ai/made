@@ -22,6 +22,8 @@ impl SqliteCouncilStatistics {
         specialty: Option<Specialty>,
         duration: DurationMs,
     ) -> Result<(), DomainError> {
+        let authorization = made_app::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
@@ -39,7 +41,11 @@ impl SqliteCouncilStatistics {
                     Key::Str("totals"),
                     &encode(&stats, "record statistics")?,
                 )?;
-                append(tx.as_mut(), CouncilJournalEvent::StatisticsRecorded(stats))?;
+                append(
+                    tx.as_mut(),
+                    CouncilJournalEvent::StatisticsRecorded(stats),
+                    authorization,
+                )?;
                 tx.commit()
             })
             .await

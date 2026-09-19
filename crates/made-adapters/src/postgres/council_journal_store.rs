@@ -59,7 +59,12 @@ pub(super) async fn append(
             reason: "council journal position is corrupt",
         }
     })?)?;
-    let record = CouncilJournalRecord::new(position, event);
+    let record = match made_app::services::AuthorizationOperationScope::current() {
+        Some(operation) => {
+            CouncilJournalRecord::authorized(position, event, operation.evidence().clone())
+        }
+        None => CouncilJournalRecord::new(position, event),
+    };
     let encoded =
         serde_json::to_value(&record).map_err(|e| serde_to_domain(&e, "encode council record"))?;
     sqlx::query(

@@ -7,6 +7,7 @@ use made_adapters::sqlite::{
     SqliteContractRegistry, SqliteCouncilJournal, SqliteCouncilRegistry, SqliteCouncilStatistics,
     SqliteCouncilStore, SqliteDeliberationRepository,
 };
+use made_app::services::AuthorizationOperationScope;
 use made_core::entities::{Council, CouncilJournalEvent, CouncilJournalRecord, Deliberation};
 use made_core::events::{EventEnvelope, PhaseChangedEvent};
 use made_core::ports::{
@@ -14,14 +15,38 @@ use made_core::ports::{
     StatisticsPort,
 };
 use made_core::value_objects::{
-    AgentId, CouncilId, CouncilJournalConsumer, CouncilJournalPageLimit, CouncilJournalPosition,
-    DurationMs, EventId, OutputContract, OutputFormat, Rounds, Specialty, TaskId,
+    AgentId, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationEvidence,
+    AuthorizedOperation, CouncilId, CouncilJournalConsumer, CouncilJournalPageLimit,
+    CouncilJournalPosition, DurationMs, EventId, OutputContract, OutputFormat, PrincipalId,
+    PrincipalKind, Rounds, Specialty, TaskId,
 };
 use made_tests_integration::postgres_fixture;
 use std::collections::BTreeMap;
 use time::{macros::datetime, OffsetDateTime};
 
 const NOW: OffsetDateTime = datetime!(2026-09-19 00:00:00 UTC);
+
+fn authorized_operation() -> AuthorizedOperation {
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("council-operator").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::MutualTls,
+    )
+    .unwrap();
+    let evidence: AuthorizationEvidence = serde_json::from_value(serde_json::json!({
+        "decision_id": "a".repeat(64),
+        "request_id": "council-conformance-request",
+        "principal_id": "council-operator",
+        "action": "create_council",
+        "scope": { "kind": "global" },
+        "target_digest": "b".repeat(64),
+        "policy_version": 1,
+        "admitted_at": "2026-09-19T12:00:00Z",
+        "valid_until": "2026-09-19T12:01:00Z"
+    }))
+    .unwrap();
+    AuthorizedOperation::new(principal, evidence).unwrap()
+}
 
 fn publication(id: &str, phase: &str) -> CouncilJournalEvent {
     CouncilJournalEvent::PhaseChanged(
@@ -117,24 +142,30 @@ async fn exercise_registries(
 async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repositories() {
     let (pool, _container) = postgres_fixture::start().await;
     let pg = PostgresCouncilJournal::new(pool.clone());
-    let expected = exercise_registries(
-        &PostgresCouncilRegistry::new(pool.clone()),
-        &PostgresContractRegistry::new(pool.clone()),
-        &PostgresDeliberationRepository::new(pool.clone()),
-        &PostgresStatistics::new(pool.clone()),
-        &pg,
+    let expected = AuthorizationOperationScope::run(
+        authorized_operation(),
+        exercise_registries(
+            &PostgresCouncilRegistry::new(pool.clone()),
+            &PostgresContractRegistry::new(pool.clone()),
+            &PostgresDeliberationRepository::new(pool.clone()),
+            &PostgresStatistics::new(pool.clone()),
+            &pg,
+        ),
     )
     .await;
     let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
     std::fs::create_dir_all(&scratch).unwrap();
     let directory = tempfile::tempdir_in(scratch).unwrap();
     let local = SqliteCouncilStore::open(directory.path().join("compare.sqlite3")).unwrap();
-    let actual = exercise_registries(
-        &SqliteCouncilRegistry::new(local.clone()),
-        &SqliteContractRegistry::new(local.clone()),
-        &SqliteDeliberationRepository::new(local.clone()),
-        &SqliteCouncilStatistics::new(local.clone()),
-        &SqliteCouncilJournal::new(local),
+    let actual = AuthorizationOperationScope::run(
+        authorized_operation(),
+        exercise_registries(
+            &SqliteCouncilRegistry::new(local.clone()),
+            &SqliteContractRegistry::new(local.clone()),
+            &SqliteDeliberationRepository::new(local.clone()),
+            &SqliteCouncilStatistics::new(local.clone()),
+            &SqliteCouncilJournal::new(local),
+        ),
     )
     .await;
     assert_eq!(actual, expected);
@@ -143,6 +174,9 @@ async fn sqlite_and_postgres_commit_the_same_council_facts_and_preserve_old_repo
         9,
         "failed commands and repeated publications do not append"
     );
+    assert!(actual.iter().all(|record| record
+        .authorization()
+        .is_some_and(|evidence| evidence.principal_id().as_str() == "council-operator")));
     assert_eq!(
         PostgresCouncilJournal::new(pool)
             .read(None, CouncilJournalPageLimit::default())
