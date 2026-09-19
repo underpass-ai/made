@@ -6,27 +6,35 @@ use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{collections::BTreeMap, iter};
 
+use made_adapters::council_data_snapshot::CouncilDataSnapshot;
 use made_adapters::postgres::{
-    PostgresArtifactStore, PostgresCeremonyStore, PostgresConfig, PostgresPool,
+    PostgresArtifactStore, PostgresCeremonyStore, PostgresConfig, PostgresCouncilJournal,
+    PostgresCouncilSnapshot, PostgresPool,
 };
 use made_core::entities::ceremony_events::CeremonyCompleted;
-use made_core::entities::{AuditFact, BudgetLedger, BudgetLedgerEvent, CeremonyEvent};
+use made_core::entities::{
+    AuditFact, BudgetLedger, BudgetLedgerEvent, CeremonyEvent, Council, CouncilJournalRecord,
+    CouncilSnapshotProvenance, Deliberation, Statistics,
+};
 use made_core::ports::{
-    AppendOutcome, ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey,
+    AgentDescriptor, AppendOutcome, ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey,
     ArtifactStorePort, BeginArtifactUpload, CeremonyEventCursorPort, CeremonyEventStorePort,
-    ExecutionReceiptStorePort, PutArtifactChunk, ReadArtifactChunk,
+    CouncilJournalPort, ExecutionReceiptStorePort, PutArtifactChunk, ReadArtifactChunk,
 };
 use made_core::value_objects::{
-    ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes, ArtifactSourceKind,
-    AuditActor, AuditActorKind, BudgetAccountId, BudgetLedgerVersion, BudgetLimits,
-    BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
-    BudgetReservationEstimate, BudgetTokenCount, CeremonyEventConsumer, CeremonyEventPageLimit,
-    CeremonyId, CeremonyName, CeremonyVersion, CostMicros, EventId, ExecutionConnectorId,
-    ExecutionDuration, ExecutionIntent, ExecutionOperation, ExecutionReceipt,
-    ExecutionRecoveryCapability, ExecutionRequestBytes, GlobalPosition, StateId, StateIteration,
+    AgentId, AgentKind, ArtifactDigest, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
+    ArtifactSourceKind, Attributes, AuditActor, AuditActorKind, BudgetAccountId,
+    BudgetLedgerVersion, BudgetLimits, BudgetMeasurement, BudgetOperationId, BudgetPageLimit,
+    BudgetQuantities, BudgetReservationEstimate, BudgetTokenCount, CeremonyEventConsumer,
+    CeremonyEventPageLimit, CeremonyId, CeremonyName, CeremonyVersion, CostMicros, CouncilId,
+    CouncilJournalConsumer, CouncilJournalPageLimit, CouncilJournalPosition, CouncilSnapshotSource,
+    DurationMs, EventId, ExecutionConnectorId, ExecutionDuration, ExecutionIntent,
+    ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability, ExecutionRequestBytes,
+    GlobalPosition, OutputContract, OutputFormat, Rounds, Specialty, StateId, StateIteration,
     StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult, StreamVersion,
-    ToolCallCount,
+    TaskId, ToolCallCount,
 };
 use made_core::DomainError;
 use made_tests_integration::postgres_fixture;
@@ -55,6 +63,10 @@ struct RestoreFixture {
     budget: made_core::ports::BudgetLedgerSnapshot,
     pending: made_core::ports::BudgetReservationPage,
     records: Vec<made_core::entities::AuditRecord>,
+    council_snapshot: CouncilDataSnapshot,
+    council_records: Vec<CouncilJournalRecord>,
+    council_consumer: CouncilJournalConsumer,
+    council_position: CouncilJournalPosition,
 }
 
 #[tokio::test]
@@ -207,11 +219,14 @@ async fn rolling_process_restarts_replay_the_journal_without_a_nats_notice() {
 }
 
 #[tokio::test]
-async fn pg_dump_restore_preserves_journal_receipts_artifacts_and_budgets() {
+async fn pg_dump_restore_preserves_ceremony_council_artifact_and_budget_state() {
     let (pool, url, container) = postgres_fixture::start_with_url().await;
     let store = PostgresCeremonyStore::new(pool.clone());
-    let artifact_store = PostgresArtifactStore::new(pool);
-    let fixture = seed_restore_fixture(&store, &artifact_store).await;
+    let artifact_store = PostgresArtifactStore::new(pool.clone());
+    let council_snapshot = PostgresCouncilSnapshot::new(pool.clone());
+    let council_journal = PostgresCouncilJournal::new(pool);
+    let fixture =
+        seed_restore_fixture(&store, &artifact_store, &council_snapshot, &council_journal).await;
 
     exec_ok(
         &container,
@@ -250,13 +265,24 @@ async fn pg_dump_restore_preserves_journal_receipts_artifacts_and_budgets() {
         .await
         .unwrap();
     let restored = PostgresCeremonyStore::new(restored_pool.clone());
-    let restored_artifacts = PostgresArtifactStore::new(restored_pool);
-    assert_restored(&restored, &restored_artifacts, &fixture).await;
+    let restored_artifacts = PostgresArtifactStore::new(restored_pool.clone());
+    let restored_council_snapshot = PostgresCouncilSnapshot::new(restored_pool.clone());
+    let restored_council_journal = PostgresCouncilJournal::new(restored_pool);
+    assert_restored(
+        &restored,
+        &restored_artifacts,
+        &restored_council_snapshot,
+        &restored_council_journal,
+        &fixture,
+    )
+    .await;
 }
 
 async fn seed_restore_fixture(
     store: &PostgresCeremonyStore,
     artifact_store: &PostgresArtifactStore,
+    council_snapshot_store: &PostgresCouncilSnapshot,
+    council_journal: &PostgresCouncilJournal,
 ) -> RestoreFixture {
     let stream = CeremonyId::new("ha-export").unwrap();
     store
@@ -276,6 +302,95 @@ async fn seed_restore_fixture(
     let receipt = receipt(&operation, producer);
     store.record_receipt(receipt.clone()).await.unwrap();
     let artifact = seed_artifact(artifact_store).await;
+    let (account, budget, pending) = seed_budget(store, &operation).await;
+    let records = store
+        .read(
+            &stream,
+            StreamVersion::EMPTY,
+            CeremonyEventPageLimit::DEFAULT,
+        )
+        .await
+        .unwrap();
+    let council_snapshot = council_snapshot();
+    let council_receipt = council_snapshot_store
+        .import(council_snapshot.clone())
+        .await
+        .unwrap();
+    let council_records = council_journal
+        .read(None, CouncilJournalPageLimit::default())
+        .await
+        .unwrap();
+    let council_consumer = CouncilJournalConsumer::new("ha-export-councils").unwrap();
+    let lease = council_journal
+        .lease(
+            &council_consumer,
+            OffsetDateTime::UNIX_EPOCH,
+            DurationMs::from_millis(1_000),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+    council_journal
+        .acknowledge(
+            &lease,
+            council_receipt.position(),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .await
+        .unwrap();
+    RestoreFixture {
+        stream,
+        operation,
+        receipt,
+        artifact,
+        account,
+        budget,
+        pending,
+        records,
+        council_snapshot,
+        council_records,
+        council_consumer,
+        council_position: council_receipt.position(),
+    }
+}
+
+async fn seed_artifact(
+    artifact_store: &PostgresArtifactStore,
+) -> made_core::value_objects::ArtifactRef {
+    let upload = artifact_store
+        .begin_upload(BeginArtifactUpload {
+            requested_artifact_id: None,
+            expected_digest: artifact_digest(ARTIFACT_BYTES),
+            size_bytes: ArtifactSizeBytes::new(ARTIFACT_BYTES.len() as u64),
+            media_type: ArtifactMediaType::new("application/octet-stream").unwrap(),
+            provenance: ArtifactProvenance::generated_report(OffsetDateTime::UNIX_EPOCH),
+            idempotency_key: ArtifactIdempotencyKey::new("ha-export-artifact").unwrap(),
+        })
+        .await
+        .unwrap();
+    artifact_store
+        .put_chunk(PutArtifactChunk {
+            upload_id: upload.upload_id.clone(),
+            offset: ArtifactByteOffset::ZERO,
+            bytes: ARTIFACT_BYTES.to_vec(),
+            chunk_digest: artifact_digest(ARTIFACT_BYTES),
+        })
+        .await
+        .unwrap();
+    artifact_store
+        .commit_upload(&upload.upload_id)
+        .await
+        .unwrap()
+}
+
+async fn seed_budget(
+    store: &PostgresCeremonyStore,
+    operation: &ExecutionOperation,
+) -> (
+    BudgetAccountId,
+    made_core::ports::BudgetLedgerSnapshot,
+    made_core::ports::BudgetReservationPage,
+) {
     let account = BudgetAccountId::new("ha-export-budget").unwrap();
     let opened = budget_opened(account.clone());
     made_core::ports::BudgetLedgerStorePort::append(
@@ -319,58 +434,14 @@ async fn seed_restore_fixture(
     )
     .await
     .unwrap();
-    let records = store
-        .read(
-            &stream,
-            StreamVersion::EMPTY,
-            CeremonyEventPageLimit::DEFAULT,
-        )
-        .await
-        .unwrap();
-    RestoreFixture {
-        stream,
-        operation,
-        receipt,
-        artifact,
-        account,
-        budget,
-        pending,
-        records,
-    }
-}
-
-async fn seed_artifact(
-    artifact_store: &PostgresArtifactStore,
-) -> made_core::value_objects::ArtifactRef {
-    let upload = artifact_store
-        .begin_upload(BeginArtifactUpload {
-            requested_artifact_id: None,
-            expected_digest: artifact_digest(ARTIFACT_BYTES),
-            size_bytes: ArtifactSizeBytes::new(ARTIFACT_BYTES.len() as u64),
-            media_type: ArtifactMediaType::new("application/octet-stream").unwrap(),
-            provenance: ArtifactProvenance::generated_report(OffsetDateTime::UNIX_EPOCH),
-            idempotency_key: ArtifactIdempotencyKey::new("ha-export-artifact").unwrap(),
-        })
-        .await
-        .unwrap();
-    artifact_store
-        .put_chunk(PutArtifactChunk {
-            upload_id: upload.upload_id.clone(),
-            offset: ArtifactByteOffset::ZERO,
-            bytes: ARTIFACT_BYTES.to_vec(),
-            chunk_digest: artifact_digest(ARTIFACT_BYTES),
-        })
-        .await
-        .unwrap();
-    artifact_store
-        .commit_upload(&upload.upload_id)
-        .await
-        .unwrap()
+    (account, budget, pending)
 }
 
 async fn assert_restored(
     restored: &PostgresCeremonyStore,
     restored_artifacts: &PostgresArtifactStore,
+    restored_council_snapshot: &PostgresCouncilSnapshot,
+    restored_council_journal: &PostgresCouncilJournal,
     fixture: &RestoreFixture,
 ) {
     assert_eq!(
@@ -424,6 +495,65 @@ async fn assert_restored(
         .unwrap(),
         fixture.pending.clone()
     );
+    assert_eq!(
+        restored_council_snapshot
+            .export(fixture.council_snapshot.provenance.clone())
+            .await
+            .unwrap(),
+        fixture.council_snapshot
+    );
+    assert_eq!(
+        restored_council_journal
+            .read(None, CouncilJournalPageLimit::default())
+            .await
+            .unwrap(),
+        fixture.council_records
+    );
+    assert_eq!(
+        restored_council_journal
+            .position(&fixture.council_consumer)
+            .await
+            .unwrap(),
+        Some(fixture.council_position)
+    );
+}
+
+fn council_snapshot() -> CouncilDataSnapshot {
+    let specialty = Specialty::new("ha-research").unwrap();
+    let agent = AgentDescriptor {
+        id: AgentId::new("ha-researcher").unwrap(),
+        specialty: specialty.clone(),
+        kind: AgentKind::new("fixture").unwrap(),
+        attributes: Attributes::new(BTreeMap::new()).unwrap(),
+    };
+    CouncilDataSnapshot {
+        schema_version: 1,
+        provenance: CouncilSnapshotProvenance::new(
+            CouncilSnapshotSource::new("ha-backup-source").unwrap(),
+            OffsetDateTime::UNIX_EPOCH,
+        ),
+        councils: vec![Council::new(
+            CouncilId::new("ha-research-council").unwrap(),
+            specialty.clone(),
+            iter::once(agent.id.clone()),
+            OffsetDateTime::UNIX_EPOCH,
+        )
+        .unwrap()],
+        agents: vec![agent],
+        contracts: vec![OutputContract::new(
+            "ha-report",
+            OutputFormat::JsonObject,
+            BTreeMap::new(),
+        )
+        .unwrap()],
+        deliberations: vec![Deliberation::start(
+            TaskId::new("ha-deliberation").unwrap(),
+            specialty,
+            Rounds::default(),
+            OffsetDateTime::UNIX_EPOCH,
+        )],
+        statistics: Statistics::default(),
+    }
 }
 
 #[tokio::test]
