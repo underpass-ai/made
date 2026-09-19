@@ -1,8 +1,11 @@
 use std::sync::Arc;
 
 use made_adapters::connectors::{GitExecutionConnector, HttpExecutionConnector};
-use made_adapters::execution::{OciExecutionConfig, OciExecutionConnector};
-use made_adapters::workers::{FileWorkerAdmissionObserver, FileWorkerCapacityStore};
+use made_adapters::execution::OciExecutionConnector;
+use made_adapters::workers::{
+    ConfiguredWorkerRootPolicy, FileWorkerAdmissionObserver, FileWorkerCapacityStore,
+    WorkerAuthorizer,
+};
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::{
     AuthorizeOperationUseCase, ContinueAcceptedCeremonyWorkUseCase,
@@ -14,10 +17,11 @@ use made_app::usecases::{
     EnforceCeremonyDeadlinesUseCase, ResolveCeremonyDefinitionUseCase, StartCeremonyStepUseCase,
 };
 use made_app::workers::{
-    CeremonyWorkerDriver, CeremonyWorkerHost, CeremonyWorkerRenewal, CeremonyWorkerStopToken,
-    ClaimCeremonyWorkInput, ClaimCeremonyWorkUseCase, CompleteExecutionReceiptUseCase,
-    ExecuteCeremonyOperationUseCase, InspectExecutionRecoveryUseCase,
-    RecoverExecutionIntentUseCase, RecoverableCeremonyWorker, RenewCeremonyStepLeaseUseCase,
+    AuthorizeWorkerOperationUseCase, CeremonyWorkerDriver, CeremonyWorkerHost,
+    CeremonyWorkerRenewal, CeremonyWorkerStopToken, ClaimCeremonyWorkInput,
+    ClaimCeremonyWorkUseCase, CompleteExecutionReceiptUseCase, ExecuteCeremonyOperationUseCase,
+    InspectExecutionRecoveryUseCase, RecoverExecutionIntentUseCase, RecoverableCeremonyWorker,
+    RenewCeremonyStepLeaseUseCase,
 };
 use made_core::ports::{
     BudgetReservationPlannerPort, CeremonyExecutionConnectorPort, CeremonyInstanceIndexPort,
@@ -30,8 +34,7 @@ use made_core::value_objects::{
 use made_core::DomainError;
 
 use crate::workers::{
-    budget_planner_from_env, CeremonyWorkerDaemon, ConfiguredWorkerRootPolicy, WorkerAuthorizer,
-    WorkerConnectorKind, WorkerDaemonConfig,
+    budget_planner_from_env, CeremonyWorkerDaemon, WorkerConnectorConfig, WorkerDaemonConfig,
 };
 use crate::ComposeError;
 
@@ -58,7 +61,7 @@ pub(super) fn wire(
         return Ok(None);
     };
     let connector_id = ExecutionConnectorId::new(config.connector.id())?;
-    let connector = connector(&config, connector_id.clone())?;
+    let connector = connector(&config.connector, connector_id.clone())?;
     let worker = recoverable_worker(&dependencies, connector);
     let capacity = Arc::new(FileWorkerCapacityStore::new(
         &config.capacity_directory,
@@ -79,7 +82,9 @@ pub(super) fn wire(
         )
         .with_reauthorization(dependencies.authorize),
     );
-    let authorization = Arc::new(WorkerAuthorizer::new(gate, continuation));
+    let authorization = Arc::new(WorkerAuthorizer::new(Arc::new(
+        AuthorizeWorkerOperationUseCase::new(gate, continuation),
+    )));
     let root_policy = Arc::new(ConfiguredWorkerRootPolicy::from_json(
         config.admission_policy.root_policy(),
         config.root_policies_json.as_deref(),
@@ -181,41 +186,23 @@ fn recoverable_worker(
 }
 
 fn connector(
-    config: &WorkerDaemonConfig,
+    config: &WorkerConnectorConfig,
     id: ExecutionConnectorId,
 ) -> Result<Arc<dyn CeremonyExecutionConnectorPort>, DomainError> {
-    match config.connector {
-        WorkerConnectorKind::Oci => Ok(Arc::new(OciExecutionConnector::new(
+    match config {
+        WorkerConnectorConfig::Oci(config) => {
+            Ok(Arc::new(OciExecutionConnector::new(id, config.clone())?))
+        }
+        WorkerConnectorConfig::Git(config) => Ok(Arc::new(GitExecutionConnector::new(
             id,
-            OciExecutionConfig {
-                image: required(config.oci_image.as_ref(), "MADE_WORKER_OCI_IMAGE")?,
-                workspace: required(config.oci_workspace.as_ref(), "MADE_WORKER_OCI_WORKSPACE")?,
-                operation_root: config.operation_root.clone(),
-                network: config.oci_network.clone(),
-                uid: config.oci_uid,
-                cpus: config.oci_cpus,
-                memory_bytes: config.oci_memory_bytes,
-                pids: config.oci_pids,
-                max_output_bytes: config.oci_max_output_bytes,
-                timeout: config.connector_timeout,
-            },
+            config.repository.clone(),
+            config.scratch.clone(),
         )?)),
-        WorkerConnectorKind::Git => Ok(Arc::new(GitExecutionConnector::new(
+        WorkerConnectorConfig::Http(config) => Ok(Arc::new(HttpExecutionConnector::new(
             id,
-            required(config.git_repository.as_ref(), "MADE_WORKER_GIT_REPOSITORY")?,
-            required(config.git_scratch.as_ref(), "MADE_WORKER_GIT_SCRATCH")?,
-        )?)),
-        WorkerConnectorKind::Http => Ok(Arc::new(HttpExecutionConnector::new(
-            id,
-            &required(config.http_base.as_ref(), "MADE_WORKER_HTTP_BASE")?,
+            &config.base_url,
             &config.operation_root,
-            config.connector_timeout,
+            config.timeout,
         )?)),
     }
-}
-
-fn required<T: Clone>(value: Option<&T>, name: &'static str) -> Result<T, DomainError> {
-    value.cloned().ok_or_else(|| DomainError::InvalidDocument {
-        reason: format!("{name} is required for the selected worker connector"),
-    })
 }

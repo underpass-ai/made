@@ -8,13 +8,13 @@ use made_core::value_objects::CeremonyId;
 use made_core::DomainError;
 
 #[derive(Debug)]
-pub(crate) struct ConfiguredWorkerRootPolicy {
+pub struct ConfiguredWorkerRootPolicy {
     default: CeremonyWorkerRootPolicy,
-    roots: BTreeMap<String, CeremonyWorkerRootPolicy>,
+    roots: BTreeMap<CeremonyId, CeremonyWorkerRootPolicy>,
 }
 
 impl ConfiguredWorkerRootPolicy {
-    pub(crate) fn from_json(
+    pub fn from_json(
         default: CeremonyWorkerRootPolicy,
         document: Option<&str>,
     ) -> Result<Self, DomainError> {
@@ -31,7 +31,10 @@ impl ConfiguredWorkerRootPolicy {
         })?;
         let mut roots = BTreeMap::new();
         for (root, value) in object {
-            CeremonyId::new(root.clone())?;
+            let root_id = CeremonyId::new(root.clone())?;
+            if roots.contains_key(&root_id) {
+                return Err(invalid("duplicate canonical ceremony root policy"));
+            }
             let fields = value
                 .as_object()
                 .ok_or_else(|| invalid(format!("root policy {root} must be a JSON object")))?;
@@ -63,7 +66,7 @@ impl ConfiguredWorkerRootPolicy {
                     ))
                 })?;
             roots.insert(
-                root.clone(),
+                root_id,
                 CeremonyWorkerRootPolicy::new(
                     CeremonyWorkerPriority::new(priority)?,
                     CeremonyWorkerWeight::new(weight)?,
@@ -78,10 +81,7 @@ impl ConfiguredWorkerRootPolicy {
 
 impl CeremonyWorkerRootPolicyPort for ConfiguredWorkerRootPolicy {
     fn policy_for(&self, root: &CeremonyId) -> CeremonyWorkerRootPolicy {
-        self.roots
-            .get(root.as_str())
-            .copied()
-            .unwrap_or(self.default)
+        self.roots.get(root).copied().unwrap_or(self.default)
     }
 }
 
@@ -119,6 +119,27 @@ mod tests {
             configured.policy_for(&CeremonyId::new("root-a").unwrap()),
             default_policy()
         );
+    }
+
+    #[test]
+    fn canonical_root_ids_are_preserved_and_duplicate_aliases_are_rejected() {
+        let configured = ConfiguredWorkerRootPolicy::from_json(
+            default_policy(),
+            Some(r#"{" root-b ":{"priority":7,"weight":3,"cost":2,"requested_capacity":2}}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            configured
+                .policy_for(&CeremonyId::new("root-b").unwrap())
+                .priority()
+                .value(),
+            7
+        );
+        let duplicate = r#"{
+            "root-b":{"priority":7,"weight":3,"cost":2,"requested_capacity":2},
+            " root-b ":{"priority":1,"weight":1,"cost":1,"requested_capacity":1}
+        }"#;
+        assert!(ConfiguredWorkerRootPolicy::from_json(default_policy(), Some(duplicate)).is_err());
     }
 
     #[test]

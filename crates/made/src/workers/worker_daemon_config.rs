@@ -13,11 +13,12 @@ use made_core::value_objects::{
 };
 use made_core::DomainError;
 
-use super::WorkerConnectorKind;
+use super::worker_environment::{env_bool, env_parse, invalid, optional, required};
+use super::WorkerConnectorConfig;
 
 #[derive(Debug, Clone)]
 pub(crate) struct WorkerDaemonConfig {
-    pub(crate) connector: WorkerConnectorKind,
+    pub(crate) connector: WorkerConnectorConfig,
     pub(crate) owner: LeaseOwnerId,
     pub(crate) principal: PrincipalId,
     pub(crate) lease_ttl: DurationMs,
@@ -30,19 +31,6 @@ pub(crate) struct WorkerDaemonConfig {
     pub(crate) host_policy: CeremonyWorkerHostPolicy,
     pub(crate) capacity_limits: WorkerCapacityLimits,
     pub(crate) capacity_directory: PathBuf,
-    pub(crate) operation_root: PathBuf,
-    pub(crate) connector_timeout: Duration,
-    pub(crate) oci_image: Option<String>,
-    pub(crate) oci_workspace: Option<PathBuf>,
-    pub(crate) oci_network: String,
-    pub(crate) oci_uid: u32,
-    pub(crate) oci_cpus: f64,
-    pub(crate) oci_memory_bytes: u64,
-    pub(crate) oci_pids: u32,
-    pub(crate) oci_max_output_bytes: usize,
-    pub(crate) git_repository: Option<PathBuf>,
-    pub(crate) git_scratch: Option<PathBuf>,
-    pub(crate) http_base: Option<String>,
 }
 
 impl WorkerDaemonConfig {
@@ -50,7 +38,7 @@ impl WorkerDaemonConfig {
         if !env_bool("MADE_WORKER_ENABLED", false)? {
             return Ok(None);
         }
-        let connector = WorkerConnectorKind::parse(&required("MADE_WORKER_CONNECTOR")?)?;
+        let connector = WorkerConnectorConfig::from_env()?;
         let max_parallel = MaxParallel::new(env_parse("MADE_WORKER_MAX_PARALLEL", 3_u8)?)?;
         let scheduler_capacity = capacity(
             "MADE_WORKER_SCHEDULER_CAPACITY",
@@ -63,7 +51,6 @@ impl WorkerDaemonConfig {
                 "worker heartbeat must be positive and shorter than lease TTL",
             ));
         }
-        let operation_root = PathBuf::from(required("MADE_WORKER_OPERATION_ROOT")?);
         let capacity_directory = PathBuf::from(required("MADE_WORKER_CAPACITY_DIRECTORY")?);
         let admission_log = optional("MADE_WORKER_ADMISSION_LOG_PATH").map_or_else(
             || capacity_directory.join("admission-decisions.jsonl"),
@@ -117,62 +104,10 @@ impl WorkerDaemonConfig {
                 per_provider: capacity("MADE_WORKER_CAPACITY_PER_PROVIDER", 1)?,
             },
             capacity_directory,
-            operation_root,
-            connector_timeout: Duration::from_millis(env_parse(
-                "MADE_WORKER_CONNECTOR_TIMEOUT_MS",
-                300_000_u64,
-            )?),
-            oci_image: optional("MADE_WORKER_OCI_IMAGE"),
-            oci_workspace: optional("MADE_WORKER_OCI_WORKSPACE").map(PathBuf::from),
-            oci_network: optional("MADE_WORKER_OCI_NETWORK").unwrap_or_else(|| "none".to_owned()),
-            oci_uid: env_parse("MADE_WORKER_OCI_UID", 65_532_u32)?,
-            oci_cpus: env_parse("MADE_WORKER_OCI_CPUS", 1.0_f64)?,
-            oci_memory_bytes: env_parse("MADE_WORKER_OCI_MEMORY_BYTES", 536_870_912_u64)?,
-            oci_pids: env_parse("MADE_WORKER_OCI_PIDS", 128_u32)?,
-            oci_max_output_bytes: env_parse("MADE_WORKER_OCI_MAX_OUTPUT_BYTES", 1_048_576_usize)?,
-            git_repository: optional("MADE_WORKER_GIT_REPOSITORY").map(PathBuf::from),
-            git_scratch: optional("MADE_WORKER_GIT_SCRATCH").map(PathBuf::from),
-            http_base: optional("MADE_WORKER_HTTP_BASE"),
         }))
     }
 }
 
 fn capacity(name: &'static str, default: u32) -> Result<CeremonyWorkerCapacity, DomainError> {
     CeremonyWorkerCapacity::new(env_parse(name, default)?)
-}
-
-fn optional(name: &'static str) -> Option<String> {
-    std::env::var(name)
-        .ok()
-        .filter(|value| !value.trim().is_empty())
-}
-
-fn required(name: &'static str) -> Result<String, DomainError> {
-    optional(name).ok_or_else(|| invalid(format!("{name} is required when workers are enabled")))
-}
-
-fn env_bool(name: &'static str, default: bool) -> Result<bool, DomainError> {
-    match optional(name).as_deref() {
-        None => Ok(default),
-        Some("true" | "1") => Ok(true),
-        Some("false" | "0") => Ok(false),
-        Some(_) => Err(invalid(format!("{name} must be true or false"))),
-    }
-}
-
-fn env_parse<T>(name: &'static str, default: T) -> Result<T, DomainError>
-where
-    T: std::str::FromStr,
-{
-    optional(name).map_or(Ok(default), |value| {
-        value
-            .parse()
-            .map_err(|_| invalid(format!("{name} has an invalid value")))
-    })
-}
-
-fn invalid(reason: impl Into<String>) -> DomainError {
-    DomainError::InvalidDocument {
-        reason: reason.into(),
-    }
 }

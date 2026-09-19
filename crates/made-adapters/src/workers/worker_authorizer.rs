@@ -1,30 +1,25 @@
-use async_trait::async_trait;
-use made_app::authorization::AuthorizationGateOutcome;
-use made_app::authorization::{
-    AcceptedStepCompletion, ContinueAcceptedStepClaimUseCase, TrustedHostAuthorizationGate,
-};
-use made_app::workers::{
-    WorkerAuthorizationError, WorkerAuthorizationPort, WorkerAuthorizationTarget,
-};
-use made_core::value_objects::{
-    AuthorizationAction, AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest,
-    AuthorizedOperation,
-};
-use made_core::DomainError;
 use std::sync::Arc;
 
+use async_trait::async_trait;
+use made_app::workers::{
+    AuthorizeWorkerOperationUseCase, WorkerAuthorizationError, WorkerAuthorizationPort,
+    WorkerAuthorizationTarget,
+};
+use made_core::value_objects::{
+    AuthorizationRequestId, AuthorizationTargetDigest, AuthorizedOperation,
+};
+use made_core::DomainError;
+
+/// Encodes a worker invocation and supplies a fresh authorization request identity.
 #[derive(Debug)]
-pub(crate) struct WorkerAuthorizer {
-    gate: TrustedHostAuthorizationGate,
-    continuation: Arc<ContinueAcceptedStepClaimUseCase>,
+pub struct WorkerAuthorizer {
+    authorize: Arc<AuthorizeWorkerOperationUseCase>,
 }
 
 impl WorkerAuthorizer {
-    pub(crate) const fn new(
-        gate: TrustedHostAuthorizationGate,
-        continuation: Arc<ContinueAcceptedStepClaimUseCase>,
-    ) -> Self {
-        Self { gate, continuation }
+    #[must_use]
+    pub const fn new(authorize: Arc<AuthorizeWorkerOperationUseCase>) -> Self {
+        Self { authorize }
     }
 
     fn target(
@@ -77,101 +72,7 @@ impl WorkerAuthorizationPort for WorkerAuthorizer {
         target: &WorkerAuthorizationTarget,
     ) -> Result<AuthorizedOperation, WorkerAuthorizationError> {
         let (request, digest) = Self::target(target).map_err(WorkerAuthorizationError::Failure)?;
-        let scope = AuthorizationScope::Ceremony {
-            ceremony_id: target.ceremony().clone(),
-        };
-        match target {
-            WorkerAuthorizationTarget::EnforceDeadline { .. } => {
-                self.authorize_direct(
-                    request,
-                    AuthorizationAction::EnforceCeremonyDeadlines,
-                    scope,
-                    digest,
-                )
-                .await
-            }
-            WorkerAuthorizationTarget::Claim { .. } => {
-                self.authorize_direct(
-                    request,
-                    AuthorizationAction::ClaimCeremonyStep,
-                    scope,
-                    digest,
-                )
-                .await
-            }
-            WorkerAuthorizationTarget::Complete {
-                ceremony,
-                step,
-                fence,
-                ..
-            } => {
-                let input = AcceptedStepCompletion::from_invocation(
-                    ceremony.clone(),
-                    step.clone(),
-                    fence.clone(),
-                    self.gate.principal().clone(),
-                    &request,
-                    digest,
-                )
-                .map_err(WorkerAuthorizationError::Failure)?;
-                self.continuation
-                    .execute(input)
-                    .await
-                    .map_err(WorkerAuthorizationError::Failure)
-            }
-            WorkerAuthorizationTarget::Renew {
-                ceremony,
-                step,
-                fence,
-                ..
-            } => {
-                let input = AcceptedStepCompletion::from_invocation(
-                    ceremony.clone(),
-                    step.clone(),
-                    fence.clone(),
-                    self.gate.principal().clone(),
-                    &request,
-                    digest,
-                )
-                .map_err(WorkerAuthorizationError::Failure)?;
-                self.continuation
-                    .execute_renewal(input)
-                    .await
-                    .map_err(WorkerAuthorizationError::Failure)
-            }
-        }
-    }
-}
-
-impl WorkerAuthorizer {
-    async fn authorize_direct(
-        &self,
-        request: AuthorizationRequestId,
-        action: AuthorizationAction,
-        scope: AuthorizationScope,
-        digest: AuthorizationTargetDigest,
-    ) -> Result<AuthorizedOperation, WorkerAuthorizationError> {
-        match self
-            .gate
-            .authorize_outcome(request, action, scope, digest, None)
-            .await
-            .map_err(WorkerAuthorizationError::Failure)?
-        {
-            AuthorizationGateOutcome::Allowed { evidence, .. } => {
-                AuthorizedOperation::new(self.gate.principal().clone(), evidence)
-                    .map_err(WorkerAuthorizationError::Failure)
-            }
-            AuthorizationGateOutcome::Denied { .. } => Err(WorkerAuthorizationError::Denied(
-                DomainError::InvariantViolated {
-                    reason: "authorization policy denied worker admission",
-                },
-            )),
-            AuthorizationGateOutcome::Expired { .. } => Err(WorkerAuthorizationError::Denied(
-                DomainError::InvariantViolated {
-                    reason: "authorization decision expired before worker admission",
-                },
-            )),
-        }
+        self.authorize.execute(target, request, digest).await
     }
 }
 
@@ -180,7 +81,7 @@ mod tests {
     use std::collections::BTreeSet;
     use std::sync::{Arc, RwLock};
 
-    use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
+    use crate::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
     use made_app::authorization::{
         AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
         ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
@@ -296,10 +197,10 @@ mod tests {
             )
             .with_reauthorization(authorize.clone()),
         );
-        let authorizer = WorkerAuthorizer::new(
+        let authorizer = WorkerAuthorizer::new(Arc::new(AuthorizeWorkerOperationUseCase::new(
             TrustedHostAuthorizationGate::new(authorize, principal).unwrap(),
             continuation,
-        );
+        )));
         let target = WorkerAuthorizationTarget::EnforceDeadline { ceremony };
 
         authorizer.authorize(&target).await.unwrap();
@@ -390,7 +291,10 @@ mod tests {
             fence,
         };
         (
-            WorkerAuthorizer::new(gate, continuation),
+            WorkerAuthorizer::new(Arc::new(AuthorizeWorkerOperationUseCase::new(
+                gate,
+                continuation,
+            ))),
             target,
             claim.evidence().decision_id().clone(),
             clock,
@@ -502,7 +406,7 @@ mod tests {
         };
         events
             .append_authorized(
-                &ceremony,
+                ceremony,
                 StreamVersion::EMPTY,
                 vec![
                     fact(

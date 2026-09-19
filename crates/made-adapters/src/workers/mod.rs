@@ -5,3 +5,8 @@ mod worker_capacity_reservation;
 pub use file_worker_admission_observer::FileWorkerAdmissionObserver;
 pub use file_worker_capacity_store::FileWorkerCapacityStore;
 pub use metadata_budget_reservation_planner::MetadataBudgetReservationPlanner;
+
+mod configured_worker_root_policy;
+mod worker_authorizer;
+pub use configured_worker_root_policy::ConfiguredWorkerRootPolicy;
+pub use worker_authorizer::WorkerAuthorizer;

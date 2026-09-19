@@ -127,3 +127,6 @@ pub use worker_authorization_target::WorkerAuthorizationTarget;
 
 mod ceremony_worker_renewal;
 pub use ceremony_worker_renewal::CeremonyWorkerRenewal;
+
+mod authorize_worker_operation_use_case;
+pub use authorize_worker_operation_use_case::AuthorizeWorkerOperationUseCase;
