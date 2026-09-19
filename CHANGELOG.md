@@ -9,7 +9,9 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
-No changes yet.
+- Make native Windows `made-setup` replace the bundled registration command
+  atomically with the batch launcher, so clean Codex and Claude installs need
+  no manual MCP edit and repeated setup keeps exactly one registration. (#185)
 
 ## 0.7.8 — 2026-09-19
 

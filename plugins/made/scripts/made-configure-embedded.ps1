@@ -1,6 +1,8 @@
 $ErrorActionPreference = "Stop"
 
 $PluginRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
+$McpManifest = Join-Path $PluginRoot ".mcp.json"
+$NativeLauncher = Join-Path $PluginRoot "scripts\run-embedded-mcp.cmd"
 $Binary = if ($env:MADE_MCP_BIN) { $env:MADE_MCP_BIN } else { Join-Path $PluginRoot "bin\made-mcp.exe" }
 if ($env:MADE_MCP_BIN -and -not (Test-Path -Path $Binary -PathType Leaf)) {
     throw "MADE setup: MADE_MCP_BIN is set to a missing executable."
@@ -123,6 +125,24 @@ $BootstrapOutput = & $Binary bootstrap-authorization $Store --policy-id $Policy 
 if ($LASTEXITCODE -ne 0) {
     throw "MADE setup: authorization bootstrap failed for the selected store; the private configuration was not replaced."
 }
+
+# The package defaults to the POSIX launcher. Native setup owns this
+# host-specific rewrite so both hosts keep the same single registration.
+# Secrets stay in the owner-only per-store file and never enter the manifest.
+$Registration = [ordered]@{
+    mcpServers = [ordered]@{
+        made = [ordered]@{
+            command = "cmd.exe"
+            args = @("/d", "/c", $NativeLauncher)
+        }
+    }
+}
+$ManifestJson = $Registration | ConvertTo-Json -Depth 4
+$ManifestTemporary = "$McpManifest.tmp.$([guid]::NewGuid())"
+$Utf8WithoutBom = New-Object System.Text.UTF8Encoding($false)
+[IO.File]::WriteAllText($ManifestTemporary, $ManifestJson + [Environment]::NewLine, $Utf8WithoutBom)
+Move-Item -LiteralPath $ManifestTemporary -Destination $McpManifest -Force
+
 Write-Output "MADE setup: embedded store configured and authorization bootstrap completed."
 Write-Output "MADE setup: persistent search cursor configured (key redacted)."
-Write-Output "MADE setup: Codex and Claude can share this setup through the single MADE MCP registration."
+Write-Output "MADE setup: native launcher registered once for Codex and Claude."
