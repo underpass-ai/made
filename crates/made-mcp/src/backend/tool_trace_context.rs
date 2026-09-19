@@ -42,6 +42,7 @@ impl ToolTraceContext {
     }
 
     #[must_use]
+    #[cfg(feature = "grpc")]
     pub(crate) fn for_direct_call(tool_name: &str, arguments: &Value) -> Self {
         let invocation_namespace = Uuid::new_v4().simple().to_string();
         Self {
