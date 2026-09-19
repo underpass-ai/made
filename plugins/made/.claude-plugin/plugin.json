@@ -1,6 +1,6 @@
 {
   "name": "made",
-  "version": "0.7.0",
+  "version": "0.7.1",
   "description": "Discover, design, run, inspect and report on MADE ceremonies locally from Claude Code.",
   "author": {
     "name": "Underpass AI"

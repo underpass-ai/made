@@ -61,17 +61,20 @@ try {
         throw "MADE Windows bootstrap: installed version $InstalledVersion, expected $Version"
     }
 
-    # Isolated CI policy and public test key; never operator defaults.
+    # Setup owns the generated cursor key and private host configuration.
     $env:MADE_MCP_STORE_PATH = Join-Path $Scratch "ceremonies.sqlite3"
-    $env:MADE_AUTH_POLICY_ID = "plugin-ci-policy"
-    $env:MADE_AUTH_TRUSTED_HOST_ID = "plugin-ci-host"
-    $env:MADE_CEREMONY_STORE_ID = "plugin-ci-store"
-    $env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY = "a5" * 32
-    & $Installed bootstrap-authorization $env:MADE_MCP_STORE_PATH `
-        --policy-id $env:MADE_AUTH_POLICY_ID --trusted-host-id $env:MADE_AUTH_TRUSTED_HOST_ID
+    $env:MADE_SETUP_CONFIG_ROOT = Join-Path $Scratch "host-config"
+    Remove-Item Env:MADE_AUTH_POLICY_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_AUTH_TRUSTED_HOST_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_CEREMONY_STORE_ID -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY -ErrorAction SilentlyContinue
+    $env:MADE_MCP_BIN = $Installed
+    & (Join-Path $TestPlugin "scripts\made-configure-embedded.ps1") | Out-Null
     if ($LASTEXITCODE -ne 0) {
-        throw "MADE Windows bootstrap: isolated policy setup failed"
+        throw "MADE Windows bootstrap: embedded setup failed"
     }
+    $ConfigFile = Get-ChildItem -Path $env:MADE_SETUP_CONFIG_ROOT -Filter *.env -Recurse | Select-Object -First 1
+    if (-not $ConfigFile) { throw "MADE Windows bootstrap: setup did not persist private host configuration" }
     $Initialize = '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
     $Response = $Initialize | & (Join-Path $TestPlugin "scripts\run-embedded-mcp.cmd")
     if (($LASTEXITCODE -ne 0) -or -not (($Response | ConvertFrom-Json).result.serverInfo)) {
@@ -103,6 +106,8 @@ finally {
     Remove-Item Env:MADE_SETUP_FORCE -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_FAKE_CURL_BAD_CHECKSUM -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_MCP_STORE_PATH -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_SETUP_CONFIG_ROOT -ErrorAction SilentlyContinue
+    Remove-Item Env:MADE_MCP_BIN -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_AUTH_POLICY_ID -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_AUTH_TRUSTED_HOST_ID -ErrorAction SilentlyContinue
     Remove-Item Env:MADE_CEREMONY_STORE_ID -ErrorAction SilentlyContinue

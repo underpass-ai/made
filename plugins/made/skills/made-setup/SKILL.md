@@ -54,6 +54,37 @@ the matching executable and SHA-256 file, verifies the digest and installs
 atomically into `bin/`. Use this path rather than substituting Cargo; setup
 must work without a Rust toolchain and keep the plugin and binary matched.
 
+After the binary is installed (or after an explicit source candidate has been
+verified), run the platform configuration adapter exactly once for the selected
+host installation:
+
+```bash
+<plugin-root>/scripts/made-configure-embedded.sh
+```
+
+On native Windows:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File <plugin-root>\scripts\made-configure-embedded.ps1
+```
+
+The adapter selects the existing `MADE_MCP_STORE_PATH` or the platform default,
+then creates a per-store file under the owner-only private host configuration
+directory (`$XDG_CONFIG_HOME/underpass-made/embedded/` or
+`%LOCALAPPDATA%\underpass-made\embedded\`). It chooses stable local policy,
+trusted-host and store identifiers derived from that store path and generates
+the 32-byte search cursor key from the platform cryptographically secure random
+source. It writes the file atomically with restrictive permissions, bootstraps
+the exact selected SQLite store idempotently, and emits only a redacted receipt.
+
+The POSIX and native Windows launchers read that same file for the existing
+single `made` registration. They never generate or replace configuration.
+Codex and Claude therefore share the policy/store identity and cursor key when
+they point at the same SQLite file. A malformed, unreadable or improperly
+protected file fails closed with the `made-setup` repair path. Explicit
+environment values continue to take precedence over values in the private
+file; an existing file is never silently rotated or overwritten by an override.
+
 Report the adapter receipt's installed version and path, or the explicitly
 verified source-candidate identity when using `MADE_MCP_BIN`. After first install
 or an update, tell the user to start a new host task so skills and MCP reload.
@@ -64,11 +95,11 @@ Keep the existing `MADE_MCP_STORE_PATH` and SQLite data. Plugin setup does not
 migrate a store or move it when catalogue identity changes. A legacy Redb
 startup refusal requires its explicit migration path, not an empty replacement.
 
-Authorization setup is explicit and precedes server startup. Require the
-operator's stable, non-empty policy id and trusted host principal id. Preserve
+Authorization setup is explicit and precedes server startup. The configuration
+adapter supplies stable, non-empty policy and trusted-host identities, preserves
 them in the MCP launch environment as `MADE_AUTH_POLICY_ID` and
-`MADE_AUTH_TRUSTED_HOST_ID`; do not generate replacements during an update.
-Then run the release-matched binary once against the selected store:
+`MADE_AUTH_TRUSTED_HOST_ID`, and never generates replacements during an update.
+It runs the release-matched binary once against the selected store:
 
 ```bash
 <made-mcp> bootstrap-authorization <store> \
@@ -84,12 +115,13 @@ through `IssueAuthorizationGrant`; setup must not give the owner implicit
 business permissions or wildcard scopes.
 
 Search also requires persistent cursor configuration in that same MCP launch
-environment. Set `MADE_CEREMONY_STORE_ID` to a stable, non-secret identifier for
-this store and policy. Set `MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` to exactly 32
-cryptographically random bytes encoded as 64 hexadecimal characters. Generate
-the key once, write it directly to the host's private launch configuration,
-and restrict that configuration to its owner. Do not print the key, put it in
-a transcript, commit it, or include it in an installation receipt.
+environment. The configuration adapter sets `MADE_CEREMONY_STORE_ID` to a
+stable, non-secret identifier for this store and policy, and
+`MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY` to exactly 32 cryptographically random
+bytes encoded as 64 hexadecimal characters. It generates the key once, writes
+it directly to the host's private launch configuration, and restricts that
+configuration to its owner. Do not print the key, put it in a transcript,
+commit it, or include it in an installation receipt.
 
 Preserve both values across restarts and package updates. Replicas of the same
 store share the key and store id; separate stores use different identities.

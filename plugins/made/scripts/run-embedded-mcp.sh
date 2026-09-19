@@ -2,6 +2,8 @@
 set -euo pipefail
 
 PLUGIN_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck source=made-embedded-config.sh
+source "${PLUGIN_ROOT}/scripts/made-embedded-config.sh"
 
 # An explicit binary wins over everything below.
 BINARY="${MADE_MCP_BIN:-${PLUGIN_ROOT}/bin/made-mcp}"
@@ -48,25 +50,8 @@ if [[ -f "${PLUGIN_MANIFEST}" ]] && command -v python3 >/dev/null 2>&1; then
   fi
 fi
 
-# The embedded backend refuses to start without a state file: where
-# ceremonies survive a restart is an operator decision. A plugin has no
-# operator to ask, so it picks the conventional per-user state directory
-# and says so — an explicit `MADE_MCP_STORE_PATH` always wins.
-if [[ -z "${MADE_MCP_STORE_PATH:-}" ]]; then
-  USER_STATE_ROOT="${XDG_STATE_HOME:-${HOME}/.local/state}"
-  MADE_STATE_ROOT="${USER_STATE_ROOT}/underpass-made"
-  mkdir -p "${MADE_STATE_ROOT}"
-  SQLITE_DEFAULT="${MADE_STATE_ROOT}/ceremonies.sqlite3"
-  LEGACY_DEFAULT="${MADE_STATE_ROOT}/ceremonies.redb"
-  if [[ ! -e "${SQLITE_DEFAULT}" && -e "${LEGACY_DEFAULT}" ]]; then
-    echo "MADE plugin: legacy Redb store found at ${LEGACY_DEFAULT}." >&2
-    echo "MADE plugin: convert it before upgrading with made-mcp v0.2.0:" >&2
-    echo "MADE plugin:   made-mcp share-store '${LEGACY_DEFAULT}'" >&2
-    echo "MADE plugin: the original is kept as a backup; no new store was created." >&2
-    exit 2
-  fi
-  export MADE_MCP_STORE_PATH="${SQLITE_DEFAULT}"
-fi
+MADE_MCP_STORE_PATH="$(made_embedded_store_path)"
+export MADE_MCP_STORE_PATH
 
 # Git Bash hands the native Windows binary an MSYS path it cannot open;
 # cygpath converts it when, and only when, we are on such a host.
@@ -75,18 +60,14 @@ if command -v cygpath >/dev/null 2>&1; then
   export MADE_MCP_STORE_PATH
 fi
 
-if [[ -z "${MADE_AUTH_POLICY_ID:-}" || -z "${MADE_AUTH_TRUSTED_HOST_ID:-}" ]]; then
-  echo "MADE plugin: authorization is not configured." >&2
-  echo "MADE plugin: set MADE_AUTH_POLICY_ID and MADE_AUTH_TRUSTED_HOST_ID in the MCP launch environment." >&2
-  echo "MADE plugin: then bootstrap this store explicitly:" >&2
-  echo "MADE plugin:   made-mcp bootstrap-authorization '${MADE_MCP_STORE_PATH}' --policy-id POLICY_ID --trusted-host-id TRUSTED_HOST_ID" >&2
+config_status=0
+made_embedded_load_config "${MADE_MCP_STORE_PATH}" || config_status=$?
+if [[ "${config_status}" -eq 2 ]]; then
   exit 2
 fi
-
-if [[ -z "${MADE_CEREMONY_STORE_ID:-}" || -z "${MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY:-}" ]]; then
-  echo "MADE plugin: persistent search cursor configuration is missing." >&2
-  echo "MADE plugin: set MADE_CEREMONY_STORE_ID and MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY in the MCP launch environment." >&2
-  echo "MADE plugin: preserve the store id and 32-byte hexadecimal key across restarts and updates; run made-setup for instructions." >&2
+if ! made_embedded_validate_runtime_config; then
+  echo "MADE plugin: embedded authorization/search configuration is missing." >&2
+  echo "MADE plugin: run made-setup (or /made:setup) for the selected store, or provide all four explicit environment overrides." >&2
   exit 2
 fi
 

@@ -11,6 +11,13 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.1 — 2026-09-19
+
+- Automate embedded plugin setup for Codex and Claude: `made-setup` now
+  creates owner-only per-store configuration, generates and preserves the
+  search cursor HMAC key, bootstraps authorization idempotently, and keeps the
+  shared launcher fail-closed for malformed or unreadable configuration.
+
 ## 0.7.0 — 2026-09-19
 
 - Add orthogonal ceremony pause, resume and irreversible cancellation plus

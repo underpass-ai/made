@@ -75,14 +75,27 @@ exit /b 2
 
 :havePath
 
-if "%MADE_AUTH_POLICY_ID%"=="" goto :missingAuthorization
-if "%MADE_AUTH_TRUSTED_HOST_ID%"=="" goto :missingAuthorization
+rem Setup owns the private configuration. The launcher only reads it; it never
+rem generates a cursor key or replaces malformed configuration.
+if not defined MADE_SETUP_CONFIG_ROOT if defined LOCALAPPDATA set "MADE_SETUP_CONFIG_ROOT=%LOCALAPPDATA%\underpass-made\embedded"
+if not defined MADE_SETUP_CONFIG_ROOT set "MADE_SETUP_CONFIG_ROOT=%USERPROFILE%\.config\underpass-made\embedded"
+for /f "delims=" %%I in ('powershell -NoProfile -ExecutionPolicy Bypass -File "%PLUGIN_ROOT%\scripts\read-embedded-config.ps1" -StorePath "%MADE_MCP_STORE_PATH%" -ConfigRoot "%MADE_SETUP_CONFIG_ROOT%" 2^>nul') do set "%%I"
+if errorlevel 2 goto :badConfiguration
+
+if "%MADE_AUTH_POLICY_ID%"=="" goto :missingConfiguration
+if "%MADE_AUTH_TRUSTED_HOST_ID%"=="" goto :missingConfiguration
+if "%MADE_CEREMONY_STORE_ID%"=="" goto :missingConfiguration
+if "%MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY%"=="" goto :missingConfiguration
 goto :authorizationReady
 
-:missingAuthorization
-echo MADE plugin: authorization is not configured. 1>&2
-echo MADE plugin: set MADE_AUTH_POLICY_ID and MADE_AUTH_TRUSTED_HOST_ID in the MCP launch environment. 1>&2
-echo MADE plugin: then run made-mcp bootstrap-authorization "%MADE_MCP_STORE_PATH%" --policy-id POLICY_ID --trusted-host-id TRUSTED_HOST_ID 1>&2
+:missingConfiguration
+echo MADE plugin: embedded authorization/search configuration is missing. 1>&2
+echo MADE plugin: run made-setup (or /made:setup) for the selected store, or provide all four explicit environment overrides. 1>&2
+exit /b 2
+
+:badConfiguration
+echo MADE plugin: private setup configuration is missing, unreadable or malformed. 1>&2
+echo MADE plugin: repair it with made-setup (or /made:setup); the launcher will not generate a replacement. 1>&2
 exit /b 2
 
 :authorizationReady

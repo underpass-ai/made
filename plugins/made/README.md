@@ -63,9 +63,19 @@ on native Windows it is `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`
 (with a `%USERPROFILE%\.local\state` fallback if `LOCALAPPDATA` is absent).
 A catalogue rename does not rename that data directory.
 
-Embedded startup also requires `MADE_AUTH_POLICY_ID` and
-`MADE_AUTH_TRUSTED_HOST_ID` in the MCP launch environment. Before the first
-start, bootstrap that exact store explicitly:
+Embedded setup automatically configures the four required launch values in an
+owner-only per-store host configuration file. Run `made-setup` (or
+`/made:setup`) after installing or updating the plugin. It generates the search
+cursor key once using a cryptographically secure source, bootstraps the exact
+SQLite store idempotently, and reports a redacted receipt. Codex and Claude
+share this file when they use the same store. The launcher never generates or
+replaces it and fails closed if it is missing, malformed or not private.
+
+Explicit environment values still take precedence. For a manual or isolated
+registration, the equivalent values are `MADE_AUTH_POLICY_ID`,
+`MADE_AUTH_TRUSTED_HOST_ID`, `MADE_CEREMONY_STORE_ID` and
+`MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY`. Before the first start, bootstrap that
+exact store explicitly:
 
 ```bash
 made-mcp bootstrap-authorization "$MADE_MCP_STORE_PATH" \
@@ -78,7 +88,8 @@ owner boundary; business capabilities still require explicit grants. The
 launcher refuses missing authorization configuration and never creates an
 anonymous owner or a replacement store.
 
-The included `.mcp.json` points to `scripts/run-embedded-mcp.sh`. On native
+The included `.mcp.json` points to one `made` registration and
+`scripts/run-embedded-mcp.sh`. On native
 Windows without Bash, replace that command in the existing `made` MCP
 registration with the plugin's absolute `scripts\run-embedded-mcp.cmd` path
 (or invoke it through `cmd.exe /d /c` if required by the host). Installing the

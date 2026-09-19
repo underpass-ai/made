@@ -70,9 +70,52 @@ export MADE_MCP_STORE_PATH="${SCRATCH}/ceremonies.sqlite3"
 if command -v cygpath >/dev/null 2>&1; then
   export MADE_MCP_STORE_PATH="$(cygpath -w "${MADE_MCP_STORE_PATH}")"
 fi
-source "${ROOT_DIR}/tests/plugin/setup-authorization.sh" "${INSTALLED}"
+export MADE_SETUP_CONFIG_ROOT="${SCRATCH}/host-config"
+unset MADE_AUTH_POLICY_ID MADE_AUTH_TRUSTED_HOST_ID MADE_CEREMONY_STORE_ID MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+MADE_MCP_BIN="${INSTALLED}" "${SCRATCH}/made/scripts/made-configure-embedded.sh" >/dev/null
 
+CONFIG_FILE="$(find "${SCRATCH}/host-config" -type f -name '*.env' -print -quit)"
+[[ -n "${CONFIG_FILE}" ]] || {
+  echo "MADE plugin bootstrap: setup did not persist private host configuration" >&2
+  exit 1
+}
+[[ "$(stat -c '%a' "${CONFIG_FILE}" 2>/dev/null || stat -f '%Lp' "${CONFIG_FILE}")" == "600" ]] || {
+  echo "MADE plugin bootstrap: private host configuration is not owner-only" >&2
+  exit 1
+}
+CURSOR_KEY="$(sed -n 's/^MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
+[[ "${#CURSOR_KEY}" -eq 64 ]] || {
+  echo "MADE plugin bootstrap: setup did not persist a 32-byte cursor key" >&2
+  exit 1
+}
+if MADE_MCP_BIN="${INSTALLED}" "${SCRATCH}/made/scripts/made-configure-embedded.sh" \
+  | grep -Fq "${CURSOR_KEY}"; then
+  echo "MADE plugin bootstrap: setup receipt leaked the cursor key" >&2
+  exit 1
+fi
+CURSOR_KEY_AFTER="$(sed -n 's/^MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY=//p' "${CONFIG_FILE}")"
+[[ "${CURSOR_KEY}" == "${CURSOR_KEY_AFTER}" ]] || {
+  echo "MADE plugin bootstrap: setup rotated the cursor key on restart" >&2
+  exit 1
+}
+
+export MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY="$(printf 'bb%.0s' {1..32})"
 INITIALIZE="$(head -n 1 "${ROOT_DIR}/tests/plugin/made-smoke.jsonl")"
+OVERRIDE_RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
+  "${SCRATCH}/made/scripts/run-embedded-mcp.sh")"
+[[ "${OVERRIDE_RESPONSE}" == *'"serverInfo"'* ]] || {
+  echo "MADE plugin bootstrap: explicit environment override did not start the launcher" >&2
+  exit 1
+}
+unset MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY
+
+printf 'malformed line\n' >>"${CONFIG_FILE}"
+if "${SCRATCH}/made/scripts/run-embedded-mcp.sh" </dev/null >/dev/null 2>&1; then
+  echo "MADE plugin bootstrap: accepted malformed private configuration" >&2
+  exit 1
+fi
+sed -i '$d' "${CONFIG_FILE}"
+
 RESPONSE="$(printf '%s\n' "${INITIALIZE}" | \
   "${SCRATCH}/made/scripts/run-embedded-mcp.sh")"
 [[ "${RESPONSE}" == *'"serverInfo"'* ]] || {

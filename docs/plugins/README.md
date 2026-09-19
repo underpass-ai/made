@@ -65,6 +65,16 @@ counterpart on native Windows. It selects a supported target, downloads the
 manifest-matched executable and checksum, verifies SHA-256 and installs
 atomically in the plugin's ignored `bin/` directory. Cargo is not required.
 
+The same setup flow then runs `scripts/made-configure-embedded.sh` (or
+`made-configure-embedded.ps1` on native Windows). It creates one owner-only,
+per-store host configuration file, generates the 32-byte search cursor HMAC key
+once from a cryptographically secure source, bootstraps the selected SQLite
+store idempotently and emits a redacted receipt. The launchers only read this
+file, so Codex and Claude share the same policy/store identity and cursor key
+when their one `made` registration points at the same store. A malformed,
+unreadable or non-private file fails closed and directs the operator back to
+setup. Explicit environment overrides remain supported and take precedence.
+
 The launcher chooses `MADE_MCP_BIN` when supplied, otherwise the plugin-local
 binary, then a PATH fallback. A PATH fallback can differ from the plugin
 version. Setup restores a matched binary; it does not migrate session data.
