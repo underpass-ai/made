@@ -50,6 +50,10 @@ pub(crate) fn optional_pb_struct_to_json(value: Option<PbStruct>) -> Value {
     )
 }
 
+pub(crate) fn nullable_pb_struct_to_json(value: Option<PbStruct>) -> Value {
+    value.map_or(Value::Null, |value| Value::Object(pb_struct_to_json(value)))
+}
+
 pub(crate) fn timestamp_to_rfc3339(timestamp: Option<&Timestamp>) -> Value {
     let Some(Timestamp { seconds, nanos }) = timestamp else {
         return Value::Null;
@@ -79,6 +83,15 @@ pub(super) fn phase_name(phase: i32) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nullable_struct_preserves_absence_instead_of_inventing_an_empty_object() {
+        assert_eq!(nullable_pb_struct_to_json(None), Value::Null);
+        assert_eq!(
+            nullable_pb_struct_to_json(Some(PbStruct::default())),
+            serde_json::json!({})
+        );
+    }
 
     #[test]
     fn a_whole_double_comes_back_the_way_it_was_sent() {

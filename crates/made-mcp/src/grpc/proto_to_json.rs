@@ -40,7 +40,9 @@ pub(crate) use ceremony_instance::{
 pub(crate) use execution_receipt::{execution_receipt_to_json, execution_recovery_page_to_json};
 pub(crate) use metrics::metric_family_view;
 use primitives::phase_name;
-pub(crate) use primitives::{optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339};
+pub(crate) use primitives::{
+    nullable_pb_struct_to_json, optional_pb_struct_to_json, pb_struct_to_json, timestamp_to_rfc3339,
+};
 
 // ---------------------------------------------------------------------------
 // Composite responses
