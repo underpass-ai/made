@@ -11,16 +11,16 @@ pub(super) fn budget_account_id_to_proto(value: Option<&BudgetAccountId>) -> Str
 use made_proto::v1 as pb;
 
 pub fn budget_limits_from_proto(value: pb::BudgetLimits) -> Result<BudgetLimits, DomainError> {
-    let quantities = BudgetQuantities::new(
-        ExecutionDuration::from_micros(value.duration_micros.unwrap_or_default()),
-        BudgetTokenCount::new(value.tokens.unwrap_or_default()),
-        CostMicros::new(value.cost_micros.unwrap_or_default()),
-        ToolCallCount::new(value.tool_calls.unwrap_or_default()),
-    );
     let currency = (!value.currency.trim().is_empty())
         .then(|| CurrencyCode::new(value.currency))
         .transpose()?;
-    BudgetLimits::new(quantities, currency)
+    BudgetLimits::from_optional(
+        value.duration_micros.map(ExecutionDuration::from_micros),
+        value.tokens.map(BudgetTokenCount::new),
+        value.cost_micros.map(CostMicros::new),
+        value.tool_calls.map(ToolCallCount::new),
+        currency,
+    )
 }
 
 pub fn budget_reservation_estimate_from_proto(

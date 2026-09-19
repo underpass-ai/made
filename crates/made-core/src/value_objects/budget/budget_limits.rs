@@ -13,6 +13,42 @@ pub struct BudgetLimits {
     currency: Option<CurrencyCode>,
 }
 impl BudgetLimits {
+    /// Preserve presence at public boundaries: a supplied ceiling must be positive.
+    /// Only absence means that the dimension has no ceiling.
+    pub fn from_optional(
+        duration: Option<ExecutionDuration>,
+        tokens: Option<BudgetTokenCount>,
+        cost: Option<CostMicros>,
+        tool_calls: Option<ToolCallCount>,
+        currency: Option<CurrencyCode>,
+    ) -> Result<Self, DomainError> {
+        for (field, amount) in [
+            (
+                "budget_limits.duration_micros",
+                duration.map(ExecutionDuration::as_micros),
+            ),
+            ("budget_limits.tokens", tokens.map(BudgetTokenCount::value)),
+            ("budget_limits.cost_micros", cost.map(CostMicros::value)),
+            (
+                "budget_limits.tool_calls",
+                tool_calls.map(ToolCallCount::value),
+            ),
+        ] {
+            if amount == Some(0) {
+                return Err(DomainError::MustBeNonZero { field });
+            }
+        }
+        Self::new(
+            BudgetQuantities::new(
+                duration.unwrap_or_else(|| ExecutionDuration::from_micros(0)),
+                tokens.unwrap_or_else(|| BudgetTokenCount::new(0)),
+                cost.unwrap_or_else(|| CostMicros::new(0)),
+                tool_calls.unwrap_or_else(|| ToolCallCount::new(0)),
+            ),
+            currency,
+        )
+    }
+
     pub fn new(
         maximum: BudgetQuantities,
         currency: Option<CurrencyCode>,
