@@ -57,9 +57,11 @@ capped at 1 GiB, and metadata pages default to 50 with a maximum of 100.
 List cursors are opaque, scoped and tamper-checked. An `ArtifactRef` contains
 identity, digest, size, type and provenance, never a path, URI or blob. A
 tombstone retains the audit record while content reads are refused. Actor
-strings at this boundary are host assertions; the host must authorize them
-until the C5.7 principal policy is applied. Backup and restore remain local
-operator operations and are not exposed through gRPC or MCP.
+strings at this boundary are provenance assertions, not credentials. Protected
+gRPC, MCP and direct-facade calls authorize the authenticated principal against
+the authoritative artifact scope before the operation; actor-shaped payload
+fields cannot replace that principal or widen its grant. Backup and restore
+remain local operator operations and are not exposed through gRPC or MCP.
 
 The [runtime guide](../runtime/README.md) describes sequencing and identity.
 Exact request fields belong to the installed schema, especially across the

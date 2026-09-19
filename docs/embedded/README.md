@@ -6,25 +6,25 @@ For an in-process engine, see [Rust embedding](rust.md).
 
 ## Install a binary
 
-These instructions target **0.6.0**. The registry command and release downloads
+These instructions target **0.7.0-rc.1**. The registry command and release downloads
 require that version to have been published. For a candidate whose assets do
-not exist yet, use the source route below; an installed 0.5.0 binary does not
-implement the new completion contract.
+not exist yet, use the source route below; an older binary does not implement
+the authorization and lifecycle contract documented here.
 
 ```bash
-cargo install made-mcp --version 0.6.0 --locked
+cargo install made-mcp --version 0.7.0-rc.1 --locked
 made-mcp --version
 ```
 
 Cargo's default features include the embedded and gRPC backends. Alternatively
-choose the 0.6.0 executable and its SHA-256 file for your platform from a
+choose the 0.7.0-rc.1 executable and its SHA-256 file for your platform from a
 [published release](https://github.com/underpass-ai/made/releases).
 Check the digest before running it. The plugin's setup adapter automates this
 for Linux x86_64/arm64, macOS arm64 and Windows x86_64 once the assets are public.
 
 ## Test a source candidate
 
-From the reviewed 0.6.0 checkout, build an embedded-only executable. In a
+From the reviewed 0.7.0-rc.1 checkout, build an embedded-only executable. In a
 POSIX shell:
 
 ```bash
@@ -36,20 +36,23 @@ export MADE_MCP_BIN="${MADE_CANDIDATE_TARGET}/release/made-mcp"
 
 Use the reported Cargo target directory; it may be outside the checkout. On
 native Windows the executable ends in `made-mcp.exe`. The build should report
-0.6.0. Register this absolute executable path manually, or set `MADE_MCP_BIN`
+0.7.0-rc.1. Register this absolute executable path manually, or set `MADE_MCP_BIN`
 to it in the plugin's host launch environment before starting a new task.
 An export in an unrelated shell does not configure a running desktop host.
 See [local plugin testing](../plugins/README.md#test-a-local-candidate).
 
 Before the release assets exist, do not run the download installer for the
-0.6.0 manifest or silently fall back to a 0.5.0 binary. A source build is a
-candidate test, not evidence that 0.6.0 has been published.
+0.7.0-rc.1 manifest or silently fall back to an older binary. A source build is
+a candidate test, not evidence that 0.7.0-rc.1 has been published.
 
 ## Register MCP
 
-The embedded backend requires an explicit SQLite path. Create its parent
-directory and use an absolute path in host configuration. A minimal Codex
-configuration is:
+The embedded backend requires an explicit SQLite path, an already bootstrapped
+authorization policy and restart-stable search cursor configuration. Create
+the store's parent directory and use an absolute path. Choose stable, nonempty
+policy, trusted-host and store ids. Generate one private 32-byte cursor HMAC key
+and encode it as exactly 64 hexadecimal characters; preserve it across restarts
+and do not print or commit it. A Codex configuration has this shape:
 
 ```toml
 [mcp_servers.made]
@@ -58,6 +61,10 @@ command = "/absolute/path/to/made-mcp"
 [mcp_servers.made.env]
 MADE_MCP_BACKEND = "embedded"
 MADE_MCP_STORE_PATH = "/absolute/path/to/ceremonies.sqlite3"
+MADE_AUTH_POLICY_ID = "my-policy"
+MADE_AUTH_TRUSTED_HOST_ID = "my-local-host"
+MADE_CEREMONY_STORE_ID = "my-local-store"
+MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY = "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
 ```
 
 A host accepting the standard JSON `mcpServers` shape can use:
@@ -69,12 +76,34 @@ A host accepting the standard JSON `mcpServers` shape can use:
       "command": "/absolute/path/to/made-mcp",
       "env": {
         "MADE_MCP_BACKEND": "embedded",
-        "MADE_MCP_STORE_PATH": "/absolute/path/to/ceremonies.sqlite3"
+        "MADE_MCP_STORE_PATH": "/absolute/path/to/ceremonies.sqlite3",
+        "MADE_AUTH_POLICY_ID": "my-policy",
+        "MADE_AUTH_TRUSTED_HOST_ID": "my-local-host",
+        "MADE_CEREMONY_STORE_ID": "my-local-store",
+        "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY": "REPLACE_WITH_64_HEXADECIMAL_CHARACTERS"
       }
     }
   }
 }
 ```
+
+Replace the cursor-key placeholder before startup. Then run the same
+release-matched binary once against that exact store:
+
+```bash
+made-mcp bootstrap-authorization /absolute/path/to/ceremonies.sqlite3 \
+  --policy-id my-policy \
+  --trusted-host-id my-local-host
+```
+
+The command opens only an absent policy and is idempotent for the same store,
+policy and host. A different owner is a conflict. Bootstrap establishes the
+administrative owner; it does not create business grants or an allow-all scope.
+Issue the explicit actions and scopes the host needs through the public
+authorization API before using business tools. Embedded startup refuses a
+missing policy configuration or a store that was not bootstrapped; it never
+infers identity from actor-shaped tool arguments and never silently falls back
+to an unprotected store.
 
 Use one active MADE registration in a host. When switching to the plugin,
 remove the duplicate manual registration and retain the same store path.
