@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub enum AuthorizationAction {
     GetCeremonyInstance,
     ListCeremonyInstances,
+    SearchCeremonyInstances,
     GenerateCeremonyReport,
     ReadCeremonyEvents,
     StreamCeremony,

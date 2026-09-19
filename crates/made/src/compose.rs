@@ -297,8 +297,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let nats_ceremony_recovery =
         ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
-    let mut grpc_builder = made_adapters::grpc::MadeGrpcService::builder()
-        .authorization(authorization)
+    let mut grpc_builder = authorization
+        .apply(made_adapters::grpc::MadeGrpcService::builder())
         .deliberate(deliberate)
         .orchestrate(orchestrate)
         .create_council(create_council)

@@ -1,6 +1,10 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
+};
 use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
@@ -38,6 +42,9 @@ use super::GrpcAuthorizationGate;
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
     pub(super) authorization: Option<Arc<GrpcAuthorizationGate>>,
+    pub(super) authorization_administration: Option<Arc<AuthorizationPolicyAdministrationService>>,
+    pub(super) read_authorization_policy: Option<Arc<ReadAuthorizationPolicyUseCase>>,
+    pub(super) read_authorization_decisions: Option<Arc<ReadAuthorizationDecisionsUseCase>>,
     pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
@@ -137,6 +144,21 @@ macro_rules! setter {
 
 impl MadeGrpcServiceBuilder {
     setter!(authorization, GrpcAuthorizationGate, authorization);
+    setter!(
+        authorization_administration,
+        AuthorizationPolicyAdministrationService,
+        authorization_administration
+    );
+    setter!(
+        read_authorization_policy,
+        ReadAuthorizationPolicyUseCase,
+        read_authorization_policy
+    );
+    setter!(
+        read_authorization_decisions,
+        ReadAuthorizationDecisionsUseCase,
+        read_authorization_decisions
+    );
     setter!(
         council_journal,
         made_app::services::CouncilJournalService,
@@ -420,6 +442,9 @@ impl MadeGrpcServiceBuilder {
         });
         Ok(MadeGrpcService {
             authorization: required!(self, authorization, "gate"),
+            authorization_administration: required!(self, authorization_administration),
+            read_authorization_policy: required!(self, read_authorization_policy),
+            read_authorization_decisions: required!(self, read_authorization_decisions),
             council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
