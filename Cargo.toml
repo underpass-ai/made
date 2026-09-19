@@ -96,8 +96,9 @@ prost-types = "0.13"
 async-nats = "0.50"
 
 # SQL / persistence
-sqlx = { version = "0.8", default-features = false, features = [
-    "runtime-tokio-rustls",
+sqlx = { version = "0.9", default-features = false, features = [
+    "runtime-tokio",
+    "tls-rustls-ring",
     "postgres",
     "macros",
     "migrate",
