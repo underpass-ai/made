@@ -4,7 +4,7 @@ use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct ClientConfig {
     endpoint: String,
-    request_id: String,
+    invocation_id: String,
     connect_attempts: u32,
     initial_backoff: Duration,
     maximum_backoff: Duration,
@@ -17,7 +17,7 @@ impl ClientConfig {
     pub fn new(endpoint: impl Into<String>) -> Self {
         Self {
             endpoint: endpoint.into(),
-            request_id: uuid::Uuid::new_v4().to_string(),
+            invocation_id: uuid::Uuid::new_v4().to_string(),
             connect_attempts: 5,
             initial_backoff: Duration::from_millis(100),
             maximum_backoff: Duration::from_secs(2),
@@ -27,10 +27,10 @@ impl ClientConfig {
         }
     }
 
-    /// Reuse one caller-generated id across every RPC and reconnect in this client.
+    /// Reuse one caller-generated namespace when reconstructing a logical invocation.
     #[must_use]
-    pub fn with_request_id(mut self, request_id: impl Into<String>) -> Self {
-        self.request_id = request_id.into();
+    pub fn with_invocation_id(mut self, invocation_id: impl Into<String>) -> Self {
+        self.invocation_id = invocation_id.into();
         self
     }
 
@@ -76,8 +76,8 @@ impl ClientConfig {
         &self.endpoint
     }
 
-    pub(crate) fn request_id(&self) -> &str {
-        &self.request_id
+    pub(crate) fn invocation_id(&self) -> &str {
+        &self.invocation_id
     }
 
     pub(crate) fn connect_attempts(&self) -> u32 {

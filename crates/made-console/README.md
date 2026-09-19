@@ -62,10 +62,12 @@ export MADE_TLS_CLIENT_KEY=./operator-key.pem
 made-console budget report ceremony-123
 ```
 
-Each invocation creates one `x-made-request-id` and reuses it for every RPC
-and reconnect. Set `MADE_REQUEST_ID` or `--request-id` to reuse a caller-owned
-id after an ambiguous response. The id correlates and deduplicates requests;
-it is never an identity or credential.
+Each invocation creates a random namespace and derives one
+`x-made-request-id` from that namespace, the exact RPC method and the canonical
+protobuf payload. Different actions and artifact chunks cannot collide; an
+identical reconstruction retains the same id. Set `MADE_REQUEST_NAMESPACE` or
+`--request-namespace` to reconstruct a caller-owned invocation after an
+ambiguous response. Request ids are never identities or credentials.
 
 `budget report` identifies bounded dimensions that are exhausted or overrun.
 `budget pending` shows the reservations currently reducing availability and

@@ -2088,12 +2088,14 @@ version = "0.6.0"
 dependencies = [
  "futures",
  "made-proto",
+ "prost 0.13.5",
  "serde",
  "serde_json",
  "sha2",
  "tempfile",
  "thiserror 1.0.69",
  "tokio",
+ "tokio-stream",
  "tonic 0.12.3",
  "uuid",
 ]

@@ -67,8 +67,8 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
 
 async fn connect_client(args: &Args) -> Result<MadeClient, MadeClientError> {
     let mut config = ClientConfig::new(args.endpoint.clone());
-    if let Some(request_id) = &args.request_id {
-        config = config.with_request_id(request_id.clone());
+    if let Some(request_namespace) = &args.request_namespace {
+        config = config.with_invocation_id(request_namespace.clone());
     }
     if let Some(path) = &args.tls_ca_certificate {
         config = config.with_ca_certificate_pem(read_pem(path).await?);

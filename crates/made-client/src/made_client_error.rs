@@ -8,8 +8,8 @@ use tonic::Code;
 pub enum MadeClientError {
     #[error("invalid MADE endpoint: {0}")]
     InvalidEndpoint(String),
-    #[error("invalid x-made-request-id: {0}")]
-    InvalidRequestId(String),
+    #[error("invocation id must contain 1 to 256 non-whitespace bytes")]
+    InvalidInvocationId,
     #[error("invalid TLS client configuration: {0}")]
     TlsConfiguration(String),
     #[error("connection attempts exhausted: {0}")]
@@ -48,7 +48,7 @@ impl MadeClientError {
     pub fn exit_code(&self) -> u8 {
         match self {
             Self::InvalidEndpoint(_)
-            | Self::InvalidRequestId(_)
+            | Self::InvalidInvocationId
             | Self::TlsConfiguration(_)
             | Self::ConnectionExhausted(_)
             | Self::Transport(_)

@@ -48,7 +48,7 @@ fn budget_and_mtls_arguments_are_explicit() {
         "made-console",
         "--endpoint",
         "https://made.example:50055",
-        "--request-id",
+        "--request-namespace",
         "request-7",
         "--tls-ca-certificate",
         "ca.pem",
@@ -62,7 +62,7 @@ fn budget_and_mtls_arguments_are_explicit() {
         "25",
     ])
     .unwrap();
-    assert_eq!(args.request_id.as_deref(), Some("request-7"));
+    assert_eq!(args.request_namespace.as_deref(), Some("request-7"));
     assert!(matches!(
         args.command,
         Command::Budget {

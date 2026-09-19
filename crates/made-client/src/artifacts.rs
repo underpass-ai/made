@@ -11,9 +11,12 @@ impl MadeClient {
     ) -> Result<ArtifactRecord, MadeClientError> {
         let response = self
             .rpc()
-            .get_artifact(self.request(GetArtifactRequest {
-                artifact_id: artifact_id.into(),
-            }))
+            .get_artifact(self.request(
+                "/underpass.made.v1.MadeService/GetArtifact",
+                GetArtifactRequest {
+                    artifact_id: artifact_id.into(),
+                },
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -28,7 +31,10 @@ impl MadeClient {
         limit: u32,
     ) -> Result<ListArtifactsResponse, MadeClientError> {
         self.rpc()
-            .list_artifacts(self.request(ListArtifactsRequest { cursor, limit }))
+            .list_artifacts(self.request(
+                "/underpass.made.v1.MadeService/ListArtifacts",
+                ListArtifactsRequest { cursor, limit },
+            ))
             .await
             .map(tonic::Response::into_inner)
             .map_err(MadeClientError::from_status)

@@ -13,10 +13,13 @@ impl MadeClient {
         title: impl Into<String>,
     ) -> Result<GenerateCeremonyReportResponse, MadeClientError> {
         self.rpc()
-            .generate_ceremony_report(self.request(GenerateCeremonyReportRequest {
-                ceremony_ids,
-                title: title.into(),
-            }))
+            .generate_ceremony_report(self.request(
+                "/underpass.made.v1.MadeService/GenerateCeremonyReport",
+                GenerateCeremonyReportRequest {
+                    ceremony_ids,
+                    title: title.into(),
+                },
+            ))
             .await
             .map(tonic::Response::into_inner)
             .map_err(MadeClientError::from_status)

@@ -12,7 +12,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .pause_ceremony(self.request(request))
+            .pause_ceremony(self.request("/underpass.made.v1.MadeService/PauseCeremony", request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -25,7 +25,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .resume_ceremony(self.request(request))
+            .resume_ceremony(self.request("/underpass.made.v1.MadeService/ResumeCeremony", request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -38,7 +38,7 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .cancel_ceremony(self.request(request))
+            .cancel_ceremony(self.request("/underpass.made.v1.MadeService/CancelCeremony", request))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -51,9 +51,12 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .enforce_ceremony_deadlines(self.request(EnforceCeremonyDeadlinesRequest {
-                ceremony_id: ceremony_id.into(),
-            }))
+            .enforce_ceremony_deadlines(self.request(
+                "/underpass.made.v1.MadeService/EnforceCeremonyDeadlines",
+                EnforceCeremonyDeadlinesRequest {
+                    ceremony_id: ceremony_id.into(),
+                },
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();
@@ -66,7 +69,10 @@ impl MadeClient {
     ) -> Result<CeremonyInstanceState, MadeClientError> {
         let response = self
             .rpc()
-            .approve_ceremony_guard(self.request(request))
+            .approve_ceremony_guard(self.request(
+                "/underpass.made.v1.MadeService/ApproveCeremonyGuard",
+                request,
+            ))
             .await
             .map_err(MadeClientError::from_status)?
             .into_inner();

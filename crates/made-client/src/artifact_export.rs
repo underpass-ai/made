@@ -64,11 +64,14 @@ impl MadeClient {
         loop {
             let response = self
                 .rpc()
-                .read_artifact_chunk(self.request(ReadArtifactChunkRequest {
-                    artifact_id: artifact_id.to_owned(),
-                    offset,
-                    max_bytes: READ_LIMIT,
-                }))
+                .read_artifact_chunk(self.request(
+                    "/underpass.made.v1.MadeService/ReadArtifactChunk",
+                    ReadArtifactChunkRequest {
+                        artifact_id: artifact_id.to_owned(),
+                        offset,
+                        max_bytes: READ_LIMIT,
+                    },
+                ))
                 .await
                 .map_err(MadeClientError::from_status)?
                 .into_inner();

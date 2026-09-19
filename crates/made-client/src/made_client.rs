@@ -1,8 +1,10 @@
 use std::cmp::min;
 
 use made_proto::v1::made_service_client::MadeServiceClient;
+use prost::Message;
+use sha2::{Digest, Sha256};
 use tokio::time::sleep;
-use tonic::metadata::{Ascii, MetadataValue};
+use tonic::metadata::MetadataValue;
 use tonic::transport::{Certificate, Channel, ClientTlsConfig, Endpoint, Identity};
 use tonic::Request;
 
@@ -12,7 +14,7 @@ use crate::{ClientConfig, MadeClientError};
 #[derive(Clone, Debug)]
 pub struct MadeClient {
     channel: Channel,
-    request_id: MetadataValue<Ascii>,
+    invocation_id: String,
 }
 
 impl MadeClient {
@@ -21,8 +23,10 @@ impl MadeClient {
     }
 
     pub async fn connect_with_config(config: ClientConfig) -> Result<Self, MadeClientError> {
-        let request_id = MetadataValue::try_from(config.request_id())
-            .map_err(|error| MadeClientError::InvalidRequestId(error.to_string()))?;
+        let invocation_id = config.invocation_id().trim();
+        if invocation_id.is_empty() || invocation_id.len() > 256 {
+            return Err(MadeClientError::InvalidInvocationId);
+        }
         let mut endpoint = Endpoint::from_shared(config.endpoint().to_owned())
             .map_err(|error| MadeClientError::InvalidEndpoint(error.to_string()))?;
         if config.uses_tls() {
@@ -48,7 +52,7 @@ impl MadeClient {
                 Ok(channel) => {
                     return Ok(Self {
                         channel,
-                        request_id,
+                        invocation_id: invocation_id.to_owned(),
                     });
                 }
                 Err(error) => last_error = Some(error.to_string()),
@@ -68,16 +72,40 @@ impl MadeClient {
         MadeServiceClient::new(self.channel.clone())
     }
 
-    pub(crate) fn request<T>(&self, payload: T) -> Request<T> {
+    pub(crate) fn request<T>(&self, method: &'static str, payload: T) -> Request<T>
+    where
+        T: Message,
+    {
+        let payload_bytes = payload.encode_to_vec();
+        let request_id = derived_request_id(&self.invocation_id, method, &payload_bytes);
         let mut request = Request::new(payload);
         request
             .metadata_mut()
-            .insert("x-made-request-id", self.request_id.clone());
+            .insert("x-made-request-id", request_id);
         request
     }
 
     #[must_use]
-    pub fn request_id(&self) -> &str {
-        self.request_id.to_str().expect("ASCII metadata is UTF-8")
+    pub fn invocation_id(&self) -> &str {
+        &self.invocation_id
     }
+}
+
+fn derived_request_id(
+    invocation_id: &str,
+    method: &'static str,
+    payload: &[u8],
+) -> MetadataValue<tonic::metadata::Ascii> {
+    let mut digest = Sha256::new();
+    digest.update(b"underpass.made.client-request.v1\0");
+    hash_field(&mut digest, invocation_id.as_bytes());
+    hash_field(&mut digest, method.as_bytes());
+    hash_field(&mut digest, payload);
+    let value = format!("made-{:x}", digest.finalize());
+    MetadataValue::try_from(value).expect("SHA-256 request ids are valid ASCII metadata")
+}
+
+fn hash_field(digest: &mut Sha256, value: &[u8]) {
+    digest.update((value.len() as u64).to_be_bytes());
+    digest.update(value);
 }

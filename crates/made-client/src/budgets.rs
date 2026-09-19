@@ -12,9 +12,12 @@ impl MadeClient {
         ceremony_id: impl Into<String>,
     ) -> Result<GetBudgetReportResponse, MadeClientError> {
         self.rpc()
-            .get_budget_report(self.request(GetBudgetReportRequest {
-                ceremony_id: ceremony_id.into(),
-            }))
+            .get_budget_report(self.request(
+                "/underpass.made.v1.MadeService/GetBudgetReport",
+                GetBudgetReportRequest {
+                    ceremony_id: ceremony_id.into(),
+                },
+            ))
             .await
             .map(tonic::Response::into_inner)
             .map_err(MadeClientError::from_status)
@@ -27,10 +30,13 @@ impl MadeClient {
         limit: u32,
     ) -> Result<ListPendingBudgetReservationsResponse, MadeClientError> {
         self.rpc()
-            .list_pending_budget_reservations(self.request(ListPendingBudgetReservationsRequest {
-                after_reservation_id: after_reservation_id.into(),
-                limit,
-            }))
+            .list_pending_budget_reservations(self.request(
+                "/underpass.made.v1.MadeService/ListPendingBudgetReservations",
+                ListPendingBudgetReservationsRequest {
+                    after_reservation_id: after_reservation_id.into(),
+                    limit,
+                },
+            ))
             .await
             .map(tonic::Response::into_inner)
             .map_err(MadeClientError::from_status)

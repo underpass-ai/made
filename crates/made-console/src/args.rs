@@ -10,9 +10,9 @@ pub struct Args {
     /// Public MADE gRPC endpoint.
     #[arg(long, env = "MADE_ENDPOINT", default_value = "http://127.0.0.1:50055")]
     pub endpoint: String,
-    /// Stable id sent as x-made-request-id for every RPC in this invocation.
-    #[arg(long, env = "MADE_REQUEST_ID")]
-    pub request_id: Option<String>,
+    /// Stable namespace used to derive one x-made-request-id per RPC payload.
+    #[arg(long, env = "MADE_REQUEST_NAMESPACE")]
+    pub request_namespace: Option<String>,
     /// Additional PEM CA certificate for the MADE endpoint.
     #[arg(long, env = "MADE_TLS_CA_CERTIFICATE")]
     pub tls_ca_certificate: Option<PathBuf>,

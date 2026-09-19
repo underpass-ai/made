@@ -26,4 +26,6 @@ pub use progress_checkpoint::ProgressCheckpoint;
 pub use made_proto::v1;
 
 #[cfg(test)]
+mod request_id_tests;
+#[cfg(test)]
 mod tests;

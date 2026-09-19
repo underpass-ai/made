@@ -42,10 +42,12 @@ export MADE_TLS_CLIENT_KEY=./operator-key.pem
 made-console get CEREMONY_ID
 ```
 
-The console creates one `x-made-request-id` per invocation and keeps it for
-all internal RPCs and reconnects. Supply `--request-id` or `MADE_REQUEST_ID`
-when retrying an ambiguous mutation with the same logical request. A request
-id is correlation and idempotency input, never authentication.
+The console creates one random namespace per invocation, then derives each
+`x-made-request-id` from that namespace, the exact RPC method and canonical
+protobuf payload. Two actions or chunk offsets receive different ids; an
+identical reconstruction receives the same one. Supply `--request-namespace`
+or `MADE_REQUEST_NAMESPACE` when retrying an ambiguous invocation. Request ids
+are correlation and idempotency input, never authentication.
 
 `scripts/ci/package-made-console.sh` builds a native release candidate,
 checks its package manifests, version, top-level help and artifact subcommands,
