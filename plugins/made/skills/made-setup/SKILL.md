@@ -70,13 +70,11 @@ On native Windows:
 powershell -NoProfile -ExecutionPolicy Bypass -File <plugin-root>\scripts\made-install-binary.ps1
 ```
 
-Native Windows also needs the correct launcher. The bundled `.mcp.json`
-points to `scripts/run-embedded-mcp.sh`; the installed EXE does not make that
-POSIX script work without Bash. Configure the existing `made` MCP registration
-to use the plugin's absolute `scripts\run-embedded-mcp.cmd` path. If the host
-requires an executable command, invoke the batch launcher through
-`cmd.exe /d /c`. Replace the existing command instead of adding another MADE
-server, and verify the override after updates.
+Native Windows setup rewrites the bundled `.mcp.json` atomically so the
+existing single `made` registration invokes the plugin's absolute
+`scripts\run-embedded-mcp.cmd` through `cmd.exe /d /c`. The adapter performs
+that host-specific step on every setup/update; do not add a second server or
+manually patch Codex or Claude configuration.
 
 The native launcher defaults to
 `%LOCALAPPDATA%\underpass-made\ceremonies.sqlite3`, or
@@ -112,7 +110,9 @@ source. It writes the file atomically with restrictive permissions, bootstraps
 the exact selected SQLite store idempotently, and emits only a redacted receipt.
 
 The POSIX and native Windows launchers read that same file for the existing
-single `made` registration. They never generate or replace configuration.
+single `made` registration. They never generate or replace secret
+configuration. On Windows, setup owns only the non-secret launcher command in
+the bundled manifest and preserves one registration across updates.
 Codex and Claude therefore share the policy/store identity and cursor key when
 they point at the same SQLite file. A malformed, unreadable or improperly
 protected file fails closed with the `made-setup` repair path. Explicit

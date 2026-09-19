@@ -83,10 +83,34 @@ try {
     if (-not (Get-Acl -LiteralPath $ConfigFile.FullName).AreAccessRulesProtected) {
         throw "MADE Windows bootstrap: private host configuration still inherits permissions"
     }
+    $ManifestPath = Join-Path $TestPlugin ".mcp.json"
+    $Registration = (Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json).mcpServers.made
+    $ExpectedLauncher = Join-Path $TestPlugin "scripts\run-embedded-mcp.cmd"
+    if ($Registration.command -ne "cmd.exe" -or
+        $Registration.args.Count -ne 3 -or
+        $Registration.args[0] -ne "/d" -or
+        $Registration.args[1] -ne "/c" -or
+        $Registration.args[2] -ne $ExpectedLauncher) {
+        throw "MADE Windows bootstrap: setup did not replace the single registration with the native launcher"
+    }
+    if ((Get-Content -Raw -LiteralPath $ManifestPath) -match "MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY") {
+        throw "MADE Windows bootstrap: registration leaked private configuration"
+    }
+    $ConfigBeforeRestart = Get-Content -Raw -LiteralPath $ConfigFile.FullName
+    & (Join-Path $TestPlugin "scripts\made-configure-embedded.ps1") | Out-Null
+    if ($LASTEXITCODE -ne 0 -or
+        (Get-Content -Raw -LiteralPath $ConfigFile.FullName) -ne $ConfigBeforeRestart) {
+        throw "MADE Windows bootstrap: repeated setup changed private store identity or cursor configuration"
+    }
+    $RestartedServers = (Get-Content -Raw -LiteralPath $ManifestPath | ConvertFrom-Json).mcpServers
+    if (@($RestartedServers.PSObject.Properties).Count -ne 1 -or -not $RestartedServers.made) {
+        throw "MADE Windows bootstrap: repeated setup created duplicate registrations"
+    }
     $Initialize = '{"jsonrpc":"2.0","id":1,"method":"initialize"}'
-    $Response = $Initialize | & (Join-Path $TestPlugin "scripts\run-embedded-mcp.cmd")
+    $RegistrationArgs = @($Registration.args)
+    $Response = $Initialize | & $Registration.command @RegistrationArgs
     if (($LASTEXITCODE -ne 0) -or -not (($Response | ConvertFrom-Json).result.serverInfo)) {
-        throw "MADE Windows bootstrap: verified binary did not start through the native launcher"
+        throw "MADE Windows bootstrap: verified binary did not start through the registered native launcher"
     }
 
     $global:MadeBootstrapRequests = @()

@@ -84,14 +84,11 @@ owner boundary; business capabilities still require explicit grants. The
 launcher refuses missing authorization configuration and never creates an
 anonymous owner or a replacement store.
 
-The included `.mcp.json` points to one `made` registration and
-`scripts/run-embedded-mcp.sh`. On native
-Windows without Bash, replace that command in the existing `made` MCP
-registration with the plugin's absolute `scripts\run-embedded-mcp.cmd` path
-(or invoke it through `cmd.exe /d /c` if required by the host). Installing the
-EXE alone is not enough. Keep one MADE registration and recheck the command
-after updates. The [setup skill](skills/made-setup/SKILL.md) includes this
-platform step.
+The included `.mcp.json` always represents one `made` registration. It starts
+with the POSIX launcher; native Windows setup rewrites that same manifest
+atomically to invoke the absolute `scripts\run-embedded-mcp.cmd` path through
+`cmd.exe /d /c`. Re-running setup after an update refreshes the path without
+creating a duplicate registration or exposing the private cursor key.
 
 In a fresh task, use `made_discover_capabilities` and `made_get_help` to
 inspect the actual running version/backend. `tools/list` is the authority for
