@@ -57,3 +57,34 @@ broker submission is not proof that an external consumer processed a message.
 `PublishCouncilEventsUseCase` forwards only the existing five messaging event
 kinds; configuration and imported snapshots advance its independent cursor
 without being represented as fictitious bus events.
+
+## Independent council consumers
+
+`ReadCouncilEvents` reads records by council position without changing a
+consumer. `GetCouncilEventCursor` returns its durable acknowledgement position.
+`LeaseCouncilEvents` grants one exclusive lease for 1 ms to 1 hour; a busy
+consumer receives no lease. After delivering records, use
+`AcknowledgeCouncilEvents` with the complete returned lease and an existing
+position. Acknowledgement releases that lease. `ReleaseCouncilEvents` releases
+without advancing. Expired or replaced leases cannot acknowledge or release a
+new owner's work. Council positions are never ceremony positions.
+
+The embedded facade exposes the same five moves. Both MCP backends expose
+`made_read_council_events`, `made_get_council_event_cursor`,
+`made_lease_council_events`, `made_acknowledge_council_events` and
+`made_release_council_events`. Read pages default to 200 records and are bounded
+at 1000. Continue from `next_after`; an empty page means currently caught up.
+
+The optional service publisher polls the durable journal even when no new event
+or broker notification arrives. It forwards only the five original messaging
+event types; registry and imported snapshot facts advance its cursor without
+inventing bus events. Delivery is at least once. A lost acknowledgement can
+cause a retry with the same original event ID, which downstream consumers must
+deduplicate. A shutdown during delivery leaves the record unacknowledged; its
+lease expires before another process can recover it.
+
+An embedded host's explicit synchronous messaging callback still receives the
+original event after the journal commits. The callback does not advance a
+consumer cursor. A failed callback remains in the journal; hosts needing
+durable external delivery should run `PublishCouncilEventsUseCase` as a leased
+consumer instead of treating the callback as an exactly-once guarantee.

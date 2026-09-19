@@ -55,6 +55,11 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
         ],
     },
     CapabilityGroup {
+        id: "council_journal",
+        description: "Read the independent council journal and manage fenced durable consumer cursors.",
+        tools: &["made_read_council_events","made_get_council_event_cursor","made_lease_council_events","made_acknowledge_council_events","made_release_council_events"],
+    },
+    CapabilityGroup {
         id: "ceremony_design",
         description: "Design, validate, explain, compare, and publish ceremony definitions.",
         tools: &[

@@ -15,6 +15,7 @@ The historical ADR labels in reason cells are stable ledger identifiers;
 | `self_description` | not supported — server tool: the MCP server answers it itself on every backend, so it has no RPC and no parity.tsv row | supported | supported | not supported — server tool: it describes the running server rather than the engine, so the facade has no method for it | catalog ⇔ proto (`protocol/tests.rs`), which pins these as the only catalog entries with no RPC |
 | `council_deliberation` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `council_configuration` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
+| `council_journal` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_design` / `design_ceremony` | supported | supported | supported | supported | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_design` / `validate_ceremony_draft` | supported | supported | supported | not supported — decided in F1: no facade method; analysing a draft is a pure domain call (CeremonyDraft::analyze) the adapter makes directly, and made-api exposes it as analyze_definition | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
 | `ceremony_design` / `explain_ceremony_draft` | supported | supported | supported | not supported — decided in F1: same as validate_ceremony_draft; the two tools render one analysis for two audiences | F1 set equality (`protocol/parity_tests.rs`); catalog ⇔ proto (`protocol/tests.rs`); F4 session parity (`mcp_parity_session.rs`) |
@@ -68,3 +69,5 @@ When a capability changes, update the code, parity ledger, this table and
 migration/release notes together. `protocol/parity_tests.rs` checks the source
 surfaces, `protocol/editions_matrix_tests.rs` checks this table and
 `mcp_parity_session.rs` checks shared behavior.
+
+The independent council journal additionally has exact embedded/gRPC MCP parity, lease fencing and durable cursor restart coverage in `council_journal_surfaces.rs`, plus shared store conformance in `council_journal_conformance.rs`.

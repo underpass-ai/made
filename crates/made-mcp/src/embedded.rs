@@ -20,6 +20,7 @@ mod embedded_collect_ceremony_evidence_request;
 mod embedded_complete_ceremony_step_request;
 mod embedded_council_context;
 mod embedded_council_dispatch;
+mod embedded_council_journal_dispatch;
 mod embedded_council_presenter;
 mod embedded_council_requests;
 mod embedded_defer_ceremony_guard_request;
@@ -198,6 +199,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     }
 
     fn supports_tool(&self, name: &str) -> bool {
+        if embedded_council_journal_dispatch::handles(name) {
+            return true;
+        }
         if embedded_council_dispatch::handles(name) || embedded_artifact_dispatch::handles(name) {
             return true;
         }
@@ -248,6 +252,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
     #[allow(clippy::too_many_lines)]
     fn call_tool<'a>(&'a self, name: &'a str, arguments: &'a Value) -> MadeMcpToolFuture<'a> {
         Box::pin(async move {
+            if embedded_council_journal_dispatch::handles(name) {
+                return embedded_council_journal_dispatch::dispatch(&self.made, name, arguments)
+                    .await
+                    .map(tool_success_result);
+            }
             if embedded_council_dispatch::handles(name) {
                 return embedded_council_dispatch::dispatch(&self.made, name, arguments).await;
             }

@@ -517,13 +517,14 @@ impl EmbeddedMadeBuilder {
             .council_journal
             .take()
             .unwrap_or_else(|| Arc::new(InMemoryCouncilJournal::new()));
-        let messaging = self.messaging.take().unwrap_or_else(|| {
-            Arc::new(
-                made_adapters::council_journal_messaging::CouncilJournalMessaging::new(
-                    journal.clone(),
-                ),
-            )
-        });
+        let messaging =
+            made_adapters::council_journal_messaging::CouncilJournalMessaging::new(journal.clone());
+        let messaging = if let Some(transport) = self.messaging.take() {
+            messaging.with_immediate_transport(transport)
+        } else {
+            messaging
+        };
+        let messaging = Arc::new(messaging);
         Arc::new(EmbeddedCouncilServices::new(
             clock,
             journal,

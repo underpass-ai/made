@@ -41,6 +41,8 @@ use made_tests_integration::parity_evidence_source::ParityEvidenceSource;
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 
+#[path = "mcp_parity_session/council_journal.rs"]
+mod council_journal;
 #[path = "mcp_parity_session/dynamic_roles.rs"]
 mod dynamic_roles;
 #[path = "mcp_parity_session/optionals.rs"]
@@ -97,6 +99,8 @@ const ABORT_UPLOAD_PLACEHOLDER: &str = "$parity-abort-upload";
 /// array element as `[]` — and every entry carries a one-line reason,
 /// which a test asserts.
 const NORMALISED: &[(&str, &str, &str)] = &[
+    ("made_lease_council_events", ".structuredContent.lease.id", "each independent council store mints an opaque exclusive lease identity"),
+    ("made_lease_council_events", ".content[].text.lease.id", "the text projection mirrors the independently minted council lease identity"),
     (
         "made_begin_artifact_upload",
         ".structuredContent.upload_id",
@@ -577,6 +581,7 @@ struct ParityArms {
     children: std::sync::Mutex<BTreeMap<String, Vec<String>>>,
     terminals: std::sync::Mutex<BTreeMap<String, String>>,
     uploads: std::sync::Mutex<BTreeMap<String, (String, String)>>,
+    council_leases: std::sync::Mutex<BTreeMap<String, (Value, Value)>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -610,7 +615,7 @@ impl ParityArms {
     /// clock on both arms — the whole reason its values can be compared
     /// at all — and `open` composes an engine that takes none of them.
     async fn start_on_the_shipped_store() -> Self {
-        let directory = tempfile::tempdir().expect("a directory for the durable store");
+        let directory = council_journal::scratch_directory("ceremony");
         let store = Arc::new(
             SqliteCeremonyStore::open(directory.path().join("parity.sqlite3"))
                 .expect("the durable SQLite ceremony store should open"),
@@ -632,8 +637,8 @@ impl ParityArms {
         // in-process and equivalent, so each arm recalls what that arm
         // wrote and the two answers are equal because the engines
         // agree — not because they are reading each other's writes.
-        let wire_artifact_dir = tempfile::tempdir().expect("a gRPC artifact root");
-        let local_artifact_dir = tempfile::tempdir().expect("an embedded artifact root");
+        let wire_artifact_dir = council_journal::scratch_directory("wire-artifacts");
+        let local_artifact_dir = council_journal::scratch_directory("local-artifacts");
         let wire_artifacts = Arc::new(
             LocalArtifactStore::open(wire_artifact_dir.path())
                 .expect("the gRPC artifact store should open"),
@@ -642,13 +647,16 @@ impl ParityArms {
             LocalArtifactStore::open(local_artifact_dir.path())
                 .expect("the embedded artifact store should open"),
         );
+        let wire_journal = council_journal::seeded(wire_artifact_dir.path()).await;
+        let local_journal = council_journal::seeded(local_artifact_dir.path()).await;
         let fixture = GrpcFixture::start_with(
             GrpcFixtureWiring::new()
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
-                .with_artifact_store(wire_artifacts),
+                .with_artifact_store(wire_artifacts)
+                .with_council_journal(wire_journal),
         )
         .await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
@@ -664,6 +672,7 @@ impl ParityArms {
                 .with_council_validators(parity_council_validators())
                 .with_executor(Arc::new(NoopExecutor::new()))
                 .with_artifact_store(local_artifacts)
+                .with_council_journal(local_journal)
                 .build(),
         ));
         Self {
@@ -676,6 +685,7 @@ impl ParityArms {
             children: std::sync::Mutex::new(BTreeMap::new()),
             terminals: std::sync::Mutex::new(BTreeMap::new()),
             uploads: std::sync::Mutex::new(BTreeMap::new()),
+            council_leases: std::sync::Mutex::new(BTreeMap::new()),
         }
     }
 
@@ -722,9 +732,33 @@ impl ParityArms {
 
     /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
-        let (wire_arguments, local_arguments) = self.artifact_arguments(arguments);
+        let (mut wire_arguments, mut local_arguments) = self.artifact_arguments(arguments);
+        if let Some(consumer) = arguments
+            .get("lease")
+            .and_then(Value::as_str)
+            .and_then(|value| value.strip_prefix("$council-lease:"))
+        {
+            let leases = self.council_leases.lock().unwrap();
+            let (wire, local) = leases
+                .get(consumer)
+                .expect("script acquired this consumer lease");
+            wire_arguments["lease"] = wire.clone();
+            local_arguments["lease"] = local.clone();
+        }
         let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
         let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
+        if tool == "made_lease_council_events" && !failed(&wire) && !failed(&local) {
+            let key = arguments["consumer"].as_str().unwrap().to_owned();
+            let leases = (
+                structured(&wire)["lease"].clone(),
+                structured(&local)["lease"].clone(),
+            );
+            assert!(
+                leases.0.is_object() && leases.1.is_object(),
+                "script acquires independent free consumers"
+            );
+            self.council_leases.lock().unwrap().insert(key, leases);
+        }
         if tool == "made_begin_artifact_upload" && !failed(&wire) && !failed(&local) {
             let key = arguments["idempotency_key"]
                 .as_str()
@@ -921,7 +955,8 @@ async fn concurrent_claim_options_and_capacity_have_full_mcp_session_parity() {
 /// least once; the coverage assertion below is what keeps it true.
 #[allow(clippy::too_many_lines)] // one entry per call; splitting fragments the session
 fn session_script() -> Vec<(&'static str, Value)> {
-    let mut calls = council_session_script();
+    let mut calls = council_journal::script();
+    calls.extend(council_session_script());
     calls.extend(vec![
         ("made_design_ceremony", design_intent()),
         (
@@ -1720,6 +1755,11 @@ fn is_council_tool(tool: &str) -> bool {
             | "made_register_contract"
             | "made_list_contracts"
             | "made_delete_contract"
+            | "made_read_council_events"
+            | "made_get_council_event_cursor"
+            | "made_lease_council_events"
+            | "made_acknowledge_council_events"
+            | "made_release_council_events"
     )
 }
 

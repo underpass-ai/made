@@ -29,6 +29,7 @@ use made_core::value_objects::MaxParallel;
 /// of use cases grows.
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
+    pub(super) council_journal: Option<Arc<made_app::services::CouncilJournalService>>,
     pub(super) deliberate: Option<Arc<DeliberateUseCase>>,
     pub(super) orchestrate: Option<Arc<OrchestrateUseCase>>,
     pub(super) create_council: Option<Arc<CreateCouncilUseCase>>,
@@ -120,6 +121,11 @@ macro_rules! setter {
 }
 
 impl MadeGrpcServiceBuilder {
+    setter!(
+        council_journal,
+        made_app::services::CouncilJournalService,
+        council_journal
+    );
     setter!(deliberate, DeliberateUseCase, deliberate);
     setter!(orchestrate, OrchestrateUseCase, orchestrate);
     setter!(create_council, CreateCouncilUseCase, create_council);
@@ -364,7 +370,14 @@ impl MadeGrpcServiceBuilder {
         ));
         let get_service_metrics =
             Arc::new(GetServiceMetricsUseCase::new(statistics, metrics_snapshot));
+        let council_journal = self.council_journal.unwrap_or_else(|| {
+            Arc::new(made_app::services::CouncilJournalService::new(
+                Arc::new(crate::memory::InMemoryCouncilJournal::new()),
+                clock.clone(),
+            ))
+        });
         Ok(MadeGrpcService {
+            council_journal,
             clock,
             max_parallel_ceiling: self.max_parallel_ceiling.unwrap_or(MaxParallel::SERVER_MAX),
             deliberate: required!(self, deliberate),

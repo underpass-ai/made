@@ -20,5 +20,8 @@ RUST_TEST_THREADS=1 cargo test \
   --test postgres_council_registry \
   --test postgres_agent_registry \
   --test postgres_statistics \
+  --test council_journal_conformance \
+  --test council_snapshot_migration \
+  --test artifact_postgres_store \
   --locked \
   -- --test-threads=1
