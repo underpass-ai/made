@@ -11,6 +11,11 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.5 — 2026-09-19
+
+- Normalize Windows store paths consistently between setup and the `cmd`
+  launcher when addressing private per-store configuration.
+
 ## 0.7.4 — 2026-09-19
 
 - Fix the native Windows setup adapter's trusted-host variable name so it does

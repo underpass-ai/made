@@ -35,8 +35,14 @@ $ConfigRoot = if ($env:MADE_SETUP_CONFIG_ROOT) {
     Join-Path $env:USERPROFILE ".config\underpass-made\embedded"
 }
 New-Item -ItemType Directory -Force -Path $ConfigRoot | Out-Null
-$HashInput = [Text.Encoding]::UTF8.GetBytes($Store)
-$Hash = ([Security.Cryptography.SHA256]::Create().ComputeHash($HashInput) | ForEach-Object { $_.ToString("x2") }) -join ""
+function Get-StoreDigest([string]$Path) {
+    # cmd and PowerShell can spell the same Windows path with different slash
+    # forms. Use one canonical spelling for the per-store config filename.
+    $Canonical = [IO.Path]::GetFullPath($Path).Replace('/', '\')
+    $HashInput = [Text.Encoding]::UTF8.GetBytes($Canonical)
+    return (([Security.Cryptography.SHA256]::Create().ComputeHash($HashInput) | ForEach-Object { $_.ToString("x2") }) -join "")
+}
+$Hash = Get-StoreDigest $Store
 $ConfigPath = Join-Path $ConfigRoot ($Hash.Substring(0, 16) + ".env")
 
 function Get-ConfigValues([string]$Path) {

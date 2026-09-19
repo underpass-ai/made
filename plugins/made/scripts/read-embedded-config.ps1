@@ -4,7 +4,8 @@ param(
 )
 $ErrorActionPreference = "Stop"
 
-$bytes = [Text.Encoding]::UTF8.GetBytes($StorePath)
+$canonical = [IO.Path]::GetFullPath($StorePath).Replace('/', '\')
+$bytes = [Text.Encoding]::UTF8.GetBytes($canonical)
 $hash = ([Security.Cryptography.SHA256]::Create().ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join ""
 $path = Join-Path $ConfigRoot ($hash.Substring(0, 16) + ".env")
 if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
