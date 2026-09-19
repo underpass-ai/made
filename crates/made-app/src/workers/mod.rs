@@ -1,4 +1,17 @@
 mod ceremony_worker_admission;
+mod ceremony_worker_admission_decision;
+mod ceremony_worker_admission_observer;
+mod ceremony_worker_admission_policy;
+mod ceremony_worker_admission_reason;
+mod ceremony_worker_capacity;
+mod ceremony_worker_claim_error;
+mod ceremony_worker_cost;
+mod ceremony_worker_eligibility;
+mod ceremony_worker_policy_version;
+mod ceremony_worker_priority;
+mod ceremony_worker_schedule;
+mod ceremony_worker_scheduler_policy;
+mod ceremony_worker_weight;
 mod claim_ceremony_work_input;
 mod claim_ceremony_work_use_case;
 mod complete_execution_receipt_input;
@@ -8,23 +21,41 @@ mod execute_ceremony_operation_outcome;
 mod execute_ceremony_operation_use_case;
 mod execution_receipt_artifact_verifier;
 mod execution_receipt_from_observation;
+mod execution_reconciliation_audit_port;
+mod execution_reconciliation_audit_record;
 mod execution_recovery_inspector_port;
 mod execution_recovery_item;
 mod execution_recovery_items_page;
 mod get_execution_receipt_use_case;
 mod inspect_execution_recovery_use_case;
+mod noop_ceremony_worker_admission_observer;
+mod reconcile_execution_operation_input;
+mod reconcile_execution_operation_outcome;
+mod reconcile_execution_operation_use_case;
 mod recover_execution_intent_outcome;
 mod recover_execution_intent_use_case;
 mod recoverable_ceremony_worker;
 mod recoverable_ceremony_worker_outcome;
 mod recoverable_ceremony_worker_port;
 
-pub use ceremony_worker_admission::{
-    CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionReason, CeremonyWorkerCapacity,
-    CeremonyWorkerCost, CeremonyWorkerEligibility, CeremonyWorkerLeaseContext,
-    CeremonyWorkerPolicyVersion, CeremonyWorkerPriority, CeremonyWorkerScheduleRequest,
-    CeremonyWorkerWeight,
-};
+pub use ceremony_worker_admission::CeremonyWorkerScheduleRequest;
+pub use ceremony_worker_admission_decision::CeremonyWorkerAdmissionDecision;
+pub use ceremony_worker_admission_observer::CeremonyWorkerAdmissionObserver;
+pub use ceremony_worker_admission_policy::CeremonyWorkerAdmissionPolicy;
+pub use ceremony_worker_admission_reason::CeremonyWorkerAdmissionReason;
+pub use ceremony_worker_capacity::CeremonyWorkerCapacity;
+pub use ceremony_worker_cost::CeremonyWorkerCost;
+pub use ceremony_worker_eligibility::CeremonyWorkerEligibility;
+pub use ceremony_worker_policy_version::CeremonyWorkerPolicyVersion;
+pub use ceremony_worker_priority::CeremonyWorkerPriority;
+mod ceremony_worker_root_policy;
+pub use ceremony_worker_root_policy::CeremonyWorkerRootPolicy;
+mod ceremony_worker_root_policy_port;
+pub use ceremony_worker_root_policy_port::CeremonyWorkerRootPolicyPort;
+mod ceremony_worker_root_queue;
+pub use ceremony_worker_schedule::CeremonyWorkerSchedule;
+pub use ceremony_worker_scheduler_policy::CeremonyWorkerSchedulerPolicy;
+pub use ceremony_worker_weight::CeremonyWorkerWeight;
 pub use claim_ceremony_work_input::ClaimCeremonyWorkInput;
 pub use claim_ceremony_work_use_case::ClaimCeremonyWorkUseCase;
 pub use complete_execution_receipt_input::CompleteExecutionReceiptInput;
@@ -32,11 +63,17 @@ pub use complete_execution_receipt_use_case::CompleteExecutionReceiptUseCase;
 pub use execute_ceremony_operation_input::ExecuteCeremonyOperationInput;
 pub use execute_ceremony_operation_outcome::ExecuteCeremonyOperationOutcome;
 pub use execute_ceremony_operation_use_case::ExecuteCeremonyOperationUseCase;
+pub use execution_reconciliation_audit_port::ExecutionReconciliationAuditPort;
+pub use execution_reconciliation_audit_record::ExecutionReconciliationAuditRecord;
 pub use execution_recovery_inspector_port::ExecutionRecoveryInspectorPort;
 pub use execution_recovery_item::ExecutionRecoveryItem;
 pub use execution_recovery_items_page::ExecutionRecoveryItemsPage;
 pub use get_execution_receipt_use_case::GetExecutionReceiptUseCase;
 pub use inspect_execution_recovery_use_case::InspectExecutionRecoveryUseCase;
+pub use noop_ceremony_worker_admission_observer::NoopCeremonyWorkerAdmissionObserver;
+pub use reconcile_execution_operation_input::ReconcileExecutionOperationInput;
+pub use reconcile_execution_operation_outcome::ReconcileExecutionOperationOutcome;
+pub use reconcile_execution_operation_use_case::ReconcileExecutionOperationUseCase;
 pub use recover_execution_intent_outcome::RecoverExecutionIntentOutcome;
 pub use recover_execution_intent_use_case::RecoverExecutionIntentUseCase;
 pub use recoverable_ceremony_worker::RecoverableCeremonyWorker;
@@ -66,8 +103,30 @@ pub use ceremony_work_claim_failure::CeremonyWorkClaimFailure;
 pub use ceremony_work_claims_page::CeremonyWorkClaimsPage;
 pub use ceremony_worker_policy::CeremonyWorkerPolicy;
 pub use ceremony_worker_run_outcome::CeremonyWorkerRunOutcome;
-pub use ceremony_worker_scheduler::{
-    CeremonyWorkerAdmissionObserver, CeremonyWorkerSchedule, CeremonyWorkerScheduler,
-    CeremonyWorkerSchedulerPolicy, NoopCeremonyWorkerAdmissionObserver,
-};
+pub use ceremony_worker_scheduler::CeremonyWorkerScheduler;
 pub use ceremony_worker_stop_token::CeremonyWorkerStopToken;
+
+mod renew_ceremony_step_lease_use_case;
+pub use renew_ceremony_step_lease_use_case::RenewCeremonyStepLeaseUseCase;
+
+mod ceremony_work_candidate;
+mod worker_capacity_request;
+pub use worker_capacity_request::WorkerCapacityRequest;
+mod worker_capacity_limits;
+pub use worker_capacity_limits::WorkerCapacityLimits;
+mod worker_capacity_port;
+pub use worker_capacity_port::WorkerCapacityPort;
+mod worker_capacity_renewal_guard;
+pub use worker_capacity_renewal_guard::WorkerCapacityRenewalGuard;
+mod worker_authorization_port;
+pub use worker_authorization_port::WorkerAuthorizationPort;
+mod worker_authorization_error;
+pub use worker_authorization_error::WorkerAuthorizationError;
+mod worker_authorization_target;
+pub use worker_authorization_target::WorkerAuthorizationTarget;
+
+mod ceremony_worker_renewal;
+pub use ceremony_worker_renewal::CeremonyWorkerRenewal;
+
+mod authorize_worker_operation_use_case;
+pub use authorize_worker_operation_use_case::AuthorizeWorkerOperationUseCase;

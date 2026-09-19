@@ -5,133 +5,15 @@ use time::OffsetDateTime;
 
 use crate::DomainError;
 
-/// Public identifier for a verification key. Material never crosses this
-/// boundary; the host keeps private key bytes in its secret store.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct VerificationKeyId(String);
+mod cursor_transition;
+mod verification_key;
+mod verification_key_fingerprint;
+mod verification_key_id;
 
-impl VerificationKeyId {
-    pub fn new(value: impl Into<String>) -> Result<Self, DomainError> {
-        let value = value.into();
-        if value.is_empty() || value.len() > 128 || !value.bytes().all(is_safe_key_byte) {
-            return Err(DomainError::InvariantViolated {
-                reason: "verification key id must be a bounded token",
-            });
-        }
-        Ok(Self(value))
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for VerificationKeyId {
-    type Error = DomainError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<VerificationKeyId> for String {
-    fn from(value: VerificationKeyId) -> Self {
-        value.0
-    }
-}
-
-/// Fingerprint of a key, not key material. It is safe to persist in audit
-/// evidence and to compare between replicas.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
-#[serde(try_from = "String", into = "String")]
-pub struct VerificationKeyFingerprint(String);
-
-impl VerificationKeyFingerprint {
-    pub fn new(value: impl Into<String>) -> Result<Self, DomainError> {
-        let value = value.into();
-        if value.len() != 64
-            || !value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-        {
-            return Err(DomainError::InvariantViolated {
-                reason: "verification key fingerprint must be lowercase sha256",
-            });
-        }
-        Ok(Self(value))
-    }
-
-    #[must_use]
-    pub fn as_str(&self) -> &str {
-        &self.0
-    }
-}
-
-impl TryFrom<String> for VerificationKeyFingerprint {
-    type Error = DomainError;
-
-    fn try_from(value: String) -> Result<Self, Self::Error> {
-        Self::new(value)
-    }
-}
-
-impl From<VerificationKeyFingerprint> for String {
-    fn from(value: VerificationKeyFingerprint) -> Self {
-        value.0
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct VerificationKey {
-    id: VerificationKeyId,
-    fingerprint: VerificationKeyFingerprint,
-    not_before: OffsetDateTime,
-    expires_at: Option<OffsetDateTime>,
-}
-
-impl VerificationKey {
-    pub fn new(
-        id: VerificationKeyId,
-        fingerprint: VerificationKeyFingerprint,
-        not_before: OffsetDateTime,
-        expires_at: Option<OffsetDateTime>,
-    ) -> Result<Self, DomainError> {
-        if expires_at.is_some_and(|value| value <= not_before) {
-            return Err(DomainError::InvariantViolated {
-                reason: "verification key expiry must follow activation",
-            });
-        }
-        Ok(Self {
-            id,
-            fingerprint,
-            not_before,
-            expires_at,
-        })
-    }
-
-    #[must_use]
-    pub const fn id(&self) -> &VerificationKeyId {
-        &self.id
-    }
-
-    #[must_use]
-    pub const fn fingerprint(&self) -> &VerificationKeyFingerprint {
-        &self.fingerprint
-    }
-
-    #[must_use]
-    pub fn accepts_at(&self, at: OffsetDateTime) -> bool {
-        at >= self.not_before && self.expires_at.is_none_or(|expires| at < expires)
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum CursorTransition {
-    Preserve,
-    Invalidate,
-}
+pub use cursor_transition::CursorTransition;
+pub use verification_key::VerificationKey;
+pub use verification_key_fingerprint::VerificationKeyFingerprint;
+pub use verification_key_id::VerificationKeyId;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AuthorizationKeyRing {
@@ -173,7 +55,7 @@ impl AuthorizationKeyRing {
         let mut fingerprints = BTreeSet::new();
         let all = std::iter::once(&self.active).chain(self.verification.iter());
         for key in all {
-            if !ids.insert(key.id.clone()) || !fingerprints.insert(key.fingerprint.clone()) {
+            if !ids.insert(key.id().clone()) || !fingerprints.insert(key.fingerprint().clone()) {
                 return Err(DomainError::InvariantViolated {
                     reason: "verification key ring contains a duplicate key",
                 });
@@ -203,10 +85,6 @@ impl AuthorizationKeyRing {
     pub fn verification_keys(&self) -> &[VerificationKey] {
         &self.verification
     }
-}
-
-fn is_safe_key_byte(byte: u8) -> bool {
-    byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-')
 }
 
 #[cfg(test)]

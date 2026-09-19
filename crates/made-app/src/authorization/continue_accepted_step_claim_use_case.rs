@@ -5,7 +5,10 @@ use made_core::ports::ClockPort;
 use made_core::value_objects::{AuthorizationAction, AuthorizedOperation};
 use made_core::DomainError;
 
-use super::{AcceptedStepCompletion, ContinueAcceptedCeremonyWorkUseCase};
+use super::{
+    AcceptedStepCompletion, AuthorizationGateOutcome, AuthorizeOperationUseCase,
+    ContinueAcceptedCeremonyWorkUseCase,
+};
 use crate::services::{LoadedSession, SessionStream};
 
 #[derive(Clone)]
@@ -13,6 +16,7 @@ pub struct ContinueAcceptedStepClaimUseCase {
     stream: Arc<SessionStream>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
     clock: Arc<dyn ClockPort>,
+    reauthorize: Option<Arc<AuthorizeOperationUseCase>>,
 }
 
 impl ContinueAcceptedStepClaimUseCase {
@@ -26,12 +30,37 @@ impl ContinueAcceptedStepClaimUseCase {
             stream,
             continuation,
             clock,
+            reauthorize: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_reauthorization(mut self, authorize: Arc<AuthorizeOperationUseCase>) -> Self {
+        self.reauthorize = Some(authorize);
+        self
     }
 
     pub async fn execute(
         &self,
         input: AcceptedStepCompletion,
+    ) -> Result<AuthorizedOperation, DomainError> {
+        self.execute_action(input, AuthorizationAction::CompleteCeremonyStep)
+            .await
+    }
+
+    /// Continue a durably accepted claim while its fence and lease remain current.
+    pub async fn execute_renewal(
+        &self,
+        input: AcceptedStepCompletion,
+    ) -> Result<AuthorizedOperation, DomainError> {
+        self.execute_action(input, AuthorizationAction::RenewCeremonyStepLease)
+            .await
+    }
+
+    async fn execute_action(
+        &self,
+        input: AcceptedStepCompletion,
+        action: AuthorizationAction,
     ) -> Result<AuthorizedOperation, DomainError> {
         let records = self.stream.records(&input.ceremony_id).await?;
         let session = SessionStream::fold_records(&records)?;
@@ -49,12 +78,15 @@ impl ContinueAcceptedStepClaimUseCase {
             .ok_or(DomainError::NotFound {
                 what: "accepted_step_claim_record",
             })?;
+        if action == AuthorizationAction::RenewCeremonyStepLease {
+            self.reauthorize_claim(source, &input).await?;
+        }
         if let Some(existing) = self
             .continuation
             .existing_for(
                 source,
                 input.request_id.clone(),
-                AuthorizationAction::CompleteCeremonyStep,
+                action,
                 input.target_digest.clone(),
                 Some(&input.principal),
             )
@@ -67,11 +99,44 @@ impl ContinueAcceptedStepClaimUseCase {
             .execute_for(
                 source,
                 input.request_id,
-                AuthorizationAction::CompleteCeremonyStep,
+                action,
                 input.target_digest,
                 Some(&input.principal),
             )
             .await
+    }
+
+    async fn reauthorize_claim(
+        &self,
+        source: &made_core::entities::AuditRecord,
+        input: &AcceptedStepCompletion,
+    ) -> Result<(), DomainError> {
+        let authorize = self
+            .reauthorize
+            .as_ref()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "lease renewal requires current claim reauthorization",
+            })?;
+        let evidence =
+            source
+                .authorization_evidence()
+                .cloned()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "accepted step claim has no authorization evidence",
+                })?;
+        let operation = AuthorizedOperation::new(input.principal.clone(), evidence)?;
+        let request_id = made_core::value_objects::AuthorizationRequestId::new(format!(
+            "renew-check:{}",
+            input.request_id.as_str()
+        ))?;
+        match authorize.revalidate(&operation, request_id).await? {
+            AuthorizationGateOutcome::Allowed { .. } => Ok(()),
+            AuthorizationGateOutcome::Denied { .. } | AuthorizationGateOutcome::Expired { .. } => {
+                Err(DomainError::InvariantViolated {
+                    reason: "current authorization refuses lease renewal",
+                })
+            }
+        }
     }
 }
 

@@ -8,7 +8,9 @@ use super::{
     CeremonyDeadlineEnforcementPort, CeremonyWorkerBatchOutcome, CeremonyWorkerItemFailure,
     CeremonyWorkerPolicy, CeremonyWorkerStopToken, ExecuteCeremonyOperationInput,
     ExecutionRecoveryInspectorPort, ExecutionRecoveryItem, RecoverableCeremonyWorkerPort,
+    WorkerAuthorizationPort, WorkerAuthorizationTarget,
 };
+use crate::services::AuthorizationOperationScope;
 
 /// Bounded host loop that drains every admitted chunk before observing stop.
 pub struct CeremonyWorkerDriver {
@@ -17,6 +19,8 @@ pub struct CeremonyWorkerDriver {
     worker: Arc<dyn RecoverableCeremonyWorkerPort>,
     policy: CeremonyWorkerPolicy,
     stop: CeremonyWorkerStopToken,
+    renewal: Option<Arc<super::CeremonyWorkerRenewal>>,
+    authorization: Option<Arc<dyn WorkerAuthorizationPort>>,
 }
 
 impl std::fmt::Debug for CeremonyWorkerDriver {
@@ -44,6 +48,8 @@ impl CeremonyWorkerDriver {
             worker,
             policy,
             stop,
+            renewal: None,
+            authorization: None,
         }
     }
 
@@ -60,7 +66,21 @@ impl CeremonyWorkerDriver {
             worker,
             policy,
             stop,
+            renewal: None,
+            authorization: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_renewal(mut self, renewal: Arc<super::CeremonyWorkerRenewal>) -> Self {
+        self.renewal = Some(renewal);
+        self
+    }
+
+    #[must_use]
+    pub fn with_authorization(mut self, authorization: Arc<dyn WorkerAuthorizationPort>) -> Self {
+        self.authorization = Some(authorization);
+        self
     }
 
     pub async fn execute_claims(
@@ -70,14 +90,8 @@ impl CeremonyWorkerDriver {
         let mut outcomes = Vec::with_capacity(claims.len());
         let mut failures = Vec::new();
         for chunk in claims.chunks(usize::from(self.policy.max_parallel().get())) {
-            if self.stop.is_requested() {
-                break;
-            }
             let mut admitted = Vec::with_capacity(chunk.len());
             for claim in chunk {
-                if self.stop.is_requested() {
-                    break;
-                }
                 let current = self
                     .deadlines
                     .enforce_current_claim(
@@ -92,7 +106,8 @@ impl CeremonyWorkerDriver {
             let drained = join_all(admitted.into_iter().map(|claim| async {
                 let ceremony_id = claim.handler_request.instance_id().clone();
                 let step_id = claim.handler_request.step_id().clone();
-                (ceremony_id, step_id, self.worker.execute_claim(claim).await)
+                let result = Box::pin(self.execute_claim(claim)).await;
+                (ceremony_id, step_id, result)
             }))
             .await;
             for (ceremony_id, step_id, result) in drained {
@@ -173,7 +188,8 @@ impl CeremonyWorkerDriver {
             let drained = join_all(enforced.into_iter().map(|item| async {
                 let ceremony_id = item.operation().ceremony_id().clone();
                 let step_id = item.operation().step_id().clone();
-                (ceremony_id, step_id, self.worker.recover(item).await)
+                let result = Box::pin(self.recover_item(item)).await;
+                (ceremony_id, step_id, result)
             }))
             .await;
             for (ceremony_id, step_id, result) in drained {
@@ -192,6 +208,72 @@ impl CeremonyWorkerDriver {
             if stopped { None } else { next_cursor },
             stopped,
         ))
+    }
+
+    async fn execute_claim(
+        &self,
+        claim: ExecuteCeremonyOperationInput,
+    ) -> Result<super::RecoverableCeremonyWorkerOutcome, DomainError> {
+        let target = WorkerAuthorizationTarget::Complete {
+            ceremony: claim.handler_request.instance_id().clone(),
+            step: claim.handler_request.step_id().clone(),
+            operation: made_core::value_objects::ExecutionOperationId::for_step(
+                claim.handler_request.instance_id(),
+                claim.handler_request.step_id(),
+                claim.state_visit,
+                claim.state_iteration,
+                claim.step_iteration,
+            ),
+            fence: claim.claim_fence.clone(),
+        };
+        let future = async {
+            if let Some(renewal) = &self.renewal {
+                renewal.execute(self.worker.as_ref(), claim).await
+            } else {
+                self.worker.execute_claim(claim).await
+            }
+        };
+        let Some(authorization) = &self.authorization else {
+            return future.await;
+        };
+        let operation = authorization
+            .authorize(&target)
+            .await
+            .map_err(super::WorkerAuthorizationError::into_domain)?;
+        Box::pin(AuthorizationOperationScope::run(operation, future)).await
+    }
+
+    async fn recover_item(
+        &self,
+        item: ExecutionRecoveryItem,
+    ) -> Result<super::RecoverableCeremonyWorkerOutcome, DomainError> {
+        let fence = item
+            .current_claim_fence()
+            .cloned()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "execution recovery has no current accepted claim",
+            })?;
+        let target = WorkerAuthorizationTarget::Complete {
+            ceremony: item.operation().ceremony_id().clone(),
+            step: item.operation().step_id().clone(),
+            operation: item.operation().operation_id().clone(),
+            fence,
+        };
+        let future = async {
+            if let Some(renewal) = &self.renewal {
+                renewal.recover(self.worker.as_ref(), item).await
+            } else {
+                self.worker.recover(item).await
+            }
+        };
+        let Some(authorization) = &self.authorization else {
+            return future.await;
+        };
+        let operation = authorization
+            .authorize(&target)
+            .await
+            .map_err(super::WorkerAuthorizationError::into_domain)?;
+        Box::pin(AuthorizationOperationScope::run(operation, future)).await
     }
 }
 
@@ -412,7 +494,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn stop_drains_the_admitted_chunk_and_blocks_the_next_one() {
+    async fn stop_drains_every_claim_already_accepted_by_the_host() {
         let stop = CeremonyWorkerStopToken::new();
         let worker = Arc::new(GatedWorker {
             active: AtomicUsize::new(0),
@@ -446,10 +528,10 @@ mod tests {
         let outcome = driver.execute_claims(claims).await.unwrap();
 
         assert!(outcome.stopped());
-        assert_eq!(outcome.outcomes().len(), 2);
-        assert_eq!(worker.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(outcome.outcomes().len(), 5);
+        assert_eq!(worker.calls.load(Ordering::SeqCst), 5);
         assert_eq!(worker.max_active.load(Ordering::SeqCst), 2);
-        assert_eq!(deadlines.calls.load(Ordering::SeqCst), 2);
+        assert_eq!(deadlines.calls.load(Ordering::SeqCst), 5);
     }
 
     #[tokio::test]

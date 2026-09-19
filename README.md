@@ -74,7 +74,6 @@ agents for the host.
 | Design a reusable procedure | [Ceremony authoring](docs/authoring/README.md) |
 | Execute, resume or inspect a session | [Runtime contract](docs/runtime/README.md) |
 | Operate a shared service | [Kubernetes](docs/operations/deploy-kubernetes.md) |
-| Explore the local C6 MCP/operator path | [C6 guide](docs/corte6/index.md) |
 | Build or extend MADE | [Architecture](docs/architecture/README.md) · [Development](docs/development/README.md) |
 
 MADE is pre-1.0. Version 0.6.0 requires client changes from 0.5.x, including

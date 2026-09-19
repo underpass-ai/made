@@ -42,6 +42,7 @@ made-adapters = { workspace = true, features = [
     "postgres",
     "sqlite",
     "runtime-grpc",
+    "connector-http",
 ] }
 made-proto = { workspace = true }
 

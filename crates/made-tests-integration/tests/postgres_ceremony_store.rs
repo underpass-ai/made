@@ -15,9 +15,9 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     ArtifactSourceKind, AuditActorKind, CeremonyId, ExecutionConnectorId, ExecutionIntent,
-    ExecutionOperation, ExecutionReceipt, ExecutionRecoveryCapability, ExecutionRecoveryPageLimit,
-    ExecutionRequestBytes, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
-    StepOutput, StepResult,
+    ExecutionOperation, ExecutionReceipt, ExecutionReconciliationRequirement,
+    ExecutionRecoveryCapability, ExecutionRecoveryPageLimit, ExecutionRequestBytes, StateIteration,
+    StateVisit, StepClaimFence, StepId, StepIteration, StepOutput, StepResult,
 };
 use made_tests_integration::postgres_fixture;
 use time::OffsetDateTime;
@@ -89,6 +89,16 @@ async fn three_replicas_choose_one_first_intent_and_reopen_the_receipt() {
         2
     );
 
+    let requirement = ExecutionReconciliationRequirement::from_intent(&intents[0]);
+    let (left, right, third) = tokio::join!(
+        replicas[0].record_reconciliation_requirement(requirement.clone()),
+        replicas[1].record_reconciliation_requirement(requirement.clone()),
+        replicas[2].record_reconciliation_requirement(requirement.clone()),
+    );
+    left.unwrap();
+    right.unwrap();
+    third.unwrap();
+
     let receipt = receipt(&operation, fence('1'));
     assert_eq!(
         replicas[1].record_receipt(receipt.clone()).await.unwrap(),
@@ -99,6 +109,13 @@ async fn three_replicas_choose_one_first_intent_and_reopen_the_receipt() {
     assert_eq!(
         reopened.receipt(operation.operation_id()).await.unwrap(),
         Some(receipt)
+    );
+    assert_eq!(
+        reopened
+            .reconciliation_requirement(operation.operation_id(), &fence('1'))
+            .await
+            .unwrap(),
+        Some(requirement)
     );
     let page = reopened
         .recoverable(None, ExecutionRecoveryPageLimit::new(1).unwrap())

@@ -10,8 +10,8 @@ use made_core::ports::{
 use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use time::OffsetDateTime;
 
-use super::artifact_gc::{ArtifactGcPlan, ArtifactGcReport};
 use super::local_artifact_repository::LocalArtifactRepository;
+use super::{ArtifactGcPlan, ArtifactGcReport};
 
 /// Durable single-host artifact store with cross-process serialization.
 #[derive(Debug, Clone)]
@@ -20,6 +20,64 @@ pub struct LocalArtifactStore {
 }
 
 impl LocalArtifactStore {
+    pub async fn store_identity(
+        &self,
+    ) -> Result<made_core::value_objects::ArtifactDigest, ArtifactStoreError> {
+        self.blocking(LocalArtifactRepository::store_identity).await
+    }
+    /// Pin the artifact selection and capture a database snapshot while the
+    /// artifact barrier is still held. The callback must not re-enter this
+    /// artifact store or acquire a database write lock.
+    ///
+    /// Persisting the pin before the callback is deliberate: a process crash
+    /// during database capture leaves a conservative orphan pin instead of a
+    /// database snapshot whose blobs can be collected before resume.
+    pub async fn protect_snapshot_and_then<F>(
+        &self,
+        key: made_core::ports::ArtifactIdempotencyKey,
+        capture_database: F,
+    ) -> Result<made_core::ports::ArtifactSnapshot, ArtifactStoreError>
+    where
+        F: FnOnce() -> Result<(), ArtifactStoreError> + Send + 'static,
+    {
+        self.blocking(move |repository| {
+            repository.locked(|| {
+                let snapshot = repository.protect_locked(key, None)?;
+                capture_database()?;
+                Ok(snapshot)
+            })
+        })
+        .await
+    }
+
+    pub async fn protect_snapshot_bundle_and_then<F>(
+        &self,
+        key: made_core::ports::ArtifactIdempotencyKey,
+        capture_database: F,
+    ) -> Result<
+        (
+            made_core::ports::ArtifactSnapshot,
+            Vec<made_core::ports::ArtifactSnapshot>,
+        ),
+        ArtifactStoreError,
+    >
+    where
+        F: FnOnce() -> Result<(), ArtifactStoreError> + Send + 'static,
+    {
+        self.blocking(move |repository| {
+            repository.locked(|| {
+                let snapshot = repository.protect_locked(key.clone(), None)?;
+                capture_database()?;
+                let protections = repository
+                    .active_protections_locked()?
+                    .into_iter()
+                    .filter(|protection| protection.key != key)
+                    .collect();
+                Ok((snapshot, protections))
+            })
+        })
+        .await
+    }
     pub fn open(root: impl AsRef<Path>) -> Result<Self, ArtifactStoreError> {
         Ok(Self {
             repository: Arc::new(LocalArtifactRepository::open(root)?),
@@ -89,6 +147,39 @@ impl LocalArtifactStore {
 
 #[async_trait]
 impl ArtifactStorePort for LocalArtifactStore {
+    async fn protect_restore(
+        &self,
+        key: made_core::ports::ArtifactIdempotencyKey,
+        records: Vec<ArtifactRecord>,
+    ) -> Result<made_core::ports::ArtifactSnapshot, ArtifactStoreError> {
+        self.blocking(move |repository| repository.protect_restore(key, records))
+            .await
+    }
+    async fn protect_snapshot(
+        &self,
+        key: made_core::ports::ArtifactIdempotencyKey,
+    ) -> Result<made_core::ports::ArtifactSnapshot, ArtifactStoreError> {
+        self.blocking(move |repository| repository.protect(key, None))
+            .await
+    }
+
+    async fn protect_references(
+        &self,
+        key: made_core::ports::ArtifactIdempotencyKey,
+        ids: Vec<ArtifactId>,
+    ) -> Result<made_core::ports::ArtifactSnapshot, ArtifactStoreError> {
+        self.blocking(move |repository| repository.protect(key, Some(ids)))
+            .await
+    }
+
+    async fn release_snapshot(
+        &self,
+        key: &made_core::ports::ArtifactIdempotencyKey,
+    ) -> Result<(), ArtifactStoreError> {
+        let key = key.clone();
+        self.blocking(move |repository| repository.release_protection(&key))
+            .await
+    }
     async fn begin_upload(
         &self,
         request: BeginArtifactUpload,
@@ -168,6 +259,47 @@ impl ArtifactStorePort for LocalArtifactStore {
         request: ReadArtifactChunk,
     ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
         self.blocking(move |repository| repository.read(&request, true))
+            .await
+    }
+
+    async fn backup_content_available(
+        &self,
+        artifact_id: &made_core::value_objects::ArtifactId,
+    ) -> Result<bool, ArtifactStoreError> {
+        let repository = self.repository.clone();
+        let artifact_id = artifact_id.clone();
+        tokio::task::spawn_blocking(move || {
+            let record = repository.load_record(&artifact_id)?;
+            match std::fs::File::open(repository.layout.blob(&record.artifact)) {
+                Ok(file) => {
+                    super::local_artifact_repository::verify_reader(file, &record.artifact)?;
+                    Ok(true)
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::NotFound
+                        && record.tombstone.is_some() =>
+                {
+                    Ok(false)
+                }
+                Err(error) => Err(super::local_artifact_io::storage_failure(error)),
+            }
+        })
+        .await
+        .map_err(|_| ArtifactStoreError::StorageUnavailable)?
+    }
+
+    async fn restore_retired_metadata(
+        &self,
+        record: ArtifactRecord,
+    ) -> Result<(), ArtifactStoreError> {
+        self.blocking(move |repository| repository.restore_retired_metadata(&record))
+            .await
+    }
+
+    async fn active_protections(
+        &self,
+    ) -> Result<Vec<made_core::ports::ArtifactSnapshot>, ArtifactStoreError> {
+        self.blocking(LocalArtifactRepository::active_protections)
             .await
     }
 

@@ -1,10 +1,10 @@
 use async_trait::async_trait;
 use made_core::ports::{
-    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactPage, ArtifactPageLimit,
-    ArtifactReadCompletion, ArtifactRecord, ArtifactStoreError, ArtifactStorePort,
-    ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus, BeginArtifactUpload,
-    PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_BYTES,
-    ARTIFACT_MAX_CHUNK_BYTES,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactChunkPage, ArtifactIdempotencyKey,
+    ArtifactPage, ArtifactPageLimit, ArtifactRecord, ArtifactSnapshot, ArtifactStoreError,
+    ArtifactStorePort, ArtifactTombstone, ArtifactUploadId, ArtifactUploadStatus,
+    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
+    ARTIFACT_MAX_BYTES, ARTIFACT_MAX_CHUNK_BYTES,
 };
 use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use serde_json::Value as JsonValue;
@@ -19,7 +19,7 @@ use super::PostgresPool;
 /// Replica-safe artifact store backed by transactional Postgres chunks.
 #[derive(Debug, Clone)]
 pub struct PostgresArtifactStore {
-    pool: PostgresPool,
+    pub(super) pool: PostgresPool,
 }
 
 impl PostgresArtifactStore {
@@ -71,68 +71,81 @@ impl PostgresArtifactStore {
                 .map_err(storage_failure)?,
         )
     }
-
-    async fn read_inner(
-        &self,
-        request: ReadArtifactChunk,
-        include_tombstoned: bool,
-    ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
-        let record = self.get(&request.artifact_id).await?;
-        if !include_tombstoned && record.tombstone.is_some() {
-            return Err(ArtifactStoreError::Tombstoned);
-        }
-        let size = record.artifact.size_bytes().get();
-        let offset = request.offset.get();
-        if offset > size {
-            return Err(ArtifactStoreError::UnexpectedOffset {
-                expected: size,
-                actual: offset,
-            });
-        }
-        let end = offset
-            .saturating_add(u64::from(request.max_bytes.get()))
-            .min(size);
-        let rows = sqlx::query(
-            "SELECT chunk_offset, bytes FROM artifact_blobs WHERE digest = $1 AND size_bytes = $2 AND chunk_offset < $3 AND chunk_offset + OCTET_LENGTH(bytes) > $4 ORDER BY chunk_offset",
-        )
-        .bind(record.artifact.digest().as_str())
-        .bind(to_i64(size)?)
-        .bind(to_i64(end)?)
-        .bind(to_i64(offset)?)
-        .fetch_all(self.pool.inner())
-        .await
-        .map_err(storage_failure)?;
-        let mut bytes = Vec::with_capacity((end - offset) as usize);
-        for row in rows {
-            let chunk_offset = to_u64(
-                row.try_get::<i64, _>("chunk_offset")
-                    .map_err(storage_failure)?,
-            )?;
-            let chunk: Vec<u8> = row.try_get("bytes").map_err(storage_failure)?;
-            let start_in_chunk = offset.saturating_sub(chunk_offset) as usize;
-            let end_in_chunk = ((end - chunk_offset) as usize).min(chunk.len());
-            if start_in_chunk < end_in_chunk {
-                bytes.extend_from_slice(&chunk[start_in_chunk..end_in_chunk]);
-            }
-        }
-        if bytes.len() != (end - offset) as usize {
-            return Err(ArtifactStoreError::StorageUnavailable);
-        }
-        Ok(ArtifactChunkPage {
-            chunk_digest: digest_bytes(&bytes),
-            bytes,
-            next_offset: ArtifactByteOffset::new(end),
-            completion: if end == size {
-                ArtifactReadCompletion::Complete
-            } else {
-                ArtifactReadCompletion::More
-            },
-        })
-    }
 }
 
 #[async_trait]
 impl ArtifactStorePort for PostgresArtifactStore {
+    async fn protect_snapshot(
+        &self,
+        key: ArtifactIdempotencyKey,
+    ) -> Result<ArtifactSnapshot, ArtifactStoreError> {
+        self.protect_records(key, None).await
+    }
+
+    async fn protect_references(
+        &self,
+        key: ArtifactIdempotencyKey,
+        ids: Vec<ArtifactId>,
+    ) -> Result<ArtifactSnapshot, ArtifactStoreError> {
+        self.protect_records(key, Some(ids)).await
+    }
+
+    async fn protect_restore(
+        &self,
+        key: ArtifactIdempotencyKey,
+        mut records: Vec<ArtifactRecord>,
+    ) -> Result<ArtifactSnapshot, ArtifactStoreError> {
+        records.sort_by(|left, right| {
+            left.artifact
+                .artifact_id()
+                .cmp(right.artifact.artifact_id())
+        });
+        if records
+            .windows(2)
+            .any(|pair| pair[0].artifact.artifact_id() == pair[1].artifact.artifact_id())
+        {
+            return Err(ArtifactStoreError::IdempotencyConflict);
+        }
+        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        Self::lock_protection_barrier(&mut tx).await?;
+        if let Some(existing) = Self::existing_protection(&mut tx, &key).await? {
+            if existing.is_released() || existing.records != records {
+                return Err(ArtifactStoreError::IdempotencyConflict);
+            }
+            tx.commit().await.map_err(storage_failure)?;
+            return Ok(existing);
+        }
+        let snapshot = ArtifactSnapshot::protected(key, records);
+        Self::persist_protection(&mut tx, &snapshot).await?;
+        tx.commit().await.map_err(storage_failure)?;
+        Ok(snapshot)
+    }
+
+    async fn release_snapshot(
+        &self,
+        key: &ArtifactIdempotencyKey,
+    ) -> Result<(), ArtifactStoreError> {
+        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        Self::lock_protection_barrier(&mut tx).await?;
+        let mut snapshot = Self::existing_protection(&mut tx, key)
+            .await?
+            .ok_or(ArtifactStoreError::NotFound)?;
+        if snapshot.is_released() {
+            tx.commit().await.map_err(storage_failure)?;
+            return Ok(());
+        }
+        snapshot.release();
+        sqlx::query(
+            "UPDATE artifact_protections SET body = $2, state = 'released', updated_at = NOW() WHERE protection_key = $1",
+        )
+        .bind(key.as_str())
+        .bind(serde_json::to_value(snapshot).map_err(|_| ArtifactStoreError::StorageUnavailable)?)
+        .execute(&mut *tx)
+        .await
+        .map_err(storage_failure)?;
+        tx.commit().await.map_err(storage_failure)
+    }
+
     async fn begin_upload(
         &self,
         request: BeginArtifactUpload,
@@ -297,6 +310,7 @@ impl ArtifactStorePort for PostgresArtifactStore {
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
         let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        Self::lock_protection_barrier(&mut tx).await?;
         let (request, state, artifact) = Self::locked_upload(&mut tx, upload_id).await?;
         if state == "committed" {
             return artifact.ok_or(ArtifactStoreError::StorageUnavailable);
@@ -446,6 +460,65 @@ impl ArtifactStorePort for PostgresArtifactStore {
         self.read_inner(request, true).await
     }
 
+    async fn backup_content_available(
+        &self,
+        artifact_id: &ArtifactId,
+    ) -> Result<bool, ArtifactStoreError> {
+        let record = self.get(artifact_id).await?;
+        let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
+        let (digest, size) = hash_blob_chunks(
+            &mut tx,
+            record.artifact.digest().as_str(),
+            record.artifact.size_bytes().get(),
+        )
+        .await?;
+        tx.commit().await.map_err(storage_failure)?;
+        if digest == record.artifact.digest().as_str() && size == record.artifact.size_bytes().get()
+        {
+            Ok(true)
+        } else if record.tombstone.is_some() && size == 0 {
+            Ok(false)
+        } else {
+            Err(ArtifactStoreError::FinalDigestMismatch)
+        }
+    }
+
+    async fn restore_retired_metadata(
+        &self,
+        record: ArtifactRecord,
+    ) -> Result<(), ArtifactStoreError> {
+        if record.tombstone.is_none() {
+            return Err(ArtifactStoreError::InvalidBackup);
+        }
+        let body =
+            serde_json::to_value(&record).map_err(|_| ArtifactStoreError::StorageUnavailable)?;
+        let result = sqlx::query(
+            "INSERT INTO artifact_records (artifact_id, body) VALUES ($1, $2) ON CONFLICT (artifact_id) DO NOTHING",
+        )
+        .bind(record.artifact.artifact_id().as_str())
+        .bind(body)
+        .execute(self.pool.inner())
+        .await
+        .map_err(storage_failure)?;
+        if result.rows_affected() == 0 && self.get(record.artifact.artifact_id()).await? != record {
+            return Err(ArtifactStoreError::IdempotencyConflict);
+        }
+        Ok(())
+    }
+
+    async fn active_protections(&self) -> Result<Vec<ArtifactSnapshot>, ArtifactStoreError> {
+        sqlx::query("SELECT body FROM artifact_protections WHERE state = 'protected' ORDER BY protection_key")
+            .fetch_all(self.pool.inner())
+            .await
+            .map_err(storage_failure)?
+            .into_iter()
+            .map(|row| {
+                serde_json::from_value(row.try_get("body").map_err(storage_failure)?)
+                    .map_err(|_| ArtifactStoreError::StorageUnavailable)
+            })
+            .collect()
+    }
+
     async fn tombstone(
         &self,
         command: TombstoneArtifact,
@@ -505,15 +578,15 @@ fn status(upload_id: ArtifactUploadId, next_offset: u64) -> ArtifactUploadStatus
     }
 }
 
-fn to_i64(value: u64) -> Result<i64, ArtifactStoreError> {
+pub(super) fn to_i64(value: u64) -> Result<i64, ArtifactStoreError> {
     i64::try_from(value).map_err(|_| ArtifactStoreError::StorageUnavailable)
 }
 
-fn to_u64(value: i64) -> Result<u64, ArtifactStoreError> {
+pub(super) fn to_u64(value: i64) -> Result<u64, ArtifactStoreError> {
     u64::try_from(value).map_err(|_| ArtifactStoreError::StorageUnavailable)
 }
 
-fn storage_failure(error: sqlx::Error) -> ArtifactStoreError {
+pub(super) fn storage_failure(error: sqlx::Error) -> ArtifactStoreError {
     tracing::error!(%error, "postgres artifact store operation failed");
     drop(error);
     ArtifactStoreError::StorageUnavailable

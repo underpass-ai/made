@@ -13,3 +13,4 @@ Cargo.lock.bak
 .codex
 tests/e2e/compose.log
 /dist/
+/tmp/

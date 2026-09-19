@@ -37,7 +37,7 @@ impl CeremonyWorkerHost {
         &self,
         input: ClaimCeremonyWorkInput,
     ) -> Result<CeremonyWorkerHostOutcome, DomainError> {
-        let page = self.claims.execute(input).await?;
+        let page = Box::pin(self.claims.execute(input)).await?;
         let (claims, failures, next_cursor) = page.into_parts();
         let batch = self.driver.execute_claims(claims).await?;
         Ok(CeremonyWorkerHostOutcome::new(batch, failures, next_cursor))
@@ -67,7 +67,7 @@ impl CeremonyWorkerHost {
             }
 
             if recovery_cursor.is_none() && !recovery_stopped {
-                let claimed = self.run_claim_page(claim_input.clone()).await?;
+                let claimed = Box::pin(self.run_claim_page(claim_input.clone())).await?;
                 outcome.record_claim_page(&claimed);
                 claim_input = claim_input.with_after(claimed.next_cursor().cloned());
             }
@@ -102,9 +102,8 @@ impl CeremonyWorkerHost {
                 if self.driver.stop_requested() {
                     break;
                 }
-                let Ok(page) = self
-                    .run_claim_page(input.with_after(claim_after.clone()))
-                    .await
+                let Ok(page) =
+                    Box::pin(self.run_claim_page(input.with_after(claim_after.clone()))).await
                 else {
                     outcome.record_retry();
                     retry_attempt = retry_attempt.saturating_add(1);

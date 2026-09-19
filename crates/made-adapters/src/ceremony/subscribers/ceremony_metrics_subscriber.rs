@@ -81,6 +81,7 @@ impl CeremonyMetricsSubscriber {
                 );
             }
             CeremonyEvent::ParticipantsBound(_)
+            | CeremonyEvent::StepLeaseRenewed(_)
             | CeremonyEvent::ContextWritten(_)
             | CeremonyEvent::StateIterationStarted(_)
             | CeremonyEvent::InterventionClosed(_)

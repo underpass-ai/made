@@ -1,106 +1,15 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use made_core::value_objects::MaxParallel;
-
+use super::ceremony_worker_root_queue::CeremonyWorkerRootQueue;
 use super::{
-    CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionReason, CeremonyWorkerCapacity,
-    CeremonyWorkerEligibility, CeremonyWorkerPolicyVersion, CeremonyWorkerScheduleRequest,
-    CeremonyWorkerWeight,
+    CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionObserver,
+    CeremonyWorkerAdmissionReason, CeremonyWorkerEligibility, CeremonyWorkerSchedule,
+    CeremonyWorkerScheduleRequest, CeremonyWorkerSchedulerPolicy,
+    NoopCeremonyWorkerAdmissionObserver,
 };
 
-/// A read-only sink for admission decisions. The returned schedule is also a
-/// complete observation, so hosts can use this trait only when they want a
-/// metrics or audit projection.
-pub trait CeremonyWorkerAdmissionObserver: Send + Sync {
-    fn observe(&self, decision: &CeremonyWorkerAdmissionDecision);
-}
-
-#[derive(Debug, Default)]
-pub struct NoopCeremonyWorkerAdmissionObserver;
-
-impl CeremonyWorkerAdmissionObserver for NoopCeremonyWorkerAdmissionObserver {
-    fn observe(&self, _decision: &CeremonyWorkerAdmissionDecision) {}
-}
-
-/// Bounded scheduler policy. `capacity` is a declared host capacity, not a
-/// budget balance; budget and permission facts are supplied per request.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct CeremonyWorkerSchedulerPolicy {
-    max_parallel: MaxParallel,
-    capacity: CeremonyWorkerCapacity,
-    version: CeremonyWorkerPolicyVersion,
-}
-
-impl CeremonyWorkerSchedulerPolicy {
-    #[must_use]
-    pub const fn new(
-        max_parallel: MaxParallel,
-        capacity: CeremonyWorkerCapacity,
-        version: CeremonyWorkerPolicyVersion,
-    ) -> Self {
-        Self {
-            max_parallel,
-            capacity,
-            version,
-        }
-    }
-
-    #[must_use]
-    pub const fn max_parallel(self) -> MaxParallel {
-        self.max_parallel
-    }
-
-    #[must_use]
-    pub const fn capacity(self) -> CeremonyWorkerCapacity {
-        self.capacity
-    }
-
-    #[must_use]
-    pub const fn version(self) -> CeremonyWorkerPolicyVersion {
-        self.version
-    }
-}
-
-/// One deterministic, bounded scheduling result.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CeremonyWorkerSchedule {
-    admitted: Vec<CeremonyWorkerAdmissionDecision>,
-    deferred: Vec<CeremonyWorkerAdmissionDecision>,
-}
-
-impl CeremonyWorkerSchedule {
-    #[must_use]
-    pub const fn new(
-        admitted: Vec<CeremonyWorkerAdmissionDecision>,
-        deferred: Vec<CeremonyWorkerAdmissionDecision>,
-    ) -> Self {
-        Self { admitted, deferred }
-    }
-
-    #[must_use]
-    pub fn admitted(&self) -> &[CeremonyWorkerAdmissionDecision] {
-        &self.admitted
-    }
-
-    #[must_use]
-    pub fn deferred(&self) -> &[CeremonyWorkerAdmissionDecision] {
-        &self.deferred
-    }
-}
-
-#[derive(Debug)]
-struct RootQueue {
-    weight: CeremonyWorkerWeight,
-    deficit: u64,
-    requests: Vec<PendingRequest>,
-}
-
-#[derive(Debug)]
-struct PendingRequest {
-    ordinal: u64,
-    request: CeremonyWorkerScheduleRequest,
-}
+type PendingRequest = (u64, CeremonyWorkerScheduleRequest);
 
 /// Pure in-process weighted deficit round-robin scheduler. It owns no permits,
 /// credentials, balances or execution side effects; the worker use cases remain
@@ -108,10 +17,11 @@ struct PendingRequest {
 pub struct CeremonyWorkerScheduler {
     policy: CeremonyWorkerSchedulerPolicy,
     draining: bool,
+    active_root: Option<made_core::value_objects::CeremonyId>,
     next_root: Option<made_core::value_objects::CeremonyId>,
     ordinal: u64,
     decision_sequence: u64,
-    roots: BTreeMap<made_core::value_objects::CeremonyId, RootQueue>,
+    roots: BTreeMap<made_core::value_objects::CeremonyId, CeremonyWorkerRootQueue>,
     observer: Arc<dyn CeremonyWorkerAdmissionObserver>,
 }
 
@@ -140,12 +50,37 @@ impl CeremonyWorkerScheduler {
         Self {
             policy,
             draining: false,
+            active_root: None,
             next_root: None,
             ordinal: 0,
             decision_sequence: 0,
             roots: BTreeMap::new(),
             observer,
         }
+    }
+
+    /// Keep only candidates observed in this discovery page. Deficits survive refresh.
+    pub fn refresh<I>(&mut self, requests: I) -> CeremonyWorkerSchedule
+    where
+        I: IntoIterator<Item = CeremonyWorkerScheduleRequest>,
+    {
+        let requests = requests.into_iter().collect::<Vec<_>>();
+        let observed_roots = requests
+            .iter()
+            .map(|request| request.root_id().clone())
+            .collect::<std::collections::BTreeSet<_>>();
+        for queue in self.roots.values_mut() {
+            queue.pending.clear();
+        }
+        self.roots.retain(|root, _| observed_roots.contains(root));
+        if self
+            .active_root
+            .as_ref()
+            .is_some_and(|root| !self.roots.contains_key(root))
+        {
+            self.active_root = None;
+        }
+        self.schedule(requests)
     }
 
     pub fn set_draining(&mut self, draining: bool) {
@@ -155,6 +90,14 @@ impl CeremonyWorkerScheduler {
     #[must_use]
     pub const fn is_draining(&self) -> bool {
         self.draining
+    }
+
+    pub fn observe(
+        &mut self,
+        request: CeremonyWorkerScheduleRequest,
+        reason: CeremonyWorkerAdmissionReason,
+    ) -> CeremonyWorkerAdmissionDecision {
+        self.decision(request, reason)
     }
 
     /// Submit a batch and dispatch at most `max_parallel` admitted requests.
@@ -194,31 +137,28 @@ impl CeremonyWorkerScheduler {
             }
             let root_id = request.root_id().clone();
             let weight = request.weight();
-            let queue = self.roots.entry(root_id).or_insert_with(|| RootQueue {
-                weight,
-                deficit: 0,
-                requests: Vec::new(),
-            });
-            if queue.weight != weight {
-                // A root's weight is policy, not caller-controlled per item.
+            let priority = request.priority();
+            let queue = self
+                .roots
+                .entry(root_id)
+                .or_insert_with(|| CeremonyWorkerRootQueue::new(weight, priority));
+            if queue.weight != weight || queue.priority != priority {
+                // Root weight and priority are policy, not caller-controlled per item.
                 deferred.push(self.decision(request, CeremonyWorkerAdmissionReason::Backpressure));
                 continue;
             }
             self.ordinal = self.ordinal.saturating_add(1);
-            queue.requests.push(PendingRequest {
-                ordinal: self.ordinal,
-                request: request.clone(),
-            });
+            queue.pending.push((self.ordinal, request.clone()));
             newly_queued.push(request);
         }
 
         for queue in self.roots.values_mut() {
-            queue.requests.sort_by(|left, right| {
+            queue.pending.sort_by(|left, right| {
                 right
-                    .request
+                    .1
                     .priority()
-                    .cmp(&left.request.priority())
-                    .then_with(|| left.ordinal.cmp(&right.ordinal))
+                    .cmp(&left.1.priority())
+                    .then_with(|| left.0.cmp(&right.0))
             });
         }
 
@@ -232,13 +172,13 @@ impl CeremonyWorkerScheduler {
         };
         let selected_ids = selected
             .iter()
-            .map(|pending| pending.request.lease().operation_id().clone())
+            .map(|pending| pending.1.operation_id().clone())
             .collect::<std::collections::BTreeSet<_>>();
         for pending in selected {
-            admitted.push(self.decision(pending.request, CeremonyWorkerAdmissionReason::Admitted));
+            admitted.push(self.decision(pending.1, CeremonyWorkerAdmissionReason::Admitted));
         }
         for request in newly_queued {
-            if !selected_ids.contains(request.lease().operation_id()) {
+            if !selected_ids.contains(request.operation_id()) {
                 deferred.push(self.decision(request, CeremonyWorkerAdmissionReason::Backpressure));
             }
         }
@@ -247,63 +187,110 @@ impl CeremonyWorkerScheduler {
 
     fn dispatch(&mut self) -> Vec<PendingRequest> {
         let mut selected = Vec::new();
-        let rounds = usize::try_from(self.policy.capacity().value()).unwrap_or(usize::MAX);
-        for _ in 0..=rounds {
-            if selected.len() >= usize::from(self.policy.max_parallel().get()) {
-                break;
-            }
+        let mut used_capacity = 0_u32;
+        while selected.len() < usize::from(self.policy.max_parallel().get()) {
+            let remaining_capacity = self.policy.capacity().value().saturating_sub(used_capacity);
             let keys = self.roots.keys().cloned().collect::<Vec<_>>();
-            if keys.is_empty() {
+            if keys.is_empty() || !self.any_fits_capacity(remaining_capacity) {
                 break;
             }
-            let start = self
-                .next_root
-                .as_ref()
-                .and_then(|root| keys.iter().position(|candidate| candidate >= root))
-                .unwrap_or(0);
-            let mut picked = None;
-            for offset in 0..keys.len() {
-                let index = (start + offset) % keys.len();
-                let root = &keys[index];
-                let queue = self
-                    .roots
-                    .get_mut(root)
-                    .expect("root key was copied from the map");
-                queue.deficit = queue
-                    .deficit
-                    .saturating_add(u64::from(queue.weight.value()));
-                if queue.requests.first().is_some_and(|pending| {
-                    u64::from(pending.request.cost().value()) <= queue.deficit
-                }) {
-                    let pending = queue.requests.remove(0);
-                    queue.deficit = queue
-                        .deficit
-                        .saturating_sub(u64::from(pending.request.cost().value()));
-                    picked = Some((index, pending));
+            if self.active_root.is_none() {
+                let Some(root) = self.start_turn(&keys, remaining_capacity) else {
                     break;
-                }
+                };
+                self.active_root = Some(root);
             }
-            let Some((index, pending)) = picked else {
+            let root = self.active_root.clone().expect("a turn was selected");
+            let queue = self
+                .roots
+                .get_mut(&root)
+                .expect("active root remains present");
+            let position = queue.pending.iter().position(|pending| {
+                u64::from(pending.1.cost().value()) <= queue.deficit
+                    && pending.1.requested_capacity().value() <= remaining_capacity
+            });
+            let Some(position) = position else {
+                self.finish_turn(&root, &keys);
                 continue;
             };
-            let root = keys[index].clone();
+            let pending = queue.pending.remove(position);
+            queue.deficit = queue
+                .deficit
+                .saturating_sub(u64::from(pending.1.cost().value()));
+            used_capacity = used_capacity.saturating_add(pending.1.requested_capacity().value());
             selected.push(pending);
-            self.next_root = keys
-                .get((index + 1) % keys.len())
-                .cloned()
-                .or_else(|| Some(root.clone()));
-            if self
-                .roots
-                .get(&root)
-                .is_some_and(|queue| queue.requests.is_empty())
-            {
+            let can_continue = queue
+                .pending
+                .iter()
+                .any(|pending| u64::from(pending.1.cost().value()) <= queue.deficit);
+            if queue.pending.is_empty() {
                 self.roots.remove(&root);
-                if self.next_root.as_ref() == Some(&root) {
-                    self.next_root = None;
-                }
+                self.finish_turn(&root, &keys);
+            } else if !can_continue {
+                self.finish_turn(&root, &keys);
             }
         }
         selected
+    }
+
+    fn any_fits_capacity(&self, remaining_capacity: u32) -> bool {
+        self.roots.values().any(|queue| {
+            queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity)
+        })
+    }
+
+    fn start_turn(
+        &mut self,
+        keys: &[made_core::value_objects::CeremonyId],
+        remaining_capacity: u32,
+    ) -> Option<made_core::value_objects::CeremonyId> {
+        let start = self
+            .next_root
+            .as_ref()
+            .and_then(|root| keys.iter().position(|candidate| candidate >= root))
+            .unwrap_or(0);
+        let mut chosen = None;
+        for offset in 0..keys.len() {
+            let index = (start + offset) % keys.len();
+            let queue = self.roots.get(&keys[index])?;
+            let fits = queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity);
+            if fits && chosen.is_none_or(|(_, score)| queue.effective_priority() > score) {
+                chosen = Some((index, queue.effective_priority()));
+            }
+        }
+        let (index, _) = chosen?;
+        let root = keys[index].clone();
+        let queue = self.roots.get_mut(&root)?;
+        queue.deficit = queue
+            .deficit
+            .saturating_add(u64::from(queue.weight.value()));
+        queue.waiting_turns = 0;
+        for (other_root, other_queue) in &mut self.roots {
+            if other_root != &root && !other_queue.pending.is_empty() {
+                other_queue.waiting_turns = other_queue.waiting_turns.saturating_add(1);
+            }
+        }
+        Some(root)
+    }
+
+    fn finish_turn(
+        &mut self,
+        root: &made_core::value_objects::CeremonyId,
+        keys: &[made_core::value_objects::CeremonyId],
+    ) {
+        self.active_root = None;
+        self.next_root = keys
+            .iter()
+            .position(|candidate| candidate == root)
+            .and_then(|index| keys.get((index + 1) % keys.len()))
+            .filter(|candidate| self.roots.contains_key(*candidate))
+            .cloned();
     }
 
     fn decision(
@@ -328,13 +315,13 @@ mod tests {
     use std::hash::{Hash, Hasher};
     use std::sync::{Arc, Mutex};
 
-    use made_core::value_objects::{
-        CeremonyId, ExecutionOperationId, IdempotencyKey, LeaseOwnerId, StepClaimFence,
-    };
-    use time::OffsetDateTime;
+    use made_core::value_objects::{CeremonyId, ExecutionOperationId, MaxParallel};
 
     use super::*;
-    use crate::workers::{CeremonyWorkerCost, CeremonyWorkerLeaseContext, CeremonyWorkerPriority};
+    use crate::workers::{
+        CeremonyWorkerCapacity, CeremonyWorkerCost, CeremonyWorkerPolicyVersion,
+        CeremonyWorkerPriority, CeremonyWorkerWeight,
+    };
 
     #[derive(Debug, Default)]
     struct RecordingObserver(Mutex<Vec<CeremonyWorkerAdmissionDecision>>);
@@ -346,19 +333,22 @@ mod tests {
     }
 
     fn request(root: &str, operation: &str, weight: u32) -> CeremonyWorkerScheduleRequest {
+        request_with_priority(root, operation, weight, 0)
+    }
+
+    fn request_with_priority(
+        root: &str,
+        operation: &str,
+        weight: u32,
+        priority: u16,
+    ) -> CeremonyWorkerScheduleRequest {
         let mut operation_hasher = std::collections::hash_map::DefaultHasher::new();
         operation.hash(&mut operation_hasher);
         let operation_id = format!("{:064x}", operation_hasher.finish());
         CeremonyWorkerScheduleRequest::new(
             CeremonyId::new(root).unwrap(),
-            CeremonyWorkerLeaseContext::new(
-                ExecutionOperationId::new(operation_id.clone()).unwrap(),
-                StepClaimFence::new(operation_id).unwrap(),
-                LeaseOwnerId::new("host-a").unwrap(),
-                OffsetDateTime::UNIX_EPOCH,
-                IdempotencyKey::new(format!("idempotency-{operation}")).unwrap(),
-            ),
-            CeremonyWorkerPriority::DEFAULT,
+            ExecutionOperationId::new(operation_id).unwrap(),
+            CeremonyWorkerPriority::new(priority).unwrap(),
             CeremonyWorkerWeight::new(weight).unwrap(),
             CeremonyWorkerCost::new(1).unwrap(),
             CeremonyWorkerCapacity::new(1).unwrap(),
@@ -366,10 +356,57 @@ mod tests {
         )
     }
 
+    #[test]
+    fn root_priority_changes_the_next_admission() {
+        let select = |left_priority, right_priority| {
+            let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+            scheduler.schedule([
+                request_with_priority("root-a", "a", 1, left_priority),
+                request_with_priority("root-b", "b", 1, right_priority),
+            ])
+        };
+
+        let left = select(9, 1);
+        let right = select(1, 9);
+
+        assert_eq!(left.admitted()[0].request().root_id().as_str(), "root-a");
+        assert_eq!(right.admitted()[0].request().root_id().as_str(), "root-b");
+    }
+
+    #[test]
+    fn aging_eventually_serves_a_lower_priority_root() {
+        let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+        let first =
+            scheduler.schedule(
+                (1..=6)
+                    .map(|index| request_with_priority("root-low", &format!("l{index}"), 1, 0))
+                    .chain((1..=6).map(|index| {
+                        request_with_priority("root-high", &format!("h{index}"), 1, 3)
+                    })),
+            );
+        let mut admitted_roots = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 0..3 {
+            admitted_roots.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+
+        assert_eq!(admitted_roots[0].as_str(), "root-high");
+        assert!(
+            admitted_roots
+                .iter()
+                .any(|root| root.as_str() == "root-low"),
+            "priority aging must eventually serve the lower root"
+        );
+    }
+
     fn policy(max_parallel: u8) -> CeremonyWorkerSchedulerPolicy {
         CeremonyWorkerSchedulerPolicy::new(
             MaxParallel::new(max_parallel).unwrap(),
-            CeremonyWorkerCapacity::new(1).unwrap(),
+            CeremonyWorkerCapacity::new(u32::from(max_parallel)).unwrap(),
             CeremonyWorkerPolicyVersion::new(7).unwrap(),
         )
     }
@@ -398,7 +435,7 @@ mod tests {
                 .iter()
                 .map(|decision| decision.request().root_id().as_str())
                 .collect::<Vec<_>>(),
-            ["root-a", "root-b"]
+            ["root-b", "root-a"]
         );
     }
 
@@ -414,6 +451,57 @@ mod tests {
             .iter()
             .all(|decision| decision.reason() == CeremonyWorkerAdmissionReason::Backpressure));
         assert_eq!(scheduler.schedule([]).admitted().len(), 2);
+    }
+
+    #[test]
+    fn weight_grants_proportional_service_for_unit_cost_work() {
+        let mut scheduler = CeremonyWorkerScheduler::new(policy(8));
+        let requests = (1..=8)
+            .map(|index| request("root-a", &format!("a{index}"), 1))
+            .chain((1..=8).map(|index| request("root-b", &format!("b{index}"), 3)));
+
+        let admitted = scheduler.schedule(requests);
+        let root_a = admitted
+            .admitted()
+            .iter()
+            .filter(|decision| decision.request().root_id().as_str() == "root-a")
+            .count();
+        let root_b = admitted
+            .admitted()
+            .iter()
+            .filter(|decision| decision.request().root_id().as_str() == "root-b")
+            .count();
+
+        assert_eq!((root_a, root_b), (2, 6));
+    }
+
+    #[test]
+    fn weight_is_preserved_across_single_slot_polls() {
+        let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+        let first = scheduler.schedule(
+            (1..=12)
+                .map(|index| request("root-a", &format!("a{index}"), 1))
+                .chain((1..=12).map(|index| request("root-b", &format!("b{index}"), 3))),
+        );
+        let mut admitted = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 1..12 {
+            admitted.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+        let root_a = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-a")
+            .count();
+        let root_b = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-b")
+            .count();
+
+        assert_eq!((root_a, root_b), (3, 9));
     }
 
     #[test]
@@ -452,7 +540,7 @@ mod tests {
         scheduler.set_draining(false);
         let too_large = CeremonyWorkerScheduleRequest::new(
             CeremonyId::new("root").unwrap(),
-            request("root", "large", 1).lease().clone(),
+            request("root", "large", 1).operation_id().clone(),
             CeremonyWorkerPriority::DEFAULT,
             CeremonyWorkerWeight::new(1).unwrap(),
             CeremonyWorkerCost::new(2).unwrap(),
@@ -476,5 +564,67 @@ mod tests {
         assert!(scheduler.schedule([]).admitted().is_empty());
         scheduler.set_draining(false);
         assert_eq!(scheduler.schedule([]).admitted().len(), 1);
+    }
+
+    #[test]
+    fn requested_capacity_is_aggregated_across_admitted_requests() {
+        let policy = CeremonyWorkerSchedulerPolicy::new(
+            MaxParallel::new(8).unwrap(),
+            CeremonyWorkerCapacity::new(4).unwrap(),
+            CeremonyWorkerPolicyVersion::new(8).unwrap(),
+        );
+        let mut scheduler = CeremonyWorkerScheduler::new(policy);
+        let requests = (1..=3).map(|index| {
+            CeremonyWorkerScheduleRequest::new(
+                CeremonyId::new(format!("root-{index}")).unwrap(),
+                request("ignored", &format!("capacity-{index}"), 3)
+                    .operation_id()
+                    .clone(),
+                CeremonyWorkerPriority::DEFAULT,
+                CeremonyWorkerWeight::new(3).unwrap(),
+                CeremonyWorkerCost::new(1).unwrap(),
+                CeremonyWorkerCapacity::new(3).unwrap(),
+                CeremonyWorkerEligibility::Ready,
+            )
+        });
+
+        let schedule = scheduler.schedule(requests);
+
+        assert_eq!(schedule.admitted().len(), 1);
+        assert_eq!(schedule.deferred().len(), 2);
+    }
+
+    #[test]
+    fn oversized_queue_head_does_not_block_a_later_fitting_request() {
+        let policy = CeremonyWorkerSchedulerPolicy::new(
+            MaxParallel::new(3).unwrap(),
+            CeremonyWorkerCapacity::new(4).unwrap(),
+            CeremonyWorkerPolicyVersion::new(9).unwrap(),
+        );
+        let mut scheduler = CeremonyWorkerScheduler::new(policy);
+        let operation = |name: &str| request("ignored", name, 4).operation_id().clone();
+        let make = |name: &str, priority: u16, capacity: u32| {
+            CeremonyWorkerScheduleRequest::new(
+                CeremonyId::new("root").unwrap(),
+                operation(name),
+                CeremonyWorkerPriority::new(priority).unwrap(),
+                CeremonyWorkerWeight::new(4).unwrap(),
+                CeremonyWorkerCost::new(1).unwrap(),
+                CeremonyWorkerCapacity::new(capacity).unwrap(),
+                CeremonyWorkerEligibility::Ready,
+            )
+        };
+
+        let schedule = scheduler.schedule([
+            make("first", 10, 3),
+            make("oversized-head", 10, 3),
+            make("fitting-tail", 10, 1),
+        ]);
+
+        assert_eq!(schedule.admitted().len(), 2);
+        assert!(schedule
+            .admitted()
+            .iter()
+            .any(|decision| { decision.request().operation_id() == &operation("fitting-tail") }));
     }
 }

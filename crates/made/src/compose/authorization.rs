@@ -23,7 +23,7 @@ const MCP_PROXY_PRINCIPAL_IDS_ENV: &str = "MADE_AUTH_MCP_PROXY_PRINCIPAL_IDS";
 
 pub(super) struct AuthorizationWiring {
     pub(super) gate: Arc<GrpcAuthorizationGate>,
-    authorize: Arc<AuthorizeOperationUseCase>,
+    pub(super) authorize: Arc<AuthorizeOperationUseCase>,
     pub(super) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(super) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,

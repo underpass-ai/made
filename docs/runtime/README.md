@@ -85,9 +85,11 @@ a live lease blocks the transition until that work completes or expires.
 
 Separate hosts may share the durable SQLite store. Optimistic append and the
 state's effective capacity decide which distinct claims land. The MCP protocol
-exposes claim and completion operations; it does not create workers, processes
-or subagents. The host owns their lifecycle, authorization, tool access and
-external idempotency.
+exposes claim and completion operations; an MCP call does not create workers,
+processes or subagents. The service binary can separately install the explicit,
+opt-in [ceremony worker daemon](worker-daemon.md). When that daemon is disabled,
+the calling host owns worker lifecycle, authorization, tool access and external
+idempotency.
 
 With a verified server-owned `CeremonyStepHandlerPort`, use
 `made_run_ceremony_step`; the application retains the accepted fence through

@@ -33,6 +33,12 @@ pub(super) fn authority_is_valid(
                         | AuthorizationAction::RunCeremony
                 )
             }
+            AuthorizationAction::RenewCeremonyStepLease => matches!(
+                accepted.request().action(),
+                AuthorizationAction::ClaimCeremonyStep
+                    | AuthorizationAction::RunCeremonyStep
+                    | AuthorizationAction::RunCeremony
+            ),
             _ => false,
         }
 }

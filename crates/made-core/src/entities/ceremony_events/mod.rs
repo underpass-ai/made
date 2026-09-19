@@ -67,3 +67,6 @@ pub use step_deadline_exceeded::StepDeadlineExceeded;
 pub use step_failed::StepFailed;
 pub use step_started::StepStarted;
 pub use transition_applied::TransitionApplied;
+
+mod step_lease_renewed;
+pub use step_lease_renewed::StepLeaseRenewed;

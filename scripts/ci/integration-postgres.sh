@@ -11,9 +11,15 @@ source "${ROOT_DIR}/scripts/ci/testcontainers-host.sh"
 
 ensure_testcontainers_host
 
+# Reuse the same acceptance suite when collecting instrumented coverage.
+runner=(cargo test)
+if [[ "${MADE_INTEGRATION_COVERAGE:-0}" == "1" ]]; then
+  runner=(cargo llvm-cov --no-report)
+fi
+
 # Keep container-backed suites single-threaded to avoid parallel startup
 # spikes saturating the runner.
-RUST_TEST_THREADS=1 cargo test \
+RUST_TEST_THREADS=1 "${runner[@]}" \
   -p made-tests-integration \
   --features container-tests \
   --test postgres_deliberation_repository \
@@ -27,6 +33,7 @@ RUST_TEST_THREADS=1 cargo test \
   --test council_journal_conformance \
   --test council_snapshot_migration \
   --test artifact_postgres_store \
+  --test artifact_postgres_protection \
   --test authorization_postgres_store \
   --locked \
   -- --test-threads=1

@@ -99,6 +99,57 @@ impl ArtifactService {
         Ok(())
     }
 
+    /// Pin exact references before the receipt becomes durable. A failed receipt
+    /// write leaves a conservative pin; retirement requires an explicit action.
+    pub async fn protect_execution_receipt(
+        &self,
+        receipt: &ExecutionReceipt,
+    ) -> Result<(), made_core::error::DomainError> {
+        receipt.validate()?;
+        if receipt.artifacts().is_empty() {
+            return Ok(());
+        }
+        let key =
+            ArtifactIdempotencyKey::new(format!("receipt:{}", receipt.receipt_id().as_str()))?;
+        let ids = receipt
+            .artifacts()
+            .iter()
+            .map(|a| a.artifact_id().clone())
+            .collect();
+        let protected = self.store.protect_references(key, ids).await.map_err(|_| {
+            made_core::error::DomainError::InvariantViolated {
+                reason: "execution receipt artifacts cannot be durably protected",
+            }
+        })?;
+        if protected.is_released()
+            || receipt.artifacts().iter().any(|expected| {
+                !protected
+                    .records
+                    .iter()
+                    .any(|stored| &stored.artifact == expected)
+            })
+        {
+            return Err(made_core::error::DomainError::InvariantViolated {
+                reason: "execution receipt protection does not match its artifacts",
+            });
+        }
+        // Backup snapshots may retain retired metadata after GC. A receipt
+        // requires the bytes themselves; the pin prevents GC during this check.
+        for artifact in receipt.artifacts() {
+            let available = self
+                .store
+                .backup_content_available(artifact.artifact_id())
+                .await
+                .unwrap_or(false);
+            if !available {
+                return Err(made_core::error::DomainError::InvariantViolated {
+                    reason: "execution receipt artifact content is unavailable",
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub async fn list(
         &self,
         after: Option<&ArtifactId>,

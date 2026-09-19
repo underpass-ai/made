@@ -211,6 +211,12 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
             started.iteration.get(),
             started.attempt.get(),
         ),
+        CeremonyEvent::StepLeaseRenewed(renewed) => format!(
+            "step:{}:claim:{}:expiry:{}",
+            renewed.step_id,
+            renewed.claim_fence.as_str(),
+            renewed.expires_at.unix_timestamp_nanos()
+        ),
         CeremonyEvent::StepCompleted(completed) => step_about(
             &completed.step_id,
             completed.state_visit,

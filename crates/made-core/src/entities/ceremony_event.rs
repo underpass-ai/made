@@ -16,7 +16,7 @@ use super::ceremony_events::{
     HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
     InterventionRequested, InterventionResponded, LateStepResultObserved, MemoryRecalled,
     ParticipantsBound, ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
-    StepDeadlineExceeded, StepFailed, StepStarted, TransitionApplied,
+    StepDeadlineExceeded, StepFailed, StepLeaseRenewed, StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.
@@ -36,6 +36,7 @@ pub enum CeremonyEvent {
     CeremonyInstanceStarted(CeremonyInstanceStarted),
     ParticipantsBound(ParticipantsBound),
     StepStarted(StepStarted),
+    StepLeaseRenewed(StepLeaseRenewed),
     StepCompleted(StepCompleted),
     StepFailed(StepFailed),
     ContextWritten(ContextWritten),
@@ -72,6 +73,7 @@ impl CeremonyEvent {
             Self::CeremonyInstanceStarted(_) => AuditEventType::CeremonyInstanceStarted,
             Self::ParticipantsBound(_) => AuditEventType::ParticipantsBound,
             Self::StepStarted(_) => AuditEventType::StepStarted,
+            Self::StepLeaseRenewed(_) => AuditEventType::StepLeaseRenewed,
             Self::StepCompleted(_) => AuditEventType::StepCompleted,
             Self::StepFailed(_) => AuditEventType::StepFailed,
             Self::ContextWritten(_) => AuditEventType::ContextWritten,
@@ -177,6 +179,7 @@ impl CeremonyEvent {
                 EventSchemaVersion::V2
             }
             Self::CeremonyInstanceStarted(_)
+            | Self::StepLeaseRenewed(_)
             | Self::ParticipantsBound(_)
             | Self::InterventionRequested(_)
             | Self::InterventionResponded(_)

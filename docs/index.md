@@ -10,6 +10,7 @@ MADE coordinates ceremonies; the host does the work. Start at the
 | Install a local agent integration | [Plugin](plugins/README.md) or [manual MCP](embedded/README.md) |
 | Embed the engine | [Rust host integration](embedded/rust.md) |
 | Write a definition | [Authoring](authoring/README.md) |
+| Define roles and responsibilities | [Business vocabulary](authoring/business-lexicon.md) |
 | Claim, execute, complete and resume | [Runtime](runtime/README.md) |
 | Inspect the public surface | [API and MCP reference](reference/README.md) |
 | Operate a deployment | [Operations](operations/README.md) |

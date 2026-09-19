@@ -92,8 +92,9 @@ pub use budget::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,
     BudgetMeasurement, BudgetOperationId, BudgetPageLimit, BudgetQuantities,
     BudgetReconciliationId, BudgetReservation, BudgetReservationEstimate, BudgetReservationId,
-    BudgetReservationRequest, BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration,
-    MeasuredBudgetQuantities, ToolCallCount,
+    BudgetReservationPolicy, BudgetReservationPolicyVersion, BudgetReservationRequest,
+    BudgetTokenCount, CostMicros, CurrencyCode, ExecutionDuration, MeasuredBudgetQuantities,
+    ToolCallCount,
 };
 pub use ceremony::{
     CeremonyChangeImpact, CeremonyChangeKind, CeremonyChildSpawn, CeremonyChildSpec,
@@ -140,8 +141,9 @@ pub use evidence_reference::EvidenceReference;
 pub use execution::{
     ExecutionConnectorId, ExecutionIntent, ExecutionOperation, ExecutionOperationId,
     ExecutionReceipt, ExecutionReceiptId, ExecutionReceiptLink, ExecutionReceiptLinkKind,
-    ExecutionRecoveryCapability, ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
-    ExecutionRequestBytes, ExecutionRequestDigest, ExternalOperationId, MAX_EXECUTION_ARTIFACTS,
+    ExecutionReconciliationRequirement, ExecutionRecoveryCapability, ExecutionRecoveryCursor,
+    ExecutionRecoveryPageLimit, ExecutionRequestBytes, ExecutionRequestDigest, ExternalOperationId,
+    MAX_EXECUTION_ARTIFACTS,
 };
 pub use execution_id::ExecutionId;
 pub use execution_outcome::ExecutionOutcome;

@@ -32,6 +32,7 @@ pub async fn serve(app: Application) -> Result<()> {
         nats_subscriber,
         nats_ceremony_recovery,
         council_event_publisher,
+        worker_daemon,
         health_state,
         ..
     } = app;
@@ -66,22 +67,8 @@ pub async fn serve(app: Application) -> Result<()> {
         None => None,
     };
 
-    let grpc_addr: SocketAddr = format!("0.0.0.0:{}", service_config.grpc_port)
-        .parse()
-        .with_context(|| {
-            format!(
-                "invalid grpc bind address for port {}",
-                service_config.grpc_port
-            )
-        })?;
-    let http_addr: SocketAddr = format!("0.0.0.0:{}", service_config.http_port)
-        .parse()
-        .with_context(|| {
-            format!(
-                "invalid http bind address for port {}",
-                service_config.http_port
-            )
-        })?;
+    let grpc_addr = SocketAddr::from(([0, 0, 0, 0], service_config.grpc_port));
+    let http_addr = SocketAddr::from(([0, 0, 0, 0], service_config.http_port));
 
     let mut server_builder = grpc_server_builder(&service_config.grpc_tls)
         .context("failed to build grpc server with the configured TLS posture")?;
@@ -94,35 +81,45 @@ pub async fn serve(app: Application) -> Result<()> {
     );
 
     // Driver: one task waits for the OS signal and flips the watch.
-    tokio::spawn(async move {
+    let signal_shutdown = shutdown_tx.clone();
+    let signal_handle = tokio::spawn(async move {
         shutdown_signal().await;
-        let _ = shutdown_tx.send(true);
+        let _ = signal_shutdown.send(true);
     });
 
+    let worker_handle = worker_daemon
+        .map(|worker| tokio::spawn(run_worker(worker, shutdown_tx.clone(), shutdown_rx.clone())));
+
     let grpc_shutdown = wait_for_shutdown(shutdown_rx.clone());
+    let grpc_shutdown_tx = shutdown_tx.clone();
     let grpc_task = tokio::spawn(async move {
-        server_builder
+        let result = server_builder
             .add_service(grpc_service.into_server())
             .serve_with_shutdown(grpc_addr, grpc_shutdown)
             .await
-            .context("grpc server terminated with error")
+            .context("grpc server terminated with error");
+        let _ = grpc_shutdown_tx.send(true);
+        result
     });
 
     let http_shutdown = wait_for_shutdown(shutdown_rx);
+    let http_shutdown_tx = shutdown_tx.clone();
     let http_task = tokio::spawn(async move {
-        let listener = tokio::net::TcpListener::bind(http_addr)
-            .await
-            .with_context(|| format!("failed to bind http listener on {http_addr}"))?;
-        axum::serve(listener, crate::health::router(health_state))
-            .with_graceful_shutdown(http_shutdown)
-            .await
-            .context("http server terminated with error")
+        let result = serve_http(http_addr, health_state, http_shutdown).await;
+        let _ = http_shutdown_tx.send(true);
+        result
     });
 
     // Await both. If one exits with an error we still try to drain
     // the other so diagnostics aren't dropped.
-    let grpc_res = grpc_task.await.context("grpc server task join failed")?;
-    let http_res = http_task.await.context("http server task join failed")?;
+    let grpc_res = grpc_task.await.context("grpc server task join failed");
+    let _ = shutdown_tx.send(true);
+    let http_res = http_task.await.context("http server task join failed");
+    let worker_res = match worker_handle {
+        Some(handle) => handle.await.context("ceremony worker task join failed")?,
+        None => Ok(()),
+    };
+    signal_handle.abort();
 
     info!("servers stopped");
     if let Some(handle) = council_publisher_handle {
@@ -132,9 +129,41 @@ pub async fn serve(app: Application) -> Result<()> {
     stop_subscriber(subscriber_handle, "nats trigger").await;
     stop_subscriber(ceremony_recovery_handle, "nats ceremony recovery").await;
 
-    grpc_res?;
-    http_res?;
+    worker_res?;
+    grpc_res??;
+    http_res??;
     Ok(())
+}
+
+async fn run_worker(
+    worker: std::sync::Arc<crate::workers::CeremonyWorkerDaemon>,
+    shutdown_tx: watch::Sender<bool>,
+    shutdown_rx: watch::Receiver<bool>,
+) -> Result<()> {
+    let mut run = Box::pin(worker.run());
+    let result = tokio::select! {
+        result = &mut run => result,
+        () = wait_for_shutdown(shutdown_rx) => {
+            worker.request_stop();
+            run.await
+        }
+    };
+    let _ = shutdown_tx.send(true);
+    result.map(|_| ()).context("ceremony worker failed")
+}
+
+async fn serve_http(
+    address: SocketAddr,
+    health_state: crate::health::HealthState,
+    shutdown: impl std::future::Future<Output = ()> + Send + 'static,
+) -> Result<()> {
+    let listener = tokio::net::TcpListener::bind(address)
+        .await
+        .with_context(|| format!("failed to bind http listener on {address}"))?;
+    axum::serve(listener, crate::health::router(health_state))
+        .with_graceful_shutdown(shutdown)
+        .await
+        .context("http server terminated with error")
 }
 
 async fn stop_subscriber(handle: Option<tokio::task::JoinHandle<()>>, name: &str) {

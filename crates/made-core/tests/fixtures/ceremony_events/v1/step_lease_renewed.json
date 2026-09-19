@@ -1,0 +1,9 @@
+{
+  "type": "step_lease_renewed",
+  "step_id": "draft",
+  "claim_fence": "1111111111111111111111111111111111111111111111111111111111111111",
+  "lease_owner_id": "host-1",
+  "previous_expires_at": "2026-07-29T09:05:00Z",
+  "expires_at": "2026-07-29T09:09:00Z",
+  "renewed_at": "2026-07-29T09:04:00Z"
+}

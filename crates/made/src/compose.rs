@@ -12,12 +12,10 @@ use made_adapters::progress::CeremonyProgressNotifier;
 
 use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, CreateCouncilUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    GetDeliberationUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PrepareCeremonyChildrenUseCase, PrepareCeremonyParticipantsUseCase, RegisterAgentUseCase,
-    ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase, RunCeremonyUseCase,
-    RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, UnregisterAgentUseCase,
+    AcceptChildCompletionUseCase, DeliberateUseCase, OrchestrateUseCase,
+    PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
+    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    StartPublishedCeremonyUseCase,
 };
 use made_core::ports::{
     AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
@@ -40,6 +38,7 @@ mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
 mod ceremony_queries;
+mod ceremony_workers;
 mod children_recovery;
 mod council_event_publisher;
 mod execution_receipts;
@@ -47,6 +46,7 @@ mod executor;
 mod messaging;
 mod persistence;
 mod persistence_handles;
+mod registry_operations;
 mod scoring;
 mod validators;
 
@@ -256,26 +256,14 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
     );
 
-    let create_council = Arc::new(CreateCouncilUseCase::new(
-        clock.clone(),
-        council_registry.clone(),
-        agent_resolver.clone(),
-    ));
-    let prepare_ceremony_participants = Arc::new(PrepareCeremonyParticipantsUseCase::new(
-        clock.clone(),
-        agent_factory.clone(),
-        agent_registry.clone(),
-        council_registry.clone(),
-    ));
-    let delete_council = Arc::new(DeleteCouncilUseCase::new(council_registry.clone()));
-    let list_councils = Arc::new(ListCouncilsUseCase::new(council_registry.clone()));
-    let get_deliberation = Arc::new(GetDeliberationUseCase::new(repository.clone()));
-
-    let register_agent = Arc::new(RegisterAgentUseCase::new(
-        agent_factory.clone(),
-        agent_registry.clone(),
-    ));
-    let unregister_agent = Arc::new(UnregisterAgentUseCase::new(agent_registry.clone()));
+    let registry_operations = registry_operations::RegistryOperations {
+        clock: clock.clone(),
+        factory: agent_factory.clone(),
+        agents: agent_registry.clone(),
+        resolver: agent_resolver.clone(),
+        councils: council_registry.clone(),
+        repository: repository.clone(),
+    };
 
     let auto_dispatch = Arc::new(AutoDispatchService::new(
         deliberate.clone(),
@@ -296,16 +284,26 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let nats_ceremony_recovery =
         ceremony_recovery_factory.map(|factory| factory(recover_ceremony_children.clone()));
 
+    let worker_daemon = ceremony_workers::wire(ceremony_workers::CeremonyWorkerDependencies {
+        index: ceremony_index.clone(),
+        stream: ceremony_stream.clone(),
+        definitions: resolve_ceremony_definition.clone(),
+        deadlines: lifecycle.enforce_deadlines.clone(),
+        start_step: claim_ceremony_step.clone(),
+        receipts: execution_receipts.clone(),
+        clock: clock.clone(),
+        artifacts: artifacts.clone(),
+        budgets: budget_operations.service(),
+        budgeted_claim: budget_operations.claim(),
+        budget_planner: None,
+        authorize: authorization.authorize.clone(),
+        continuation: authorization_continuation.clone(),
+    })?;
+
     let mut grpc_builder = authorization
         .apply(made_adapters::grpc::MadeGrpcService::builder())
         .deliberate(deliberate)
         .orchestrate(orchestrate)
-        .create_council(create_council)
-        .delete_council(delete_council)
-        .list_councils(list_councils)
-        .get_deliberation(get_deliberation)
-        .register_agent(register_agent)
-        .unregister_agent(unregister_agent)
         .run_council_decision(run_council_decision)
         .run_ceremony(run_ceremony)
         .start_ceremony(start_ceremony)
@@ -320,7 +318,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .enforce_ceremony_deadlines(lifecycle.enforce_deadlines)
         .ceremony_definitions(ceremony_definitions.clone())
         .resolve_ceremony_definition(resolve_ceremony_definition.clone())
-        .prepare_ceremony_participants(prepare_ceremony_participants)
         .contract_registry(contract_registry.clone())
         .auto_dispatch(auto_dispatch)
         .statistics(statistics.clone())
@@ -333,6 +330,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
+    grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
     grpc_builder = ceremony_queries::wire(
         grpc_builder,
@@ -394,6 +392,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         council_event_publisher,
         nats_subscriber,
         nats_ceremony_recovery,
+        worker_daemon,
         health_state,
     })
 }

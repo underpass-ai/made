@@ -48,7 +48,7 @@ ejecutadas y un handoff antes de cruzar otro puerto.
 |---|---|---|---|
 | 1A | A | `crates/made-app/src/workers/` y tests del módulo | host continuo, renovación/fence y scheduler acotado |
 | 1B | B | nuevo adapter de ejecución en `crates/made-adapters/src/execution/` y tests propios | límites explícitos y recibo de ejecución |
-| 1C | C | `docs/corte6/`, ADRs y guía MCP; no editar código | guía ejecutable, índice y checklist de aceptación |
+| 1C | C | documentación operativa del corte fuera del repositorio, ADRs y guía MCP; no editar código | guía ejecutable, índice y checklist de aceptación |
 | 2A | A | conectores sólo tras el handoff del puerto de aislamiento | Git/HTTP de aceptación y conciliación |
 | 2B | B | perfiles/proveedores y corpus/evaluación en sus directorios | perfiles locales, rubricado y resultados reproducibles |
 | 2C | C | artifacts/retención y consola; compartir contratos sólo por handoff | preview/GC seguro y operación visual/CLI |

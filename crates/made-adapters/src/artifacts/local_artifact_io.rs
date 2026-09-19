@@ -5,7 +5,7 @@ use std::path::Path;
 use made_core::ports::ArtifactStoreError;
 use uuid::Uuid;
 
-pub(super) fn read_json<T: serde::de::DeserializeOwned>(
+pub(crate) fn read_json<T: serde::de::DeserializeOwned>(
     path: &Path,
 ) -> Result<Option<T>, ArtifactStoreError> {
     match fs::read(path) {
@@ -17,7 +17,7 @@ pub(super) fn read_json<T: serde::de::DeserializeOwned>(
     }
 }
 
-pub(super) fn write_json_atomic(
+pub(crate) fn write_json_atomic(
     path: &Path,
     value: &impl serde::Serialize,
 ) -> Result<(), ArtifactStoreError> {
@@ -31,7 +31,7 @@ pub(super) fn write_json_atomic(
     sync_directory(path.parent().expect("artifact state has a parent"))
 }
 
-pub(super) fn sync_directory(path: &Path) -> Result<(), ArtifactStoreError> {
+pub(crate) fn sync_directory(path: &Path) -> Result<(), ArtifactStoreError> {
     File::open(path)
         .and_then(|file| file.sync_all())
         .map_err(storage_failure)
