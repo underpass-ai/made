@@ -420,6 +420,15 @@ impl LocalArtifactRepository {
         read_json(&self.layout.upload_manifest(id))?.ok_or(ArtifactStoreError::NotFound)
     }
 
+    pub(super) fn artifact_id_for_upload(
+        &self,
+        id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        Ok(Self::artifact_for(&self.load_upload(id)?)?
+            .artifact_id()
+            .clone())
+    }
+
     fn load_record(&self, id: &ArtifactId) -> Result<ArtifactRecord, ArtifactStoreError> {
         read_json(&self.layout.artifact(id))?.ok_or(ArtifactStoreError::NotFound)
     }

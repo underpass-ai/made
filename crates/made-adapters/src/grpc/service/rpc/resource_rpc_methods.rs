@@ -105,10 +105,10 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::GetBudgetReportRequest>,
         ) -> GrpcResult<pb::GetBudgetReportResponse> {
-            authorized_global!(
-                self,
-                request,
-                ReadBudget,
+        authorized_budget_for_ceremony!(
+            self,
+            request,
+            ReadBudget,
                 self.handle_get_budget_report(request)
             )
         }
@@ -127,10 +127,10 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::BeginArtifactUploadRequest>,
         ) -> GrpcResult<pb::BeginArtifactUploadResponse> {
-            authorized_global!(
-                self,
-                request,
-                BeginArtifactUpload,
+        authorized_artifact_upload_begin!(
+            self,
+            request,
+            BeginArtifactUpload,
                 self.handle_begin_artifact_upload(request)
             )
         }
@@ -138,44 +138,48 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::PutArtifactChunkRequest>,
         ) -> GrpcResult<pb::PutArtifactChunkResponse> {
-            authorized_global!(
-                self,
-                request,
-                PutArtifactChunk,
-                self.handle_put_artifact_chunk(request)
+        authorized_artifact_upload!(
+            self,
+            request,
+            PutArtifactChunk,
+            request.get_ref().upload_id,
+            self.handle_put_artifact_chunk(request)
             )
         }
         async fn commit_artifact_upload(
             &self,
             request: Request<pb::CommitArtifactUploadRequest>,
         ) -> GrpcResult<pb::CommitArtifactUploadResponse> {
-            authorized_global!(
-                self,
-                request,
-                CommitArtifactUpload,
-                self.handle_commit_artifact_upload(request)
+        authorized_artifact_upload!(
+            self,
+            request,
+            CommitArtifactUpload,
+            request.get_ref().upload_id,
+            self.handle_commit_artifact_upload(request)
             )
         }
         async fn abort_artifact_upload(
             &self,
             request: Request<pb::AbortArtifactUploadRequest>,
         ) -> GrpcResult<pb::AbortArtifactUploadResponse> {
-            authorized_global!(
-                self,
-                request,
-                AbortArtifactUpload,
-                self.handle_abort_artifact_upload(request)
+        authorized_artifact_upload!(
+            self,
+            request,
+            AbortArtifactUpload,
+            request.get_ref().upload_id,
+            self.handle_abort_artifact_upload(request)
             )
         }
         async fn get_artifact(
             &self,
             request: Request<pb::GetArtifactRequest>,
         ) -> GrpcResult<pb::GetArtifactResponse> {
-            authorized_global!(
-                self,
-                request,
-                GetArtifact,
-                self.handle_get_artifact(request)
+        authorized_artifact!(
+            self,
+            request,
+            GetArtifact,
+            request.get_ref().artifact_id,
+            self.handle_get_artifact(request)
             )
         }
         async fn list_artifacts(
@@ -193,22 +197,24 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::ReadArtifactChunkRequest>,
         ) -> GrpcResult<pb::ReadArtifactChunkResponse> {
-            authorized_global!(
-                self,
-                request,
-                ReadArtifactChunk,
-                self.handle_read_artifact_chunk(request)
+        authorized_artifact!(
+            self,
+            request,
+            ReadArtifactChunk,
+            request.get_ref().artifact_id,
+            self.handle_read_artifact_chunk(request)
             )
         }
         async fn tombstone_artifact(
             &self,
             request: Request<pb::TombstoneArtifactRequest>,
         ) -> GrpcResult<pb::TombstoneArtifactResponse> {
-            authorized_global!(
-                self,
-                request,
-                TombstoneArtifact,
-                self.handle_tombstone_artifact(request)
+        authorized_artifact!(
+            self,
+            request,
+            TombstoneArtifact,
+            request.get_ref().artifact_id,
+            self.handle_tombstone_artifact(request)
             )
         }
         async fn publish_ceremony_definition(

@@ -14,6 +14,12 @@ pub enum AuthorizationScope {
     CeremonyTree {
         root_id: CeremonyId,
     },
+    /// Authoritative lineage resolved by the application before policy evaluation.
+    /// This scope is request-only and cannot be issued as a grant.
+    ResolvedCeremony {
+        ceremony_id: CeremonyId,
+        root_id: CeremonyId,
+    },
     Definition {
         name: CeremonyName,
         version: Option<CeremonyVersion>,
@@ -42,6 +48,15 @@ impl AuthorizationScope {
                 root_id == ceremony_id
             }
             (
+                Self::Ceremony {
+                    ceremony_id: granted,
+                },
+                Self::ResolvedCeremony { ceremony_id, .. },
+            ) => granted == ceremony_id,
+            (Self::CeremonyTree { root_id: granted }, Self::ResolvedCeremony { root_id, .. }) => {
+                granted == root_id
+            }
+            (
                 Self::Definition {
                     name: left_name,
                     version: left_version,
@@ -64,5 +79,45 @@ impl AuthorizationScope {
             }
             _ => false,
         }
+    }
+
+    #[must_use]
+    pub const fn is_resolved_request_scope(&self) -> bool {
+        matches!(self, Self::ResolvedCeremony { .. })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ceremony_and_tree_grants_cover_the_same_resolved_child() {
+        let child = CeremonyId::new("child").unwrap();
+        let root = CeremonyId::new("root").unwrap();
+        let resolved = AuthorizationScope::ResolvedCeremony {
+            ceremony_id: child.clone(),
+            root_id: root.clone(),
+        };
+
+        assert!(AuthorizationScope::Ceremony { ceremony_id: child }.covers(&resolved));
+        assert!(AuthorizationScope::CeremonyTree { root_id: root }.covers(&resolved));
+    }
+
+    #[test]
+    fn resolved_child_rejects_neighbor_grants() {
+        let resolved = AuthorizationScope::ResolvedCeremony {
+            ceremony_id: CeremonyId::new("child").unwrap(),
+            root_id: CeremonyId::new("root").unwrap(),
+        };
+
+        assert!(!AuthorizationScope::Ceremony {
+            ceremony_id: CeremonyId::new("neighbor").unwrap()
+        }
+        .covers(&resolved));
+        assert!(!AuthorizationScope::CeremonyTree {
+            root_id: CeremonyId::new("other-root").unwrap()
+        }
+        .covers(&resolved));
     }
 }

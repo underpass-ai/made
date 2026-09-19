@@ -99,6 +99,12 @@ impl AuthorizationGrant {
 
     pub fn validate(&self) -> Result<(), DomainError> {
         self.issuer.principal().validate()?;
+        if self.scope.is_resolved_request_scope() {
+            return Err(DomainError::InvariantViolated {
+                reason:
+                    "resolved ceremony lineage is an authorization request scope, not a grant scope",
+            });
+        }
         if self.actions.is_empty() {
             return Err(DomainError::EmptyCollection {
                 field: "authorization_grant.actions",
