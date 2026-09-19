@@ -8,10 +8,15 @@
 
 use time::OffsetDateTime;
 
-use crate::entities::CeremonyInstance;
+use crate::entities::ceremony_events::ExecutionReceiptLinked;
+use crate::entities::{CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 use crate::ports::{CeremonySnapshot, CeremonySnapshotStorePort};
-use crate::value_objects::{CeremonyContext, CeremonyId, StreamVersion};
+use crate::value_objects::{
+    CeremonyContext, CeremonyId, ExecutionOperationId, ExecutionReceiptId, ExecutionReceiptLink,
+    ExecutionReceiptLinkKind, StateIteration, StateVisit, StepClaimFence, StepId, StepIteration,
+    StreamVersion,
+};
 
 use super::conformance_fixtures::definition;
 use super::ConformanceFailure;
@@ -36,6 +41,8 @@ impl CeremonySnapshotStoreConformance {
         passed.push("a_higher_version_becomes_latest_and_a_lower_one_does_not");
         Self::saving_the_same_version_twice_is_idempotent(store).await?;
         passed.push("saving_the_same_version_twice_is_idempotent");
+        Self::receipt_adoptions_survive_snapshot_reopen(store).await?;
+        passed.push("receipt_adoptions_survive_snapshot_reopen");
         Self::forgetting_a_stream_drops_its_snapshots_and_no_others(store).await?;
         passed.push("forgetting_a_stream_drops_its_snapshots_and_no_others");
         Ok(passed)
@@ -119,6 +126,118 @@ impl CeremonySnapshotStoreConformance {
         // nothing to drop, which is the state being asked for.
         call(PROPERTY, store.forget(&forgotten).await)
     }
+
+    async fn receipt_adoptions_survive_snapshot_reopen(
+        store: &dyn CeremonySnapshotStorePort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "receipt_adoptions_survive_snapshot_reopen";
+        let stream = ceremony_id(PROPERTY, "receipt")?;
+        let mut snapshot = snapshot(PROPERTY, &stream, 7)?;
+        let operation = ExecutionOperationId::for_step(
+            &stream,
+            &StepId::new("conformance_step").map_err(|error| {
+                failure(
+                    PROPERTY,
+                    format!("the suite built an invalid step id: {error}"),
+                )
+            })?,
+            StateVisit::FIRST,
+            StateIteration::FIRST,
+            StepIteration::FIRST,
+        );
+        let producer = StepClaimFence::new("1".repeat(64)).map_err(|error| {
+            failure(
+                PROPERTY,
+                format!("the suite built an invalid fence: {error}"),
+            )
+        })?;
+        let applied = StepClaimFence::new("2".repeat(64)).map_err(|error| {
+            failure(
+                PROPERTY,
+                format!("the suite built an invalid fence: {error}"),
+            )
+        })?;
+        let second_applied = StepClaimFence::new("3".repeat(64)).map_err(|error| {
+            failure(
+                PROPERTY,
+                format!("the suite built an invalid fence: {error}"),
+            )
+        })?;
+        let receipt = ExecutionReceiptId::for_operation(&operation);
+        let direct = receipt_event(
+            operation.clone(),
+            receipt.clone(),
+            producer.clone(),
+            producer.clone(),
+            ExecutionReceiptLinkKind::Direct,
+        )?;
+        let adoption = receipt_event(
+            operation.clone(),
+            receipt.clone(),
+            producer.clone(),
+            applied.clone(),
+            ExecutionReceiptLinkKind::Adopted,
+        )?;
+        let second_adoption = receipt_event(
+            operation.clone(),
+            receipt,
+            producer,
+            second_applied.clone(),
+            ExecutionReceiptLinkKind::Adopted,
+        )?;
+        snapshot.instance.apply(&direct);
+        snapshot.instance.apply(&adoption);
+        snapshot.instance.apply(&second_adoption);
+
+        call(PROPERTY, store.save(snapshot.clone()).await)?;
+        let reopened = call(PROPERTY, store.latest(&stream).await)?
+            .ok_or_else(|| failure(PROPERTY, "the receipt adoption snapshot disappeared"))?;
+        if reopened.instance.execution_receipt_link(&operation)
+            != snapshot.instance.execution_receipt_link(&operation)
+            || reopened
+                .instance
+                .execution_receipt_adoption(&operation, &applied)
+                != snapshot
+                    .instance
+                    .execution_receipt_adoption(&operation, &applied)
+            || reopened
+                .instance
+                .execution_receipt_adoption(&operation, &second_applied)
+                != snapshot
+                    .instance
+                    .execution_receipt_adoption(&operation, &second_applied)
+        {
+            return Err(failure(
+                PROPERTY,
+                "the original receipt link or its adoption changed after reopening",
+            ));
+        }
+        Ok(())
+    }
+}
+
+fn receipt_event(
+    operation: ExecutionOperationId,
+    receipt: ExecutionReceiptId,
+    producer: StepClaimFence,
+    applied: StepClaimFence,
+    kind: ExecutionReceiptLinkKind,
+) -> Result<CeremonyEvent, ConformanceFailure> {
+    let link = ExecutionReceiptLink::new(receipt, operation, producer, applied, kind).map_err(
+        |error| {
+            failure(
+                "receipt_adoptions_survive_snapshot_reopen",
+                error.to_string(),
+            )
+        },
+    )?;
+    Ok(CeremonyEvent::ExecutionReceiptLinked(
+        ExecutionReceiptLinked {
+            step_id: StepId::new("conformance_step").expect("static step id"),
+            link,
+            linked_at: OffsetDateTime::UNIX_EPOCH,
+        },
+    ))
 }
 
 async fn expect_latest(

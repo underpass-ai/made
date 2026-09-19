@@ -390,3 +390,58 @@ for marker in "${provider_env_markers[@]}"; do
     exit 1
   fi
 done
+
+# --- Gate 9: replicas require one shared persistence decision. Three replicas
+# with Postgres are supported; the chart must refuse in-memory/SQLite replicas
+# and mixed local + Postgres ceremony stores.
+
+MULTI_WITHOUT_POSTGRES_ERR="${TMP_DIR}/made-helm-multi-without-postgres.err"
+MIXED_CEREMONY_ERR="${TMP_DIR}/made-helm-mixed-ceremony.err"
+POSTGRES_MULTI_OUT="${TMP_DIR}/made-helm-postgres-multi.yaml"
+
+if helm template made "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set replicaCount=3 \
+  > /dev/null 2>"${MULTI_WITHOUT_POSTGRES_ERR}"; then
+  echo "three-replica render without Postgres unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "replicaCount>1 requires persistence.postgres.enabled=true" "${MULTI_WITHOUT_POSTGRES_ERR}"
+
+if helm template made "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set persistence.ceremonies.enabled=true \
+  --set persistence.postgres.enabled=true \
+  --set persistence.postgres.urlFromSecret.name=pg-dsn \
+  --set persistence.postgres.urlFromSecret.key=url \
+  > /dev/null 2>"${MIXED_CEREMONY_ERR}"; then
+  echo "mixed local and Postgres ceremony render unexpectedly succeeded" >&2
+  exit 1
+fi
+grep -q "choose one ceremony adapter" "${MIXED_CEREMONY_ERR}"
+
+helm template made "${CHART_PATH}" \
+  --set image.tag=v0 \
+  --set replicaCount=3 \
+  --set persistence.postgres.enabled=true \
+  --set persistence.postgres.urlFromSecret.name=pg-dsn \
+  --set persistence.postgres.urlFromSecret.key=url \
+  > "${POSTGRES_MULTI_OUT}"
+
+postgres_multi_markers=(
+  'replicas: 3'
+  'name: MADE_POSTGRES_URL'
+  'name: "pg-dsn"'
+  'key: "url"'
+)
+for marker in "${postgres_multi_markers[@]}"; do
+  if ! grep -qF -- "${marker}" "${POSTGRES_MULTI_OUT}"; then
+    echo "three-replica Postgres manifest missing marker: ${marker}" >&2
+    exit 1
+  fi
+done
+
+if grep -qF 'name: MADE_CEREMONY_STORE_PATH' "${POSTGRES_MULTI_OUT}"; then
+  echo "three-replica Postgres manifest selected local ceremony storage" >&2
+  exit 1
+fi
