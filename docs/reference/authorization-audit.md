@@ -33,7 +33,6 @@ claim; revocation stops the next step even while the initial decision remains
 live. Other mutations after expiry require a current grant. The domain event
 retains its observation time; the journal fact records its renewed admission
 time when that is later, so authorization is never backdated.
-
 Separation rules are exercised through `ApproveAuthorizationOperation` (or
 `made_approve_authorization_operation`). The approver supplies the configured
 approval action, execution action, authoritative scope, and the SHA-256 digest
