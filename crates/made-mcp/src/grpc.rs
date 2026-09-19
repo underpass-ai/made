@@ -91,12 +91,15 @@ impl MadeMcpToolBackend for GrpcMadeMcpBackend {
             // A channel that will not open is the engine out of
             // reach, not the engine refusing: waiting is the remedy.
             let channel = self.channel().await.map_err(ToolError::unavailable)?;
+            let target_digest = ToolTraceContext::grpc_authorization_target_digest(name, arguments)
+                .map_err(ToolError::invalid_request)?;
             let structured = tools::dispatch(
                 channel,
                 name,
                 arguments,
                 trace.traceparent(),
                 trace.authorization_request_id(),
+                &target_digest,
             )
             .await?;
             Ok(crate::protocol::tool_success_result(structured))
