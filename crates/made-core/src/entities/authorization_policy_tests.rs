@@ -160,6 +160,51 @@ fn revoked_grant_can_only_continue_the_same_principal_and_sealed_work() {
 }
 
 #[test]
+fn sealed_child_completion_transition_can_drive_recovery() {
+    let mut policy = opened_policy(Vec::new());
+    let executor = worker("executor");
+    let transition_grant = grant(
+        "transition-grant",
+        executor.id().clone(),
+        [AuthorizationAction::ApplyCeremonyTransition],
+        DelegationDepth::none(),
+        trusted_host(),
+        None,
+    );
+    issue(&mut policy, &trusted_host(), transition_grant);
+    let (accepted, event) = policy
+        .decide_authorize(
+            request(
+                "accepted-terminal-transition",
+                executor.clone(),
+                AuthorizationAction::ApplyCeremonyTransition,
+                b"child-terminal",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap()
+        .into_parts();
+    policy.apply(event.unwrap()).unwrap();
+    let recovery = request(
+        "recover-terminal-child",
+        executor,
+        AuthorizationAction::RecoverCeremonyChildren,
+        b"sealed-terminal-event",
+    )
+    .with_accepted_work(accepted.id().clone());
+
+    assert_eq!(
+        policy
+            .decide_accepted_work(recovery, None, &accepted, NOW + Duration::seconds(1), ttl(),)
+            .unwrap()
+            .decision()
+            .kind(),
+        AuthorizationDecisionKind::Allow
+    );
+}
+
+#[test]
 fn revoked_claim_can_only_complete_as_the_same_authenticated_principal() {
     let mut policy = opened_policy(Vec::new());
     let executor = worker("executor");

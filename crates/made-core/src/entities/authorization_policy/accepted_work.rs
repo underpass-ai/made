@@ -22,6 +22,7 @@ pub(super) fn authority_is_valid(
                 AuthorizationAction::RunCeremony
                     | AuthorizationAction::RunCeremonyStep
                     | AuthorizationAction::PrepareCeremonyChildren
+                    | AuthorizationAction::ApplyCeremonyTransition
                     | AuthorizationAction::RecoverCeremonyChildren
             ),
             AuthorizationAction::CompleteCeremonyStep => {
