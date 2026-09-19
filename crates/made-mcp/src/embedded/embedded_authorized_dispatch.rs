@@ -27,9 +27,7 @@ pub(super) fn call<'a>(
                 return embedded_authorization_dispatch::present_approval(&decision)
                     .map(tool_success_result);
             }
-            let operation = authorization
-                .authorize(&backend.made, name, arguments, trace)
-                .await?;
+            let operation = authorization.authorize(name, arguments, trace).await?;
             AuthorizationOperationScope::run(operation, async {
                 if name == SEARCH_CEREMONY_INSTANCES_TOOL {
                     return backend

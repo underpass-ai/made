@@ -67,12 +67,19 @@ macro_rules! ceremony_rpc_methods {
             request: Request<pb::AcceptChildCompletionRequest>,
         ) -> GrpcResult<pb::AcceptChildCompletionResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_global!(
-                self,
-                request,
-                AcceptChildCompletion,
-                run_with_ceremony_trace(trace, self.handle_accept_child_completion(request))
+            let child_id = request.get_ref().child_id.clone();
+            let authorization = self
+                .authorize_child_parent(
+                    &request,
+                    AuthorizationAction::AcceptChildCompletion,
+                    &child_id,
+                )
+                .await?;
+            AuthorizationOperationScope::run(
+                authorization,
+                run_with_ceremony_trace(trace, self.handle_accept_child_completion(request)),
             )
+            .await
         }
         async fn recover_ceremony_children(
             &self,

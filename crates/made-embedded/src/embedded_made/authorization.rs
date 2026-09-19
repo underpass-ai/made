@@ -39,6 +39,14 @@ impl EmbeddedMade {
         self.authorization()?.revoke(grant_id, reason).await
     }
 
+    /// Admit the approval half of a configured separation rule.
+    ///
+    /// A direct Rust caller passes the returned decision id to
+    /// [`made_app::authorization::TrustedHostAuthorizationGate::authorize`]
+    /// for the exact execution
+    /// request, then runs the facade future inside
+    /// [`made_app::services::AuthorizationOperationScope`]. The facade checks
+    /// that typed context again for the method's action and resource scope.
     pub async fn approve_authorization_operation(
         &self,
         request_id: AuthorizationRequestId,

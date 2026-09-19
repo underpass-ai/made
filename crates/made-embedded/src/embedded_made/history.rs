@@ -17,8 +17,8 @@ use made_app::usecases::{
 use made_core::entities::AuditRecord;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId, CeremonyTranscript, GlobalPosition,
-    StreamVersion,
+    AuthorizationAction, CeremonyEventConsumer, CeremonyEventPageLimit, CeremonyId,
+    CeremonyTranscript, GlobalPosition, StreamVersion,
 };
 
 use super::EmbeddedMade;
@@ -29,6 +29,10 @@ impl EmbeddedMade {
         &self,
         input: StreamCeremonyInput,
     ) -> Result<CeremonyProgressStream, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::StreamCeremony,
+            input.ceremony_id(),
+        )?;
         self.progress_stream.execute(input).await
     }
 
@@ -39,6 +43,7 @@ impl EmbeddedMade {
     /// given asks for the whole stream, and a caller that is following
     /// one asks for a page.
     pub async fn audit_records(&self, id: &CeremonyId) -> Result<Vec<AuditRecord>, DomainError> {
+        self.require_authorized_ceremony_records(id)?;
         ReadWholeCeremonyEventsUseCase::new(self.events.clone())
             .execute(id)
             .await
@@ -58,6 +63,7 @@ impl EmbeddedMade {
         from: StreamVersion,
         limit: Option<usize>,
     ) -> Result<CeremonyEventPage, DomainError> {
+        self.require_authorized_ceremony_records(id)?;
         let limit = match limit {
             Some(limit) => CeremonyEventPageLimit::new(limit)?,
             None => CeremonyEventPageLimit::DEFAULT,
@@ -74,6 +80,7 @@ impl EmbeddedMade {
         limit: CeremonyEventPageLimit,
         acknowledge_through: Option<GlobalPosition>,
     ) -> Result<PullCeremonyEventsOutput, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::PullCeremonyEvents)?;
         PullCeremonyEventsUseCase::new(self.events.clone(), self.cursors.clone())
             .execute(PullCeremonyEventsInput::new(
                 consumer,
@@ -84,6 +91,7 @@ impl EmbeddedMade {
     }
 
     pub async fn transcript(&self, id: &CeremonyId) -> Result<CeremonyTranscript, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::GetCeremonyTranscript, id)?;
         GetCeremonyTranscriptUseCase::new(self.events.clone())
             .execute(id)
             .await
@@ -99,6 +107,7 @@ impl EmbeddedMade {
         &self,
         input: GenerateCeremonyReportInput,
     ) -> Result<CeremonyReport, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GenerateCeremonyReport)?;
         GenerateCeremonyReportUseCase::new(self.resolve_definition(), self.events.clone())
             .execute(input)
             .await
@@ -116,6 +125,7 @@ impl EmbeddedMade {
         &self,
         id: &CeremonyId,
     ) -> Result<CeremonyJournalVerdict, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::VerifyCeremonyJournal, id)?;
         VerifyCeremonyJournalUseCase::new(self.events.clone())
             .execute(id)
             .await

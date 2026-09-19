@@ -40,7 +40,8 @@ impl EmbeddedAuthorizationServices {
     }
 
     pub(crate) async fn policy(&self) -> Result<AuthorizationPolicySnapshot, DomainError> {
-        active_operation(AuthorizationAction::ReadAuthorizationPolicy)?;
+        let operation = active_operation(AuthorizationAction::ReadAuthorizationPolicy)?;
+        require_global(&operation)?;
         self.policy.execute().await
     }
 
@@ -49,7 +50,8 @@ impl EmbeddedAuthorizationServices {
         after: Option<&AuthorizationDecisionId>,
         limit: AuthorizationDecisionPageLimit,
     ) -> Result<AuthorizationDecisionPage, DomainError> {
-        active_operation(AuthorizationAction::ReadAuthorizationDecisions)?;
+        let operation = active_operation(AuthorizationAction::ReadAuthorizationDecisions)?;
+        require_global(&operation)?;
         self.decisions.execute(after, limit).await
     }
 
@@ -63,6 +65,11 @@ impl EmbeddedAuthorizationServices {
                 reason: "authorization grant issuer must be the authenticated facade principal",
             });
         }
+        if operation.evidence().scope() != grant.scope() {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorized operation scope does not match the issued grant",
+            });
+        }
         self.administration
             .issue(operation.principal(), grant)
             .await
@@ -74,10 +81,35 @@ impl EmbeddedAuthorizationServices {
         reason: AuthorizationRevocationReason,
     ) -> Result<AuthorizationMutationOutcome, DomainError> {
         let operation = active_operation(AuthorizationAction::RevokeAuthorizationGrant)?;
+        let snapshot = self.policy.execute().await?;
+        let scope = snapshot
+            .policy
+            .grants()
+            .find(|grant| grant.id() == grant_id)
+            .map(made_core::value_objects::AuthorizationGrant::scope)
+            .ok_or(DomainError::NotFound {
+                what: "authorization_grant",
+            })?;
+        if operation.evidence().scope() != scope {
+            return Err(DomainError::InvariantViolated {
+                reason: "authorized operation scope does not match the revoked grant",
+            });
+        }
         self.administration
             .revoke(operation.principal(), grant_id, reason)
             .await
     }
+}
+
+fn require_global(
+    operation: &made_core::value_objects::AuthorizedOperation,
+) -> Result<(), DomainError> {
+    if operation.evidence().scope() == &made_core::value_objects::AuthorizationScope::Global {
+        return Ok(());
+    }
+    Err(DomainError::InvariantViolated {
+        reason: "authorized operation scope is not global",
+    })
 }
 
 fn active_operation(

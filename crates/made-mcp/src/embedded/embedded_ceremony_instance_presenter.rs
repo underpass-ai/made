@@ -1,4 +1,3 @@
-use made_app::services::SessionStream;
 use made_app::usecases::{CeremonyInstanceView, StartCeremonyStepOutput};
 use made_core::entities::{AuditRecord, CeremonyInstance};
 use made_core::value_objects::{
@@ -6,7 +5,7 @@ use made_core::value_objects::{
     ChildCompletionRef, ChildGroupState, PlannedChild, RecalledEntry, RoleId, SessionRecollection,
     StepDeadline, StepId,
 };
-use made_embedded::{EmbeddedCeremonyProjection, EmbeddedMade};
+use made_embedded::{EmbeddedCeremonyAuthority, EmbeddedCeremonyProjection, EmbeddedMade};
 use time::OffsetDateTime;
 
 use crate::protocol::ToolError;
@@ -21,35 +20,44 @@ impl EmbeddedCeremonyInstancePresenter {
         made: &EmbeddedMade,
         ceremony_id: &CeremonyId,
     ) -> Result<Value, ToolError> {
-        let records = made.audit_records(ceremony_id).await?;
-        let read = SessionStream::fold_records(&records)?;
-        Self::render(made, &read.instance, records.last()).await
+        let projection = EmbeddedCeremonyAuthority::for_engine(made)
+            .projection(ceremony_id)
+            .await?;
+        Self::render(
+            made,
+            projection.instance(),
+            projection.definition(),
+            projection.records().last(),
+        )
     }
 
     pub(super) async fn present_claim(
         made: &EmbeddedMade,
         claim: &StartCeremonyStepOutput,
     ) -> Result<Value, ToolError> {
-        let records = made.audit_records(claim.instance().id()).await?;
-        let head = records
+        let projection = EmbeddedCeremonyAuthority::for_engine(made)
+            .projection(claim.instance().id())
+            .await?;
+        let head = projection
+            .records()
             .iter()
             .find(|record| record.sequence().value() == claim.version().value());
-        let mut value = Self::render(made, claim.instance(), head).await?;
+        let mut value = Self::render(made, claim.instance(), projection.definition(), head)?;
         value["claim_fence"] = json!(claim.claim_fence().as_str());
         Ok(value)
     }
 
-    async fn render(
+    fn render(
         made: &EmbeddedMade,
         instance: &CeremonyInstance,
+        definition: &made_core::entities::CeremonyDefinition,
         head: Option<&AuditRecord>,
     ) -> Result<Value, ToolError> {
-        let definition = made.definition_for(instance).await?;
         // Derived once in the application layer and rendered here. The
         // gRPC adapter renders the same view, which is what keeps one
         // working session from looking like two depending on how a
         // client reached it.
-        let view = made.project_instance(instance, &definition)?;
+        let view = made.project_instance(instance, definition)?;
         let steps = step_values(&view);
         let transitions = transition_values(&view);
         let waiting_for_human = view
@@ -114,8 +122,8 @@ impl EmbeddedCeremonyInstancePresenter {
             "current_state_visit": instance.current_state_visit().get(),
             "state_repeat_max_iterations": definition.state(instance.current_state())
                 .and_then(|state| state.repeat_policy()).map(|policy| policy.max_iterations().get()),
-            "state_repeat_condition_satisfied": instance.state_repeat_condition_is_satisfied(&definition),
-            "state_repeat_limit_reached": instance.state_repeat_limit_reached(&definition),
+            "state_repeat_condition_satisfied": instance.state_repeat_condition_is_satisfied(definition),
+            "state_repeat_limit_reached": instance.state_repeat_limit_reached(definition),
             "completed": view.is_completed(),
             "next_step_id": next_step_id,
             "claimable_step_ids": claimable_step_ids,

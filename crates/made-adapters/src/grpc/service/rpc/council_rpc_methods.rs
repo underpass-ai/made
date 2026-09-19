@@ -203,12 +203,25 @@ macro_rules! council_rpc_methods {
             &self,
             request: Request<pb::RunCouncilDecisionRequest>,
         ) -> GrpcResult<pb::RunCouncilDecisionResponse> {
-            authorized_global!(
-                self,
-                request,
-                RunCouncilDecision,
-                self.handle_run_council_decision(request)
+            let authorization = match request.get_ref().selector.as_ref() {
+                Some(pb::run_council_decision_request::Selector::CouncilId(council_id)) => {
+                    self.authorize_council(
+                        &request,
+                        AuthorizationAction::RunCouncilDecision,
+                        council_id,
+                    )
+                    .await?
+                }
+                Some(pb::run_council_decision_request::Selector::Specialty(_)) | None => {
+                    self.authorize_global(&request, AuthorizationAction::RunCouncilDecision)
+                        .await?
+                }
+            };
+            AuthorizationOperationScope::run(
+                authorization,
+                self.handle_run_council_decision(request),
             )
+            .await
         }
         async fn register_contract(
             &self,

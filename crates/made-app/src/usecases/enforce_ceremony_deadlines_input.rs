@@ -10,4 +10,9 @@ impl EnforceCeremonyDeadlinesInput {
     pub fn new(instance_id: CeremonyId) -> Self {
         Self { instance_id }
     }
+
+    #[must_use]
+    pub const fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
 }

@@ -17,6 +17,8 @@ impl EmbeddedMadeMcpBackend {
         artifacts: std::sync::Arc<dyn ArtifactStorePort>,
         execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
     ) -> Self {
+        let scopes: std::sync::Arc<dyn made_core::ports::AuthorizationScopeResolverPort> =
+            std::sync::Arc::new(made.clone());
         Self {
             made,
             authorization: Some(EmbeddedToolAuthorizer::new(
@@ -25,6 +27,7 @@ impl EmbeddedMadeMcpBackend {
                 step_continuation,
                 artifacts,
                 execution_receipts,
+                scopes,
             )),
         }
     }
