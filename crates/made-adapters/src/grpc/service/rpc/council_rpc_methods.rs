@@ -1,6 +1,10 @@
 macro_rules! council_rpc_methods {
     ($callback:ident) => {
+        council_rpc_methods!($callback; {});
+    };
+    ($callback:ident; { $($methods:tt)* }) => {
         ceremony_rpc_methods!($callback; {
+        $($methods)*
         async fn get_execution_receipt(
             &self,
             request: Request<pb::GetExecutionReceiptRequest>,

@@ -4,6 +4,7 @@ use made_adapters::grpc::GrpcAuthorizationGate;
 use made_adapters::memory::InMemoryAuthorizationPolicyStore;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
@@ -12,7 +13,14 @@ use made_core::value_objects::{
     AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind,
 };
 
-pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> Arc<GrpcAuthorizationGate> {
+pub(crate) struct FixtureAuthorization {
+    pub(crate) gate: Arc<GrpcAuthorizationGate>,
+    pub(crate) administration: Arc<AuthorizationPolicyAdministrationService>,
+    pub(crate) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
+    pub(crate) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+}
+
+pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureAuthorization {
     let policy_id = AuthorizationPolicyId::new("grpc-fixture").unwrap();
     let principal = AuthenticatedPrincipal::new(
         PrincipalId::new("grpc-fixture-host").unwrap(),
@@ -47,15 +55,27 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> Arc<Grpc
         .await
         .unwrap();
     let authorize = Arc::new(AuthorizeOperationUseCase::new(
-        policy_id,
-        store,
-        clock,
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
         AuthorizationDecisionTtl::from_seconds(300).unwrap(),
     ));
-    Arc::new(
-        GrpcAuthorizationGate::trusted_host(authorize, principal, "grpc-fixture")
-            .expect("fixture authorization must be valid"),
-    )
+    FixtureAuthorization {
+        gate: Arc::new(
+            GrpcAuthorizationGate::trusted_host(authorize, principal, "grpc-fixture")
+                .expect("fixture authorization must be valid"),
+        ),
+        administration: Arc::new(AuthorizationPolicyAdministrationService::new(
+            policy_id.clone(),
+            store.clone(),
+            clock,
+        )),
+        read_policy: Arc::new(ReadAuthorizationPolicyUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+        )),
+        read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(policy_id, store)),
+    }
 }
 
 #[allow(clippy::too_many_lines)]
@@ -64,6 +84,7 @@ fn fixture_actions() -> Vec<AuthorizationAction> {
     vec![
         A::GetCeremonyInstance,
         A::ListCeremonyInstances,
+        A::SearchCeremonyInstances,
         A::GenerateCeremonyReport,
         A::ReadCeremonyEvents,
         A::StreamCeremony,

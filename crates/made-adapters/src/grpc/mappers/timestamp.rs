@@ -8,6 +8,8 @@
 use prost_types::Timestamp;
 use time::OffsetDateTime;
 
+use made_core::DomainError;
+
 #[must_use]
 pub fn offset_to_timestamp(dt: OffsetDateTime) -> Timestamp {
     let nanos = dt.unix_timestamp_nanos();
@@ -17,6 +19,24 @@ pub fn offset_to_timestamp(dt: OffsetDateTime) -> Timestamp {
         seconds,
         nanos: sub_nanos,
     }
+}
+
+pub fn timestamp_to_offset(timestamp: Timestamp) -> Result<OffsetDateTime, DomainError> {
+    let nanos = i128::from(timestamp.seconds)
+        .checked_mul(1_000_000_000)
+        .and_then(|value| value.checked_add(i128::from(timestamp.nanos)))
+        .ok_or(DomainError::OutOfRange {
+            field: "timestamp",
+            value: timestamp.seconds as f64,
+            min: i64::MIN as f64,
+            max: i64::MAX as f64,
+        })?;
+    OffsetDateTime::from_unix_timestamp_nanos(nanos).map_err(|_| DomainError::OutOfRange {
+        field: "timestamp",
+        value: timestamp.seconds as f64,
+        min: i64::MIN as f64,
+        max: i64::MAX as f64,
+    })
 }
 
 #[cfg(test)]

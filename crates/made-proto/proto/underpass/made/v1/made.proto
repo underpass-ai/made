@@ -248,6 +248,13 @@ service MadeService {
   rpc ReadArtifactChunk(ReadArtifactChunkRequest) returns (ReadArtifactChunkResponse);
   rpc TombstoneArtifact(TombstoneArtifactRequest) returns (TombstoneArtifactResponse);
 
+  // ---- Authorization policy administration ----------------------------
+
+  rpc GetAuthorizationPolicy(GetAuthorizationPolicyRequest) returns (GetAuthorizationPolicyResponse);
+  rpc IssueAuthorizationGrant(IssueAuthorizationGrantRequest) returns (IssueAuthorizationGrantResponse);
+  rpc RevokeAuthorizationGrant(RevokeAuthorizationGrantRequest) returns (RevokeAuthorizationGrantResponse);
+  rpc ListAuthorizationDecisions(ListAuthorizationDecisionsRequest) returns (ListAuthorizationDecisionsResponse);
+
   // ---- Observability --------------------------------------------------
 
   rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
@@ -2454,3 +2461,104 @@ message ReleaseCouncilEventsRequest {
   CouncilJournalLease lease = 1;
 }
 message ReleaseCouncilEventsResponse {}
+
+// Authorization policy IDs come from process configuration. Payload principals
+// describe grant targets and recorded evidence; the authenticated transport
+// principal always supplies issuer/revoker identity.
+message AuthorizationPrincipal {
+  string principal_id = 1;
+  string kind = 2;
+  string authentication_method = 3;
+}
+
+message AuthorizationScope {
+  string kind = 1;
+  optional string ceremony_id = 2;
+  optional string root_id = 3;
+  optional string definition_name = 4;
+  optional string definition_version = 5;
+  optional string artifact_id = 6;
+  optional string council_id = 7;
+  optional string budget_account_id = 8;
+}
+
+message AuthorizationGrantRecord {
+  string grant_id = 1;
+  string grantee_id = 2;
+  repeated string actions = 3;
+  AuthorizationScope scope = 4;
+  google.protobuf.Timestamp valid_from = 5;
+  optional google.protobuf.Timestamp valid_until = 6;
+  uint32 delegation_depth = 7;
+  AuthorizationPrincipal issuer = 8;
+  optional string parent_grant_id = 9;
+}
+
+message AuthorizationSeparationRule {
+  string approval_action = 1;
+  string execution_action = 2;
+}
+
+message AuthorizationPolicyRecord {
+  string policy_id = 1;
+  uint64 version = 2;
+  AuthorizationPrincipal owner = 3;
+  repeated AuthorizationGrantRecord grants = 4;
+  repeated string revoked_grant_ids = 5;
+  repeated AuthorizationSeparationRule separation_rules = 6;
+}
+
+message GetAuthorizationPolicyRequest {}
+message GetAuthorizationPolicyResponse {
+  AuthorizationPolicyRecord policy = 1;
+}
+
+message IssueAuthorizationGrantRequest {
+  string grant_id = 1;
+  string grantee_id = 2;
+  repeated string actions = 3;
+  AuthorizationScope scope = 4;
+  google.protobuf.Timestamp valid_from = 5;
+  optional google.protobuf.Timestamp valid_until = 6;
+  uint32 delegation_depth = 7;
+  optional string parent_grant_id = 8;
+}
+message IssueAuthorizationGrantResponse {
+  uint64 version = 1;
+  bool existing = 2;
+}
+
+message RevokeAuthorizationGrantRequest {
+  string grant_id = 1;
+  string reason = 2;
+}
+message RevokeAuthorizationGrantResponse {
+  uint64 version = 1;
+  bool existing = 2;
+}
+
+message AuthorizationDecisionRecord {
+  string decision_id = 1;
+  string request_id = 2;
+  AuthorizationPrincipal principal = 3;
+  string action = 4;
+  AuthorizationScope scope = 5;
+  string target_digest = 6;
+  optional string approval_decision_id = 7;
+  uint64 policy_version = 8;
+  string outcome = 9;
+  optional string grant_id = 10;
+  optional string denial_reason = 11;
+  google.protobuf.Timestamp decided_at = 12;
+  google.protobuf.Timestamp valid_until = 13;
+}
+
+message ListAuthorizationDecisionsRequest {
+  optional string after_decision_id = 1;
+  // Zero uses 100. Maximum 500.
+  uint32 limit = 2;
+}
+message ListAuthorizationDecisionsResponse {
+  repeated AuthorizationDecisionRecord decisions = 1;
+  optional string next_after_decision_id = 2;
+}

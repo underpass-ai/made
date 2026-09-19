@@ -9,6 +9,7 @@ mod audit_fact;
 mod audit_record;
 mod authorization_policy;
 mod authorization_policy_event;
+mod authorization_policy_helpers;
 mod authorized_audit_fact;
 mod budget_ledger;
 mod budget_ledger_event;

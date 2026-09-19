@@ -4,7 +4,10 @@ use made_adapters::config::{GrpcTlsConfig, ServiceConfig};
 use made_adapters::grpc::{GrpcAuthorizationGate, MutualTlsPrincipalMap};
 use made_adapters::postgres::{PostgresAuthorizationPolicyStore, PostgresPool};
 use made_adapters::sqlite::SqliteAuthorizationPolicyStore;
-use made_app::authorization::AuthorizeOperationUseCase;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
+    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+};
 use made_core::ports::{AuthorizationPolicyStorePort, ClockPort};
 use made_core::value_objects::{AuthorizationDecisionTtl, AuthorizationPolicyId};
 use made_core::DomainError;
@@ -14,11 +17,31 @@ use crate::ComposeError;
 const POLICY_ID_ENV: &str = "MADE_AUTH_POLICY_ID";
 const PRINCIPALS_PATH_ENV: &str = "MADE_AUTH_MTLS_PRINCIPALS_PATH";
 
+pub(super) struct AuthorizationWiring {
+    pub(super) gate: Arc<GrpcAuthorizationGate>,
+    pub(super) administration: Arc<AuthorizationPolicyAdministrationService>,
+    pub(super) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
+    pub(super) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+}
+
+impl AuthorizationWiring {
+    pub(super) fn apply(
+        self,
+        builder: made_adapters::grpc::MadeGrpcServiceBuilder,
+    ) -> made_adapters::grpc::MadeGrpcServiceBuilder {
+        builder
+            .authorization(self.gate)
+            .authorization_administration(self.administration)
+            .read_authorization_policy(self.read_policy)
+            .read_authorization_decisions(self.read_decisions)
+    }
+}
+
 pub(super) async fn wire(
     config: &ServiceConfig,
     postgres: Option<&PostgresPool>,
     clock: Arc<dyn ClockPort>,
-) -> Result<Arc<GrpcAuthorizationGate>, ComposeError> {
+) -> Result<AuthorizationWiring, ComposeError> {
     if !matches!(config.grpc_tls, GrpcTlsConfig::Mutual { .. }) {
         return Err(configuration_error(
             "authorization requires MADE_GRPC_TLS_MODE=mutual",
@@ -37,14 +60,24 @@ pub(super) async fn wire(
         )));
     }
     let authorize = Arc::new(AuthorizeOperationUseCase::new(
-        policy_id,
-        store,
-        clock,
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
         AuthorizationDecisionTtl::from_seconds(60)?,
     ));
-    Ok(Arc::new(GrpcAuthorizationGate::mutual_tls(
-        authorize, principals,
-    )))
+    Ok(AuthorizationWiring {
+        gate: Arc::new(GrpcAuthorizationGate::mutual_tls(authorize, principals)),
+        administration: Arc::new(AuthorizationPolicyAdministrationService::new(
+            policy_id.clone(),
+            store.clone(),
+            clock,
+        )),
+        read_policy: Arc::new(ReadAuthorizationPolicyUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+        )),
+        read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(policy_id, store)),
+    })
 }
 
 fn policy_store(

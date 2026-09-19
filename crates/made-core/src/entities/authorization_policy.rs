@@ -2,6 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use time::OffsetDateTime;
 
+use super::authorization_policy_helpers::{owner_permits, separation_rule_map, validity_contains};
 use super::AuthorizationPolicyEvent;
 use crate::value_objects::{
     AuthenticatedPrincipal, AuthorizationAction, AuthorizationDecision, AuthorizationDecisionId,
@@ -51,6 +52,15 @@ impl AuthorizationPolicy {
     }
     pub fn decisions(&self) -> impl Iterator<Item = &AuthorizationDecision> {
         self.decisions_by_id.values()
+    }
+    pub fn grants(&self) -> impl Iterator<Item = &AuthorizationGrant> {
+        self.grants.values()
+    }
+    pub fn revoked_grant_ids(&self) -> impl Iterator<Item = &AuthorizationGrantId> {
+        self.revoked.iter()
+    }
+    pub fn separation_rules(&self) -> impl Iterator<Item = SeparationRule> + '_ {
+        self.separation_rules.values().copied()
     }
 
     pub fn decide_open(
@@ -561,38 +571,4 @@ impl AuthorizationPolicy {
             }
         }
     }
-}
-
-fn validity_contains(parent: Option<OffsetDateTime>, child: Option<OffsetDateTime>) -> bool {
-    match (parent, child) {
-        (None, _) => true,
-        (Some(_), None) => false,
-        (Some(parent), Some(child)) => child <= parent,
-    }
-}
-
-fn owner_permits(action: AuthorizationAction) -> bool {
-    matches!(
-        action,
-        AuthorizationAction::ReadAuthorizationPolicy
-            | AuthorizationAction::IssueAuthorizationGrant
-            | AuthorizationAction::RevokeAuthorizationGrant
-            | AuthorizationAction::ReadAuthorizationDecisions
-    )
-}
-
-fn separation_rule_map(
-    rules: Vec<SeparationRule>,
-) -> Result<BTreeMap<AuthorizationAction, SeparationRule>, DomainError> {
-    let count = rules.len();
-    let mapped = rules
-        .into_iter()
-        .map(|rule| (rule.execution_action(), rule))
-        .collect::<BTreeMap<_, _>>();
-    if mapped.len() != count {
-        return Err(DomainError::Conflict {
-            what: "authorization_separation_rule",
-        });
-    }
-    Ok(mapped)
 }
