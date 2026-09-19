@@ -30,8 +30,8 @@ use made_core::value_objects::{
 use made_core::DomainError;
 
 use crate::workers::{
-    CeremonyWorkerDaemon, ConfiguredWorkerBudgetPlanner, ConfiguredWorkerRootPolicy,
-    WorkerAuthorizer, WorkerConnectorKind, WorkerDaemonConfig,
+    budget_planner_from_env, CeremonyWorkerDaemon, ConfiguredWorkerRootPolicy, WorkerAuthorizer,
+    WorkerConnectorKind, WorkerDaemonConfig,
 };
 use crate::ComposeError;
 
@@ -104,7 +104,7 @@ pub(super) fn wire(
         if let Some(planner) = dependencies.budget_planner {
             planner
         } else {
-            Arc::new(ConfiguredWorkerBudgetPlanner::from_env()?)
+            Arc::new(budget_planner_from_env()?)
         };
     claims = claims.with_budget_admission(dependencies.budgeted_claim, planner);
 
