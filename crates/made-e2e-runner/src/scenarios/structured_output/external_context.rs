@@ -2,9 +2,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use futures::StreamExt;
-use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{DeliberateRequest, ExternalContextBundle, Task};
-use tonic::transport::Channel;
 use tracing::{info, warn};
 
 /// Drives `Deliberate` with an `ExternalContextBundle` attached and
@@ -14,7 +12,7 @@ use tracing::{info, warn};
 /// covers the bundle pointer a context-producing consumer would feed
 /// in).
 pub(crate) async fn verify_external_context_bundle_round_trips(
-    client: &mut MadeServiceClient<Channel>,
+    client: &mut crate::scenarios::E2eClient,
     specialty: &str,
 ) -> Result<()> {
     const BUNDLE_ID: &str = "scenario-7-bundle";
