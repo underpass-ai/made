@@ -139,6 +139,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_snapshots,
         subscribers,
     ));
+    let memory_reader = authorization.protect_memory(memory_reader, ceremony_stream.clone());
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),

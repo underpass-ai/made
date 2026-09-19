@@ -102,6 +102,24 @@ visit fields remain absent on serialization, preserving sealed bytes and
 hashes. A new transition after an old prefix opens visit 2; no undocumented
 historical visits are reconstructed. See [migration versions](../migrations/README.md).
 
+## Memory access across ceremonies
+
+`MemoryScope` selects potentially relevant memories; it grants no access to
+those memories. Protected embedded and service compositions pass reads through
+`AuthorizedMemoryReader`. Each distinct source ceremony requires the current
+principal's `ReadCeremonyEvents` authorization, recorded in the policy journal.
+The source's sealed lineage determines whether a ceremony-tree grant covers it;
+an external source absent from the local store cannot invent a parent tree.
+
+Recall and historical queries return only authorized entries and relations
+whose endpoints are both visible. Following reasons applies the same rule.
+Colliding entry identifiers with different source ceremonies are withheld,
+including their incident relations. Missing authenticated context fails closed.
+A new query after revocation or grant expiry cannot use historical permissions
+to reveal earlier decisions. Exact retries retain the authorization system's
+existing bounded admission semantics. Filtering does not rewrite session memory
+or the source journal.
+
 ## Public contract discipline
 
 The [parity ledger](parity.tsv) maps capabilities to protobuf, both MCP
