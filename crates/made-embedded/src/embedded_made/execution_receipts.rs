@@ -7,8 +7,8 @@ use made_app::workers::{
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    ExecutionOperationId, ExecutionReceipt, ExecutionReceiptLinkKind, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit,
+    AuthorizationAction, ExecutionOperationId, ExecutionReceipt, ExecutionReceiptLinkKind,
+    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
 };
 
 use super::EmbeddedMade;
@@ -18,6 +18,18 @@ impl EmbeddedMade {
         &self,
         operation_id: &ExecutionOperationId,
     ) -> Result<ExecutionReceipt, DomainError> {
+        self.require_authorized_action(AuthorizationAction::GetExecutionReceipt)?;
+        let operation = self
+            .execution_receipts
+            .operation(operation_id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                what: "execution_operation",
+            })?;
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::GetExecutionReceipt,
+            operation.ceremony_id(),
+        )?;
         GetExecutionReceiptUseCase::new(self.execution_receipts.clone())
             .execute(operation_id)
             .await
@@ -28,6 +40,7 @@ impl EmbeddedMade {
         after: Option<&ExecutionRecoveryCursor>,
         limit: ExecutionRecoveryPageLimit,
     ) -> Result<ExecutionRecoveryItemsPage, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::InspectExecutionRecovery)?;
         InspectExecutionRecoveryUseCase::new(self.stream.clone(), self.execution_receipts.clone())
             .execute(after, limit)
             .await
@@ -37,6 +50,10 @@ impl EmbeddedMade {
         &self,
         mut input: CompleteExecutionReceiptInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::CompleteExecutionReceipt,
+            &input.ceremony_id,
+        )?;
         input.link_kind = ExecutionReceiptLinkKind::Direct;
         let complete = CompleteExecutionReceiptUseCase::new(
             self.resolve_definition(),
@@ -57,6 +74,10 @@ impl EmbeddedMade {
         &self,
         mut input: CompleteExecutionReceiptInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::AdoptExecutionReceipt,
+            &input.ceremony_id,
+        )?;
         input.link_kind = ExecutionReceiptLinkKind::Adopted;
         let complete = CompleteExecutionReceiptUseCase::new(
             self.resolve_definition(),

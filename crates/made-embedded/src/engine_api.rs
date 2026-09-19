@@ -21,9 +21,9 @@ use made_core::entities::CeremonyInstance;
 use made_core::entities::CeremonyIntervention;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    Attributes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyInterventionContent,
-    CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget, CeremonyName,
-    CeremonyVersion, RoleId,
+    Attributes, AuditActorKind, AuthorizationAction, CeremonyContext, CeremonyId,
+    CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
+    CeremonyInterventionTarget, CeremonyName, CeremonyVersion, RoleId,
 };
 use time::OffsetDateTime;
 
@@ -127,10 +127,22 @@ impl CeremonyEngineApi for EmbeddedMade {
         &self,
         definition_yaml: &str,
     ) -> Result<DefinitionAnalysisView, ApiError> {
+        self.require_authorized_action(AuthorizationAction::ValidateCeremonyDraft)
+            .map_err(|error| ApiError::Refused {
+                reason: error.to_string(),
+            })?;
         let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml).map_err(|error| {
             ApiError::Refused {
                 reason: format!("that is not a definition at all: {error}"),
             }
+        })?;
+        self.require_authorized_definition_action(
+            AuthorizationAction::ValidateCeremonyDraft,
+            draft.name(),
+            Some(draft.version()),
+        )
+        .map_err(|error| ApiError::Refused {
+            reason: error.to_string(),
         })?;
         let report = draft.analyze();
         let publishable = report.is_valid();

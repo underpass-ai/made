@@ -18,13 +18,17 @@ use made_app::usecases::{
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyEventConsumer, CeremonyEventPageLimit};
+use made_core::ports::AuthorizationScopeResolverPort;
+use made_core::value_objects::{
+    AuthorizationAction, CeremonyEventConsumer, CeremonyEventPageLimit,
+};
 use std::sync::Arc;
 
 use super::EmbeddedMade;
 
 impl EmbeddedMade {
     pub async fn run(&self, input: RunCeremonyInput) -> Result<RunCeremonyOutput, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::RunCeremony, input.id())?;
         RunCeremonyUseCase::new(
             self.definitions.clone(),
             self.stream.clone(),
@@ -43,6 +47,10 @@ impl EmbeddedMade {
         &self,
         input: BindCeremonyParticipantsInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::BindCeremonyParticipants,
+            input.instance_id(),
+        )?;
         BindCeremonyParticipantsUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -57,6 +65,10 @@ impl EmbeddedMade {
         &self,
         input: StartCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::StartPublishedCeremony,
+            input.id(),
+        )?;
         StartPublishedCeremonyUseCase::new(
             self.publications.clone(),
             self.stream.clone(),
@@ -71,6 +83,10 @@ impl EmbeddedMade {
         &self,
         input: StartBudgetedCeremonyInput,
     ) -> Result<CeremonyInstance, made_core::BudgetError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::StartPublishedCeremony,
+            input.ceremony_id(),
+        )?;
         StartBudgetedCeremonyUseCase::new(
             self.publications.clone(),
             self.stream.clone(),
@@ -83,6 +99,7 @@ impl EmbeddedMade {
     }
 
     pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::StartCeremony, input.id())?;
         StartCeremonyUseCase::new(
             self.definitions.clone(),
             self.stream.clone(),
@@ -97,6 +114,10 @@ impl EmbeddedMade {
         &self,
         input: StartCeremonyStepInput,
     ) -> Result<StartCeremonyStepOutput, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ClaimCeremonyStep,
+            input.instance_id(),
+        )?;
         StartCeremonyStepUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -111,6 +132,10 @@ impl EmbeddedMade {
         &self,
         input: BudgetedStepClaimInput,
     ) -> Result<BudgetedStepClaimOutput, made_core::BudgetError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ClaimCeremonyStep,
+            input.ceremony_id(),
+        )?;
         made_app::budgets::BudgetedStepClaimUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -126,6 +151,10 @@ impl EmbeddedMade {
         &self,
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::RunCeremonyStep,
+            input.instance_id(),
+        )?;
         Box::pin(
             RunCeremonyStepUseCase::new(
                 self.resolve_definition(),
@@ -144,6 +173,10 @@ impl EmbeddedMade {
         &self,
         input: PrepareCeremonyChildrenInput,
     ) -> Result<PrepareCeremonyChildrenOutput, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::PrepareCeremonyChildren,
+            &input.instance_id,
+        )?;
         self.child_orchestrator().execute(input).await
     }
 
@@ -151,6 +184,14 @@ impl EmbeddedMade {
         &self,
         input: AcceptChildCompletionInput,
     ) -> Result<AcceptChildCompletionOutput, DomainError> {
+        self.require_authorized_action(AuthorizationAction::AcceptChildCompletion)?;
+        if self.authorization.is_some() {
+            let parent_scope = self.child_parent_scope(&input.child_id).await?;
+            self.require_authorized_scope_action(
+                AuthorizationAction::AcceptChildCompletion,
+                &parent_scope,
+            )?;
+        }
         self.child_completion_acceptor().execute(input).await
     }
 
@@ -198,6 +239,10 @@ impl EmbeddedMade {
         &self,
         input: CompleteCeremonyStepInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::CompleteCeremonyStep,
+            input.instance_id(),
+        )?;
         CompleteCeremonyStepUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -211,6 +256,10 @@ impl EmbeddedMade {
         &self,
         input: ApplyCeremonyTransitionInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ApplyCeremonyTransition,
+            input.instance_id(),
+        )?;
         ApplyCeremonyTransitionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -224,6 +273,10 @@ impl EmbeddedMade {
         &self,
         input: PauseCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::PauseCeremony,
+            input.instance_id(),
+        )?;
         PauseCeremonyUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -237,6 +290,10 @@ impl EmbeddedMade {
         &self,
         input: ResumeCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ResumeCeremony,
+            input.instance_id(),
+        )?;
         ResumeCeremonyUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -250,6 +307,10 @@ impl EmbeddedMade {
         &self,
         input: CancelCeremonyInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::CancelCeremony,
+            input.instance_id(),
+        )?;
         CancelCeremonyUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -263,6 +324,10 @@ impl EmbeddedMade {
         &self,
         input: EnforceCeremonyDeadlinesInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::EnforceCeremonyDeadlines,
+            input.instance_id(),
+        )?;
         EnforceCeremonyDeadlinesUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),

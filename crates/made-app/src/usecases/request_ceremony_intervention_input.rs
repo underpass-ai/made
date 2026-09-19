@@ -62,4 +62,9 @@ impl RequestCeremonyInterventionInput {
     pub const fn kind(&self) -> CeremonyInterventionKind {
         self.kind
     }
+
+    #[must_use]
+    pub const fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
 }

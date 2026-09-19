@@ -8,6 +8,7 @@ use made_app::usecases::{
 };
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
+use made_core::value_objects::AuthorizationAction;
 
 use super::EmbeddedMade;
 
@@ -21,6 +22,10 @@ impl EmbeddedMade {
         &self,
         input: AssertCeremonyReasonInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::AssertCeremonyReason,
+            input.instance_id(),
+        )?;
         AssertCeremonyReasonUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -34,6 +39,10 @@ impl EmbeddedMade {
         &self,
         input: ApproveCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::ApproveCeremonyGuard,
+            input.instance_id(),
+        )?;
         ApproveCeremonyGuardUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -47,6 +56,10 @@ impl EmbeddedMade {
         &self,
         input: DeferCeremonyGuardInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::DeferCeremonyGuard,
+            input.instance_id(),
+        )?;
         DeferCeremonyGuardUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -60,6 +73,10 @@ impl EmbeddedMade {
         &self,
         input: RequestCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::RequestCeremonyIntervention,
+            input.instance_id(),
+        )?;
         RequestCeremonyInterventionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -73,6 +90,10 @@ impl EmbeddedMade {
         &self,
         input: RespondToCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::RespondToCeremonyIntervention,
+            input.instance_id(),
+        )?;
         RespondToCeremonyInterventionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -86,6 +107,10 @@ impl EmbeddedMade {
         &self,
         input: CollectCeremonyEvidenceInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::CollectCeremonyEvidence,
+            input.instance_id(),
+        )?;
         CollectCeremonyEvidenceUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
@@ -100,6 +125,10 @@ impl EmbeddedMade {
         &self,
         input: CloseCeremonyInterventionInput,
     ) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::CloseCeremonyIntervention,
+            input.instance_id(),
+        )?;
         CloseCeremonyInterventionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),

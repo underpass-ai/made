@@ -15,7 +15,7 @@ use made_adapters::sqlite::{
     SqliteDeliberationRepository,
 };
 use made_api::ApiError;
-use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
+use made_app::artifacts::ArtifactService;
 use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
@@ -31,23 +31,22 @@ use made_app::usecases::{
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::ports::{
-    ArtifactChunkPage, ArtifactPageLimit, ArtifactRecord, ArtifactStoreError, ArtifactTombstone,
-    ArtifactUploadId, ArtifactUploadStatus, AuthorizationPolicyStorePort, BeginArtifactUpload,
-    CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort,
-    CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
-    CeremonyEvidenceSourcePort, CeremonyInstanceIndexPort, CeremonySnapshotStorePort,
-    CeremonyStepHandlerPort, ClockPort, ExecutionReceiptStorePort, MemoryReaderPort,
-    MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, PutArtifactChunk,
-    ReadArtifactChunk, StatisticsPort, TombstoneArtifact,
+    AuthorizationPolicyStorePort, CeremonyDefinitionPublicationPort,
+    CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
+    CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
+    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
+    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
+    MetricsSnapshotPort, StatisticsPort,
 };
 use made_core::value_objects::{
-    ArtifactId, ArtifactRef, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
+    AuthorizationAction, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
     CeremonyId,
 };
 use made_core::value_objects::{CeremonyEventPageLimit, MaxParallel};
 use std::fmt;
 use std::sync::Arc;
 
+mod artifacts;
 mod authorization;
 mod budgets;
 mod council_journal;
@@ -73,7 +72,7 @@ pub struct EmbeddedMade {
     cursors: Arc<dyn CeremonyEventCursorPort>,
     /// A session as the fold of its stream: every verb that reads or
     /// advances one goes through here.
-    stream: Arc<SessionStream>,
+    pub(crate) stream: Arc<SessionStream>,
     step_handler: Arc<dyn CeremonyStepHandlerPort>,
     evidence_source: Arc<dyn CeremonyEvidenceSourcePort>,
     pub(crate) clock: Arc<dyn ClockPort>,
@@ -381,12 +380,14 @@ impl EmbeddedMade {
     }
 
     pub async fn instance(&self, id: &CeremonyId) -> Result<CeremonyInstance, DomainError> {
+        self.require_authorized_ceremony_action(AuthorizationAction::GetCeremonyInstance, id)?;
         GetCeremonyInstanceUseCase::new(self.stream.clone())
             .execute(id)
             .await
     }
 
     pub async fn instances(&self) -> Result<Vec<CeremonyInstance>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListCeremonyInstances)?;
         ListCeremonyInstancesUseCase::new(self.stream.clone())
             .execute()
             .await
@@ -416,6 +417,7 @@ impl EmbeddedMade {
     /// a host that moves between editions reads one answer rather than
     /// two (ADR-014).
     pub async fn status(&self, include_statistics: bool) -> Result<ServiceStatus, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GetStatus)?;
         GetServiceStatusUseCase::new(
             self.statistics.clone(),
             self.metrics_recorder.clone(),
@@ -428,73 +430,10 @@ impl EmbeddedMade {
 
     /// The operational counters on their own.
     pub async fn metrics(&self) -> Result<ServiceMetrics, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::GetMetrics)?;
         GetServiceMetricsUseCase::new(self.statistics.clone(), self.metrics_snapshot.clone())
             .execute()
             .await
-    }
-
-    pub async fn begin_artifact_upload(
-        &self,
-        request: BeginArtifactUpload,
-    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
-        self.artifact_service()?.begin_upload(request).await
-    }
-
-    pub async fn put_artifact_chunk(
-        &self,
-        request: PutArtifactChunk,
-    ) -> Result<ArtifactUploadStatus, ArtifactStoreError> {
-        self.artifact_service()?.put_chunk(request).await
-    }
-
-    pub async fn commit_artifact_upload(
-        &self,
-        upload_id: &ArtifactUploadId,
-    ) -> Result<ArtifactRef, ArtifactStoreError> {
-        self.artifact_service()?.commit_upload(upload_id).await
-    }
-
-    pub async fn abort_artifact_upload(
-        &self,
-        upload_id: &ArtifactUploadId,
-    ) -> Result<(), ArtifactStoreError> {
-        self.artifact_service()?.abort_upload(upload_id).await
-    }
-
-    pub async fn get_artifact(
-        &self,
-        artifact_id: &ArtifactId,
-    ) -> Result<ArtifactRecord, ArtifactStoreError> {
-        self.artifact_service()?.get(artifact_id).await
-    }
-
-    pub async fn list_artifacts(
-        &self,
-        cursor: Option<&ArtifactCursor>,
-        limit: ArtifactPageLimit,
-    ) -> Result<ArtifactListing, ArtifactStoreError> {
-        self.artifact_service()?.list_page(cursor, limit).await
-    }
-
-    pub async fn read_artifact_chunk(
-        &self,
-        request: ReadArtifactChunk,
-    ) -> Result<ArtifactChunkPage, ArtifactStoreError> {
-        self.artifact_service()?.read_chunk(request).await
-    }
-
-    /// The host must authorize retention before calling this method.
-    pub async fn tombstone_artifact(
-        &self,
-        command: TombstoneArtifact,
-    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
-        self.artifact_service()?.tombstone(command).await
-    }
-
-    fn artifact_service(&self) -> Result<&ArtifactService, ArtifactStoreError> {
-        self.artifacts
-            .as_deref()
-            .ok_or(ArtifactStoreError::StorageUnavailable)
     }
 }
 

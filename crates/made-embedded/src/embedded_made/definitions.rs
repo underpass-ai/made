@@ -9,7 +9,9 @@ use made_core::entities::{
     CeremonyDefinition, CeremonyInstance, PublicationOutcome, PublishedCeremonyDefinition,
 };
 use made_core::error::DomainError;
-use made_core::value_objects::{CeremonyDefinitionDiff, CeremonyName, CeremonyVersion};
+use made_core::value_objects::{
+    AuthorizationAction, CeremonyDefinitionDiff, CeremonyName, CeremonyVersion,
+};
 use std::sync::Arc;
 
 use super::EmbeddedMade;
@@ -19,6 +21,11 @@ impl EmbeddedMade {
         &self,
         definition: CeremonyDefinition,
     ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+        self.require_authorized_definition_action(
+            AuthorizationAction::MountDefinition,
+            definition.name(),
+            Some(definition.version()),
+        )?;
         self.mount_definitions([definition]).await
     }
 
@@ -26,6 +33,15 @@ impl EmbeddedMade {
         &self,
         definitions: impl IntoIterator<Item = CeremonyDefinition>,
     ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+        self.require_authorized_action(AuthorizationAction::MountDefinition)?;
+        let definitions = definitions.into_iter().collect::<Vec<_>>();
+        for definition in &definitions {
+            self.require_authorized_definition_action(
+                AuthorizationAction::MountDefinition,
+                definition.name(),
+                Some(definition.version()),
+            )?;
+        }
         let source = Arc::new(InProcessCeremonyDefinitionSource::new(definitions));
         MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
             .execute()
@@ -36,7 +52,15 @@ impl EmbeddedMade {
         &self,
         raw: &str,
     ) -> Result<MountCeremonyDefinitionsOutput, DomainError> {
+        self.require_any_authorized_action(&[
+            AuthorizationAction::MountDefinition,
+            AuthorizationAction::RunCeremony,
+            AuthorizationAction::StartCeremony,
+        ])?;
         let source = Arc::new(InProcessCeremonyDefinitionSource::from_yaml(raw)?);
+        for definition in source.definitions() {
+            self.require_definition_scope_when_mounting(definition.name(), definition.version())?;
+        }
         MountCeremonyDefinitionsUseCase::new(source, self.definitions.clone())
             .execute()
             .await
@@ -47,12 +71,18 @@ impl EmbeddedMade {
         name: &CeremonyName,
         version: &CeremonyVersion,
     ) -> Result<CeremonyDefinition, DomainError> {
+        self.require_authorized_definition_action(
+            AuthorizationAction::GetCeremonyDefinition,
+            name,
+            Some(version),
+        )?;
         GetCeremonyDefinitionUseCase::new(self.definitions.clone())
             .execute(name, version)
             .await
     }
 
     pub async fn definitions(&self) -> Result<Vec<CeremonyDefinition>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
         ListCeremonyDefinitionsUseCase::new(self.definitions.clone())
             .execute()
             .await
@@ -63,6 +93,11 @@ impl EmbeddedMade {
         &self,
         definition: CeremonyDefinition,
     ) -> Result<PublicationOutcome, DomainError> {
+        self.require_authorized_definition_action(
+            AuthorizationAction::PublishCeremonyDefinition,
+            definition.name(),
+            Some(definition.version()),
+        )?;
         PublishCeremonyDefinitionUseCase::new(self.publications.clone())
             .execute(definition)
             .await
@@ -74,6 +109,11 @@ impl EmbeddedMade {
         name: &CeremonyName,
         version: &CeremonyVersion,
     ) -> Result<Option<PublishedCeremonyDefinition>, DomainError> {
+        self.require_authorized_definition_action(
+            AuthorizationAction::GetCeremonyDefinition,
+            name,
+            Some(version),
+        )?;
         self.publications.published(name, version).await
     }
 
@@ -81,6 +121,7 @@ impl EmbeddedMade {
     pub async fn published_definitions(
         &self,
     ) -> Result<Vec<PublishedCeremonyDefinition>, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::ListCeremonyDefinitions)?;
         self.publications.catalogue().await
     }
 
@@ -93,6 +134,7 @@ impl EmbeddedMade {
         &self,
         instance: &CeremonyInstance,
     ) -> Result<CeremonyDefinition, DomainError> {
+        self.require_authorized_ceremony_view(instance.id())?;
         self.resolve_definition().execute(instance).await
     }
 
@@ -123,6 +165,7 @@ impl EmbeddedMade {
         &self,
         document: &CeremonyDesignDocument,
     ) -> Result<DesignedCeremony, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::DesignCeremony)?;
         DesignCeremonyUseCase::new().execute(document)
     }
 
@@ -132,6 +175,7 @@ impl EmbeddedMade {
         before: CeremonyDefinitionSource,
         after: CeremonyDefinitionSource,
     ) -> Result<CeremonyDefinitionDiff, DomainError> {
+        self.require_authorized_global_action(AuthorizationAction::DiffCeremonyDefinitions)?;
         DiffCeremonyDefinitionsUseCase::new(self.publications.clone())
             .execute(before, after)
             .await

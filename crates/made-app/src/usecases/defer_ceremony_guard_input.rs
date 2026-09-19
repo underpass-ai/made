@@ -42,4 +42,9 @@ impl DeferCeremonyGuardInput {
     pub fn content(&self) -> &CeremonyGuardDeferralContent {
         &self.content
     }
+
+    #[must_use]
+    pub const fn instance_id(&self) -> &CeremonyId {
+        &self.instance_id
+    }
 }

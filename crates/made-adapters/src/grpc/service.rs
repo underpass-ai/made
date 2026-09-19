@@ -41,7 +41,7 @@ use made_core::ports::{
 };
 use made_core::value_objects::{
     AgentId, ArtifactId, AuthorizationAction, AuthorizationScope, AuthorizedOperation, CeremonyId,
-    MaxParallel, OutputContractId, Specialty, TaskId,
+    CouncilId, MaxParallel, OutputContractId, Specialty, TaskId,
 };
 use made_proto::v1 as pb;
 use made_proto::v1::made_service_server::{MadeService, MadeServiceServer};
@@ -238,6 +238,66 @@ impl MadeGrpcService {
         };
         self.authorization
             .authorize_authenticated(request, principal, action, scope, None)
+            .await
+    }
+
+    async fn authorize_child_parent<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        child_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let child_id = CeremonyId::new(child_id).map_err(domain_error_to_status)?;
+        let child = self
+            .get_ceremony_instance
+            .execute(&child_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let parent_id = child
+            .lineage()
+            .ok_or_else(|| {
+                domain_error_to_status(DomainError::InvariantViolated {
+                    reason: "child authorization scope requires sealed lineage",
+                })
+            })?
+            .parent_id()
+            .clone();
+        let parent = self
+            .get_ceremony_instance
+            .execute(&parent_id)
+            .await
+            .map_err(domain_error_to_status)?;
+        let scope = parent.lineage().map_or_else(
+            || AuthorizationScope::Ceremony {
+                ceremony_id: parent_id.clone(),
+            },
+            |lineage| AuthorizationScope::ResolvedCeremony {
+                ceremony_id: parent_id.clone(),
+                root_id: lineage.root_id().clone(),
+            },
+        );
+        self.authorization
+            .authorize_authenticated(request, principal, action, scope, None)
+            .await
+    }
+
+    async fn authorize_council<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        council_id: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let council_id = CouncilId::new(council_id).map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize_authenticated(
+                request,
+                principal,
+                action,
+                AuthorizationScope::Council { council_id },
+                None,
+            )
             .await
     }
 

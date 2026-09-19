@@ -2,12 +2,13 @@ use made_app::authorization::{
     AuthorizationGateOutcome, ContinueAcceptedStepClaimUseCase, ReadAuthorizationPolicyUseCase,
     TrustedHostAuthorizationGate,
 };
-use made_core::ports::{ArtifactStorePort, ArtifactUploadId, ExecutionReceiptStorePort};
+use made_core::ports::{
+    ArtifactStorePort, ArtifactUploadId, AuthorizationScopeResolverPort, ExecutionReceiptStorePort,
+};
 use made_core::value_objects::{
     ArtifactId, AuthorizationAction, AuthorizationRequestId, AuthorizationScope, BudgetAccountId,
     CeremonyId, CeremonyName, CeremonyVersion, CouncilId, ExecutionOperationId,
 };
-use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
 use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
@@ -24,6 +25,7 @@ pub(super) struct EmbeddedToolAuthorizer {
     step_continuation: std::sync::Arc<ContinueAcceptedStepClaimUseCase>,
     artifacts: std::sync::Arc<dyn ArtifactStorePort>,
     execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
+    scopes: std::sync::Arc<dyn AuthorizationScopeResolverPort>,
 }
 
 impl std::fmt::Debug for EmbeddedToolAuthorizer {
@@ -42,6 +44,7 @@ impl EmbeddedToolAuthorizer {
         step_continuation: std::sync::Arc<ContinueAcceptedStepClaimUseCase>,
         artifacts: std::sync::Arc<dyn ArtifactStorePort>,
         execution_receipts: std::sync::Arc<dyn ExecutionReceiptStorePort>,
+        scopes: std::sync::Arc<dyn AuthorizationScopeResolverPort>,
     ) -> Self {
         Self {
             gate,
@@ -49,6 +52,7 @@ impl EmbeddedToolAuthorizer {
             step_continuation,
             artifacts,
             execution_receipts,
+            scopes,
         }
     }
 
@@ -62,15 +66,12 @@ impl EmbeddedToolAuthorizer {
 
     pub(super) async fn authorize(
         &self,
-        made: &EmbeddedMade,
         tool_name: &str,
         arguments: &Value,
         trace: &ToolTraceContext,
     ) -> Result<made_core::value_objects::AuthorizedOperation, ToolError> {
         let action = action_for_tool(tool_name)?;
-        let scope = self
-            .scope_for_tool(made, tool_name, action, arguments)
-            .await?;
+        let scope = self.scope_for_tool(tool_name, action, arguments).await?;
         let request_id = AuthorizationRequestId::new(trace.authorization_request_id())?;
         let target_digest = if tool_name == SEARCH_CEREMONY_INSTANCES_TOOL {
             EmbeddedCeremonySearchRequest::try_from(arguments)
@@ -156,7 +157,6 @@ impl EmbeddedToolAuthorizer {
     }
     async fn scope_for_tool(
         &self,
-        made: &EmbeddedMade,
         tool_name: &str,
         action: AuthorizationAction,
         arguments: &Value,
@@ -165,7 +165,7 @@ impl EmbeddedToolAuthorizer {
             &self.read_policy,
             self.artifacts.as_ref(),
             self.execution_receipts.as_ref(),
-            made,
+            self.scopes.as_ref(),
             tool_name,
             action,
             arguments,
@@ -206,7 +206,7 @@ async fn scope_for_tool(
     read_policy: &ReadAuthorizationPolicyUseCase,
     artifacts: &dyn ArtifactStorePort,
     execution_receipts: &dyn ExecutionReceiptStorePort,
-    made: &EmbeddedMade,
+    scopes: &dyn AuthorizationScopeResolverPort,
     tool_name: &str,
     action: AuthorizationAction,
     arguments: &Value,
@@ -237,13 +237,19 @@ async fn scope_for_tool(
     if tool_name == "made_get_budget_report" {
         let raw = string_field(object, "ceremony_id")?
             .ok_or_else(|| ToolError::invalid_request("field `ceremony_id` is required"))?;
-        let instance = made.instance(&CeremonyId::new(raw)?).await?;
-        let account_id = instance
-            .budget_account_id()
-            .ok_or_else(|| ToolError::refused("ceremony has no durable budget account"))?;
-        return Ok(AuthorizationScope::Budget {
-            account_id: account_id.clone(),
-        });
+        return scopes
+            .budget_scope(&CeremonyId::new(raw)?)
+            .await
+            .map_err(Into::into);
+    }
+
+    if tool_name == "made_accept_child_completion" {
+        let raw = string_field(object, "child_id")?
+            .ok_or_else(|| ToolError::invalid_request("field `child_id` is required"))?;
+        return scopes
+            .child_parent_scope(&CeremonyId::new(raw)?)
+            .await
+            .map_err(Into::into);
     }
 
     if is_definition_action(action) {
@@ -252,7 +258,10 @@ async fn scope_for_tool(
     }
 
     if let Some(raw) = string_field(object, "ceremony_id")? {
-        return resolved_ceremony(made, CeremonyId::new(raw)?).await;
+        return scopes
+            .ceremony_scope(&CeremonyId::new(raw)?)
+            .await
+            .map_err(Into::into);
     }
     if let Some(raw) = string_field(object, "operation_id")? {
         let operation = execution_receipts
@@ -261,7 +270,10 @@ async fn scope_for_tool(
         let operation = operation.ok_or(made_core::DomainError::NotFound {
             what: "execution_operation",
         })?;
-        return resolved_ceremony(made, operation.ceremony_id().clone()).await;
+        return scopes
+            .ceremony_scope(operation.ceremony_id())
+            .await
+            .map_err(Into::into);
     }
     if let Some(raw) =
         string_field(object, "artifact_id")?.or(string_field(object, "requested_artifact_id")?)
@@ -328,24 +340,6 @@ fn definition_identity(
         .map(CeremonyVersion::new)
         .transpose()?;
     Ok((CeremonyName::new(name)?, version))
-}
-
-async fn resolved_ceremony(
-    made: &EmbeddedMade,
-    ceremony_id: CeremonyId,
-) -> Result<AuthorizationScope, ToolError> {
-    match made.instance(&ceremony_id).await {
-        Ok(instance) => Ok(AuthorizationScope::ResolvedCeremony {
-            root_id: instance
-                .lineage()
-                .map_or_else(|| ceremony_id.clone(), |lineage| lineage.root_id().clone()),
-            ceremony_id,
-        }),
-        Err(made_core::DomainError::NotFound { .. }) => {
-            Ok(AuthorizationScope::Ceremony { ceremony_id })
-        }
-        Err(error) => Err(error.into()),
-    }
 }
 
 fn string_field<'a>(

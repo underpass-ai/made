@@ -1,4 +1,4 @@
-use made_core::value_objects::BudgetReservationEstimate;
+use made_core::value_objects::{BudgetReservationEstimate, CeremonyId};
 
 use crate::usecases::StartCeremonyStepInput;
 
@@ -15,5 +15,10 @@ impl BudgetedStepClaimInput {
         reservation: BudgetReservationEstimate,
     ) -> Self {
         Self { claim, reservation }
+    }
+
+    #[must_use]
+    pub fn ceremony_id(&self) -> &CeremonyId {
+        self.claim.instance_id()
     }
 }
