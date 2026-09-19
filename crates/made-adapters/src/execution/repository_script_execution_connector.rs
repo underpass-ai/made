@@ -237,27 +237,9 @@ impl RepositoryScriptExecutionConnector {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .kill_on_drop(true);
-        configure_process_group(&mut command);
-        let Ok(mut child) = command.spawn() else {
+        let Ok(Ok(status)) = tokio::time::timeout(self.timeout, command.status()).await else {
             return Ok(Self::reconciliation_required(intent));
         };
-        let Some(pid) = child.id() else {
-            return Ok(Self::reconciliation_required(intent));
-        };
-        let mut process_group = OwnedProcessGroup::new(pid);
-        let mut reaper = tokio::spawn(async move { child.wait().await });
-        let status =
-            if let Ok(Ok(Ok(status))) = tokio::time::timeout(self.timeout, &mut reaper).await {
-                process_group.disarm();
-                status
-            } else {
-                process_group.terminate();
-                let Ok(Ok(status)) = reaper.await else {
-                    return Ok(Self::reconciliation_required(intent));
-                };
-                process_group.disarm();
-                status
-            };
         if !status.success() {
             return Ok(Self::reconciliation_required(intent));
         }
@@ -298,68 +280,6 @@ impl RepositoryScriptExecutionConnector {
         )))
     }
 }
-
-#[cfg(unix)]
-fn configure_process_group(command: &mut Command) {
-    command.process_group(0);
-}
-
-#[cfg(not(unix))]
-fn configure_process_group(_command: &mut Command) {}
-
-struct OwnedProcessGroup {
-    pid: u32,
-    armed: bool,
-}
-
-impl OwnedProcessGroup {
-    fn new(pid: u32) -> Self {
-        Self { pid, armed: true }
-    }
-
-    fn disarm(&mut self) {
-        self.armed = false;
-    }
-
-    fn terminate(&mut self) {
-        if self.armed {
-            terminate_process_group(self.pid);
-            self.armed = false;
-        }
-    }
-}
-
-impl Drop for OwnedProcessGroup {
-    fn drop(&mut self) {
-        self.terminate();
-    }
-}
-
-#[cfg(unix)]
-fn terminate_process_group(pid: u32) {
-    let Some(kill_binary) = ["/bin/kill", "/usr/bin/kill"]
-        .iter()
-        .map(Path::new)
-        .find(|path| path.is_file())
-    else {
-        return;
-    };
-    let group_killed = std::process::Command::new(kill_binary)
-        .arg("-KILL")
-        .arg("--")
-        .arg(format!("-{pid}"))
-        .status()
-        .is_ok_and(|status| status.success());
-    if !group_killed {
-        let _ = std::process::Command::new(kill_binary)
-            .arg("-KILL")
-            .arg(pid.to_string())
-            .status();
-    }
-}
-
-#[cfg(not(unix))]
-fn terminate_process_group(_pid: u32) {}
 
 #[async_trait]
 impl CeremonyExecutionConnectorPort for RepositoryScriptExecutionConnector {

@@ -599,7 +599,6 @@ fn kill_process_group(pid: u32) -> bool {
     };
     std::process::Command::new(kill_binary)
         .arg("-KILL")
-        .arg("--")
         .arg(format!("-{pid}"))
         .status()
         .is_ok_and(|status| status.success())
