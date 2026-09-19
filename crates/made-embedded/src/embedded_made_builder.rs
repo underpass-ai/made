@@ -5,19 +5,12 @@ use std::sync::Arc;
 use made_adapters::clock::SystemClock;
 use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
-    InMemoryContractRegistry, InMemoryCouncilJournal, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryExecutionReceiptStore, InMemoryStatistics,
+    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
+    InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
-use made_adapters::scoring::UniformScoring;
-use made_adapters::validators::{
-    AllowedStringValuesValidator, BoundedEventShapeValidator, ClaimsEvidenceGroundedValidator,
-    ClaimsEvidenceSupportedValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
-    JsonSchemaValidator, RequiredFieldsValidator,
-};
 use made_app::artifacts::ArtifactService;
 use made_app::usecases::CeremonyProgressSettings;
 use made_core::entities::CeremonyEvidencePack;
@@ -34,11 +27,9 @@ use made_core::ports::{
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
-use crate::{
-    embedded_council_services::EmbeddedCouncilServices,
-    unconfigured_executor::UnconfiguredExecutor, CallbackCeremonyEvidenceSource,
-    CallbackCeremonyStepHandler, EmbeddedMade,
-};
+use crate::{CallbackCeremonyEvidenceSource, CallbackCeremonyStepHandler, EmbeddedMade};
+
+mod councils;
 
 /// Builder for an in-process MADE with replaceable adapters.
 #[derive(Default)]
@@ -503,71 +494,6 @@ impl EmbeddedMadeBuilder {
             execution_receipts,
         )
     }
-
-    fn compose_councils(
-        &mut self,
-        clock: Arc<dyn ClockPort>,
-        statistics: Arc<dyn StatisticsPort>,
-        metrics: Arc<dyn MetricsRecorderPort>,
-    ) -> Arc<EmbeddedCouncilServices> {
-        let councils = self.council_registry.take().unwrap_or_else(|| {
-            Arc::new(InMemoryCouncilRegistry::new()) as Arc<dyn CouncilRegistryPort>
-        });
-        let (agent_registry, agent_resolver) = self
-            .agent_registry
-            .take()
-            .zip(self.agent_resolver.take())
-            .unwrap_or_else(|| {
-                let registry = Arc::new(InMemoryAgentRegistry::new());
-                (
-                    registry.clone() as Arc<dyn AgentRegistryPort>,
-                    registry as Arc<dyn AgentResolverPort>,
-                )
-            });
-        let deliberations = self.deliberations.take().unwrap_or_else(|| {
-            Arc::new(InMemoryDeliberationRepository::new()) as Arc<dyn DeliberationRepositoryPort>
-        });
-        let contracts = self.contracts.take().unwrap_or_else(|| {
-            Arc::new(InMemoryContractRegistry::new()) as Arc<dyn ContractRegistryPort>
-        });
-        let journal = self
-            .council_journal
-            .take()
-            .unwrap_or_else(|| Arc::new(InMemoryCouncilJournal::new()));
-        let messaging =
-            made_adapters::council_journal_messaging::CouncilJournalMessaging::new(journal.clone());
-        let messaging = if let Some(transport) = self.messaging.take() {
-            messaging.with_immediate_transport(transport)
-        } else {
-            messaging
-        };
-        let messaging = Arc::new(messaging);
-        Arc::new(EmbeddedCouncilServices::new(
-            clock,
-            journal,
-            councils,
-            agent_registry,
-            agent_resolver,
-            self.agent_factory.take().unwrap_or_else(|| {
-                Arc::new(made_adapters::agents::DispatchingAgentFactory::new())
-                    as Arc<dyn AgentFactoryPort>
-            }),
-            deliberations,
-            contracts,
-            self.validators
-                .take()
-                .unwrap_or_else(default_council_validators),
-            self.scoring
-                .take()
-                .unwrap_or_else(|| Arc::new(UniformScoring::new()) as Arc<dyn ScoringPort>),
-            self.executor
-                .take()
-                .unwrap_or_else(|| Arc::new(UnconfiguredExecutor) as Arc<dyn ExecutorPort>),
-            messaging,
-            statistics,
-            metrics,
-        ))
-    }
 }
 
 impl fmt::Debug for EmbeddedMadeBuilder {
@@ -595,17 +521,4 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             )
             .finish()
     }
-}
-
-fn default_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
-    vec![
-        Arc::new(ContentNonEmptyValidator::new()),
-        Arc::new(JsonObjectOutputValidator::new()),
-        Arc::new(RequiredFieldsValidator::new()),
-        Arc::new(AllowedStringValuesValidator::new()),
-        Arc::new(JsonSchemaValidator::new()),
-        Arc::new(ClaimsEvidenceGroundedValidator::new()),
-        Arc::new(ClaimsEvidenceSupportedValidator::new(None)),
-        Arc::new(BoundedEventShapeValidator::new()),
-    ]
 }
