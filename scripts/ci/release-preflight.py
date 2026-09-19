@@ -146,7 +146,17 @@ def release_identity(root: pathlib.Path) -> tuple[str, list[str]]:
     if len(entries) != 1:
         raise PreflightError("Claude marketplace must contain one made entry")
     source = entries[0].get("source")
-    if not isinstance(source, dict) or source.get("ref") != f"v{version}":
+    marketplace_ref = source.get("ref") if isinstance(source, dict) else None
+    if "-" in version:
+        stable = re.fullmatch(
+            r"v(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)\.(?:0|[1-9][0-9]*)",
+            marketplace_ref or "",
+        )
+        if stable is None:
+            raise PreflightError(
+                "a prerelease must leave the Claude marketplace on an immutable stable tag"
+            )
+    elif marketplace_ref != f"v{version}":
         raise PreflightError(f"Claude marketplace must pin v{version}")
 
     return version, sorted(member_names)
@@ -230,6 +240,19 @@ def self_test() -> None:
             assert "chart version" in str(error), error
         else:
             raise AssertionError("accepted a drifted Helm chart")
+
+        if "-" in version:
+            chart.write_bytes((source_root / "charts/made/Chart.yaml").read_bytes())
+            catalog = root / ".claude-plugin/marketplace.json"
+            payload = json.loads(catalog.read_text())
+            payload["plugins"][0]["source"]["ref"] = f"v{version}"
+            catalog.write_text(json.dumps(payload, indent=2) + "\n")
+            try:
+                release_identity(root)
+            except PreflightError as error:
+                assert "immutable stable tag" in str(error), error
+            else:
+                raise AssertionError("accepted a prerelease as the stable marketplace ref")
 
     with tempfile.TemporaryDirectory(
         prefix="release-tag-", dir=source_root / "tmp"
