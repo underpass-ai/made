@@ -354,18 +354,25 @@ impl SessionStream {
         version: StreamVersion,
         facts: Vec<AuditFact>,
     ) -> Result<AppendOutcome, DomainError> {
-        if let Some(operation) = current_authorized_operation() {
+        if let Some(operation) = Self::active_authorization(self.authorization_required)? {
             return self
                 .events
                 .append_authorized(ceremony_id, version, facts, operation.evidence().clone())
                 .await;
         }
-        if self.authorization_required {
+        self.events.append(ceremony_id, version, facts).await
+    }
+
+    pub(crate) fn active_authorization(
+        required: bool,
+    ) -> Result<Option<made_core::value_objects::AuthorizedOperation>, DomainError> {
+        let operation = current_authorized_operation();
+        if required && operation.is_none() {
             return Err(DomainError::InvariantViolated {
                 reason: "protected ceremony append has no active authorization",
             });
         }
-        self.events.append(ceremony_id, version, facts).await
+        Ok(operation)
     }
 
     /// Cache the fold at this version. A failure is logged and
