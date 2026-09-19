@@ -10,6 +10,7 @@
 use crate::entities::{CeremonyCommand, CeremonyDefinition, CeremonyEvent, CeremonyInstance};
 use crate::error::DomainError;
 
+mod budget_admission;
 mod children;
 mod execution_receipts;
 mod guard_decisions;

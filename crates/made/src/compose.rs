@@ -27,14 +27,14 @@ use tracing::info;
 
 use crate::{Application, ComposeError};
 
-use messaging::{wire_messaging, MessagingWiring};
-
 use ceremony_lifecycle::CeremonyLifecycleControls;
 use ceremony_persistence::{wire as wire_ceremony_persistence, CeremonyPersistence};
+use messaging::{wire_messaging, MessagingWiring};
 use persistence::wire_persistence;
 use persistence_handles::Persistence;
 
 mod artifact_storage;
+mod budget_operations;
 mod ceremony_lifecycle;
 mod ceremony_operations;
 mod ceremony_persistence;
@@ -92,6 +92,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         memory_writer,
         memory_reader,
         receipts: execution_receipts,
+        budgets: budget_ledger,
     } = wire_ceremony_persistence(&service_config)?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
@@ -188,6 +189,15 @@ pub async fn compose() -> Result<Application, ComposeError> {
         clock.clone(),
         memory_reader.clone(),
     ));
+    let budget_operations = budget_operations::BudgetOperations::new(
+        budget_ledger,
+        ceremony_publications.clone(),
+        ceremony_stream.clone(),
+        clock.clone(),
+        memory_reader.clone(),
+        resolve_ceremony_definition.clone(),
+        service_config.max_parallel,
+    );
     let prepare_ceremony_children = Arc::new(PrepareCeremonyChildrenUseCase::new(
         resolve_ceremony_definition.clone(),
         ceremony_publications.clone(),
@@ -241,7 +251,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )
         .with_max_parallel_ceiling(service_config.max_parallel),
     );
-
     let lifecycle = CeremonyLifecycleControls::wire(
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
@@ -326,6 +335,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         )))
         .clock(clock.clone())
         .max_parallel_ceiling(service_config.max_parallel);
+    grpc_builder = budget_operations.wire(grpc_builder);
     grpc_builder = ceremony_queries::wire(
         grpc_builder,
         resolve_ceremony_definition.clone(),
@@ -342,6 +352,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         execution_receipts,
         clock.clone(),
         artifacts.clone(),
+        budget_operations.service(),
     );
     grpc_builder = ceremony_operations::wire(
         grpc_builder,

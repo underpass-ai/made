@@ -39,6 +39,7 @@ impl CeremonyInstance {
             completed_at: None,
             bound_definition: started.bound_definition,
             lineage: started.lineage.clone(),
+            budget_account_id: started.budget_account_id.clone(),
             child_groups: BTreeMap::new(),
             lifecycle: crate::value_objects::CeremonyLifecycle::default(),
             ceremony_deadline: started.ceremony_deadline,

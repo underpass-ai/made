@@ -26,7 +26,7 @@ use made_adapters::ceremony::{
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
+    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
     InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
     InMemoryStatistics,
@@ -40,6 +40,9 @@ use made_adapters::validators::{
     JsonSchemaValidator, RequiredFieldsValidator,
 };
 use made_app::artifacts::ArtifactService;
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+};
 use made_app::services::{
     AutoDispatchService, CeremonyEventFanout, SessionMemoryRecorder, SessionStream,
 };
@@ -170,6 +173,8 @@ impl GrpcFixture {
         ));
         let ceremony_publications: Arc<dyn CeremonyDefinitionPublicationPort> =
             Arc::new(InMemoryCeremonyDefinitionPublications::new());
+        let budgets =
+            BudgetLedgerService::new(Arc::new(InMemoryBudgetLedgerStore::new()), clock.clone());
         let ceremony_cursors = Arc::new(InMemoryCeremonyEventCursor::new());
         let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
             ceremony_definitions.clone(),
@@ -255,6 +260,13 @@ impl GrpcFixture {
             clock.clone(),
             memory_reader.clone(),
         ));
+        let start_budgeted_ceremony = Arc::new(StartBudgetedCeremonyUseCase::new(
+            ceremony_publications.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+            memory_reader.clone(),
+            budgets.clone(),
+        ));
         let run_ceremony_step = Arc::new(
             RunCeremonyStepUseCase::new(
                 resolve_ceremony_definition.clone(),
@@ -272,6 +284,12 @@ impl GrpcFixture {
             resolve_ceremony_definition.clone(),
             ceremony_stream.clone(),
             clock.clone(),
+        ));
+        let budgeted_step_claim = Arc::new(BudgetedStepClaimUseCase::new(
+            resolve_ceremony_definition.clone(),
+            ceremony_stream.clone(),
+            clock.clone(),
+            budgets.clone(),
         ));
         let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
             resolve_ceremony_definition.clone(),
@@ -395,10 +413,13 @@ impl GrpcFixture {
             .run_ceremony(run_ceremony)
             .start_ceremony(start_ceremony)
             .start_published_ceremony(start_published_ceremony)
+            .start_budgeted_ceremony(start_budgeted_ceremony)
             .run_ceremony_step(run_ceremony_step)
             .accept_child_completion(accept_child_completion)
             .recover_ceremony_children(recover_ceremony_children)
             .claim_ceremony_step(claim_ceremony_step)
+            .budgeted_step_claim(budgeted_step_claim)
+            .budgets(Arc::new(budgets.clone()))
             .complete_ceremony_step(complete_ceremony_step)
             .apply_ceremony_transition(apply_ceremony_transition)
             .pause_ceremony(pause_ceremony)
@@ -468,7 +489,8 @@ impl GrpcFixture {
             complete_receipt.with_artifacts(Arc::new(ArtifactService::new(store)))
         } else {
             complete_receipt
-        };
+        }
+        .with_budget_ledger(budgets);
         service_builder = service_builder
             .get_execution_receipt(Arc::new(
                 made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),

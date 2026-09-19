@@ -87,10 +87,11 @@ impl CeremonyInstance {
         let claimed_role = dynamic
             .then(|| started_by.clone())
             .or_else(|| sealed_role.clone());
-        let claimed_record =
-            record
-                .clone()
-                .with_started(command.lease.clone(), attempt, claimed_role);
+        let claimed_record = record
+            .clone()
+            .with_started(command.lease.clone(), attempt, claimed_role)
+            .with_budget_reservation(command.budget_reservation_id.clone());
+        self.require_budget_reservation(&command.step_id, record, command)?;
         let claim_fence = StepClaimFence::for_record(self.id(), &command.step_id, &claimed_record)?;
         let deadline = self.step_deadline(
             command,
@@ -116,6 +117,7 @@ impl CeremonyInstance {
             }),
             sealed_role,
             deadline,
+            budget_reservation_id: command.budget_reservation_id.clone(),
             started_at: command.now,
         })])
     }

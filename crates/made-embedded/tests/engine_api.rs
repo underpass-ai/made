@@ -183,6 +183,26 @@ async fn engine_with_published_definition() -> EmbeddedMade {
 }
 
 #[tokio::test]
+async fn an_explicit_zero_ceiling_cannot_turn_into_an_unlimited_dimension() {
+    let embedded = engine_with_published_definition().await;
+    let error = embedded
+        .start_budgeted_ceremony(
+            start_request("zero-budget"),
+            made_api::BudgetLimits {
+                duration_micros: None,
+                tokens: Some(0),
+                cost_micros: None,
+                tool_calls: Some(10),
+                currency: None,
+            },
+        )
+        .await
+        .unwrap_err();
+    assert!(matches!(error, ApiError::Refused { .. }));
+    assert!(embedded.ceremonies().await.unwrap().is_empty());
+}
+
+#[tokio::test]
 async fn a_contract_started_ceremony_is_always_digest_bound() {
     let embedded = engine_with_published_definition().await;
 

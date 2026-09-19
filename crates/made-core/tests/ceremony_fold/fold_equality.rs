@@ -183,6 +183,7 @@ fn drafting() -> Vec<CeremonyCommand> {
             lease: lease("plan-1", at(2)),
             now: at(2),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
@@ -196,6 +197,7 @@ fn drafting() -> Vec<CeremonyCommand> {
             lease: lease("plan-2", at(4)),
             now: at(4),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("plan"),
@@ -274,6 +276,7 @@ fn review() -> Vec<CeremonyCommand> {
             lease: lease("check-1", at(14)),
             now: at(14),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("check"),
@@ -287,6 +290,7 @@ fn review() -> Vec<CeremonyCommand> {
             lease: lease("check-2", at(16)),
             now: at(16),
             max_parallel_ceiling: made_core::value_objects::MaxParallel::SERVER_MAX,
+            budget_reservation_id: None,
         }),
         CeremonyCommand::ApplyStepResult(ApplyStepResult {
             step_id: step("check"),

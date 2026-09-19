@@ -266,7 +266,8 @@ impl RepositoryScriptExecutionConnector {
         intent: &ExecutionIntent,
         observation: CeremonyExecutionObservation,
     ) -> Result<CeremonyExecutionConnectorOutcome, DomainError> {
-        let (producer_claim_fence, _, result, artifacts, observed_at) = observation.into_parts();
+        let (producer_claim_fence, _, result, artifacts, measured, observed_at) =
+            observation.into_parts();
         Ok(CeremonyExecutionConnectorOutcome::Observed(Box::new(
             CeremonyExecutionObservation::new(
                 producer_claim_fence,
@@ -274,7 +275,8 @@ impl RepositoryScriptExecutionConnector {
                 result,
                 artifacts,
                 observed_at,
-            ),
+            )
+            .with_budget_measurement(measured),
         )))
     }
 }

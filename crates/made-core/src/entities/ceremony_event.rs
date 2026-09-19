@@ -109,7 +109,9 @@ impl CeremonyEvent {
     pub fn schema_version(&self) -> EventSchemaVersion {
         match self {
             Self::StepStarted(event) => {
-                if event.deadline.is_some() {
+                if event.budget_reservation_id.is_some() {
+                    EventSchemaVersion::V6
+                } else if event.deadline.is_some() {
                     EventSchemaVersion::V5
                 } else if event.state_visit.is_some() {
                     EventSchemaVersion::V4
@@ -163,6 +165,9 @@ impl CeremonyEvent {
             Self::ContextWritten(event) => event
                 .state_visit
                 .map_or(EventSchemaVersion::V1, |_| EventSchemaVersion::V2),
+            Self::CeremonyInstanceStarted(event) if event.budget_account_id.is_some() => {
+                EventSchemaVersion::V4
+            }
             Self::CeremonyInstanceStarted(event)
                 if event.ceremony_deadline.is_some() || event.state_deadline.is_some() =>
             {

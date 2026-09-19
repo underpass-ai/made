@@ -25,7 +25,7 @@ use super::{
 use crate::error::DomainError;
 use crate::ports::CeremonyEvidenceRequest;
 use crate::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest,
+    AuditActorKind, BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest,
     CeremonyEvidenceSourceId, CeremonyGuardApproval, CeremonyGuardDeferral,
     CeremonyGuardDeferralContent, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget,
@@ -139,6 +139,8 @@ pub struct CeremonyInstance {
     bound_definition: Option<CeremonyDefinitionDigest>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     lineage: Option<CeremonyLineage>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    budget_account_id: Option<BudgetAccountId>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     child_groups: BTreeMap<ChildGroupId, ChildGroupState>,
     #[serde(default, skip_serializing_if = "CeremonyLifecycle::is_default")]
@@ -170,7 +172,7 @@ impl CeremonyInstance {
         now: OffsetDateTime,
     ) -> Result<Self, DomainError> {
         Ok(Self::from_started(&Self::opening(
-            id, definition, context, now, None, None,
+            id, definition, context, now, None, None, None,
         )?))
     }
 
@@ -192,6 +194,7 @@ impl CeremonyInstance {
             now,
             Some(published.digest()),
             None,
+            None,
         )?))
     }
 
@@ -205,6 +208,11 @@ impl CeremonyInstance {
     #[must_use]
     pub fn lineage(&self) -> Option<&CeremonyLineage> {
         self.lineage.as_ref()
+    }
+
+    #[must_use]
+    pub fn budget_account_id(&self) -> Option<&BudgetAccountId> {
+        self.budget_account_id.as_ref()
     }
 
     #[must_use]

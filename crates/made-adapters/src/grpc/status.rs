@@ -6,6 +6,7 @@
 
 use made_core::error::DomainError;
 use made_core::ports::ArtifactStoreError;
+use made_core::BudgetError;
 use tonic::Status;
 
 /// Map a [`DomainError`] onto a [`tonic::Status`] with the most
@@ -66,6 +67,23 @@ pub fn artifact_error_to_status(error: ArtifactStoreError) -> Status {
         ArtifactStoreError::AccessDenied => Status::permission_denied(message),
         ArtifactStoreError::StorageUnavailable | ArtifactStoreError::InvalidBackup => {
             Status::unavailable(message)
+        }
+    }
+}
+
+#[must_use]
+pub fn budget_error_to_status(error: BudgetError) -> Status {
+    let message = error.to_string();
+    match error {
+        BudgetError::Persistence(error) => domain_error_to_status(error),
+        BudgetError::LedgerNotOpen | BudgetError::ReservationNotFound(_) => {
+            Status::not_found(message)
+        }
+        BudgetError::Exhausted { .. } | BudgetError::MissingReservationEstimate(_) => {
+            Status::failed_precondition(message)
+        }
+        BudgetError::ReservationConflict(_) | BudgetError::ReconciliationConflict(_) => {
+            Status::aborted(message)
         }
     }
 }

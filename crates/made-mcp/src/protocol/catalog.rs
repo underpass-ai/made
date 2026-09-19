@@ -5,7 +5,6 @@ use super::artifact_schemas::{
     list_artifacts_schema, put_artifact_chunk_schema, read_artifact_chunk_schema,
     tombstone_artifact_schema,
 };
-
 use super::ceremony_schemas::{
     accept_child_completion_schema, apply_execution_receipt_schema, ceremony_definition_ref_schema,
     ceremony_design_schema, ceremony_draft_schema, ceremony_guard_approval_schema,
@@ -46,6 +45,7 @@ use super::tool_names::{
     TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
+mod budget_catalog;
 mod council_catalog;
 mod council_journal_catalog;
 
@@ -391,5 +391,6 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             verify_ceremony_journal_schema(),
         ),
     ]);
+    budget_catalog::insert_budget_tools(&mut tools);
     tools
 }

@@ -1,17 +1,21 @@
 use std::sync::Arc;
 
 use made_core::error::DomainError;
-use made_core::ports::{CeremonyStepHandlerRequest, ClockPort};
-use made_core::value_objects::{CeremonyId, IdempotencyKey, StepId};
+use made_core::ports::{BudgetReservationPlannerPort, CeremonyStepHandlerRequest, ClockPort};
+use made_core::value_objects::{
+    BudgetReservationRequest, CeremonyId, CeremonyStep, IdempotencyKey, StepId,
+};
 
 use super::{
     CeremonyWorkClaimFailure, CeremonyWorkClaimsPage, CeremonyWorkerPolicy, ClaimCeremonyWorkInput,
     ExecuteCeremonyOperationInput,
 };
+use crate::budgets::{BudgetedStepClaimInput, BudgetedStepClaimUseCase};
 use crate::services::{ceremony_transcript_projection, SessionStream};
 use crate::usecases::{
     CeremonyInstanceView, EnforceCeremonyDeadlinesInput, EnforceCeremonyDeadlinesUseCase,
-    ResolveCeremonyDefinitionUseCase, StartCeremonyStepInput, StartCeremonyStepUseCase,
+    ResolveCeremonyDefinitionUseCase, StartCeremonyStepInput, StartCeremonyStepOutput,
+    StartCeremonyStepUseCase,
 };
 
 /// Discovers ceremonies in keyset order and claims at most one external step per ceremony.
@@ -20,6 +24,8 @@ pub struct ClaimCeremonyWorkUseCase {
     definitions: Arc<ResolveCeremonyDefinitionUseCase>,
     deadlines: Arc<EnforceCeremonyDeadlinesUseCase>,
     start_step: Arc<StartCeremonyStepUseCase>,
+    budgeted_step: Option<Arc<BudgetedStepClaimUseCase>>,
+    budget_planner: Option<Arc<dyn BudgetReservationPlannerPort>>,
     clock: Arc<dyn ClockPort>,
     policy: CeremonyWorkerPolicy,
 }
@@ -48,9 +54,22 @@ impl ClaimCeremonyWorkUseCase {
             definitions,
             deadlines,
             start_step,
+            budgeted_step: None,
+            budget_planner: None,
             clock,
             policy,
         }
+    }
+
+    #[must_use]
+    pub fn with_budget_admission(
+        mut self,
+        budgeted_step: Arc<BudgetedStepClaimUseCase>,
+        planner: Arc<dyn BudgetReservationPlannerPort>,
+    ) -> Self {
+        self.budgeted_step = Some(budgeted_step);
+        self.budget_planner = Some(planner);
+        self
     }
 
     pub async fn execute(
@@ -115,21 +134,20 @@ impl ClaimCeremonyWorkUseCase {
             ceremony_transcript_projection::transcript(&self.stream.records(ceremony_id).await?);
         let role_id = definition.role_id_for_step(&step_id)?;
         let idempotency_key = Self::idempotency_key(&instance, &step_id)?;
-        let claim = self
-            .start_step
-            .execute(
-                StartCeremonyStepInput::new(
-                    ceremony_id.clone(),
-                    role_id,
-                    input.actor_kind(),
-                    step_id.clone(),
-                    input.lease_owner_id().clone(),
-                    idempotency_key,
-                    input.lease_ttl(),
-                )
-                .with_automatic_role_resolution(),
-            )
-            .await?;
+        let step = definition.step(&step_id).ok_or(DomainError::NotFound {
+            what: "ceremony_step",
+        })?;
+        let claim_input = StartCeremonyStepInput::new(
+            ceremony_id.clone(),
+            role_id,
+            input.actor_kind(),
+            step_id.clone(),
+            input.lease_owner_id().clone(),
+            idempotency_key,
+            input.lease_ttl(),
+        )
+        .with_automatic_role_resolution();
+        let claim = self.claim_step(&instance, step, claim_input).await?;
         let accepted = claim
             .instance()
             .step_record(&step_id)
@@ -140,9 +158,6 @@ impl ClaimCeremonyWorkUseCase {
             .claimed_role()
             .cloned()
             .unwrap_or(definition.role_id_for_step(&step_id)?);
-        let step = definition.step(&step_id).ok_or(DomainError::NotFound {
-            what: "ceremony_step",
-        })?;
         let request = CeremonyStepHandlerRequest::new(
             ceremony_id.clone(),
             claim.instance().definition_name().clone(),
@@ -165,6 +180,41 @@ impl ClaimCeremonyWorkUseCase {
             claim_fence: claim.claim_fence().clone(),
             actor_kind: input.actor_kind(),
         }))
+    }
+
+    async fn claim_step(
+        &self,
+        instance: &made_core::entities::CeremonyInstance,
+        step: &CeremonyStep,
+        claim_input: StartCeremonyStepInput,
+    ) -> Result<StartCeremonyStepOutput, DomainError> {
+        if instance.budget_account_id().is_none() {
+            return self.start_step.execute(claim_input).await;
+        }
+        let planner = self
+            .budget_planner
+            .as_ref()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "budgeted worker claim requires a reservation planner",
+            })?;
+        let estimate = planner
+            .estimate(&BudgetReservationRequest::new(
+                instance.id().clone(),
+                claim_input.step_id.clone(),
+                step.handler_kind().clone(),
+                step.handler_config().clone(),
+                instance.context().clone(),
+            ))
+            .await?;
+        self.budgeted_step
+            .as_ref()
+            .ok_or(DomainError::InvariantViolated {
+                reason: "budgeted worker claim requires a budget ledger",
+            })?
+            .execute(BudgetedStepClaimInput::new(claim_input, estimate))
+            .await
+            .map_err(crate::budgets::budget_error_to_domain)
+            .map(|output| output.claim().clone())
     }
 
     fn idempotency_key(

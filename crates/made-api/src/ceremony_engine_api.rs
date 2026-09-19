@@ -1,6 +1,7 @@
 use crate::{
-    ApiCapabilities, ApiError, CeremonySummary, DefinitionAnalysisView, PublishedDefinitionView,
-    RaiseInterventionRequest, RespondToInterventionRequest, StartCeremonyRequest,
+    ApiCapabilities, ApiError, BudgetLimits, BudgetReport, BudgetReservation, CeremonySummary,
+    DefinitionAnalysisView, PublishedDefinitionView, RaiseInterventionRequest,
+    RespondToInterventionRequest, StartCeremonyRequest,
 };
 
 /// What a consuming product may ask of the embedded engine.
@@ -37,6 +38,23 @@ pub trait CeremonyEngineApi: Send + Sync {
         &self,
         request: StartCeremonyRequest,
     ) -> Result<CeremonySummary, ApiError>;
+
+    /// Start a published ceremony and open one durable budget account shared by its descendants.
+    async fn start_budgeted_ceremony(
+        &self,
+        request: StartCeremonyRequest,
+        limits: BudgetLimits,
+    ) -> Result<CeremonySummary, ApiError>;
+
+    /// Current durable budget balance for a ceremony tree.
+    async fn budget_report(&self, ceremony_id: &str) -> Result<BudgetReport, ApiError>;
+
+    /// Bounded global recovery view of reservations awaiting a terminal receipt.
+    async fn pending_budget_reservations(
+        &self,
+        after_reservation_id: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<BudgetReservation>, ApiError>;
 
     /// Put a question, investigation or proposed action to the table.
     /// Capability `raise_intervention`.

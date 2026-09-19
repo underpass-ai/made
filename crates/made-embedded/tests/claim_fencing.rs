@@ -275,12 +275,12 @@ async fn app_owned_late_handler_cannot_rebind_to_replacement_claim() {
         .build();
     start(&a).await;
     mount(&b).await;
-    let worker_a = tokio::spawn(async move { a.run_step(run_input("worker-a")).await });
+    let worker_a = tokio::spawn(async move { Box::pin(a.run_step(run_input("worker-a"))).await });
     entered_a.notified().await;
     clock.0.store(2, Ordering::SeqCst);
     let worker_b = {
         let engine = b.clone();
-        tokio::spawn(async move { engine.run_step(run_input("worker-b")).await })
+        tokio::spawn(async move { Box::pin(engine.run_step(run_input("worker-b"))).await })
     };
     entered_b.notified().await;
     let before = b.audit_records(&id()).await.unwrap();

@@ -27,8 +27,9 @@ pub(super) async fn execution_receipt_from_observation(
             reason: "execution observation does not match the producer connector contract",
         });
     }
-    let (_, external_operation_id, result, artifacts, observed_at) = observation.into_parts();
-    ExecutionReceipt::new(
+    let (_, external_operation_id, result, artifacts, measured, observed_at) =
+        observation.into_parts();
+    Ok(ExecutionReceipt::new(
         intent.operation().operation_id().clone(),
         intent.operation().request_digest().clone(),
         producer_intent.claim_fence().clone(),
@@ -39,5 +40,6 @@ pub(super) async fn execution_receipt_from_observation(
         result,
         artifacts,
         observed_at,
-    )
+    )?
+    .with_budget_measurement(measured))
 }

@@ -1,8 +1,10 @@
+use made_app::budgets::BudgetedStepClaimInput;
 use made_app::usecases::{StartCeremonyStepInput, StartCeremonyStepOutput};
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, DurationMs, IdempotencyKey, LeaseOwnerId, StepId,
 };
 use made_embedded::EmbeddedMade;
+use serde_json::json;
 use serde_json::Value;
 
 use super::embedded_request_fields::{
@@ -23,31 +25,46 @@ pub(super) struct EmbeddedClaimCeremonyStepRequest {
     lease_owner_id: LeaseOwnerId,
     idempotency_key: IdempotencyKey,
     lease_ttl: DurationMs,
+    reservation: Option<made_core::value_objects::BudgetReservationEstimate>,
 }
 
 impl EmbeddedClaimCeremonyStepRequest {
     pub(super) async fn execute(
         self,
         made: &EmbeddedMade,
-    ) -> Result<StartCeremonyStepOutput, ToolError> {
-        let (definition, _instance) = load_instance_definition(made, &self.ceremony_id).await?;
+    ) -> Result<(StartCeremonyStepOutput, Option<Value>), ToolError> {
+        let (definition, instance) = load_instance_definition(made, &self.ceremony_id).await?;
         let role_id = definition.role_id_for_step(&self.step_id)?;
-
-        let claim = made
-            .start_step(
-                StartCeremonyStepInput::new(
-                    self.ceremony_id.clone(),
-                    role_id,
-                    self.actor_kind,
-                    self.step_id,
-                    self.lease_owner_id,
-                    self.idempotency_key,
-                    self.lease_ttl,
-                )
-                .with_automatic_role_resolution(),
-            )
-            .await?;
-        Ok(claim)
+        let claim = StartCeremonyStepInput::new(
+            self.ceremony_id.clone(),
+            role_id,
+            self.actor_kind,
+            self.step_id,
+            self.lease_owner_id,
+            self.idempotency_key,
+            self.lease_ttl,
+        )
+        .with_automatic_role_resolution();
+        if instance.budget_account_id().is_some() {
+            let reservation = self.reservation.ok_or_else(|| {
+                ToolError::refused("budgeted ceremony claims require a reservation estimate")
+            })?;
+            let output = made
+                .start_budgeted_step(BudgetedStepClaimInput::new(claim, reservation))
+                .await?;
+            let budget = json!({
+                "account_id": output.account_id().as_str(),
+                "operation_id": output.operation_id().as_str(),
+                "reservation_id": output.reservation_id().as_str(),
+            });
+            Ok((output.claim().clone(), Some(budget)))
+        } else if self.reservation.is_some() {
+            Err(ToolError::invalid_request(
+                "budget reservation supplied for an unbudgeted ceremony",
+            ))
+        } else {
+            Ok((made.start_step(claim).await?, None))
+        }
     }
 }
 
@@ -78,6 +95,7 @@ impl TryFrom<&Value> for EmbeddedClaimCeremonyStepRequest {
             } else {
                 lease_ttl_ms
             }),
+            reservation: super::embedded_budget_fields::reservation(object)?,
         })
     }
 }

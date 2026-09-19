@@ -12,6 +12,7 @@ mod actor_kind;
 mod agent;
 mod artifact;
 mod attributes;
+mod budget;
 mod ceremony_authoring;
 mod ceremony_delegation;
 mod ceremony_design;
@@ -45,6 +46,10 @@ pub use artifact::{
     read_artifact_chunk_from_proto, tombstone_artifact_from_proto,
 };
 pub(super) use attributes::attributes_from_struct;
+pub use budget::{
+    budget_balance_to_proto, budget_limits_from_proto, budget_reservation_estimate_from_proto,
+    budget_reservation_to_proto,
+};
 pub use ceremony_authoring::{
     ceremony_definition_source_from_proto, diff_ceremony_definitions_response_from,
     explain_ceremony_draft_response_from, publish_ceremony_definition_response_from,
