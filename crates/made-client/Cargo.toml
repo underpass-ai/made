@@ -1,0 +1,33 @@
+[package]
+name = "made-client"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Reusable operator client for MADE's public gRPC API."
+readme = "README.md"
+keywords = ["made", "grpc", "client", "orchestration"]
+categories = ["api-bindings"]
+publish = true
+include = ["src/**/*.rs", "Cargo.toml", "README.md"]
+
+[lints]
+workspace = true
+
+[dependencies]
+made-proto = { workspace = true }
+prost = { workspace = true }
+futures = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+sha2 = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tonic = { workspace = true }
+uuid = { workspace = true }
+
+[dev-dependencies]
+tempfile = "3"
+tokio-stream = { workspace = true, features = ["net"] }

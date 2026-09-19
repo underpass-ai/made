@@ -58,7 +58,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let service_config = EnvConfiguration::new().load()?;
 
     let clock = Arc::new(SystemClock::new());
-    // One registry serves use cases and health; malformed metrics fail startup.
     let metrics_recorder = Arc::new(PrometheusMetricsRecorder::new()?);
     let mut validators = validators::wire(metrics_recorder.clone())?;
     // An optional LLM judge joins validators so its verdict drives ranking.
@@ -69,7 +68,6 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let supported_agent_kinds = dispatching_factory.supported_kinds().join(",");
     let agent_factory: Arc<dyn AgentFactoryPort> = Arc::new(dispatching_factory);
 
-    // Select council repositories and their journal together to keep one source of truth.
     let Persistence {
         repository,
         council_registry,
@@ -90,6 +88,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
     let CeremonyPersistence {
         events: ceremony_events,
+        index: ceremony_index,
         cursors: ceremony_cursors,
         snapshots: ceremony_snapshots,
         publications: ceremony_publications,
@@ -137,6 +136,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_snapshots,
         subscribers,
     ));
+    let memory_reader = authorization.protect_memory(memory_reader, ceremony_stream.clone());
 
     let deliberate = Arc::new(DeliberateUseCase::new(
         clock.clone(),
@@ -339,11 +339,12 @@ pub async fn compose() -> Result<Application, ComposeError> {
         grpc_builder,
         resolve_ceremony_definition.clone(),
         ceremony_stream.clone(),
+        ceremony_index,
         ceremony_events,
         ceremony_cursors,
         progress_notifier,
         ceremony_publications,
-    );
+    )?;
     grpc_builder = execution_receipts::wire(
         grpc_builder,
         resolve_ceremony_definition.clone(),
@@ -452,6 +453,8 @@ mod tests {
         std::env::set_var("MADE_GRPC_TLS_KEY_PATH", "test-server-key.pem");
         std::env::set_var("MADE_GRPC_TLS_CLIENT_CA_PATH", "test-client-ca.pem");
         std::env::set_var("MADE_AUTH_POLICY_ID", "compose-test-policy");
+        std::env::set_var("MADE_CEREMONY_STORE_ID", "compose-test-store");
+        std::env::set_var("MADE_CEREMONY_SEARCH_CURSOR_HMAC_KEY", "5a".repeat(32));
         std::env::set_var("MADE_AUTH_MTLS_PRINCIPALS_PATH", principals_path);
         directory
     }

@@ -24,14 +24,26 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::sync::Arc;
 
 use made_adapters::artifacts::LocalArtifactStore;
-use made_adapters::memory::InProcessSessionMemory;
+use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InProcessSessionMemory};
 use made_adapters::noop::NoopExecutor;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::validators::{
     AllowedStringValuesValidator, ContentNonEmptyValidator, JsonObjectOutputValidator,
     JsonSchemaValidator, RequiredFieldsValidator,
 };
-use made_core::ports::ValidatorPort;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
+    TrustedHostAuthorizationGate,
+};
+use made_app::usecases::{
+    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
+};
+use made_core::ports::{ClockPort, ValidatorPort};
+use made_core::value_objects::{
+    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
+    AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
+    AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind,
+};
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
 use made_mcp::{EmbeddedMadeMcpBackend, GrpcMadeMcpBackend, MadeMcpServer};
@@ -600,6 +612,51 @@ fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
     ]
 }
 
+async fn parity_embedded_authorization(
+    clock: Arc<dyn ClockPort>,
+) -> Arc<TrustedHostAuthorizationGate> {
+    let policy_id = AuthorizationPolicyId::new("grpc-fixture").unwrap();
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("grpc-fixture-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    let store = Arc::new(InMemoryAuthorizationPolicyStore::new());
+    let administration = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+    );
+    administration
+        .open(principal.clone(), Vec::new())
+        .await
+        .unwrap();
+    administration
+        .issue(
+            &principal,
+            AuthorizationGrant::new(
+                AuthorizationGrantId::new("parity-search").unwrap(),
+                principal.id().clone(),
+                [AuthorizationAction::SearchCeremonyInstances],
+                AuthorizationScope::Global,
+                (clock.now(), None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(principal.clone()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let authorize = Arc::new(AuthorizeOperationUseCase::new(
+        policy_id,
+        store,
+        clock,
+        AuthorizationDecisionTtl::from_seconds(300).unwrap(),
+    ));
+    Arc::new(TrustedHostAuthorizationGate::new(authorize, principal).unwrap())
+}
+
 impl ParityArms {
     /// The in-process arm over the store a test gets by default.
     async fn start() -> Self {
@@ -672,6 +729,7 @@ impl ParityArms {
                 .with_execution_receipts(wire_receipts.clone()),
         )
         .await;
+        let embedded_authorization = parity_embedded_authorization(ParityClock::shared()).await;
         let over_the_wire = MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
             format!("http://{}", fixture.addr),
             MadeMcpGrpcTlsConfig::disabled(),
@@ -681,6 +739,12 @@ impl ParityArms {
                 .with_step_handler(ParityStepHandler::shared())
                 .with_evidence_source(ParityEvidenceSource::shared())
                 .with_clock(ParityClock::shared())
+                .with_ceremony_search_cursors(CeremonySearchCursorCodec::new(
+                    CeremonySearchCursorKey::new([0x5a; 32]),
+                    CeremonySearchCursorNamespace::new("grpc-fixture-store", "grpc-fixture")
+                        .unwrap(),
+                ))
+                .with_authorization(embedded_authorization)
                 .with_memory(Arc::new(InProcessSessionMemory::new()))
                 .with_council_validators(parity_council_validators())
                 .with_executor(Arc::new(NoopExecutor::new()))
@@ -1220,6 +1284,10 @@ fn session_script() -> Vec<(&'static str, Value)> {
             }),
         ),
         ("made_list_ceremony_instances", json!({})),
+        (
+            "made_search_ceremony_instances",
+            json!({ "id_prefix": "parity-", "limit": 100 }),
+        ),
         // What the session left behind, read after it is finished so
         // the stream is whole. The sealed records carry their digests
         // and the payload those digests cover, so a client can verify

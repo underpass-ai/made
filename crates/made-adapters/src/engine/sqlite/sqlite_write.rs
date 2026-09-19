@@ -23,6 +23,15 @@ impl ReadTx for SqliteWrite<'_> {
     fn scan_str(&self, table: Table) -> Result<Vec<StrRow>, DomainError> {
         self.ops().scan_str(table)
     }
+    fn scan_str_page(
+        &self,
+        table: Table,
+        after: Option<&str>,
+        prefix: Option<&str>,
+        limit: usize,
+    ) -> Result<Vec<StrRow>, DomainError> {
+        self.ops().scan_str_page(table, after, prefix, limit)
+    }
     fn scan_str_after(
         &self,
         table: Table,
@@ -33,6 +42,14 @@ impl ReadTx for SqliteWrite<'_> {
     }
     fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
         self.ops().scan_bytes(table)
+    }
+    fn scan_byte_keys_page(
+        &self,
+        table: Table,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<Vec<u8>>, DomainError> {
+        self.ops().scan_byte_keys_page(table, after, limit)
     }
     fn scan_bytes_range(
         &self,

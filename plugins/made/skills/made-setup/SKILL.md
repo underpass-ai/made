@@ -61,3 +61,22 @@ an already-running server. Discovery in the new task verifies the runtime.
 Keep the existing `MADE_MCP_STORE_PATH` and SQLite data. Plugin setup does not
 migrate a store or move it when catalogue identity changes. A legacy Redb
 startup refusal requires its explicit migration path, not an empty replacement.
+
+Authorization setup is explicit and precedes server startup. Require the
+operator's stable, non-empty policy id and trusted host principal id. Preserve
+them in the MCP launch environment as `MADE_AUTH_POLICY_ID` and
+`MADE_AUTH_TRUSTED_HOST_ID`; do not generate replacements during an update.
+Then run the release-matched binary once against the selected store:
+
+```bash
+<made-mcp> bootstrap-authorization <store> \
+  --policy-id <policy-id> \
+  --trusted-host-id <trusted-host-id>
+```
+
+The command is idempotent for the same policy, host and store. Report its
+receipt before starting the MCP server. Never create an anonymous owner,
+infer a host identity, or fall back to an unprotected store. The trusted host
+owner administers authorization. Business actions need explicit grants issued
+through `IssueAuthorizationGrant`; setup must not give the owner implicit
+business permissions or wildcard scopes.

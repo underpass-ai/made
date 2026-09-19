@@ -9,7 +9,9 @@ use serde_json::Value;
 
 use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
 use crate::backend::ToolTraceContext;
-use crate::protocol::ToolError;
+use crate::protocol::{ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
+
+use super::embedded_ceremony_search_request::EmbeddedCeremonySearchRequest;
 
 #[derive(Clone)]
 pub(super) struct EmbeddedToolAuthorizer {
@@ -63,7 +65,13 @@ impl EmbeddedToolAuthorizer {
             .scope_for_tool(made, tool_name, action, arguments)
             .await?;
         let request_id = AuthorizationRequestId::new(trace.authorization_request_id())?;
-        let target_digest = ToolTraceContext::authorization_target_digest(tool_name, arguments);
+        let target_digest = if tool_name == SEARCH_CEREMONY_INSTANCES_TOOL {
+            EmbeddedCeremonySearchRequest::try_from(arguments)
+                .map_err(ToolError::invalid_request)?
+                .authorization_target_digest()
+        } else {
+            ToolTraceContext::authorization_target_digest(tool_name, arguments)
+        };
         let ordinary = self
             .gate
             .authorize(

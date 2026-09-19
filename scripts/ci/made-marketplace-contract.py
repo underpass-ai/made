@@ -196,6 +196,26 @@ def self_test() -> None:
     # A future metadata edit must not restore the known catalogue collision or
     # hide the official site. Exercise the same gate used for packaging.
     original_loader = load_json
+
+    # Both sparse-index readers must consume the whole response even when the
+    # requested version is the first row. Otherwise their upstream curl can
+    # receive SIGPIPE under `set -o pipefail` and turn a published version into
+    # a false negative.
+    for script in (
+        "scripts/ci/publish-crates.sh",
+        "scripts/release/advance-marketplace.sh",
+    ):
+        result = subprocess.run(
+            ["bash", script, "--self-test"],
+            cwd=ROOT,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            check=False,
+        )
+        if result.returncode != 0:
+            fail(f"{script} self-test failed:\n{result.stdout}")
+
     for path, field, message in (
         (".agents/plugins/marketplace.json", "name", "distinct from KMP"),
         (".claude-plugin/marketplace.json", "name", "distinct from KMP"),

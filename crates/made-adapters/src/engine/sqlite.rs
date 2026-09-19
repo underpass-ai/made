@@ -47,13 +47,14 @@ const BUSY_TIMEOUT: Duration = Duration::from_secs(10);
 /// `state_migrations` — and they are left exactly where they are:
 /// nothing here writes them, and dropping a table an operator can
 /// still read is not this command's to do.
-const ALL_TABLES: [Table; 21] = [
+const ALL_TABLES: [Table; 22] = [
     Table::Ceremonies,
     Table::Journal,
     Table::Publications,
     Table::Events,
     Table::EventLog,
     Table::Snapshots,
+    Table::StreamIndex,
     Table::Meta,
     Table::EventCursors,
     Table::EventCursorQuarantine,

@@ -9,17 +9,19 @@
 //! depends on them.
 
 use std::collections::BTreeMap;
+use std::ops::Bound;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use made_core::entities::{AuditFact, AuditRecord};
 use made_core::error::DomainError;
 use made_core::ports::{
-    seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonySnapshot,
-    CeremonySnapshotStorePort, PositionedRecord,
+    seal_continuation, AppendOutcome, CeremonyEventStorePort, CeremonyInstanceIdPage,
+    CeremonyInstanceIndexPort, CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
+    CeremonyInstancePageLimit, GlobalPosition, StreamVersion,
 };
 use tokio::sync::RwLock;
 
@@ -49,12 +51,14 @@ impl InMemoryCeremonyEventStore {
         authorization: Option<&AuthorizationEvidence>,
     ) -> Result<AppendOutcome, DomainError> {
         let mut state = self.inner.write().await;
+
         let existing = state.stream(stream);
         let actual = version_of(existing);
         if actual != expected {
             return Ok(AppendOutcome::Conflict { expected, actual });
         }
         let sealed = seal_continuation(stream, existing, facts, authorization)?;
+
         let first_position = state.next_position();
         let mut position = first_position;
         for record in &sealed {
@@ -66,6 +70,7 @@ impl InMemoryCeremonyEventStore {
         let records = state.streams.entry(stream.clone()).or_default();
         records.extend(sealed.iter().cloned());
         let version = version_of(records);
+
         Ok(AppendOutcome::Appended {
             version,
             records: sealed,
@@ -171,6 +176,30 @@ impl CeremonySnapshotStorePort for InMemoryCeremonyEventStore {
     async fn forget(&self, stream: &CeremonyId) -> Result<(), DomainError> {
         self.inner.write().await.snapshots.remove(stream);
         Ok(())
+    }
+}
+
+#[async_trait]
+impl CeremonyInstanceIndexPort for InMemoryCeremonyEventStore {
+    async fn ids_after(
+        &self,
+        after: Option<&CeremonyId>,
+        id_prefix: Option<&CeremonyIdPrefix>,
+        limit: CeremonyInstancePageLimit,
+    ) -> Result<CeremonyInstanceIdPage, DomainError> {
+        let state = self.inner.read().await;
+        let lower = after.map_or(Bound::Unbounded, Bound::Excluded);
+        let mut ids: Vec<_> = state
+            .streams
+            .range((lower, Bound::Unbounded))
+            .map(|(id, _)| id)
+            .filter(|id| id_prefix.is_none_or(|prefix| id.as_str().starts_with(prefix.as_str())))
+            .take(limit.value() + 1)
+            .cloned()
+            .collect();
+        let has_more = ids.len() > limit.value();
+        ids.truncate(limit.value());
+        Ok(CeremonyInstanceIdPage::new(ids, has_more))
     }
 }
 

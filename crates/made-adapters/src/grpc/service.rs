@@ -13,6 +13,7 @@ use made_app::budgets::{
     BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
 };
 use made_app::services::AutoDispatchService;
+use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
@@ -100,6 +101,7 @@ mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
 mod ceremony_lifecycle_handlers;
+mod ceremony_search_handlers;
 mod council_handlers;
 mod council_journal_handlers;
 mod descriptor_error;
@@ -133,6 +135,7 @@ pub struct MadeGrpcService {
     pub(super) run_ceremony: Arc<RunCeremonyUseCase>,
     pub(super) get_ceremony_instance: Arc<GetCeremonyInstanceUseCase>,
     pub(super) list_ceremony_instances: Arc<ListCeremonyInstancesUseCase>,
+    pub(super) search_ceremony_instances: Arc<SearchCeremonyInstancesUseCase>,
     pub(super) resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,

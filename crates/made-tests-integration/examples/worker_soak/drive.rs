@@ -1,7 +1,7 @@
 use super::{
-    composition, count_outcomes, AuditActorKind, CeremonyContext, CeremonyId, CeremonyName,
-    CeremonyVersion, ClaimCeremonyWorkInput, Config, DurationMs, ExecutionRecoveryPageLimit,
-    Instant, LeaseOwnerId, StartCeremonyInput,
+    composition, count_outcomes, AuditActorKind, CeremonyContext, CeremonyId,
+    CeremonyInstancePageLimit, CeremonyName, CeremonyVersion, ClaimCeremonyWorkInput, Config,
+    DurationMs, Instant, LeaseOwnerId, StartCeremonyInput,
 };
 
 pub struct Counts {
@@ -69,7 +69,7 @@ pub async fn run(
             .host
             .run_claim_page(ClaimCeremonyWorkInput::new(
                 after.clone(),
-                ExecutionRecoveryPageLimit::new(config.workers)?,
+                CeremonyInstancePageLimit::new(config.workers)?,
                 LeaseOwnerId::new(format!("worker-soak-{run_id}"))?,
                 DurationMs::from_millis(120_000),
                 AuditActorKind::Engine,

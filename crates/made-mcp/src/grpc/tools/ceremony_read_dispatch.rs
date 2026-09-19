@@ -11,7 +11,9 @@ pub(super) fn handles(name: &str) -> bool {
     budget_dispatch::handles(name)
         || matches!(
             name,
-            "made_get_ceremony_instance" | "made_list_ceremony_instances"
+            "made_get_ceremony_instance"
+                | "made_list_ceremony_instances"
+                | "made_search_ceremony_instances"
         )
 }
 
@@ -53,6 +55,44 @@ pub(super) async fn dispatch(
                 .map(p2j::ceremony_instance_listing_entry)
                 .collect();
             Ok(crate::renderers::CeremonyInstanceListing::new(entries).to_json())
+        }
+        "made_search_ceremony_instances" => {
+            let obj =
+                j2p::require_object(arguments, "tools/call.arguments").map_err(bad_request)?;
+            let lifecycle = match j2p::optional_str(obj, "lifecycle") {
+                None => pb::CeremonyLifecycleFilter::Unspecified,
+                Some("running") => pb::CeremonyLifecycleFilter::Running,
+                Some("paused") => pb::CeremonyLifecycleFilter::Paused,
+                Some("ended") => pb::CeremonyLifecycleFilter::Ended,
+                Some(other) => {
+                    return Err(bad_request(format!(
+                        "`lifecycle` must be running, paused or ended, got `{other}`"
+                    )))
+                }
+            };
+            let response = client
+                .search_ceremony_instances(pb::SearchCeremonyInstancesRequest {
+                    cursor: j2p::optional_str(obj, "cursor")
+                        .unwrap_or_default()
+                        .to_owned(),
+                    limit: j2p::optional_u32(obj, "limit").map_err(bad_request)?,
+                    id_prefix: j2p::optional_str(obj, "id_prefix")
+                        .unwrap_or_default()
+                        .to_owned(),
+                    lifecycle: lifecycle as i32,
+                })
+                .await?
+                .into_inner();
+            let entries = response
+                .instances
+                .into_iter()
+                .map(p2j::ceremony_instance_listing_entry)
+                .collect();
+            Ok(crate::renderers::CeremonyInstanceSearchPage::new(
+                entries,
+                (!response.next_cursor.is_empty()).then_some(response.next_cursor),
+            )
+            .to_json())
         }
         other => Err(ToolError::invalid_request(format!(
             "unknown ceremony read tool `{other}`"

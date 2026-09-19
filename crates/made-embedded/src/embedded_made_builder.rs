@@ -12,8 +12,9 @@ use made_adapters::memory::{
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
 use made_app::artifacts::ArtifactService;
+use made_app::authorization::TrustedHostAuthorizationGate;
 use made_app::budgets::BudgetLedgerService;
-use made_app::usecases::CeremonyProgressSettings;
+use made_app::usecases::{CeremonyProgressSettings, CeremonySearchCursorCodec};
 use made_core::entities::CeremonyEvidencePack;
 use made_core::error::DomainError;
 use made_core::ports::{
@@ -21,11 +22,11 @@ use made_core::ports::{
     BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
     CeremonyEventCursorPort, CeremonyEventStorePort, CeremonyEventSubscriberPort,
     CeremonyEventTransportPort, CeremonyEvidenceRequest, CeremonyEvidenceSourcePort,
-    CeremonySnapshotStorePort, CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort,
-    ContractRegistryPort, CouncilRegistryPort, DeliberationRepositoryPort,
-    ExecutionReceiptStorePort, ExecutorPort, MemoryReaderPort, MemoryWriterPort, MessagingPort,
-    MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot,
-    ScoringPort, StatisticsPort, ValidatorPort,
+    CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort,
+    CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort, CouncilRegistryPort,
+    DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort, MemoryReaderPort,
+    MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
+    NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -46,6 +47,7 @@ pub struct EmbeddedMadeBuilder {
     definitions: Option<Arc<dyn CeremonyDefinitionRepositoryPort>>,
     publications: Option<Arc<dyn CeremonyDefinitionPublicationPort>>,
     events: Option<Arc<dyn CeremonyEventStorePort>>,
+    ceremony_index: Option<Arc<dyn CeremonyInstanceIndexPort>>,
     cursors: Option<Arc<dyn CeremonyEventCursorPort>>,
     snapshots: Option<Arc<dyn CeremonySnapshotStorePort>>,
     subscriber: Option<Arc<dyn CeremonyEventSubscriberPort>>,
@@ -72,6 +74,8 @@ pub struct EmbeddedMadeBuilder {
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
     execution_receipts: Option<Arc<dyn ExecutionReceiptStorePort>>,
     budget_ledger: Option<Arc<dyn BudgetLedgerStorePort>>,
+    ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
+    authorization: Option<Arc<TrustedHostAuthorizationGate>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -114,9 +118,10 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_ceremony_store<S>(mut self, adapter: Arc<S>) -> Self
     where
-        S: CeremonyEventStorePort + CeremonySnapshotStorePort + 'static,
+        S: CeremonyEventStorePort + CeremonyInstanceIndexPort + CeremonySnapshotStorePort + 'static,
     {
         self.events = Some(adapter.clone());
+        self.ceremony_index = Some(adapter.clone());
         self.snapshots = Some(adapter);
         self
     }
@@ -139,6 +144,7 @@ impl EmbeddedMadeBuilder {
     pub fn with_ceremony_store_and_memory<S>(mut self, adapter: Arc<S>) -> Self
     where
         S: CeremonyEventStorePort
+            + CeremonyInstanceIndexPort
             + CeremonySnapshotStorePort
             + MemoryWriterPort
             + MemoryReaderPort
@@ -146,6 +152,7 @@ impl EmbeddedMadeBuilder {
             + 'static,
     {
         self.events = Some(adapter.clone());
+        self.ceremony_index = Some(adapter.clone());
         self.snapshots = Some(adapter.clone());
         self.memory = Some((adapter.clone(), adapter.clone()));
         self.execution_receipts = Some(adapter);
@@ -165,6 +172,18 @@ impl EmbeddedMadeBuilder {
     #[must_use]
     pub fn with_budget_ledger_store(mut self, adapter: Arc<dyn BudgetLedgerStorePort>) -> Self {
         self.budget_ledger = Some(adapter);
+        self
+    }
+
+    #[must_use]
+    pub fn with_ceremony_search_cursors(mut self, cursors: CeremonySearchCursorCodec) -> Self {
+        self.ceremony_search_cursors = Some(cursors);
+        self
+    }
+
+    #[must_use]
+    pub fn with_authorization(mut self, authorization: Arc<TrustedHostAuthorizationGate>) -> Self {
+        self.authorization = Some(authorization);
         self
     }
 
@@ -394,6 +413,33 @@ impl EmbeddedMadeBuilder {
         self
     }
 
+    fn take_ceremony_stores(
+        &mut self,
+    ) -> (
+        Arc<dyn CeremonyEventStorePort>,
+        Arc<dyn CeremonyInstanceIndexPort>,
+        Arc<dyn CeremonySnapshotStorePort>,
+    ) {
+        // One call configures the three views together. With no host
+        // configuration, one in-memory store remains authoritative for all
+        // three instead of silently splitting event, index, and snapshot data.
+        self.events
+            .take()
+            .zip(self.ceremony_index.take())
+            .zip(self.snapshots.take())
+            .map_or_else(
+                || {
+                    let store = Arc::new(InMemoryCeremonyEventStore::new());
+                    (
+                        store.clone() as Arc<dyn CeremonyEventStorePort>,
+                        store.clone() as Arc<dyn CeremonyInstanceIndexPort>,
+                        store as Arc<dyn CeremonySnapshotStorePort>,
+                    )
+                },
+                |((events, index), snapshots)| (events, index, snapshots),
+            )
+    }
+
     /// Build with in-memory, side-effect-free defaults for every adapter not
     /// supplied by the host.
     #[must_use]
@@ -406,20 +452,7 @@ impl EmbeddedMadeBuilder {
             Arc::new(InMemoryCeremonyDefinitionPublications::new())
                 as Arc<dyn CeremonyDefinitionPublicationPort>
         });
-        // Zipped rather than defaulted one at a time, for the reason
-        // `with_ceremony_store` takes them together: the pair is set by
-        // one call or by neither, and a host that configures nothing
-        // still gets one storage behind both.
-        let (events, snapshots) = self.events.take().zip(self.snapshots.take()).map_or_else(
-            || {
-                let store = Arc::new(InMemoryCeremonyEventStore::new());
-                (
-                    store.clone() as Arc<dyn CeremonyEventStorePort>,
-                    store as Arc<dyn CeremonySnapshotStorePort>,
-                )
-            },
-            |(events, snapshots)| (events, snapshots),
-        );
+        let (events, ceremony_index, snapshots) = self.take_ceremony_stores();
         let cursors = self.cursors.take().unwrap_or_else(|| {
             Arc::new(InMemoryCeremonyEventCursor::new()) as Arc<dyn CeremonyEventCursorPort>
         });
@@ -488,6 +521,7 @@ impl EmbeddedMadeBuilder {
             definitions,
             publications,
             events,
+            ceremony_index,
             cursors,
             snapshots,
             step_handler,
@@ -506,6 +540,8 @@ impl EmbeddedMadeBuilder {
             artifacts,
             execution_receipts,
             budgets,
+            self.ceremony_search_cursors,
+            self.authorization,
         )
     }
 }
@@ -516,6 +552,11 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .debug_struct("EmbeddedMadeBuilder")
             .field("has_definition_repository", &self.definitions.is_some())
             .field("has_ceremony_store", &self.events.is_some())
+            .field(
+                "has_ceremony_search_cursors",
+                &self.ceremony_search_cursors.is_some(),
+            )
+            .field("has_authorization", &self.authorization.is_some())
             .field("has_event_cursor", &self.cursors.is_some())
             .field("has_event_subscriber", &self.subscriber.is_some())
             .field("has_event_transport", &self.event_transport.is_some())

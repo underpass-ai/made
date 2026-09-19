@@ -172,7 +172,7 @@ bench-experiment-002:
 version VERSION:
     bash scripts/release.sh version {{VERSION}}
 
-# Cut a release: tag HEAD with `v{VERSION}` and push. Requires the
+# Cut a stable or prerelease: tag HEAD with `v{VERSION}` and push. Requires the
 # working tree clean and every version in sync.
 release VERSION:
     bash scripts/release.sh release {{VERSION}}
