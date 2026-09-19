@@ -32,6 +32,7 @@ pub struct GrpcFixtureWiring {
     clock: Option<Arc<dyn ClockPort>>,
     memory: Option<(Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>)>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
+    execution_receipts: Arc<dyn made_core::ports::ExecutionReceiptStorePort>,
 }
 
 impl Default for GrpcFixtureWiring {
@@ -46,6 +47,9 @@ impl Default for GrpcFixtureWiring {
             clock: None,
             memory: None,
             artifact_store: None,
+            execution_receipts: Arc::new(
+                made_adapters::memory::InMemoryExecutionReceiptStore::new(),
+            ),
         }
     }
 }
@@ -170,6 +174,21 @@ impl GrpcFixtureWiring {
             let forgetful = Arc::new(ForgetfulMemory::new());
             (forgetful.clone(), forgetful)
         })
+    }
+
+    #[must_use]
+    pub fn with_execution_receipts(
+        mut self,
+        store: Arc<dyn made_core::ports::ExecutionReceiptStorePort>,
+    ) -> Self {
+        self.execution_receipts = store;
+        self
+    }
+
+    pub(crate) fn execution_receipts(
+        &self,
+    ) -> Arc<dyn made_core::ports::ExecutionReceiptStorePort> {
+        self.execution_receipts.clone()
     }
 
     #[must_use]

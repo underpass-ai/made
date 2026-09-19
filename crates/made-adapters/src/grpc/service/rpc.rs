@@ -54,14 +54,16 @@ impl MadeService for MadeGrpcService {
         &self,
         request: Request<pb::CompleteExecutionReceiptRequest>,
     ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
-        self.handle_complete_execution_receipt(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request)).await
     }
 
     async fn adopt_execution_receipt(
         &self,
         request: Request<pb::AdoptExecutionReceiptRequest>,
     ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
-        self.handle_adopt_execution_receipt(request).await
+        let trace = trace_context_from_metadata(&request);
+        run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request)).await
     }
 
     async fn read_council_events(

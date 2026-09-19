@@ -7,6 +7,7 @@ use made_core::value_objects::{
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Map, Value};
 
+use super::embedded_artifact_dispatch::{artifact_ref, format_time};
 use super::embedded_request_fields::{
     optional_string, optional_u64, required_actor_kind, required_string,
 };
@@ -96,8 +97,8 @@ pub(super) fn present_receipt(receipt: &ExecutionReceipt) -> Value {
         "status": receipt.result().status().as_label(),
         "output": receipt.result().output().attributes().as_map(),
         "error": receipt.result().error_message().map(ToString::to_string),
-        "artifacts": receipt.artifacts(),
-        "observed_at": receipt.observed_at(),
+        "artifacts": receipt.artifacts().iter().map(artifact_ref).collect::<Vec<_>>(),
+        "observed_at": format_time(receipt.observed_at()),
     })
 }
 
@@ -117,7 +118,7 @@ pub(super) fn present_recovery_page(page: &ExecutionRecoveryItemsPage) -> Value 
                     "recovery_capability": recovery_capability(intent.recovery_capability()),
                     "source_kind": source_kind(intent.source_kind()),
                     "actor_kind": actor_kind(intent.actor_kind()),
-                    "recorded_at": intent.recorded_at(),
+                    "recorded_at": format_time(intent.recorded_at()),
                 })).collect::<Vec<_>>(),
                 "receipt": item.receipt().map(present_receipt),
                 "current_claim_fence": item.current_claim_fence().map(StepClaimFence::as_str),

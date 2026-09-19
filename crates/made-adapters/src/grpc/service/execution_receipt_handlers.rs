@@ -51,6 +51,7 @@ impl MadeGrpcService {
         Ok(Response::new(execution_recovery_page_to_proto(&page)))
     }
 
+    #[tracing::instrument(name = "rpc.complete_execution_receipt", skip_all)]
     pub(super) async fn handle_complete_execution_receipt(
         &self,
         request: Request<pb::CompleteExecutionReceiptRequest>,
@@ -64,6 +65,7 @@ impl MadeGrpcService {
         }))
     }
 
+    #[tracing::instrument(name = "rpc.adopt_execution_receipt", skip_all)]
     pub(super) async fn handle_adopt_execution_receipt(
         &self,
         request: Request<pb::AdoptExecutionReceiptRequest>,
