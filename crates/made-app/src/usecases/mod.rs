@@ -72,6 +72,8 @@ mod collect_ceremony_evidence_input;
 mod collect_ceremony_evidence_use_case;
 mod complete_ceremony_step_input;
 mod complete_ceremony_step_use_case;
+#[cfg(test)]
+mod completion_replay_tests;
 mod create_council;
 mod create_council_input;
 mod defer_ceremony_guard_input;
@@ -122,6 +124,7 @@ mod read_whole_ceremony_events_use_case;
 mod recover_ceremony_children_round;
 mod recover_ceremony_children_use_case;
 mod register_agent;
+mod replay_step_completion;
 mod report_title;
 mod request_ceremony_intervention_input;
 mod request_ceremony_intervention_use_case;

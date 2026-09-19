@@ -27,6 +27,11 @@ pub struct GrpcAuthorizationGate {
 }
 
 impl GrpcAuthorizationGate {
+    /// Keep internal appends on the same policy as this transport boundary.
+    pub fn protect_session_stream(&self, stream: &made_app::services::SessionStream) {
+        stream.authorize_appends(Arc::new(self.authorize.clone().for_ceremony_appends()));
+    }
+
     #[must_use]
     pub fn mutual_tls(
         authorize: Arc<AuthorizeOperationUseCase>,

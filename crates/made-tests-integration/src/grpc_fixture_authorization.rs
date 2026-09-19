@@ -60,7 +60,7 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
         policy_id.clone(),
         store.clone(),
         clock.clone(),
-        AuthorizationDecisionTtl::from_seconds(300).unwrap(),
+        AuthorizationDecisionTtl::from_seconds(60).unwrap(),
     ));
     FixtureAuthorization {
         gate: Arc::new(
@@ -85,7 +85,7 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
             policy_id,
             store,
             clock,
-            AuthorizationDecisionTtl::from_seconds(300).unwrap(),
+            AuthorizationDecisionTtl::from_seconds(60).unwrap(),
         )),
     }
 }
