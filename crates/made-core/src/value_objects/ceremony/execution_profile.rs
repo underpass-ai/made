@@ -145,19 +145,21 @@ impl ExecutionProfile {
                 })
             }
             "fallback" => {
-                if self
-                    .fallback_model
-                    .as_deref()
-                    .is_some_and(|fallback| fallback != self.actual_model)
+                if self.actual_model != self.requested_model
+                    && self
+                        .fallback_model
+                        .as_deref()
+                        .is_some_and(|fallback| fallback != self.actual_model)
                 {
                     return Err(DomainError::InvariantViolated {
                         reason: "declared fallback model does not match actual model",
                     });
                 }
-                if self
-                    .fallback_reasoning_effort
-                    .as_deref()
-                    .is_some_and(|fallback| fallback != self.actual_reasoning_effort)
+                if self.actual_reasoning_effort != self.requested_reasoning_effort
+                    && self
+                        .fallback_reasoning_effort
+                        .as_deref()
+                        .is_some_and(|fallback| fallback != self.actual_reasoning_effort)
                 {
                     return Err(DomainError::InvariantViolated {
                         reason: "declared fallback reasoning effort does not match actual effort",
@@ -336,9 +338,9 @@ mod tests {
             vec!["reasoning".into()],
             "fallback",
             Some("balanced-model".into()),
-            Some("medium".into()),
+            Some("high".into()),
             "balanced-model",
-            "high",
+            "medium",
             vec!["reasoning".into()],
             "codex-agent-1",
             "inc-2",
@@ -347,5 +349,26 @@ mod tests {
             None,
         )
         .is_err());
+    }
+
+    #[test]
+    fn supported_requested_selection_does_not_use_declared_fallback() {
+        assert!(ExecutionProfile::new(
+            "strong-model",
+            "high",
+            vec!["reasoning".into()],
+            "fallback",
+            Some("balanced-model".into()),
+            Some("medium".into()),
+            "strong-model",
+            "high",
+            vec!["reasoning".into()],
+            "codex-agent-1",
+            "inc-2",
+            None,
+            None,
+            None,
+        )
+        .is_ok());
     }
 }
