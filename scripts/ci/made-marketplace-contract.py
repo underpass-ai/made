@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -67,6 +68,20 @@ def git_output(*args: str) -> str | None:
         check=False,
     )
     return result.stdout.strip() if result.returncode == 0 else None
+
+
+def bash_executable(platform_name: str = os.name, which=shutil.which) -> str:
+    """Resolve Git Bash instead of the WSL launcher on Windows runners."""
+    if platform_name == "nt":
+        sh = which("sh")
+        if sh is not None:
+            git_bash = Path(sh).with_name("bash.exe")
+            if git_bash.is_file():
+                return str(git_bash)
+    bash = which("bash")
+    if bash is None:
+        fail("bash is required to verify release script self-tests")
+    return bash
 
 
 def verify_release_tag(release_ref: str, require_release_tag: bool) -> None:
@@ -208,16 +223,33 @@ def self_test() -> None:
     # hide the official site. Exercise the same gate used for packaging.
     original_loader = load_json
 
+    # Windows exposes System32/bash.exe as the WSL launcher. Native Python
+    # must select the Git Bash executable beside sh.exe or every shell
+    # contract fails before packaging begins.
+    (ROOT / "tmp").mkdir(exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="marketplace-shell-", dir=ROOT / "tmp") as scratch:
+        shell_root = Path(scratch)
+        git_sh = shell_root / "sh.exe"
+        git_bash = shell_root / "bash.exe"
+        git_sh.touch()
+        git_bash.touch()
+        lookup = {
+            "sh": str(git_sh),
+            "bash": r"C:\Windows\System32\bash.exe",
+        }.get
+        assert bash_executable("nt", lookup) == str(git_bash)
+
     # Both sparse-index readers must consume the whole response even when the
     # requested version is the first row. Otherwise their upstream curl can
     # receive SIGPIPE under `set -o pipefail` and turn a published version into
     # a false negative.
+    bash = bash_executable()
     for script in (
         "scripts/ci/publish-crates.sh",
         "scripts/release/advance-marketplace.sh",
     ):
         result = subprocess.run(
-            ["bash", script, "--self-test"],
+            [bash, script, "--self-test"],
             cwd=ROOT,
             text=True,
             stdout=subprocess.PIPE,
