@@ -164,6 +164,7 @@ fn executable_tool_names() -> &'static [&'static str] {
         "made_bind_ceremony_participants",
         "made_claim_ceremony_step",
         "made_complete_ceremony_step",
+        "made_renew_ceremony_step_lease",
         "made_get_execution_receipt",
         "made_inspect_execution_recovery",
         "made_complete_execution_receipt",
