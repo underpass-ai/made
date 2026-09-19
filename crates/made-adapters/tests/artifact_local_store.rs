@@ -911,21 +911,7 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
         .unwrap();
     let service = SqliteArtifactBackupService::new(store.clone(), &database);
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer_stop = stop.clone();
-    let writer_database = database.clone();
-    let writer = tokio::task::spawn_blocking(move || {
-        let connection = rusqlite::Connection::open(writer_database).unwrap();
-        let mut position = 2_i64;
-        while !writer_stop.load(std::sync::atomic::Ordering::Acquire) {
-            connection
-                .execute(
-                    "INSERT INTO journal(position, payload) VALUES (?1, 'during-backup')",
-                    [position],
-                )
-                .unwrap();
-            position += 1;
-        }
-    });
+    let writer = spawn_sqlite_backup_writer(database.clone(), stop.clone());
 
     let backup = directory.path().join("backup-set");
     let manifest = service
@@ -996,6 +982,26 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
     assert!(raced.join("restore-complete.json").exists());
+}
+
+#[cfg(feature = "sqlite")]
+fn spawn_sqlite_backup_writer(
+    database: std::path::PathBuf,
+    stop: Arc<std::sync::atomic::AtomicBool>,
+) -> tokio::task::JoinHandle<()> {
+    tokio::task::spawn_blocking(move || {
+        let connection = rusqlite::Connection::open(database).unwrap();
+        let mut position = 2_i64;
+        while !stop.load(std::sync::atomic::Ordering::Acquire) {
+            connection
+                .execute(
+                    "INSERT INTO journal(position, payload) VALUES (?1, 'during-backup')",
+                    [position],
+                )
+                .unwrap();
+            position += 1;
+        }
+    })
 }
 
 #[tokio::test]
