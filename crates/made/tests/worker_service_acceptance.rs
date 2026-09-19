@@ -659,6 +659,15 @@ async fn composed_daemon_exposes_distinct_root_policy_and_wait_reasons() {
     assert!(decisions.iter().any(|decision| {
         decision["reason"] == "backpressure" || decision["reason"] == "capacity"
     }));
+    let first_admitted = decisions
+        .iter()
+        .find(|decision| decision["reason"] == "admitted")
+        .unwrap();
+    assert_eq!(
+        first_admitted["root_id"],
+        root_b.as_str(),
+        "the higher-priority root must change the first operational decision"
+    );
     assert!(
         decisions
             .iter()

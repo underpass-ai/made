@@ -71,7 +71,17 @@ each entry must contain exactly `priority`, `weight`, `cost`, and
 ```
 
 Invalid or partial policy stops startup. Roots absent from the document use
-the global values. Every scheduling and post-admission decision is appended as
+the global values. Priority chooses among roots that currently have enough
+capacity; larger values run first. A selected root keeps its turn while its
+deficit can pay for more work, including across daemon polls. Quantum is added
+only when a new root turn begins. Every time another root begins a turn, a
+waiting root gains one priority point, so finite priority differences do not
+cause indefinite starvation. There is no fixed bound in admission count:
+latency also depends on weight, cost, and available capacity. Weight continues
+to set the WDRR quantum and proportional service; priority does not replace
+weight.
+
+Every scheduling and post-admission decision is appended as
 JSON Lines to `admission-decisions.jsonl` in the capacity directory. Set
 `MADE_WORKER_ADMISSION_LOG_PATH` to choose another path. Each record includes
 the root, operation, priority, weight, cost, requested capacity, policy version,

@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use anyhow::{bail, Context, Result};
+use async_trait::async_trait;
 use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::config::ServiceConfig;
 use made_adapters::postgres::{
@@ -10,20 +11,19 @@ use made_adapters::sqlite::SqliteCeremonyStore;
 use made_app::artifacts::ArtifactService;
 use made_app::services::AuthorizationOperationScope;
 use made_app::workers::{
+    ExecutionReconciliationAuditPort, ExecutionReconciliationAuditRecord,
     ReconcileExecutionOperationInput, ReconcileExecutionOperationOutcome,
     ReconcileExecutionOperationUseCase,
 };
 use made_core::ports::{ArtifactIdempotencyKey, ArtifactStorePort, ExecutionReceiptStorePort};
-use made_core::value_objects::{ArtifactMediaType, AuthorizationAction, ExecutionReceipt};
+use made_core::value_objects::{ArtifactMediaType, AuthorizedOperation, ExecutionReceipt};
+use made_core::DomainError;
 use serde_json::{json, Value};
 use time::OffsetDateTime;
 
 pub(super) async fn execute(config: &ServiceConfig, receipt: &ExecutionReceipt) -> Result<Value> {
     let operation =
         AuthorizationOperationScope::current().context("reconciliation requires authorization")?;
-    if operation.evidence().action() != AuthorizationAction::ReconcileExecutionOperation {
-        bail!("reconciliation requires its dedicated action");
-    }
     receipt.validate()?;
     let (receipts, artifact_store): (
         Arc<dyn ExecutionReceiptStorePort>,
@@ -51,46 +51,85 @@ pub(super) async fn execute(config: &ServiceConfig, receipt: &ExecutionReceipt) 
             Arc::new(LocalArtifactStore::open(artifacts)?),
         )
     };
-    let intent = receipts
-        .intent(receipt.operation_id(), receipt.producer_claim_fence())
-        .await?
-        .context("reconciliation requires the exact persisted intent")?;
-    if receipt.source_kind() != intent.source_kind()
-        || receipt.recovery_capability() != intent.recovery_capability()
-        || !receipt.budget_measurement().is_unknown()
-    {
-        bail!("declared receipt must match the intent and must not assert unsupported usage measurements");
-    }
     let artifacts = Arc::new(ArtifactService::new(artifact_store.clone()));
-    // Keep actor, authorization and the exact declaration durable before the
-    // receipt write. This is an attempt record, never a claim of success.
-    let audit_key =
-        ArtifactIdempotencyKey::new(format!("reconciliation-audit:{}", uuid::Uuid::new_v4()))?;
-    let audit = artifacts.save_generated_report(
-        &serde_json::to_vec(&json!({"phase":"authorized_attempt", "authorization":operation.evidence(), "receipt":receipt}))?,
-        ArtifactMediaType::new("application/json")?,
-        OffsetDateTime::now_utc(),
-        audit_key.clone(),
-    ).await?;
-    artifact_store
-        .protect_references(audit_key, vec![audit.artifact_id().clone()])
-        .await?;
+    let audit = Arc::new(MaintenanceReconciliationAudit {
+        artifacts: artifacts.clone(),
+        store: artifact_store,
+    });
     let input = ReconcileExecutionOperationInput {
-        operation_id: receipt.operation_id().clone(),
-        request_digest: receipt.request_digest().clone(),
-        producer_claim_fence: receipt.producer_claim_fence().clone(),
-        connector_id: receipt.connector_id().clone(),
-        external_operation_id: receipt.external_operation_id().cloned(),
-        result: receipt.result().clone(),
-        evidence: receipt.artifacts().to_vec(),
-        observed_at: receipt.observed_at(),
+        authorization: operation,
+        receipt: receipt.clone(),
     };
-    let result = ReconcileExecutionOperationUseCase::new(receipts, artifacts)
+    let result = ReconcileExecutionOperationUseCase::new(receipts, artifacts, audit)
         .execute(input)
         .await?;
-    let (receipt, already_recorded) = match result {
-        ReconcileExecutionOperationOutcome::Reconciled(receipt) => (receipt, false),
-        ReconcileExecutionOperationOutcome::AlreadyReconciled(receipt) => (receipt, true),
+    let (receipt, already_recorded, authorization_audit) = match result {
+        ReconcileExecutionOperationOutcome::Reconciled {
+            receipt,
+            authorization_audit,
+        } => (receipt, false, authorization_audit),
+        ReconcileExecutionOperationOutcome::AlreadyReconciled {
+            receipt,
+            authorization_audit,
+        } => (receipt, true, authorization_audit),
     };
-    Ok(json!({"receipt":receipt,"already_recorded":already_recorded,"authorization_audit":audit}))
+    Ok(
+        json!({"receipt":receipt,"already_recorded":already_recorded,"authorization_audit":authorization_audit}),
+    )
+}
+
+struct MaintenanceReconciliationAudit {
+    artifacts: Arc<ArtifactService>,
+    store: Arc<dyn ArtifactStorePort>,
+}
+
+#[async_trait]
+impl ExecutionReconciliationAuditPort for MaintenanceReconciliationAudit {
+    async fn record_authorized_attempt(
+        &self,
+        authorization: &AuthorizedOperation,
+        receipt: &ExecutionReceipt,
+    ) -> Result<ExecutionReconciliationAuditRecord, DomainError> {
+        let key =
+            ArtifactIdempotencyKey::new(format!("reconciliation-audit:{}", uuid::Uuid::new_v4()))?;
+        let bytes = serde_json::to_vec(&json!({
+            "phase": "authorized_attempt",
+            "authorization": authorization.evidence(),
+            "receipt": receipt,
+        }))
+        .map_err(|_| DomainError::InvariantViolated {
+            reason: "reconciliation audit could not be encoded",
+        })?;
+        let artifact = self
+            .artifacts
+            .save_generated_report(
+                &bytes,
+                ArtifactMediaType::new("application/json")?,
+                OffsetDateTime::now_utc(),
+                key.clone(),
+            )
+            .await
+            .map_err(audit_storage_error)?;
+        Ok(ExecutionReconciliationAuditRecord::new(artifact, key))
+    }
+
+    async fn protect_authorized_attempt(
+        &self,
+        audit: &ExecutionReconciliationAuditRecord,
+    ) -> Result<(), DomainError> {
+        self.store
+            .protect_references(
+                audit.protection_key().clone(),
+                vec![audit.artifact().artifact_id().clone()],
+            )
+            .await
+            .map(|_| ())
+            .map_err(audit_storage_error)
+    }
+}
+
+fn audit_storage_error<T>(_error: T) -> DomainError {
+    DomainError::InvariantViolated {
+        reason: "reconciliation authorization audit storage failed",
+    }
 }

@@ -1,15 +1,15 @@
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
+use super::ceremony_worker_root_queue::CeremonyWorkerRootQueue;
 use super::{
     CeremonyWorkerAdmissionDecision, CeremonyWorkerAdmissionObserver,
     CeremonyWorkerAdmissionReason, CeremonyWorkerEligibility, CeremonyWorkerSchedule,
-    CeremonyWorkerScheduleRequest, CeremonyWorkerSchedulerPolicy, CeremonyWorkerWeight,
+    CeremonyWorkerScheduleRequest, CeremonyWorkerSchedulerPolicy,
     NoopCeremonyWorkerAdmissionObserver,
 };
 
 type PendingRequest = (u64, CeremonyWorkerScheduleRequest);
-type RootQueue = (CeremonyWorkerWeight, u64, Vec<PendingRequest>);
 
 /// Pure in-process weighted deficit round-robin scheduler. It owns no permits,
 /// credentials, balances or execution side effects; the worker use cases remain
@@ -17,10 +17,11 @@ type RootQueue = (CeremonyWorkerWeight, u64, Vec<PendingRequest>);
 pub struct CeremonyWorkerScheduler {
     policy: CeremonyWorkerSchedulerPolicy,
     draining: bool,
+    active_root: Option<made_core::value_objects::CeremonyId>,
     next_root: Option<made_core::value_objects::CeremonyId>,
     ordinal: u64,
     decision_sequence: u64,
-    roots: BTreeMap<made_core::value_objects::CeremonyId, RootQueue>,
+    roots: BTreeMap<made_core::value_objects::CeremonyId, CeremonyWorkerRootQueue>,
     observer: Arc<dyn CeremonyWorkerAdmissionObserver>,
 }
 
@@ -49,6 +50,7 @@ impl CeremonyWorkerScheduler {
         Self {
             policy,
             draining: false,
+            active_root: None,
             next_root: None,
             ordinal: 0,
             decision_sequence: 0,
@@ -68,9 +70,16 @@ impl CeremonyWorkerScheduler {
             .map(|request| request.root_id().clone())
             .collect::<std::collections::BTreeSet<_>>();
         for queue in self.roots.values_mut() {
-            queue.2.clear();
+            queue.pending.clear();
         }
         self.roots.retain(|root, _| observed_roots.contains(root));
+        if self
+            .active_root
+            .as_ref()
+            .is_some_and(|root| !self.roots.contains_key(root))
+        {
+            self.active_root = None;
+        }
         self.schedule(requests)
     }
 
@@ -128,22 +137,23 @@ impl CeremonyWorkerScheduler {
             }
             let root_id = request.root_id().clone();
             let weight = request.weight();
+            let priority = request.priority();
             let queue = self
                 .roots
                 .entry(root_id)
-                .or_insert_with(|| (weight, 0, Vec::new()));
-            if queue.0 != weight {
-                // A root's weight is policy, not caller-controlled per item.
+                .or_insert_with(|| CeremonyWorkerRootQueue::new(weight, priority));
+            if queue.weight != weight || queue.priority != priority {
+                // Root weight and priority are policy, not caller-controlled per item.
                 deferred.push(self.decision(request, CeremonyWorkerAdmissionReason::Backpressure));
                 continue;
             }
             self.ordinal = self.ordinal.saturating_add(1);
-            queue.2.push((self.ordinal, request.clone()));
+            queue.pending.push((self.ordinal, request.clone()));
             newly_queued.push(request);
         }
 
         for queue in self.roots.values_mut() {
-            queue.2.sort_by(|left, right| {
+            queue.pending.sort_by(|left, right| {
                 right
                     .1
                     .priority()
@@ -181,73 +191,106 @@ impl CeremonyWorkerScheduler {
         while selected.len() < usize::from(self.policy.max_parallel().get()) {
             let remaining_capacity = self.policy.capacity().value().saturating_sub(used_capacity);
             let keys = self.roots.keys().cloned().collect::<Vec<_>>();
-            if keys.is_empty() {
+            if keys.is_empty() || !self.any_fits_capacity(remaining_capacity) {
                 break;
             }
-            let any_fits_capacity = self.roots.values().any(|queue| {
-                queue
-                    .2
-                    .iter()
-                    .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity)
-            });
-            if !any_fits_capacity {
-                break;
-            }
-            let start = self
-                .next_root
-                .as_ref()
-                .and_then(|root| keys.iter().position(|candidate| candidate >= root))
-                .unwrap_or(0);
-            let mut picked = Vec::new();
-            let mut visited_root = None;
-            for offset in 0..keys.len() {
-                let index = (start + offset) % keys.len();
-                let root = &keys[index];
-                let capacity_limit = self.policy.capacity().value();
-                let queue = self
-                    .roots
-                    .get_mut(root)
-                    .expect("root key was copied from the map");
-                queue.1 = queue.1.saturating_add(u64::from(queue.0.value()));
-                while selected.len() + picked.len() < usize::from(self.policy.max_parallel().get())
-                {
-                    let Some(position) = queue.2.iter().position(|pending| {
-                        u64::from(pending.1.cost().value()) <= queue.1
-                            && pending.1.requested_capacity().value()
-                                <= capacity_limit.saturating_sub(used_capacity)
-                    }) else {
-                        break;
-                    };
-                    let pending = queue.2.remove(position);
-                    queue.1 = queue.1.saturating_sub(u64::from(pending.1.cost().value()));
-                    used_capacity =
-                        used_capacity.saturating_add(pending.1.requested_capacity().value());
-                    picked.push(pending);
-                }
-                visited_root = Some(index);
-                if !picked.is_empty() {
+            if self.active_root.is_none() {
+                let Some(root) = self.start_turn(&keys, remaining_capacity) else {
                     break;
-                }
+                };
+                self.active_root = Some(root);
             }
-            let Some(index) = visited_root else { break };
-            let root = keys[index].clone();
-            selected.extend(picked);
-            self.next_root = keys
-                .get((index + 1) % keys.len())
-                .cloned()
-                .or_else(|| Some(root.clone()));
-            if self
+            let root = self.active_root.clone().expect("a turn was selected");
+            let queue = self
                 .roots
-                .get(&root)
-                .is_some_and(|queue| queue.2.is_empty())
-            {
+                .get_mut(&root)
+                .expect("active root remains present");
+            let position = queue.pending.iter().position(|pending| {
+                u64::from(pending.1.cost().value()) <= queue.deficit
+                    && pending.1.requested_capacity().value() <= remaining_capacity
+            });
+            let Some(position) = position else {
+                self.finish_turn(&root, &keys);
+                continue;
+            };
+            let pending = queue.pending.remove(position);
+            queue.deficit = queue
+                .deficit
+                .saturating_sub(u64::from(pending.1.cost().value()));
+            used_capacity = used_capacity.saturating_add(pending.1.requested_capacity().value());
+            selected.push(pending);
+            let can_continue = queue
+                .pending
+                .iter()
+                .any(|pending| u64::from(pending.1.cost().value()) <= queue.deficit);
+            if queue.pending.is_empty() {
                 self.roots.remove(&root);
-                if self.next_root.as_ref() == Some(&root) {
-                    self.next_root = None;
-                }
+                self.finish_turn(&root, &keys);
+            } else if !can_continue {
+                self.finish_turn(&root, &keys);
             }
         }
         selected
+    }
+
+    fn any_fits_capacity(&self, remaining_capacity: u32) -> bool {
+        self.roots.values().any(|queue| {
+            queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity)
+        })
+    }
+
+    fn start_turn(
+        &mut self,
+        keys: &[made_core::value_objects::CeremonyId],
+        remaining_capacity: u32,
+    ) -> Option<made_core::value_objects::CeremonyId> {
+        let start = self
+            .next_root
+            .as_ref()
+            .and_then(|root| keys.iter().position(|candidate| candidate >= root))
+            .unwrap_or(0);
+        let mut chosen = None;
+        for offset in 0..keys.len() {
+            let index = (start + offset) % keys.len();
+            let queue = self.roots.get(&keys[index])?;
+            let fits = queue
+                .pending
+                .iter()
+                .any(|pending| pending.1.requested_capacity().value() <= remaining_capacity);
+            if fits && chosen.is_none_or(|(_, score)| queue.effective_priority() > score) {
+                chosen = Some((index, queue.effective_priority()));
+            }
+        }
+        let (index, _) = chosen?;
+        let root = keys[index].clone();
+        let queue = self.roots.get_mut(&root)?;
+        queue.deficit = queue
+            .deficit
+            .saturating_add(u64::from(queue.weight.value()));
+        queue.waiting_turns = 0;
+        for (other_root, other_queue) in &mut self.roots {
+            if other_root != &root && !other_queue.pending.is_empty() {
+                other_queue.waiting_turns = other_queue.waiting_turns.saturating_add(1);
+            }
+        }
+        Some(root)
+    }
+
+    fn finish_turn(
+        &mut self,
+        root: &made_core::value_objects::CeremonyId,
+        keys: &[made_core::value_objects::CeremonyId],
+    ) {
+        self.active_root = None;
+        self.next_root = keys
+            .iter()
+            .position(|candidate| candidate == root)
+            .and_then(|index| keys.get((index + 1) % keys.len()))
+            .filter(|candidate| self.roots.contains_key(*candidate))
+            .cloned();
     }
 
     fn decision(
@@ -277,7 +320,7 @@ mod tests {
     use super::*;
     use crate::workers::{
         CeremonyWorkerCapacity, CeremonyWorkerCost, CeremonyWorkerPolicyVersion,
-        CeremonyWorkerPriority,
+        CeremonyWorkerPriority, CeremonyWorkerWeight,
     };
 
     #[derive(Debug, Default)]
@@ -290,18 +333,74 @@ mod tests {
     }
 
     fn request(root: &str, operation: &str, weight: u32) -> CeremonyWorkerScheduleRequest {
+        request_with_priority(root, operation, weight, 0)
+    }
+
+    fn request_with_priority(
+        root: &str,
+        operation: &str,
+        weight: u32,
+        priority: u16,
+    ) -> CeremonyWorkerScheduleRequest {
         let mut operation_hasher = std::collections::hash_map::DefaultHasher::new();
         operation.hash(&mut operation_hasher);
         let operation_id = format!("{:064x}", operation_hasher.finish());
         CeremonyWorkerScheduleRequest::new(
             CeremonyId::new(root).unwrap(),
             ExecutionOperationId::new(operation_id).unwrap(),
-            CeremonyWorkerPriority::DEFAULT,
+            CeremonyWorkerPriority::new(priority).unwrap(),
             CeremonyWorkerWeight::new(weight).unwrap(),
             CeremonyWorkerCost::new(1).unwrap(),
             CeremonyWorkerCapacity::new(1).unwrap(),
             CeremonyWorkerEligibility::Ready,
         )
+    }
+
+    #[test]
+    fn root_priority_changes_the_next_admission() {
+        let select = |left_priority, right_priority| {
+            let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+            scheduler.schedule([
+                request_with_priority("root-a", "a", 1, left_priority),
+                request_with_priority("root-b", "b", 1, right_priority),
+            ])
+        };
+
+        let left = select(9, 1);
+        let right = select(1, 9);
+
+        assert_eq!(left.admitted()[0].request().root_id().as_str(), "root-a");
+        assert_eq!(right.admitted()[0].request().root_id().as_str(), "root-b");
+    }
+
+    #[test]
+    fn aging_eventually_serves_a_lower_priority_root() {
+        let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+        let first =
+            scheduler.schedule(
+                (1..=6)
+                    .map(|index| request_with_priority("root-low", &format!("l{index}"), 1, 0))
+                    .chain((1..=6).map(|index| {
+                        request_with_priority("root-high", &format!("h{index}"), 1, 3)
+                    })),
+            );
+        let mut admitted_roots = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 0..3 {
+            admitted_roots.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+
+        assert_eq!(admitted_roots[0].as_str(), "root-high");
+        assert!(
+            admitted_roots
+                .iter()
+                .any(|root| root.as_str() == "root-low"),
+            "priority aging must eventually serve the lower root"
+        );
     }
 
     fn policy(max_parallel: u8) -> CeremonyWorkerSchedulerPolicy {
@@ -336,7 +435,7 @@ mod tests {
                 .iter()
                 .map(|decision| decision.request().root_id().as_str())
                 .collect::<Vec<_>>(),
-            ["root-a", "root-b"]
+            ["root-b", "root-a"]
         );
     }
 
@@ -374,6 +473,35 @@ mod tests {
             .count();
 
         assert_eq!((root_a, root_b), (2, 6));
+    }
+
+    #[test]
+    fn weight_is_preserved_across_single_slot_polls() {
+        let mut scheduler = CeremonyWorkerScheduler::new(policy(1));
+        let first = scheduler.schedule(
+            (1..=12)
+                .map(|index| request("root-a", &format!("a{index}"), 1))
+                .chain((1..=12).map(|index| request("root-b", &format!("b{index}"), 3))),
+        );
+        let mut admitted = vec![first.admitted()[0].request().root_id().clone()];
+        for _ in 1..12 {
+            admitted.push(
+                scheduler.schedule([]).admitted()[0]
+                    .request()
+                    .root_id()
+                    .clone(),
+            );
+        }
+        let root_a = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-a")
+            .count();
+        let root_b = admitted
+            .iter()
+            .filter(|root| root.as_str() == "root-b")
+            .count();
+
+        assert_eq!((root_a, root_b), (3, 9));
     }
 
     #[test]
@@ -489,8 +617,8 @@ mod tests {
 
         let schedule = scheduler.schedule([
             make("first", 10, 3),
-            make("oversized-head", 9, 3),
-            make("fitting-tail", 1, 1),
+            make("oversized-head", 10, 3),
+            make("fitting-tail", 10, 1),
         ]);
 
         assert_eq!(schedule.admitted().len(), 2);
