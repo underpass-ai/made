@@ -1,12 +1,9 @@
 //! Proto → JSON for what a session left behind.
 //!
-//! The record mapper has one job and it is exact: rebuild, key for key
-//! and type for type, the serde form of `AuditRecord` that the
-//! in-process arm answers with. A client reads either arm's answer
-//! back into the record and verifies the chain; a key spelled
-//! differently, an integer turned into a double or an absent field
-//! turned into an empty string would all break that, and the parity
-//! session compares the two answers field for field so they cannot.
+//! Both MCP backends render the same public fields, including every field
+//! sealed by authorization-bearing schema 3. Storage uses a separate v3
+//! envelope: clients reconstruct it from `schema_version`, the record fields
+//! and `authorization` before verifying the domain record's digest.
 
 use made_mcp_proto::v1 as pb;
 use serde_json::{json, Map, Value};
@@ -88,6 +85,7 @@ pub(crate) fn ceremony_event_record_view(
         event,
         previous_record_hash,
         record_hash,
+        authorization,
     } = record;
     AuditRecordView {
         global_position,
@@ -108,6 +106,7 @@ pub(crate) fn ceremony_event_record_view(
         event: event.map(|event| Value::Object(pb_struct_to_json(event))),
         previous_record_hash: (!previous_record_hash.is_empty()).then_some(previous_record_hash),
         record_hash,
+        authorization: authorization.as_ref().map(super::authorization::evidence),
     }
 }
 
@@ -197,6 +196,7 @@ mod tests {
             event: None,
             previous_record_hash: Vec::new(),
             record_hash: vec![0_u8; 32],
+            authorization: None,
         }
     }
 

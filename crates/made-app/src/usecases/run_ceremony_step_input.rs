@@ -83,6 +83,11 @@ impl RunCeremonyStepInput {
     }
 
     #[must_use]
+    pub const fn role_kind(&self) -> AuditActorKind {
+        self.role_kind
+    }
+
+    #[must_use]
     pub fn lease_owner_id(&self) -> &LeaseOwnerId {
         &self.lease_owner_id
     }

@@ -1,7 +1,7 @@
 use made_mcp_proto::v1 as pb;
 use serde_json::{json, Value};
 
-use super::p2j::timestamp_to_rfc3339;
+use super::p2j::{authorization_scope_to_json as scope, timestamp_to_rfc3339};
 
 pub(super) fn policy(policy: pb::AuthorizationPolicyRecord) -> Value {
     json!({
@@ -19,24 +19,6 @@ fn principal(value: &pb::AuthorizationPrincipal) -> Value {
     json!({"principal_id":value.principal_id,"kind":value.kind,"authentication_method":value.authentication_method})
 }
 
-pub(super) fn scope(value: &pb::AuthorizationScope) -> Value {
-    match value.kind.as_str() {
-        "global" => json!({"kind":"global"}),
-        "ceremony" => json!({"kind":"ceremony","ceremony_id":value.ceremony_id}),
-        "ceremony_tree" => json!({"kind":"ceremony_tree","root_id":value.root_id}),
-        "resolved_ceremony" => {
-            json!({"kind":"resolved_ceremony","ceremony_id":value.ceremony_id,"root_id":value.root_id})
-        }
-        "definition" => {
-            json!({"kind":"definition","name":value.definition_name,"version":value.definition_version})
-        }
-        "artifact" => json!({"kind":"artifact","artifact_id":value.artifact_id}),
-        "council" => json!({"kind":"council","council_id":value.council_id}),
-        "budget" => json!({"kind":"budget","account_id":value.budget_account_id}),
-        other => json!({"kind":other}),
-    }
-}
-
 fn grant(value: &pb::AuthorizationGrantRecord) -> Value {
     json!({
         "grant_id":value.grant_id,"grantee_id":value.grantee_id,"actions":value.actions,
@@ -52,7 +34,8 @@ pub(super) fn decision(value: &pb::AuthorizationDecisionRecord) -> Value {
         "decision_id":value.decision_id,"request_id":value.request_id,
         "principal":value.principal.as_ref().map(principal),"action":value.action,
         "scope":value.scope.as_ref().map(scope),"target_digest":value.target_digest,
-        "approval_decision_id":value.approval_decision_id,"policy_version":value.policy_version,
+        "approval_decision_id":value.approval_decision_id,
+        "accepted_work_decision_id":value.accepted_work_decision_id,"policy_version":value.policy_version,
         "outcome":value.outcome,"grant_id":value.grant_id,"denial_reason":value.denial_reason,
         "decided_at":timestamp_to_rfc3339(value.decided_at.as_ref()),
         "valid_until":timestamp_to_rfc3339(value.valid_until.as_ref())

@@ -150,6 +150,10 @@ pub fn message(value: &Value, format: OutputFormat) -> String {
     render(value, format)
 }
 
+pub(crate) fn value(value: &Value, format: OutputFormat) -> String {
+    render(value, format)
+}
+
 fn instance_value(instance: &CeremonyInstanceState) -> Value {
     let steps: Vec<_> = instance
         .steps
