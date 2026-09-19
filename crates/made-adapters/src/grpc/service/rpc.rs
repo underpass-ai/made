@@ -30,6 +30,16 @@ macro_rules! authorized_global {
     }};
 }
 
+macro_rules! authorized_definition {
+    ($service:expr, $request:ident, $action:ident, $future:expr) => {{
+        let definition_yaml = $request.get_ref().definition_yaml.clone();
+        let authorization = $service
+            .authorize_definition(&$request, AuthorizationAction::$action, &definition_yaml)
+            .await?;
+        AuthorizationOperationScope::run(authorization, $future).await
+    }};
+}
+
 macro_rules! authorized_ceremony {
     ($service:expr, $request:ident, $action:ident, $future:expr) => {{
         let ceremony_id = $request.get_ref().ceremony_id.clone();

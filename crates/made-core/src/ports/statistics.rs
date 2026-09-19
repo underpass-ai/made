@@ -12,7 +12,7 @@ use async_trait::async_trait;
 
 use crate::entities::Statistics;
 use crate::error::DomainError;
-use crate::value_objects::{DurationMs, Specialty};
+use crate::value_objects::{AuthorizationEvidence, DurationMs, Specialty};
 
 #[async_trait]
 pub trait StatisticsPort: Send + Sync {
@@ -23,12 +23,38 @@ pub trait StatisticsPort: Send + Sync {
         specialty: &Specialty,
         duration: DurationMs,
     ) -> Result<(), DomainError>;
+    async fn record_deliberation_authorized(
+        &self,
+        specialty: &Specialty,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.record_deliberation(specialty, duration).await
+    }
 
     /// Record that an orchestration (deliberate + execute) completed
     /// in `duration`.
     async fn record_orchestration(&self, duration: DurationMs) -> Result<(), DomainError>;
+    async fn record_orchestration_authorized(
+        &self,
+        duration: DurationMs,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
+        reject_unsupported(authorization.as_ref())?;
+        self.record_orchestration(duration).await
+    }
 
     /// Read-only snapshot. Callers receive a clone so the returned
     /// value is safe to serialise without holding any lock.
     async fn snapshot(&self) -> Result<Statistics, DomainError>;
+}
+
+fn reject_unsupported(authorization: Option<&AuthorizationEvidence>) -> Result<(), DomainError> {
+    if authorization.is_some() {
+        return Err(DomainError::InvariantViolated {
+            reason: "statistics adapter cannot persist authorization evidence",
+        });
+    }
+    Ok(())
 }

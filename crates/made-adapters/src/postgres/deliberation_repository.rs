@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use made_core::entities::{CouncilJournalEvent, Deliberation, DeliberationPhase};
 use made_core::error::DomainError;
 use made_core::ports::DeliberationRepositoryPort;
-use made_core::value_objects::TaskId;
+use made_core::value_objects::{AuthorizationEvidence, TaskId};
 use serde_json::Value as JsonValue;
 use sqlx::Row;
 
@@ -37,6 +37,13 @@ impl PostgresDeliberationRepository {
 #[async_trait]
 impl DeliberationRepositoryPort for PostgresDeliberationRepository {
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError> {
+        self.save_authorized(deliberation, None).await
+    }
+    async fn save_authorized(
+        &self,
+        deliberation: &Deliberation,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(deliberation).map_err(|e| serde_to_domain(&e, "save"))?;
@@ -80,6 +87,7 @@ impl DeliberationRepositoryPort for PostgresDeliberationRepository {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::DeliberationSnapshotSaved(deliberation.clone()),
+            authorization,
         )
         .await?;
         tx.commit()

@@ -1,20 +1,24 @@
 use std::sync::Arc;
 
+use made_adapters::artifacts::LocalArtifactStore;
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::GrpcAuthorizationGate;
 use made_adapters::memory::{InMemoryAuthorizationPolicyStore, InMemoryCeremonyEventStore};
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
 };
-use made_core::ports::CeremonyEventStorePort;
+use made_core::ports::{ArtifactPageLimit, ArtifactStorePort, CeremonyEventStorePort};
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
     AuthorizationPolicyId, AuthorizationScope, CeremonyEventPageLimit, CeremonyId, PrincipalId,
     PrincipalKind, StreamVersion,
 };
 use made_proto::v1::made_service_client::MadeServiceClient;
-use made_proto::v1::StartCeremonyRequest;
+use made_proto::v1::{
+    ArtifactProvenance, ArtifactSourceKind, BeginArtifactUploadRequest, StartCeremonyRequest,
+};
 use made_tests_integration::grpc_fixture::{GrpcFixture, GrpcFixtureWiring};
+use prost_types::Timestamp;
 use tonic::Code;
 
 const CEREMONY: &str =
@@ -109,6 +113,61 @@ async fn denied_rpc_leaves_the_ceremony_journal_unchanged() {
     assert_eq!(
         store.head(&ceremony_id).await.unwrap(),
         StreamVersion::EMPTY
+    );
+}
+
+#[tokio::test]
+async fn denied_artifact_rpc_leaves_the_repository_unchanged() {
+    let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
+    std::fs::create_dir_all(&scratch).unwrap();
+    let directory = tempfile::tempdir_in(scratch).unwrap();
+    let store = Arc::new(LocalArtifactStore::open(directory.path()).unwrap());
+    let fixture = GrpcFixture::start_with(
+        GrpcFixtureWiring::new()
+            .with_artifact_store(store.clone())
+            .with_authorization(deny_business_actions().await),
+    )
+    .await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+
+    let status =
+        client
+            .begin_artifact_upload(BeginArtifactUploadRequest {
+                requested_artifact_id: None,
+                expected_digest:
+                    "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+                        .to_owned(),
+                size_bytes: 1,
+                media_type: "text/plain".to_owned(),
+                provenance: Some(ArtifactProvenance {
+                    source_kind: ArtifactSourceKind::GeneratedReport as i32,
+                    execution_receipt_id: None,
+                    operation_id: None,
+                    accepted_claim_fence: None,
+                    observed_at: Some(Timestamp {
+                        seconds: 0,
+                        nanos: 0,
+                    }),
+                    import_ref: None,
+                }),
+                idempotency_key: "denied-artifact-upload".to_owned(),
+            })
+            .await
+            .unwrap_err();
+
+    assert_eq!(status.code(), Code::PermissionDenied);
+    assert!(store
+        .list(None, ArtifactPageLimit::default())
+        .await
+        .unwrap()
+        .items
+        .is_empty());
+    assert_eq!(
+        std::fs::read_dir(directory.path().join("uploads"))
+            .unwrap()
+            .count(),
+        0,
+        "authorization denial must happen before the upload manifest is written"
     );
 }
 

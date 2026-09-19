@@ -5,8 +5,16 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use made_adapters::artifacts::LocalArtifactStore;
+use made_adapters::memory::InMemoryAuthorizationPolicyStore;
 use made_adapters::sqlite::SqliteCeremonyStore;
 use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_app::authorization::{
+    AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
+    ContinueAcceptedCeremonyWorkUseCase, ContinueAcceptedStepClaimUseCase,
+    ReadAuthorizationPolicyUseCase, TrustedHostAuthorizationGate,
+};
+use made_app::services::{CeremonyEventFanout, SessionStream};
 use made_app::usecases::{
     AcceptChildCompletionInput, ApplyCeremonyTransitionInput, PauseCeremonyInput,
     PrepareCeremonyChildrenInput, RunCeremonyStepInput, StartCeremonyInput, StartCeremonyStepInput,
@@ -18,9 +26,12 @@ use made_core::ports::{
     CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId, CeremonyIdPrefix,
-    CeremonyInstancePageLimit, DurationMs, EventId, GlobalPosition, IdempotencyKey, LeaseOwnerId,
-    LifecycleReason, RoleId, StepId, StreamVersion, TransitionTrigger,
+    AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
+    AuthorizationDecisionTtl, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
+    AuthorizationPolicyId, AuthorizationScope, CeremonyContext, CeremonyEventPageLimit, CeremonyId,
+    CeremonyIdPrefix, CeremonyInstancePageLimit, DelegationDepth, DurationMs, EventId,
+    GlobalPosition, IdempotencyKey, LeaseOwnerId, LifecycleReason, PrincipalId, PrincipalKind,
+    RoleId, StepId, StreamVersion, TransitionTrigger,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::MadeMcpGrpcTlsConfig;
@@ -36,6 +47,8 @@ use made_tests_integration::parity_clock::{ParityClock, PARITY_INSTANT};
 use made_tests_integration::parity_step_handler::ParityStepHandler;
 use serde_json::{json, Value};
 use tokio::sync::Notify;
+
+static MCP_CALL_ID: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
 
 const CHILD_YAML: &str = r#"
 version: "1.0"
@@ -123,6 +136,88 @@ fn durable_engine(path: &Path) -> EmbeddedMade {
         .with_clock(ParityClock::shared())
         .with_step_handler(ParityStepHandler::shared())
         .build()
+}
+
+struct EmbeddedAuthorization {
+    policy_id: AuthorizationPolicyId,
+    store: Arc<InMemoryAuthorizationPolicyStore>,
+    gate: TrustedHostAuthorizationGate,
+    continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+}
+
+async fn embedded_authorization() -> EmbeddedAuthorization {
+    let clock = ParityClock::shared();
+    let policy_id = AuthorizationPolicyId::new("grpc-fixture").unwrap();
+    let principal = AuthenticatedPrincipal::new(
+        PrincipalId::new("grpc-fixture-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    let store = Arc::new(InMemoryAuthorizationPolicyStore::new());
+    let administration = AuthorizationPolicyAdministrationService::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+    );
+    administration
+        .open(principal.clone(), Vec::new())
+        .await
+        .unwrap();
+    for (grant_id, actions) in [
+        (
+            "grpc-fixture-business-actions",
+            vec![
+                AuthorizationAction::PublishCeremonyDefinition,
+                AuthorizationAction::StartPublishedCeremony,
+                AuthorizationAction::PrepareCeremonyChildren,
+                AuthorizationAction::RunCeremonyStep,
+                AuthorizationAction::ApplyCeremonyTransition,
+                AuthorizationAction::ReadCeremonyEvents,
+                AuthorizationAction::AcceptChildCompletion,
+            ],
+        ),
+        (
+            "grpc-fixture-authorization-admin",
+            vec![AuthorizationAction::ReadAuthorizationPolicy],
+        ),
+    ] {
+        administration
+            .issue(
+                &principal,
+                AuthorizationGrant::new(
+                    AuthorizationGrantId::new(grant_id).unwrap(),
+                    principal.id().clone(),
+                    actions,
+                    AuthorizationScope::Global,
+                    (clock.now(), None),
+                    DelegationDepth::none(),
+                    AuthorizationGrantIssuer::direct(principal.clone()),
+                )
+                .unwrap(),
+            )
+            .await
+            .unwrap();
+    }
+    let ttl = AuthorizationDecisionTtl::from_seconds(60).unwrap();
+    let authorize = Arc::new(AuthorizeOperationUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock.clone(),
+        ttl,
+    ));
+    let continuation = Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+        policy_id.clone(),
+        store.clone(),
+        clock,
+        ttl,
+    ));
+    EmbeddedAuthorization {
+        policy_id: policy_id.clone(),
+        store,
+        gate: TrustedHostAuthorizationGate::new(authorize, principal).unwrap(),
+        continuation,
+    }
 }
 
 #[derive(Debug, Default)]
@@ -793,20 +888,23 @@ async fn direct_rpc_any_join_stays_terminal_when_the_late_sibling_arrives() {
     assert_eq!(late.child_groups[0].completions.len(), 2);
 }
 
-async fn mcp_call(server: &MadeMcpServer, name: &str, arguments: Value) -> Value {
+async fn mcp_call(server: &MadeMcpServer, id: u64, name: &str, arguments: Value) -> Value {
     let request = json!({
-        "jsonrpc":"2.0", "id":1, "method":"tools/call",
+        "jsonrpc":"2.0", "id":id, "method":"tools/call",
         "params":{"name":name,"arguments":arguments}
     });
     serde_json::from_str(&server.handle_json_line(&request.to_string()).await.unwrap()).unwrap()
 }
 
 async fn mcp_both(servers: &[MadeMcpServer; 2], name: &str, arguments: Value) -> Value {
-    let remote = mcp_call(&servers[0], name, arguments.clone()).await;
-    let embedded = mcp_call(&servers[1], name, arguments).await;
+    let id = MCP_CALL_ID.fetch_add(1, Ordering::Relaxed);
+    let mut arguments = arguments;
+    arguments["_meta"] = json!({"made_request_id": format!("children-parity-{id}")});
+    let remote = mcp_call(&servers[0], id, name, arguments.clone()).await;
+    let embedded = mcp_call(&servers[1], id, name, arguments).await;
     assert_eq!(
         remote["result"]["isError"], embedded["result"]["isError"],
-        "{name}"
+        "{name}: remote={remote:#} embedded={embedded:#}"
     );
     assert_eq!(
         without_transport_trace(remote["result"]["structuredContent"].clone()),
@@ -874,18 +972,52 @@ async fn mcp_complete_child(servers: &[MadeMcpServer; 2], child_id: &str) -> Str
         .to_owned()
 }
 
-#[tokio::test]
-async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
-    let directory = scratch();
-    let path = directory.path().join("mcp.sqlite3");
+async fn protected_mcp_servers(directory: &Path) -> ([MadeMcpServer; 2], GrpcFixture) {
     let fixture = grpc_fixture().await;
+    let store = Arc::new(SqliteCeremonyStore::open(directory.join("mcp.sqlite3")).unwrap());
+    let authorization = embedded_authorization().await;
+    let artifacts = Arc::new(LocalArtifactStore::open(directory.join("artifacts")).unwrap());
+    let stream = Arc::new(SessionStream::new_authorized(
+        store.clone(),
+        store.clone(),
+        Arc::new(CeremonyEventFanout::new(Vec::new())),
+    ));
+    let step_continuation = Arc::new(ContinueAcceptedStepClaimUseCase::new(
+        stream,
+        authorization.continuation.clone(),
+        ParityClock::shared(),
+    ));
+    let made = EmbeddedMade::builder()
+        .with_ceremony_store(store.clone())
+        .with_definition_publications(store.clone())
+        .with_execution_receipt_store(store.clone())
+        .with_artifact_store(artifacts.clone())
+        .with_clock(ParityClock::shared())
+        .with_step_handler(ParityStepHandler::shared())
+        .with_authorization(Arc::new(authorization.gate.clone()))
+        .build()
+        .with_authorization_policy(authorization.policy_id.clone(), authorization.store.clone());
     let servers = [
         MadeMcpServer::with_backend(GrpcMadeMcpBackend::new(
             format!("http://{}", fixture.addr),
             MadeMcpGrpcTlsConfig::disabled(),
         )),
-        MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::new(durable_engine(&path))),
+        MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::with_authorization(
+            made,
+            authorization.gate,
+            ReadAuthorizationPolicyUseCase::new(authorization.policy_id, authorization.store),
+            step_continuation,
+            artifacts,
+            store,
+        )),
     ];
+    (servers, fixture)
+}
+
+#[tokio::test]
+async fn grpc_and_embedded_mcp_agree_on_quorum_dedup_and_refusal() {
+    let directory = scratch();
+    let (servers, _fixture) = protected_mcp_servers(directory.path()).await;
     let parent_raw = parent_yaml("quorum:2", 3);
     for raw in [CHILD_YAML, parent_raw.as_str()] {
         let published = mcp_both(

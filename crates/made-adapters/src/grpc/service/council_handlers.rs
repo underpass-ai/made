@@ -7,6 +7,7 @@ use super::{
     GrpcResult, MadeGrpcService, MadeService, OutputContractId, Request, Response, Specialty,
     Status, TaskId,
 };
+use made_app::services::AuthorizationOperationScope;
 
 impl MadeGrpcService {
     #[tracing::instrument(name = "rpc.deliberate", skip_all)]
@@ -294,8 +295,10 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?
             .ok_or_else(|| Status::invalid_argument("contract is required"))?;
         let contract_id = contract.contract_id().to_owned();
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
         self.contract_registry
-            .register(contract)
+            .register_authorized(contract, authorization)
             .await
             .map_err(domain_error_to_status)?;
         Ok(Response::new(pb::RegisterContractResponse {
@@ -328,7 +331,13 @@ impl MadeGrpcService {
         link_span_to_metadata(&request);
         let contract_id = OutputContractId::new(request.into_inner().contract_id)
             .map_err(domain_error_to_status)?;
-        match self.contract_registry.delete(&contract_id).await {
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        match self
+            .contract_registry
+            .delete_authorized(&contract_id, authorization)
+            .await
+        {
             Ok(()) => Ok(Response::new(pb::DeleteContractResponse { deleted: true })),
             Err(DomainError::NotFound { .. }) => {
                 Ok(Response::new(pb::DeleteContractResponse { deleted: false }))

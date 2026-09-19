@@ -223,6 +223,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     assert_ne!(claims[0].1["claim_fence"], claims[1].1["claim_fence"]);
 
     let backend = server(&path);
+    let mut completed = Vec::new();
     for (id, (step, claim)) in claims.iter().rev().enumerate() {
         let answer = complete(
             &backend,
@@ -233,6 +234,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
         )
         .await;
         assert_ok(&answer);
+        completed.push(answer);
     }
     let instance = call(
         &backend,
@@ -259,7 +261,7 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
         .collect::<Vec<_>>();
     assert_eq!(completion_order, vec!["review_data", "review_api"]);
 
-    let stale = complete(
+    let retry = complete(
         &backend,
         31,
         ceremony,
@@ -267,7 +269,8 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
         &claims[0].1["claim_fence"],
     )
     .await;
-    assert_eq!(stale["result"]["isError"], true);
+    assert_ok(&retry);
+    assert_eq!(structured(&retry), structured(completed.last().unwrap()));
     let unchanged = call(
         &backend,
         32,
@@ -276,4 +279,12 @@ async fn two_processes_claim_distinct_sqlite_steps_and_complete_out_of_order() {
     )
     .await;
     assert_eq!(structured(&unchanged), structured(&instance));
+    let unchanged_history = call(
+        &backend,
+        33,
+        "made_read_ceremony_events",
+        json!({"ceremony_id": ceremony}),
+    )
+    .await;
+    assert_eq!(structured(&unchanged_history), structured(&history));
 }

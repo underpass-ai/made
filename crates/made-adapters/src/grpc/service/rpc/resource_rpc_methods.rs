@@ -6,7 +6,7 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::ValidateCeremonyDraftRequest>,
         ) -> GrpcResult<pb::ValidateCeremonyDraftResponse> {
-            authorized_global!(
+            authorized_definition!(
                 self,
                 request,
                 ValidateCeremonyDraft,
@@ -17,7 +17,7 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::ExplainCeremonyDraftRequest>,
         ) -> GrpcResult<pb::ExplainCeremonyDraftResponse> {
-            authorized_global!(
+            authorized_definition!(
                 self,
                 request,
                 ExplainCeremonyDraft,
@@ -221,7 +221,7 @@ macro_rules! resource_rpc_methods {
             &self,
             request: Request<pb::PublishCeremonyDefinitionRequest>,
         ) -> GrpcResult<pb::PublishCeremonyDefinitionResponse> {
-            authorized_global!(
+            authorized_definition!(
                 self,
                 request,
                 PublishCeremonyDefinition,

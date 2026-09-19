@@ -213,6 +213,27 @@ impl MadeGrpcService {
             .await
     }
 
+    async fn authorize_definition<T: prost::Message>(
+        &self,
+        request: &Request<T>,
+        action: AuthorizationAction,
+        definition_yaml: &str,
+    ) -> Result<AuthorizedOperation, Status> {
+        let draft = CeremonyDefinitionYaml::parse_draft_str(definition_yaml)
+            .map_err(domain_error_to_status)?;
+        self.authorization
+            .authorize(
+                request,
+                action,
+                AuthorizationScope::Definition {
+                    name: draft.name().clone(),
+                    version: Some(draft.version().clone()),
+                },
+                None,
+            )
+            .await
+    }
+
     async fn authorize_ceremony<T: prost::Message>(
         &self,
         request: &Request<T>,
