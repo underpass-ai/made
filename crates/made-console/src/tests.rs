@@ -1,6 +1,6 @@
 use clap::Parser;
 
-use crate::{Args, ArtifactCommand, BudgetCommand, Command, OutputFormat};
+use crate::{Args, ArtifactCommand, BudgetCommand, Command, OutputFormat, ReceiptCommand};
 
 #[test]
 fn watch_and_artifact_export_arguments_are_unambiguous() {
@@ -113,4 +113,30 @@ fn list_accepts_bounded_paging_and_lifecycle_filters() {
             lifecycle: Some(_),
         } if cursor == "opaque" && prefix == "release_%"
     ));
+}
+
+#[test]
+fn receipt_recovery_is_explicitly_bounded_and_cursor_resumable() {
+    let args = Args::try_parse_from([
+        "made-console",
+        "receipt",
+        "recovery",
+        "--after",
+        "operation-42",
+        "--limit",
+        "25",
+    ])
+    .unwrap();
+    assert!(matches!(
+        args.command,
+        Command::Receipt {
+            command: ReceiptCommand::Recovery {
+                after: Some(after),
+                limit: 25,
+            },
+        } if after == "operation-42"
+    ));
+    assert!(
+        Args::try_parse_from(["made-console", "receipt", "recovery", "--limit", "501",]).is_err()
+    );
 }

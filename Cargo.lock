@@ -2110,6 +2110,7 @@ version = "0.6.0"
 dependencies = [
  "clap",
  "made-client",
+ "prost-types 0.13.5",
  "serde",
  "serde_json",
  "tokio",

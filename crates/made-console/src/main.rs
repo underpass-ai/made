@@ -5,6 +5,7 @@ use artifact_command::ArtifactCommand;
 use budget_command::BudgetCommand;
 use command::Command;
 use output_format::OutputFormat;
+use receipt_command::ReceiptCommand;
 
 mod args;
 mod artifact_command;
@@ -13,6 +14,7 @@ mod command;
 mod execute;
 mod lifecycle_filter_arg;
 mod output_format;
+mod receipt_command;
 mod render;
 
 #[cfg(test)]

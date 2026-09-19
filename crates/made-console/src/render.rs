@@ -1,9 +1,12 @@
 use made_client::v1::CeremonyInstanceState;
 use made_client::v1::{
     ArtifactRecord, BudgetBalance, BudgetLimits, BudgetMeasurement, BudgetQuantities,
-    BudgetReservationEstimate, GetBudgetReportResponse, ListPendingBudgetReservationsResponse,
+    BudgetReservationEstimate, ExecutionIntentSummary, ExecutionReceipt, ExecutionRecoveryItem,
+    GetBudgetReportResponse, InspectExecutionRecoveryResponse,
+    ListPendingBudgetReservationsResponse,
 };
 use made_client::{CeremonySearchPage, CeremonyTree, CeremonyTreeNode, ProgressBatch};
+use prost_types::{value::Kind, Struct};
 use serde_json::{json, Value};
 
 use crate::OutputFormat;
@@ -129,6 +132,20 @@ pub fn pending_budget_reservations(
     )
 }
 
+pub fn execution_receipt(receipt: &ExecutionReceipt, format: OutputFormat) -> String {
+    render(&execution_receipt_value(receipt), format)
+}
+
+pub fn execution_recovery(page: &InspectExecutionRecoveryResponse, format: OutputFormat) -> String {
+    render(
+        &json!({
+            "items": page.items.iter().map(execution_recovery_item_value).collect::<Vec<_>>(),
+            "next_cursor": page.next_cursor,
+        }),
+        format,
+    )
+}
+
 pub fn message(value: &Value, format: OutputFormat) -> String {
     render(value, format)
 }
@@ -187,6 +204,81 @@ fn tree_node_value(node: &CeremonyTreeNode) -> Value {
 
 fn optional_text(value: &str) -> Option<&str> {
     (!value.is_empty()).then_some(value)
+}
+
+fn execution_receipt_value(receipt: &ExecutionReceipt) -> Value {
+    json!({
+        "receipt_id": receipt.receipt_id,
+        "operation_id": receipt.operation_id,
+        "request_digest": receipt.request_digest,
+        "producer_claim_fence": receipt.producer_claim_fence,
+        "connector_id": receipt.connector_id,
+        "external_operation_id": receipt.external_operation_id,
+        "recovery_capability": receipt.recovery_capability,
+        "source_kind": made_client::v1::ArtifactSourceKind::try_from(receipt.source_kind)
+            .map_or("unspecified", |kind| kind.as_str_name()),
+        "status": receipt.status,
+        "output": receipt.output.as_ref().map(struct_value),
+        "error": receipt.error,
+        "artifacts": receipt.artifacts.iter().map(|artifact| json!({
+            "artifact_id": artifact.artifact_id,
+            "digest": artifact.digest,
+            "size_bytes": artifact.size_bytes,
+            "media_type": artifact.media_type,
+        })).collect::<Vec<_>>(),
+        "observed_at": receipt.observed_at.as_ref().map(timestamp_value),
+    })
+}
+
+fn execution_recovery_item_value(item: &ExecutionRecoveryItem) -> Value {
+    json!({
+        "operation_id": item.operation_id,
+        "ceremony_id": item.ceremony_id,
+        "step_id": item.step_id,
+        "request_digest": item.request_digest,
+        "intents": item.intents.iter().map(execution_intent_value).collect::<Vec<_>>(),
+        "receipt": item.receipt.as_ref().map(execution_receipt_value),
+        "current_claim_fence": item.current_claim_fence,
+    })
+}
+
+fn execution_intent_value(intent: &ExecutionIntentSummary) -> Value {
+    json!({
+        "claim_fence": intent.claim_fence,
+        "connector_id": intent.connector_id,
+        "recovery_capability": intent.recovery_capability,
+        "source_kind": made_client::v1::ArtifactSourceKind::try_from(intent.source_kind)
+            .map_or("unspecified", |kind| kind.as_str_name()),
+        "actor_kind": intent.actor_kind,
+        "recorded_at": intent.recorded_at.as_ref().map(timestamp_value),
+    })
+}
+
+fn timestamp_value(timestamp: &prost_types::Timestamp) -> Value {
+    json!({"seconds": timestamp.seconds, "nanos": timestamp.nanos})
+}
+
+fn struct_value(value: &Struct) -> Value {
+    Value::Object(
+        value
+            .fields
+            .iter()
+            .map(|(key, value)| (key.clone(), prost_value(value)))
+            .collect(),
+    )
+}
+
+fn prost_value(value: &prost_types::Value) -> Value {
+    match value.kind.as_ref() {
+        None | Some(Kind::NullValue(_)) => Value::Null,
+        Some(Kind::NumberValue(value)) => json!(value),
+        Some(Kind::StringValue(value)) => json!(value),
+        Some(Kind::BoolValue(value)) => json!(value),
+        Some(Kind::StructValue(value)) => struct_value(value),
+        Some(Kind::ListValue(value)) => {
+            Value::Array(value.values.iter().map(prost_value).collect())
+        }
+    }
 }
 
 fn balance_value(balance: &BudgetBalance) -> Value {

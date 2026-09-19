@@ -9,6 +9,7 @@ mod ceremony_search_page;
 mod ceremony_tree;
 mod ceremony_tree_node;
 mod client_config;
+mod execution_receipts;
 mod made_client;
 mod made_client_error;
 mod progress;

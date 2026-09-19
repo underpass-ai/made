@@ -9,7 +9,7 @@ use made_client::v1::{
 use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint, RequestContext};
 use serde_json::json;
 
-use crate::{render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat};
+use crate::{render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat, ReceiptCommand};
 
 pub async fn run(args: Args) -> Result<(), MadeClientError> {
     let client = connect_client(&args).await?;
@@ -71,12 +71,31 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
         }
         Command::Artifact { command } => artifact(&client, command, args.output).await?,
         Command::Budget { command } => budget(&client, command, args.output).await?,
+        Command::Receipt { command } => receipt(&client, command, args.output).await?,
         Command::Report {
             ceremony_ids,
             title,
             destination,
         } => report(&client, ceremony_ids, title, &destination, args.output).await?,
         command => action(&client, command, args.output).await?,
+    }
+    Ok(())
+}
+
+async fn receipt(
+    client: &MadeClient,
+    command: ReceiptCommand,
+    output: OutputFormat,
+) -> Result<(), MadeClientError> {
+    match command {
+        ReceiptCommand::Get { operation_id } => {
+            let receipt = client.get_execution_receipt(operation_id).await?;
+            println!("{}", render::execution_receipt(&receipt, output));
+        }
+        ReceiptCommand::Recovery { after, limit } => {
+            let page = client.inspect_execution_recovery(after, limit).await?;
+            println!("{}", render::execution_recovery(&page, output));
+        }
     }
     Ok(())
 }

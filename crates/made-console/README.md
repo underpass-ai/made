@@ -34,6 +34,8 @@ made-console artifact list --limit 50
 made-console artifact export artifact-123 ./report.bin
 made-console budget report ceremony-123
 made-console budget pending --limit 100
+made-console receipt get operation-123
+made-console receipt recovery --limit 100
 made-console report ceremony-123 --destination ./report.md
 made-console pause ceremony-123 \
   --actor-id operator-7 --actor-kind human --reason maintenance
@@ -73,6 +75,7 @@ ambiguous response. Request ids are never identities or credentials.
 `budget pending` shows the reservations currently reducing availability and
 their observed/estimated/unknown measurement quality.
 
-`list` currently reflects the server's legacy unpaged RPC. It is an operator
-checkpoint, not the accepted C5.8 search/pagination surface; the bounded
-storage query and opaque public cursor are tracked in the C5.8 contract.
+`list` uses the bounded public search API. Its cursor is opaque and bound to
+the store, policy and exact filters; return it unchanged on the next page.
+`receipt recovery` pages through immutable execution observations and their
+claim fences without opening the service store.

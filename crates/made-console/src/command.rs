@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use clap::Subcommand;
 
-use crate::{lifecycle_filter_arg::LifecycleFilterArg, ArtifactCommand, BudgetCommand};
+use crate::{
+    lifecycle_filter_arg::LifecycleFilterArg, ArtifactCommand, BudgetCommand, ReceiptCommand,
+};
 
 /// Public operator reads, exports and authorized actions.
 #[derive(Debug, Subcommand)]
@@ -47,6 +49,10 @@ pub enum Command {
     Budget {
         #[command(subcommand)]
         command: BudgetCommand,
+    },
+    Receipt {
+        #[command(subcommand)]
+        command: ReceiptCommand,
     },
     Report {
         #[arg(required = true, num_args = 1..)]

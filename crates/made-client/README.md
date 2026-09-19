@@ -31,7 +31,9 @@ println!("resume at {}", progress.checkpoint().after_sequence());
 
 Read operations may be repeated after transport failure. Mutating methods do
 not retry an ambiguous response. Artifact exports verify every chunk and the
-final digest and size before installing the destination file.
+final digest and size before installing the destination file. Execution
+receipt reads and bounded recovery inspection use the same public API and do
+not open service storage.
 
 By default each public client call creates a fresh `RequestContext`. For each
 request the client derives `x-made-request-id` from that context, the exact RPC
