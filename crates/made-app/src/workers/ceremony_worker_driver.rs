@@ -565,6 +565,37 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn recovery_without_current_claim_keeps_item_for_retry_without_applying_it() {
+        let inspector = Arc::new(RecoveryInspector(vec![recovery_item(1)]));
+        let recovered = Arc::new(Mutex::new(Vec::new()));
+        let deadlines = Arc::new(DeadlineGate {
+            current: Vec::new(),
+            calls: AtomicUsize::new(0),
+        });
+        let driver = CeremonyWorkerDriver::new(
+            inspector,
+            deadlines.clone(),
+            Arc::new(RecordingRecoveryWorker {
+                recovered: recovered.clone(),
+                stop: CeremonyWorkerStopToken::new(),
+                stop_on_first: false,
+            }),
+            CeremonyWorkerPolicy::new(
+                MaxParallel::new(1).unwrap(),
+                ExecutionRecoveryPageLimit::new(1).unwrap(),
+            ),
+            CeremonyWorkerStopToken::new(),
+        );
+
+        let outcome = driver.recover_page(None).await.unwrap();
+
+        assert!(outcome.outcomes().is_empty());
+        assert_eq!(outcome.failures().len(), 1);
+        assert!(recovered.lock().unwrap().is_empty());
+        assert_eq!(deadlines.calls.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
     async fn stop_discards_the_page_cursor_so_resume_cannot_skip_an_undrained_item() {
         let items = (1..=3).map(recovery_item).collect::<Vec<_>>();
         let inspector = Arc::new(RecoveryInspector(items.clone()));

@@ -22,6 +22,7 @@ pub trait WorkerCapacityPort: Send + Sync {
         &self,
         operation: &ExecutionOperationId,
         owner: &LeaseOwnerId,
+        fence: &StepClaimFence,
     ) -> Result<Box<dyn WorkerCapacityRenewalGuard>, DomainError>;
     async fn release(
         &self,

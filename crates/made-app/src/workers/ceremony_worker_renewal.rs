@@ -168,7 +168,7 @@ impl CeremonyWorkerRenewal {
     ) -> Result<(), DomainError> {
         let renew = async {
             let _capacity_guard = if let Some(capacity) = &self.capacity {
-                Some(capacity.lock_renewal(operation, &self.owner).await?)
+                Some(capacity.lock_renewal(operation, &self.owner, fence).await?)
             } else {
                 None
             };
