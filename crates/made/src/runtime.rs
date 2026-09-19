@@ -31,6 +31,7 @@ pub async fn serve(app: Application) -> Result<()> {
         grpc_service,
         nats_subscriber,
         nats_ceremony_recovery,
+        council_event_publisher,
         health_state,
         ..
     } = app;
@@ -38,6 +39,14 @@ pub async fn serve(app: Application) -> Result<()> {
     // Shutdown channel: a single send triggers both servers.
     let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
+    let council_publisher_handle = council_event_publisher.map(|publisher| {
+        let consumer = made_core::value_objects::CouncilJournalConsumer::new("nats-publisher")
+            .expect("static council publisher consumer is valid");
+        tokio::spawn(
+            crate::councils::CouncilPublisherWorker::new(publisher, consumer)
+                .run(shutdown_rx.clone()),
+        )
+    });
     let subscriber_handle = match nats_subscriber {
         Some(subscriber) => Some(
             subscriber
@@ -116,29 +125,27 @@ pub async fn serve(app: Application) -> Result<()> {
     let http_res = http_task.await.context("http server task join failed")?;
 
     info!("servers stopped");
+    if let Some(handle) = council_publisher_handle {
+        handle.await.context("council publisher task join failed")?;
+    }
 
-    if let Some(handle) = subscriber_handle {
-        handle.abort();
-        match handle.await {
-            Ok(()) => info!("nats subscriber stopped"),
-            Err(err) if err.is_cancelled() => info!("nats subscriber cancelled"),
-            Err(err) => error!(error = %err, "nats subscriber task errored"),
-        }
-    }
-    if let Some(handle) = ceremony_recovery_handle {
-        handle.abort();
-        match handle.await {
-            Ok(()) => info!("nats ceremony recovery subscriber stopped"),
-            Err(err) if err.is_cancelled() => {
-                info!("nats ceremony recovery subscriber cancelled");
-            }
-            Err(err) => error!(error = %err, "nats ceremony recovery subscriber task errored"),
-        }
-    }
+    stop_subscriber(subscriber_handle, "nats trigger").await;
+    stop_subscriber(ceremony_recovery_handle, "nats ceremony recovery").await;
 
     grpc_res?;
     http_res?;
     Ok(())
+}
+
+async fn stop_subscriber(handle: Option<tokio::task::JoinHandle<()>>, name: &str) {
+    if let Some(handle) = handle {
+        handle.abort();
+        match handle.await {
+            Ok(()) => info!(name, "subscriber stopped"),
+            Err(error) if error.is_cancelled() => info!(name, "subscriber cancelled"),
+            Err(error) => error!(name, %error, "subscriber task errored"),
+        }
+    }
 }
 
 async fn wait_for_shutdown(mut rx: watch::Receiver<bool>) {

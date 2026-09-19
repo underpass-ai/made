@@ -47,7 +47,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 59] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 64] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -62,6 +62,11 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 59] = [
     "made_register_contract",
     "made_list_contracts",
     "made_delete_contract",
+    "made_read_council_events",
+    "made_get_council_event_cursor",
+    "made_lease_council_events",
+    "made_acknowledge_council_events",
+    "made_release_council_events",
     RUN_CEREMONY_TOOL,
     GET_CEREMONY_INSTANCE_TOOL,
     LIST_CEREMONY_INSTANCES_TOOL,

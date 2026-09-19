@@ -27,18 +27,36 @@ pub(crate) enum Table {
     EventCursorQuarantine,
     /// Idempotent session-memory writes, grouped by memory scope.
     MemoryWrites,
+    Councils,
+    CouncilAgents,
+    CouncilContracts,
+    CouncilDeliberations,
+    CouncilStatistics,
+    CouncilJournal,
+    CouncilJournalIds,
+    CouncilJournalCursors,
 }
 
 impl Table {
     pub(crate) const fn key_shape(self) -> KeyShape {
         match self {
-            Table::Ceremonies | Table::Meta | Table::EventCursors => KeyShape::Str,
+            Table::Ceremonies
+            | Table::Meta
+            | Table::EventCursors
+            | Table::Councils
+            | Table::CouncilAgents
+            | Table::CouncilContracts
+            | Table::CouncilDeliberations
+            | Table::CouncilStatistics
+            | Table::CouncilJournalIds
+            | Table::CouncilJournalCursors => KeyShape::Str,
             Table::Journal
             | Table::Publications
             | Table::Events
             | Table::EventLog
             | Table::Snapshots
             | Table::EventCursorQuarantine
+            | Table::CouncilJournal
             | Table::MemoryWrites => KeyShape::Bytes,
         }
     }
@@ -57,6 +75,14 @@ impl fmt::Display for Table {
             Table::EventCursors => "ceremony_event_cursors",
             Table::EventCursorQuarantine => "ceremony_event_cursor_quarantine",
             Table::MemoryWrites => "session_memory_writes",
+            Table::Councils => "council_registry",
+            Table::CouncilAgents => "council_agents",
+            Table::CouncilContracts => "council_contracts",
+            Table::CouncilDeliberations => "council_deliberations",
+            Table::CouncilStatistics => "council_statistics",
+            Table::CouncilJournal => "council_journal",
+            Table::CouncilJournalIds => "council_journal_ids",
+            Table::CouncilJournalCursors => "council_journal_cursors",
         })
     }
 }

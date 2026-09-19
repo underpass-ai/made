@@ -24,6 +24,7 @@ mod ceremony_lifecycle;
 mod ceremony_progress;
 mod context;
 mod council;
+pub(crate) mod council_journal;
 mod deliberation;
 mod event;
 mod output_contract;

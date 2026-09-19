@@ -36,6 +36,37 @@ impl<T> futures::Stream for RpcResultStream<T> {
 
 #[async_trait]
 impl MadeService for MadeGrpcService {
+    async fn read_council_events(
+        &self,
+        request: Request<pb::ReadCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReadCouncilEventsResponse> {
+        self.handle_read_council_events(request).await
+    }
+    async fn get_council_event_cursor(
+        &self,
+        request: Request<pb::GetCouncilEventCursorRequest>,
+    ) -> GrpcResult<pb::GetCouncilEventCursorResponse> {
+        self.handle_get_council_event_cursor(request).await
+    }
+    async fn lease_council_events(
+        &self,
+        request: Request<pb::LeaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::LeaseCouncilEventsResponse> {
+        self.handle_lease_council_events(request).await
+    }
+    async fn acknowledge_council_events(
+        &self,
+        request: Request<pb::AcknowledgeCouncilEventsRequest>,
+    ) -> GrpcResult<pb::AcknowledgeCouncilEventsResponse> {
+        self.handle_acknowledge_council_events(request).await
+    }
+    async fn release_council_events(
+        &self,
+        request: Request<pb::ReleaseCouncilEventsRequest>,
+    ) -> GrpcResult<pb::ReleaseCouncilEventsResponse> {
+        self.handle_release_council_events(request).await
+    }
+
     type StreamCeremonyStream = RpcResultStream<pb::StreamCeremonyResponse>;
     type StreamDeliberationStream = tokio_stream::wrappers::ReceiverStream<
         std::result::Result<pb::StreamDeliberationResponse, Status>,

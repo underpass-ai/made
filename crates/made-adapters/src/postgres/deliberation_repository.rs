@@ -6,7 +6,7 @@
 //! cheap winner lookup. See `migrations/postgres/0001_deliberations.sql`.
 
 use async_trait::async_trait;
-use made_core::entities::{Deliberation, DeliberationPhase};
+use made_core::entities::{CouncilJournalEvent, Deliberation, DeliberationPhase};
 use made_core::error::DomainError;
 use made_core::ports::DeliberationRepositoryPort;
 use made_core::value_objects::TaskId;
@@ -37,8 +37,18 @@ impl PostgresDeliberationRepository {
 #[async_trait]
 impl DeliberationRepositoryPort for PostgresDeliberationRepository {
     async fn save(&self, deliberation: &Deliberation) -> Result<(), DomainError> {
+        let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(deliberation).map_err(|e| serde_to_domain(&e, "save"))?;
+        let previous: Option<JsonValue> =
+            sqlx::query_scalar("SELECT body FROM deliberations WHERE task_id = $1")
+                .bind(deliberation.task_id().as_str())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|e| sqlx_to_domain(e, "read prior deliberation"))?;
+        if previous.as_ref() == Some(&body) {
+            return Ok(());
+        }
         let phase = phase_name(deliberation.phase());
         let winner = deliberation
             .ranking()
@@ -63,11 +73,18 @@ impl DeliberationRepositoryPort for PostgresDeliberationRepository {
         .bind(phase)
         .bind(winner)
         .bind(&body)
-        .execute(self.pool.inner())
+        .execute(&mut *tx)
         .await
         .map_err(|e| sqlx_to_domain(e, "save"))?;
 
-        Ok(())
+        super::council_journal_store::append(
+            &mut tx,
+            CouncilJournalEvent::DeliberationSnapshotSaved(deliberation.clone()),
+        )
+        .await?;
+        tx.commit()
+            .await
+            .map_err(|e| sqlx_to_domain(e, "commit council mutation"))
     }
 
     async fn get(&self, task_id: &TaskId) -> Result<Deliberation, DomainError> {
@@ -90,7 +107,7 @@ impl DeliberationRepositoryPort for PostgresDeliberationRepository {
     }
 }
 
-fn phase_name(phase: DeliberationPhase) -> &'static str {
+pub(super) fn phase_name(phase: DeliberationPhase) -> &'static str {
     match phase {
         DeliberationPhase::Proposing => "Proposing",
         DeliberationPhase::Revising => "Revising",

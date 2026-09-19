@@ -81,6 +81,7 @@ mod ceremony_handlers;
 mod ceremony_history_handlers;
 mod ceremony_lifecycle_handlers;
 mod council_handlers;
+mod council_journal_handlers;
 mod descriptor_error;
 mod metrics_snapshot_mapper;
 mod register_agent_descriptor;
@@ -91,6 +92,7 @@ mod statistics_mapper;
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
     pub(super) deliberate: Arc<DeliberateUseCase>,

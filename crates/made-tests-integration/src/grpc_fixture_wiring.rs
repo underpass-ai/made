@@ -24,6 +24,7 @@ use made_core::ports::{
 
 /// The adapters a fixture will use where a test has an opinion.
 pub struct GrpcFixtureWiring {
+    council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     ceremony_store: Arc<dyn CeremonyEventStorePort>,
     ceremony_snapshots: Arc<dyn CeremonySnapshotStorePort>,
     step_handler: Option<Arc<dyn CeremonyStepHandlerPort>>,
@@ -37,6 +38,7 @@ impl Default for GrpcFixtureWiring {
     fn default() -> Self {
         let store = Arc::new(InMemoryCeremonyEventStore::new());
         Self {
+            council_journal: None,
             ceremony_store: store.clone(),
             ceremony_snapshots: store,
             step_handler: None,
@@ -49,6 +51,19 @@ impl Default for GrpcFixtureWiring {
 }
 
 impl GrpcFixtureWiring {
+    #[must_use]
+    pub fn with_council_journal(
+        mut self,
+        journal: Arc<dyn made_core::ports::CouncilJournalPort>,
+    ) -> Self {
+        self.council_journal = Some(journal);
+        self
+    }
+    pub(crate) fn council_journal(&self) -> Arc<dyn made_core::ports::CouncilJournalPort> {
+        self.council_journal
+            .clone()
+            .unwrap_or_else(|| Arc::new(made_adapters::memory::InMemoryCouncilJournal::new()))
+    }
     #[must_use]
     pub fn new() -> Self {
         Self::default()
