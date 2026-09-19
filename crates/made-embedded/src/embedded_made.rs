@@ -16,7 +16,9 @@ use made_adapters::sqlite::{
 };
 use made_api::ApiError;
 use made_app::artifacts::{ArtifactCursor, ArtifactListing, ArtifactService};
-use made_app::authorization::{AuthorizationMutationOutcome, TrustedHostAuthorizationGate};
+use made_app::authorization::{
+    AcceptedStepCompletion, AuthorizationMutationOutcome, TrustedHostAuthorizationGate,
+};
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
     CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
@@ -343,6 +345,14 @@ impl EmbeddedMade {
         self.memory_reader = memory_reader;
         self.authorization = Some(authorization);
         self
+    }
+
+    #[doc(hidden)]
+    pub async fn continue_accepted_step(
+        &self,
+        input: AcceptedStepCompletion,
+    ) -> Result<made_core::value_objects::AuthorizedOperation, DomainError> {
+        self.authorization()?.continue_step(input).await
     }
 
     pub async fn authorization_policy(&self) -> Result<AuthorizationPolicySnapshot, DomainError> {

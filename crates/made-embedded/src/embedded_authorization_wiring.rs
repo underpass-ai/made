@@ -41,8 +41,10 @@ pub(crate) fn wire(
     let services = EmbeddedAuthorizationServices::new(
         ReadAuthorizationPolicyUseCase::new(policy_id.clone(), store.clone()),
         ReadAuthorizationDecisionsUseCase::new(policy_id.clone(), store.clone()),
-        AuthorizationPolicyAdministrationService::new(policy_id, store, clock),
+        AuthorizationPolicyAdministrationService::new(policy_id, store, clock.clone()),
         continuation,
+        stream.clone(),
+        clock,
     );
     (memory_reader, services)
 }

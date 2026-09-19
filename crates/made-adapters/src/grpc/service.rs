@@ -5,7 +5,8 @@ use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
 use made_app::authorization::{
-    AuthorizationPolicyAdministrationService, ReadAuthorizationDecisionsUseCase,
+    AcceptedStepCompletion, AuthorizationPolicyAdministrationService,
+    ContinueAcceptedStepClaimUseCase, ReadAuthorizationDecisionsUseCase,
     ReadAuthorizationPolicyUseCase,
 };
 use made_app::budgets::{
@@ -118,6 +119,7 @@ pub struct MadeGrpcService {
     pub(super) authorization_administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(super) read_authorization_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(super) read_authorization_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+    pub(super) continue_accepted_step_claim: Arc<ContinueAcceptedStepClaimUseCase>,
     pub(super) council_journal: Arc<made_app::services::CouncilJournalService>,
     pub(super) clock: Arc<dyn ClockPort>,
     pub(super) max_parallel_ceiling: MaxParallel,
@@ -237,6 +239,31 @@ impl MadeGrpcService {
         self.authorization
             .authorize_authenticated(request, principal, action, scope, None)
             .await
+    }
+
+    async fn continue_accepted_step_completion(
+        &self,
+        request: &Request<pb::CompleteCeremonyStepRequest>,
+    ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
+        let request_id = self
+            .authorization
+            .request_id(request, AuthorizationAction::CompleteCeremonyStep)?;
+        let input = AcceptedStepCompletion::from_invocation(
+            CeremonyId::new(&request.get_ref().ceremony_id).map_err(domain_error_to_status)?,
+            made_core::value_objects::StepId::new(&request.get_ref().step_id)
+                .map_err(domain_error_to_status)?,
+            made_core::value_objects::StepClaimFence::new(&request.get_ref().claim_fence)
+                .map_err(domain_error_to_status)?,
+            principal,
+            &request_id,
+            super::grpc_authorization_gate::target_digest(request.get_ref()),
+        )
+        .map_err(domain_error_to_status)?;
+        self.continue_accepted_step_claim
+            .execute(input)
+            .await
+            .map_err(domain_error_to_status)
     }
 
     async fn authorize_artifact<T: prost::Message>(

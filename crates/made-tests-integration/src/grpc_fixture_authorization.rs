@@ -4,7 +4,8 @@ use made_adapters::grpc::GrpcAuthorizationGate;
 use made_adapters::memory::InMemoryAuthorizationPolicyStore;
 use made_app::authorization::{
     AuthorizationPolicyAdministrationService, AuthorizeOperationUseCase,
-    ReadAuthorizationDecisionsUseCase, ReadAuthorizationPolicyUseCase,
+    ContinueAcceptedCeremonyWorkUseCase, ReadAuthorizationDecisionsUseCase,
+    ReadAuthorizationPolicyUseCase,
 };
 use made_core::ports::ClockPort;
 use made_core::value_objects::{
@@ -18,6 +19,7 @@ pub(crate) struct FixtureAuthorization {
     pub(crate) administration: Arc<AuthorizationPolicyAdministrationService>,
     pub(crate) read_policy: Arc<ReadAuthorizationPolicyUseCase>,
     pub(crate) read_decisions: Arc<ReadAuthorizationDecisionsUseCase>,
+    pub(crate) continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
 }
 
 pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureAuthorization {
@@ -68,13 +70,22 @@ pub(crate) async fn fixture_authorization(clock: Arc<dyn ClockPort>) -> FixtureA
         administration: Arc::new(AuthorizationPolicyAdministrationService::new(
             policy_id.clone(),
             store.clone(),
-            clock,
+            clock.clone(),
         )),
         read_policy: Arc::new(ReadAuthorizationPolicyUseCase::new(
             policy_id.clone(),
             store.clone(),
         )),
-        read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(policy_id, store)),
+        read_decisions: Arc::new(ReadAuthorizationDecisionsUseCase::new(
+            policy_id.clone(),
+            store.clone(),
+        )),
+        continuation: Arc::new(ContinueAcceptedCeremonyWorkUseCase::new(
+            policy_id,
+            store,
+            clock,
+            AuthorizationDecisionTtl::from_seconds(300).unwrap(),
+        )),
     }
 }
 

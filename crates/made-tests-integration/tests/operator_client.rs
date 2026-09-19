@@ -68,6 +68,7 @@ async fn client_reconnects_from_checkpoint_and_preserves_late_terminal_history()
             lease_owner_id: "operator-worker".to_owned(),
             idempotency_key: "operator-claim".to_owned(),
             lease_ttl_ms: 60_000,
+            budget_reservation: None,
         })
         .await
         .unwrap()

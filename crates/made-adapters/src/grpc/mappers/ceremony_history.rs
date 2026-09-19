@@ -115,6 +115,10 @@ pub(super) fn ceremony_event_record_from(
             .map(|hash| hash.as_bytes().to_vec())
             .unwrap_or_default(),
         record_hash: record.record_hash().as_bytes().to_vec(),
+        authorization: record
+            .authorization_evidence()
+            .map(super::ceremony_authorization::evidence_to_proto)
+            .transpose()?,
     })
 }
 

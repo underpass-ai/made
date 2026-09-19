@@ -82,6 +82,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
     let authorization_continuation = authorization.continuation.clone();
+    let step_authorization_continuation = authorization.continuation.clone();
 
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
@@ -356,8 +357,9 @@ pub async fn compose() -> Result<Application, ComposeError> {
     grpc_builder = ceremony_operations::wire(
         grpc_builder,
         resolve_ceremony_definition,
-        ceremony_stream,
-        clock,
+        &ceremony_stream,
+        &clock,
+        step_authorization_continuation,
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);

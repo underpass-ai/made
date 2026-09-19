@@ -7,6 +7,7 @@ use made_core::value_objects::{
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
+use super::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
 use crate::backend::ToolTraceContext;
 use crate::protocol::{ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
 
@@ -63,6 +64,7 @@ impl EmbeddedToolAuthorizer {
         let scope = self
             .scope_for_tool(made, tool_name, action, arguments)
             .await?;
+        let request_id = AuthorizationRequestId::new(trace.authorization_request_id())?;
         let target_digest = if tool_name == SEARCH_CEREMONY_INSTANCES_TOOL {
             EmbeddedCeremonySearchRequest::try_from(arguments)
                 .map_err(ToolError::invalid_request)?
@@ -70,19 +72,34 @@ impl EmbeddedToolAuthorizer {
         } else {
             ToolTraceContext::authorization_target_digest(tool_name, arguments)
         };
-        self.gate
+        let ordinary = self
+            .gate
             .authorize(
-                AuthorizationRequestId::new(trace.authorization_request_id())?,
+                request_id.clone(),
                 action,
                 scope,
-                target_digest,
+                target_digest.clone(),
                 trace
                     .approval_decision_id()
                     .map(made_core::value_objects::AuthorizationDecisionId::new)
                     .transpose()?,
             )
-            .await
-            .map_err(Into::into)
+            .await;
+        match ordinary {
+            Ok(operation) => Ok(operation),
+            Err(_) if action == AuthorizationAction::CompleteCeremonyStep => {
+                let request = EmbeddedCompleteCeremonyStepRequest::try_from(arguments)
+                    .map_err(ToolError::invalid_request)?;
+                made.continue_accepted_step(request.accepted_completion(
+                    self.gate.principal().clone(),
+                    &request_id,
+                    target_digest,
+                )?)
+                .await
+                .map_err(Into::into)
+            }
+            Err(error) => Err(error.into()),
+        }
     }
     async fn scope_for_tool(
         &self,
