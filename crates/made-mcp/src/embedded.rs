@@ -537,7 +537,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                             .to_owned(),
                     )
                     .map_err(|error| ToolError::invalid_request(error.to_string()))?;
-                    request.execute_and_present(&self.made, request_id).await
+                    let page = request.execute(&self.made, request_id).await?;
+                    self.present_search_page(&page).await
                 }
                 REQUEST_CEREMONY_INTERVENTION_TOOL => {
                     let request = EmbeddedRequestCeremonyInterventionRequest::try_from(arguments)
@@ -592,10 +593,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                     .await?;
                 AuthorizationOperationScope::run(operation, async {
                     if name == SEARCH_CEREMONY_INSTANCES_TOOL {
-                        return EmbeddedCeremonySearchRequest::try_from(arguments)
+                        let page = EmbeddedCeremonySearchRequest::try_from(arguments)
                             .map_err(ToolError::invalid_request)?
-                            .execute_and_present(&self.made, authorization_request_id)
-                            .await;
+                            .execute(&self.made, authorization_request_id)
+                            .await?;
+                        return self.present_search_page(&page).await;
                     }
                     self.call_tool(name, arguments).await
                 })

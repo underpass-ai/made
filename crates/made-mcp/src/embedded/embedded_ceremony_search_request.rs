@@ -1,13 +1,14 @@
-use made_app::usecases::{CeremonySearchCursor, SearchCeremonyInstancesInput};
+use made_app::usecases::{
+    CeremonyInstancePage, CeremonySearchCursor, SearchCeremonyInstancesInput,
+};
 use made_core::value_objects::{
-    AuthorizationRequestId, CeremonyIdPrefix, CeremonyInstancePageLimit, CeremonyLifecyclePhase,
+    AuthorizationRequestId, AuthorizationTargetDigest, CeremonyIdPrefix, CeremonyInstancePageLimit,
+    CeremonyLifecyclePhase,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
 use crate::protocol::ToolError;
-
-use super::embedded_ceremony_listing;
 
 #[derive(Debug)]
 pub(super) struct EmbeddedCeremonySearchRequest {
@@ -15,13 +16,16 @@ pub(super) struct EmbeddedCeremonySearchRequest {
 }
 
 impl EmbeddedCeremonySearchRequest {
-    pub(super) async fn execute_and_present(
+    pub(super) fn authorization_target_digest(&self) -> AuthorizationTargetDigest {
+        self.input.authorization_target_digest()
+    }
+
+    pub(super) async fn execute(
         &self,
         made: &EmbeddedMade,
         request_id: AuthorizationRequestId,
-    ) -> Result<Value, ToolError> {
-        let page = made.search_instances(request_id, &self.input).await?;
-        embedded_ceremony_listing::present_page(made, &page).await
+    ) -> Result<CeremonyInstancePage, ToolError> {
+        Ok(made.search_instances(request_id, &self.input).await?)
     }
 }
 

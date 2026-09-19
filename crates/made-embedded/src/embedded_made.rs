@@ -23,7 +23,8 @@ use made_app::authorization::{
 };
 use made_app::budgets::BudgetLedgerService;
 use made_app::services::{
-    CeremonyEventFanout, CeremonyEventPublisherSubscriber, SessionMemoryRecorder, SessionStream,
+    AuthorizationOperationScope, CeremonyEventFanout, CeremonyEventPublisherSubscriber,
+    SessionMemoryRecorder, SessionStream,
 };
 use made_app::usecases::{
     CeremonyInstancePage, CeremonyProgressSettings, CeremonySearchCursorCodec,
@@ -442,19 +443,32 @@ impl EmbeddedMade {
         request_id: AuthorizationRequestId,
         input: &SearchCeremonyInstancesInput,
     ) -> Result<CeremonyInstancePage, DomainError> {
-        self.ceremony_search_authorization
-            .as_ref()
-            .ok_or(DomainError::InvariantViolated {
-                reason: "embedded ceremony search requires an explicit authorization gate",
-            })?
-            .authorize(
-                request_id,
-                AuthorizationAction::SearchCeremonyInstances,
-                AuthorizationScope::Global,
-                input.authorization_target_digest(),
-                None,
-            )
-            .await?;
+        let target_digest = input.authorization_target_digest();
+        if let Some(operation) = AuthorizationOperationScope::current() {
+            let evidence = operation.evidence();
+            if evidence.action() != AuthorizationAction::SearchCeremonyInstances
+                || evidence.scope() != &AuthorizationScope::Global
+                || evidence.target_digest() != &target_digest
+            {
+                return Err(DomainError::InvariantViolated {
+                    reason: "active authorization evidence does not admit this ceremony search",
+                });
+            }
+        } else {
+            self.ceremony_search_authorization
+                .as_ref()
+                .ok_or(DomainError::InvariantViolated {
+                    reason: "embedded ceremony search requires an explicit authorization gate",
+                })?
+                .authorize(
+                    request_id,
+                    AuthorizationAction::SearchCeremonyInstances,
+                    AuthorizationScope::Global,
+                    target_digest,
+                    None,
+                )
+                .await?;
+        }
         let cursors =
             self.ceremony_search_cursors
                 .clone()
