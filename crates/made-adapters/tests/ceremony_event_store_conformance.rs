@@ -25,5 +25,5 @@ async fn the_in_memory_store_satisfies_the_snapshot_store_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 5, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 6, "properties run: {passed:?}");
 }

@@ -356,9 +356,9 @@ mod tests {
         CeremonyCompleted, CeremonyInstanceStarted, StepCompleted, StepFailed, StepStarted,
     };
     use crate::value_objects::{
-        AuditActorKind, CeremonyContext, IdempotencyKey, LeaseOwnerId, RoleId, StateId,
-        StateIteration, StepAttempt, StepErrorMessage, StepId, StepIteration, StepLease,
-        StepOutput, StepResult,
+        AuditActorKind, BudgetAccountId, BudgetReservationId, CeremonyContext, IdempotencyKey,
+        LeaseOwnerId, RoleId, StateId, StateIteration, StateVisit, StepAttempt, StepErrorMessage,
+        StepId, StepIteration, StepLease, StepOutput, StepResult,
     };
     use serde_json::Value;
     use time::macros::datetime;
@@ -505,6 +505,49 @@ mod tests {
             assert!(restored.digest_is_intact().unwrap());
             assert_eq!(restored.event(), record.event());
         }
+    }
+
+    #[test]
+    fn budgeted_start_and_claim_round_trip_with_hashes_and_fold() {
+        let account = BudgetAccountId::new("ceremony-1").unwrap();
+        let reservation = BudgetReservationId::new("reservation-1").unwrap();
+        let mut started = fact("budgeted-start", AuditEventType::CeremonyInstanceStarted);
+        let CeremonyEvent::CeremonyInstanceStarted(event) = &mut started.event else {
+            unreachable!();
+        };
+        event.budget_account_id = Some(account.clone());
+        let first = AuditRecord::first(started).unwrap();
+
+        let mut claimed = fact("budgeted-claim", AuditEventType::StepStarted);
+        let CeremonyEvent::StepStarted(event) = &mut claimed.event else {
+            unreachable!();
+        };
+        event.state_visit = Some(StateVisit::FIRST);
+        event.budget_reservation_id = Some(reservation.clone());
+        let second = AuditRecord::following(claimed, &first).unwrap();
+
+        assert_eq!(first.event_schema_version(), Some(EventSchemaVersion::V4));
+        assert_eq!(second.event_schema_version(), Some(EventSchemaVersion::V6));
+        let encoded = serde_json::to_vec(&[first.clone(), second.clone()]).unwrap();
+        let restored: Vec<AuditRecord> = serde_json::from_slice(&encoded).unwrap();
+        assert_eq!(restored, [first, second]);
+        assert!(restored
+            .iter()
+            .all(|record| record.digest_is_intact().unwrap()));
+
+        let events: Vec<_> = restored
+            .iter()
+            .map(|record| record.event().unwrap())
+            .collect();
+        let instance = crate::entities::CeremonyInstance::rehydrate(events).unwrap();
+        assert_eq!(instance.budget_account_id(), Some(&account));
+        assert_eq!(
+            instance
+                .step_record(&StepId::new("draft").unwrap())
+                .unwrap()
+                .budget_reservation_id(),
+            Some(&reservation)
+        );
     }
 
     #[test]
