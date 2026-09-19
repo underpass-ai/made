@@ -1,6 +1,6 @@
 #![cfg(feature = "container-tests")]
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use made_adapters::artifacts::ArtifactGcExclusionReason;
@@ -8,9 +8,9 @@ use made_adapters::postgres::{
     PostgresArtifactStore, PostgresBackupService, PostgresConfig, PostgresPool,
 };
 use made_core::ports::{
-    ArtifactByteOffset, ArtifactIdempotencyKey, ArtifactRetentionActor, ArtifactRetentionPolicy,
-    ArtifactStoreError, ArtifactStorePort, BeginArtifactUpload, PutArtifactChunk,
-    TombstoneArtifact,
+    ArtifactByteOffset, ArtifactChunkLimit, ArtifactIdempotencyKey, ArtifactPageLimit,
+    ArtifactRetentionActor, ArtifactRetentionPolicy, ArtifactStoreError, ArtifactStorePort,
+    BeginArtifactUpload, PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact,
 };
 use made_core::value_objects::{
     ArtifactDigest, ArtifactId, ArtifactMediaType, ArtifactProvenance, ArtifactSizeBytes,
@@ -324,7 +324,7 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     std::fs::write(
         &dump,
         format!(
-            "#!/bin/sh\nset -eu\nout=''\nwhile [ $# -gt 0 ]; do\n  if [ \"$1\" = '--file' ]; then shift; out=$1; fi\n  shift || true\ndone\ndocker exec {} pg_dump -U made -Fc -f /tmp/service.dump made\ndocker cp {}:/tmp/service.dump \"$out\" >/dev/null\n",
+            "#!/bin/sh\nset -eu\nout=''\nsnapshot=''\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --file) shift; out=$1 ;;\n    --snapshot) shift; snapshot=$1 ;;\n  esac\n  shift || true\ndone\ntest -n \"$snapshot\"\nsleep 1\ndocker exec {} pg_dump -U made -Fc --snapshot \"$snapshot\" -f /tmp/service.dump made\ndocker cp {}:/tmp/service.dump \"$out\" >/dev/null\n",
             container.id(),
             container.id()
         ),
@@ -347,8 +347,8 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         std::fs::set_permissions(program, permissions).unwrap();
     }
 
-    let service =
-        PostgresBackupService::new(store, url.clone()).with_client_programs(&dump, &restore);
+    let service = PostgresBackupService::new(store.clone(), url.clone())
+        .with_client_programs(&dump, &restore);
     let backup = scratch.path().join("backup");
     let key = ArtifactIdempotencyKey::new("backup:postgres-service").unwrap();
     let raw = sqlx::PgPool::connect(&url).await.unwrap();
@@ -371,11 +371,46 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
                 .unwrap();
         }
     });
+    let artifact_writer_stop = stop.clone();
+    let artifact_writer_store = store.clone();
+    let artifact_mutations = Arc::new(AtomicUsize::new(0));
+    let observed_artifact_mutations = artifact_mutations.clone();
+    let artifact_writer = tokio::spawn(async move {
+        let mut sequence = 0_u64;
+        while !artifact_writer_stop.load(Ordering::Acquire) {
+            let bytes = format!("concurrent-postgres-artifact-{sequence}").into_bytes();
+            let concurrent = upload(&artifact_writer_store, &bytes).await;
+            if sequence % 2 == 0 {
+                artifact_writer_store
+                    .tombstone(TombstoneArtifact {
+                        artifact_id: concurrent.artifact_id().clone(),
+                        actor: ArtifactRetentionActor::new("host:postgres-backup-writer").unwrap(),
+                        policy: ArtifactRetentionPolicy::new("postgres-backup-snapshot-test")
+                            .unwrap(),
+                        retired_at: OffsetDateTime::now_utc(),
+                    })
+                    .await
+                    .unwrap();
+            }
+            artifact_mutations.fetch_add(1, Ordering::Release);
+            sequence += 1;
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while observed_artifact_mutations.load(Ordering::Acquire) < 2 {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .unwrap();
     let backup_started = std::time::Instant::now();
-    let manifest = service.backup_to(&backup, key).await.unwrap();
+    let backup_result = service.backup_to(&backup, key).await;
     let backup_duration = backup_started.elapsed();
     stop.store(true, Ordering::Release);
     writer.await.unwrap();
+    artifact_writer.await.unwrap();
+    let manifest = backup_result.unwrap();
     let source_rows: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM service_writer")
         .fetch_one(&raw)
         .await
@@ -410,6 +445,29 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         target.get(artifact.artifact_id()).await.unwrap().artifact,
         artifact
     );
+    assert_eq!(
+        target
+            .list(None, ArtifactPageLimit::new(100).unwrap())
+            .await
+            .unwrap()
+            .items,
+        manifest.artifact_records
+    );
+    for record in &manifest.artifact_records {
+        let restored = target
+            .read_chunk_for_backup(ReadArtifactChunk {
+                artifact_id: record.artifact.artifact_id().clone(),
+                offset: ArtifactByteOffset::ZERO,
+                max_bytes: ArtifactChunkLimit::default(),
+            })
+            .await
+            .unwrap()
+            .bytes;
+        assert_eq!(restored.len() as u64, record.artifact.size_bytes().get());
+        assert_eq!(&digest(&restored), record.artifact.digest());
+    }
+    assert!(!manifest.snapshot_id.is_empty());
+    assert!(!manifest.transaction_snapshot.is_empty());
     assert!(target
         .backup_content_available(artifact.artifact_id())
         .await
@@ -530,11 +588,20 @@ async fn postgres_backup_client_failures_keep_the_pin_and_never_publish_a_manife
         .unwrap()
         .iter()
         .any(|protection| protection.key == verify_key));
-    healthy
+    let owner_before: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(verify_failure.join("postgres-owner.json")).unwrap())
+            .unwrap();
+    let retry_without_dump = PostgresBackupService::new(store.clone(), url.clone())
+        .with_client_programs(&fail_dump, &restore);
+    let retry_manifest = retry_without_dump
         .backup_to(&verify_failure, verify_key.clone())
         .await
         .unwrap();
     assert!(verify_failure.join("postgres-manifest.json").exists());
+    assert_eq!(
+        retry_manifest.snapshot_id,
+        owner_before["snapshot_id"].as_str().unwrap()
+    );
     assert!(!store
         .active_protections()
         .await
