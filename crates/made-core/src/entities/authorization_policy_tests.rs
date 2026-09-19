@@ -49,6 +49,41 @@ fn matching_owner_id_with_another_authenticated_identity_has_no_owner_authority(
 }
 
 #[test]
+fn policy_owner_administers_policy_but_needs_grants_for_business_actions() {
+    let policy = opened_policy(Vec::new());
+    let business = policy
+        .decide_authorize(
+            request(
+                "owner-business",
+                trusted_host(),
+                AuthorizationAction::PauseCeremony,
+                b"ceremony",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap();
+    assert_eq!(business.decision().kind(), AuthorizationDecisionKind::Deny);
+
+    let administration = policy
+        .decide_authorize(
+            request(
+                "owner-administration",
+                trusted_host(),
+                AuthorizationAction::IssueAuthorizationGrant,
+                b"policy",
+            ),
+            NOW,
+            ttl(),
+        )
+        .unwrap();
+    assert_eq!(
+        administration.decision().kind(),
+        AuthorizationDecisionKind::Allow
+    );
+}
+
+#[test]
 fn forged_revocation_is_rejected_without_changing_rehydrated_state() {
     let mut policy = opened_policy(Vec::new());
     let grant = grant(
