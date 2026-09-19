@@ -609,6 +609,7 @@ struct ParityArms {
     receipt_stores: Vec<Arc<dyn made_core::ports::ExecutionReceiptStorePort>>,
     receipt_artifacts: Vec<Arc<dyn made_core::ports::ArtifactStorePort>>,
     opaque_authorization_targets: std::sync::Mutex<BTreeMap<String, [(String, String); 2]>>,
+    artifact_authorizations: std::sync::Mutex<Vec<[Value; 2]>>,
 }
 
 fn parity_council_validators() -> Vec<Arc<dyn ValidatorPort>> {
@@ -890,6 +891,7 @@ impl ParityArms {
             receipt_stores: vec![wire_receipts, local_receipts],
             receipt_artifacts: vec![wire_artifacts, local_artifacts],
             opaque_authorization_targets: std::sync::Mutex::new(BTreeMap::new()),
+            artifact_authorizations: std::sync::Mutex::new(Vec::new()),
         }
     }
 
@@ -2102,6 +2104,15 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
                 &over_the_wire,
                 &in_process,
                 &arms.opaque_authorization_targets.lock().unwrap(),
+                &arms.artifact_authorizations.lock().unwrap(),
+            );
+        } else if matches!(tool, "made_get_artifact" | "made_list_artifacts") {
+            assert_artifact_fact_answer(
+                tool,
+                &over_the_wire,
+                &in_process,
+                &arms.opaque_authorization_targets.lock().unwrap(),
+                &mut arms.artifact_authorizations.lock().unwrap(),
             );
         } else {
             assert_same_answer(tool, &over_the_wire, &in_process);
@@ -2191,6 +2202,178 @@ async fn assert_transcript_contains_both_steps(arms: &ParityArms) {
     );
 }
 
+/// Compare an artifact fact while retaining the authorization that admitted
+/// its original commit.
+///
+/// The stores mint different upload IDs, so the commit authorization has three
+/// derived fields that legitimately differ. This checks both complete objects
+/// in place, binds each to its arm's exact admitted commit arguments, and saves
+/// them for byte-for-byte verification against the public decision ledger.
+fn assert_artifact_fact_answer(
+    tool: &str,
+    wire_answer: &Value,
+    embedded_answer: &Value,
+    opaque_targets: &BTreeMap<String, [(String, String); 2]>,
+    captured: &mut Vec<[Value; 2]>,
+) {
+    for answer in [wire_answer, embedded_answer] {
+        assert_eq!(answer["isError"], json!(false));
+        let content = answer["content"]
+            .as_array()
+            .expect("artifact answers carry MCP content");
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0]["type"], json!("text"));
+        let rendered: Value = serde_json::from_str(
+            content[0]["text"]
+                .as_str()
+                .expect("artifact answers carry a JSON text projection"),
+        )
+        .unwrap();
+        assert_eq!(
+            rendered, answer["structuredContent"],
+            "the artifact text projection must preserve its complete authorization evidence"
+        );
+    }
+
+    let wire_records = artifact_fact_records(tool, structured(wire_answer));
+    let embedded_records = artifact_fact_records(tool, structured(embedded_answer));
+    assert_eq!(wire_records.len(), embedded_records.len());
+    if tool == "made_list_artifacts" {
+        assert_eq!(
+            structured(wire_answer)["next_cursor"],
+            structured(embedded_answer)["next_cursor"]
+        );
+    }
+    let expectations = opaque_targets
+        .get("made_commit_artifact_upload")
+        .expect("the artifact fact follows the recorded opaque commit invocation");
+    for (wire, embedded) in wire_records.into_iter().zip(embedded_records) {
+        assert_eq!(wire["artifact"], embedded["artifact"]);
+        assert_eq!(wire["tombstone"], embedded["tombstone"]);
+        let wire_authorization = wire
+            .get("authorization")
+            .expect("new artifact facts retain commit authorization")
+            .clone();
+        let embedded_authorization = embedded
+            .get("authorization")
+            .expect("new artifact facts retain commit authorization")
+            .clone();
+        assert_artifact_authorization_pair(
+            &wire_authorization,
+            &embedded_authorization,
+            expectations,
+        );
+        captured.push([wire_authorization, embedded_authorization]);
+    }
+}
+
+fn artifact_fact_records<'a>(tool: &str, answer: &'a Value) -> Vec<&'a Value> {
+    match tool {
+        "made_get_artifact" => vec![answer],
+        "made_list_artifacts" => answer["artifacts"]
+            .as_array()
+            .expect("artifact listing carries records")
+            .iter()
+            .collect(),
+        _ => panic!("`{tool}` is not an artifact fact reader"),
+    }
+}
+
+fn assert_artifact_authorization_pair(
+    wire: &Value,
+    embedded: &Value,
+    expectations: &[(String, String); 2],
+) {
+    for (authorization, (target_digest, request_id)) in
+        [(wire, &expectations[0]), (embedded, &expectations[1])]
+    {
+        let fields = authorization
+            .as_object()
+            .expect("artifact authorization is an object")
+            .keys()
+            .map(String::as_str)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(
+            fields,
+            BTreeSet::from([
+                "action",
+                "admitted_at",
+                "decision_id",
+                "policy_version",
+                "principal_id",
+                "request_id",
+                "scope",
+                "target_digest",
+                "valid_until",
+            ])
+        );
+        assert_eq!(authorization["action"], json!("commit_artifact_upload"));
+        assert_eq!(authorization["target_digest"], json!(target_digest));
+        assert_eq!(authorization["request_id"], json!(request_id));
+        assert_lower_hex(authorization["decision_id"].as_str().unwrap(), 64);
+    }
+    for field in [
+        "action",
+        "admitted_at",
+        "policy_version",
+        "principal_id",
+        "scope",
+        "valid_until",
+    ] {
+        assert_eq!(
+            wire[field], embedded[field],
+            "persisted artifact authorization field `{field}` diverged"
+        );
+    }
+    for field in ["decision_id", "request_id", "target_digest"] {
+        assert_ne!(
+            wire[field], embedded[field],
+            "store-bound artifact authorization field `{field}` unexpectedly matched"
+        );
+    }
+}
+
+fn assert_persisted_artifact_authorizations(
+    captured: &[[Value; 2]],
+    wire_decisions: &[Value],
+    embedded_decisions: &[Value],
+) {
+    assert!(
+        !captured.is_empty(),
+        "F4 must observe the commit authorization through artifact readers"
+    );
+    for arm in 0..2 {
+        let decisions = if arm == 0 {
+            wire_decisions
+        } else {
+            embedded_decisions
+        };
+        let first = &captured[0][arm];
+        for pair in captured {
+            let authorization = &pair[arm];
+            assert_eq!(
+                authorization, first,
+                "get/list must preserve the original authorization byte-for-byte within one arm"
+            );
+            let decision = decisions
+                .iter()
+                .find(|decision| decision["decision_id"] == authorization["decision_id"])
+                .expect("persisted artifact authorization links to its public decision");
+            assert_eq!(authorization["request_id"], decision["request_id"]);
+            assert_eq!(
+                authorization["principal_id"],
+                decision["principal"]["principal_id"]
+            );
+            assert_eq!(authorization["action"], decision["action"]);
+            assert_eq!(authorization["scope"], decision["scope"]);
+            assert_eq!(authorization["target_digest"], decision["target_digest"]);
+            assert_eq!(authorization["policy_version"], decision["policy_version"]);
+            assert_eq!(authorization["admitted_at"], decision["decided_at"]);
+            assert_eq!(authorization["valid_until"], decision["valid_until"]);
+        }
+    }
+}
+
 /// Compare the complete authorization ledger without erasing its bindings.
 ///
 /// Every record must be byte-for-byte equal across the two arms except the
@@ -2204,6 +2387,7 @@ fn assert_authorization_decisions(
     wire_answer: &Value,
     embedded_answer: &Value,
     opaque_targets: &BTreeMap<String, [(String, String); 2]>,
+    artifact_authorizations: &[[Value; 2]],
 ) {
     for answer in [wire_answer, embedded_answer] {
         let rendered: Value = serde_json::from_str(
@@ -2230,6 +2414,11 @@ fn assert_authorization_decisions(
         .expect("embedded decisions are an array")
         .clone();
     assert_eq!(wire.len(), embedded.len());
+    assert_persisted_artifact_authorizations(
+        artifact_authorizations,
+        wire.as_slice(),
+        embedded.as_slice(),
+    );
 
     for (tool, expectations) in opaque_targets {
         let action = tool
