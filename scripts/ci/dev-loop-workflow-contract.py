@@ -40,6 +40,9 @@ DEV_SCRIPT = "scripts/ci/dev-loop.sh"
 JUSTFILE = "justfile"
 PLANNER = "scripts/ci/quality-gate-plan.py"
 TREE_PROOF = "scripts/ci/tree-already-proved.sh"
+RELEASE_PREFLIGHT = "scripts/ci/release-preflight.py"
+PUBLISH_CRATES = "scripts/ci/publish-crates.sh"
+ADVANCE_MARKETPLACE = "scripts/release/advance-marketplace.sh"
 
 SOURCES = (
     DEV_LOOP,
@@ -52,6 +55,9 @@ SOURCES = (
     JUSTFILE,
     PLANNER,
     TREE_PROOF,
+    RELEASE_PREFLIGHT,
+    PUBLISH_CRATES,
+    ADVANCE_MARKETPLACE,
 )
 
 # The dev loop answers drafts; everything else answers ready pull requests.
@@ -104,6 +110,7 @@ STANDDOWN_WORKFLOWS = {
 # the only job in that workflow that writes.
 PACKAGING_JOB = "package"
 RELEASE_JOB = "release-upload"
+RELEASE_PREFLIGHT_JOB = "release-preflight"
 
 ACTION_REFERENCE = re.compile(r"^\s*uses:\s*(\S+)\s*$", re.MULTILINE)
 COMMIT_SHA = re.compile(r"[0-9a-f]{40}")
@@ -494,6 +501,10 @@ def validate(sources: dict[str, str]) -> list[str]:
             failures.append(
                 f"{PLUGIN_PACKAGE} packaging matrix no longer uploads console candidates"
             )
+        if RELEASE_PREFLIGHT_JOB not in needs_list(packaging):
+            failures.append(
+                f"{PLUGIN_PACKAGE} packaging no longer waits for release preflight"
+            )
 
     if '- "!crates/made-mcp/**/*.md"' not in trigger_block(sources[PLUGIN_PACKAGE]):
         failures.append(
@@ -520,11 +531,34 @@ def validate(sources: dict[str, str]) -> list[str]:
                 f"{PLUGIN_PACKAGE} job {RELEASE_JOB} no longer waits for "
                 f"{PACKAGING_JOB}, so it would publish a partial release"
             )
+        if RELEASE_PREFLIGHT_JOB not in needs_list(release):
+            failures.append(
+                f"{PLUGIN_PACKAGE} release upload no longer waits for preflight"
+            )
+        if "--clobber" in release:
+            failures.append("release upload can overwrite immutable public assets")
+        for proof in (
+            "EXPECTED_PRERELEASE",
+            "plugin-assets.txt",
+            'cmp -s "dist/plugin/${asset}"',
+        ):
+            if proof not in release:
+                failures.append(
+                    f"release upload lost immutable inventory proof: {proof}"
+                )
+
+    plugin_preflight = job_block(sources[PLUGIN_PACKAGE], RELEASE_PREFLIGHT_JOB)
+    if plugin_preflight is None:
+        failures.append(f"{PLUGIN_PACKAGE} lost release preflight")
+    elif "scripts/ci/release-preflight.py" not in plugin_preflight:
+        failures.append(f"{PLUGIN_PACKAGE} no longer runs the shared release preflight")
 
     # --- commit-image smoke reuses all four images by immutable digest ----
     distribution = sources[PUBLISH_DISTRIBUTION]
     smoke = job_block(distribution, "compose-smoke")
     publish = job_block(distribution, "publish-image")
+    promotion = job_block(distribution, "promote-release-image")
+    distribution_preflight = job_block(distribution, RELEASE_PREFLIGHT_JOB)
     image_contract = (
         (
             "made",
@@ -655,6 +689,42 @@ def validate(sources: dict[str, str]) -> list[str]:
         )
         if publish.count(cache_scope) != 2:
             failures.append("publish cache is no longer isolated by image and arch")
+        if "!startsWith(github.ref, 'refs/tags/v')" not in publish:
+            failures.append("release tags can rebuild mutable image bytes")
+
+    if distribution_preflight is None:
+        failures.append(f"{PUBLISH_DISTRIBUTION} lost release preflight")
+    elif "scripts/ci/release-preflight.py" not in distribution_preflight:
+        failures.append(
+            f"{PUBLISH_DISTRIBUTION} no longer runs the shared release preflight"
+        )
+
+    if promotion is None:
+        failures.append(f"{PUBLISH_DISTRIBUTION} lost digest promotion")
+    else:
+        for proof in (
+            'source_tag="${IMAGE}:sha-${GITHUB_SHA:0:7}"',
+            'target_tag="${IMAGE}:${RELEASE_REF}"',
+            'docker buildx imagetools create --tag "${target_tag}" "${source_ref}"',
+            'if [[ "${promoted_digest}" != "${source_digest}" ]]',
+        ):
+            if proof not in promotion:
+                failures.append(f"release image promotion lost proof: {proof}")
+        if "docker/build-push-action" in promotion:
+            failures.append("release image promotion rebuilds instead of copying a digest")
+
+    helm = job_block(distribution, "publish-helm-chart")
+    if helm is None or "promote-release-image" not in needs_list(helm):
+        failures.append("Helm publication no longer waits for release image promotion")
+
+    if '  wait_until_indexed "${crate}" "${version}"' not in sources[PUBLISH_CRATES]:
+        failures.append("crate publication no longer waits for sparse-index propagation")
+    advance = sources[ADVANCE_MARKETPLACE]
+    if 'if [[ "${EXPECTED_PRERELEASE}" == "true" ]]' not in advance:
+        failures.append("prereleases can advance the stable marketplace")
+    for proof in ("release_assets_ready", "crates_ready", "images_ready", "chart_ready"):
+        if proof not in advance:
+            failures.append(f"marketplace advance no longer waits for {proof}")
 
     # --- H5: `just dev` is the same script, `just check` runs this --------
     justfile = sources[JUSTFILE]
@@ -783,14 +853,20 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
     ),
     "the packaging matrix gets a write token again": (
         PLUGIN_PACKAGE,
-        "    permissions:\n      contents: read\n",
-        "    permissions:\n      contents: write\n",
+        "    runs-on: ${{ matrix.os }}\n"
+        "    timeout-minutes: 30\n"
+        "    permissions:\n"
+        "      contents: read\n",
+        "    runs-on: ${{ matrix.os }}\n"
+        "    timeout-minutes: 30\n"
+        "    permissions:\n"
+        "      contents: write\n",
     ),
     "the release upload stops being tag-gated": (
         PLUGIN_PACKAGE,
-        "  release-upload:\n    needs: [package]\n"
+        "  release-upload:\n    needs: [release-preflight, package]\n"
         "    if: startsWith(github.ref, 'refs/tags/v')\n",
-        "  release-upload:\n    needs: [package]\n",
+        "  release-upload:\n    needs: [release-preflight, package]\n",
     ),
     "a README under made-mcp wakes four packaging hosts": (
         PLUGIN_PACKAGE,
@@ -904,6 +980,31 @@ MUTATIONS: dict[str, tuple[str, str, str]] = {
         PUBLISH_DISTRIBUTION,
         "scope=compose-smoke-${{ matrix.cache_key }}-${{ runner.arch }}-v1",
         "scope=compose-smoke-rust-${{ runner.arch }}-v1",
+    ),
+    "release tags rebuild image bytes": (
+        PUBLISH_DISTRIBUTION,
+        " && !startsWith(github.ref, 'refs/tags/v')",
+        "",
+    ),
+    "release promotion stops checking the resulting digest": (
+        PUBLISH_DISTRIBUTION,
+        'if [[ "${promoted_digest}" != "${source_digest}" ]]; then',
+        'if [[ "${promoted_digest}" == "never" ]]; then',
+    ),
+    "plugin assets become clobberable": (
+        PLUGIN_PACKAGE,
+        'gh release upload "${TAG}" "dist/plugin/${asset}"',
+        'gh release upload "${TAG}" "dist/plugin/${asset}" --clobber',
+    ),
+    "prereleases can advance the stable marketplace": (
+        ADVANCE_MARKETPLACE,
+        'if [[ "${EXPECTED_PRERELEASE}" == "true" ]]; then',
+        'if [[ "${EXPECTED_PRERELEASE}" == "never" ]]; then',
+    ),
+    "dependent crates stop waiting for index propagation": (
+        PUBLISH_CRATES,
+        '  wait_until_indexed "${crate}" "${version}"\n',
+        "",
     ),
 }
 

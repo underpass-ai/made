@@ -21,6 +21,7 @@ on:
       - "scripts/plugin/**"
       - "scripts/release/**"
       - "scripts/release.sh"
+      - "scripts/ci/release-preflight.py"
       - "scripts/ci/made-marketplace-contract.py"
       - "scripts/ci/made-plugin-bootstrap.sh"
       - "scripts/ci/made-plugin-bootstrap-windows.ps1"
@@ -54,6 +55,42 @@ env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
+  release-preflight:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.release.outputs.version }}
+      release_ref: ${{ steps.release.outputs.release_ref }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - name: Checkout release identity
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+
+      - name: Verify one release identity before packaging
+        id: release
+        shell: bash
+        run: |
+          python3 scripts/ci/release-preflight.py --self-test
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            mode=--require-release-tag
+          else
+            mode=--allow-unpublished-tag
+          fi
+          python3 scripts/ci/release-preflight.py "${mode}" \
+            --github-output "${GITHUB_OUTPUT}" \
+            --plugin-assets dist/release/plugin-assets.txt
+
+      - name: Preserve the exact expected release inventory
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: release-preflight
+          path: dist/release/plugin-assets.txt
+          if-no-files-found: error
+
   # A draft pull request is development mode: dev-loop.yml answers it, and
   # this four-host packaging matrix stands down until the pull request is
   # marked ready for review. Tag and main pushes are unaffected.
@@ -64,6 +101,7 @@ jobs:
   # can spend. The release upload is the one step that needs to write, and
   # it has moved to its own tag-gated job.
   package:
+    needs: [release-preflight]
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     strategy:
       fail-fast: false
@@ -150,13 +188,19 @@ jobs:
   # No checkout: `gh` reads the repository from GH_REPO, and there is no
   # reason to put a working tree next to a write token.
   release-upload:
-    needs: [package]
+    needs: [release-preflight, package]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     permissions:
       contents: write
     steps:
+      - name: Collect the preflight release inventory
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: release-preflight
+          path: dist/release
+
       - name: Collect the bundles the matrix packaged
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
@@ -169,8 +213,68 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
+          EXPECTED_PRERELEASE: ${{ needs.release-preflight.outputs.prerelease }}
         run: |
           TAG="${GITHUB_REF_NAME}"
-          gh release create "${TAG}" dist/plugin/* \
-            --title "${TAG}" --generate-notes --verify-tag \
-            || gh release upload "${TAG}" dist/plugin/* --clobber
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "${scratch}"' EXIT
+
+          find dist/plugin -maxdepth 1 -type f -printf '%f\n' \
+            | LC_ALL=C sort > "${scratch}/local.txt"
+          if ! cmp -s dist/release/plugin-assets.txt "${scratch}/local.txt"; then
+            echo "error: packaged assets differ from the preflight inventory" >&2
+            diff -u dist/release/plugin-assets.txt "${scratch}/local.txt" >&2 || true
+            exit 1
+          fi
+
+          if gh release view "${TAG}" --json isDraft,isPrerelease,assets \
+            > "${scratch}/release.json" 2>/dev/null; then
+            python3 - "${EXPECTED_PRERELEASE}" "${scratch}/release.json" <<'PY'
+          import json
+          import pathlib
+          import sys
+
+          expected = sys.argv[1] == "true"
+          release = json.loads(pathlib.Path(sys.argv[2]).read_text())
+          if release["isDraft"]:
+              raise SystemExit("error: refusing to mutate an existing draft release")
+          if release["isPrerelease"] is not expected:
+              raise SystemExit(
+                  "error: existing release prerelease flag differs from preflight"
+              )
+          PY
+          else
+            create=(release create "${TAG}" --title "${TAG}" --generate-notes --verify-tag)
+            if [[ "${EXPECTED_PRERELEASE}" == "true" ]]; then
+              create+=(--prerelease)
+            fi
+            gh "${create[@]}"
+          fi
+
+          gh release view "${TAG}" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort -u > "${scratch}/remote.txt"
+          if comm -13 dist/release/plugin-assets.txt "${scratch}/remote.txt" \
+            | grep -q .; then
+            echo "error: release contains assets outside the immutable inventory" >&2
+            comm -13 dist/release/plugin-assets.txt "${scratch}/remote.txt" >&2
+            exit 1
+          fi
+
+          while IFS= read -r asset; do
+            if grep -Fxq "${asset}" "${scratch}/remote.txt"; then
+              mkdir "${scratch}/existing"
+              gh release download "${TAG}" --pattern "${asset}" \
+                --dir "${scratch}/existing"
+              if ! cmp -s "dist/plugin/${asset}" "${scratch}/existing/${asset}"; then
+                echo "error: ${asset} already exists with different bytes" >&2
+                exit 1
+              fi
+              rm -rf "${scratch}/existing"
+            else
+              gh release upload "${TAG}" "dist/plugin/${asset}"
+            fi
+          done < dist/release/plugin-assets.txt
+
+          gh release view "${TAG}" --json assets --jq '.assets[].name' \
+            | LC_ALL=C sort -u > "${scratch}/final.txt"
+          cmp dist/release/plugin-assets.txt "${scratch}/final.txt"

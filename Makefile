@@ -32,8 +32,8 @@ help:
 		'  make build-provider-image   # provider E2E runner image' \
 		'  make run RUN_ARGS="..."     # run MADE locally' \
 		'  make run-otel RUN_ARGS="..."' \
-		'  make version VERSION=X.Y.Z' \
-		'  make release VERSION=X.Y.Z'
+		'  make version VERSION=SEMVER' \
+		'  make release VERSION=SEMVER'
 
 contract:
 	bash scripts/ci/contract-gate.sh
@@ -111,9 +111,9 @@ bench-experiment-002:
 	bash docs/experiments/002-deliberation-scale-sweep/run.sh
 
 version:
-	@test -n "$(VERSION)" || { echo 'usage: make version VERSION=X.Y.Z' >&2; exit 1; }
+	@test -n "$(VERSION)" || { echo 'usage: make version VERSION=SEMVER' >&2; exit 1; }
 	bash scripts/release.sh version "$(VERSION)"
 
 release:
-	@test -n "$(VERSION)" || { echo 'usage: make release VERSION=X.Y.Z' >&2; exit 1; }
+	@test -n "$(VERSION)" || { echo 'usage: make release VERSION=SEMVER' >&2; exit 1; }
 	bash scripts/release.sh release "$(VERSION)"
