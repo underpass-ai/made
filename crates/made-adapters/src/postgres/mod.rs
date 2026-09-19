@@ -31,6 +31,7 @@ mod execution_receipt_store;
 mod execution_reconciliation_store;
 mod pool;
 mod postgres_backup_manifest;
+mod postgres_backup_owner;
 mod postgres_backup_service;
 mod postgres_config;
 mod postgres_pool_error;

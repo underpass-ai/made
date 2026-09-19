@@ -5,26 +5,17 @@ use std::process::Command;
 use made_core::ports::{
     ArtifactIdempotencyKey, ArtifactRecord, ArtifactStoreError, ArtifactStorePort,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::artifacts::hashing::{digest_bytes, digest_reader};
 use crate::artifacts::local_artifact_io::{read_json, sync_directory, write_json_atomic};
 
+use super::postgres_backup_owner::PostgresBackupOwner;
 use super::{PostgresArtifactStore, PostgresBackupManifest, PostgresConfig, PostgresPool};
 use sqlx::{Postgres, Row, Transaction};
 
 const ARCHIVE_FILE: &str = "database.dump";
 const MANIFEST_FILE: &str = "postgres-manifest.json";
 const OWNER_FILE: &str = "postgres-owner.json";
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-struct PostgresBackupOwner {
-    protection_key: ArtifactIdempotencyKey,
-    source_identity: made_core::value_objects::ArtifactDigest,
-    snapshot_id: String,
-    transaction_snapshot: String,
-    artifact_records: Vec<ArtifactRecord>,
-}
 
 /// Full PostgreSQL backup. Artifact bytes share the database MVCC boundary.
 #[derive(Clone)]
