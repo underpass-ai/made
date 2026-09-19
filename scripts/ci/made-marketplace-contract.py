@@ -130,12 +130,23 @@ def verify(require_release_tag: bool = False) -> str:
         fail("Claude marketplace must contain exactly one plugin")
     claude_entry = claude_plugins[0]
     source = claude_entry.get("source")
-    if claude_entry.get("name") != "made" or source != {
+    expected_source = {
         "source": "git-subdir",
         "url": "https://github.com/underpass-ai/made.git",
         "path": "plugins/made",
-        "ref": release_ref,
-    }:
+    }
+    if not isinstance(source, dict):
+        fail("Claude marketplace source must be an object")
+    source_without_ref = {key: value for key, value in source.items() if key != "ref"}
+    if claude_entry.get("name") != "made" or source_without_ref != expected_source:
+        fail("Claude marketplace must pin plugins/made to its immutable repository path")
+    marketplace_ref = source.get("ref")
+    if "-" in version:
+        if not isinstance(marketplace_ref, str) or not re.fullmatch(
+            r"v[0-9]+\.[0-9]+\.[0-9]+", marketplace_ref
+        ):
+            fail("a prerelease must leave Claude marketplace on an immutable stable tag")
+    elif marketplace_ref != release_ref:
         fail(f"Claude marketplace must pin plugins/made to immutable {release_ref}")
 
     tracked_bin = git_output("ls-files", "--", "plugins/made/bin")
@@ -237,6 +248,22 @@ def self_test() -> None:
                 assert message in str(error), error
             else:
                 raise AssertionError(f"accepted broken marketplace metadata: {path}")
+
+    if "-" in workspace_version():
+
+        def prerelease_catalog(relative: str) -> dict:
+            value = original_loader(relative)
+            if relative == ".claude-plugin/marketplace.json":
+                value["plugins"][0]["source"]["ref"] = f"v{workspace_version()}"
+            return value
+
+        with patch.dict(globals(), load_json=prerelease_catalog):
+            try:
+                verify()
+            except SystemExit as error:
+                assert "immutable stable tag" in str(error), error
+            else:
+                raise AssertionError("accepted a prerelease as the stable marketplace ref")
 
     # Real Git objects distinguish annotated tags, lightweight tags and branches.
     (ROOT / "tmp").mkdir(exist_ok=True)
