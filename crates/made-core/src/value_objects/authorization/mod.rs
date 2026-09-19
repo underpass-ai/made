@@ -12,6 +12,7 @@ mod authorization_evidence;
 mod authorization_grant;
 mod authorization_grant_id;
 mod authorization_grant_issuer;
+mod authorization_key_ring;
 mod authorization_policy_id;
 mod authorization_policy_version;
 mod authorization_request;
@@ -40,6 +41,10 @@ pub use authorization_evidence::AuthorizationEvidence;
 pub use authorization_grant::AuthorizationGrant;
 pub use authorization_grant_id::AuthorizationGrantId;
 pub use authorization_grant_issuer::AuthorizationGrantIssuer;
+pub use authorization_key_ring::{
+    AuthorizationKeyRing, CursorTransition, VerificationKey, VerificationKeyFingerprint,
+    VerificationKeyId,
+};
 pub use authorization_policy_id::AuthorizationPolicyId;
 pub use authorization_policy_version::AuthorizationPolicyVersion;
 pub use authorization_request::AuthorizationRequest;
