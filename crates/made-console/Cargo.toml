@@ -1,0 +1,23 @@
+[package]
+name = "made-console"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+description = "Operator CLI for MADE's public API."
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "made-console"
+path = "src/main.rs"
+
+[dependencies]
+made-client = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
