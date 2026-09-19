@@ -26,9 +26,9 @@ use made_core::ports::{
     CeremonySnapshot, CeremonySnapshotStorePort, PositionedRecord,
 };
 use made_core::value_objects::{
-    AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
-    AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
-    AuthorizationScope, AuditActorKind, CeremonyContext, CeremonyEventPageLimit, CeremonyId,
+    AuditActorKind, AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction,
+    AuthorizationDecisionTtl, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
+    AuthorizationPolicyId, AuthorizationScope, CeremonyContext, CeremonyEventPageLimit, CeremonyId,
     CeremonyIdPrefix, CeremonyInstancePageLimit, DelegationDepth, DurationMs, EventId,
     GlobalPosition, IdempotencyKey, LeaseOwnerId, LifecycleReason, PrincipalId, PrincipalKind,
     RoleId, StepId, StreamVersion, TransitionTrigger,
@@ -160,7 +160,10 @@ async fn embedded_authorization() -> EmbeddedAuthorization {
         store.clone(),
         clock.clone(),
     );
-    administration.open(principal.clone(), Vec::new()).await.unwrap();
+    administration
+        .open(principal.clone(), Vec::new())
+        .await
+        .unwrap();
     for (grant_id, actions) in [
         (
             "grpc-fixture-business-actions",
@@ -1002,10 +1005,7 @@ async fn protected_mcp_servers(directory: &Path) -> ([MadeMcpServer; 2], GrpcFix
         MadeMcpServer::with_backend(EmbeddedMadeMcpBackend::with_authorization(
             made,
             authorization.gate,
-            ReadAuthorizationPolicyUseCase::new(
-                authorization.policy_id,
-                authorization.store,
-            ),
+            ReadAuthorizationPolicyUseCase::new(authorization.policy_id, authorization.store),
             step_continuation,
             artifacts,
             store,
