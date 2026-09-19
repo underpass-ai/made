@@ -215,6 +215,7 @@ fn canonical_json(value: &Value) -> String {
     serde_json::to_string(&canonical_value(value)).expect("JSON values always serialize")
 }
 
+#[cfg(any(feature = "embedded", feature = "grpc"))]
 fn without_transport_meta(value: &Value) -> Value {
     let mut value = value.clone();
     if let Some(object) = value.as_object_mut() {
