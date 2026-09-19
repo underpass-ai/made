@@ -69,7 +69,19 @@ impl GrpcAuthorizationGate {
         scope: AuthorizationScope,
         approval: Option<AuthorizationDecisionId>,
     ) -> Result<AuthorizedOperation, Status> {
-        let principal = self.authenticate(request).map_err(Status::from)?;
+        let principal = self.authenticate(request)?;
+        self.authorize_authenticated(request, principal, action, scope, approval)
+            .await
+    }
+
+    pub async fn authorize_authenticated<T: Message>(
+        &self,
+        request: &Request<T>,
+        principal: AuthenticatedPrincipal,
+        action: AuthorizationAction,
+        scope: AuthorizationScope,
+        approval: Option<AuthorizationDecisionId>,
+    ) -> Result<AuthorizedOperation, Status> {
         let request_id = self.request_id(request, action).map_err(Status::from)?;
         let target_digest = target_digest(request.get_ref());
         let mut authorization =
@@ -101,12 +113,14 @@ impl GrpcAuthorizationGate {
         }
     }
 
-    fn authenticate<T>(
+    pub fn authenticate<T>(
         &self,
         request: &Request<T>,
     ) -> Result<AuthenticatedPrincipal, GrpcAuthorizationError> {
         if let Some(principals) = &self.mutual_tls_principals {
-            return principals.authenticate(request).map_err(Into::into);
+            return principals
+                .authenticate(request)
+                .map_err(GrpcAuthorizationError::from);
         }
         self.trusted_host
             .clone()

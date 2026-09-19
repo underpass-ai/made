@@ -402,8 +402,12 @@ impl GrpcFixture {
 
         let get_ceremony_instance =
             Arc::new(GetCeremonyInstanceUseCase::new(ceremony_stream.clone()));
+        let authorization = match wiring.authorization() {
+            Some(authorization) => authorization,
+            None => fixture_authorization(clock.clone()).await,
+        };
         let mut service_builder = MadeGrpcService::builder()
-            .authorization(fixture_authorization(clock.clone()).await)
+            .authorization(authorization)
             .deliberate(deliberate)
             .orchestrate(orchestrate)
             .create_council(create_council)

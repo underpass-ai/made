@@ -206,6 +206,7 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         ceremony_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
         let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
         let scope = match self.get_ceremony_instance.execute(&ceremony_id).await {
             Ok(instance) => instance.lineage().map_or_else(
@@ -223,7 +224,7 @@ impl MadeGrpcService {
             Err(error) => return Err(domain_error_to_status(error)),
         };
         self.authorization
-            .authorize(request, action, scope, None)
+            .authorize_authenticated(request, principal, action, scope, None)
             .await
     }
 
@@ -233,10 +234,12 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         artifact_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
         let artifact_id = ArtifactId::new(artifact_id).map_err(domain_error_to_status)?;
         self.authorization
-            .authorize(
+            .authorize_authenticated(
                 request,
+                principal,
                 action,
                 AuthorizationScope::Artifact { artifact_id },
                 None,
@@ -250,6 +253,7 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         upload_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
         let upload_id = ArtifactUploadId::new(upload_id).map_err(domain_error_to_status)?;
         let artifact_id = self
             .artifact_service()
@@ -258,8 +262,9 @@ impl MadeGrpcService {
             .await
             .map_err(artifact_error_to_status)?;
         self.authorization
-            .authorize(
+            .authorize_authenticated(
                 request,
+                principal,
                 action,
                 AuthorizationScope::Artifact { artifact_id },
                 None,
@@ -273,12 +278,14 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         requested_artifact_id: Option<&str>,
     ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
         let scope = requested_artifact_id.map_or(Ok(AuthorizationScope::Global), |id| {
             ArtifactId::new(id).map(|artifact_id| AuthorizationScope::Artifact { artifact_id })
         });
         self.authorization
-            .authorize(
+            .authorize_authenticated(
                 request,
+                principal,
                 action,
                 scope.map_err(domain_error_to_status)?,
                 None,
@@ -292,6 +299,7 @@ impl MadeGrpcService {
         action: AuthorizationAction,
         ceremony_id: &str,
     ) -> Result<AuthorizedOperation, Status> {
+        let principal = self.authorization.authenticate(request)?;
         let ceremony_id = CeremonyId::new(ceremony_id).map_err(domain_error_to_status)?;
         let instance = self
             .get_ceremony_instance
@@ -303,8 +311,9 @@ impl MadeGrpcService {
             .cloned()
             .ok_or_else(|| Status::failed_precondition("ceremony has no durable budget account"))?;
         self.authorization
-            .authorize(
+            .authorize_authenticated(
                 request,
+                principal,
                 action,
                 AuthorizationScope::Budget { account_id },
                 None,
