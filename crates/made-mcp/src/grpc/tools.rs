@@ -52,8 +52,10 @@ pub(crate) async fn dispatch(
     arguments: &Value,
     traceparent: &str,
     request_id: &str,
+    target_digest: &str,
 ) -> Result<Value, ToolError> {
-    let mut client = request_metadata_client::build(channel, traceparent, request_id)?;
+    let mut client =
+        request_metadata_client::build(channel, traceparent, request_id, target_digest)?;
     if authorization_dispatch::handles(name) {
         return authorization_dispatch::dispatch(&mut client, name, arguments).await;
     }
