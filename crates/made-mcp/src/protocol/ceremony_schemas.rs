@@ -250,6 +250,43 @@ pub(super) fn complete_ceremony_step_schema() -> Value {
     })
 }
 
+pub(super) fn get_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["operation_id"],
+        "properties": {
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."}
+        }
+    })
+}
+
+pub(super) fn inspect_execution_recovery_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+            "after": string_schema("Opaque cursor returned by the preceding recovery page."),
+            "limit": {"type": "integer", "minimum": 0, "maximum": 1000, "description": "Maximum operation roots to inspect. Zero or omission uses the bounded default."}
+        }
+    })
+}
+
+pub(super) fn apply_execution_receipt_schema() -> Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["ceremony_id", "step_id", "operation_id", "claim_fence", "actor_kind"],
+        "properties": {
+            "ceremony_id": string_schema("Ceremony that owns the operation."),
+            "step_id": string_schema("Claimed step receiving the terminal observation."),
+            "operation_id": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Stable semantic operation identity."},
+            "claim_fence": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Current accepted claim fence. Completion requires the producer fence; adoption requires a distinct current fence."},
+            "actor_kind": {"type": "string", "enum": ["human", "agent", "service", "engine"], "description": "Kind of participant consuming the receipt."}
+        }
+    })
+}
+
 pub(super) fn ceremony_guard_approval_schema() -> Value {
     json!({
         "type": "object",

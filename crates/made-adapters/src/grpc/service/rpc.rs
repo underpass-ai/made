@@ -36,6 +36,34 @@ impl<T> futures::Stream for RpcResultStream<T> {
 
 #[async_trait]
 impl MadeService for MadeGrpcService {
+    async fn get_execution_receipt(
+        &self,
+        request: Request<pb::GetExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::GetExecutionReceiptResponse> {
+        self.handle_get_execution_receipt(request).await
+    }
+
+    async fn inspect_execution_recovery(
+        &self,
+        request: Request<pb::InspectExecutionRecoveryRequest>,
+    ) -> GrpcResult<pb::InspectExecutionRecoveryResponse> {
+        self.handle_inspect_execution_recovery(request).await
+    }
+
+    async fn complete_execution_receipt(
+        &self,
+        request: Request<pb::ApplyExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
+        self.handle_complete_execution_receipt(request).await
+    }
+
+    async fn adopt_execution_receipt(
+        &self,
+        request: Request<pb::ApplyExecutionReceiptRequest>,
+    ) -> GrpcResult<pb::ApplyExecutionReceiptResponse> {
+        self.handle_adopt_execution_receipt(request).await
+    }
+
     async fn read_council_events(
         &self,
         request: Request<pb::ReadCouncilEventsRequest>,

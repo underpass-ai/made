@@ -66,8 +66,7 @@ impl Table {
             | Table::EventCursorQuarantine
             | Table::MemoryWrites
             | Table::ExecutionIntents
-            | Table::CouncilJournal
-            => KeyShape::Bytes,
+            | Table::CouncilJournal => KeyShape::Bytes,
         }
     }
 }

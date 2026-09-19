@@ -6,6 +6,10 @@ pub(crate) const ACCEPT_CHILD_COMPLETION_TOOL: &str = "made_accept_child_complet
 pub(crate) const RECOVER_CEREMONY_CHILDREN_TOOL: &str = "made_recover_ceremony_children";
 pub(crate) const CLAIM_CEREMONY_STEP_TOOL: &str = "made_claim_ceremony_step";
 pub(crate) const COMPLETE_CEREMONY_STEP_TOOL: &str = "made_complete_ceremony_step";
+pub(crate) const GET_EXECUTION_RECEIPT_TOOL: &str = "made_get_execution_receipt";
+pub(crate) const INSPECT_EXECUTION_RECOVERY_TOOL: &str = "made_inspect_execution_recovery";
+pub(crate) const COMPLETE_EXECUTION_RECEIPT_TOOL: &str = "made_complete_execution_receipt";
+pub(crate) const ADOPT_EXECUTION_RECEIPT_TOOL: &str = "made_adopt_execution_receipt";
 pub(crate) const APPROVE_CEREMONY_GUARD_TOOL: &str = "made_approve_ceremony_guard";
 pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "made_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "made_apply_ceremony_transition";
@@ -47,7 +51,7 @@ pub(crate) const START_PUBLISHED_CEREMONY_TOOL: &str = "made_start_published_cer
 pub(crate) const GET_STATUS_TOOL: &str = "made_get_status";
 pub(crate) const GET_METRICS_TOOL: &str = "made_get_metrics";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 64] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 68] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -95,6 +99,10 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 64] = [
     BIND_CEREMONY_PARTICIPANTS_TOOL,
     CLAIM_CEREMONY_STEP_TOOL,
     COMPLETE_CEREMONY_STEP_TOOL,
+    GET_EXECUTION_RECEIPT_TOOL,
+    INSPECT_EXECUTION_RECOVERY_TOOL,
+    COMPLETE_EXECUTION_RECEIPT_TOOL,
+    ADOPT_EXECUTION_RECEIPT_TOOL,
     DESIGN_CEREMONY_TOOL,
     READ_CEREMONY_EVENTS_TOOL,
     STREAM_CEREMONY_TOOL,

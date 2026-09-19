@@ -23,6 +23,7 @@ mod ceremony_requests;
 mod children_dispatch;
 mod council_journal_dispatch;
 mod design_ceremony_request;
+mod execution_receipt_dispatch;
 mod general_dispatch;
 mod general_requests;
 mod lifecycle_dispatch;
@@ -73,6 +74,9 @@ pub(crate) async fn dispatch(
     }
     if artifact_dispatch::handles(name) {
         return artifact_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if execution_receipt_dispatch::handles(name) {
+        return execution_receipt_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {

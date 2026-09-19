@@ -8,7 +8,7 @@ use made_adapters::memory::{
     InMemoryAgentRegistry, InMemoryCeremonyDefinitionPublications,
     InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
     InMemoryContractRegistry, InMemoryCouncilJournal, InMemoryCouncilRegistry,
-    InMemoryDeliberationRepository, InMemoryStatistics,
+    InMemoryDeliberationRepository, InMemoryExecutionReceiptStore, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopCeremonyStepHandler};
@@ -28,9 +28,9 @@ use made_core::ports::{
     CeremonyEventStorePort, CeremonyEventSubscriberPort, CeremonyEventTransportPort,
     CeremonyEvidenceRequest, CeremonyEvidenceSourcePort, CeremonySnapshotStorePort,
     CeremonyStepHandlerPort, CeremonyStepHandlerRequest, ClockPort, ContractRegistryPort,
-    CouncilRegistryPort, DeliberationRepositoryPort, ExecutorPort, MemoryReaderPort,
-    MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort, NoopMetricsRecorder,
-    NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
+    CouncilRegistryPort, DeliberationRepositoryPort, ExecutionReceiptStorePort, ExecutorPort,
+    MemoryReaderPort, MemoryWriterPort, MessagingPort, MetricsRecorderPort, MetricsSnapshotPort,
+    NoopMetricsRecorder, NoopMetricsSnapshot, ScoringPort, StatisticsPort, ValidatorPort,
 };
 use made_core::value_objects::{MaxParallel, StepResult};
 
@@ -77,6 +77,7 @@ pub struct EmbeddedMadeBuilder {
     council_journal: Option<Arc<dyn made_core::ports::CouncilJournalPort>>,
     progress_settings: Option<CeremonyProgressSettings>,
     artifact_store: Option<Arc<dyn ArtifactStorePort>>,
+    execution_receipts: Option<Arc<dyn ExecutionReceiptStorePort>>,
 }
 
 impl EmbeddedMadeBuilder {
@@ -147,11 +148,23 @@ impl EmbeddedMadeBuilder {
             + CeremonySnapshotStorePort
             + MemoryWriterPort
             + MemoryReaderPort
+            + ExecutionReceiptStorePort
             + 'static,
     {
         self.events = Some(adapter.clone());
         self.snapshots = Some(adapter.clone());
-        self.memory = Some((adapter.clone(), adapter));
+        self.memory = Some((adapter.clone(), adapter.clone()));
+        self.execution_receipts = Some(adapter);
+        self
+    }
+
+    /// Persist operation roots, execution intents, and terminal receipts.
+    #[must_use]
+    pub fn with_execution_receipt_store(
+        mut self,
+        adapter: Arc<dyn ExecutionReceiptStorePort>,
+    ) -> Self {
+        self.execution_receipts = Some(adapter);
         self
     }
 
@@ -463,6 +476,9 @@ impl EmbeddedMadeBuilder {
             .take()
             .map(ArtifactService::new)
             .map(Arc::new);
+        let execution_receipts = self.execution_receipts.take().unwrap_or_else(|| {
+            Arc::new(InMemoryExecutionReceiptStore::new()) as Arc<dyn ExecutionReceiptStorePort>
+        });
 
         EmbeddedMade::new(
             definitions,
@@ -484,6 +500,7 @@ impl EmbeddedMadeBuilder {
             self.event_transport.take(),
             self.progress_settings.unwrap_or_default(),
             artifacts,
+            execution_receipts,
         )
     }
 
@@ -572,6 +589,10 @@ impl fmt::Debug for EmbeddedMadeBuilder {
             .field("has_council_registry", &self.council_registry.is_some())
             .field("has_agent_registry", &self.agent_registry.is_some())
             .field("has_agent_factory", &self.agent_factory.is_some())
+            .field(
+                "has_execution_receipt_store",
+                &self.execution_receipts.is_some(),
+            )
             .finish()
     }
 }

@@ -70,7 +70,7 @@ impl CompleteExecutionReceiptUseCase {
             });
         }
 
-        let link_kind = if receipt.producer_claim_fence() == &input.claim_fence {
+        let actual_link_kind = if receipt.producer_claim_fence() == &input.claim_fence {
             ExecutionReceiptLinkKind::Direct
         } else {
             if !receipt.recovery_capability().supports_automatic_recovery() {
@@ -80,12 +80,17 @@ impl CompleteExecutionReceiptUseCase {
             }
             ExecutionReceiptLinkKind::Adopted
         };
+        if actual_link_kind != input.link_kind {
+            return Err(DomainError::Conflict {
+                what: "execution_receipt_link_kind",
+            });
+        }
         let link = ExecutionReceiptLink::new(
             receipt.receipt_id().clone(),
             receipt.operation_id().clone(),
             receipt.producer_claim_fence().clone(),
             input.claim_fence.clone(),
-            link_kind,
+            actual_link_kind,
         )?;
         let session = self.stream.load(&input.ceremony_id).await?;
         let definition = self.definitions.execute(&session.instance).await?;

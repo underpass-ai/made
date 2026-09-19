@@ -46,6 +46,7 @@ mod ceremony_operations;
 mod ceremony_persistence;
 mod ceremony_publisher;
 mod ceremony_queries;
+mod execution_receipts;
 mod executor;
 mod messaging;
 mod persistence;
@@ -97,6 +98,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         publications: ceremony_publications,
         memory_writer,
         memory_reader,
+        receipts: execution_receipts,
     } = wire_ceremony_persistence(&service_config)?;
     // The writer is a subscriber of the stream: memory is a projection
     // of sealed events, outside the ceremony transaction (ADR-012/013).
@@ -351,6 +353,13 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_cursors,
         progress_notifier,
         ceremony_publications,
+    );
+    grpc_builder = execution_receipts::wire(
+        grpc_builder,
+        resolve_ceremony_definition.clone(),
+        ceremony_stream.clone(),
+        execution_receipts,
+        clock.clone(),
     );
     grpc_builder = ceremony_operations::wire(
         grpc_builder,

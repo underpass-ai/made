@@ -16,6 +16,7 @@ use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture};
 mod artifact_fixtures;
 mod ceremony_history_fixtures;
 mod children_fixtures;
+mod execution_receipt_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, ServiceMetricsView, StatisticsView,
@@ -115,6 +116,10 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
                 "made_claim_ceremony_step" => ceremony_instance_fixture(),
                 "made_complete_ceremony_step" => ceremony_instance_fixture(),
+                "made_get_execution_receipt" => execution_receipt_fixtures::receipt(),
+                "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
+                "made_complete_execution_receipt" => ceremony_instance_fixture(),
+                "made_adopt_execution_receipt" => ceremony_instance_fixture(),
                 "made_get_status" => get_status_fixture(),
                 "made_get_metrics" => get_metrics_fixture(),
                 other => {
