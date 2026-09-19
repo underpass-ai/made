@@ -39,11 +39,40 @@ impl AuthenticatedPrincipal {
     pub fn validate(&self) -> Result<(), DomainError> {
         let trusted_host = self.kind == PrincipalKind::TrustedHost;
         let local_policy = self.method == AuthenticationMethod::LocalHostPolicy;
-        if trusted_host != local_policy {
+        if local_policy && !trusted_host {
             return Err(DomainError::InvariantViolated {
-                reason: "local host policy authenticates exactly trusted-host principals",
+                reason: "local host policy authenticates only trusted-host principals",
             });
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn trusted_host_may_be_authenticated_by_mutual_tls() {
+        let principal = AuthenticatedPrincipal::new(
+            PrincipalId::new("remote-owner").unwrap(),
+            PrincipalKind::TrustedHost,
+            AuthenticationMethod::MutualTls,
+        );
+
+        assert!(principal.is_ok());
+    }
+
+    #[test]
+    fn local_host_policy_rejects_non_host_principals() {
+        for kind in [PrincipalKind::Human, PrincipalKind::Worker] {
+            let result = AuthenticatedPrincipal::new(
+                PrincipalId::new("not-a-host").unwrap(),
+                kind,
+                AuthenticationMethod::LocalHostPolicy,
+            );
+
+            assert!(matches!(result, Err(DomainError::InvariantViolated { .. })));
+        }
     }
 }

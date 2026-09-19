@@ -5,12 +5,12 @@ use made_app::authorization::{AuthorizationGateOutcome, AuthorizeOperationUseCas
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionId,
     AuthorizationRequest, AuthorizationRequestId, AuthorizationScope, AuthorizationTargetDigest,
-    PrincipalKind,
+    AuthorizedOperation, PrincipalKind,
 };
 use prost::Message;
 use tonic::{Request, Status};
 
-use super::{AuthorizedGrpcInvocation, GrpcAuthorizationError, MutualTlsPrincipalMap};
+use super::{GrpcAuthorizationError, MutualTlsPrincipalMap};
 
 const REQUEST_ID_HEADER: &str = "x-made-request-id";
 
@@ -68,11 +68,10 @@ impl GrpcAuthorizationGate {
         action: AuthorizationAction,
         scope: AuthorizationScope,
         approval: Option<AuthorizationDecisionId>,
-    ) -> Result<AuthorizedGrpcInvocation, Status> {
+    ) -> Result<AuthorizedOperation, Status> {
         let principal = self.authenticate(request).map_err(Status::from)?;
         let request_id = self.request_id(request, action).map_err(Status::from)?;
-        let target_digest =
-            AuthorizationTargetDigest::for_bytes(&request.get_ref().encode_to_vec());
+        let target_digest = target_digest(request.get_ref());
         let mut authorization =
             AuthorizationRequest::new(request_id, principal.clone(), action, scope, target_digest);
         if let Some(approval) = approval {
@@ -85,7 +84,7 @@ impl GrpcAuthorizationGate {
             .map_err(super::domain_error_to_status)?
         {
             AuthorizationGateOutcome::Allowed { evidence, .. } => {
-                Ok(AuthorizedGrpcInvocation::new(principal, evidence))
+                AuthorizedOperation::new(principal, evidence).map_err(super::domain_error_to_status)
             }
             AuthorizationGateOutcome::Denied { decision } => {
                 Err(Status::permission_denied(format!(
@@ -136,5 +135,43 @@ impl GrpcAuthorizationGate {
             .saturating_add(1);
         AuthorizationRequestId::new(format!("{namespace}:{action:?}:{sequence}"))
             .map_err(GrpcAuthorizationError::InvalidRequestId)
+    }
+}
+
+fn target_digest<T: Message>(request: &T) -> AuthorizationTargetDigest {
+    AuthorizationTargetDigest::for_bytes(&request.encode_to_vec())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::BTreeMap;
+
+    use made_proto::v1::BindCeremonyParticipantsRequest;
+
+    use super::*;
+
+    #[test]
+    fn canonical_map_order_produces_the_same_target_digest() {
+        let left = BindCeremonyParticipantsRequest {
+            ceremony_id: "ceremony-1".to_owned(),
+            seating: BTreeMap::from([
+                ("reviewer".to_owned(), "review".to_owned()),
+                ("author".to_owned(), "writing".to_owned()),
+            ]),
+            actor_id: "operator".to_owned(),
+            actor_kind: "human".to_owned(),
+        };
+        let right = BindCeremonyParticipantsRequest {
+            ceremony_id: "ceremony-1".to_owned(),
+            seating: BTreeMap::from([
+                ("author".to_owned(), "writing".to_owned()),
+                ("reviewer".to_owned(), "review".to_owned()),
+            ]),
+            actor_id: "operator".to_owned(),
+            actor_kind: "human".to_owned(),
+        };
+
+        assert_eq!(target_digest(&left), target_digest(&right));
+        assert_eq!(left.encode_to_vec(), right.encode_to_vec());
     }
 }

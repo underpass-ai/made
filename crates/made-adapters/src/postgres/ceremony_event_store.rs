@@ -4,7 +4,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     seal_continuation, AppendOutcome, CeremonyEventStorePort, PositionedRecord,
 };
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion};
+use made_core::value_objects::{
+    AuthorizationEvidence, CeremonyEventPageLimit, CeremonyId, GlobalPosition, StreamVersion,
+};
 use sqlx::{Postgres, Row, Transaction};
 
 use super::ceremony_store::{decode, encode, i64_to_u64, sqlx_error, u64_to_i64};
@@ -112,13 +114,13 @@ async fn persist_records(
     Ok(first_position)
 }
 
-#[async_trait]
-impl CeremonyEventStorePort for PostgresCeremonyStore {
-    async fn append(
+impl PostgresCeremonyStore {
+    async fn append_with_authorization(
         &self,
         stream: &CeremonyId,
         expected: StreamVersion,
         facts: Vec<AuditFact>,
+        authorization: Option<&AuthorizationEvidence>,
     ) -> Result<AppendOutcome, DomainError> {
         let mut transaction = self
             .pool
@@ -148,8 +150,7 @@ impl CeremonyEventStorePort for PostgresCeremonyStore {
             return Ok(AppendOutcome::Conflict { expected, actual });
         }
         let existing = records_in(&mut transaction, stream).await?;
-        let sealed = seal_continuation(stream, &existing, facts)?;
-
+        let sealed = seal_continuation(stream, &existing, facts, authorization)?;
         let first_position = persist_records(&mut transaction, stream, &sealed).await?;
         let version = sealed.last().map_or(actual, |record| {
             StreamVersion::from_sequence(record.sequence())
@@ -164,12 +165,35 @@ impl CeremonyEventStorePort for PostgresCeremonyStore {
             .commit()
             .await
             .map_err(|error| sqlx_error(error, "commit ceremony append"))?;
-
         Ok(AppendOutcome::Appended {
             version,
             records: sealed,
             first_position,
         })
+    }
+}
+
+#[async_trait]
+impl CeremonyEventStorePort for PostgresCeremonyStore {
+    async fn append(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, None)
+            .await
+    }
+
+    async fn append_authorized(
+        &self,
+        stream: &CeremonyId,
+        expected: StreamVersion,
+        facts: Vec<AuditFact>,
+        authorization: AuthorizationEvidence,
+    ) -> Result<AppendOutcome, DomainError> {
+        self.append_with_authorization(stream, expected, facts, Some(&authorization))
+            .await
     }
 
     async fn read(

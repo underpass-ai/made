@@ -134,7 +134,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         metrics_recorder.clone(),
         event_publisher,
     );
-    let ceremony_stream = Arc::new(SessionStream::new(
+    let ceremony_stream = Arc::new(SessionStream::new_authorized(
         ceremony_events.clone(),
         ceremony_snapshots,
         subscribers,

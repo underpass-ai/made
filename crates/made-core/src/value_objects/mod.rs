@@ -84,8 +84,8 @@ pub use authorization::{
     AuthorizationEvidence, AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer,
     AuthorizationPolicyId, AuthorizationPolicyVersion, AuthorizationRequest,
     AuthorizationRequestId, AuthorizationRevocation, AuthorizationRevocationReason,
-    AuthorizationScope, AuthorizationTargetDigest, DelegationDepth, PrincipalId, PrincipalKind,
-    SeparationRule,
+    AuthorizationScope, AuthorizationTargetDigest, AuthorizedOperation, DelegationDepth,
+    PrincipalId, PrincipalKind, SeparationRule,
 };
 pub use budget::{
     BudgetAccountId, BudgetBalance, BudgetDimension, BudgetLedgerVersion, BudgetLimits,

@@ -83,7 +83,7 @@ mod tests {
         let contract = output_contract_from_proto(Some(pb::OutputContract {
             contract_id: "decision-contract".to_owned(),
             format: pb::OutputFormat::JsonObject as i32,
-            fields: std::collections::HashMap::from([(
+            fields: std::collections::BTreeMap::from([(
                 "decision".to_owned(),
                 pb::OutputFieldRule {
                     required: true,
@@ -106,7 +106,7 @@ mod tests {
         let contract = output_contract_from_proto(Some(pb::OutputContract {
             contract_id: "decision-contract".to_owned(),
             format: pb::OutputFormat::JsonObject as i32,
-            fields: std::collections::HashMap::new(),
+            fields: std::collections::BTreeMap::new(),
             json_schema: r#"{"type":"object","required":["decision"]}"#.to_owned(),
         }))
         .unwrap()

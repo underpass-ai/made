@@ -269,7 +269,7 @@ mod tests {
                 repeat: None,
                 role_from: String::new(),
                 allowed_roles: Vec::new(),
-                context_writes: std::collections::HashMap::new(),
+                context_writes: std::collections::BTreeMap::new(),
                 aggregate: None,
                 pattern_stage: None,
                 spawn: None,
@@ -289,7 +289,7 @@ mod tests {
                             repeat: None,
                             role_from: String::new(),
                             allowed_roles: Vec::new(),
-                            context_writes: std::collections::HashMap::new(),
+                            context_writes: std::collections::BTreeMap::new(),
                             aggregate: None,
                             spawn: None,
                         })

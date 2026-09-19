@@ -48,7 +48,7 @@ pub(crate) async fn verify_structured_output_against_vllm_kind(
             contract: Some(OutputContract {
                 contract_id: CONTRACT_ID.to_owned(),
                 format: OutputFormat::JsonObject as i32,
-                fields: std::collections::HashMap::new(),
+                fields: std::collections::BTreeMap::new(),
                 json_schema: schema_body.clone(),
             }),
         })

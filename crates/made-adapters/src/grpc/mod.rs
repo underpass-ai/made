@@ -13,7 +13,6 @@
 //!
 //! [`DomainError`]: made_core::error::DomainError
 
-mod authorized_grpc_invocation;
 mod grpc_authorization_error;
 mod grpc_authorization_gate;
 mod made_grpc_service_builder;
@@ -26,7 +25,6 @@ mod status;
 mod stream;
 pub(crate) mod tracecontext;
 
-pub use authorized_grpc_invocation::AuthorizedGrpcInvocation;
 pub use grpc_authorization_error::GrpcAuthorizationError;
 pub use grpc_authorization_gate::GrpcAuthorizationGate;
 pub use made_grpc_service_builder::MadeGrpcServiceBuilder;
