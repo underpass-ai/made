@@ -2,13 +2,14 @@ use std::sync::Arc;
 
 use made_adapters::config::{MemorySelection, ServiceConfig};
 use made_adapters::memory::{
-    ForgetfulMemory, InMemoryCeremonyDefinitionPublications, InMemoryCeremonyEventCursor,
-    InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
+    ForgetfulMemory, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
+    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryExecutionReceiptStore,
 };
-use made_adapters::sqlite::SqliteCeremonyStore;
+use made_adapters::sqlite::{SqliteBudgetLedgerStore, SqliteCeremonyStore};
 use made_core::ports::{
-    CeremonyDefinitionPublicationPort, CeremonyEventCursorPort, CeremonyEventStorePort,
-    CeremonySnapshotStorePort, ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort,
+    BudgetLedgerStorePort, CeremonyDefinitionPublicationPort, CeremonyEventCursorPort,
+    CeremonyEventStorePort, CeremonySnapshotStorePort, ExecutionReceiptStorePort, MemoryReaderPort,
+    MemoryWriterPort,
 };
 use tracing::{info, warn};
 
@@ -23,6 +24,7 @@ pub(super) struct CeremonyPersistence {
     pub(super) memory_writer: Arc<dyn MemoryWriterPort>,
     pub(super) memory_reader: Arc<dyn MemoryReaderPort>,
     pub(super) receipts: Arc<dyn ExecutionReceiptStorePort>,
+    pub(super) budgets: Arc<dyn BudgetLedgerStorePort>,
 }
 
 pub(super) fn wire(config: &ServiceConfig) -> Result<CeremonyPersistence, ComposeError> {
@@ -54,6 +56,7 @@ pub(super) fn wire(config: &ServiceConfig) -> Result<CeremonyPersistence, Compos
                 memory_writer: memory.clone(),
                 memory_reader: memory,
                 receipts: Arc::new(InMemoryExecutionReceiptStore::new()),
+                budgets: Arc::new(InMemoryBudgetLedgerStore::new()),
             })
         }
     }
@@ -67,6 +70,9 @@ fn durable(
         SqliteCeremonyStore::open(path)
             .map_err(|error| ComposeError::CeremonyStore(format!("at {path}: {error}")))?,
     );
+    let budgets = Arc::new(SqliteBudgetLedgerStore::open(path).map_err(|error| {
+        ComposeError::CeremonyStore(format!("budget ledger at {path}: {error}"))
+    })?);
     info!(path, "ceremony state is durable");
 
     let (memory_writer, memory_reader): (Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>) =
@@ -90,6 +96,7 @@ fn durable(
         memory_writer,
         memory_reader,
         receipts: store,
+        budgets,
     })
 }
 

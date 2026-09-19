@@ -1,3 +1,7 @@
+use made_app::budgets::{
+    BudgetedStepClaimInput, BudgetedStepClaimOutput, StartBudgetedCeremonyInput,
+    StartBudgetedCeremonyUseCase,
+};
 use made_app::usecases::StartCeremonyStepOutput;
 use made_app::usecases::{
     AcceptChildCompletionInput, AcceptChildCompletionOutput, AcceptChildCompletionUseCase,
@@ -63,6 +67,21 @@ impl EmbeddedMade {
         .await
     }
 
+    pub async fn start_budgeted_published(
+        &self,
+        input: StartBudgetedCeremonyInput,
+    ) -> Result<CeremonyInstance, made_core::BudgetError> {
+        StartBudgetedCeremonyUseCase::new(
+            self.publications.clone(),
+            self.stream.clone(),
+            self.clock.clone(),
+            self.memory_reader.clone(),
+            self.budgets.clone(),
+        )
+        .execute(input)
+        .await
+    }
+
     pub async fn start(&self, input: StartCeremonyInput) -> Result<CeremonyInstance, DomainError> {
         StartCeremonyUseCase::new(
             self.definitions.clone(),
@@ -82,6 +101,21 @@ impl EmbeddedMade {
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
+        )
+        .with_max_parallel_ceiling(self.max_parallel_ceiling)
+        .execute(input)
+        .await
+    }
+
+    pub async fn start_budgeted_step(
+        &self,
+        input: BudgetedStepClaimInput,
+    ) -> Result<BudgetedStepClaimOutput, made_core::BudgetError> {
+        made_app::budgets::BudgetedStepClaimUseCase::new(
+            self.resolve_definition(),
+            self.stream.clone(),
+            self.clock.clone(),
+            self.budgets.clone(),
         )
         .with_max_parallel_ceiling(self.max_parallel_ceiling)
         .execute(input)

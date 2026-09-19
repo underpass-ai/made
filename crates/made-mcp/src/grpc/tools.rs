@@ -17,6 +17,7 @@ use super::streaming;
 
 mod artifact_dispatch;
 mod artifact_requests;
+mod budget_dispatch;
 mod ceremony_history_requests;
 mod ceremony_read_dispatch;
 mod ceremony_requests;
@@ -74,6 +75,9 @@ pub(crate) async fn dispatch(
     }
     if artifact_dispatch::handles(name) {
         return artifact_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if budget_dispatch::handles(name) {
+        return budget_dispatch::dispatch(&mut client, name, arguments).await;
     }
     if execution_receipt_dispatch::handles(name) {
         return execution_receipt_dispatch::dispatch(&mut client, name, arguments).await;

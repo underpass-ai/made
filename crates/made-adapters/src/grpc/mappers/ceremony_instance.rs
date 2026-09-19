@@ -130,6 +130,9 @@ pub fn ceremony_instance_state_from(view: &CeremonyInstanceView<'_>) -> pb::Cere
             .values()
             .map(step_deadline_state_from)
             .collect(),
+        budget_account_id: instance
+            .budget_account_id()
+            .map_or_else(String::new, |account| account.as_str().to_owned()),
     }
 }
 

@@ -93,10 +93,19 @@ fn quantities_to_proto(value: BudgetQuantities) -> pb::BudgetQuantities {
 
 fn estimate_to_proto(value: BudgetReservationEstimate) -> pb::BudgetReservationEstimate {
     pb::BudgetReservationEstimate {
-        duration: Some(measurement_to_proto(value.duration(), ExecutionDuration::as_micros)),
-        tokens: Some(measurement_to_proto(value.tokens(), BudgetTokenCount::value)),
+        duration: Some(measurement_to_proto(
+            value.duration(),
+            ExecutionDuration::as_micros,
+        )),
+        tokens: Some(measurement_to_proto(
+            value.tokens(),
+            BudgetTokenCount::value,
+        )),
         cost: Some(measurement_to_proto(value.cost(), CostMicros::value)),
-        tool_calls: Some(measurement_to_proto(value.tool_calls(), ToolCallCount::value)),
+        tool_calls: Some(measurement_to_proto(
+            value.tool_calls(),
+            ToolCallCount::value,
+        )),
     }
 }
 

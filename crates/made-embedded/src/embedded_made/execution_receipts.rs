@@ -49,6 +49,7 @@ impl EmbeddedMade {
         } else {
             complete
         };
+        let complete = complete.with_budget_ledger(self.budgets.clone());
         complete.execute(input).await
     }
 
@@ -68,6 +69,7 @@ impl EmbeddedMade {
         } else {
             complete
         };
+        let complete = complete.with_budget_ledger(self.budgets.clone());
         complete.execute(input).await
     }
 }

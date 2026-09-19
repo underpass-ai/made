@@ -7,6 +7,8 @@ mod embedded_approve_ceremony_guard_request;
 mod embedded_artifact_dispatch;
 mod embedded_assert_ceremony_reason_request;
 mod embedded_bind_ceremony_participants_request;
+mod embedded_budget_dispatch;
+mod embedded_budget_fields;
 mod embedded_cancel_ceremony_request;
 mod embedded_ceremony_draft_presenter;
 mod embedded_ceremony_draft_request;
@@ -208,6 +210,9 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         if embedded_council_journal_dispatch::handles(name) {
             return true;
         }
+        if embedded_budget_dispatch::handles(name) {
+            return true;
+        }
         if embedded_council_dispatch::handles(name) || embedded_artifact_dispatch::handles(name) {
             return true;
         }
@@ -264,6 +269,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
         Box::pin(async move {
             if embedded_council_journal_dispatch::handles(name) {
                 return embedded_council_journal_dispatch::dispatch(&self.made, name, arguments)
+                    .await
+                    .map(tool_success_result);
+            }
+            if embedded_budget_dispatch::handles(name) {
+                return embedded_budget_dispatch::dispatch(&self.made, name, arguments)
                     .await
                     .map(tool_success_result);
             }
@@ -377,10 +387,11 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 CLAIM_CEREMONY_STEP_TOOL => {
                     let request = EmbeddedClaimCeremonyStepRequest::try_from(arguments)
                         .map_err(ToolError::invalid_request)?;
-                    let claim = request.execute(&self.made).await?;
-                    let value =
+                    let (claim, budget) = request.execute(&self.made).await?;
+                    let mut value =
                         EmbeddedCeremonyInstancePresenter::present_claim(&self.made, &claim)
                             .await?;
+                    value["budget"] = budget.unwrap_or(Value::Null);
                     Ok(tool_success_result(value))
                 }
                 COMPLETE_CEREMONY_STEP_TOOL => {

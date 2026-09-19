@@ -4,6 +4,9 @@
 use std::sync::Arc;
 
 use made_app::artifacts::ArtifactService;
+use made_app::budgets::{
+    BudgetLedgerService, BudgetedStepClaimUseCase, StartBudgetedCeremonyUseCase,
+};
 use made_app::services::AutoDispatchService;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
@@ -42,9 +45,10 @@ use super::mappers::{
     artifact_page_limit_from_proto, artifact_record_to_proto, artifact_ref_to_proto,
     artifact_tombstone_to_proto, artifact_upload_status_to_proto,
     assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
-    bind_ceremony_participants_input_from_proto, cancel_ceremony_input_from_proto,
-    ceremony_definition_source_from_proto, ceremony_design_document_from_proto,
-    ceremony_instance_state_from, child_completion_state_from,
+    bind_ceremony_participants_input_from_proto, budget_balance_to_proto, budget_limits_from_proto,
+    budget_reservation_estimate_from_proto, budget_reservation_to_proto,
+    cancel_ceremony_input_from_proto, ceremony_definition_source_from_proto,
+    ceremony_design_document_from_proto, ceremony_instance_state_from, child_completion_state_from,
     claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
     complete_execution_receipt_input_from_proto, council_summary_from,
@@ -67,7 +71,7 @@ use super::mappers::{
     validate_ceremony_draft_response_from, verify_ceremony_journal_response_from,
     StartCeremonyFromYaml,
 };
-use super::status::{artifact_error_to_status, domain_error_to_status};
+use super::status::{artifact_error_to_status, budget_error_to_status, domain_error_to_status};
 use super::tracecontext::{
     link_span_to_metadata, run_with_ceremony_trace, trace_context_from_metadata,
 };
@@ -82,6 +86,7 @@ use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
 mod artifact_handlers;
 mod authoring_handlers;
+mod budget_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
@@ -117,10 +122,12 @@ pub struct MadeGrpcService {
     pub(super) resolve_ceremony_definition: Arc<ResolveCeremonyDefinitionUseCase>,
     pub(super) start_ceremony: Arc<StartCeremonyUseCase>,
     pub(super) start_published_ceremony: Arc<StartPublishedCeremonyUseCase>,
+    pub(super) start_budgeted_ceremony: Option<Arc<StartBudgetedCeremonyUseCase>>,
     pub(super) run_ceremony_step: Arc<RunCeremonyStepUseCase>,
     pub(super) accept_child_completion: Arc<AcceptChildCompletionUseCase>,
     pub(super) recover_ceremony_children: Arc<RecoverCeremonyChildrenUseCase>,
     pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
+    pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
     pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
     pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
     pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
@@ -158,6 +165,7 @@ pub struct MadeGrpcService {
     pub(super) get_service_status: Arc<GetServiceStatusUseCase>,
     pub(super) get_service_metrics: Arc<GetServiceMetricsUseCase>,
     pub(super) artifacts: Option<Arc<ArtifactService>>,
+    pub(super) budgets: Option<Arc<BudgetLedgerService>>,
 }
 
 impl std::fmt::Debug for MadeGrpcService {
