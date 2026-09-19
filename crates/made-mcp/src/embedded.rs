@@ -10,6 +10,7 @@ mod embedded_authorization_dispatch;
 mod embedded_authorization_presenter;
 mod embedded_authorization_request;
 mod embedded_backend_authorization;
+mod embedded_backend_presenter;
 mod embedded_bind_ceremony_participants_request;
 mod embedded_budget_dispatch;
 mod embedded_budget_fields;
@@ -58,7 +59,7 @@ mod embedded_tool_authorizer;
 
 use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_app::usecases::CeremonyDraftView;
-use made_core::value_objects::{CeremonyEventPageLimit, CeremonyId, TraceContext};
+use made_core::value_objects::{CeremonyEventPageLimit, TraceContext};
 use made_embedded::EmbeddedMade;
 use serde_json::Value;
 
@@ -81,7 +82,6 @@ use crate::protocol::{
     RUN_CEREMONY_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
-use crate::renderers::{CeremonyInstanceListing, CeremonyInstanceListingEntry};
 
 use self::embedded_accept_child_completion_request::EmbeddedAcceptChildCompletionRequest;
 use self::embedded_apply_ceremony_transition_request::EmbeddedApplyCeremonyTransitionRequest;
@@ -148,29 +148,6 @@ impl EmbeddedMadeMcpBackend {
             made,
             authorization: None,
         }
-    }
-
-    async fn present_instance(&self, ceremony_id: &CeremonyId) -> Result<Value, ToolError> {
-        EmbeddedCeremonyInstancePresenter::present(&self.made, ceremony_id)
-            .await
-            .map(tool_success_result)
-    }
-
-    async fn present_instances(&self) -> Result<Value, ToolError> {
-        let instances = self.made.instances().await?;
-        let mut values = Vec::with_capacity(instances.len());
-        for instance in instances {
-            match EmbeddedCeremonyInstancePresenter::present(&self.made, instance.id()).await {
-                Ok(value) => values.push(CeremonyInstanceListingEntry::rehydratable(value)),
-                Err(reason) => values.push(CeremonyInstanceListingEntry::unrehydratable(
-                    instance.id().as_str(),
-                    reason.message(),
-                )),
-            }
-        }
-        Ok(tool_success_result(
-            CeremonyInstanceListing::new(values).to_json(),
-        ))
     }
 }
 
