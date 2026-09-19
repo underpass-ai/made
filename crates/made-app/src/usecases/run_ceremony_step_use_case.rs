@@ -79,6 +79,13 @@ impl RunCeremonyStepUseCase {
         &self,
         input: RunCeremonyStepInput,
     ) -> Result<RunCeremonyStepOutput, DomainError> {
+        Box::pin(self.execute_inner(input)).await
+    }
+
+    async fn execute_inner(
+        &self,
+        input: RunCeremonyStepInput,
+    ) -> Result<RunCeremonyStepOutput, DomainError> {
         // Two appends, not one, and deliberately so: the claim has to
         // be durable before the handler is invoked, or a crash while it
         // runs leaves no record that anything took the step.

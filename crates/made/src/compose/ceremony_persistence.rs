@@ -90,7 +90,9 @@ fn postgres_persistence(
     memory_selection: MemorySelection,
 ) -> CeremonyPersistence {
     let store = Arc::new(PostgresCeremonyStore::new(pool.clone()));
-    info!("ceremony state, publications, cursors and execution receipts are durable in Postgres");
+    info!(
+        "ceremony state, publications, cursors, execution receipts and budgets are durable in Postgres"
+    );
     let (memory_writer, memory_reader): (Arc<dyn MemoryWriterPort>, Arc<dyn MemoryReaderPort>) =
         if memory_selection == MemorySelection::None {
             info!("session memory is disabled explicitly with MADE_MEMORY=none");
