@@ -156,6 +156,20 @@ async fn client_pages_metadata_and_exports_verified_artifact_chunks() {
         .await
         .unwrap();
     assert_eq!(tokio::fs::read(destination).await.unwrap(), BYTES);
+
+    let protected = scratch.path().join("export/protected.txt");
+    tokio::fs::write(&protected, b"keep").await.unwrap();
+    assert!(client
+        .export_artifact("artifact-operator-b", &protected, false)
+        .await
+        .is_err());
+    assert_eq!(tokio::fs::read(&protected).await.unwrap(), b"keep");
+    let mut entries = tokio::fs::read_dir(protected.parent().unwrap())
+        .await
+        .unwrap();
+    while let Some(entry) = entries.next_entry().await.unwrap() {
+        assert!(!entry.file_name().to_string_lossy().ends_with(".part"));
+    }
 }
 
 async fn upload(client: &mut MadeServiceClient<tonic::transport::Channel>, id: &str, key: &str) {
