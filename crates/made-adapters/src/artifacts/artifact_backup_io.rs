@@ -32,7 +32,8 @@ pub(super) async fn write_backup_blob<S: ArtifactStorePort>(
                 offset: ArtifactByteOffset::new(offset),
                 max_bytes: ArtifactChunkLimit::DEFAULT,
             })
-            .await?;
+            .await
+            .map_err(backup_content_failure)?;
         if digest_bytes(&chunk.bytes) != chunk.chunk_digest {
             return Err(ArtifactStoreError::InvalidBackup);
         }
@@ -56,6 +57,16 @@ pub(super) fn verify_backup_blob(
         reference.digest(),
         reference.size_bytes().get(),
     )
+}
+
+/// Keep backup integrity failures stable regardless of when a store detects them.
+pub(super) fn backup_content_failure(error: ArtifactStoreError) -> ArtifactStoreError {
+    match error {
+        ArtifactStoreError::ChunkDigestMismatch
+        | ArtifactStoreError::FinalDigestMismatch
+        | ArtifactStoreError::Incomplete { .. } => ArtifactStoreError::InvalidBackup,
+        other => other,
+    }
 }
 
 pub(super) fn verify_blob(

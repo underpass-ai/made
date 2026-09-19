@@ -471,6 +471,63 @@ async fn backup_restore_preserves_tombstone_and_detects_tamper_or_missing_conten
 }
 
 #[tokio::test]
+async fn backup_rejects_corrupt_source_before_publishing_and_preserves_storage_failures() {
+    let scratch = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
+    fs::create_dir_all(&scratch).unwrap();
+    for prepared in [false, true] {
+        for replacement in [
+            Some(b"wrong bytes".as_slice()),
+            Some(b"short".as_slice()),
+            None,
+        ] {
+            let directory = TempDir::new_in(&scratch).unwrap();
+            let source_root = directory.path().join("source");
+            let source = Arc::new(LocalArtifactStore::open(&source_root).unwrap());
+            let artifact = upload(&source, b"backup body", "backup-corrupt-source").await;
+            let service = ArtifactBackupService::new(source.clone());
+            let destination = directory.path().join("backup");
+            if prepared {
+                service.prepare(&destination).await.unwrap();
+            }
+            let blob = source_root
+                .join("blobs")
+                .join(artifact.digest().as_str().trim_start_matches("sha256:"));
+            let expected = if let Some(bytes) = replacement {
+                fs::write(&blob, bytes).unwrap();
+                ArtifactStoreError::InvalidBackup
+            } else {
+                fs::remove_file(&blob).unwrap();
+                ArtifactStoreError::StorageUnavailable
+            };
+            assert_eq!(service.plan().await.unwrap_err(), expected);
+            assert_eq!(service.backup_to(&destination).await, Err(expected));
+            if prepared {
+                let manifest: serde_json::Value =
+                    serde_json::from_slice(&fs::read(destination.join("manifest.json")).unwrap())
+                        .unwrap();
+                assert_eq!(manifest["complete"], false);
+                assert!(matches!(
+                    ArtifactBackupService::<LocalArtifactStore>::inspect_manifest(&destination),
+                    Err(ArtifactStoreError::InvalidBackup)
+                ));
+            } else {
+                assert!(
+                    !destination.exists(),
+                    "a failed backup must not be published"
+                );
+                let staging = directory.path().join(".backup-in-progress");
+                assert!(!staging.join("manifest.json").exists());
+            }
+            assert_eq!(
+                source.active_protections().await.unwrap().len(),
+                usize::from(prepared),
+                "a failed backup must preserve any existing durable protection"
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn backup_plan_and_manifest_resume_deterministically_and_repeat_idempotently() {
     let directory = TempDir::new().unwrap();
     let source = Arc::new(LocalArtifactStore::open(directory.path().join("source")).unwrap());

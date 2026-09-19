@@ -11,8 +11,8 @@ use made_core::ports::{
 
 use super::artifact_backup_entry::ArtifactBackupEntry;
 use super::artifact_backup_io::{
-    backup_key, blob_path, read_json, staging_path, storage_failure, sync_directory,
-    verify_backup_blob, verify_blob, write_backup_blob, write_json_durable,
+    backup_content_failure, backup_key, blob_path, read_json, staging_path, storage_failure,
+    sync_directory, verify_backup_blob, verify_blob, write_backup_blob, write_json_durable,
 };
 use super::artifact_backup_manifest::{
     ArtifactBackupManifest, ArtifactBackupPlan, ARTIFACT_BACKUP_VERSION,
@@ -83,13 +83,18 @@ where
                             .map(|entry| entry.artifact_id().clone())
                             .collect(),
                     )
-                    .await?;
+                    .await
+                    .map_err(backup_content_failure)?;
             }
             return Ok(manifest.plan);
         }
         let key = backup_key(root)?;
         write_json_durable(&root.join("backup-owner.json"), &key)?;
-        let snapshot = self.store.protect_snapshot(key.clone()).await?;
+        let snapshot = self
+            .store
+            .protect_snapshot(key.clone())
+            .await
+            .map_err(backup_content_failure)?;
         let plan = ArtifactBackupPlan::from_entries(self.backup_entries(snapshot.records).await?)
             .map_err(|_| ArtifactStoreError::StorageUnavailable)?;
         let manifest = ArtifactBackupManifest {
@@ -180,7 +185,8 @@ where
         let available = self
             .store
             .backup_content_available(record.artifact.artifact_id())
-            .await?;
+            .await
+            .map_err(backup_content_failure)?;
         let content = if available {
             ArtifactBackupContent::Present
         } else if record.tombstone.is_some() {
@@ -344,7 +350,8 @@ where
                     .map(|entry| entry.artifact_id().clone())
                     .collect(),
             )
-            .await?;
+            .await
+            .map_err(backup_content_failure)?;
         if snapshot.records.len() != manifest.plan.entries.len()
             || snapshot
                 .records
