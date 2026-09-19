@@ -75,6 +75,11 @@ try {
     }
     $ConfigFile = Get-ChildItem -Path $env:MADE_SETUP_CONFIG_ROOT -Filter *.env -Recurse | Select-Object -First 1
     if (-not $ConfigFile) { throw "MADE Windows bootstrap: setup did not persist private host configuration" }
+    $ReaderOutput = & powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $TestPlugin "scripts\read-embedded-config.ps1") -StorePath $env:MADE_MCP_STORE_PATH -ConfigRoot $env:MADE_SETUP_CONFIG_ROOT 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        $ConfigNames = (Get-ChildItem -Path $env:MADE_SETUP_CONFIG_ROOT -Filter *.env -Recurse | ForEach-Object Name) -join ","
+        throw "MADE Windows bootstrap: config reader exit $LASTEXITCODE for store '$env:MADE_MCP_STORE_PATH' and root '$env:MADE_SETUP_CONFIG_ROOT'; files: $ConfigNames"
+    }
     if (-not (Get-Acl -LiteralPath $ConfigFile.FullName).AreAccessRulesProtected) {
         throw "MADE Windows bootstrap: private host configuration still inherits permissions"
     }

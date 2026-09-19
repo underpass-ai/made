@@ -11,6 +11,11 @@ even though the new catalogue identity is `made`.
 
 No changes yet.
 
+## 0.7.6 — 2026-09-19
+
+- Make the native Windows bootstrap verify the same private configuration
+  reader used by the `cmd` launcher before starting the embedded server.
+
 ## 0.7.5 — 2026-09-19
 
 - Normalize Windows store paths consistently between setup and the `cmd`
