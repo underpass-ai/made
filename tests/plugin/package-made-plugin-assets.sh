@@ -41,7 +41,7 @@ ARCHIVE="$(find "${TEST_ROOT}/dist/plugin" -maxdepth 1 -name 'made-plugin-*.tar.
 STANDALONE="$(find "${TEST_ROOT}/dist/plugin" -maxdepth 1 -name 'made-mcp-v*' ! -name '*.sha256' -print -quit)"
 [[ -n "${ARCHIVE}" && -n "${STANDALONE}" ]]
 mkdir -p "${SCRATCH}/unpacked"
-tar -xzf "${ARCHIVE}" -C "${SCRATCH}/unpacked"
+tar -xzf - -C "${SCRATCH}/unpacked" <"${ARCHIVE}"
 python3 "${TEST_ROOT}/scripts/ci/plugin-bundle-assets.py" \
   "${SCRATCH}/unpacked/made" >"${SCRATCH}/verified.json"
 
