@@ -7,13 +7,25 @@ use made_app::workers::{
 use made_core::entities::CeremonyInstance;
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    ExecutionOperationId, ExecutionReceipt, ExecutionReceiptLinkKind, ExecutionRecoveryCursor,
-    ExecutionRecoveryPageLimit,
+    ExecutionOperation, ExecutionOperationId, ExecutionReceipt, ExecutionReceiptLinkKind,
+    ExecutionRecoveryCursor, ExecutionRecoveryPageLimit,
 };
 
 use super::EmbeddedMade;
 
 impl EmbeddedMade {
+    pub async fn execution_operation(
+        &self,
+        operation_id: &ExecutionOperationId,
+    ) -> Result<ExecutionOperation, DomainError> {
+        self.execution_receipts
+            .operation(operation_id)
+            .await?
+            .ok_or(DomainError::NotFound {
+                what: "execution_operation",
+            })
+    }
+
     pub async fn get_execution_receipt(
         &self,
         operation_id: &ExecutionOperationId,
