@@ -48,7 +48,11 @@ use std::sync::Arc;
 
 mod artifacts;
 mod authorization;
+mod authorization_guards;
 mod budgets;
+mod ceremony_authority;
+mod ceremony_operation_authority;
+mod ceremony_projection_data;
 mod council_journal;
 mod councils;
 mod definitions;
@@ -56,6 +60,10 @@ mod execution;
 mod execution_receipts;
 mod history;
 mod participation;
+
+pub use ceremony_authority::EmbeddedCeremonyAuthority;
+pub use ceremony_operation_authority::EmbeddedCeremonyOperationAuthority;
+pub use ceremony_projection_data::EmbeddedCeremonyProjectionData;
 
 /// In-process facade over the MADE ceremony use cases.
 #[derive(Clone)]

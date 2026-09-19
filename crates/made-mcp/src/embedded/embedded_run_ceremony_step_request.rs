@@ -84,6 +84,22 @@ impl EmbeddedRunCeremonyStepRequest {
         )
         .with_automatic_role_resolution())
     }
+
+    pub(super) fn run_input(
+        &self,
+        definition: &CeremonyDefinition,
+    ) -> Result<RunCeremonyStepInput, made_core::DomainError> {
+        Ok(RunCeremonyStepInput::new(
+            self.ceremony_id.clone(),
+            definition.role_id_for_step(&self.step_id)?,
+            self.actor_kind,
+            self.step_id.clone(),
+            self.lease_owner_id.clone(),
+            self.idempotency_key.clone(),
+            self.lease_ttl,
+        )
+        .with_automatic_role_resolution())
+    }
 }
 
 impl TryFrom<&Value> for EmbeddedRunCeremonyStepRequest {

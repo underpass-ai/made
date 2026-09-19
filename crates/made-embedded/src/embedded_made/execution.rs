@@ -216,7 +216,7 @@ impl EmbeddedMade {
         recovery.execute(limit).await
     }
 
-    fn child_orchestrator(&self) -> Arc<PrepareCeremonyChildrenUseCase> {
+    pub(super) fn child_orchestrator(&self) -> Arc<PrepareCeremonyChildrenUseCase> {
         Arc::new(PrepareCeremonyChildrenUseCase::new(
             self.resolve_definition(),
             self.publications.clone(),

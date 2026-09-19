@@ -24,7 +24,10 @@ mod unconfigured_executor;
 pub use callback_ceremony_evidence_source::CallbackCeremonyEvidenceSource;
 pub use callback_ceremony_step_handler::CallbackCeremonyStepHandler;
 pub use embedded_ceremony_projection::EmbeddedCeremonyProjection;
-pub use embedded_made::EmbeddedMade;
+pub use embedded_made::{
+    EmbeddedCeremonyAuthority, EmbeddedCeremonyOperationAuthority, EmbeddedCeremonyProjectionData,
+    EmbeddedMade,
+};
 pub use embedded_made_builder::EmbeddedMadeBuilder;
 pub use in_process_ceremony_definition_source::InProcessCeremonyDefinitionSource;
 

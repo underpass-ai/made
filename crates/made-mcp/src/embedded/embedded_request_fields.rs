@@ -1,7 +1,7 @@
 use made_core::value_objects::{Attributes, AuditActorKind, CeremonyContext, CeremonyId, RoleId};
 
 use crate::protocol::ToolError;
-use made_embedded::EmbeddedMade;
+use made_embedded::{EmbeddedCeremonyAuthority, EmbeddedMade};
 use serde_json::{Map, Value};
 
 pub(super) fn required_string(object: &Map<String, Value>, field: &str) -> Result<String, String> {
@@ -113,9 +113,13 @@ pub(super) async fn load_instance_definition(
     ),
     ToolError,
 > {
-    let instance = made.instance(ceremony_id).await?;
-    let definition = made.definition_for(&instance).await?;
-    Ok((definition, instance))
+    let projection = EmbeddedCeremonyAuthority::for_engine(made)
+        .projection(ceremony_id)
+        .await?;
+    Ok((
+        projection.definition().clone(),
+        projection.instance().clone(),
+    ))
 }
 
 /// What kind of party the caller says acted.

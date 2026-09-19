@@ -12,13 +12,15 @@ impl AuthorizationScopeResolverPort for EmbeddedMade {
         ceremony_id: &CeremonyId,
     ) -> Result<AuthorizationScope, DomainError> {
         match self.stream.load(ceremony_id).await {
-            Ok(read) => Ok(AuthorizationScope::ResolvedCeremony {
-                root_id: read
-                    .instance
-                    .lineage()
-                    .map_or_else(|| ceremony_id.clone(), |lineage| lineage.root_id().clone()),
-                ceremony_id: ceremony_id.clone(),
-            }),
+            Ok(read) => Ok(read.instance.lineage().map_or_else(
+                || AuthorizationScope::Ceremony {
+                    ceremony_id: ceremony_id.clone(),
+                },
+                |lineage| AuthorizationScope::ResolvedCeremony {
+                    root_id: lineage.root_id().clone(),
+                    ceremony_id: ceremony_id.clone(),
+                },
+            )),
             Err(DomainError::NotFound { .. }) => Ok(AuthorizationScope::Ceremony {
                 ceremony_id: ceremony_id.clone(),
             }),
