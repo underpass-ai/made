@@ -4,12 +4,13 @@ use serde_json::Value;
 use crate::protocol::{tool_success_result, ToolError};
 
 use super::{
-    embedded_artifact_dispatch, embedded_budget_dispatch, embedded_council_dispatch,
-    embedded_council_journal_dispatch,
+    embedded_artifact_dispatch, embedded_authorization_dispatch, embedded_budget_dispatch,
+    embedded_council_dispatch, embedded_council_journal_dispatch,
 };
 
 pub(super) fn handles(name: &str) -> bool {
-    embedded_council_journal_dispatch::handles(name)
+    embedded_authorization_dispatch::handles(name)
+        || embedded_council_journal_dispatch::handles(name)
         || embedded_budget_dispatch::handles(name)
         || embedded_council_dispatch::handles(name)
         || embedded_artifact_dispatch::handles(name)
@@ -20,6 +21,13 @@ pub(super) async fn dispatch(
     name: &str,
     arguments: &Value,
 ) -> Option<Result<Value, ToolError>> {
+    if embedded_authorization_dispatch::handles(name) {
+        return Some(
+            embedded_authorization_dispatch::dispatch(made, name, arguments)
+                .await
+                .map(tool_success_result),
+        );
+    }
     if embedded_council_journal_dispatch::handles(name) {
         return Some(
             embedded_council_journal_dispatch::dispatch(made, name, arguments)
