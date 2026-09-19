@@ -14,8 +14,15 @@ pub(super) fn handles(name: &str) -> bool {
         "made_get_authorization_policy"
             | "made_issue_authorization_grant"
             | "made_revoke_authorization_grant"
+            | "made_approve_authorization_operation"
             | "made_list_authorization_decisions"
     )
+}
+
+pub(super) fn present_approval(
+    decision: &made_core::value_objects::AuthorizationDecision,
+) -> Result<Value, ToolError> {
+    Ok(json!({"decision":view::decision(decision)?}))
 }
 
 pub(super) async fn dispatch(
@@ -37,6 +44,9 @@ pub(super) async fn dispatch(
                 AuthorizationRevocationReason::new(request::string(args, "reason")?)?,
             )
             .await?,
+        )),
+        "made_approve_authorization_operation" => Err(ToolError::refused(
+            "operation approval requires the configured embedded authorization gate",
         )),
         "made_list_authorization_decisions" => {
             let after = request::optional_string(args, "after_decision_id")

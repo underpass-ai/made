@@ -112,7 +112,7 @@ impl AuthorizedMemoryReader {
         };
         // Backends can merge independently named memories. A colliding id from
         // different sources has no unambiguous provenance, so neither its
-        // content nor incident relations are safe to disclose.
+        // content nor relations attached to the entry are safe to disclose.
         let mut origins = BTreeMap::new();
         let mut ambiguous = BTreeSet::new();
         for entry in &entries {

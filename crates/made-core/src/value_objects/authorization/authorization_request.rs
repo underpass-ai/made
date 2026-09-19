@@ -17,9 +17,18 @@ pub struct AuthorizationRequest {
     approval_decision_id: Option<AuthorizationDecisionId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     accepted_work_decision_id: Option<AuthorizationDecisionId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    approved_action: Option<AuthorizationAction>,
 }
 
 impl AuthorizationRequest {
+    /// Re-admit the same operation without dropping its approval or scope.
+    #[must_use]
+    pub fn with_request_id(mut self, id: AuthorizationRequestId) -> Self {
+        self.id = id;
+        self
+    }
+
     #[must_use]
     pub const fn new(
         id: AuthorizationRequestId,
@@ -36,6 +45,7 @@ impl AuthorizationRequest {
             target_digest,
             approval_decision_id: None,
             accepted_work_decision_id: None,
+            approved_action: None,
         }
     }
 
@@ -51,6 +61,12 @@ impl AuthorizationRequest {
     #[must_use]
     pub fn with_accepted_work(mut self, decision_id: AuthorizationDecisionId) -> Self {
         self.accepted_work_decision_id = Some(decision_id);
+        self
+    }
+    /// Bind an approval decision to the exact execution action it reviews.
+    #[must_use]
+    pub fn with_approved_action(mut self, action: AuthorizationAction) -> Self {
+        self.approved_action = Some(action);
         self
     }
     #[must_use]
@@ -82,6 +98,11 @@ impl AuthorizationRequest {
     #[must_use]
     pub fn accepted_work_decision_id(&self) -> Option<&AuthorizationDecisionId> {
         self.accepted_work_decision_id.as_ref()
+    }
+
+    #[must_use]
+    pub const fn approved_action(&self) -> Option<AuthorizationAction> {
+        self.approved_action
     }
 
     pub(crate) fn validate(&self) -> Result<(), DomainError> {

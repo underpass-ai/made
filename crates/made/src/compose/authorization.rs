@@ -31,11 +31,12 @@ pub(super) struct AuthorizationWiring {
 }
 
 impl AuthorizationWiring {
-    pub(super) fn protect_memory(
+    pub(super) fn protect_runtime(
         &self,
         reader: Arc<dyn made_core::ports::MemoryReaderPort>,
         stream: Arc<made_app::services::SessionStream>,
     ) -> Arc<dyn made_core::ports::MemoryReaderPort> {
+        stream.authorize_appends(Arc::new(self.authorize.clone().for_ceremony_appends()));
         Arc::new(made_app::authorization::AuthorizedMemoryReader::new(
             reader,
             self.authorize.clone(),

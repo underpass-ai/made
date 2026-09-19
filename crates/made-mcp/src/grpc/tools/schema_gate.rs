@@ -15,6 +15,37 @@
 
 use serde_json::{json, Map, Value};
 
+use super::artifact_requests::{
+    build_abort_artifact_upload_request, build_begin_artifact_upload_request,
+    build_commit_artifact_upload_request, build_get_artifact_request, build_list_artifacts_request,
+    build_put_artifact_chunk_request, build_read_artifact_chunk_request,
+    build_tombstone_artifact_request,
+};
+use super::ceremony_history_requests::{
+    build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
+    build_pull_ceremony_events_request, build_read_ceremony_events_request,
+    build_stream_ceremony_request,
+};
+use super::ceremony_requests::{
+    build_accept_child_completion_request, build_apply_ceremony_transition_request,
+    build_approve_ceremony_guard_request, build_assert_ceremony_reason_request,
+    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
+    build_collect_ceremony_evidence_request, build_complete_ceremony_step_request,
+    build_defer_ceremony_guard_request, build_prepare_ceremony_children_request,
+    build_recover_ceremony_children_request, build_request_ceremony_intervention_request,
+    build_respond_to_ceremony_intervention_request, build_run_ceremony_step_request,
+    build_start_ceremony_request, build_start_published_ceremony_request,
+};
+use super::design_ceremony_request::build_design_ceremony_request;
+use super::general_requests::{
+    build_create_council_request, build_delete_contract_request, build_delete_council_request,
+    build_deliberate_request, build_get_deliberation_result_request, build_orchestrate_request,
+    build_process_trigger_event_request, build_register_agent_request,
+    build_register_contract_request, build_run_ceremony_request,
+    build_run_council_decision_request, build_stream_deliberation_request,
+    build_unregister_agent_request,
+};
+
 use super::lifecycle_requests::{
     build_cancel_ceremony_request, build_enforce_ceremony_deadlines_request,
     build_pause_ceremony_request, build_resume_ceremony_request,
@@ -214,6 +245,9 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_revoke_authorization_grant" => {
             rendered(super::authorization_requests::revoke(arguments))
         }
+        "made_approve_authorization_operation" => {
+            rendered(super::authorization_requests::approval(arguments))
+        }
         "made_list_authorization_decisions" => {
             rendered(super::authorization_requests::decisions(arguments))
         }
@@ -278,27 +312,3 @@ fn every_required_field_reaches_the_request() {
         }
     }
 }
-
-use super::{
-    build_abort_artifact_upload_request, build_accept_child_completion_request,
-    build_apply_ceremony_transition_request, build_approve_ceremony_guard_request,
-    build_assert_ceremony_reason_request, build_begin_artifact_upload_request,
-    build_claim_ceremony_step_request, build_close_ceremony_intervention_request,
-    build_collect_ceremony_evidence_request, build_commit_artifact_upload_request,
-    build_complete_ceremony_step_request, build_create_council_request,
-    build_defer_ceremony_guard_request, build_delete_contract_request,
-    build_delete_council_request, build_deliberate_request, build_design_ceremony_request,
-    build_generate_ceremony_report_request, build_get_artifact_request,
-    build_get_ceremony_transcript_request, build_get_deliberation_result_request,
-    build_list_artifacts_request, build_orchestrate_request,
-    build_prepare_ceremony_children_request, build_process_trigger_event_request,
-    build_pull_ceremony_events_request, build_put_artifact_chunk_request,
-    build_read_artifact_chunk_request, build_read_ceremony_events_request,
-    build_recover_ceremony_children_request, build_register_agent_request,
-    build_register_contract_request, build_request_ceremony_intervention_request,
-    build_respond_to_ceremony_intervention_request, build_run_ceremony_request,
-    build_run_ceremony_step_request, build_run_council_decision_request,
-    build_start_ceremony_request, build_start_published_ceremony_request,
-    build_stream_ceremony_request, build_stream_deliberation_request,
-    build_tombstone_artifact_request, build_unregister_agent_request,
-};

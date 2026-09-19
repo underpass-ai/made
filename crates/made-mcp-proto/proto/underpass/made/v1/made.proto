@@ -254,6 +254,7 @@ service MadeService {
   // ---- Authorization policy administration ----------------------------
 
   rpc GetAuthorizationPolicy(GetAuthorizationPolicyRequest) returns (GetAuthorizationPolicyResponse);
+  rpc ApproveAuthorizationOperation(ApproveAuthorizationOperationRequest) returns (ApproveAuthorizationOperationResponse);
   rpc IssueAuthorizationGrant(IssueAuthorizationGrantRequest) returns (IssueAuthorizationGrantResponse);
   rpc RevokeAuthorizationGrant(RevokeAuthorizationGrantRequest) returns (RevokeAuthorizationGrantResponse);
   rpc ListAuthorizationDecisions(ListAuthorizationDecisionsRequest) returns (ListAuthorizationDecisionsResponse);
@@ -2562,6 +2563,16 @@ message GetAuthorizationPolicyResponse {
   AuthorizationPolicyRecord policy = 1;
 }
 
+message ApproveAuthorizationOperationRequest {
+  string approval_action = 1;
+  string execution_action = 2;
+  AuthorizationScope scope = 3;
+  string target_digest = 4;
+}
+message ApproveAuthorizationOperationResponse {
+  AuthorizationDecisionRecord decision = 1;
+}
+
 message IssueAuthorizationGrantRequest {
   string grant_id = 1;
   string grantee_id = 2;
@@ -2601,6 +2612,7 @@ message AuthorizationDecisionRecord {
   google.protobuf.Timestamp decided_at = 12;
   google.protobuf.Timestamp valid_until = 13;
   optional string accepted_work_decision_id = 14;
+  optional string approved_action = 15;
 }
 
 message ListAuthorizationDecisionsRequest {

@@ -19,6 +19,7 @@ mod progress_checkpoint;
 mod reports;
 mod request_context;
 
+pub use authorization::authorization_target_digest;
 pub use ceremony_search_page::CeremonySearchPage;
 pub use ceremony_tree::CeremonyTree;
 pub use ceremony_tree_node::CeremonyTreeNode;

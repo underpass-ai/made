@@ -22,10 +22,16 @@ pub(super) fn authority_is_valid(
                 AuthorizationAction::RunCeremony
                     | AuthorizationAction::RunCeremonyStep
                     | AuthorizationAction::PrepareCeremonyChildren
+                    | AuthorizationAction::ApplyCeremonyTransition
                     | AuthorizationAction::RecoverCeremonyChildren
             ),
             AuthorizationAction::CompleteCeremonyStep => {
-                accepted.request().action() == AuthorizationAction::ClaimCeremonyStep
+                matches!(
+                    accepted.request().action(),
+                    AuthorizationAction::ClaimCeremonyStep
+                        | AuthorizationAction::RunCeremonyStep
+                        | AuthorizationAction::RunCeremony
+                )
             }
             _ => false,
         }

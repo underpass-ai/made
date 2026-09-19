@@ -19,11 +19,31 @@ An authorized policy administrator can resolve `decision_id` through the paged
 to the admission that originally accepted the work, even if its grant has
 subsequently been revoked.
 
+Separation rules are exercised through `ApproveAuthorizationOperation` (or
+`made_approve_authorization_operation`). The approver supplies the configured
+approval action, execution action, authoritative scope, and the SHA-256 digest
+of the exact execution request. The resulting decision records
+`approved_action`; the executor sends its id in
+`x-made-approval-decision-id`, or in MCP
+`_meta.made_approval_decision_id`. Admission requires a live approval grant,
+the configured action pair, the same target and covered scope, and a different
+principal id. Reusing an approval for another target, action, or principal is
+recorded as a denial before the domain operation runs.
+
 An exact `CompleteCeremonyStep` retry recovers the accepted response from the
 sealed journal, including its context writes and any reopened iteration. It
 does not append another result or include work admitted after that response.
 The claim fence, result, actor kind and original authenticated principal must
 match. A different result for the same completed claim is refused.
+
+Long-running `RunCeremony` and `RunCeremonyStep` calls renew admission evidence
+before sealing a result after the initial decision expires. This completion
+points to the decision sealed with its original claim and can drain after a
+grant is revoked. A one-shot ceremony rechecks current grants before every new
+claim; revocation stops the next step even while the initial decision remains
+live. Other mutations after expiry require a current grant. The domain event
+retains its observation time; the journal fact records its renewed admission
+time when that is later, so authorization is never backdated.
 
 Public history keeps its fields flat for transport consumers. To reconstruct a
 schema-3 domain `AuditRecord` for independent verification, remove

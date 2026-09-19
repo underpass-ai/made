@@ -49,7 +49,8 @@ pub use artifact::{
 };
 pub(super) use attributes::attributes_from_struct;
 pub use authorization::{
-    authorization_decision_to_proto, authorization_grant_from_proto, authorization_policy_to_proto,
+    authorization_action_from_proto, authorization_decision_to_proto,
+    authorization_grant_from_proto, authorization_policy_to_proto, authorization_scope_from_proto,
 };
 pub use budget::{
     budget_balance_to_proto, budget_limits_from_proto, budget_reservation_estimate_from_proto,
