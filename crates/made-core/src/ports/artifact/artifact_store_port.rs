@@ -19,6 +19,11 @@ pub trait ArtifactStorePort: Send + Sync {
         &self,
         request: PutArtifactChunk,
     ) -> Result<ArtifactUploadStatus, ArtifactStoreError>;
+    /// Resolve an upload to the artifact identity sealed in its durable manifest.
+    async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError>;
     async fn commit_upload(
         &self,
         upload_id: &ArtifactUploadId,

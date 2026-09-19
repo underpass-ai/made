@@ -257,6 +257,33 @@ impl ArtifactStorePort for PostgresArtifactStore {
         Ok(status(request.upload_id, new_offset))
     }
 
+    async fn artifact_id_for_upload(
+        &self,
+        upload_id: &ArtifactUploadId,
+    ) -> Result<ArtifactId, ArtifactStoreError> {
+        let row = sqlx::query("SELECT request FROM artifact_uploads WHERE upload_id = $1")
+            .bind(upload_id.as_str())
+            .fetch_optional(self.pool.inner())
+            .await
+            .map_err(storage_failure)?
+            .ok_or(ArtifactStoreError::NotFound)?;
+        let request: BeginArtifactUpload = serde_json::from_value(
+            row.try_get::<JsonValue, _>("request")
+                .map_err(storage_failure)?,
+        )
+        .map_err(|_| ArtifactStoreError::StorageUnavailable)?;
+        request.requested_artifact_id.map_or_else(
+            || {
+                ArtifactId::new(format!(
+                    "artifact-{}",
+                    upload_id.as_str().trim_start_matches("upload-")
+                ))
+                .map_err(Into::into)
+            },
+            Ok,
+        )
+    }
+
     async fn commit_upload(
         &self,
         upload_id: &ArtifactUploadId,

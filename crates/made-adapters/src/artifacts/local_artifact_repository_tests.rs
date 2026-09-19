@@ -48,6 +48,43 @@ fn staged(
 }
 
 #[test]
+fn upload_manifest_resolves_its_authoritative_artifact_identity() {
+    let directory = TempDir::new().unwrap();
+    let repository = LocalArtifactRepository::open(directory.path()).unwrap();
+    let requested = ArtifactId::new("artifact-requested").unwrap();
+    let requested_upload = repository
+        .begin(request(
+            b"requested",
+            "requested-id",
+            Some(requested.clone()),
+        ))
+        .unwrap();
+    assert_eq!(
+        repository
+            .artifact_id_for_upload(&requested_upload.upload_id)
+            .unwrap(),
+        requested
+    );
+
+    let generated_upload = repository
+        .begin(request(b"generated", "generated-id", None))
+        .unwrap();
+    assert_eq!(
+        repository
+            .artifact_id_for_upload(&generated_upload.upload_id)
+            .unwrap()
+            .as_str(),
+        format!(
+            "artifact-{}",
+            generated_upload
+                .upload_id
+                .as_str()
+                .trim_start_matches("upload-")
+        )
+    );
+}
+
+#[test]
 fn every_commit_phase_is_recoverable_after_an_injected_failure() {
     for phase in ["blob_published", "record_published", "manifest_published"] {
         let directory = TempDir::new().unwrap();
