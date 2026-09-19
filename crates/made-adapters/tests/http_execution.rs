@@ -1,6 +1,6 @@
 #![cfg(feature = "_http")]
 
-mod c6_execution_support;
+mod execution_support;
 
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
@@ -8,7 +8,7 @@ use std::sync::{
 };
 use std::time::Duration;
 
-use c6_execution_support::{request, scratch};
+use execution_support::{request, scratch};
 use made_adapters::connectors::{HttpExecutionConnector, HttpOperationResponse};
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,

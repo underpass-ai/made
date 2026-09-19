@@ -1,6 +1,6 @@
 #![cfg(target_os = "linux")]
-mod c6_execution_support;
-use c6_execution_support::{request, scratch};
+mod execution_support;
+use execution_support::{request, scratch};
 use made_adapters::execution::{OciExecutionConfig, OciExecutionConnector};
 use made_core::{
     ports::{

@@ -1,10 +1,10 @@
-mod c6_execution_support;
+mod execution_support;
 
 use std::path::Path;
 use std::process::{Command, Stdio};
 use std::sync::Arc;
 
-use c6_execution_support::{request, scratch};
+use execution_support::{request, scratch};
 use made_adapters::connectors::GitExecutionConnector;
 use made_core::ports::{
     CeremonyExecutionConnectorOutcome as Outcome, CeremonyExecutionConnectorPort,
@@ -20,10 +20,10 @@ fn git(repository: &Path, args: &[&str], input: Option<&[u8]>) -> String {
         .env("PATH", "/usr/bin:/bin")
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
-        .env("GIT_AUTHOR_NAME", "C6")
-        .env("GIT_AUTHOR_EMAIL", "c6@localhost")
-        .env("GIT_COMMITTER_NAME", "C6")
-        .env("GIT_COMMITTER_EMAIL", "c6@localhost")
+        .env("GIT_AUTHOR_NAME", "Execution test")
+        .env("GIT_AUTHOR_EMAIL", "execution-test@localhost")
+        .env("GIT_COMMITTER_NAME", "Execution test")
+        .env("GIT_COMMITTER_EMAIL", "execution-test@localhost")
         .arg("--git-dir")
         .arg(repository)
         .args(args)
