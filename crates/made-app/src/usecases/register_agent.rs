@@ -13,6 +13,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::error::DomainError;
 use made_core::ports::{AgentDescriptor, AgentFactoryPort, AgentRegistryPort};
 use made_core::value_objects::AgentId;
@@ -50,7 +51,11 @@ impl RegisterAgentUseCase {
         let specialty = descriptor.specialty.clone();
 
         let agent = self.factory.create(descriptor.clone()).await?;
-        self.registry.register_described(descriptor, agent).await?;
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        self.registry
+            .register_described_authorized(descriptor, agent, authorization)
+            .await?;
 
         info!(
             agent_id = id.as_str(),

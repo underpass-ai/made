@@ -128,6 +128,7 @@ where
         entry: ArtifactBackupEntry,
     ) -> Result<(), ArtifactStoreError> {
         let reference = &entry.record.artifact;
+        let artifact_authorization = entry.record.authorization.clone();
         let key = ArtifactIdempotencyKey::new(format!(
             "backup-v1:{}:{}",
             reference.artifact_id(),
@@ -167,18 +168,25 @@ where
                 .await?;
             offset = status.next_offset.get();
         }
-        let restored = self.store.commit_upload(&upload.upload_id).await?;
+        let restored = self
+            .store
+            .commit_upload_authorized(&upload.upload_id, artifact_authorization)
+            .await?;
         if restored != *reference {
             return Err(ArtifactStoreError::InvalidBackup);
         }
         if let Some(tombstone) = entry.record.tombstone {
+            let authorization = tombstone.authorization.clone();
             self.store
-                .tombstone(TombstoneArtifact {
-                    artifact_id: reference.artifact_id().clone(),
-                    actor: tombstone.actor,
-                    policy: tombstone.policy,
-                    retired_at: tombstone.retired_at,
-                })
+                .tombstone_authorized(
+                    TombstoneArtifact {
+                        artifact_id: reference.artifact_id().clone(),
+                        actor: tombstone.actor,
+                        policy: tombstone.policy,
+                        retired_at: tombstone.retired_at,
+                    },
+                    authorization,
+                )
                 .await?;
         }
         Ok(())

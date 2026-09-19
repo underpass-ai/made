@@ -6,7 +6,7 @@ use made_core::ports::{
     PutArtifactChunk, ReadArtifactChunk, TombstoneArtifact, ARTIFACT_MAX_BYTES,
     ARTIFACT_MAX_CHUNK_BYTES,
 };
-use made_core::value_objects::{ArtifactId, ArtifactRef};
+use made_core::value_objects::{ArtifactId, ArtifactRef, AuthorizationEvidence};
 use serde_json::Value as JsonValue;
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
@@ -288,6 +288,14 @@ impl ArtifactStorePort for PostgresArtifactStore {
         &self,
         upload_id: &ArtifactUploadId,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
+        self.commit_upload_authorized(upload_id, None).await
+    }
+
+    async fn commit_upload_authorized(
+        &self,
+        upload_id: &ArtifactUploadId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactRef, ArtifactStoreError> {
         let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
         let (request, state, artifact) = Self::locked_upload(&mut tx, upload_id).await?;
         if state == "committed" {
@@ -344,6 +352,7 @@ impl ArtifactStorePort for PostgresArtifactStore {
             ArtifactRecord {
                 artifact: artifact.clone(),
                 tombstone: None,
+                authorization,
             }
         };
         let record_json =
@@ -441,6 +450,14 @@ impl ArtifactStorePort for PostgresArtifactStore {
         &self,
         command: TombstoneArtifact,
     ) -> Result<ArtifactTombstone, ArtifactStoreError> {
+        self.tombstone_authorized(command, None).await
+    }
+
+    async fn tombstone_authorized(
+        &self,
+        command: TombstoneArtifact,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<ArtifactTombstone, ArtifactStoreError> {
         let mut tx = self.pool.inner().begin().await.map_err(storage_failure)?;
         let row =
             sqlx::query("SELECT body FROM artifact_records WHERE artifact_id = $1 FOR UPDATE")
@@ -457,9 +474,10 @@ impl ArtifactStorePort for PostgresArtifactStore {
             policy: command.policy,
             retired_at: command.retired_at,
             digest: record.artifact.digest().clone(),
+            authorization,
         };
         if let Some(existing) = &record.tombstone {
-            return if existing == &tombstone {
+            return if existing.same_retirement_as(&tombstone) {
                 Ok(existing.clone())
             } else {
                 Err(ArtifactStoreError::IdempotencyConflict)

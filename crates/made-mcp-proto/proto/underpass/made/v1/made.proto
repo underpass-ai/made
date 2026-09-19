@@ -2298,11 +2298,13 @@ message ArtifactTombstoneRecord {
   string policy = 2;
   google.protobuf.Timestamp retired_at = 3;
   string digest = 4;
+  CeremonyAuthorizationEvidence authorization = 5;
 }
 
 message ArtifactRecord {
   ArtifactReference artifact = 1;
   optional ArtifactTombstoneRecord tombstone = 2;
+  CeremonyAuthorizationEvidence authorization = 3;
 }
 
 message ArtifactUploadStatus {
@@ -2469,6 +2471,7 @@ message ListPendingBudgetReservationsResponse {
 message CouncilJournalRecord {
   uint64 position = 1;
   string event_json = 2;
+  CeremonyAuthorizationEvidence authorization = 3;
 }
 message CouncilJournalLease {
   string consumer = 1;

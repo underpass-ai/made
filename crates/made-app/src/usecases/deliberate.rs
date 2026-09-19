@@ -22,6 +22,7 @@
 
 use std::sync::Arc;
 
+use crate::services::AuthorizationOperationScope;
 use made_core::entities::{
     Council, Deliberation, Proposal, Task, TaskConstraints, TaskMetadata, ValidationOutcome,
     ValidatorReport,
@@ -201,12 +202,16 @@ impl DeliberateUseCase {
         completed_at: OffsetDateTime,
         discrimination: Option<Discrimination>,
     ) -> Result<DeliberateOutput, DomainError> {
-        self.repository.save(&deliberation).await?;
+        let authorization =
+            AuthorizationOperationScope::current().map(|operation| operation.evidence().clone());
+        self.repository
+            .save_authorized(&deliberation, authorization.clone())
+            .await?;
 
         let duration = deliberation.duration().unwrap_or_default();
 
         self.statistics
-            .record_deliberation(deliberation.specialty(), duration)
+            .record_deliberation_authorized(deliberation.specialty(), duration, authorization)
             .await?;
         // The duration is recorded for every completed run, before the
         // winner is picked, so a `NoValidProposal` is still timed.

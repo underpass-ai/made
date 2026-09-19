@@ -57,7 +57,11 @@ impl ArtifactService {
         &self,
         upload_id: &ArtifactUploadId,
     ) -> Result<ArtifactRef, ArtifactStoreError> {
-        self.store.commit_upload(upload_id).await
+        let authorization = crate::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
+        self.store
+            .commit_upload_authorized(upload_id, authorization)
+            .await
     }
 
     pub async fn abort_upload(
@@ -128,7 +132,11 @@ impl ArtifactService {
         &self,
         command: TombstoneArtifact,
     ) -> Result<ArtifactTombstone, ArtifactStoreError> {
-        self.store.tombstone(command).await
+        let authorization = crate::services::AuthorizationOperationScope::current()
+            .map(|operation| operation.evidence().clone());
+        self.store
+            .tombstone_authorized(command, authorization)
+            .await
     }
 
     /// Persist a generated report through the same verified chunk protocol.

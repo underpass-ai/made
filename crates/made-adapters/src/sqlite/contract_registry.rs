@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use made_core::entities::CouncilJournalEvent;
 use made_core::error::DomainError;
 use made_core::ports::ContractRegistryPort;
-use made_core::value_objects::{OutputContract, OutputContractId};
+use made_core::value_objects::{AuthorizationEvidence, OutputContract, OutputContractId};
 
 #[derive(Debug, Clone)]
 pub struct SqliteContractRegistry {
@@ -19,6 +19,13 @@ impl SqliteContractRegistry {
 #[async_trait]
 impl ContractRegistryPort for SqliteContractRegistry {
     async fn register(&self, contract: OutputContract) -> Result<(), DomainError> {
+        self.register_authorized(contract, None).await
+    }
+    async fn register_authorized(
+        &self,
+        contract: OutputContract,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .insert(
                 Table::CouncilContracts,
@@ -26,6 +33,7 @@ impl ContractRegistryPort for SqliteContractRegistry {
                 contract.clone(),
                 "contract",
                 CouncilJournalEvent::ContractRegistered(contract),
+                authorization,
             )
             .await
     }
@@ -38,12 +46,20 @@ impl ContractRegistryPort for SqliteContractRegistry {
         self.store.list(Table::CouncilContracts).await
     }
     async fn delete(&self, id: &OutputContractId) -> Result<(), DomainError> {
+        self.delete_authorized(id, None).await
+    }
+    async fn delete_authorized(
+        &self,
+        id: &OutputContractId,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .delete(
                 Table::CouncilContracts,
                 id.to_string(),
                 "contract",
                 CouncilJournalEvent::ContractDeleted(id.clone()),
+                authorization,
             )
             .await
     }

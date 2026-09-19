@@ -6,7 +6,7 @@ use async_trait::async_trait;
 use made_core::entities::{Council, CouncilJournalEvent};
 use made_core::error::DomainError;
 use made_core::ports::CouncilRegistryPort;
-use made_core::value_objects::Specialty;
+use made_core::value_objects::{AuthorizationEvidence, Specialty};
 
 #[derive(Debug, Clone)]
 pub struct SqliteCouncilRegistry {
@@ -21,6 +21,13 @@ impl SqliteCouncilRegistry {
 #[async_trait]
 impl CouncilRegistryPort for SqliteCouncilRegistry {
     async fn register(&self, council: Council) -> Result<(), DomainError> {
+        self.register_authorized(council, None).await
+    }
+    async fn register_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .insert(
                 Table::Councils,
@@ -28,10 +35,18 @@ impl CouncilRegistryPort for SqliteCouncilRegistry {
                 council.clone(),
                 "council",
                 CouncilJournalEvent::CouncilRegistered(council),
+                authorization,
             )
             .await
     }
     async fn replace(&self, council: Council) -> Result<(), DomainError> {
+        self.replace_authorized(council, None).await
+    }
+    async fn replace_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .blocking(move |engine| {
                 let mut tx = engine.begin_write()?;
@@ -44,7 +59,11 @@ impl CouncilRegistryPort for SqliteCouncilRegistry {
                     Key::Str(key),
                     &encode(&council, "replace council")?,
                 )?;
-                append(tx.as_mut(), CouncilJournalEvent::CouncilReplaced(council))?;
+                append(
+                    tx.as_mut(),
+                    CouncilJournalEvent::CouncilReplaced(council),
+                    authorization,
+                )?;
                 tx.commit()
             })
             .await
@@ -58,12 +77,20 @@ impl CouncilRegistryPort for SqliteCouncilRegistry {
         self.store.list(Table::Councils).await
     }
     async fn delete(&self, specialty: &Specialty) -> Result<(), DomainError> {
+        self.delete_authorized(specialty, None).await
+    }
+    async fn delete_authorized(
+        &self,
+        specialty: &Specialty,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         self.store
             .delete(
                 Table::Councils,
                 specialty.to_string(),
                 "council",
                 CouncilJournalEvent::CouncilDeleted(specialty.clone()),
+                authorization,
             )
             .await
     }

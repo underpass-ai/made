@@ -7,6 +7,8 @@ use made_core::value_objects::{
 use made_proto::v1 as pb;
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
+use super::ceremony_authorization::evidence_to_proto;
+
 pub(crate) fn record_to_proto(
     record: &CouncilJournalRecord,
 ) -> Result<pb::CouncilJournalRecord, DomainError> {
@@ -17,6 +19,7 @@ pub(crate) fn record_to_proto(
                 reason: "cannot encode council journal event",
             }
         })?,
+        authorization: record.authorization().map(evidence_to_proto).transpose()?,
     })
 }
 pub(crate) fn lease_to_proto(

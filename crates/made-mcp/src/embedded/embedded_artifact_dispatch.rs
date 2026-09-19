@@ -226,19 +226,32 @@ fn artifact_provenance(value: &ArtifactProvenance) -> Value {
 }
 
 fn artifact_record(record: &ArtifactRecord) -> Value {
-    json!({
+    let mut value = json!({
         "artifact": artifact_ref(&record.artifact),
         "tombstone": record.tombstone.as_ref().map(artifact_tombstone),
-    })
+    });
+    insert_authorization(&mut value, record.authorization.as_ref());
+    value
 }
 
 fn artifact_tombstone(value: &ArtifactTombstone) -> Value {
-    json!({
+    let mut rendered = json!({
         "actor": value.actor.as_str(),
         "policy": value.policy.as_str(),
         "retired_at": format_time(value.retired_at),
         "digest": value.digest.as_str(),
-    })
+    });
+    insert_authorization(&mut rendered, value.authorization.as_ref());
+    rendered
+}
+
+fn insert_authorization(
+    value: &mut Value,
+    authorization: Option<&made_core::value_objects::AuthorizationEvidence>,
+) {
+    if let (Some(object), Some(authorization)) = (value.as_object_mut(), authorization) {
+        object.insert("authorization".to_owned(), json!(authorization));
+    }
 }
 
 fn object(value: &Value) -> Result<&Map<String, Value>, ToolError> {

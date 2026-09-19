@@ -10,7 +10,7 @@ use async_trait::async_trait;
 use made_core::entities::{Council, CouncilJournalEvent};
 use made_core::error::DomainError;
 use made_core::ports::CouncilRegistryPort;
-use made_core::value_objects::Specialty;
+use made_core::value_objects::{AuthorizationEvidence, Specialty};
 use serde_json::Value as JsonValue;
 use sqlx::Row;
 
@@ -38,6 +38,13 @@ impl PostgresCouncilRegistry {
 #[async_trait]
 impl CouncilRegistryPort for PostgresCouncilRegistry {
     async fn register(&self, council: Council) -> Result<(), DomainError> {
+        self.register_authorized(council, None).await
+    }
+    async fn register_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(&council).map_err(|e| serde_to_domain(&e, "register"))?;
@@ -61,6 +68,7 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::CouncilRegistered(council),
+            authorization,
         )
         .await?;
         tx.commit()
@@ -69,6 +77,13 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
     }
 
     async fn replace(&self, council: Council) -> Result<(), DomainError> {
+        self.replace_authorized(council, None).await
+    }
+    async fn replace_authorized(
+        &self,
+        council: Council,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let body: JsonValue =
             serde_json::to_value(&council).map_err(|e| serde_to_domain(&e, "replace"))?;
@@ -94,6 +109,7 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::CouncilReplaced(council),
+            authorization,
         )
         .await?;
         tx.commit()
@@ -126,6 +142,13 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
     }
 
     async fn delete(&self, specialty: &Specialty) -> Result<(), DomainError> {
+        self.delete_authorized(specialty, None).await
+    }
+    async fn delete_authorized(
+        &self,
+        specialty: &Specialty,
+        authorization: Option<AuthorizationEvidence>,
+    ) -> Result<(), DomainError> {
         let mut tx = super::council_journal_store::begin(&self.pool).await?;
         let result = sqlx::query("DELETE FROM councils WHERE specialty = $1")
             .bind(specialty.as_str())
@@ -138,6 +161,7 @@ impl CouncilRegistryPort for PostgresCouncilRegistry {
         super::council_journal_store::append(
             &mut tx,
             CouncilJournalEvent::CouncilDeleted(specialty.clone()),
+            authorization,
         )
         .await?;
         tx.commit()
