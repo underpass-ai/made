@@ -9,7 +9,10 @@ use made_client::v1::{
 use made_client::{ClientConfig, MadeClient, MadeClientError, ProgressCheckpoint, RequestContext};
 use serde_json::json;
 
-use crate::{render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat, ReceiptCommand};
+use crate::{
+    authorization_execute, render, Args, ArtifactCommand, BudgetCommand, Command, OutputFormat,
+    ReceiptCommand,
+};
 
 pub async fn run(args: Args) -> Result<(), MadeClientError> {
     let client = connect_client(&args).await?;
@@ -72,6 +75,9 @@ pub async fn run(args: Args) -> Result<(), MadeClientError> {
         Command::Artifact { command } => artifact(&client, command, args.output).await?,
         Command::Budget { command } => budget(&client, command, args.output).await?,
         Command::Receipt { command } => receipt(&client, command, args.output).await?,
+        Command::Authorization { command } => {
+            authorization_execute::execute(&client, command, args.output).await?;
+        }
         Command::Report {
             ceremony_ids,
             title,

@@ -1,6 +1,9 @@
 use clap::Parser;
 
-use crate::{Args, ArtifactCommand, BudgetCommand, Command, OutputFormat, ReceiptCommand};
+use crate::{
+    Args, ArtifactCommand, AuthorizationCommand, BudgetCommand, Command, OutputFormat,
+    ReceiptCommand,
+};
 
 #[test]
 fn watch_and_artifact_export_arguments_are_unambiguous() {
@@ -139,4 +142,42 @@ fn receipt_recovery_is_explicitly_bounded_and_cursor_resumable() {
     assert!(
         Args::try_parse_from(["made-console", "receipt", "recovery", "--limit", "501",]).is_err()
     );
+}
+
+#[test]
+fn authorization_issue_uses_typed_scope_without_a_principal_override() {
+    let args = Args::try_parse_from([
+        "made-console",
+        "authorization",
+        "issue",
+        "grant-7",
+        "worker-7",
+        "--actions",
+        "get_ceremony_instance,read_ceremony_events",
+        "--scope",
+        "ceremony-tree",
+        "--scope-id",
+        "root-7",
+        "--valid-from",
+        "2026-09-19T10:00:00Z",
+    ])
+    .unwrap();
+    assert!(matches!(
+        args.command,
+        Command::Authorization {
+            command: AuthorizationCommand::Issue { actions, scope, .. },
+        } if actions.len() == 2 && scope.scope_id.as_deref() == Some("root-7")
+    ));
+}
+
+#[test]
+fn authorization_decision_pages_enforce_the_public_limit() {
+    assert!(Args::try_parse_from([
+        "made-console",
+        "authorization",
+        "decisions",
+        "--limit",
+        "501",
+    ])
+    .is_err());
 }

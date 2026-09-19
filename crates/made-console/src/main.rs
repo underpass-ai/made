@@ -2,6 +2,9 @@ use clap::Parser;
 
 use args::Args;
 use artifact_command::ArtifactCommand;
+use authorization_command::AuthorizationCommand;
+use authorization_scope_args::AuthorizationScopeArgs;
+use authorization_scope_kind::AuthorizationScopeKind;
 use budget_command::BudgetCommand;
 use command::Command;
 use output_format::OutputFormat;
@@ -9,6 +12,11 @@ use receipt_command::ReceiptCommand;
 
 mod args;
 mod artifact_command;
+mod authorization_command;
+mod authorization_execute;
+mod authorization_render;
+mod authorization_scope_args;
+mod authorization_scope_kind;
 mod budget_command;
 mod command;
 mod execute;
