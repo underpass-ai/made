@@ -267,9 +267,20 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         | CeremonyEvent::StateDeadlineExceeded(_)
         | CeremonyEvent::StepDeadlineExceeded(_)
         | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
-        CeremonyEvent::ExecutionReceiptLinked(linked) => {
-            format!("execution_receipt:{}", linked.link.receipt_id())
+        CeremonyEvent::ExecutionReceiptLinked(linked) => execution_receipt_about(&linked.link),
+    }
+}
+
+fn execution_receipt_about(link: &made_core::value_objects::ExecutionReceiptLink) -> String {
+    match link.kind() {
+        made_core::value_objects::ExecutionReceiptLinkKind::Direct => {
+            format!("execution_receipt:{}", link.receipt_id())
         }
+        made_core::value_objects::ExecutionReceiptLinkKind::Adopted => format!(
+            "execution_receipt_adoption:{}:{}",
+            link.receipt_id(),
+            link.applied_claim_fence().as_str()
+        ),
     }
 }
 
@@ -351,3 +362,7 @@ fn step_about(
         .unwrap_or_default();
     format!("step:{step_id}{visit}:state_iteration:{state_iteration}:iteration:{iteration}:attempt:{attempt}")
 }
+
+#[cfg(test)]
+#[path = "session_facts_tests.rs"]
+mod tests;

@@ -22,6 +22,15 @@ const PG_PASSWORD: &str = "made";
 const PG_DB: &str = "made";
 
 pub async fn start() -> (PostgresPool, testcontainers::ContainerAsync<GenericImage>) {
+    let (pool, _url, container) = start_with_url().await;
+    (pool, container)
+}
+
+pub async fn start_with_url() -> (
+    PostgresPool,
+    String,
+    testcontainers::ContainerAsync<GenericImage>,
+) {
     let container = GenericImage::new(PG_IMAGE, PG_TAG)
         .with_exposed_port(5432_u16.tcp())
         .with_wait_for(WaitFor::message_on_stderr(
@@ -39,7 +48,7 @@ pub async fn start() -> (PostgresPool, testcontainers::ContainerAsync<GenericIma
         .expect("host port");
     let url = format!("postgres://{PG_USER}:{PG_PASSWORD}@127.0.0.1:{port}/{PG_DB}");
 
-    let mut cfg = PostgresConfig::from_url(url);
+    let mut cfg = PostgresConfig::from_url(url.clone());
     cfg.acquire_timeout = Duration::from_secs(10);
 
     let mut last_err = None;
@@ -49,7 +58,7 @@ pub async fn start() -> (PostgresPool, testcontainers::ContainerAsync<GenericIma
                 pool.run_migrations()
                     .await
                     .expect("migrations must apply on a fresh database");
-                return (pool, container);
+                return (pool, url, container);
             }
             Err(err) => {
                 last_err = Some(err);

@@ -19,7 +19,7 @@ workspace = true
 container-tests = ["dep:testcontainers"]
 
 [dependencies]
-made-core = { workspace = true }
+made-core = { workspace = true, features = ["conformance"] }
 made-app = { workspace = true }
 made-adapters = { workspace = true, features = [
     "grpc",
@@ -56,6 +56,7 @@ rcgen = { version = "0.13", features = ["pem"] }
 # than dev-dependencies of its `tests/`.
 time = { workspace = true }
 serde_json = { workspace = true }
+sqlx = { workspace = true }
 
 [dev-dependencies]
 # Both backends at once, on purpose: the parity test is the only place

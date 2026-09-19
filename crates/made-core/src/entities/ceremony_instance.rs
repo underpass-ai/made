@@ -157,6 +157,9 @@ pub struct CeremonyInstance {
     late_step_results: BTreeMap<StepClaimFence, LateStepResult>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     execution_receipt_links: BTreeMap<ExecutionOperationId, ExecutionReceiptLink>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    execution_receipt_adoptions:
+        BTreeMap<ExecutionOperationId, BTreeMap<StepClaimFence, ExecutionReceiptLink>>,
 }
 
 impl CeremonyInstance {
@@ -335,6 +338,24 @@ impl CeremonyInstance {
         operation_id: &ExecutionOperationId,
     ) -> Option<&ExecutionReceiptLink> {
         self.execution_receipt_links.get(operation_id)
+    }
+
+    #[must_use]
+    pub fn execution_receipt_adoptions(
+        &self,
+    ) -> &BTreeMap<ExecutionOperationId, BTreeMap<StepClaimFence, ExecutionReceiptLink>> {
+        &self.execution_receipt_adoptions
+    }
+
+    #[must_use]
+    pub fn execution_receipt_adoption(
+        &self,
+        operation_id: &ExecutionOperationId,
+        applied_claim_fence: &StepClaimFence,
+    ) -> Option<&ExecutionReceiptLink> {
+        self.execution_receipt_adoptions
+            .get(operation_id)
+            .and_then(|adoptions| adoptions.get(applied_claim_fence))
     }
 
     /// Finished iterations before the current record, in execution order.
