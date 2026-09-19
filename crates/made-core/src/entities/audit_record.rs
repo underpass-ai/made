@@ -8,40 +8,49 @@
 //!
 //! Since schema version 2 the record carries the event itself, payload
 //! included, and the digest covers it: the chain now verifies what
-//! happened, not only that something did.
+//! happened, not only that something did. Version 3 additionally seals
+//! the typed authorization decision that admitted the mutation.
 
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use time::{format_description::well_known::Rfc3339, OffsetDateTime};
 
-use crate::entities::{AuditFact, CeremonyEvent};
+use crate::entities::{AuditFact, AuthorizedAuditFact, CeremonyEvent};
 use crate::error::DomainError;
 use crate::value_objects::{
-    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, CeremonyId, CeremonyName,
-    CeremonyVersion, EventId, EventSchemaVersion,
+    AuditActor, AuditEventType, AuditRecordHash, AuditSequence, AuthorizationEvidence, CeremonyId,
+    CeremonyName, CeremonyVersion, EventId, EventSchemaVersion,
 };
 
+mod audit_record_serde;
 mod audit_record_wire;
-
-use audit_record_wire::AuditRecordWire;
 
 /// Domain separator of the first record shape, which carried no
 /// payload. Records sealed under it keep verifying byte for byte.
 const CANONICAL_SCHEME_V1: &[u8] = b"underpass.made.audit-record.v1";
 
-/// Domain separator of the current shape. A digest computed under a
+/// Domain separator of the event-bearing flat shape. A digest computed under a
 /// different scheme can never collide with one computed under this
 /// version, and bumping it is how the algorithm is versioned.
 const CANONICAL_SCHEME_V2: &[u8] = b"underpass.made.audit-record.v2";
 
+/// Domain separator for the authorization-bearing envelope.
+const CANONICAL_SCHEME_V3: &[u8] = b"underpass.made.audit-record.v3";
+
 /// The shape records were sealed in before the event travelled inside
 /// them.
-const LEGACY_SCHEMA_VERSION: u32 = 1;
+pub(super) const LEGACY_SCHEMA_VERSION: u32 = 1;
+
+/// Flat record shape that carries the ceremony event but no admission proof.
+pub(super) const EVENT_BEARING_SCHEMA_VERSION: u32 = 2;
+
+/// Enveloped record shape with mandatory typed authorization evidence.
+pub(super) const AUTHORIZED_SCHEMA_VERSION: u32 = 3;
 
 /// Version of the record's field set. It participates in the digest,
 /// so records written under different shapes cannot be silently mixed
-/// into one chain.
-pub const AUDIT_RECORD_SCHEMA_VERSION: u32 = 2;
+/// into one chain. This is the latest readable shape; records sealed without
+/// authorization evidence deliberately remain at version 2.
+pub const AUDIT_RECORD_SCHEMA_VERSION: u32 = AUTHORIZED_SCHEMA_VERSION;
 
 /// One fact in a ceremony's audit journal.
 ///
@@ -49,17 +58,14 @@ pub const AUDIT_RECORD_SCHEMA_VERSION: u32 = 2;
 /// content and the previous record's digest, and every accessor is
 /// read-only. There is no setter that could leave the digest stale.
 ///
-/// # Two shapes in one type
+/// # Three shapes in one type
 ///
-/// Every record this code seals is schema version 2 and carries its
-/// event and the event's payload schema version. Both are `Option` for
-/// one reason: records written under schema version 1 — the journals
-/// of stores from v0.3.0 and earlier — carry no payload, and they must
-/// keep deserializing and verifying exactly as they did until the
-/// copy-on-write migration imports them. A version-1 record therefore
-/// has neither; a version-2 record without its event is not intact.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(try_from = "AuditRecordWire")]
+/// Version 1 is the historical flat envelope without an event. Version 2 is
+/// the historical flat envelope carrying an event. Version 3 is an explicit
+/// envelope carrying both the event and mandatory authorization evidence.
+/// The optional fields keep all three generations readable in one domain
+/// type; [`Self::has_canonical_shape`] rejects every contradictory mixture.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AuditRecord {
     event_id: EventId,
     event_type: AuditEventType,
@@ -68,7 +74,6 @@ pub struct AuditRecord {
     definition_name: CeremonyName,
     definition_version: CeremonyVersion,
     sequence: AuditSequence,
-    #[serde(with = "time::serde::rfc3339")]
     occurred_at: OffsetDateTime,
     actor: AuditActor,
     correlation_id: Option<EventId>,
@@ -76,6 +81,7 @@ pub struct AuditRecord {
     trace_id: Option<String>,
     event_schema_version: Option<EventSchemaVersion>,
     event: Option<CeremonyEvent>,
+    authorization_evidence: Option<AuthorizationEvidence>,
     previous_record_hash: Option<AuditRecordHash>,
     record_hash: AuditRecordHash,
 }
@@ -83,7 +89,25 @@ pub struct AuditRecord {
 impl AuditRecord {
     /// Seal a fact as the first record of a ceremony's journal.
     pub fn first(fact: AuditFact) -> Result<Self, DomainError> {
-        Self::seal(fact, AuditSequence::FIRST, None)
+        Self::seal(
+            fact,
+            None,
+            EVENT_BEARING_SCHEMA_VERSION,
+            AuditSequence::FIRST,
+            None,
+        )
+    }
+
+    /// Seal an authorized fact as the first record of a ceremony's journal.
+    pub fn first_authorized(fact: AuthorizedAuditFact) -> Result<Self, DomainError> {
+        let (fact, evidence) = fact.into_parts();
+        Self::seal(
+            fact,
+            Some(evidence),
+            AUTHORIZED_SCHEMA_VERSION,
+            AuditSequence::FIRST,
+            None,
+        )
     }
 
     /// Seal a fact as the record that follows `previous`.
@@ -92,24 +116,57 @@ impl AuditRecord {
     /// predecessor rather than supplied, so a caller cannot append a
     /// record that claims to follow something it does not.
     pub fn following(fact: AuditFact, previous: &Self) -> Result<Self, DomainError> {
+        Self::validate_predecessor(previous)?;
         if fact.ceremony_id != previous.ceremony_id {
             return Err(DomainError::InvariantViolated {
                 reason: "an audit record must belong to the same ceremony as its predecessor",
             });
         }
-        Self::seal(fact, previous.sequence.next(), Some(previous.record_hash))
+        Self::seal(
+            fact,
+            None,
+            EVENT_BEARING_SCHEMA_VERSION,
+            previous.sequence.next(),
+            Some(previous.record_hash),
+        )
+    }
+
+    /// Seal an authorized fact after a verified predecessor.
+    pub fn following_authorized(
+        fact: AuthorizedAuditFact,
+        previous: &Self,
+    ) -> Result<Self, DomainError> {
+        Self::validate_predecessor(previous)?;
+        let (fact, evidence) = fact.into_parts();
+        if fact.ceremony_id != previous.ceremony_id {
+            return Err(DomainError::InvariantViolated {
+                reason: "an audit record must belong to the same ceremony as its predecessor",
+            });
+        }
+        Self::seal(
+            fact,
+            Some(evidence),
+            AUTHORIZED_SCHEMA_VERSION,
+            previous.sequence.next(),
+            Some(previous.record_hash),
+        )
     }
 
     fn seal(
         fact: AuditFact,
+        authorization_evidence: Option<AuthorizationEvidence>,
+        schema_version: u32,
         sequence: AuditSequence,
         previous_record_hash: Option<AuditRecordHash>,
     ) -> Result<Self, DomainError> {
+        if let Some(evidence) = authorization_evidence.as_ref() {
+            Self::validate_authorization_evidence(evidence, fact.occurred_at)?;
+        }
         let trace_id = fact.trace.map(|trace| trace.trace_id().to_owned());
         let mut record = Self {
             event_id: fact.event_id,
             event_type: fact.event.event_type(),
-            schema_version: AUDIT_RECORD_SCHEMA_VERSION,
+            schema_version,
             ceremony_id: fact.ceremony_id,
             definition_name: fact.definition_name,
             definition_version: fact.definition_version,
@@ -121,11 +178,38 @@ impl AuditRecord {
             trace_id,
             event_schema_version: Some(fact.event.schema_version()),
             event: Some(fact.event),
+            authorization_evidence,
             previous_record_hash,
             record_hash: AuditRecordHash::from_bytes([0; 32]),
         };
         record.record_hash = record.compute_hash()?;
         Ok(record)
+    }
+
+    fn validate_predecessor(previous: &Self) -> Result<(), DomainError> {
+        if !previous.digest_is_intact()? {
+            return Err(DomainError::InvariantViolated {
+                reason: "an audit record cannot follow an unsupported or altered predecessor",
+            });
+        }
+        Ok(())
+    }
+
+    fn validate_authorization_evidence(
+        evidence: &AuthorizationEvidence,
+        occurred_at: OffsetDateTime,
+    ) -> Result<(), DomainError> {
+        if evidence.valid_until() <= evidence.admitted_at() {
+            return Err(DomainError::InvariantViolated {
+                reason: "audit authorization evidence expiry must follow admission",
+            });
+        }
+        if occurred_at < evidence.admitted_at() || occurred_at >= evidence.valid_until() {
+            return Err(DomainError::InvariantViolated {
+                reason: "audit fact must occur while its authorization evidence is live",
+            });
+        }
+        Ok(())
     }
 
     #[must_use]
@@ -205,6 +289,15 @@ impl AuditRecord {
         self.event.as_ref()
     }
 
+    /// The allow decision that admitted this mutation.
+    ///
+    /// Present exactly on schema-version-3 records. Its absence on historical
+    /// records is history, not an implicit authorization decision.
+    #[must_use]
+    pub fn authorization_evidence(&self) -> Option<&AuthorizationEvidence> {
+        self.authorization_evidence.as_ref()
+    }
+
     #[must_use]
     pub fn previous_record_hash(&self) -> Option<AuditRecordHash> {
         self.previous_record_hash
@@ -243,9 +336,20 @@ impl AuditRecord {
     /// Whether the fields present match what the schema version seals.
     fn has_canonical_shape(&self) -> bool {
         match self.schema_version {
-            LEGACY_SCHEMA_VERSION => self.event.is_none() && self.event_schema_version.is_none(),
-            AUDIT_RECORD_SCHEMA_VERSION => {
-                self.event.is_some() && self.event_schema_version.is_some()
+            LEGACY_SCHEMA_VERSION => {
+                self.event.is_none()
+                    && self.event_schema_version.is_none()
+                    && self.authorization_evidence.is_none()
+            }
+            EVENT_BEARING_SCHEMA_VERSION => {
+                self.event.is_some()
+                    && self.event_schema_version.is_some()
+                    && self.authorization_evidence.is_none()
+            }
+            AUTHORIZED_SCHEMA_VERSION => {
+                self.event.is_some()
+                    && self.event_schema_version.is_some()
+                    && self.authorization_evidence.is_some()
             }
             _ => false,
         }
@@ -269,7 +373,8 @@ impl AuditRecord {
         let mut canonical = Vec::new();
         match self.schema_version {
             LEGACY_SCHEMA_VERSION => canonical.extend_from_slice(CANONICAL_SCHEME_V1),
-            AUDIT_RECORD_SCHEMA_VERSION => canonical.extend_from_slice(CANONICAL_SCHEME_V2),
+            EVENT_BEARING_SCHEMA_VERSION => canonical.extend_from_slice(CANONICAL_SCHEME_V2),
+            AUTHORIZED_SCHEMA_VERSION => canonical.extend_from_slice(CANONICAL_SCHEME_V3),
             _ => {
                 return Err(DomainError::InvariantViolated {
                     reason: "audit record schema version has no canonical form",
@@ -308,7 +413,10 @@ impl AuditRecord {
                 .map(|hash| hash.as_bytes().as_slice()),
         );
 
-        if self.schema_version == AUDIT_RECORD_SCHEMA_VERSION {
+        if matches!(
+            self.schema_version,
+            EVENT_BEARING_SCHEMA_VERSION | AUTHORIZED_SCHEMA_VERSION
+        ) {
             let (Some(version), Some(event)) = (self.event_schema_version, self.event.as_ref())
             else {
                 return Err(DomainError::InvariantViolated {
@@ -321,6 +429,19 @@ impl AuditRecord {
                     reason: "ceremony event cannot be rendered canonically",
                 })?;
             write_field(&mut canonical, &payload);
+        }
+
+        if self.schema_version == AUTHORIZED_SCHEMA_VERSION {
+            let Some(evidence) = self.authorization_evidence.as_ref() else {
+                return Err(DomainError::InvariantViolated {
+                    reason: "a version-3 audit record must carry authorization evidence",
+                });
+            };
+            let authorization =
+                serde_json::to_vec(evidence).map_err(|_| DomainError::InvariantViolated {
+                    reason: "authorization evidence cannot be rendered canonically",
+                })?;
+            write_field(&mut canonical, &authorization);
         }
 
         let digest = Sha256::digest(&canonical);
@@ -454,6 +575,24 @@ mod tests {
         }
     }
 
+    fn authorization_evidence() -> AuthorizationEvidence {
+        serde_json::from_value(serde_json::json!({
+            "decision_id": "a".repeat(64),
+            "request_id": "request-1",
+            "principal_id": "principal-1",
+            "action": "run_ceremony_step",
+            "scope": {
+                "kind": "ceremony",
+                "ceremony_id": "ceremony-1"
+            },
+            "target_digest": "b".repeat(64),
+            "policy_version": 7,
+            "admitted_at": "2026-07-29T08:59:00Z",
+            "valid_until": "2026-07-29T09:05:00Z"
+        }))
+        .unwrap()
+    }
+
     fn chain_of_three() -> [AuditRecord; 3] {
         let first =
             AuditRecord::first(fact("e1", AuditEventType::CeremonyInstanceStarted)).unwrap();
@@ -480,7 +619,7 @@ mod tests {
         assert!(record.sequence().is_first());
         assert!(record.previous_record_hash().is_none());
         assert!(record.digest_is_intact().unwrap());
-        assert_eq!(record.schema_version(), AUDIT_RECORD_SCHEMA_VERSION);
+        assert_eq!(record.schema_version(), EVENT_BEARING_SCHEMA_VERSION);
     }
 
     #[test]
@@ -505,6 +644,128 @@ mod tests {
             assert!(restored.digest_is_intact().unwrap());
             assert_eq!(restored.event(), record.event());
         }
+    }
+
+    #[test]
+    fn authorized_record_uses_the_version_three_envelope() {
+        let evidence = authorization_evidence();
+        let record = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(evidence.clone()),
+        )
+        .unwrap();
+
+        assert_eq!(record.schema_version(), AUDIT_RECORD_SCHEMA_VERSION);
+        assert_eq!(record.authorization_evidence(), Some(&evidence));
+        assert!(record.digest_is_intact().unwrap());
+        assert_eq!(
+            record.record_hash().to_string(),
+            "0b50be46717d750c0b4ff442300f613f2b21704f1904175c50cac4500beb0747"
+        );
+
+        let json = serde_json::to_value(&record).unwrap();
+        assert_eq!(json["schema_version"], AUTHORIZED_SCHEMA_VERSION);
+        assert!(json.get("event_id").is_none());
+        assert_eq!(json["record"]["event_id"], "e1");
+        assert_eq!(json["authorization"]["request_id"], "request-1");
+
+        let restored: AuditRecord = serde_json::from_value(json).unwrap();
+        assert_eq!(restored, record);
+        assert!(restored.digest_is_intact().unwrap());
+    }
+
+    #[test]
+    fn version_three_requires_the_envelope_and_authorization() {
+        let flat = AuditRecord::first(fact("e1", AuditEventType::StepStarted)).unwrap();
+        let mut flat_v3 = serde_json::to_value(&flat).unwrap();
+        flat_v3["schema_version"] = AUTHORIZED_SCHEMA_VERSION.into();
+        assert!(serde_json::from_value::<AuditRecord>(flat_v3).is_err());
+
+        let authorized = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(authorization_evidence()),
+        )
+        .unwrap();
+        let mut missing_evidence = serde_json::to_value(authorized).unwrap();
+        missing_evidence
+            .as_object_mut()
+            .unwrap()
+            .remove("authorization");
+        assert!(serde_json::from_value::<AuditRecord>(missing_evidence).is_err());
+
+        let mut evidence_on_v2 = serde_json::to_value(flat).unwrap();
+        evidence_on_v2["authorization"] = serde_json::to_value(authorization_evidence()).unwrap();
+        assert!(serde_json::from_value::<AuditRecord>(evidence_on_v2).is_err());
+    }
+
+    #[test]
+    fn authorization_must_be_live_when_the_fact_occurs() {
+        let mut evidence = serde_json::to_value(authorization_evidence()).unwrap();
+        evidence["valid_until"] = "2026-07-29T08:59:30Z".into();
+        let expired: AuthorizationEvidence = serde_json::from_value(evidence).unwrap();
+
+        assert!(AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(expired)
+        )
+        .is_err());
+
+        let authorized = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(authorization_evidence()),
+        )
+        .unwrap();
+        let mut stored = serde_json::to_value(authorized).unwrap();
+        stored["authorization"]["valid_until"] = "2026-07-29T08:59:30Z".into();
+        assert!(serde_json::from_value::<AuditRecord>(stored).is_err());
+    }
+
+    #[test]
+    fn old_flat_reader_rejects_the_version_three_envelope() {
+        #[derive(serde::Deserialize)]
+        struct VersionTwoFlatReader {
+            #[serde(rename = "event_id")]
+            _event_id: EventId,
+            #[serde(rename = "schema_version")]
+            _schema_version: u32,
+        }
+
+        let authorized = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(authorization_evidence()),
+        )
+        .unwrap();
+        let bytes = serde_json::to_vec(&authorized).unwrap();
+
+        assert!(serde_json::from_slice::<VersionTwoFlatReader>(&bytes).is_err());
+    }
+
+    #[test]
+    fn changing_authorization_evidence_breaks_the_version_three_digest() {
+        let authorized = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(authorization_evidence()),
+        )
+        .unwrap();
+        let mut json = serde_json::to_value(authorized).unwrap();
+        json["authorization"]["decision_id"] = "c".repeat(64).into();
+
+        let altered: AuditRecord = serde_json::from_value(json).unwrap();
+        assert!(!altered.digest_is_intact().unwrap());
+    }
+
+    #[test]
+    fn no_record_can_follow_an_altered_predecessor() {
+        let first = AuditRecord::first_authorized(
+            fact("e1", AuditEventType::StepStarted).authorized(authorization_evidence()),
+        )
+        .unwrap();
+        let mut json = serde_json::to_value(first).unwrap();
+        json["authorization"]["decision_id"] = "c".repeat(64).into();
+        let altered: AuditRecord = serde_json::from_value(json).unwrap();
+
+        assert!(
+            AuditRecord::following(fact("e2", AuditEventType::StepCompleted), &altered).is_err()
+        );
+        assert!(AuditRecord::following_authorized(
+            fact("e2", AuditEventType::StepCompleted).authorized(authorization_evidence()),
+            &altered
+        )
+        .is_err());
     }
 
     #[test]
@@ -621,7 +882,7 @@ mod tests {
         });
 
         assert!(stripped.event().is_none());
-        assert_eq!(stripped.schema_version(), AUDIT_RECORD_SCHEMA_VERSION);
+        assert_eq!(stripped.schema_version(), EVENT_BEARING_SCHEMA_VERSION);
         assert!(!stripped.digest_is_intact().unwrap());
     }
 
@@ -637,11 +898,12 @@ mod tests {
     }
 
     #[test]
-    fn an_unknown_record_schema_version_is_not_intact() {
+    fn an_unknown_record_schema_version_is_rejected() {
         let [first, ..] = chain_of_three();
-        let relabelled = tampered(&first, |json| json["schema_version"] = 3.into());
+        let mut json = serde_json::to_value(first).unwrap();
+        json["schema_version"] = 99.into();
 
-        assert!(!relabelled.digest_is_intact().unwrap());
+        assert!(serde_json::from_value::<AuditRecord>(json).is_err());
     }
 
     #[test]
