@@ -32,10 +32,10 @@ macro_rules! council_rpc_methods {
             request: Request<pb::CompleteExecutionReceiptRequest>,
         ) -> GrpcResult<pb::CompleteExecutionReceiptResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_global!(
+            authorized_ceremony!(
                 self,
                 request,
-            CompleteExecutionReceipt,
+                CompleteExecutionReceipt,
                 run_with_ceremony_trace(trace, self.handle_complete_execution_receipt(request))
             )
         }
@@ -44,10 +44,10 @@ macro_rules! council_rpc_methods {
             request: Request<pb::AdoptExecutionReceiptRequest>,
         ) -> GrpcResult<pb::AdoptExecutionReceiptResponse> {
             let trace = trace_context_from_metadata(&request);
-            authorized_global!(
+            authorized_ceremony!(
                 self,
                 request,
-            AdoptExecutionReceipt,
+                AdoptExecutionReceipt,
                 run_with_ceremony_trace(trace, self.handle_adopt_execution_receipt(request))
             )
         }
