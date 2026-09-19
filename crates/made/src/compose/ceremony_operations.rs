@@ -79,3 +79,17 @@ pub(super) fn wire(
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .bind_ceremony_participants(bind_ceremony_participants)
 }
+
+/// Catch up persisted child work on startup without requiring a broker notification.
+pub(super) async fn recover_to_head(
+    recovery: &made_app::usecases::RecoverCeremonyChildrenUseCase,
+) -> Result<(), made_core::DomainError> {
+    loop {
+        let limit = made_core::value_objects::CeremonyEventPageLimit::DEFAULT;
+        let round = recovery.execute(limit).await?;
+        if round.busy || round.failed > 0 || round.acknowledged() < limit.value() {
+            break;
+        }
+    }
+    Ok(())
+}
