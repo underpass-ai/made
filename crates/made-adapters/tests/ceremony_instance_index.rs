@@ -33,6 +33,17 @@ async fn sqlite_index_survives_reopen() {
             [],
         )
         .unwrap();
+    let transaction = connection.unchecked_transaction().unwrap();
+    for ordinal in 0..1_100_u64 {
+        let id = format!("bulk-{ordinal:04}");
+        transaction
+            .execute(
+                "INSERT INTO ceremony_events (k, v) VALUES (?1, ?2)",
+                rusqlite::params![event_key(id.as_bytes(), 1), b"payload-not-read"],
+            )
+            .unwrap();
+    }
+    transaction.commit().unwrap();
     drop(connection);
 
     let reopened = SqliteCeremonyStore::open(path).unwrap();
@@ -52,6 +63,69 @@ async fn sqlite_index_survives_reopen() {
         ["team-a", "team-aa", "team-b"]
     );
     assert!(!page.has_more());
+
+    let prefix = CeremonyIdPrefix::new("bulk-").unwrap();
+    let mut after = None;
+    let mut count = 0;
+    loop {
+        let page = reopened
+            .ids_after(
+                after.as_ref(),
+                Some(&prefix),
+                CeremonyInstancePageLimit::new(100).unwrap(),
+            )
+            .await
+            .unwrap();
+        count += page.ids().len();
+        if !page.has_more() {
+            break;
+        }
+        after = page.ids().last().cloned();
+    }
+    assert_eq!(count, 1_100);
+}
+
+#[test]
+fn sqlite_backfill_rejects_invalid_utf8_without_installing_marker_or_index() {
+    let scratch = scratch();
+    let path = scratch.path().join("corrupt.sqlite3");
+    drop(SqliteCeremonyStore::open(&path).unwrap());
+    let connection = rusqlite::Connection::open(&path).unwrap();
+    connection
+        .execute("DELETE FROM ceremony_stream_index", [])
+        .unwrap();
+    connection
+        .execute(
+            "DELETE FROM store_meta WHERE k = 'ceremony_stream_index_backfilled_v1'",
+            [],
+        )
+        .unwrap();
+    connection
+        .execute(
+            "INSERT INTO ceremony_events (k, v) VALUES (?1, ?2)",
+            rusqlite::params![event_key(&[0xff], 1), b"payload-not-read"],
+        )
+        .unwrap();
+    drop(connection);
+
+    assert!(SqliteCeremonyStore::open(&path).is_err());
+
+    let connection = rusqlite::Connection::open(path).unwrap();
+    let index_rows: i64 = connection
+        .query_row("SELECT count(*) FROM ceremony_stream_index", [], |row| {
+            row.get(0)
+        })
+        .unwrap();
+    let marker_rows: i64 = connection
+        .query_row(
+            "SELECT count(*) FROM store_meta WHERE k = \
+             'ceremony_stream_index_backfilled_v1'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(index_rows, 0);
+    assert_eq!(marker_rows, 0);
 }
 
 async fn exercise<T>(store: &T)
@@ -133,4 +207,12 @@ fn scratch() -> tempfile::TempDir {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tmp");
     std::fs::create_dir_all(&root).unwrap();
     tempfile::tempdir_in(root).unwrap()
+}
+
+fn event_key(id: &[u8], sequence: u64) -> Vec<u8> {
+    let mut key = Vec::with_capacity(id.len() + 9);
+    key.extend_from_slice(id);
+    key.push(0);
+    key.extend_from_slice(&sequence.to_be_bytes());
+    key
 }

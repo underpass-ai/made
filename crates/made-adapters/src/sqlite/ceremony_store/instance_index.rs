@@ -1,5 +1,3 @@
-use std::collections::BTreeSet;
-
 use async_trait::async_trait;
 use made_core::error::DomainError;
 use made_core::ports::{CeremonyInstanceIdPage, CeremonyInstanceIndexPort};
@@ -11,6 +9,7 @@ use crate::sqlite::keys::ceremony_of;
 use super::SqliteCeremonyStore;
 
 const BACKFILL_MARKER: &str = "ceremony_stream_index_backfilled_v1";
+const BACKFILL_KEY_PAGE: usize = 512;
 
 impl SqliteCeremonyStore {
     /// Build the durable stream identity index once for stores created before
@@ -21,15 +20,34 @@ impl SqliteCeremonyStore {
         if tx.get(Table::Meta, Key::Str(BACKFILL_MARKER))?.is_some() {
             return Ok(());
         }
-        let mut ids = BTreeSet::new();
-        for (key, _) in tx.scan_bytes(Table::Events)? {
-            let bytes = ceremony_of(&key).ok_or(DomainError::InvariantViolated {
-                reason: "sqlite: an events-table key is too short to index its ceremony",
-            })?;
-            ids.insert(CeremonyId::new(String::from_utf8_lossy(bytes))?);
-        }
-        for id in ids {
-            tx.insert(Table::StreamIndex, Key::Str(id.as_str()), &[])?;
+        let mut after = None;
+        let mut previous_id = None;
+        loop {
+            let keys =
+                tx.scan_byte_keys_page(Table::Events, after.as_deref(), BACKFILL_KEY_PAGE)?;
+            if keys.is_empty() {
+                break;
+            }
+            for key in &keys {
+                let bytes = ceremony_of(key).ok_or(DomainError::InvariantViolated {
+                    reason: "sqlite: an events-table key is too short to index its ceremony",
+                })?;
+                let raw =
+                    std::str::from_utf8(bytes).map_err(|_| DomainError::InvalidCharacters {
+                        field: "ceremony_id",
+                    })?;
+                let id = CeremonyId::new(raw)?;
+                if id.as_str().as_bytes() != bytes {
+                    return Err(DomainError::InvalidCharacters {
+                        field: "ceremony_id",
+                    });
+                }
+                if previous_id.as_ref() != Some(&id) {
+                    tx.insert(Table::StreamIndex, Key::Str(id.as_str()), &[])?;
+                    previous_id = Some(id);
+                }
+            }
+            after = keys.last().cloned();
         }
         tx.insert(Table::Meta, Key::Str(BACKFILL_MARKER), &[])?;
         tx.commit()

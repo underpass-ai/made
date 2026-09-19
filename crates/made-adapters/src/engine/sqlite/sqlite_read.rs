@@ -35,6 +35,14 @@ impl ReadTx for SqliteRead<'_> {
     fn scan_bytes(&self, table: Table) -> Result<Vec<BytesRow>, DomainError> {
         self.ops().scan_bytes(table)
     }
+    fn scan_byte_keys_page(
+        &self,
+        table: Table,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<Vec<u8>>, DomainError> {
+        self.ops().scan_byte_keys_page(table, after, limit)
+    }
     fn scan_bytes_range(
         &self,
         table: Table,

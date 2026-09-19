@@ -80,6 +80,26 @@ impl Ops<'_> {
             .map_err(|error| failure(&error, "scan rows"))
     }
 
+    pub(super) fn scan_byte_keys_page(
+        &self,
+        table: Table,
+        after: Option<&[u8]>,
+        limit: usize,
+    ) -> Result<Vec<Vec<u8>>, DomainError> {
+        if table.key_shape() != KeyShape::Bytes {
+            return Err(scan_shape_mismatch(table, KeyShape::Bytes));
+        }
+        let sql =
+            format!("SELECT k FROM \"{table}\" WHERE (?1 IS NULL OR k > ?1) ORDER BY k LIMIT ?2");
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let mut statement = self.prepare(&sql)?;
+        let rows = statement
+            .query_map(params![after, limit], |row| row.get::<_, Vec<u8>>(0))
+            .map_err(|error| failure(&error, "scan byte keys page"))?;
+        rows.collect::<Result<Vec<_>, _>>()
+            .map_err(|error| failure(&error, "scan byte keys page"))
+    }
+
     pub(super) fn scan_bytes_range(
         &self,
         table: Table,
