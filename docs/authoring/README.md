@@ -87,6 +87,30 @@ use the [claim/work/complete loop](../runtime/README.md).
 Only apply `finish` when the returned transition is enabled. Reusing
 `review-1` is not a request to create an unrelated replacement session.
 
+### Integrator, implementers, independent reviewer and human guard
+
+The executable [integrator delivery example](examples/integrator-delivery.yaml)
+keeps four responsibilities separate: two implementers produce the inputs,
+`INTEGRATOR` combines them, `INDEPENDENT_REVIEWER` reviews that combined result,
+and `HUMAN_APPROVER` alone may perform `approve_delivery`. Validate and publish
+the example with the same calls above, then drive it through the claim/work/
+complete loop. The `implementations_complete`, `integration_complete` and
+`independent_review_complete` guards must be satisfied before their transitions;
+`human_approved` is a `type: human` guard and cannot be replaced by an agent
+claim or a completed implementation.
+
+The negative authorization check is intentional: `INTEGRATOR` is allowed
+`integrate_delivery` and `integration_ready`, but not `approve_delivery`.
+Changing only the role name to `INTEGRATOR` does not add authority, bypass the
+independent review, or satisfy the human guard. The engine enforces the
+declared role actions and guards; the host still supplies the actual handlers
+and evidence.
+
+Current support ends at declared roles, claims, completion records, guards and
+host-provided execution. The live agent roster/activity surface described by
+issues #190 and #191, and host delivery/acknowledgement for interventions in
+#192, are future capabilities; this example does not imply any of them.
+
 ## Draft, analyze, publish
 
 Use `made_design_ceremony` for a structured draft. Declare the objective,

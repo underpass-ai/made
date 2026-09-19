@@ -1,0 +1,69 @@
+version: "1.0"
+name: integrator_delivery
+description: Two implementations are integrated, independently reviewed, and require explicit human approval
+inputs:
+  required: [delivery_brief]
+states:
+  - id: IMPLEMENTING
+    initial: true
+    execution: concurrent
+  - id: INTEGRATING
+  - id: REVIEWING
+  - id: APPROVAL
+  - id: CLOSED
+    terminal: true
+transitions:
+  - from: IMPLEMENTING
+    to: INTEGRATING
+    trigger: implementations_ready
+    guards: [implementations_complete]
+  - from: INTEGRATING
+    to: REVIEWING
+    trigger: integration_ready
+    guards: [integration_complete]
+  - from: REVIEWING
+    to: APPROVAL
+    trigger: review_ready
+    guards: [independent_review_complete]
+  - from: APPROVAL
+    to: CLOSED
+    trigger: approve_delivery
+    guards: [human_approved]
+steps:
+  - id: implement_api
+    state: IMPLEMENTING
+    handler: api_implementation
+  - id: implement_storage
+    state: IMPLEMENTING
+    handler: storage_implementation
+  - id: integrate_delivery
+    state: INTEGRATING
+    handler: integration
+  - id: independent_review
+    state: REVIEWING
+    handler: independent_review
+guards:
+  implementations_complete:
+    type: automated
+    check: "steps_completed:2"
+  integration_complete:
+    type: automated
+    check: "step_status:integrate_delivery:COMPLETED"
+  independent_review_complete:
+    type: automated
+    check: "step_status:independent_review:COMPLETED"
+  human_approved:
+    type: human
+    check: manual_approval
+roles:
+  - id: API_IMPLEMENTER
+    allowed_actions: [implement_api]
+  - id: STORAGE_IMPLEMENTER
+    allowed_actions: [implement_storage]
+  - id: INTEGRATOR
+    allowed_actions: [integrate_delivery, integration_ready]
+  - id: INDEPENDENT_REVIEWER
+    allowed_actions: [independent_review, review_ready]
+  - id: HUMAN_APPROVER
+    allowed_actions: [approve_delivery]
+max_parallel: 2

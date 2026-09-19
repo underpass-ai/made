@@ -78,6 +78,18 @@ If the decision is deferred, use `made_defer_ceremony_guard` with the person's
 statement, the reason and concrete `reconsider_when` conditions. Leave the
 session paused and report its id, state and guard. Deferral does not approve.
 
+### Integrator vocabulary does not widen authority
+
+An `INTEGRATOR` coordinates contributions and may execute only the integration
+steps and transitions declared for that role. Keep implementers and an
+independent reviewer separate, and keep the human guard on its own approval
+transition. Do not infer approval, review completion, or verified host work
+from the Integrator's name or from a step being `in_progress`; inspect the
+persisted step result and enabled guards. The current runtime records declared
+roles, claims, completions and guard decisions. It does not yet provide the
+live agent roster/activity or intervention delivery/acknowledgement proposed
+by issues #190--#192, so do not report those as runtime facts.
+
 ## Recover a session
 
 After context loss, list instances before creating a replacement. Inspect

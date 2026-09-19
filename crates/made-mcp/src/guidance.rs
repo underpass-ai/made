@@ -366,6 +366,10 @@ fn base_agent_authority_boundaries() -> Vec<Value> {
             "rule": "Evidence must come from an actual authorized source and remain attributable.",
             "forbidden_inference": "An empty, inaccessible, or imagined source is evidence."
         }),
+        json!({
+            "rule": "Integrator is a business responsibility, not a privilege; declared role actions and human guards still apply.",
+            "forbidden_inference": "A role named integrator may approve for a person, bypass independent review, or prove host-agent activity."
+        }),
     ]
 }
 
@@ -712,6 +716,8 @@ mod tests {
                         markdown.contains("## Delegated-host sequence"),
                         "{backend} agent help drops the delegated-host sequence"
                     );
+                    assert!(markdown.contains("Integrator is a business responsibility"));
+                    assert!(markdown.contains("prove host-agent activity"));
                 }
             }
         }

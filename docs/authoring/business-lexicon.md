@@ -55,6 +55,8 @@ the existing role mechanisms. Keep review and human decisions explicit.
 Simple ceremonies need not introduce an integrator role.
 
 This vocabulary does not add a reserved role id, actor kind, automatic
-assignment or special runtime privilege. Designer guidance and visibility of
-the role in live agent interfaces are tracked separately; naming the role
-alone does not implement those capabilities.
+assignment or special runtime privilege. The executable
+[Integrator delivery example](examples/integrator-delivery.yaml) and the
+designer, runtime and `made_get_help` guidance show the supported shape;
+naming the role alone does not implement live agent visibility, activity
+reporting or intervention delivery.

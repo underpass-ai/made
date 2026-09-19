@@ -5,6 +5,10 @@
 //! the request and leave no trace; the third is what makes a version
 //! something an instance can be bound to.
 
+use made_adapters::yaml::CeremonyDefinitionYaml;
+use made_core::value_objects::{
+    GuardCondition, GuardName, RoleAction, RoleId, StepId, TransitionTrigger,
+};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
     ExplainCeremonyDraftRequest, PublishCeremonyDefinitionRequest, StartPublishedCeremonyRequest,
@@ -12,6 +16,9 @@ use made_proto::v1::{
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
 use tonic::Code;
+
+const INTEGRATOR_DELIVERY: &str =
+    include_str!("../../../docs/authoring/examples/integrator-delivery.yaml");
 
 const PUBLISHABLE_CEREMONY: &str = r#"
 version: "1.0"
@@ -123,6 +130,38 @@ async fn a_sound_draft_validates_and_a_broken_one_says_where_it_is_broken() {
         .find_map(|finding| finding.locus.as_ref())
         .expect("a finding should point at an element");
     assert!(transition.fields.contains_key("kind"));
+}
+
+#[test]
+fn integrator_example_keeps_integration_and_human_approval_separate() {
+    let definition = CeremonyDefinitionYaml::parse_str(INTEGRATOR_DELIVERY)
+        .expect("the executable Integrator example must parse and publish");
+    let integrator = definition
+        .roles()
+        .get(&RoleId::new("INTEGRATOR").unwrap())
+        .expect("the example declares an Integrator role");
+
+    assert!(integrator.allowed_actions().contains(&RoleAction::step(
+        StepId::new("integrate_delivery").unwrap()
+    )));
+    assert!(integrator
+        .allowed_actions()
+        .contains(&RoleAction::transition(
+            TransitionTrigger::new("integration_ready").unwrap()
+        )));
+    assert!(!integrator
+        .allowed_actions()
+        .contains(&RoleAction::transition(
+            TransitionTrigger::new("approve_delivery").unwrap(),
+        )));
+    assert!(matches!(
+        definition
+            .guards()
+            .get(&GuardName::new("human_approved").unwrap())
+            .expect("the final transition has a named human guard")
+            .condition(),
+        GuardCondition::HumanApproval
+    ));
 }
 
 #[tokio::test]
