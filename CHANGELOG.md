@@ -18,7 +18,7 @@ even though the new catalogue identity is `made`.
   into ceremonies each round, so an integrator driving a composed system is
   woken for the runs its own execution opens later. A full queue sheds the
   oldest thing nobody is waiting on, keeps every decision, block and ending,
-  and tells the host it fell behind. (#PR)
+  and tells the host it fell behind. (#231)
 - Let the delivery ledger hear back from an activation adapter. A delivery
   pushed to a host had nowhere to record that it arrived: the state and the
   receipt were modelled, but every write the ledger offered went through a
@@ -27,7 +27,7 @@ even though the new catalogue identity is `made`.
   wake-up failed and cost an attempt like any other — and a delivered record
   stays offerable, because reaching a host is transport and never the host
   having taken the work. Four conformance properties, on all three stores.
-  (#PR)
+  (#230)
 - Tell an integrator which step ran out of time. A step deadline carries the
   step inside the deadline rather than beside it, so the attention reading
   dropped it and woke a host that could not say what to retry. The three
