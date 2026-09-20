@@ -175,6 +175,27 @@ pub(super) fn system_state(view: &AgenticSystemView) -> Result<pb::AgenticSystem
 }
 
 #[must_use]
+/// A catalogue entry: what a design is, without the document.
+///
+/// A listing that carried every design in full would be a listing
+/// nobody could afford to call, so the `yaml` field stays empty here
+/// and the payload is the summary — the same one the in-process
+/// backend answers a listing with.
+pub(super) fn summary_state(
+    system: &made_core::entities::AgenticSystem,
+) -> Result<pb::AgenticSystemState, Status> {
+    let rendered =
+        crate::json::AgenticSystemJson::summary(system).map_err(domain_error_to_status)?;
+    Ok(pb::AgenticSystemState {
+        system_id: system.id().as_str().to_owned(),
+        revision: system.revision().get(),
+        lifecycle: system.lifecycle().as_str().to_owned(),
+        digest: system.digest().map_err(domain_error_to_status)?.to_hex(),
+        yaml: String::new(),
+        json: Some(json_to_struct(&rendered)),
+    })
+}
+
 pub(super) fn validation_response(
     view: &AgenticSystemValidationView,
     rendered: &Value,

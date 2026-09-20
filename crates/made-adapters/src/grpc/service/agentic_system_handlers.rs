@@ -61,8 +61,7 @@ impl MadeGrpcService {
             .map_err(domain_error_to_status)?;
         let mut systems = Vec::with_capacity(page.systems().len());
         for system in page.systems() {
-            let view = AgenticSystemView::of(system.clone()).map_err(domain_error_to_status)?;
-            systems.push(requests::system_state(&view)?);
+            systems.push(requests::summary_state(system)?);
         }
         Ok(Response::new(pb::ListAgenticSystemsResponse {
             systems,
