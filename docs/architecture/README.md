@@ -151,4 +151,25 @@ The hardening decisions are retained in a separate
 and [list values](../history/hardening-integration-2026-09-18/docs/architecture/ceremony-list-values.md).
 Their active contract is described here and in the
 [runtime guide](../runtime/README.md); the original pre-rebuild snapshot remains
-unchanged.
+unchanged. The numbering of the live [ADR directory](../adr) continues past
+those snapshots, which is why it resumes at 019.
+
+The C7 decisions are recorded before their implementation:
+
+- [ADR 019](../adr/019-sealed-plan-then-auditable-successor.md) — succession is
+  sealed in the predecessor first and the successor is then opened with an
+  expected-empty append and an exact comparison. A superseded origin cannot
+  resume, carried evidence is referenced rather than copied, and budget starts
+  fresh.
+- [ADR 020](../adr/020-shared-host-delivery-core.md) — one durable host delivery
+  ledger, with integrator bindings and a fenced activation port, serves both
+  intervention delivery and integrator attention. Transport facts stay out of
+  the sealed journal; only an observed acknowledgement is a domain fact.
+- [ADR 021](../adr/021-pinned-agentic-system-aggregate.md) — an agentic system
+  references ceremonies through immutable definition pins, persists as a
+  revision log under compare-and-swap rather than as an event stream, declares
+  requested execution profiles only, and keeps execution as a separate entity.
+- [ADR 022](../adr/022-durable-integrator-loop.md) — the integrator loop runs on
+  a typed projection of the global feed, records intent before effect, derives a
+  rejected review instead of premiering a new event, and treats an accepted
+  activation as transport rather than processing.

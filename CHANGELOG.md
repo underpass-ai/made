@@ -9,6 +9,12 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Record the C7 architecture decisions before their implementation: an
+  auditable successor sealed in its predecessor before the successor stream is
+  opened, one shared durable host delivery ledger that keeps transport facts out
+  of the sealed journal, an agentic system aggregate that pins the ceremonies it
+  composes and persists under compare-and-swap, and an integrator loop driven by
+  a typed projection of the global feed. (#219)
 - Make native Windows `made-setup` replace the bundled registration command
   atomically with the batch launcher, so clean Codex and Claude installs need
   no manual MCP edit and repeated setup keeps exactly one registration. (#185)
