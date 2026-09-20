@@ -78,6 +78,7 @@ pub(crate) fn mutate(
         | CeremonyCommand::AcknowledgeInterventionDelivery(_)
         | CeremonyCommand::RenewStepLease(_)
         | CeremonyCommand::PlanCeremonyChildren(_)
+        | CeremonyCommand::PlanSuccessor(_)
         | CeremonyCommand::ApplyExecutionReceiptResult(_)
         | CeremonyCommand::AdoptChildSpawnPlan(_)
         | CeremonyCommand::AcceptChildCompletion(_)

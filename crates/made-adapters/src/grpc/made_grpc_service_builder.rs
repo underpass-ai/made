@@ -48,6 +48,10 @@ pub struct MadeGrpcServiceBuilder {
         Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
     pub(super) inspect_ceremony_resume:
         Option<Arc<made_app::workers::InspectCeremonyResumeUseCase>>,
+    pub(super) plan_ceremony_successor:
+        Option<Arc<made_app::usecases::PlanCeremonySuccessorUseCase>>,
+    pub(super) start_ceremony_successor:
+        Option<Arc<made_app::usecases::StartCeremonySuccessorUseCase>>,
     pub(super) authorization: Option<Arc<GrpcAuthorizationGate>>,
     pub(super) authorization_administration: Option<Arc<AuthorizationPolicyAdministrationService>>,
     pub(super) read_authorization_policy: Option<Arc<ReadAuthorizationPolicyUseCase>>,
@@ -283,6 +287,16 @@ impl MadeGrpcServiceBuilder {
         inspect_ceremony_resume,
         made_app::workers::InspectCeremonyResumeUseCase,
         inspect_ceremony_resume
+    );
+    setter!(
+        plan_ceremony_successor,
+        made_app::usecases::PlanCeremonySuccessorUseCase,
+        plan_ceremony_successor
+    );
+    setter!(
+        start_ceremony_successor,
+        made_app::usecases::StartCeremonySuccessorUseCase,
+        start_ceremony_successor
     );
     setter!(resume_ceremony, ResumeCeremonyUseCase, resume_ceremony);
     setter!(cancel_ceremony, CancelCeremonyUseCase, cancel_ceremony);
@@ -560,6 +574,8 @@ impl MadeGrpcServiceBuilder {
             pause_ceremony: required!(self, pause_ceremony),
             record_ceremony_host_handoff: self.record_ceremony_host_handoff,
             inspect_ceremony_resume: self.inspect_ceremony_resume,
+            plan_ceremony_successor: self.plan_ceremony_successor,
+            start_ceremony_successor: self.start_ceremony_successor,
             resume_ceremony: required!(self, resume_ceremony),
             cancel_ceremony: required!(self, cancel_ceremony),
             enforce_ceremony_deadlines: required!(self, enforce_ceremony_deadlines),

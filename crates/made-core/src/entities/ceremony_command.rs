@@ -18,7 +18,7 @@ use super::ceremony_commands::{
     AcceptChildCompletion, AcknowledgeInterventionDelivery, AdoptChildSpawnPlan,
     ApplyExecutionReceiptResult, ApplyStepResult, ApplyTransition, ApproveGuard, AssertReason,
     BindParticipant, CancelCeremony, CloseIntervention, DeferGuard, EnforceCeremonyDeadlines,
-    PauseCeremony, PlanCeremonyChildren, RenewStepLease, RequestIntervention,
+    PauseCeremony, PlanCeremonyChildren, PlanSuccessor, RenewStepLease, RequestIntervention,
     RespondToIntervention, RespondToInterventionWithEvidence, ResumeCeremony, StartStep,
 };
 
@@ -41,6 +41,7 @@ pub enum CeremonyCommand {
     AssertReason(AssertReason),
     CloseIntervention(CloseIntervention),
     PlanCeremonyChildren(PlanCeremonyChildren),
+    PlanSuccessor(PlanSuccessor),
     AdoptChildSpawnPlan(AdoptChildSpawnPlan),
     AcceptChildCompletion(AcceptChildCompletion),
     PauseCeremony(PauseCeremony),

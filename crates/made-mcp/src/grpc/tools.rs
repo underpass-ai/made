@@ -41,6 +41,9 @@ mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
 mod request_metadata_client;
+mod succession_dispatch;
+mod succession_presenter;
+mod succession_requests;
 
 use request_error::bad_request;
 
@@ -99,6 +102,9 @@ pub(crate) async fn dispatch(
     }
     if intervention_delivery_dispatch::handles(name) {
         return intervention_delivery_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if succession_dispatch::handles(name) {
+        return succession_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {

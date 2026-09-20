@@ -21,6 +21,21 @@ event. Upgrade every writer before enabling lifecycle controls, and do not use
 an older binary as a rollback writer. See the [snapshot v2 compatibility
 barrier](snapshots-v2.md) for the exact reader matrix and recovery procedure.
 
+## Unreleased succession fields
+
+A ceremony handed to a successor seals two new facts, `successor_planned` and
+`succession_carried`, and two payloads gain an optional field:
+`ceremony_instance_started` an optional `succession`, and the step execution
+record an optional `carried_from`. Both are skipped when absent, so every
+sealed record written before this keeps its bytes and its digest, and both
+stay at schema version 1.
+
+Old readers do not know either event type and will refuse a stream that holds
+one, so upgrade every reader before a writer seals a handoff. Nothing rewrites
+an existing stream: a ceremony that never handed off is byte for byte what it
+was, and a snapshot taken before this reads back with no succession and no
+plan.
+
 ## Unreleased durable councils
 
 Configured local stores now retain councils, agent descriptors, contracts,

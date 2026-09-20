@@ -38,5 +38,8 @@ pub(super) fn step_state_from(step: &CeremonyStepView<'_>) -> pb::CeremonyStepSt
             .and_then(|lease| lease.execution_profile())
             .and_then(|profile| serde_json::to_value(profile).ok())
             .and_then(|value| struct_from_json(&value)),
+        carried_from: step
+            .carried_from()
+            .map(super::ceremony_succession::source_to_proto),
     }
 }

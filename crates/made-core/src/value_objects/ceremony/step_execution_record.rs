@@ -3,8 +3,8 @@ use serde::{Deserialize, Serialize};
 use time::OffsetDateTime;
 
 use super::{
-    RoleId, StateIteration, StateVisit, StepAttempt, StepErrorMessage, StepIteration, StepLease,
-    StepOutput, StepResult, StepStatus,
+    RoleId, SourceRecordRef, StateIteration, StateVisit, StepAttempt, StepErrorMessage,
+    StepIteration, StepLease, StepOutput, StepResult, StepStatus,
 };
 use crate::value_objects::BudgetReservationId;
 
@@ -31,6 +31,16 @@ pub struct StepExecutionRecord {
     claimed_role: Option<RoleId>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     budget_reservation_id: Option<BudgetReservationId>,
+    /// Where this record's work actually happened, when it happened
+    /// somewhere else.
+    ///
+    /// Present only on a record a successor carried from its
+    /// predecessor. Absent — and skipped on the wire, so no sealed
+    /// record moves a byte — for every record of work this instance
+    /// did itself, which is every record written before successions
+    /// existed and nearly every one written since.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    carried_from: Option<SourceRecordRef>,
 }
 
 impl StepExecutionRecord {
@@ -48,6 +58,7 @@ impl StepExecutionRecord {
             error_message: None,
             claimed_role: None,
             budget_reservation_id: None,
+            carried_from: None,
         }
     }
 
@@ -180,6 +191,7 @@ impl StepExecutionRecord {
             error_message: None,
             claimed_role,
             budget_reservation_id: self.budget_reservation_id,
+            carried_from: self.carried_from,
         }
     }
 
@@ -204,6 +216,36 @@ impl StepExecutionRecord {
             error_message,
             claimed_role: self.claimed_role,
             budget_reservation_id: self.budget_reservation_id,
+            carried_from: self.carried_from,
         }
+    }
+
+    /// A completed record whose work was done in another instance.
+    ///
+    /// Built rather than folded from a start and a result, because
+    /// there was no start here: nothing was claimed, nothing was
+    /// leased, and the attempt is the first this instance would make.
+    /// The source is what keeps the distinction readable afterwards.
+    #[must_use]
+    pub fn carried(
+        output: StepOutput,
+        source: SourceRecordRef,
+        state_iteration: StateIteration,
+        state_visit: StateVisit,
+    ) -> Self {
+        Self {
+            status: StepStatus::Completed,
+            state_iteration,
+            state_visit,
+            output,
+            carried_from: Some(source),
+            ..Self::pending()
+        }
+    }
+
+    /// Where this record's work happened, when it was not here.
+    #[must_use]
+    pub const fn carried_from(&self) -> Option<&SourceRecordRef> {
+        self.carried_from.as_ref()
     }
 }

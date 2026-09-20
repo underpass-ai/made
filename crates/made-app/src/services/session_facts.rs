@@ -20,10 +20,13 @@
 //! without changing the identity of a historical event.
 
 use made_core::entities::{AuditFact, CeremonyEvent, CeremonyInstance};
+
+mod succession;
 use made_core::error::DomainError;
 use made_core::value_objects::{
     AuditActor, AuditActorKind, AuditEventType, CeremonyId, EventId, RoleId,
 };
+use succession::succession_about;
 use time::OffsetDateTime;
 
 /// The id of the record that opens a stream.
@@ -289,6 +292,9 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         | CeremonyEvent::StepDeadlineExceeded(_)
         | CeremonyEvent::LateStepResultObserved(_) => lifecycle_about(event),
         CeremonyEvent::ExecutionReceiptLinked(linked) => execution_receipt_about(&linked.link),
+        event @ (CeremonyEvent::SuccessorPlanned(_) | CeremonyEvent::SuccessionCarried(_)) => {
+            succession_about(event)
+        }
     }
 }
 

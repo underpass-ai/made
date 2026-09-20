@@ -78,6 +78,8 @@ mod optionals;
 mod state_repeat;
 #[path = "mcp_parity_session/state_visits.rs"]
 mod state_visits;
+#[path = "mcp_parity_session/succession.rs"]
+mod succession;
 
 /// The exception list, read at test time from the same file the
 /// surface gate reads. Relative to this file, as F1's `include_str!`
@@ -992,6 +994,30 @@ impl ParityArms {
                 .get(&key)
                 .expect("the scripted host captured a claim")
                 .clone();
+        }
+        if tool == "made_start_ceremony_successor" {
+            // Every disposition answers for the exact claim the host
+            // accepted; the script names the step and the host supplies
+            // the fence it captured, exactly as a real caller would.
+            let ceremony_id = arguments["ceremony_id"].as_str().unwrap().to_owned();
+            if let Some(dispositions) = arguments["dispositions"].as_array_mut() {
+                for disposition in dispositions {
+                    if disposition.get("claim_fence").is_some() {
+                        continue;
+                    }
+                    let key = (
+                        ceremony_id.clone(),
+                        disposition["step_id"].as_str().unwrap().to_owned(),
+                    );
+                    disposition["claim_fence"] = self
+                        .claims
+                        .lock()
+                        .unwrap()
+                        .get(&key)
+                        .expect("the scripted host captured a claim")
+                        .clone();
+                }
+            }
         }
         if tool == "made_report_ceremony_agent_status"
             && arguments["status"].get("claim_fence").is_none()
@@ -2120,6 +2146,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
     calls.extend(renewal_script());
     calls.extend(host_handoff::script());
     calls.extend(intervention_delivery::script());
+    calls.extend(succession::script());
     calls
 }
 
@@ -2354,6 +2381,9 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
         }
         called.insert((*tool).to_owned());
     }
+    // The two refusals a handoff owes: every call above has to succeed,
+    // and these two have to be refused the same way on both backends.
+    succession::assert_both_refuse_a_superseded_origin(arms).await;
     called
 }
 

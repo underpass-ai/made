@@ -129,6 +129,7 @@ fn events(id: &CeremonyId, name: &CeremonyName) -> Vec<CeremonyEvent> {
             context: CeremonyContext::empty(),
             bound_definition: None,
             lineage: None,
+            succession: None,
             budget_account_id: None,
             ceremony_deadline: None,
             state_deadline: None,
