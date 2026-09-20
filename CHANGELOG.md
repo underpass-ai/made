@@ -9,6 +9,11 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Read the global ceremony feed as attention an integrator can act on: typed
+  events derived from sealed records, an identity that makes replaying the feed
+  harmless, a result that says whether it is sealed or merely reported by a
+  host, and the loop state a host stops on. Nothing is appended to a journal,
+  so two integrators bound to one ceremony agree without coordinating. (#PR)
 - Fix the PostgreSQL agentic system repository, which could not save at all:
   it locked the revision head with `FOR UPDATE` on an aggregate, which
   PostgreSQL refuses at planning time. It now locks the head row, and a race
