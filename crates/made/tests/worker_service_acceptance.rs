@@ -687,7 +687,7 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
 
 #[tokio::test]
 #[allow(clippy::too_many_lines)] // One installed daemon must reject every untrusted estimate before intent/PUT.
-async fn installed_worker_lifecycle_and_budget_policy_fail_closed_together() {
+async fn installed_worker_budget_policy_fails_closed_before_intent_or_put() {
     std::fs::create_dir_all("tmp").unwrap();
     let directory = tempfile::tempdir_in("tmp").unwrap();
     let root = directory.path().canonicalize().unwrap();
