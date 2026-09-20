@@ -37,31 +37,27 @@ pub(super) fn wire(
             activation,
         });
     }
-    match config.ceremony_store_path.as_deref() {
-        Some(path) => {
-            let ledger = SqliteHostDeliveryLedger::open(path).map_err(|error| {
-                ComposeError::CeremonyStore(format!("host delivery ledger at {path}: {error}"))
-            })?;
-            let bindings = SqliteIntegratorBindings::open(path).map_err(|error| {
-                ComposeError::CeremonyStore(format!("integrator bindings at {path}: {error}"))
-            })?;
-            info!(path, "host deliveries and integrator bindings are durable");
-            Ok(HostDeliveryHandles {
-                ledger: Arc::new(ledger),
-                bindings: Arc::new(bindings),
-                activation,
-            })
-        }
-        None => {
-            warn!(
-                "MADE_CEREMONY_STORE_PATH is unset: work handed out to hosts is held in memory \
-                 and will not survive a restart"
-            );
-            Ok(HostDeliveryHandles {
-                ledger: Arc::new(InMemoryHostDeliveryLedger::new()),
-                bindings: Arc::new(InMemoryIntegratorBindings::new()),
-                activation,
-            })
-        }
-    }
+    let Some(path) = config.ceremony_store_path.as_deref() else {
+        warn!(
+            "MADE_CEREMONY_STORE_PATH is unset: work handed out to hosts is held in memory \
+             and will not survive a restart"
+        );
+        return Ok(HostDeliveryHandles {
+            ledger: Arc::new(InMemoryHostDeliveryLedger::new()),
+            bindings: Arc::new(InMemoryIntegratorBindings::new()),
+            activation,
+        });
+    };
+    let ledger = SqliteHostDeliveryLedger::open(path).map_err(|error| {
+        ComposeError::CeremonyStore(format!("host delivery ledger at {path}: {error}"))
+    })?;
+    let bindings = SqliteIntegratorBindings::open(path).map_err(|error| {
+        ComposeError::CeremonyStore(format!("integrator bindings at {path}: {error}"))
+    })?;
+    info!(path, "host deliveries and integrator bindings are durable");
+    Ok(HostDeliveryHandles {
+        ledger: Arc::new(ledger),
+        bindings: Arc::new(bindings),
+        activation,
+    })
 }
