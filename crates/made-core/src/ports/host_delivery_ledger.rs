@@ -11,9 +11,9 @@ use crate::value_objects::{
 };
 
 use super::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryPage,
-    HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, ProcessedOutcome,
-    SupersessionOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostActivationOutcome, HostDeliveryFilter,
+    HostDeliveryPage, HostDeliveryPageLimit, HostDeliveryQuery, LeasedDelivery, ProcessedOutcome,
+    RecordedActivation, SupersessionOutcome,
 };
 
 /// Persistence contract for work handed out to hosts.
@@ -63,6 +63,21 @@ pub trait HostDeliveryLedgerPort: Send + Sync {
         action: &ProcessedActionRef,
         now: OffsetDateTime,
     ) -> Result<ProcessedOutcome, DomainError>;
+
+    /// Write down what an activation adapter did with an envelope.
+    ///
+    /// Not the leased path, and deliberately so. An activation is a
+    /// push: the engine woke a host and holds nothing, so requiring a
+    /// lease here would mean taking one out against itself to record
+    /// that it made a phone call. Reaching a host is transport and
+    /// never processing, so a delivered record stays offerable and the
+    /// host still comes and takes the work under its own lease.
+    async fn record_activation(
+        &self,
+        delivery_id: &HostDeliveryId,
+        outcome: &HostActivationOutcome,
+        now: OffsetDateTime,
+    ) -> Result<RecordedActivation, DomainError>;
 
     /// Count a failed attempt, and retry or give up by the policy.
     async fn mark_failed(
