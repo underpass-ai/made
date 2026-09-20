@@ -18,7 +18,7 @@ even though the new catalogue identity is `made`.
   closing a hand-off nobody made; and a host that was replaced cannot close its
   successor's work. None of it confers authority: the effect itself still goes
   through the commands the host already has, authorized as they already are.
-  (#PR)
+  (#236)
 - A bound integrator can ask what it is owed and be handed it, with enough
   context to decide and not enough to act on blindly. The read path is where
   the loop recovers — what has run out is expired and what is offerable is
