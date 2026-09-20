@@ -22,6 +22,7 @@ mod reasons;
 mod recollection;
 mod start;
 mod step_execution;
+mod succession;
 mod transitions;
 
 impl CeremonyInstance {
@@ -106,6 +107,8 @@ impl CeremonyInstance {
             CeremonyEvent::ExecutionReceiptLinked(event) => {
                 self.apply_execution_receipt_linked(event);
             }
+            CeremonyEvent::SuccessorPlanned(event) => self.apply_successor_planned(event),
+            CeremonyEvent::SuccessionCarried(event) => self.apply_succession_carried(event),
         }
     }
 

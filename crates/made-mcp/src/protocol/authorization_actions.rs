@@ -89,6 +89,9 @@ pub(super) const GRANT_ACTIONS: &[&str] = &[
     "issue_authorization_grant",
     "revoke_authorization_grant",
     "read_authorization_decisions",
+    "inspect_ceremony_resume",
+    "plan_ceremony_successor",
+    "start_ceremony_successor",
 ];
 
 #[cfg(all(test, feature = "embedded"))]

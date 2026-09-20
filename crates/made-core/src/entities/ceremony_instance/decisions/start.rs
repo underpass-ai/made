@@ -1,13 +1,16 @@
 use time::{Duration, OffsetDateTime};
 
-use crate::entities::ceremony_events::{CeremonyInstanceStarted, MemoryRecalled};
+use crate::entities::ceremony_events::{
+    CeremonyInstanceStarted, MemoryRecalled, SuccessionCarried,
+};
 use crate::entities::{
     CeremonyDefinition, CeremonyEvent, CeremonyInstance, PublishedCeremonyDefinition,
 };
 use crate::error::DomainError;
 use crate::value_objects::{
     BudgetAccountId, CeremonyContext, CeremonyDeadline, CeremonyDefinitionDigest, CeremonyId,
-    CeremonyLineage, SessionRecollection, StateDeadline, StateVisit,
+    CeremonyLineage, CeremonySuccession, SessionRecollection, StateDeadline, StateVisit,
+    SuccessionPlan,
 };
 
 impl CeremonyInstance {
@@ -133,6 +136,47 @@ impl CeremonyInstance {
         ))
     }
 
+    /// Open a successor: the opening the plan settled, and what it was
+    /// given to start from.
+    ///
+    /// The second append of a succession, and the one that may be made
+    /// twice. Everything here is derived from facts already sealed in
+    /// the predecessor, so the batch a retry builds is byte for byte
+    /// the batch the first attempt built — which is what lets a caller
+    /// that crashed between the two appends verify the existing stream
+    /// instead of opening a second one.
+    ///
+    /// The successor seals its own deadlines from its own definition.
+    /// Inheriting the predecessor's would carry a clock the new
+    /// definition never agreed to.
+    pub fn decide_start_successor(
+        id: CeremonyId,
+        published: &PublishedCeremonyDefinition,
+        context: CeremonyContext,
+        succession: CeremonySuccession,
+        plan: &SuccessionPlan,
+        now: OffsetDateTime,
+    ) -> Result<Vec<CeremonyEvent>, DomainError> {
+        let mut opening = Self::opening(
+            id,
+            published.definition(),
+            context,
+            now,
+            Some(published.digest()),
+            None,
+            None,
+        )?;
+        opening.succession = Some(Box::new(succession));
+        let mut events = vec![CeremonyEvent::CeremonyInstanceStarted(opening)];
+        if !plan.carried().is_empty() {
+            events.push(CeremonyEvent::SuccessionCarried(SuccessionCarried {
+                carried: plan.carried().to_vec(),
+                carried_at: now,
+            }));
+        }
+        Ok(events)
+    }
+
     /// The opening, and the recollection when there was one.
     ///
     /// The recollection is decided outside — reading memory is IO, and
@@ -200,6 +244,7 @@ impl CeremonyInstance {
             context,
             bound_definition,
             lineage,
+            succession: None,
             budget_account_id,
             ceremony_deadline,
             state_deadline,

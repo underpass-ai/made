@@ -14,3 +14,4 @@ mod fold_equality;
 mod import;
 mod lifecycle;
 mod property;
+mod succession;

@@ -139,6 +139,13 @@ impl EmbeddedCeremonyInstancePresenter {
             // declares no `memory_scope`.
             "recollection": instance.recollection().map(recollection_value),
             "lineage": instance.lineage().map(lineage_value),
+            // Both directions of the relation, so "which ceremony
+            // replaced this one" and "which one did this replace" are
+            // answerable without reading raw streams.
+            "succession": instance.succession().map(succession_value),
+            "successor_plan": instance
+                .successor_plan()
+                .map(super::embedded_succession_dispatch::plan_value),
             "child_groups": instance.child_groups().values().map(child_group_value).collect::<Vec<_>>(),
             "lifecycle": lifecycle.phase().as_label(),
             "end_reason": lifecycle.end_reason().map(CeremonyEndReason::as_label),
@@ -251,6 +258,26 @@ fn child_group_value(group: &ChildGroupState) -> Value {
     })
 }
 
+/// Which ceremony this one succeeds, when it succeeds one.
+fn succession_value(succession: &made_core::value_objects::CeremonySuccession) -> Value {
+    json!({
+        "predecessor_id": succession.predecessor_id().as_str(),
+        "predecessor_head": succession.predecessor_head().to_hex(),
+        "predecessor_version": succession.predecessor_version().value(),
+        "predecessor_definition": {
+            "name": succession.predecessor_definition().name().as_str(),
+            "version": succession.predecessor_definition().version().as_str(),
+            "digest": succession.predecessor_definition().digest().to_hex(),
+        },
+        "successor_definition": {
+            "name": succession.successor_definition().name().as_str(),
+            "version": succession.successor_definition().version().as_str(),
+            "digest": succession.successor_definition().digest().to_hex(),
+        },
+        "plan_id": succession.plan_id().as_str(),
+    })
+}
+
 fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
     view.steps()
         .iter()
@@ -270,6 +297,9 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                     .lease()
                     .and_then(|lease| lease.execution_profile())
                     .and_then(|profile| serde_json::to_value(profile).ok()),
+                "carried_from": step
+                    .carried_from()
+                    .map(super::embedded_succession_dispatch::source),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
                 "effective_lease_expires_at": step.record().effective_lease_expires_at().map(|at| at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),
