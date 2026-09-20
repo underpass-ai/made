@@ -30,6 +30,8 @@ use made_core::value_objects::{
 };
 
 mod support;
+#[cfg(test)]
+mod tests;
 
 use support::{carried_evidence, predecessor_cut, sealed_plan, verify_existing_opening};
 

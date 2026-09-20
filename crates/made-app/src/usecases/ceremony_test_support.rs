@@ -1056,6 +1056,12 @@ impl EventStoreFake {
         self.facts.read().await.clone()
     }
 
+    /// Lose a whole stream, as a crash between two appends does.
+    pub(super) async fn drop_stream(&self, id: &CeremonyId) {
+        self.streams.write().await.remove(id);
+        self.snapshots.write().await.remove(id);
+    }
+
     /// The sealed records of one stream, in order.
     pub(super) async fn records(&self, id: &CeremonyId) -> Vec<AuditRecord> {
         self.streams
