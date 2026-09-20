@@ -1,6 +1,7 @@
 use crate::{
     embedded_authorization_services::EmbeddedAuthorizationServices,
-    embedded_council_services::EmbeddedCouncilServices, EmbeddedMadeBuilder, VERSION,
+    embedded_council_services::EmbeddedCouncilServices, host_delivery_ports::HostDeliveryPorts,
+    EmbeddedMadeBuilder, VERSION,
 };
 use made_adapters::agents::DispatchingAgentFactory;
 use made_adapters::artifacts::LocalArtifactStore;
@@ -35,8 +36,8 @@ use made_core::ports::{
     CeremonyDefinitionRepositoryPort, CeremonyEventCursorPort, CeremonyEventStorePort,
     CeremonyEventSubscriberPort, CeremonyEventTransportPort, CeremonyEvidenceSourcePort,
     CeremonyInstanceIndexPort, CeremonySnapshotStorePort, CeremonyStepHandlerPort, ClockPort,
-    ExecutionReceiptStorePort, MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort,
-    MetricsSnapshotPort, StatisticsPort,
+    ExecutionReceiptStorePort, HostActivationPort, HostDeliveryLedgerPort, IntegratorBindingPort,
+    MemoryReaderPort, MemoryWriterPort, MetricsRecorderPort, MetricsSnapshotPort, StatisticsPort,
 };
 use made_core::value_objects::{
     AuthorizationAction, AuthorizationPolicyId, AuthorizationRequestId, CeremonyEventConsumer,
@@ -104,6 +105,7 @@ pub struct EmbeddedMade {
     budgets: BudgetLedgerService,
     authorization: Option<EmbeddedAuthorizationServices>,
     agent_status: Arc<made_app::usecases::CeremonyAgentStatusService>,
+    host_delivery: HostDeliveryPorts,
 }
 
 impl EmbeddedMade {
@@ -137,6 +139,8 @@ impl EmbeddedMade {
         })?;
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
+            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
+            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -161,6 +165,8 @@ impl EmbeddedMade {
         })?;
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
+            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
+            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -186,6 +192,8 @@ impl EmbeddedMade {
         })?;
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
+            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
+            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -203,6 +211,8 @@ impl EmbeddedMade {
     ) -> Result<Self, ApiError> {
         let store = Arc::new(store);
         Ok(Self::provider_builder(&store)?
+            .with_host_delivery_ledger(Arc::new(store.host_delivery_ledger()))
+            .with_integrator_bindings(Arc::new(store.integrator_bindings()))
             .with_ceremony_store_and_memory(store.clone())
             .with_event_cursor(store.clone())
             .with_definition_publications(store)
@@ -263,6 +273,7 @@ impl EmbeddedMade {
         ceremony_search_cursors: Option<CeremonySearchCursorCodec>,
         ceremony_search_authorization: Option<Arc<TrustedHostAuthorizationGate>>,
         agent_status_port: Arc<dyn CeremonyAgentStatusPort>,
+        host_delivery: HostDeliveryPorts,
     ) -> Self {
         // What a session leaves behind is a projection of its stream,
         // so it is a subscriber rather than something a use case
@@ -345,7 +356,26 @@ impl EmbeddedMade {
             budgets,
             authorization: None,
             agent_status,
+            host_delivery,
         }
+    }
+
+    /// Work handed out to hosts, as this engine composed it.
+    #[must_use]
+    pub fn host_delivery_ledger(&self) -> &Arc<dyn HostDeliveryLedgerPort> {
+        self.host_delivery.ledger()
+    }
+
+    /// Who is driving each ceremony, as this engine composed it.
+    #[must_use]
+    pub fn integrator_bindings(&self) -> &Arc<dyn IntegratorBindingPort> {
+        self.host_delivery.bindings()
+    }
+
+    /// How a host that does not ask gets woken, if this engine can.
+    #[must_use]
+    pub fn host_activation(&self) -> &Arc<dyn HostActivationPort> {
+        self.host_delivery.activation()
     }
 
     /// Attach the policy services used by protected direct facade calls and

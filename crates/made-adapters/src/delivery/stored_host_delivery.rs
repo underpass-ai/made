@@ -1,0 +1,232 @@
+use made_core::error::DomainError;
+use made_core::ports::{AckOutcome, DeliveryFailureOutcome, ProcessedOutcome};
+use made_core::value_objects::{
+    DeliveryExpiryCause, DeliveryFailureReason, DurationMs, HostAgentIncarnation, HostDeliveryId,
+    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryRecord,
+    HostDeliveryState, HostDeliveryStateKind, IntegratorFence, ProcessedActionRef,
+};
+use serde::{Deserialize, Serialize};
+use time::{Duration, OffsetDateTime};
+
+/// One delivery as a store holds it, with the two facts the domain
+/// record deliberately does not carry.
+///
+/// Who last held it and which integrator generation closed it are
+/// storage-side fencing, not part of what the delivery *is*: a host
+/// reading its own record has no business being told which other
+/// process was there before it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(crate) struct StoredHostDelivery {
+    record: HostDeliveryRecord,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    owner: Option<HostAgentIncarnation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fence: Option<IntegratorFence>,
+}
+
+impl StoredHostDelivery {
+    pub(crate) const fn new(record: HostDeliveryRecord) -> Self {
+        Self {
+            record,
+            owner: None,
+            fence: None,
+        }
+    }
+
+    pub(crate) const fn record(&self) -> &HostDeliveryRecord {
+        &self.record
+    }
+
+    pub(crate) fn into_record(self) -> HostDeliveryRecord {
+        self.record
+    }
+
+    pub(crate) const fn id(&self) -> &HostDeliveryId {
+        self.record.id()
+    }
+
+    /// The key the destination index files this delivery under.
+    pub(crate) fn target_key(&self) -> String {
+        self.record.target().target_key().to_string()
+    }
+
+    pub(crate) fn is_offerable_at(&self, now: OffsetDateTime) -> bool {
+        self.record.is_offerable_at(now)
+    }
+
+    /// Hand this delivery to one host for a bounded time.
+    pub(crate) fn leased(
+        &self,
+        lease_id: HostDeliveryLeaseId,
+        owner: &HostAgentIncarnation,
+        now: OffsetDateTime,
+        duration: DurationMs,
+    ) -> (Self, HostDeliveryLease) {
+        let lease = HostDeliveryLease::new(
+            self.record.id().clone(),
+            lease_id,
+            owner.clone(),
+            now + millis(duration),
+        );
+        let next = Self {
+            record: self.record.leased(lease.clone(), now),
+            owner: Some(owner.clone()),
+            fence: self.fence,
+        };
+        (next, lease)
+    }
+
+    /// Record what the host said, or say why the report is not taken.
+    pub(crate) fn acknowledged(
+        &self,
+        lease: &HostDeliveryLease,
+        observation: &HostDeliveryObservation,
+        now: OffsetDateTime,
+    ) -> (Option<Self>, AckOutcome) {
+        if let HostDeliveryState::Acknowledged { observation: held } = self.record.state() {
+            return if held == observation {
+                (None, AckOutcome::AlreadyAcknowledged(self.record.clone()))
+            } else {
+                (
+                    None,
+                    AckOutcome::Conflict {
+                        existing: Box::new(held.clone()),
+                    },
+                )
+            };
+        }
+        if !self.holds(lease, now) {
+            return (None, AckOutcome::LeaseNotOwned);
+        }
+        let next = self.with_record(self.record.acknowledged(observation.clone(), now));
+        let outcome = AckOutcome::Acknowledged(next.record.clone());
+        (Some(next), outcome)
+    }
+
+    /// Close a delivery the host has acted on, or say why not.
+    pub(crate) fn processed(
+        &self,
+        owner: &HostAgentIncarnation,
+        fence: Option<IntegratorFence>,
+        action: &ProcessedActionRef,
+        now: OffsetDateTime,
+    ) -> (Option<Self>, ProcessedOutcome) {
+        // The fence first: a host that was replaced has no standing to
+        // close anything, and finding that out only after the state
+        // check would let a stale caller conflict with its successor.
+        if let (Some(offered), Some(current)) = (fence, self.fence) {
+            if offered < current {
+                return (None, ProcessedOutcome::FenceRejected { current });
+            }
+        }
+        if let HostDeliveryState::Processed { action: held, .. } = self.record.state() {
+            return if held == action {
+                (
+                    None,
+                    ProcessedOutcome::AlreadyProcessed(self.record.clone()),
+                )
+            } else {
+                (
+                    None,
+                    ProcessedOutcome::Conflict {
+                        existing: Box::new(held.clone()),
+                    },
+                )
+            };
+        }
+        let state = self.record.state().kind();
+        if state != HostDeliveryStateKind::Acknowledged {
+            return (None, ProcessedOutcome::NotAcknowledged { state });
+        }
+        if self.owner.as_ref().is_some_and(|held| held != owner) {
+            return (None, ProcessedOutcome::LeaseNotOwned);
+        }
+        let next = Self {
+            record: self.record.processed(action.clone(), now),
+            owner: self.owner.clone(),
+            fence: fence.or(self.fence),
+        };
+        let outcome = ProcessedOutcome::Processed(next.record.clone());
+        (Some(next), outcome)
+    }
+
+    /// Count a failed attempt, and retry or give up by the policy.
+    pub(crate) fn failed(
+        &self,
+        lease: &HostDeliveryLease,
+        reason: &DeliveryFailureReason,
+        now: OffsetDateTime,
+    ) -> (Option<Self>, DeliveryFailureOutcome) {
+        if !self.holds(lease, now) {
+            return (None, DeliveryFailureOutcome::LeaseNotOwned);
+        }
+        let attempted = self.record.attempt().next();
+        if self
+            .record
+            .policy()
+            .max_attempts()
+            .is_exhausted_by(attempted)
+        {
+            let next = self.with_record(self.record.failed(reason.clone(), now));
+            let outcome = DeliveryFailureOutcome::Exhausted(next.record.clone());
+            return (Some(next), outcome);
+        }
+        let next = self.with_record(self.record.requeued(now));
+        let outcome = DeliveryFailureOutcome::Requeued(next.record.clone());
+        (Some(next), outcome)
+    }
+
+    /// Give a lease back untouched, if it is the one that holds this.
+    pub(crate) fn released(&self, lease: &HostDeliveryLease, now: OffsetDateTime) -> Option<Self> {
+        self.holds(lease, now)
+            .then(|| self.with_record(self.record.released(now)))
+    }
+
+    /// Whatever has run out of time, and nothing else.
+    pub(crate) fn expired(&self, now: OffsetDateTime) -> Option<Self> {
+        match self.record.state() {
+            HostDeliveryState::Leased { lease } if !lease.is_live_at(now) => {
+                Some(self.with_record(self.record.released(now)))
+            }
+            HostDeliveryState::Acknowledged { observation } => {
+                let timeout = self.record.policy().ack_timeout()?;
+                (observation.observed_at() + millis(timeout) <= now).then(|| {
+                    self.with_record(self.record.expired(DeliveryExpiryCause::Timeout, now))
+                })
+            }
+            _ => None,
+        }
+    }
+
+    /// Close this delivery because its destination was replaced.
+    pub(crate) fn superseded(&self, by: Option<HostDeliveryId>, now: OffsetDateTime) -> Self {
+        self.with_record(self.record.superseded(by, now))
+    }
+
+    /// The same item, offered to the destination that replaced this one.
+    pub(crate) fn re_addressed(
+        &self,
+        target: made_core::value_objects::HostDeliveryTarget,
+        now: OffsetDateTime,
+    ) -> Result<Self, DomainError> {
+        self.record.re_addressed(target, now).map(Self::new)
+    }
+
+    fn holds(&self, lease: &HostDeliveryLease, now: OffsetDateTime) -> bool {
+        self.record
+            .live_lease_at(now)
+            .is_some_and(|held| held.lease_id() == lease.lease_id())
+    }
+
+    fn with_record(&self, record: HostDeliveryRecord) -> Self {
+        Self {
+            record,
+            owner: self.owner.clone(),
+            fence: self.fence,
+        }
+    }
+}
+
+fn millis(duration: DurationMs) -> Duration {
+    Duration::milliseconds(i64::try_from(duration.get()).unwrap_or(i64::MAX))
+}

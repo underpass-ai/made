@@ -40,12 +40,14 @@
 
 #![deny(missing_debug_implementations)]
 
+pub mod activation;
 pub mod artifacts;
 pub mod ceremony;
 mod ceremony_event_wire;
 pub mod clock;
 pub mod config;
 pub mod connectors;
+mod delivery;
 pub mod event_sink;
 pub mod execution;
 pub mod execution_profile_resolver;

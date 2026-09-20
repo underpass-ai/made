@@ -18,6 +18,7 @@ mod embedded_council_services;
 mod embedded_made;
 mod embedded_made_builder;
 mod engine_api;
+mod host_delivery_ports;
 mod in_process_ceremony_definition_source;
 mod unconfigured_executor;
 
@@ -29,6 +30,7 @@ pub use embedded_made::{
     EmbeddedMade,
 };
 pub use embedded_made_builder::EmbeddedMadeBuilder;
+pub use host_delivery_ports::HostDeliveryPorts;
 pub use in_process_ceremony_definition_source::InProcessCeremonyDefinitionSource;
 
 /// MADE release version used by this embedded distribution.

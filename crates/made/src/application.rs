@@ -21,6 +21,7 @@ pub struct Application {
     pub nats_ceremony_recovery: Option<NatsCeremonyRecoverySubscriber>,
     pub worker_daemon: Option<Arc<crate::workers::CeremonyWorkerDaemon>>,
     pub health_state: crate::health::HealthState,
+    pub host_delivery: crate::HostDeliveryHandles,
 }
 
 impl std::fmt::Debug for Application {
