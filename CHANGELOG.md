@@ -17,7 +17,7 @@ even though the new catalogue identity is `made`.
   the event it stands for by deriving it again from the journal, never from a
   stored copy, so a host is told what the rules say now; one that cannot be
   derived is handed back rather than invented into news. A host that was
-  replaced is refused before anything is leased. (#PR)
+  replaced is refused before anything is leased. (#235)
 - Put an integrator in charge of a ceremony or a system run, and move the work
   when the host is replaced. Binding a scope that already has one displaces the
   incumbent and raises the fence, and whatever the outgoing host was offered
