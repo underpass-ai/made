@@ -5,17 +5,33 @@
 //! from records that already exist — nothing here appends to a
 //! journal, and two integrators reading the same ceremony reach the
 //! same conclusions without coordinating.
+//!
+//! The reading is pure and lives in the rules. Everything that turns a
+//! reading into work a host is handed — the durable cursor, the
+//! delivery ledger, waking the host, keeping the queue bounded — is
+//! the projector's, and none of it can change what the rules decided.
 
+mod attention_audience;
+mod attention_audience_resolver;
+mod attention_backpressure;
 mod attention_event;
+mod attention_projector;
 mod attention_rules;
 mod event_ref;
 mod loop_progress;
 mod loop_state;
+mod projection_round;
 mod result_acceptance;
 
+pub use attention_audience::AttentionAudience;
+pub use attention_audience_resolver::AttentionAudienceResolver;
 pub use attention_event::AttentionEvent;
-pub use attention_rules::attention_for;
+pub use attention_projector::AttentionProjector;
+pub use attention_rules::{attention_for, queue_overflow};
 pub use event_ref::EventRef;
 pub use loop_progress::LoopProgress;
 pub use loop_state::LoopState;
+pub use projection_round::ProjectionRound;
 pub use result_acceptance::ResultAcceptance;
+
+use attention_backpressure::AttentionBackpressure;

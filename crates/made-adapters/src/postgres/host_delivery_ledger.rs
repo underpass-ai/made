@@ -193,6 +193,25 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
         Ok(expired)
     }
 
+    async fn abandon(
+        &self,
+        delivery_id: &HostDeliveryId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Option<HostDeliveryRecord>, DomainError> {
+        let mut transaction = self.begin("begin host delivery abandon").await?;
+        let Some(next) = locked(&mut transaction, delivery_id)
+            .await?
+            .and_then(|stored| stored.abandoned(cause, now))
+        else {
+            return Ok(None);
+        };
+        let record = next.record().clone();
+        upsert(&mut transaction, &next).await?;
+        commit(transaction, "commit host delivery abandon").await?;
+        Ok(Some(record))
+    }
+
     async fn expire_ceremony(
         &self,
         ceremony_id: &CeremonyId,

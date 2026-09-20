@@ -177,6 +177,24 @@ impl HostDeliveryLedgerPort for InMemoryHostDeliveryLedger {
         Ok(ids)
     }
 
+    async fn abandon(
+        &self,
+        delivery_id: &HostDeliveryId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Option<HostDeliveryRecord>, DomainError> {
+        let mut deliveries = self.inner.write().await;
+        let Some(next) = deliveries
+            .get(delivery_id)
+            .and_then(|stored| stored.abandoned(cause, now))
+        else {
+            return Ok(None);
+        };
+        let record = next.record().clone();
+        deliveries.insert(delivery_id.clone(), next);
+        Ok(Some(record))
+    }
+
     async fn expire_ceremony(
         &self,
         ceremony_id: &CeremonyId,
