@@ -117,7 +117,8 @@ pub(crate) fn acknowledge_ceremony_agent_intervention_schema() -> Value {
                 "description": "What you saw. `received` and `refused` and `incapable` are statements about the item and are sealed in the ceremony's stream; `busy` and `timeout` are statements about you, count an attempt and put the offer back for whoever can take it."
             },
             "note": string_schema("What to record alongside it, in your own words."),
-            "evidence": string_schema("An evidence reference backing what you say you saw.")
+            "evidence": string_schema("An evidence reference backing what you say you saw."),
+            "observed_at": string_schema("When you saw it, RFC3339. State it if you might retry: an acknowledgement that differs only by the instant it was resent conflicts with its own retry. Omitted means now.")
         }
     })
 }
@@ -192,6 +193,8 @@ mod tests {
         assert!(required.contains(&"delivery_id"));
         assert!(required.contains(&"incarnation"));
         assert_eq!(schema["additionalProperties"], json!(false));
+        // Stating the instant is what makes a retry repeatable.
+        assert!(schema["properties"]["observed_at"].is_object());
     }
 
     #[test]

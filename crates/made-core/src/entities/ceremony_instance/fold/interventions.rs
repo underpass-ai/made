@@ -29,18 +29,11 @@ impl CeremonyInstance {
         let Some(intervention) = self.intervention_mut(&responded.intervention_id) else {
             return;
         };
-        let appended = match response.evidence_pack() {
-            Some(evidence_pack) => intervention.respond_with_evidence(
-                response.role_id().clone(),
-                evidence_pack.clone(),
-                response.responded_at(),
-            ),
-            None => intervention.respond(
-                response.role_id().clone(),
-                response.content().clone(),
-                response.responded_at(),
-            ),
-        };
+        // Verbatim, because the event is the answer: rebuilding it from
+        // its parts would drop the agent and the offer it names, and a
+        // replayed session would then disagree with its own journal
+        // about who answered.
+        let appended = intervention.accept_response(response.clone());
         if appended.is_ok() {
             self.record_that_it_answers(&responded.intervention_id, response.responded_at());
         }

@@ -127,6 +127,7 @@ pub(crate) fn request_ceremony_intervention_schema() -> Value {
             },
             "target_agent_execution_id": string_schema("Put it to one live agent instead of to seats. Requires target_incarnation, and makes target_role_ids ignored."),
             "target_incarnation": string_schema("Which generation of that agent's process. Required with target_agent_execution_id: an execution without its generation names a name rather than a process, and a replacement would inherit the question."),
+            "target_role_id": string_schema("Which seat that agent holds. Required with target_agent_execution_id, and refused when the definition does not let that role answer interventions."),
             "intent": {
                 "type": "string",
                 "enum": ["question", "feedback", "constraint", "checkpoint"],

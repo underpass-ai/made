@@ -35,6 +35,8 @@ use made_core::value_objects::{
 };
 use time::OffsetDateTime;
 
+use crate::services::AuthorizationOperationScope;
+
 /// Offers every intervention the stream opens to the hosts that can answer.
 pub struct InterventionDeliverySubscriber {
     deliveries: Arc<dyn HostDeliveryLedgerPort>,
@@ -68,6 +70,11 @@ impl CeremonyEventSubscriberPort for InterventionDeliverySubscriber {
             }
         }
     }
+}
+
+/// The evidence the append that produced these records is running under.
+fn current_authorization() -> Option<made_core::value_objects::AuthorizationEvidence> {
+    AuthorizationOperationScope::current().map(|operation| operation.evidence().clone())
 }
 
 impl InterventionDeliverySubscriber {
@@ -178,7 +185,10 @@ impl InterventionDeliverySubscriber {
         ceremony_id: &CeremonyId,
     ) -> Result<Vec<CeremonyAgentStatus>, DomainError> {
         let query = CeremonyAgentStatusQuery::new(ceremony_id.as_str(), None, 100, None)?;
-        let page = self.statuses.list(query, None).await?;
+        // Under the evidence the append is running within, because the
+        // roster refuses an unauthenticated read and this projection is
+        // not a second authority: it sees what the caller could see.
+        let page = self.statuses.list(query, current_authorization()).await?;
         Ok(page
             .entries()
             .iter()

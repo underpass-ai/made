@@ -29,6 +29,9 @@ use made_core::value_objects::{
     AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId, AuthorizationScope,
     DelegationDepth, PrincipalId, PrincipalKind,
 };
+use made_core::value_objects::{
+    CeremonyId, ExecutionOperationId, StateIteration, StateVisit, StepId, StepIteration,
+};
 use made_mcp::{EMBEDDED_STORE_PATH_ENV, EVENT_SINK_PATH_ENV, MCP_BACKEND_ENV};
 use serde_json::{json, Value};
 
@@ -63,14 +66,14 @@ roles:
 const AUTH_POLICY_ID: &str = "bridge-test";
 const AUTH_TRUSTED_HOST_ID: &str = "bridge-test-host";
 const SEARCH_STORE_ID: &str = "bridge-stdio-test-store";
-const SEARCH_CURSOR_KEY: &str =
-    "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5";
+const SEARCH_CURSOR_KEY: &str = "b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5";
 
 const CEREMONY: &str = "bridge-1";
 const EXECUTION: &str = "exec-1";
 const INCARNATION: &str = "inc-1";
 const REPLACEMENT: &str = "inc-2";
 const ITEM: &str = "item-1";
+const OWNER: &str = AUTH_TRUSTED_HOST_ID;
 
 #[test]
 fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answer() {
@@ -80,13 +83,13 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
 
     // The worker process claims the step and reports itself live, which
     // is what makes it a destination anything can be addressed to.
-    let claim = worker_process(&store, &[start(1), claim_step(2), report_status(3, INCARNATION)]);
+    let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
     assert_ok(&claim);
-    let claim_fence = structured(&claim[1])["claim_fence"]
-        .as_str()
-        .expect("the claim answers with its fence")
-        .to_owned();
-
+    let fence = claim_fence_of(&claim[2]);
+    assert_ok(&worker_process(
+        &store,
+        &[report_status(3, INCARNATION, &fence)],
+    ));
     // The supervisor process, which has never met the worker, puts a
     // question to that exact execution.
     let asked = supervisor_process(&store, &[request_exact(4, ITEM, INCARNATION)]);
@@ -111,7 +114,10 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     );
 
     // The worker pulls, which is a lease and not a receipt.
-    let pulled = worker_process(&store, &[report_status(6, INCARNATION), pull(7, INCARNATION)]);
+    let pulled = worker_process(
+        &store,
+        &[report_status(6, INCARNATION, &fence), pull(7, INCARNATION)],
+    );
     assert_ok(&pulled);
     let items = structured(&pulled[1])["items"].as_array().unwrap();
     assert_eq!(items.len(), 1, "the worker was handed exactly its question");
@@ -136,7 +142,13 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     // has that the question arrived.
     let acknowledged = worker_process(
         &store,
-        &[acknowledge(9, &delivery_id, &lease_id, INCARNATION, "received")],
+        &[acknowledge(
+            9,
+            &delivery_id,
+            &lease_id,
+            INCARNATION,
+            "received",
+        )],
     );
     assert_ok(&acknowledged);
 
@@ -151,7 +163,13 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     // the same fact and not a second one.
     let repeated = worker_process(
         &store,
-        &[acknowledge(11, &delivery_id, &lease_id, INCARNATION, "received")],
+        &[acknowledge(
+            11,
+            &delivery_id,
+            &lease_id,
+            INCARNATION,
+            "received",
+        )],
     );
     assert_ok(&repeated);
     let after_repeat = supervisor_process(&store, &[get_intervention(12, ITEM)]);
@@ -165,10 +183,7 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     );
 
     // And the answer, attributed to the agent that was handed it.
-    let answered = worker_process(
-        &store,
-        &[respond(13, &delivery_id, INCARNATION, &claim_fence)],
-    );
+    let answered = worker_process(&store, &[respond(13, &delivery_id, INCARNATION)]);
     assert_ok(&answered);
 
     let resolved = supervisor_process(&store, &[get_intervention(14, ITEM), list(15)]);
@@ -177,7 +192,9 @@ fn a_supervisor_and_a_worker_in_separate_processes_carry_one_question_to_an_answ
     let response = &structured(&resolved[0])["responses"][0];
     assert_eq!(response["executor_incarnation"], INCARNATION);
     assert_eq!(response["delivery_id"], delivery_id.as_str());
-    let listed = structured(&resolved[1])["interventions"].as_array().unwrap();
+    let listed = structured(&resolved[1])["interventions"]
+        .as_array()
+        .unwrap();
     assert_eq!(listed.len(), 1, "the ceremony holds the one question asked");
 }
 
@@ -187,8 +204,13 @@ fn a_replaced_agent_is_refused_and_a_refusal_is_visible() {
     let store = state.path().join("ceremonies.sqlite3");
     bootstrap_authorization(&store);
 
-    let claim = worker_process(&store, &[start(1), claim_step(2), report_status(3, INCARNATION)]);
+    let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
     assert_ok(&claim);
+    let fence = claim_fence_of(&claim[2]);
+    assert_ok(&worker_process(
+        &store,
+        &[report_status(3, INCARNATION, &fence)],
+    ));
     let asked = supervisor_process(&store, &[request_exact(4, ITEM, INCARNATION)]);
     assert_ok(&asked);
 
@@ -217,7 +239,10 @@ fn a_replaced_agent_is_refused_and_a_refusal_is_visible() {
     // The right agent takes it and declines it. A refusal is an
     // observation about the item, so it is sealed — and it is not a
     // delivery anybody is still waiting on.
-    let pulled = worker_process(&store, &[report_status(7, INCARNATION), pull(8, INCARNATION)]);
+    let pulled = worker_process(
+        &store,
+        &[report_status(7, INCARNATION, &fence), pull(8, INCARNATION)],
+    );
     assert_ok(&pulled);
     let items = structured(&pulled[1])["items"].as_array().unwrap();
     let delivery_id = items[0]["delivery_id"].as_str().unwrap().to_owned();
@@ -225,7 +250,13 @@ fn a_replaced_agent_is_refused_and_a_refusal_is_visible() {
 
     let refused = worker_process(
         &store,
-        &[acknowledge(9, &delivery_id, &lease_id, INCARNATION, "refused")],
+        &[acknowledge(
+            9,
+            &delivery_id,
+            &lease_id,
+            INCARNATION,
+            "refused",
+        )],
     );
     assert_ok(&refused);
 
@@ -248,28 +279,48 @@ fn a_conflicting_second_answer_about_one_offer_is_refused() {
     let store = state.path().join("ceremonies.sqlite3");
     bootstrap_authorization(&store);
 
-    let claim = worker_process(&store, &[start(1), claim_step(2), report_status(3, INCARNATION)]);
+    let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
     assert_ok(&claim);
+    let fence = claim_fence_of(&claim[2]);
+    assert_ok(&worker_process(
+        &store,
+        &[report_status(3, INCARNATION, &fence)],
+    ));
     assert_ok(&supervisor_process(
         &store,
         &[request_exact(4, ITEM, INCARNATION)],
     ));
 
-    let pulled = worker_process(&store, &[pull(5, INCARNATION)]);
+    let pulled = worker_process(
+        &store,
+        &[report_status(5, INCARNATION, &fence), pull(6, INCARNATION)],
+    );
     assert_ok(&pulled);
-    let items = structured(&pulled[0])["items"].as_array().unwrap();
+    let items = structured(&pulled[1])["items"].as_array().unwrap();
     let delivery_id = items[0]["delivery_id"].as_str().unwrap().to_owned();
     let lease_id = items[0]["lease_id"].as_str().unwrap().to_owned();
 
     assert_ok(&worker_process(
         &store,
-        &[acknowledge(6, &delivery_id, &lease_id, INCARNATION, "received")],
+        &[acknowledge(
+            7,
+            &delivery_id,
+            &lease_id,
+            INCARNATION,
+            "received",
+        )],
     ));
     // Changing its mind about what it saw. The first statement is
     // already sealed, and the stream does not overwrite.
     let conflicting = worker_process(
         &store,
-        &[acknowledge(7, &delivery_id, &lease_id, INCARNATION, "incapable")],
+        &[acknowledge(
+            8,
+            &delivery_id,
+            &lease_id,
+            INCARNATION,
+            "incapable",
+        )],
     );
     assert_eq!(
         conflicting[0]["result"]["isError"],
@@ -278,7 +329,7 @@ fn a_conflicting_second_answer_about_one_offer_is_refused() {
         conflicting[0]
     );
 
-    let read = supervisor_process(&store, &[get_intervention(8, ITEM)]);
+    let read = supervisor_process(&store, &[get_intervention(9, ITEM)]);
     let acks = structured(&read[0])["deliveries"].as_array().unwrap();
     assert_eq!(acks.len(), 1);
     assert_eq!(acks[0]["observation_kind"], "received");
@@ -290,8 +341,13 @@ fn a_ceremony_that_ends_leaves_no_question_waiting() {
     let store = state.path().join("ceremonies.sqlite3");
     bootstrap_authorization(&store);
 
-    let claim = worker_process(&store, &[start(1), claim_step(2), report_status(3, INCARNATION)]);
+    let claim = worker_process(&store, &[publish(0), start(1), claim_step(2)]);
     assert_ok(&claim);
+    let fence = claim_fence_of(&claim[2]);
+    assert_ok(&worker_process(
+        &store,
+        &[report_status(3, INCARNATION, &fence)],
+    ));
     assert_ok(&supervisor_process(
         &store,
         &[request_exact(4, ITEM, INCARNATION)],
@@ -311,11 +367,31 @@ fn a_ceremony_that_ends_leaves_no_question_waiting() {
     assert_eq!(view["unresolved"], false);
 }
 
+/// Publish first, then open an instance bound to the published version.
+///
+/// A definition handed in with the request lives only in the process
+/// that was handed it, so the supervisor would open the store and find
+/// a session it could not resolve. Publishing is what makes the two
+/// processes share more than a file.
+fn publish(id: u64) -> Value {
+    tool_call(
+        id,
+        "made_publish_ceremony_definition",
+        &json!({ "definition_yaml": CEREMONY_YAML }),
+    )
+}
+
 fn start(id: u64) -> Value {
     tool_call(
         id,
-        "made_start_ceremony",
-        &json!({"ceremony_id": CEREMONY, "definition_yaml": CEREMONY_YAML}),
+        "made_start_published_ceremony",
+        &json!({
+            "ceremony_id": CEREMONY,
+            "ceremony": "intervention_bridge",
+            "version": "1.0",
+            "actor_id": OWNER,
+            "actor_kind": "service"
+        }),
     )
 }
 
@@ -326,14 +402,15 @@ fn claim_step(id: u64) -> Value {
         &json!({
             "ceremony_id": CEREMONY,
             "step_id": "work",
-            "role_id": "ENGINEER",
-            "lease_owner_id": "bridge-worker",
-            "idempotency_key": "bridge-claim-1"
+            "actor_kind": "agent",
+            "lease_owner_id": OWNER,
+            "idempotency_key": "bridge-claim-1",
+            "lease_ttl_ms": 300_000
         }),
     )
 }
 
-fn report_status(id: u64, incarnation: &str) -> Value {
+fn report_status(id: u64, incarnation: &str, claim_fence: &str) -> Value {
     tool_call(
         id,
         "made_report_ceremony_agent_status",
@@ -341,9 +418,9 @@ fn report_status(id: u64, incarnation: &str) -> Value {
             "ceremony_id": CEREMONY,
             "agent_execution_id": EXECUTION,
             "operation_id": operation_id(),
-            "claim_owner_id": "bridge-worker",
+            "claim_owner_id": OWNER,
             "logical_worker_id": "bridge-worker",
-            "host_agent_id": "bridge-worker",
+            "host_agent_id": OWNER,
             "host_agent_incarnation": incarnation,
             "role_id": "ENGINEER",
             "step_id": "work",
@@ -357,7 +434,7 @@ fn report_status(id: u64, incarnation: &str) -> Value {
             "observed_at": "2026-09-20T12:00:00Z",
             "report_sequence": 1,
             "idempotency_key": format!("bridge-status-{incarnation}"),
-            "claim_fence": claim_fence_placeholder()
+            "claim_fence": claim_fence
         }}),
     )
 }
@@ -375,6 +452,7 @@ fn request_exact(id: u64, item: &str, incarnation: &str) -> Value {
             "intent": "question",
             "target_agent_execution_id": EXECUTION,
             "target_incarnation": incarnation,
+            "target_role_id": "ENGINEER",
             "message": "Is the migration still reversible?"
         }),
     )
@@ -412,12 +490,15 @@ fn acknowledge(
             "incarnation": incarnation,
             "role_id": "ENGINEER",
             "observation_kind": observation,
-            "note": "the bridge fixture's worker"
+            "note": "the bridge fixture's worker",
+            // Stated, so the retry below is the same fact and not a
+            // second one that happens to disagree about the clock.
+            "observed_at": "2026-09-20T12:00:05Z"
         }),
     )
 }
 
-fn respond(id: u64, delivery_id: &str, incarnation: &str, _claim_fence: &str) -> Value {
+fn respond(id: u64, delivery_id: &str, incarnation: &str) -> Value {
     tool_call(
         id,
         "made_respond_to_ceremony_intervention",
@@ -456,17 +537,38 @@ fn cancel(id: u64) -> Value {
         "made_cancel_ceremony",
         &json!({
             "ceremony_id": CEREMONY,
+            "actor_id": OWNER,
+            "actor_kind": "service",
             "reason": "the bridge fixture ends the ceremony with a question in flight"
         }),
     )
 }
 
+/// The identity the engine derives for this step's one execution.
+///
+/// Computed the way the engine computes it rather than copied out of a
+/// response, so a change to that derivation fails here instead of
+/// leaving the bridge testing a stale spelling.
 fn operation_id() -> String {
-    format!("{CEREMONY}:work:1:1:1")
+    ExecutionOperationId::for_step(
+        &CeremonyId::new(CEREMONY).unwrap(),
+        &StepId::new("work").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    )
+    .as_str()
+    .to_owned()
 }
 
-fn claim_fence_placeholder() -> String {
-    format!("{CEREMONY}:work:1:1:1")
+/// The fence the claim answered with, which is what a status report has
+/// to match for the engine to believe the claim is still this host's.
+fn claim_fence_of(response: &Value) -> String {
+    let structured = structured(response);
+    structured["claim_fence"]
+        .as_str()
+        .unwrap_or_else(|| panic!("the claim answers with its fence: {structured}"))
+        .to_owned()
 }
 
 fn tool_call(id: u64, tool: &str, arguments: &Value) -> Value {
@@ -562,6 +664,8 @@ fn bootstrap_authorization(path: &Path) {
                 owner.id().clone(),
                 [
                     AuthorizationAction::StartCeremony,
+                    AuthorizationAction::StartPublishedCeremony,
+                    AuthorizationAction::PublishCeremonyDefinition,
                     AuthorizationAction::GetCeremonyInstance,
                     AuthorizationAction::ClaimCeremonyStep,
                     AuthorizationAction::ReportCeremonyAgentStatus,

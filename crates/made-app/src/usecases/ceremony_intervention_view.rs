@@ -75,16 +75,22 @@ impl CeremonyInterventionView {
         Self::ended_status(intervention, records)
     }
 
-    /// Whether a host has been handed this route, on the engine's own
+    /// Whether a host has this route in hand, on the engine's own
     /// evidence: an unexpired lease it took, or an activation receipt.
+    ///
+    /// A route the host acknowledged by declining is not in anybody's
+    /// hands any more. Counting it as delivered would leave an operator
+    /// waiting for an answer that was already refused.
     fn is_in_host_hands(state: &HostDeliveryState) -> bool {
-        matches!(
-            state.kind(),
+        match state.kind() {
             HostDeliveryStateKind::Leased
-                | HostDeliveryStateKind::DeliveredToHost
-                | HostDeliveryStateKind::Acknowledged
-                | HostDeliveryStateKind::Processed
-        )
+            | HostDeliveryStateKind::DeliveredToHost
+            | HostDeliveryStateKind::Processed => true,
+            HostDeliveryStateKind::Acknowledged => state
+                .observation()
+                .is_some_and(|observation| observation.kind().is_received()),
+            _ => false,
+        }
     }
 
     fn ended_status(

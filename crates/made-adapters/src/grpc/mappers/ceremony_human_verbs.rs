@@ -149,19 +149,25 @@ pub fn request_ceremony_intervention_input_from_proto(
     // say, so it wins over the seats. Both halves or neither: an
     // execution without its generation names a name rather than a
     // process, and the point of this route is to address a process.
-    let exact = match (
-        request.target_agent_execution_id.trim().is_empty(),
-        request.target_incarnation.trim().is_empty(),
-    ) {
-        (false, false) => Some(DeliveryRecipient::new(
+    let named = [
+        request.target_agent_execution_id.trim(),
+        request.target_incarnation.trim(),
+        request.target_role_id.trim(),
+    ]
+    .iter()
+    .filter(|value| !value.is_empty())
+    .count();
+    let exact = match named {
+        3 => Some(DeliveryRecipient::new(
             CeremonyAgentExecutionId::new(request.target_agent_execution_id)?,
             HostAgentIncarnation::new(request.target_incarnation)?,
-            RoleId::new(request.role_id.clone())?,
+            RoleId::new(request.target_role_id)?,
         )),
-        (true, true) => None,
+        0 => None,
         _ => {
             return Err(DomainError::InvariantViolated {
-                reason: "an exact intervention target needs both an execution and an incarnation",
+                reason:
+                    "an exact intervention target needs an execution, an incarnation and a role",
             })
         }
     };

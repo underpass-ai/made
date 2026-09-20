@@ -30,6 +30,9 @@ pub(super) fn build_request_ceremony_intervention_request(
         target_incarnation: j2p::optional_str(obj, "target_incarnation")
             .unwrap_or_default()
             .to_owned(),
+        target_role_id: j2p::optional_str(obj, "target_role_id")
+            .unwrap_or_default()
+            .to_owned(),
         intent: j2p::optional_str(obj, "intent")
             .unwrap_or_default()
             .to_owned(),

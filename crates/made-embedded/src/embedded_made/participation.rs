@@ -94,11 +94,16 @@ impl EmbeddedMade {
             AuthorizationAction::RespondToCeremonyIntervention,
             input.instance_id(),
         )?;
+        // The ledger is composed in so an answer that names a delivery
+        // can close it. Without it, a route stays open after the
+        // question it carried has been answered, and an operator is
+        // told something is outstanding that is not.
         RespondToCeremonyInterventionUseCase::new(
             self.resolve_definition(),
             self.stream.clone(),
             self.clock.clone(),
         )
+        .with_delivery_ledger(self.host_delivery_ledger().clone())
         .execute(input)
         .await
     }

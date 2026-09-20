@@ -1499,6 +1499,11 @@ message RequestCeremonyInterventionRequest {
   // process. Setting these makes target_role_ids ignored.
   string target_agent_execution_id = 10;
   string target_incarnation = 11;
+  // Which seat that agent holds. Stated rather than looked up, because
+  // the engine refuses an item put to a role that may not answer it,
+  // and refusing at the request is clearer than delivering to somebody
+  // who turns out to have nothing to say.
+  string target_role_id = 15;
   // "question", "feedback", "constraint" or "checkpoint".
   string intent = 12;
   // How the item is offered to hosts: lease length, attempt limit,
@@ -2993,6 +2998,12 @@ message AcknowledgeCeremonyAgentInterventionRequest {
   string note = 9;
   // An evidence reference backing what the host says it saw.
   string evidence = 10;
+  // When the host saw it, RFC3339. Stated rather than taken from the
+  // engine's clock so that a host repeating itself after losing an
+  // answer repeats the same fact: an acknowledgement that differed only
+  // by the instant it was resent would conflict with its own retry.
+  // Absent means "now", which is fine for a host that will not retry.
+  string observed_at = 11;
 }
 
 message AcknowledgeCeremonyAgentInterventionResponse {

@@ -153,10 +153,23 @@ impl CeremonyIntervention {
         content: CeremonyInterventionContent,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
-        self.ensure_can_respond(&role_id)?;
-        self.responses
-            .push(CeremonyInterventionResponse::new(role_id, content, now));
-        self.updated_at = now;
+        self.accept_response(CeremonyInterventionResponse::new(role_id, content, now))
+    }
+
+    /// Append an answer exactly as it was sealed.
+    ///
+    /// The door a replay comes through. A fold that rebuilt the answer
+    /// from its parts would silently drop whatever the value object
+    /// grew since — which agent gave it, which offer it closes — and
+    /// the replayed session would disagree with its own journal about
+    /// who answered.
+    pub fn accept_response(
+        &mut self,
+        response: CeremonyInterventionResponse,
+    ) -> Result<(), DomainError> {
+        self.ensure_can_respond(response.role_id())?;
+        self.updated_at = response.responded_at();
+        self.responses.push(response);
         Ok(())
     }
 
@@ -166,15 +179,11 @@ impl CeremonyIntervention {
         evidence_pack: CeremonyEvidencePack,
         now: OffsetDateTime,
     ) -> Result<(), DomainError> {
-        self.ensure_can_respond(&role_id)?;
-        self.responses
-            .push(CeremonyInterventionResponse::from_evidence(
-                role_id,
-                evidence_pack,
-                now,
-            )?);
-        self.updated_at = now;
-        Ok(())
+        self.accept_response(CeremonyInterventionResponse::from_evidence(
+            role_id,
+            evidence_pack,
+            now,
+        )?)
     }
 
     pub(crate) fn ensure_can_respond(&self, role_id: &RoleId) -> Result<(), DomainError> {

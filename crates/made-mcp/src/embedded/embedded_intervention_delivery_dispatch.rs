@@ -152,9 +152,16 @@ fn observation(
     let evidence = optional(object, "evidence")
         .map(EvidenceReference::new)
         .transpose()?;
+    // The host's own instant when it gave one, so its retry repeats the
+    // same fact rather than conflicting with itself.
+    let observed_at = match optional(object, "observed_at") {
+        Some(raw) => OffsetDateTime::parse(&raw, &Rfc3339)
+            .map_err(|_| ToolError::invalid_request("observed_at must be an RFC3339 instant"))?,
+        None => OffsetDateTime::now_utc(),
+    };
     Ok(HostDeliveryObservation::new(
         kind,
-        OffsetDateTime::now_utc(),
+        observed_at,
         evidence,
         note,
     ))

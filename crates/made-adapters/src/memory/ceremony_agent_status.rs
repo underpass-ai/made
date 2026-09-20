@@ -140,9 +140,16 @@ impl CeremonyAgentStatusPort for InMemoryCeremonyAgentStatus {
         agent_execution_id: &str,
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<CeremonyAgentStatus, DomainError> {
-        require_read_authorization(
+        // Two actions read one row, because delivering an intervention
+        // has to ask who is holding this execution before it hands
+        // anything over. Naming them both here keeps that check honest:
+        // the pull is reading the roster, and the roster knows it.
+        require_one_read_authorization(
             authorization.as_ref(),
-            AuthorizationAction::GetCeremonyAgent,
+            &[
+                AuthorizationAction::GetCeremonyAgent,
+                AuthorizationAction::PullCeremonyAgentInterventions,
+            ],
         )?;
         self.entries
             .read()
@@ -159,9 +166,15 @@ impl CeremonyAgentStatusPort for InMemoryCeremonyAgentStatus {
         query: CeremonyAgentStatusQuery,
         authorization: Option<AuthorizationEvidence>,
     ) -> Result<CeremonyAgentStatusPage, DomainError> {
-        require_read_authorization(
+        require_one_read_authorization(
             authorization.as_ref(),
-            AuthorizationAction::ListCeremonyAgents,
+            &[
+                AuthorizationAction::ListCeremonyAgents,
+                // The projection that fills the delivery ledger reads
+                // the roster to know which live agents a question put
+                // to a seat should be offered to.
+                AuthorizationAction::RequestCeremonyIntervention,
+            ],
         )?;
         let after = query.cursor().map(parse_cursor).transpose()?;
         let mut values: Vec<_> = self
@@ -393,10 +406,17 @@ fn require_read_authorization(
     authorization: Option<&AuthorizationEvidence>,
     expected_action: AuthorizationAction,
 ) -> Result<(), DomainError> {
+    require_one_read_authorization(authorization, &[expected_action])
+}
+
+fn require_one_read_authorization(
+    authorization: Option<&AuthorizationEvidence>,
+    expected: &[AuthorizationAction],
+) -> Result<(), DomainError> {
     let authorization = authorization.ok_or(DomainError::InvariantViolated {
         reason: "ceremony agent status reads require authorization evidence",
     })?;
-    if authorization.action() != expected_action {
+    if !expected.contains(&authorization.action()) {
         return Err(DomainError::InvariantViolated {
             reason: "ceremony agent status authorization action does not match the read",
         });

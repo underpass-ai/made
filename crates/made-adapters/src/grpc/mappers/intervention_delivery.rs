@@ -63,6 +63,15 @@ pub fn acknowledge_ceremony_agent_intervention_input_from_proto(
         Some(EvidenceReference::new(request.evidence)?)
     };
     let now = OffsetDateTime::now_utc();
+    let observed_at = if request.observed_at.is_empty() {
+        now
+    } else {
+        OffsetDateTime::parse(&request.observed_at, &Rfc3339).map_err(|_| {
+            DomainError::InvariantViolated {
+                reason: "observed_at must be an RFC3339 instant",
+            }
+        })?
+    };
     Ok(AcknowledgeCeremonyAgentInterventionInput::new(
         CeremonyId::new(request.ceremony_id)?,
         CeremonyInterventionId::new(request.intervention_id)?,
@@ -73,7 +82,7 @@ pub fn acknowledge_ceremony_agent_intervention_input_from_proto(
             now,
         ),
         recipient,
-        HostDeliveryObservation::new(kind, now, evidence, note),
+        HostDeliveryObservation::new(kind, observed_at, evidence, note),
     ))
 }
 

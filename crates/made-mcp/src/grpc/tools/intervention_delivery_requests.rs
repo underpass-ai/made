@@ -35,6 +35,9 @@ pub(super) fn acknowledge(
         evidence: j2p::optional_str(obj, "evidence")
             .unwrap_or_default()
             .into(),
+        observed_at: j2p::optional_str(obj, "observed_at")
+            .unwrap_or_default()
+            .into(),
     })
 }
 
