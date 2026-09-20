@@ -208,10 +208,10 @@ pub fn request_ceremony_intervention_input_from_proto(
         input = input.with_intent(intent_from_proto(&request.intent)?);
     }
     if let Some(delivery) = request.delivery {
-        input = input.with_delivery(delivery_policy_from_proto(delivery)?);
+        input = input.with_delivery(delivery_policy_from_proto(&delivery)?);
     }
     if let Some(supervisor) = request.supervisor {
-        input = input.asked_by_supervisor(supervisor_from_proto(supervisor)?)?;
+        input = input.asked_by_supervisor(supervisor_from_proto(&supervisor)?)?;
     }
     Ok(input)
 }
@@ -341,6 +341,12 @@ mod tests {
             message: "Which table holds the queued messages?".to_owned(),
             details: None,
             provenance: None,
+            target_agent_execution_id: String::new(),
+            target_incarnation: String::new(),
+            target_role_id: String::new(),
+            intent: String::new(),
+            delivery: None,
+            supervisor: None,
         }
     }
 

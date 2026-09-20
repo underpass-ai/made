@@ -8,7 +8,9 @@ use made_core::error::DomainError;
 use made_core::ports::{
     ClockPort, HostDeliveryFilter, HostDeliveryLedgerPort, HostDeliveryTargetFilter,
 };
-use made_core::value_objects::{CeremonyInterventionId, HostDeliveryItem, HostDeliveryItemKind};
+use made_core::value_objects::{
+    CeremonyInterventionId, HostDeliveryItem, HostDeliveryItemKind, HostDeliveryRecord,
+};
 
 use super::ceremony_agent_status_service::CeremonyAgentStatusService;
 use super::ceremony_intervention_view::CeremonyInterventionView;
@@ -102,7 +104,7 @@ impl PullCeremonyAgentInterventionsUseCase {
             else {
                 continue;
             };
-            let Some(view) = self.view_of(&session.instance, intervention_id, &record) else {
+            let Some(view) = view_of(&session.instance, intervention_id, &record) else {
                 // The offer names an item this stream does not hold, or
                 // holds closed. Hand the lease back rather than hand a
                 // host a question that no longer exists.
@@ -113,20 +115,24 @@ impl PullCeremonyAgentInterventionsUseCase {
         }
         Ok(PulledCeremonyInterventions::new(items))
     }
+}
 
-    fn view_of(
-        &self,
-        instance: &CeremonyInstance,
-        intervention_id: &CeremonyInterventionId,
-        record: &made_core::value_objects::HostDeliveryRecord,
-    ) -> Option<CeremonyInterventionView> {
-        let intervention = instance.intervention(intervention_id)?;
-        if !intervention.status().is_open() {
-            return None;
-        }
-        Some(CeremonyInterventionView::project(
-            intervention.clone(),
-            std::slice::from_ref(record),
-        ))
+/// The item this offer names, if the stream still holds it open.
+///
+/// A closed item is not handed to anybody: the lease goes back rather
+/// than a host being given a question nobody is waiting on an answer
+/// to any more.
+fn view_of(
+    instance: &CeremonyInstance,
+    intervention_id: &CeremonyInterventionId,
+    record: &HostDeliveryRecord,
+) -> Option<CeremonyInterventionView> {
+    let intervention = instance.intervention(intervention_id)?;
+    if !intervention.status().is_open() {
+        return None;
     }
+    Some(CeremonyInterventionView::project(
+        intervention.clone(),
+        std::slice::from_ref(record),
+    ))
 }

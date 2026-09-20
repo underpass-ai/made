@@ -158,8 +158,7 @@ mod tests {
         CeremonyInterventionId, CeremonyInterventionKind, CeremonyInterventionTarget,
         DeliveryExpiryCause, DeliveryNote, DeliveryRecipient, HostAgentIncarnation,
         HostDeliveryItem, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
-        HostDeliveryObservationKind, HostDeliveryPolicy, HostDeliveryTarget,
-        InterventionDeliveryAck, RoleId,
+        HostDeliveryObservationKind, HostDeliveryPolicy, InterventionDeliveryAck, RoleId,
     };
     use time::macros::datetime;
     use time::OffsetDateTime;
@@ -250,7 +249,8 @@ mod tests {
         let acknowledged = record.acknowledged(observation.clone(), at());
         let mut item = intervention();
         assert_eq!(
-            CeremonyInterventionView::project(item.clone(), &[acknowledged.clone()]).status(),
+            CeremonyInterventionView::project(item.clone(), std::slice::from_ref(&acknowledged))
+                .status(),
             &CeremonyInterventionDeliveryStatus::Delivered
         );
         item.acknowledge_delivery(InterventionDeliveryAck::new(
@@ -261,7 +261,7 @@ mod tests {
         ))
         .unwrap();
         assert_eq!(
-            CeremonyInterventionView::project(item, &[acknowledged]).status(),
+            CeremonyInterventionView::project(item, std::slice::from_ref(&acknowledged)).status(),
             &CeremonyInterventionDeliveryStatus::Acknowledged
         );
     }

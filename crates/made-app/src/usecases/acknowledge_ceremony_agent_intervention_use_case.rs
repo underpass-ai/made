@@ -65,7 +65,7 @@ impl AcknowledgeCeremonyAgentInterventionUseCase {
         // of attempts and stays visibly failed. Only a host that took
         // the item — including one that took it and refused — has made
         // an observation worth a place in the ceremony's stream.
-        if !self.is_an_observation(&input) {
+        if !is_an_observation(&input) {
             return self.count_a_failed_attempt(&input, now).await;
         }
         // The ledger goes first because it owns the lease, and a lease
@@ -116,16 +116,6 @@ impl AcknowledgeCeremonyAgentInterventionUseCase {
         Ok(instance)
     }
 
-    /// Whether the host is reporting on the item or on itself.
-    ///
-    /// A refusal and an incapacity are reports on the item: the host
-    /// has it and will not act, which is something the ceremony needs
-    /// sealed. Busy and timeout are reports on the host, and the item
-    /// is still nobody's.
-    fn is_an_observation(&self, input: &AcknowledgeCeremonyAgentInterventionInput) -> bool {
-        !input.observation.kind().is_retryable()
-    }
-
     async fn count_a_failed_attempt(
         &self,
         input: &AcknowledgeCeremonyAgentInterventionInput,
@@ -150,4 +140,13 @@ impl AcknowledgeCeremonyAgentInterventionUseCase {
         }
         Ok(self.stream.load(&input.instance_id).await?.instance)
     }
+}
+
+/// Whether the host is reporting on the item or on itself.
+///
+/// A refusal and an incapacity are reports on the item: the host has it
+/// and will not act, which is something the ceremony needs sealed. Busy
+/// and timeout are reports on the host, and the item is still nobody's.
+fn is_an_observation(input: &AcknowledgeCeremonyAgentInterventionInput) -> bool {
+    !input.observation.kind().is_retryable()
 }

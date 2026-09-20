@@ -24,9 +24,9 @@ pub(super) fn intent_from_proto(raw: &str) -> Result<CeremonyInterventionIntent,
 /// Reads the policy fields it understands and leaves the rest at the
 /// engine's own defaults, which is what the schema promises.
 pub(super) fn delivery_policy_from_proto(
-    delivery: prost_types::Struct,
+    delivery: &prost_types::Struct,
 ) -> Result<InterventionDeliveryPolicy, DomainError> {
-    let fields = attributes_json(&delivery);
+    let fields = attributes_json(delivery);
     let mode = match fields.get("mode").and_then(serde_json::Value::as_str) {
         Some("activation") => HostDeliveryMode::Activation,
         _ => HostDeliveryMode::PullLease,
@@ -65,9 +65,9 @@ pub(super) fn delivery_policy_from_proto(
 }
 
 pub(super) fn supervisor_from_proto(
-    supervisor: prost_types::Struct,
+    supervisor: &prost_types::Struct,
 ) -> Result<SupervisorPrincipal, DomainError> {
-    let fields = attributes_json(&supervisor);
+    let fields = attributes_json(supervisor);
     let principal_id = fields
         .get("principal_id")
         .and_then(serde_json::Value::as_str)
