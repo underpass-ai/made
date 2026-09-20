@@ -9,6 +9,13 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Fix the PostgreSQL agentic system repository, which could not save at all:
+  it locked the revision head with `FOR UPDATE` on an aggregate, which
+  PostgreSQL refuses at planning time. It now locks the head row, and a race
+  between two creations of the same design is refused by the revision primary
+  key and reported as a conflict rather than a backend failure. The
+  conformance suite that proves it, and two other container-backed suites, now
+  run in CI. (#PR)
 - Put an intervention in front of the agent that is working, and know whether
   it arrived. An intervention can now name one live agent execution and the
   process generation running it, carry an intent and delivery terms, and be
