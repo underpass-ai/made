@@ -6,7 +6,8 @@
 
 use made_app::usecases::{CeremonyInterventionView, DeliveryRouteView, PulledCeremonyIntervention};
 use made_core::value_objects::{
-    CeremonyInterventionTarget, HostDeliveryLease, HostDeliveryTarget, InterventionDeliveryAck,
+    CeremonyInterventionIntent, CeremonyInterventionTarget, HostAgentIncarnation, HostDeliveryId,
+    HostDeliveryLease, HostDeliveryTarget, InterventionDeliveryAck, RoleId,
 };
 use serde_json::{json, Value};
 
@@ -30,7 +31,7 @@ pub(super) fn present_view(view: &CeremonyInterventionView) -> Value {
         "kind": intervention.kind().as_label(),
         "status": intervention.status().as_label(),
         "requested_by": intervention.requested_by().as_str(),
-        "intent": intervention.intent().map(|intent| intent.as_str()),
+        "intent": intervention.intent().map(CeremonyInterventionIntent::as_str),
         "target": present_target(intervention.target()),
         "provenance": Value::Null,
         "message": intervention.request().message(),
@@ -53,7 +54,7 @@ pub(super) fn present_view(view: &CeremonyInterventionView) -> Value {
                 "executor_incarnation": response
                     .executor()
                     .map(|executor| executor.incarnation().as_str()),
-                "delivery_id": response.delivery_id().map(|id| id.as_str()),
+                "delivery_id": response.delivery_id().map(HostDeliveryId::as_str),
             }))
             .collect::<Vec<_>>(),
         "deliveries": intervention
@@ -123,8 +124,8 @@ fn present_delivery_target(route: &DeliveryRouteView) -> Value {
             .strip_prefix("agent:")
             .and_then(|rest| rest.split_once(':'))
             .map(|(execution, _)| execution),
-        "incarnation": target.incarnation().map(|incarnation| incarnation.as_str()),
-        "role_id": target.role_id().map(|role| role.as_str()),
+        "incarnation": target.incarnation().map(HostAgentIncarnation::as_str),
+        "role_id": target.role_id().map(RoleId::as_str),
     })
 }
 
@@ -138,10 +139,7 @@ fn present_target(target: &CeremonyInterventionTarget) -> Value {
     if let Some(role_ids) = target.role_ids() {
         object.insert(
             "role_ids".to_owned(),
-            json!(role_ids
-                .iter()
-                .map(|role| role.as_str())
-                .collect::<Vec<_>>()),
+            json!(role_ids.iter().map(RoleId::as_str).collect::<Vec<_>>()),
         );
     }
     if let Some(recipient) = target.exact_recipient() {

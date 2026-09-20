@@ -332,7 +332,6 @@ fn intervention_to_json(intervention: pb::CeremonyInterventionState) -> Value {
 /// Proto cannot say "absent", so an empty string is how absence
 /// arrives. Turning it back into `null` is what makes the two backends
 /// answer the same thing.
-
 fn empty_as_null(value: String) -> Value {
     if value.is_empty() {
         Value::Null

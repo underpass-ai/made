@@ -63,7 +63,7 @@ fn intervention(state: pb::CeremonyInterventionState) -> Value {
         "status": state.status,
         "requested_by": state.requested_by,
         "intent": optional(state.intent),
-        "target": state.target.map(target_state),
+        "target": state.target.as_ref().map(target_state),
         "provenance": Value::Null,
         "message": state.request.map(|request| request.message),
         "supervisor": optional(state.supervisor_principal_id).map(|principal_id| json!({
@@ -94,21 +94,21 @@ fn intervention(state: pb::CeremonyInterventionState) -> Value {
 }
 
 /// A target names what it names; unused keys are absent, not null.
-fn target_state(target: pb::CeremonyInterventionTargetState) -> Value {
+fn target_state(target: &pb::CeremonyInterventionTargetState) -> Value {
     let mut value = json!({ "kind": target.kind });
     let object = value
         .as_object_mut()
         .expect("a target renders as an object");
     if !target.role_ids.is_empty() {
-        object.insert("role_ids".to_owned(), json!(target.role_ids));
+        object.insert("role_ids".to_owned(), json!(target.role_ids.clone()));
     }
     if !target.agent_execution_id.is_empty() {
         object.insert(
             "agent_execution_id".to_owned(),
-            json!(target.agent_execution_id),
+            json!(target.agent_execution_id.clone()),
         );
-        object.insert("incarnation".to_owned(), json!(target.incarnation));
-        object.insert("role_id".to_owned(), json!(target.role_id));
+        object.insert("incarnation".to_owned(), json!(target.incarnation.clone()));
+        object.insert("role_id".to_owned(), json!(target.role_id.clone()));
     }
     value
 }

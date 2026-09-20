@@ -27,7 +27,7 @@ pub(crate) fn intervention_delivery_policy_schema() -> Value {
             "lease_duration_ms": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 3600000,
+                "maximum": 3_600_000,
                 "description": "How long a host may hold this exclusively. Bounded at both ends: a lease of no length excludes nobody, and an unbounded one strands the item behind a host that never comes back."
             },
             "ack_timeout_ms": {
@@ -76,7 +76,7 @@ pub(crate) fn pull_ceremony_agent_interventions_schema() -> Value {
             "lease_duration_ms": {
                 "type": "integer",
                 "minimum": 1,
-                "maximum": 3600000,
+                "maximum": 3_600_000,
                 "description": "How long to hold what is handed over. Defaults to 60000. A lease and not a take: an agent that dies holding one strands nothing."
             },
             "limit": {
