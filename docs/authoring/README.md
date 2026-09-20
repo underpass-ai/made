@@ -407,6 +407,15 @@ An output contract constrains shape; it does not prove an external claim is
 true. Council output JSON Schema examples are documented
 [here](../../api/examples/output-contracts/README.md).
 
+## The level above one ceremony
+
+Several published ceremonies, the business roles they are staffed from, the
+topology between participants, bounded review loops and a supervision policy
+belong to an [agentic system](agentic-systems.md), not to a larger ceremony
+definition. A system references ceremonies by a pin of name, version and digest
+and adds no second execution engine: each composition runs as an ordinary
+instance. Write and publish the definitions first; compose them afterwards.
+
 ## Boundaries and roadmap
 
 The source tree's Unreleased surface includes the bounded concurrent driver,

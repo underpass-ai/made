@@ -1,6 +1,6 @@
 macro_rules! resource_rpc_methods {
     ($callback:ident; { $($methods:tt)* }) => {
-        $callback!({
+        agentic_system_rpc_methods!($callback; {
             $($methods)*
         async fn validate_ceremony_draft(
             &self,

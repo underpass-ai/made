@@ -14,6 +14,8 @@
 use std::sync::Arc;
 
 use made_adapters::config::ServiceConfig;
+use made_adapters::grpc::{AgenticSystemOperations, MadeGrpcServiceBuilder};
+use made_adapters::memory::ForgetfulMemory;
 use made_adapters::memory::{
     InMemoryAgenticSystemExecutions, InMemoryAgenticSystemPublications,
     InMemoryAgenticSystemRepository,
@@ -26,7 +28,16 @@ use made_adapters::postgres::{
 use made_adapters::sqlite::{
     SqliteAgenticSystemExecutions, SqliteAgenticSystemPublications, SqliteAgenticSystemRepository,
 };
-use made_core::ports::AgenticSystemDiagramPort;
+use made_app::services::SessionStream;
+use made_app::usecases::agentic_system::{CeremonyLauncher, Observation};
+use made_app::usecases::{
+    BindCeremonyParticipantsUseCase, ResolveCeremonyDefinitionUseCase,
+    StartPublishedCeremonyUseCase,
+};
+use made_core::ports::{
+    AgenticSystemDiagramPort, CeremonyDefinitionPublicationPort, CeremonyDefinitionRepositoryPort,
+    ClockPort, IntegratorBindingPort,
+};
 use tracing::{info, warn};
 
 use crate::{AgenticSystemHandles, ComposeError};
@@ -74,4 +85,57 @@ pub(super) fn wire(
         executions: Arc::new(executions),
         diagrams,
     })
+}
+
+/// What the agentic-system operations need beyond their own stores.
+///
+/// A named bundle rather than six positional arguments: the
+/// composition root already has six things called `ceremony_*`, and a
+/// call that mixed two of them would still compile.
+pub(super) struct AgenticSystemDependencies {
+    pub(super) publications: Arc<dyn CeremonyDefinitionPublicationPort>,
+    pub(super) definitions: Arc<dyn CeremonyDefinitionRepositoryPort>,
+    pub(super) stream: Arc<SessionStream>,
+    pub(super) clock: Arc<dyn ClockPort>,
+    pub(super) bindings: Arc<dyn IntegratorBindingPort>,
+}
+
+/// Hand the service the operations, built from the stores and the
+/// use cases a host would call itself.
+///
+/// Starting a composed ceremony goes through `start_published` and
+/// `bind_participants`, the same two a host uses by hand, so a system
+/// run and a hand-started ceremony leave the same records behind.
+pub(super) fn apply_to(
+    builder: MadeGrpcServiceBuilder,
+    handles: &AgenticSystemHandles,
+    deps: AgenticSystemDependencies,
+) -> MadeGrpcServiceBuilder {
+    let launcher = Arc::new(CeremonyLauncher::new(
+        Arc::new(StartPublishedCeremonyUseCase::new(
+            deps.publications.clone(),
+            deps.stream.clone(),
+            deps.clock.clone(),
+            Arc::new(ForgetfulMemory::new()),
+        )),
+        Arc::new(BindCeremonyParticipantsUseCase::new(
+            Arc::new(ResolveCeremonyDefinitionUseCase::new(
+                deps.definitions,
+                deps.publications.clone(),
+            )),
+            deps.stream.clone(),
+            deps.clock.clone(),
+        )),
+    ));
+    builder.agentic_system(Arc::new(AgenticSystemOperations::new(
+        handles.repository.clone(),
+        handles.publications.clone(),
+        handles.executions.clone(),
+        handles.diagrams.clone(),
+        deps.publications,
+        launcher,
+        Arc::new(Observation::new(deps.stream)),
+        Some(deps.bindings),
+        deps.clock,
+    )))
 }

@@ -184,6 +184,41 @@ service MadeService {
   // "can the meeting happening right now still finish" is not.
   rpc DiffCeremonyDefinitions(DiffCeremonyDefinitionsRequest) returns (DiffCeremonyDefinitionsResponse);
 
+  // The level above a ceremony: a named system of business roles,
+  // logical participants and several ceremonies composed together.
+  //
+  // It references ceremonies and never owns them. Every composition
+  // pins a name, a version and a digest, so a republished version is
+  // a different pin rather than a silent change of what the system
+  // does (ADR-021).
+  rpc DesignAgenticSystem(DesignAgenticSystemRequest) returns (DesignAgenticSystemResponse);
+  rpc GetAgenticSystem(GetAgenticSystemRequest) returns (GetAgenticSystemResponse);
+  rpc ListAgenticSystems(ListAgenticSystemsRequest) returns (ListAgenticSystemsResponse);
+  // Resolve every pin against what is actually published and report
+  // every defect at once. An author correcting one finding per round
+  // trip is an author who will stop correcting them.
+  rpc ValidateAgenticSystem(ValidateAgenticSystemRequest) returns (ValidateAgenticSystemResponse);
+  // Seal a revision a run can pin. Offering the same content under a
+  // revision that already holds it is not an error; offering
+  // different content under it is refused.
+  rpc PublishAgenticSystem(PublishAgenticSystemRequest) returns (PublishAgenticSystemResponse);
+  // Open a run of a sealed revision. The execution id is the caller's
+  // idempotency key: asking twice answers with the run that exists.
+  //
+  // A participant the host does not offer is recorded as unavailable
+  // and the ceremonies that needed it are skipped with the reason.
+  // Nothing is stood in for.
+  rpc InstantiateAgenticSystem(InstantiateAgenticSystemRequest) returns (InstantiateAgenticSystemResponse);
+  // Start whatever the run is now ready for, and send bounded loops
+  // round again. Derived from what the instances say, so advancing
+  // twice with nothing changed starts nothing twice.
+  rpc AdvanceAgenticSystemExecution(AdvanceAgenticSystemExecutionRequest) returns (AdvanceAgenticSystemExecutionResponse);
+  // What the design intended, beside what the instances report.
+  rpc GetAgenticSystemExecution(GetAgenticSystemExecutionRequest) returns (GetAgenticSystemExecutionResponse);
+  // The topology as Mermaid text and as an accessible list. Turning
+  // it into an image is the caller's job; no renderer is vendored.
+  rpc RenderAgenticSystemDiagram(RenderAgenticSystemDiagramRequest) returns (RenderAgenticSystemDiagramResponse);
+
   // Seat this session's roles. A definition says what a role does; it
   // does not say who plays it, and the same ceremony run twice can
   // seat different people. Answers with the session, like every other
@@ -2840,4 +2875,211 @@ message CeremonyResumePreflight {
 }
 message InspectCeremonyResumeResponse {
   CeremonyResumePreflight report = 1;
+}
+
+// ============================================================================
+// Agentic systems
+// ============================================================================
+
+// One revision of a design.
+//
+// The document itself travels as opaque structured data, like every
+// other domain payload in this contract: the design vocabulary is
+// large, it grows, and mirroring it field by field here would make
+// every addition a wire change. What is named is what a caller
+// branches on.
+message AgenticSystemState {
+  string system_id = 1;
+  uint64 revision = 2;
+  // "draft", "published" or "deprecated".
+  string lifecycle = 3;
+  // Content identity. Two renderings of one design produce the same
+  // digest; any material difference produces a different one.
+  string digest = 4;
+  // The document a person reads and edits.
+  string yaml = 5;
+  // The same document, for a machine.
+  google.protobuf.Struct json = 6;
+}
+
+// Which published definition one composition resolved to.
+message AgenticSystemResolvedPin {
+  string ceremony = 1;
+  string name = 2;
+  string version = 3;
+  string digest = 4;
+}
+
+// What a host says it can put behind one logical participant.
+//
+// The whole of the answer: MADE compares this against the design and
+// never fills a gap in it.
+message AgenticSystemParticipantOffer {
+  string specialty = 1;
+  repeated string capabilities = 2;
+}
+
+// Where the integrator wants to be reached while the run is going.
+message AgenticSystemIntegratorDestination {
+  string host_kind = 1;
+  string address = 2;
+  // "none" or "command".
+  string activation_mode = 3;
+}
+
+// What became of one composed ceremony inside one run.
+message AgenticSystemCeremonyState {
+  string ceremony = 1;
+  string pin_name = 2;
+  string pin_version = 3;
+  string pin_digest = 4;
+  // What the run recorded: "pending", "started", "completed",
+  // "failed" or "skipped".
+  string planned = 5;
+  uint32 round = 6;
+  string instance_id = 7;
+  // What the instance says about itself, empty when there is no
+  // instance to ask. Kept apart from `planned` on purpose: a run that
+  // skipped a ceremony must not read like a design that never had one.
+  string observed_phase = 8;
+  string observed_state = 9;
+  // Why it was skipped, when it was.
+  string skipped_because = 10;
+}
+
+// One run of one sealed revision.
+message AgenticSystemExecutionState {
+  string execution_id = 1;
+  string system_id = 2;
+  uint64 revision = 3;
+  string digest = 4;
+  // "planned", "running", "completed" or "failed".
+  string state = 5;
+  string integrator_binding_id = 6;
+  repeated AgenticSystemCeremonyState ceremonies = 7;
+  // The whole run, for a caller that wants more than it branches on.
+  google.protobuf.Struct json = 8;
+}
+
+message DesignAgenticSystemRequest {
+  // The design document. Unknown fields are refused: a misspelled key
+  // silently ignored is a supervision policy that quietly is not there.
+  google.protobuf.Struct design = 1;
+}
+
+message DesignAgenticSystemResponse {
+  AgenticSystemState system = 1;
+}
+
+message GetAgenticSystemRequest {
+  string system_id = 1;
+  // Zero reads the head.
+  uint64 revision = 2;
+}
+
+message GetAgenticSystemResponse {
+  AgenticSystemState system = 1;
+}
+
+message ListAgenticSystemsRequest {
+  // Empty lists every lifecycle.
+  string lifecycle = 1;
+  // Zero takes the server default; the server's own ceiling applies.
+  uint32 limit = 2;
+  // The last identifier of the previous page.
+  string after = 3;
+}
+
+message ListAgenticSystemsResponse {
+  repeated AgenticSystemState systems = 1;
+  string next_cursor = 2;
+}
+
+message ValidateAgenticSystemRequest {
+  string system_id = 1;
+  // Zero validates the head.
+  uint64 revision = 2;
+}
+
+message ValidateAgenticSystemResponse {
+  string system_id = 1;
+  uint64 revision = 2;
+  bool publishable = 3;
+  uint32 error_count = 4;
+  uint32 warning_count = 5;
+  // The same shape a ceremony draft's findings take, because
+  // "where, how bad, and what" is the same question at both levels.
+  repeated CeremonyDraftFinding findings = 6;
+  // What the analysis was performed against.
+  repeated AgenticSystemResolvedPin resolved_pins = 7;
+}
+
+message PublishAgenticSystemRequest {
+  string system_id = 1;
+  // The revision the caller read and wants sealed.
+  uint64 revision = 2;
+}
+
+message PublishAgenticSystemResponse {
+  // "published" or "already_published".
+  string outcome = 1;
+  string system_id = 2;
+  // The revision a run may now pin.
+  uint64 sealed_revision = 3;
+  // Where the design's history stands after the seal was recorded.
+  uint64 head_revision = 4;
+  string digest = 5;
+}
+
+message InstantiateAgenticSystemRequest {
+  string system_id = 1;
+  uint64 revision = 2;
+  // The caller's own name for this run, and its idempotency key.
+  string execution_id = 3;
+  // Starting context per composed ceremony.
+  map<string, google.protobuf.Struct> inputs = 4;
+  // What the host can supply, per logical participant.
+  map<string, AgenticSystemParticipantOffer> offers = 5;
+  AgenticSystemIntegratorDestination integrator_destination = 6;
+  string actor_id = 7;
+  // "human", "agent", "service" or "engine".
+  string actor_kind = 8;
+}
+
+message InstantiateAgenticSystemResponse {
+  AgenticSystemExecutionState execution = 1;
+}
+
+message AdvanceAgenticSystemExecutionRequest {
+  string execution_id = 1;
+  string actor_id = 2;
+  string actor_kind = 3;
+}
+
+message AdvanceAgenticSystemExecutionResponse {
+  AgenticSystemExecutionState execution = 1;
+}
+
+message GetAgenticSystemExecutionRequest {
+  string execution_id = 1;
+}
+
+message GetAgenticSystemExecutionResponse {
+  AgenticSystemExecutionState execution = 1;
+  // The design as it was sealed, not as it is now.
+  AgenticSystemState system = 2;
+}
+
+message RenderAgenticSystemDiagramRequest {
+  string system_id = 1;
+  uint64 revision = 2;
+  // With a run, the design drawn is the one that run pinned.
+  string execution_id = 3;
+}
+
+message RenderAgenticSystemDiagramResponse {
+  string mermaid = 1;
+  // The same picture in sentences. Not a fallback: it is the other
+  // half of the answer.
+  repeated string text_equivalent = 2;
 }

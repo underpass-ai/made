@@ -42,6 +42,7 @@ use super::GrpcAuthorizationGate;
 /// of use cases grows.
 #[derive(Default)]
 pub struct MadeGrpcServiceBuilder {
+    pub(super) agentic_system: Option<Arc<crate::grpc::AgenticSystemOperations>>,
     pub(super) record_ceremony_host_handoff:
         Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
     pub(super) inspect_ceremony_resume:
@@ -267,6 +268,11 @@ impl MadeGrpcServiceBuilder {
     );
     setter!(pause_ceremony, PauseCeremonyUseCase, pause_ceremony);
     setter!(
+        agentic_system,
+        crate::grpc::AgenticSystemOperations,
+        agentic_system
+    );
+    setter!(
         record_ceremony_host_handoff,
         made_app::workers::RecordCeremonyHostHandoffUseCase,
         record_ceremony_host_handoff
@@ -452,6 +458,10 @@ impl MadeGrpcServiceBuilder {
     /// Consume the builder. Missing dependencies are reported via
     /// [`DomainError::InvariantViolated`] so wiring errors surface
     /// through the same error channel the rest of the app uses.
+    /// One exhaustive assembly of every dependency the service
+    /// holds. Splitting it would hide which fields are required and
+    /// which are optional behind a second function boundary.
+    #[allow(clippy::too_many_lines)]
     pub fn build(self) -> Result<MadeGrpcService, DomainError> {
         // Composed here rather than in a handler: the uptime clock
         // starts when the service is built, and what a status *is*
@@ -490,6 +500,7 @@ impl MadeGrpcServiceBuilder {
             ))
         });
         Ok(MadeGrpcService {
+            agentic_system: self.agentic_system,
             authorization: required!(self, authorization, "gate"),
             authorization_administration: required!(self, authorization_administration),
             read_authorization_policy: required!(self, read_authorization_policy),

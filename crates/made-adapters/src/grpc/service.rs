@@ -95,6 +95,9 @@ use metrics_snapshot_mapper::metric_family_to_proto;
 use register_agent_descriptor::descriptor_from_register_request;
 use statistics_mapper::{service_status_to_proto, statistics_to_proto};
 
+mod agentic_system_handlers;
+pub mod agentic_system_operations;
+mod agentic_system_requests;
 mod artifact_handlers;
 mod authoring_handlers;
 mod authorization_handlers;
@@ -115,10 +118,16 @@ mod register_agent_descriptor;
 mod rpc;
 mod statistics_mapper;
 
+use agentic_system_operations::AgenticSystemOperations;
+
 /// The gRPC service struct. Clone-friendly: every dependency is an
 /// `Arc` so multiple request tasks can share state without locking.
 #[derive(Clone)]
 pub struct MadeGrpcService {
+    /// Absent when no agentic-system stores were composed; the
+    /// operations then refuse honestly rather than answering with an
+    /// empty catalogue.
+    pub(super) agentic_system: Option<Arc<AgenticSystemOperations>>,
     pub(super) record_ceremony_host_handoff:
         Option<Arc<made_app::workers::RecordCeremonyHostHandoffUseCase>>,
     pub(super) inspect_ceremony_resume:

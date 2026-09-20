@@ -3,7 +3,6 @@
 use std::sync::Arc;
 
 use made_adapters::agents::DispatchingAgentFactory;
-use made_adapters::ceremony::DeliberatingCeremonyStepHandler;
 use made_adapters::clock::SystemClock;
 use made_adapters::config::EnvConfiguration;
 use made_adapters::metrics::PrometheusMetricsRecorder;
@@ -11,12 +10,11 @@ use made_adapters::progress::CeremonyProgressNotifier;
 
 use made_app::services::{AutoDispatchService, SessionMemoryRecorder, SessionStream};
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, DeliberateUseCase, OrchestrateUseCase,
-    PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
+    AcceptChildCompletionUseCase, PrepareCeremonyChildrenUseCase, ResolveCeremonyDefinitionUseCase,
+    RunCeremonyStepUseCase, RunCeremonyUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
     StartPublishedCeremonyUseCase,
 };
-use made_core::ports::{AgentFactoryPort, CeremonyStepHandlerPort, ScoringPort};
+use made_core::ports::{AgentFactoryPort, ScoringPort};
 
 use crate::{Application, ComposeError};
 
@@ -39,7 +37,9 @@ mod ceremony_publisher;
 mod ceremony_queries;
 mod ceremony_workers;
 mod children_recovery;
+mod council_dependencies;
 mod council_event_publisher;
+mod council_operations;
 mod execution_receipts;
 mod executor;
 mod host_delivery;
@@ -140,37 +140,24 @@ pub async fn compose() -> Result<Application, ComposeError> {
     ));
     let memory_reader = authorization.protect_runtime(memory_reader, ceremony_stream.clone());
 
-    let deliberate = Arc::new(DeliberateUseCase::new(
-        clock.clone(),
-        council_registry.clone(),
-        agent_resolver.clone(),
+    let council_operations::CouncilOperations {
+        deliberate,
+        orchestrate,
+        run_council_decision,
+        step_handler: ceremony_step_handler,
+    } = council_operations::wire(council_dependencies::CouncilDependencies {
+        clock: clock.clone(),
+        councils: council_registry.clone(),
+        resolver: agent_resolver.clone(),
         validators,
         scoring,
-        repository.clone(),
-        messaging.clone(),
-        statistics.clone(),
-        metrics_recorder.clone(),
-        "made",
-    ));
-
-    let ceremony_step_handler: Arc<dyn CeremonyStepHandlerPort> =
-        Arc::new(DeliberatingCeremonyStepHandler::new(deliberate.clone()));
-
-    let orchestrate = Arc::new(OrchestrateUseCase::new(
-        deliberate.clone(),
+        repository: repository.clone(),
+        messaging: messaging.clone(),
+        statistics: statistics.clone(),
+        metrics: metrics_recorder.clone(),
         executor,
-        messaging.clone(),
-        clock.clone(),
-        statistics.clone(),
-        "made",
-    ));
-
-    let run_council_decision = Arc::new(RunCouncilDecisionUseCase::new(
-        contract_registry.clone(),
-        council_registry.clone(),
-        deliberate.clone(),
-        repository.clone(),
-    ));
+        contracts: contract_registry.clone(),
+    });
     let resolve_ceremony_definition = Arc::new(ResolveCeremonyDefinitionUseCase::new(
         ceremony_definitions.clone(),
         ceremony_publications.clone(),
@@ -338,7 +325,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         ceremony_cursors,
         progress_notifier,
         ceremony_agent_status_port,
-        ceremony_publications,
+        ceremony_publications.clone(),
     )?;
     grpc_builder = execution_receipts::wire(
         grpc_builder,
@@ -356,6 +343,17 @@ pub async fn compose() -> Result<Application, ComposeError> {
         &clock,
         authorization_continuation,
         renewal_authorization,
+    );
+    grpc_builder = agentic_system::apply_to(
+        grpc_builder,
+        &agentic_system,
+        agentic_system::AgenticSystemDependencies {
+            publications: ceremony_publications.clone(),
+            definitions: ceremony_definitions,
+            stream: ceremony_stream,
+            clock,
+            bindings: host_delivery.bindings.clone(),
+        },
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);
