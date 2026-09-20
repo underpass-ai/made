@@ -96,7 +96,7 @@ pub(super) async fn dispatch(
                 .render_agentic_system_diagram(requests::diagram(arguments).map_err(bad_request)?)
                 .await?
                 .into_inner();
-            Ok(presenter::diagram(response))
+            Ok(presenter::diagram(&response))
         }
         other => Err(ToolError::invalid_request(format!(
             "unknown agentic system tool `{other}`"

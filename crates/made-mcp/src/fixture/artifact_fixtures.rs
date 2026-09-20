@@ -18,6 +18,7 @@ pub(super) fn handles(name: &str) -> bool {
 /// One arm per tool rather than a combined pattern: the catalog gate
 /// scans this source for each tool's own arm, and a tool folded into
 /// a neighbour's pattern would read as one nothing answers.
+#[allow(clippy::match_same_arms)] // one arm per tool: the catalog gate reads them
 pub(super) fn response(name: &str) -> Value {
     match name {
         "made_begin_artifact_upload" => upload(),

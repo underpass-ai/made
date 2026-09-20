@@ -73,7 +73,7 @@ pub(super) fn publication(response: pb::PublishAgenticSystemResponse) -> Value {
     })
 }
 
-pub(super) fn diagram(response: pb::RenderAgenticSystemDiagramResponse) -> Value {
+pub(super) fn diagram(response: &pb::RenderAgenticSystemDiagramResponse) -> Value {
     json!({
         "mermaid": response.mermaid,
         "text_equivalent": response.text_equivalent,

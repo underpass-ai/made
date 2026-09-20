@@ -30,6 +30,7 @@ pub(super) fn handles(name: &str) -> bool {
     )
 }
 
+#[allow(clippy::match_same_arms)] // one arm per tool: the catalog gate reads them
 pub(super) fn response(name: &str) -> Value {
     match name {
         "made_design_agentic_system" => system(),

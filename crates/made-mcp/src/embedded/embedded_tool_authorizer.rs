@@ -202,6 +202,10 @@ fn action_for_tool(tool_name: &str) -> Result<AuthorizationAction, ToolError> {
     })
 }
 
+/// One arm per tool that scopes itself by something other than a
+/// named field. Splitting the table would hide which tools are
+/// special behind a second function boundary.
+#[allow(clippy::too_many_lines)]
 async fn scope_for_tool(
     read_policy: &ReadAuthorizationPolicyUseCase,
     artifacts: &dyn ArtifactStorePort,
