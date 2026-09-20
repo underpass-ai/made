@@ -15,7 +15,7 @@ even though the new catalogue identity is `made`.
   readings that had no test — a step that failed, a step that timed out and a
   question put to somebody else — have one now, and the human decision request
   the projector still owes is written down beside the other declared gaps.
-  (#PR)
+  (#229)
 - Read the global ceremony feed as attention an integrator can act on: typed
   events derived from sealed records, an identity that makes replaying the feed
   harmless, a result that says whether it is sealed or merely reported by a
