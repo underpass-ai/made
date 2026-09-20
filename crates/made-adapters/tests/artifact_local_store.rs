@@ -957,7 +957,11 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute_batch(
-            "PRAGMA journal_mode=WAL; CREATE TABLE journal(position INTEGER PRIMARY KEY, payload TEXT NOT NULL); INSERT INTO journal VALUES (1, 'boundary');",
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE journal(position INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+             INSERT INTO journal VALUES (1, 'boundary');
+             CREATE TABLE snapshot_padding(bytes BLOB NOT NULL);
+             INSERT INTO snapshot_padding VALUES (zeroblob(8388608));",
         )
         .unwrap();
     drop(connection);
@@ -984,20 +988,81 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     }
     let service = SqliteArtifactBackupService::new(store.clone(), &database);
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer = spawn_sqlite_backup_writer(database.clone(), stop.clone());
+    let (snapshot_barrier, writer_barrier) = std::sync::mpsc::sync_channel(0);
+    let committed_writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let writer = spawn_sqlite_backup_writer(
+        database.clone(),
+        stop.clone(),
+        writer_barrier,
+        committed_writes.clone(),
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while committed_writes.load(std::sync::atomic::Ordering::Acquire) == 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("writer must commit at least once before the snapshot starts");
+    let writes_before_snapshot = committed_writes.load(std::sync::atomic::Ordering::Acquire);
 
     let backup = directory.path().join("backup-set");
     let backup_started = Instant::now();
-    let manifest = service
-        .backup_to(
-            &backup,
-            ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
-        )
-        .await
-        .unwrap();
-    let backup_elapsed = backup_started.elapsed();
+    let backup_task = tokio::spawn({
+        let service = service.clone();
+        let backup = backup.clone();
+        async move {
+            service
+                .backup_to(
+                    backup,
+                    ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
+                )
+                .await
+        }
+    });
+    let snapshot_directory = backup.join("database");
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let copy_started = fs::read_dir(&snapshot_directory).is_ok_and(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("database.tmp-")
+                })
+            });
+            if copy_started {
+                break;
+            }
+            assert!(
+                !backup_task.is_finished(),
+                "SQLite snapshot completed before the concurrent-write barrier"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("SQLite online copy must expose its in-progress snapshot");
+    snapshot_barrier
+        .send(())
+        .expect("writer must still be waiting at the snapshot barrier");
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while committed_writes.load(std::sync::atomic::Ordering::Acquire) <= writes_before_snapshot
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("writer must commit while the SQLite snapshot is in progress");
+    assert!(
+        !backup_task.is_finished(),
+        "the observed commit must precede snapshot completion"
+    );
+    let writes_during_snapshot =
+        committed_writes.load(std::sync::atomic::Ordering::Acquire) - writes_before_snapshot;
     stop.store(true, std::sync::atomic::Ordering::Release);
     writer.await.unwrap();
+    let manifest = backup_task.await.unwrap().unwrap();
+    let backup_elapsed = backup_started.elapsed();
     let source_frontier: i64 = rusqlite::Connection::open(&database)
         .unwrap()
         .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
@@ -1042,6 +1107,10 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     let rows: i64 = restored_database
         .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
         .unwrap();
+    assert!(
+        rows > i64::try_from(writes_before_snapshot).unwrap(),
+        "snapshot omitted a journal commit completed before capture"
+    );
     assert!((1..=source_frontier).contains(&rows));
     let restored_store = LocalArtifactStore::open(restored.join("artifacts")).unwrap();
     for expected in [&artifact, &retired_first, &retired_second] {
@@ -1110,6 +1179,8 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
             "rto_ms":restore_elapsed.as_secs_f64()*1000.0,
             "source_frontier":source_frontier,
             "restored_frontier":rows,
+            "writes_before_snapshot":writes_before_snapshot,
+            "writes_during_snapshot":writes_during_snapshot,
             "lost_commits":source_frontier-rows,
             "rpo_commits":source_frontier-rows,
             "receipt_protection":receipt_key.as_str(),
@@ -1124,10 +1195,23 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
 fn spawn_sqlite_backup_writer(
     database: std::path::PathBuf,
     stop: Arc<std::sync::atomic::AtomicBool>,
+    snapshot_barrier: std::sync::mpsc::Receiver<()>,
+    committed_writes: Arc<std::sync::atomic::AtomicUsize>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || {
         let connection = rusqlite::Connection::open(database).unwrap();
         let mut position = 2_i64;
+        connection
+            .execute(
+                "INSERT INTO journal(position, payload) VALUES (?1, 'before-backup')",
+                [position],
+            )
+            .unwrap();
+        committed_writes.fetch_add(1, std::sync::atomic::Ordering::Release);
+        position += 1;
+        if snapshot_barrier.recv().is_err() {
+            return;
+        }
         while !stop.load(std::sync::atomic::Ordering::Acquire) {
             connection
                 .execute(
@@ -1135,6 +1219,7 @@ fn spawn_sqlite_backup_writer(
                     [position],
                 )
                 .unwrap();
+            committed_writes.fetch_add(1, std::sync::atomic::Ordering::Release);
             position += 1;
         }
     })
