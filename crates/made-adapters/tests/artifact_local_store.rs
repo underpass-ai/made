@@ -1,9 +1,11 @@
 use std::fs;
 use std::process::Command;
 use std::sync::Arc;
+use std::time::Instant;
 
 use made_adapters::artifacts::{
-    ArtifactBackupEntry, ArtifactBackupService, ArtifactRetentionService, LocalArtifactStore,
+    ArtifactBackupEntry, ArtifactBackupService, ArtifactGcExclusionReason,
+    ArtifactRetentionService, LocalArtifactStore,
 };
 #[cfg(feature = "sqlite")]
 use made_adapters::artifacts::{SqliteArtifactBackupService, SqliteBackupService};
@@ -948,38 +950,123 @@ async fn sqlite_retry_cannot_mix_captured_database_with_another_artifact_store()
 
 #[cfg(feature = "sqlite")]
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[allow(clippy::too_many_lines)] // One acceptance flow keeps snapshot, pins, GC and restore race correlated.
 async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_restores_atomically() {
     let directory = TempDir::new().unwrap();
     let database = directory.path().join("made.sqlite3");
     let connection = rusqlite::Connection::open(&database).unwrap();
     connection
         .execute_batch(
-            "PRAGMA journal_mode=WAL; CREATE TABLE journal(position INTEGER PRIMARY KEY, payload TEXT NOT NULL); INSERT INTO journal VALUES (1, 'boundary');",
+            "PRAGMA journal_mode=WAL;
+             CREATE TABLE journal(position INTEGER PRIMARY KEY, payload TEXT NOT NULL);
+             INSERT INTO journal VALUES (1, 'boundary');
+             CREATE TABLE snapshot_padding(bytes BLOB NOT NULL);
+             INSERT INTO snapshot_padding VALUES (zeroblob(8388608));",
         )
         .unwrap();
     drop(connection);
     let store_root = directory.path().join("artifact-store");
     let store = LocalArtifactStore::open(&store_root).unwrap();
     let artifact = upload(&store, b"composed snapshot blob", "composed-snapshot").await;
+    let retired_first = upload(&store, b"retired snapshot blob one", "retired-one").await;
+    let retired_second = upload(&store, b"retired snapshot blob two", "retired-two").await;
     let receipt_key = ArtifactIdempotencyKey::new("receipt:composed-snapshot").unwrap();
     store
         .protect_references(receipt_key.clone(), vec![artifact.artifact_id().clone()])
         .await
         .unwrap();
+    for retired in [&artifact, &retired_first, &retired_second] {
+        store
+            .tombstone(TombstoneArtifact {
+                artifact_id: retired.artifact_id().clone(),
+                actor: ArtifactRetentionActor::new("acceptance").unwrap(),
+                policy: ArtifactRetentionPolicy::new("restore-set").unwrap(),
+                retired_at: OffsetDateTime::UNIX_EPOCH,
+            })
+            .await
+            .unwrap();
+    }
     let service = SqliteArtifactBackupService::new(store.clone(), &database);
     let stop = Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let writer = spawn_sqlite_backup_writer(database.clone(), stop.clone());
+    let (snapshot_barrier, writer_barrier) = std::sync::mpsc::sync_channel(0);
+    let committed_writes = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let writer = spawn_sqlite_backup_writer(
+        database.clone(),
+        stop.clone(),
+        writer_barrier,
+        committed_writes.clone(),
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while committed_writes.load(std::sync::atomic::Ordering::Acquire) == 0 {
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("writer must commit at least once before the snapshot starts");
+    let writes_before_snapshot = committed_writes.load(std::sync::atomic::Ordering::Acquire);
 
     let backup = directory.path().join("backup-set");
-    let manifest = service
-        .backup_to(
-            &backup,
-            ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
-        )
-        .await
-        .unwrap();
+    let backup_started = Instant::now();
+    let backup_task = tokio::spawn({
+        let service = service.clone();
+        let backup = backup.clone();
+        async move {
+            service
+                .backup_to(
+                    backup,
+                    ArtifactIdempotencyKey::new("backup:sqlite-set-under-write").unwrap(),
+                )
+                .await
+        }
+    });
+    let snapshot_directory = backup.join("database");
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            let copy_started = fs::read_dir(&snapshot_directory).is_ok_and(|entries| {
+                entries.filter_map(Result::ok).any(|entry| {
+                    entry
+                        .file_name()
+                        .to_string_lossy()
+                        .starts_with("database.tmp-")
+                })
+            });
+            if copy_started {
+                break;
+            }
+            assert!(
+                !backup_task.is_finished(),
+                "SQLite snapshot completed before the concurrent-write barrier"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("SQLite online copy must expose its in-progress snapshot");
+    snapshot_barrier
+        .send(())
+        .expect("writer must still be waiting at the snapshot barrier");
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while committed_writes.load(std::sync::atomic::Ordering::Acquire) <= writes_before_snapshot
+        {
+            tokio::time::sleep(std::time::Duration::from_millis(2)).await;
+        }
+    })
+    .await
+    .expect("writer must commit while the SQLite snapshot is in progress");
+    assert!(
+        !backup_task.is_finished(),
+        "the observed commit must precede snapshot completion"
+    );
+    let writes_during_snapshot =
+        committed_writes.load(std::sync::atomic::Ordering::Acquire) - writes_before_snapshot;
     stop.store(true, std::sync::atomic::Ordering::Release);
     writer.await.unwrap();
+    let manifest = backup_task.await.unwrap().unwrap();
+    let backup_elapsed = backup_started.elapsed();
+    let source_frontier: i64 = rusqlite::Connection::open(&database)
+        .unwrap()
+        .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
+        .unwrap();
     service.verify(&backup, &manifest).unwrap();
     let retried = service
         .backup_to(
@@ -1012,22 +1099,34 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     );
 
     let restored = directory.path().join("restored-set");
+    let restore_started = Instant::now();
     service.restore_set_to(&backup, &restored).await.unwrap();
+    let restore_elapsed = restore_started.elapsed();
     assert!(restored.join("restore-complete.json").exists());
     let restored_database = rusqlite::Connection::open(restored.join("database.sqlite3")).unwrap();
     let rows: i64 = restored_database
-        .query_row("SELECT COUNT(*) FROM journal", [], |row| row.get(0))
+        .query_row("SELECT MAX(position) FROM journal", [], |row| row.get(0))
         .unwrap();
-    assert!(rows >= 1);
-    let restored_store = LocalArtifactStore::open(restored.join("artifacts")).unwrap();
-    assert_eq!(
-        restored_store
-            .get(artifact.artifact_id())
-            .await
-            .unwrap()
-            .artifact,
-        artifact
+    assert!(
+        rows > i64::try_from(writes_before_snapshot).unwrap(),
+        "snapshot omitted a journal commit completed before capture"
     );
+    assert!((1..=source_frontier).contains(&rows));
+    let restored_store = LocalArtifactStore::open(restored.join("artifacts")).unwrap();
+    for expected in [&artifact, &retired_first, &retired_second] {
+        assert_eq!(
+            restored_store
+                .get(expected.artifact_id())
+                .await
+                .unwrap()
+                .artifact,
+            *expected
+        );
+        assert!(restored_store
+            .backup_content_available(expected.artifact_id())
+            .await
+            .unwrap());
+    }
     let restored_protections = restored_store.active_protections().await.unwrap();
     assert!(restored_protections
         .iter()
@@ -1035,6 +1134,24 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
     assert!(restored_protections
         .iter()
         .all(|protection| !protection.key.as_str().starts_with("restore:")));
+    let gc_preview = restored_store
+        .plan_gc(
+            OffsetDateTime::UNIX_EPOCH + time::Duration::days(1),
+            lease("restored-set-gc", 259_200_000),
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        gc_preview.candidates.len(),
+        2,
+        "two retired blobs remain collectable"
+    );
+    assert!(gc_preview.exclusions.iter().any(|exclusion| {
+        exclusion.digest == *artifact.digest()
+            && exclusion
+                .reasons
+                .contains(&ArtifactGcExclusionReason::ProtectedReference)
+    }));
     assert_eq!(
         service.restore_set_to(&backup, &restored).await,
         Err(ArtifactStoreError::IdempotencyConflict)
@@ -1046,17 +1163,55 @@ async fn sqlite_set_keeps_database_and_exact_blobs_together_under_writes_and_res
         service.restore_set_to(&backup, &raced),
     );
     assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    assert!(matches!(
+        (left, right),
+        (Ok(()), Err(ArtifactStoreError::IdempotencyConflict))
+            | (Err(ArtifactStoreError::IdempotencyConflict), Ok(()))
+    ));
     assert!(raced.join("restore-complete.json").exists());
+    println!(
+        "{}",
+        serde_json::json!({
+            "backend":"sqlite",
+            "sample":"backup_set_under_writer_and_restore_race",
+            "backup_ms":backup_elapsed.as_secs_f64()*1000.0,
+            "restore_ms":restore_elapsed.as_secs_f64()*1000.0,
+            "rto_ms":restore_elapsed.as_secs_f64()*1000.0,
+            "source_frontier":source_frontier,
+            "restored_frontier":rows,
+            "writes_before_snapshot":writes_before_snapshot,
+            "writes_during_snapshot":writes_during_snapshot,
+            "lost_commits":source_frontier-rows,
+            "rpo_commits":source_frontier-rows,
+            "receipt_protection":receipt_key.as_str(),
+            "retired_digests":[retired_first.digest(), retired_second.digest()],
+            "gc_protected_reference":artifact.digest(),
+            "restore_race":{"successes":1,"conflicts":1}
+        })
+    );
 }
 
 #[cfg(feature = "sqlite")]
 fn spawn_sqlite_backup_writer(
     database: std::path::PathBuf,
     stop: Arc<std::sync::atomic::AtomicBool>,
+    snapshot_barrier: std::sync::mpsc::Receiver<()>,
+    committed_writes: Arc<std::sync::atomic::AtomicUsize>,
 ) -> tokio::task::JoinHandle<()> {
     tokio::task::spawn_blocking(move || {
         let connection = rusqlite::Connection::open(database).unwrap();
         let mut position = 2_i64;
+        connection
+            .execute(
+                "INSERT INTO journal(position, payload) VALUES (?1, 'before-backup')",
+                [position],
+            )
+            .unwrap();
+        committed_writes.fetch_add(1, std::sync::atomic::Ordering::Release);
+        position += 1;
+        if snapshot_barrier.recv().is_err() {
+            return;
+        }
         while !stop.load(std::sync::atomic::Ordering::Acquire) {
             connection
                 .execute(
@@ -1064,6 +1219,7 @@ fn spawn_sqlite_backup_writer(
                     [position],
                 )
                 .unwrap();
+            committed_writes.fetch_add(1, std::sync::atomic::Ordering::Release);
             position += 1;
         }
     })

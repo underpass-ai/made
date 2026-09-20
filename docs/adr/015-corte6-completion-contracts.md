@@ -54,6 +54,15 @@ Snapshot journal, authorization, budgets and execution receipts at a consistent
 database boundary. Protect every referenced blob before GC can invalidate that
 snapshot; document lock ordering. SQLite and PostgreSQL restore only into isolated
 targets. PITR is not claimed without a recoverable common WAL/blob horizon.
+PostgreSQL restore takes a destination-database advisory lock on a dedicated
+connection before identity and emptiness checks, retains it through
+`pg_restore`, then rechecks while still fenced. A concurrent restore to that
+same destination therefore observes the completed target and conflicts; a
+different destination database has a distinct lock scope.
+
+The SQLite recovery tests emit structured backend, digest, frontier and elapsed
+time observations. They are acceptance evidence for the exercised fixture,
+not an RPO, RTO or availability SLA.
 
 ## Ownership
 

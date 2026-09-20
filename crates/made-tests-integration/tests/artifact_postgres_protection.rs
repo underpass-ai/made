@@ -543,18 +543,43 @@ async fn postgres_receipt_requires_content_and_survives_reopen() {
 }
 
 #[cfg(unix)]
-#[tokio::test]
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_database() {
     let (pool, url, container) = start_with_url().await;
-    let store = PostgresArtifactStore::new(pool);
+    let store = PostgresArtifactStore::new(pool.clone());
     let artifact = upload(&store, b"service archive boundary").await;
+    let (receipt_operation, receipt_intent, receipt_fence) =
+        operation_fixture("postgres-backup-restored-receipt");
+    let receipt_artifact = upload_receipt_artifact(
+        &store,
+        b"receipt pin that must survive postgres restore",
+        &receipt_operation,
+        &receipt_fence,
+    )
+    .await;
+    let receipt = receipt_fixture(&receipt_operation, receipt_fence, receipt_artifact.clone());
+    let artifact_service = ArtifactService::new(Arc::new(store.clone()));
+    let source_ceremony = PostgresCeremonyStore::new(pool.clone());
+    source_ceremony.record_intent(receipt_intent).await.unwrap();
+    artifact_service
+        .protect_execution_receipt(&receipt)
+        .await
+        .unwrap();
+    source_ceremony
+        .record_receipt(receipt.clone())
+        .await
+        .unwrap();
     let scratch = tempfile::TempDir::new().unwrap();
     let dump = scratch.path().join("pg_dump-wrapper");
     let restore = scratch.path().join("pg_restore-wrapper");
+    let dump_started = scratch.path().join("pg-dump-started");
+    let release_dump = scratch.path().join("release-pg-dump");
     std::fs::write(
         &dump,
         format!(
-            "#!/bin/sh\nset -eu\nout=''\nsnapshot=''\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --file) shift; out=$1 ;;\n    --snapshot) shift; snapshot=$1 ;;\n  esac\n  shift || true\ndone\ntest -n \"$snapshot\"\nsleep 1\ndocker exec {} pg_dump -U made -Fc --snapshot \"$snapshot\" -f /tmp/service.dump made\ndocker cp {}:/tmp/service.dump \"$out\" >/dev/null\n",
+            "#!/bin/sh\nset -eu\nout=''\nsnapshot=''\nwhile [ $# -gt 0 ]; do\n  case \"$1\" in\n    --file) shift; out=$1 ;;\n    --snapshot) shift; snapshot=$1 ;;\n  esac\n  shift || true\ndone\ntest -n \"$snapshot\"\nstarted='{}'\nrelease='{}'\ntouch \"$started\"\nwhile [ ! -f \"$release\" ]; do sleep 0.01; done\ndocker exec {} pg_dump -U made -Fc --snapshot \"$snapshot\" -f /tmp/service.dump made\ndocker cp {}:/tmp/service.dump \"$out\" >/dev/null\n",
+            dump_started.display(),
+            release_dump.display(),
             container.id(),
             container.id()
         ),
@@ -593,12 +618,15 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     let stop = Arc::new(AtomicBool::new(false));
     let writer_stop = stop.clone();
     let writer_pool = raw.clone();
+    let sql_writes = Arc::new(AtomicUsize::new(0));
+    let observed_sql_writes = sql_writes.clone();
     let writer = tokio::spawn(async move {
         while !writer_stop.load(Ordering::Acquire) {
             sqlx::query("INSERT INTO service_writer DEFAULT VALUES")
                 .execute(&writer_pool)
                 .await
                 .unwrap();
+            sql_writes.fetch_add(1, Ordering::Release);
         }
     });
     let artifact_writer_stop = stop.clone();
@@ -628,14 +656,54 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         }
     });
     tokio::time::timeout(std::time::Duration::from_secs(5), async {
-        while observed_artifact_mutations.load(Ordering::Acquire) < 2 {
+        while observed_artifact_mutations.load(Ordering::Acquire) < 2
+            || observed_sql_writes.load(Ordering::Acquire) == 0
+        {
             tokio::time::sleep(std::time::Duration::from_millis(5)).await;
         }
     })
     .await
     .unwrap();
+    let sql_writes_before_backup = observed_sql_writes.load(Ordering::Acquire);
     let backup_started = std::time::Instant::now();
-    let backup_result = service.backup_to(&backup, key).await;
+    let backup_task = std::thread::spawn({
+        let service = service.clone();
+        let backup = backup.clone();
+        move || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap()
+                .block_on(service.backup_to(backup, key))
+        }
+    });
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while !dump_started.exists() {
+            assert!(
+                !backup_task.is_finished(),
+                "PostgreSQL backup completed before reaching the dump barrier"
+            );
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("pg_dump must start under the exported transaction snapshot");
+    let sql_writes_at_dump_barrier = observed_sql_writes.load(Ordering::Acquire);
+    tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        while observed_sql_writes.load(Ordering::Acquire) <= sql_writes_at_dump_barrier {
+            tokio::time::sleep(std::time::Duration::from_millis(5)).await;
+        }
+    })
+    .await
+    .expect("SQL writer must commit while pg_dump is held on its snapshot");
+    assert!(
+        !backup_task.is_finished(),
+        "the observed SQL commit must precede backup completion"
+    );
+    let sql_writes_during_backup =
+        observed_sql_writes.load(Ordering::Acquire) - sql_writes_at_dump_barrier;
+    std::fs::write(&release_dump, b"continue").unwrap();
+    let backup_result = backup_task.join().unwrap();
     let backup_duration = backup_started.elapsed();
     stop.store(true, Ordering::Release);
     writer.await.unwrap();
@@ -645,6 +713,11 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         .fetch_one(&raw)
         .await
         .unwrap();
+    assert_eq!(
+        source_rows,
+        1 + i64::try_from(observed_sql_writes.load(Ordering::Acquire)).unwrap(),
+        "the SQL commit counter must describe the source frontier"
+    );
     let source_last_ms: i64 = sqlx::query_scalar(
         "SELECT (EXTRACT(EPOCH FROM MAX(committed_at)) * 1000)::BIGINT FROM service_writer",
     )
@@ -664,13 +737,25 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .await;
     let target_url = format!("{}/made_service_restore", url.rsplit_once('/').unwrap().0);
     let restore_started = std::time::Instant::now();
-    service.restore_to(&backup, &target_url).await.unwrap();
-    let restore_duration = restore_started.elapsed();
-    let target = PostgresArtifactStore::new(
-        PostgresPool::connect(&PostgresConfig::from_url(target_url.clone()))
-            .await
-            .unwrap(),
+    // Both invocations reach a newly-created destination at once. The
+    // destination-scoped advisory lock makes one complete and makes the
+    // waiter observe the now non-empty target as an idempotency conflict.
+    let (left, right) = tokio::join!(
+        service.restore_to(&backup, &target_url),
+        service.restore_to(&backup, &target_url),
     );
+    assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    assert!(matches!(
+        (left, right),
+        (Ok(()), Err(ArtifactStoreError::IdempotencyConflict))
+            | (Err(ArtifactStoreError::IdempotencyConflict), Ok(()))
+    ));
+    let restore_duration = restore_started.elapsed();
+    let target_pool = PostgresPool::connect(&PostgresConfig::from_url(target_url.clone()))
+        .await
+        .unwrap();
+    let target = PostgresArtifactStore::new(target_pool.clone());
+    let target_ceremony = PostgresCeremonyStore::new(target_pool);
     assert_eq!(
         target.get(artifact.artifact_id()).await.unwrap().artifact,
         artifact
@@ -702,7 +787,29 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         .backup_content_available(artifact.artifact_id())
         .await
         .unwrap());
-    assert!(target.active_protections().await.unwrap().is_empty());
+    assert_eq!(
+        target_ceremony
+            .receipt(receipt_operation.operation_id())
+            .await
+            .unwrap(),
+        Some(receipt.clone())
+    );
+    assert!(target
+        .backup_content_available(receipt_artifact.artifact_id())
+        .await
+        .unwrap());
+    assert!(target
+        .active_protections()
+        .await
+        .unwrap()
+        .iter()
+        .any(|protection| {
+            protection.key.as_str() == format!("receipt:{}", receipt.receipt_id())
+                && protection
+                    .records
+                    .iter()
+                    .any(|record| record.artifact == receipt_artifact)
+        }));
     assert_eq!(
         service.restore_to(&backup, &target_url).await,
         Err(ArtifactStoreError::IdempotencyConflict)
@@ -718,15 +825,29 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .fetch_one(&target_raw)
     .await
     .unwrap();
-    assert!(restored_rows > 0 && restored_rows <= source_rows);
+    assert!(
+        restored_rows > i64::try_from(sql_writes_before_backup).unwrap()
+            && restored_rows <= source_rows,
+        "backup must contain the pre-barrier SQL frontier and no future rows"
+    );
     eprintln!(
-        "postgres backup metrics: backup_ms={} restore_ms={} source_rows={} restored_rows={} rpo_missing_rows={} rpo_lag_ms={}",
-        backup_duration.as_millis(),
-        restore_duration.as_millis(),
-        source_rows,
-        restored_rows,
-        source_rows - restored_rows,
-        source_last_ms - restored_last_ms
+        "{}",
+        serde_json::json!({
+            "backend":"postgres",
+            "sample":"backup_restore_under_writers_with_destination_fence",
+            "archive_digest":manifest.archive_digest,
+            "backup_ms":backup_duration.as_secs_f64()*1000.0,
+            "restore_ms":restore_duration.as_secs_f64()*1000.0,
+            "rto_ms":restore_duration.as_secs_f64()*1000.0,
+            "source_frontier":source_rows,
+            "restored_frontier":restored_rows,
+            "sql_writes_before_backup":sql_writes_before_backup,
+            "sql_writes_during_backup":sql_writes_during_backup,
+            "rpo_missing_rows":source_rows-restored_rows,
+            "rpo_lag_ms":source_last_ms-restored_last_ms,
+            "receipt_pin":receipt.receipt_id(),
+            "restore_race":{"successes":1,"conflicts":1}
+        })
     );
 }
 

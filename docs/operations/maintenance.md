@@ -106,7 +106,16 @@ host variable whose name starts with `MADE_RESTORE_`, for example
 The resolved destination identity is included as a digest in authorization,
 without emitting its credentials. The service rejects the original cluster/database
 identity even through a different URL, and rejects a target containing user
-tables. Inspect the result in that isolated database before any deployment change.
+tables. It holds a destination-database advisory lock on a dedicated connection
+from those checks through `pg_restore` and the post-restore check: a second
+restore to the same destination waits and then conflicts, while another database
+uses another lock. Inspect the result in that isolated database before any
+deployment change.
+
+The SQLite recovery acceptance fixture emits structured measurements for its
+backup/restore elapsed time, journal frontiers, lost commits and blob digests.
+Those are observations from that fixture only; they are not an RPO, RTO or
+availability SLA for a production deployment.
 
 ## Ambiguous external effects
 
