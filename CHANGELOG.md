@@ -9,6 +9,15 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- A bound integrator can ask what it is owed and be handed it, with enough
+  context to decide and not enough to act on blindly. The read path is where
+  the loop recovers — what has run out is expired and what is offerable is
+  leased on the way in — so a deployment with no background sweeper still gets
+  its work back after a host dies holding a lease. An offer is read back into
+  the event it stands for by deriving it again from the journal, never from a
+  stored copy, so a host is told what the rules say now; one that cannot be
+  derived is handed back rather than invented into news. A host that was
+  replaced is refused before anything is leased. (#PR)
 - Put an integrator in charge of a ceremony or a system run, and move the work
   when the host is replaced. Binding a scope that already has one displaces the
   incumbent and raises the fence, and whatever the outgoing host was offered
