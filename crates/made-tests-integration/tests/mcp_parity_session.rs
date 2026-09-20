@@ -1040,6 +1040,68 @@ impl ParityArms {
         arguments
     }
 
+    /// Present the ticket this arm's own pull issued.
+    ///
+    /// A lease id is minted per engine, so a scripted literal would
+    /// hand one engine the other's ticket and compare an
+    /// acknowledgement with a refusal.
+    fn present_pulled_ticket(
+        &self,
+        arguments: &Value,
+        wire_arguments: &mut Value,
+        local_arguments: &mut Value,
+    ) {
+        if let Some(pulled) = arguments
+            .get("delivery_id")
+            .and_then(Value::as_str)
+            .and_then(|value| value.strip_prefix("$pulled:"))
+        {
+            let leases = self.intervention_leases.lock().unwrap();
+            let [wire, local] = leases.get(pulled).expect("the script pulled this delivery");
+            wire_arguments["delivery_id"] = Value::String(wire.0.clone());
+            wire_arguments["lease_id"] = Value::String(wire.1.clone());
+            local_arguments["delivery_id"] = Value::String(local.0.clone());
+            local_arguments["lease_id"] = Value::String(local.1.clone());
+        }
+    }
+
+    /// Remember the opaque tickets each arm minted for itself.
+    ///
+    /// A delivery lease and a council lease are the same problem: the
+    /// two engines issue their own, and a later call has to present the
+    /// one its own arm was given.
+    fn remember_issued_tickets(&self, tool: &str, arguments: &Value, wire: &Value, local: &Value) {
+        if tool == "made_pull_ceremony_agent_interventions" && !failed(wire) && !failed(local) {
+            let ticket = |answer: &Value| {
+                let item = &structured(answer)["items"][0];
+                (
+                    item["delivery_id"].as_str().unwrap_or_default().to_owned(),
+                    item["lease_id"].as_str().unwrap_or_default().to_owned(),
+                )
+            };
+            let key = arguments["agent_execution_id"]
+                .as_str()
+                .expect("a pull names the execution asking")
+                .to_owned();
+            self.intervention_leases
+                .lock()
+                .unwrap()
+                .insert(key, [ticket(wire), ticket(local)]);
+        }
+        if tool == "made_lease_council_events" && !failed(wire) && !failed(local) {
+            let key = arguments["consumer"].as_str().unwrap().to_owned();
+            let leases = (
+                structured(wire)["lease"].clone(),
+                structured(local)["lease"].clone(),
+            );
+            assert!(
+                leases.0.is_object() && leases.1.is_object(),
+                "script acquires independent free consumers"
+            );
+            self.council_leases.lock().unwrap().insert(key, leases);
+        }
+    }
+
     /// Raw call: omission and malformed-fence tests reach the request gate unchanged.
     async fn call(&self, id: u64, tool: &str, arguments: &Value) -> (Value, Value) {
         let (mut wire_arguments, mut local_arguments) = self.artifact_arguments(arguments);
@@ -1055,50 +1117,11 @@ impl ParityArms {
             wire_arguments["lease"] = wire.clone();
             local_arguments["lease"] = local.clone();
         }
-        if let Some(pulled) = arguments
-            .get("delivery_id")
-            .and_then(Value::as_str)
-            .and_then(|value| value.strip_prefix("$pulled:"))
-        {
-            let leases = self.intervention_leases.lock().unwrap();
-            let [wire, local] = leases.get(pulled).expect("the script pulled this delivery");
-            wire_arguments["delivery_id"] = Value::String(wire.0.clone());
-            wire_arguments["lease_id"] = Value::String(wire.1.clone());
-            local_arguments["delivery_id"] = Value::String(local.0.clone());
-            local_arguments["lease_id"] = Value::String(local.1.clone());
-        }
+        self.present_pulled_ticket(arguments, &mut wire_arguments, &mut local_arguments);
         self.record_opaque_authorization_targets(id, tool, &wire_arguments, &local_arguments);
         let wire = call_tool(&self.over_the_wire, id, tool, &wire_arguments).await;
         let local = call_tool(&self.in_process, id, tool, &local_arguments).await;
-        if tool == "made_pull_ceremony_agent_interventions" && !failed(&wire) && !failed(&local) {
-            let ticket = |answer: &Value| {
-                let item = &structured(answer)["items"][0];
-                (
-                    item["delivery_id"].as_str().unwrap_or_default().to_owned(),
-                    item["lease_id"].as_str().unwrap_or_default().to_owned(),
-                )
-            };
-            let key = arguments["agent_execution_id"]
-                .as_str()
-                .expect("a pull names the execution asking")
-                .to_owned();
-            self.intervention_leases
-                .lock()
-                .unwrap()
-                .insert(key, [ticket(&wire), ticket(&local)]);
-        }
-        if tool == "made_lease_council_events" && !failed(&wire) && !failed(&local) {
-            let key = arguments["consumer"].as_str().unwrap().to_owned();
-            let leases = (
-                structured(&wire)["lease"].clone(),
-                structured(&local)["lease"].clone(),
-            );
-            assert!(
-                leases.0.is_object() && leases.1.is_object(),
-                "script acquires independent free consumers"
-            );
-            self.council_leases.lock().unwrap().insert(key, leases);
-        }
+        self.remember_issued_tickets(tool, arguments, &wire, &local);
         if tool == "made_begin_artifact_upload" && !failed(&wire) && !failed(&local) {
             let key = arguments["idempotency_key"]
                 .as_str()

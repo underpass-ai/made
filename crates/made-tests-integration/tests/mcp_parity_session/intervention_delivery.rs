@@ -46,17 +46,14 @@ roles:
 /// literal against two different tickets would compare an
 /// acknowledgement with a refusal and call the difference parity.
 pub(super) fn script() -> Vec<(&'static str, Value)> {
-    let operation_id = ExecutionOperationId::for_step(
-        &CeremonyId::new(DELIVERY_SESSION_ID).unwrap(),
-        &StepId::new("work").unwrap(),
-        StateVisit::FIRST,
-        StateIteration::FIRST,
-        StepIteration::FIRST,
-    )
-    .to_string();
+    let mut calls = reads_of_the_earlier_session();
+    calls.extend(one_question_to_a_live_agent());
+    calls
+}
+
+/// What the projection says about items this session already asked.
+fn reads_of_the_earlier_session() -> Vec<(&'static str, Value)> {
     vec![
-        // What the earlier session's own items look like once the
-        // delivery projection is asked about them.
         (
             "made_get_ceremony_intervention",
             json!({ "ceremony_id": SESSION_ID, "intervention_id": "what-happened" }),
@@ -69,6 +66,21 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
             "made_list_ceremony_interventions",
             json!({ "ceremony_id": SESSION_ID, "unresolved_only": true }),
         ),
+    ]
+}
+
+/// A session of its own, opened, claimed, asked, pulled, acknowledged
+/// and read back on both engines.
+fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
+    let operation_id = ExecutionOperationId::for_step(
+        &CeremonyId::new(DELIVERY_SESSION_ID).unwrap(),
+        &StepId::new("work").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    )
+    .to_string();
+    vec![
         (
             "made_start_ceremony",
             json!({
@@ -91,30 +103,7 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
         ),
         // The claim fence is filled in by the scripted host from the
         // claim above, per arm.
-        (
-            "made_report_ceremony_agent_status",
-            json!({ "status": {
-                "ceremony_id": DELIVERY_SESSION_ID,
-                "agent_execution_id": "parity-delivery-execution",
-                "operation_id": operation_id,
-                "claim_owner_id": "grpc-fixture-host",
-                "logical_worker_id": "parity-delivery-worker",
-                "host_agent_id": "grpc-fixture-host",
-                "host_agent_incarnation": "parity-delivery-incarnation-1",
-                "role_id": "ENGINEER",
-                "step_id": "work",
-                "attempt": 1,
-                "execution_status": "running",
-                "liveness": "fresh",
-                "source": "host_report",
-                "activity": "working",
-                "task_summary": "Running the parity delivery claim.",
-                "evidence_references": [],
-                "observed_at": "2026-09-16T09:00:00Z",
-                "report_sequence": 1,
-                "idempotency_key": "parity-delivery-status-1",
-            }}),
-        ),
+        live_agent_status(&operation_id),
         (
             "made_request_ceremony_intervention",
             json!({
@@ -166,4 +155,35 @@ pub(super) fn script() -> Vec<(&'static str, Value)> {
             json!({ "ceremony_id": DELIVERY_SESSION_ID, "limit": 10 }),
         ),
     ]
+}
+
+/// The claim fence is filled in by the scripted host, per arm, from the
+/// claim above: the two engines mint their own and an answer that
+/// presented one arm's fence to the other would compare a report with a
+/// refusal.
+fn live_agent_status(operation_id: &str) -> (&'static str, Value) {
+    (
+        "made_report_ceremony_agent_status",
+        json!({ "status": {
+            "ceremony_id": DELIVERY_SESSION_ID,
+            "agent_execution_id": "parity-delivery-execution",
+            "operation_id": operation_id,
+            "claim_owner_id": "grpc-fixture-host",
+            "logical_worker_id": "parity-delivery-worker",
+            "host_agent_id": "grpc-fixture-host",
+            "host_agent_incarnation": "parity-delivery-incarnation-1",
+            "role_id": "ENGINEER",
+            "step_id": "work",
+            "attempt": 1,
+            "execution_status": "running",
+            "liveness": "fresh",
+            "source": "host_report",
+            "activity": "working",
+            "task_summary": "Running the parity delivery claim.",
+            "evidence_references": [],
+            "observed_at": "2026-09-16T09:00:00Z",
+            "report_sequence": 1,
+            "idempotency_key": "parity-delivery-status-1",
+        }}),
+    )
 }
