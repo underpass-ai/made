@@ -546,8 +546,29 @@ async fn postgres_receipt_requires_content_and_survives_reopen() {
 #[tokio::test]
 async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_database() {
     let (pool, url, container) = start_with_url().await;
-    let store = PostgresArtifactStore::new(pool);
+    let store = PostgresArtifactStore::new(pool.clone());
     let artifact = upload(&store, b"service archive boundary").await;
+    let (receipt_operation, receipt_intent, receipt_fence) =
+        operation_fixture("postgres-backup-restored-receipt");
+    let receipt_artifact = upload_receipt_artifact(
+        &store,
+        b"receipt pin that must survive postgres restore",
+        &receipt_operation,
+        &receipt_fence,
+    )
+    .await;
+    let receipt = receipt_fixture(&receipt_operation, receipt_fence, receipt_artifact.clone());
+    let artifact_service = ArtifactService::new(Arc::new(store.clone()));
+    let source_ceremony = PostgresCeremonyStore::new(pool.clone());
+    source_ceremony.record_intent(receipt_intent).await.unwrap();
+    artifact_service
+        .protect_execution_receipt(&receipt)
+        .await
+        .unwrap();
+    source_ceremony
+        .record_receipt(receipt.clone())
+        .await
+        .unwrap();
     let scratch = tempfile::TempDir::new().unwrap();
     let dump = scratch.path().join("pg_dump-wrapper");
     let restore = scratch.path().join("pg_restore-wrapper");
@@ -678,11 +699,11 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
             | (Err(ArtifactStoreError::IdempotencyConflict), Ok(()))
     ));
     let restore_duration = restore_started.elapsed();
-    let target = PostgresArtifactStore::new(
-        PostgresPool::connect(&PostgresConfig::from_url(target_url.clone()))
-            .await
-            .unwrap(),
-    );
+    let target_pool = PostgresPool::connect(&PostgresConfig::from_url(target_url.clone()))
+        .await
+        .unwrap();
+    let target = PostgresArtifactStore::new(target_pool.clone());
+    let target_ceremony = PostgresCeremonyStore::new(target_pool);
     assert_eq!(
         target.get(artifact.artifact_id()).await.unwrap().artifact,
         artifact
@@ -714,7 +735,29 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
         .backup_content_available(artifact.artifact_id())
         .await
         .unwrap());
-    assert!(target.active_protections().await.unwrap().is_empty());
+    assert_eq!(
+        target_ceremony
+            .receipt(receipt_operation.operation_id())
+            .await
+            .unwrap(),
+        Some(receipt.clone())
+    );
+    assert!(target
+        .backup_content_available(receipt_artifact.artifact_id())
+        .await
+        .unwrap());
+    assert!(target
+        .active_protections()
+        .await
+        .unwrap()
+        .iter()
+        .any(|protection| {
+            protection.key.as_str() == format!("receipt:{}", receipt.receipt_id())
+                && protection
+                    .records
+                    .iter()
+                    .any(|record| record.artifact == receipt_artifact)
+        }));
     assert_eq!(
         service.restore_to(&backup, &target_url).await,
         Err(ArtifactStoreError::IdempotencyConflict)
@@ -732,13 +775,21 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .unwrap();
     assert!(restored_rows > 0 && restored_rows <= source_rows);
     eprintln!(
-        "postgres backup metrics: backup_ms={} restore_ms={} source_rows={} restored_rows={} rpo_missing_rows={} rpo_lag_ms={}",
-        backup_duration.as_millis(),
-        restore_duration.as_millis(),
-        source_rows,
-        restored_rows,
-        source_rows - restored_rows,
-        source_last_ms - restored_last_ms
+        "{}",
+        serde_json::json!({
+            "backend":"postgres",
+            "sample":"backup_restore_under_writers_with_destination_fence",
+            "archive_digest":manifest.archive_digest,
+            "backup_ms":backup_duration.as_secs_f64()*1000.0,
+            "restore_ms":restore_duration.as_secs_f64()*1000.0,
+            "rto_ms":restore_duration.as_secs_f64()*1000.0,
+            "source_frontier":source_rows,
+            "restored_frontier":restored_rows,
+            "rpo_missing_rows":source_rows-restored_rows,
+            "rpo_lag_ms":source_last_ms-restored_last_ms,
+            "receipt_pin":receipt.receipt_id(),
+            "restore_race":{"successes":1,"conflicts":1}
+        })
     );
 }
 
