@@ -18,10 +18,9 @@ use crate::error::DomainError;
 pub struct SuccessorCeremonyId(CeremonyId);
 
 impl SuccessorCeremonyId {
-    pub fn derive(
-        predecessor: &CeremonyId,
-        plan_id: &IdempotencyKey,
-    ) -> Result<Self, DomainError> {
+    pub fn derive(predecessor: &CeremonyId, plan_id: &IdempotencyKey) -> Result<Self, DomainError> {
+        const DIGITS: &[u8; 16] = b"0123456789abcdef";
+
         let mut digest = Sha256::new();
         digest.update(b"made.ceremony-successor.v1\0");
         for part in [predecessor.as_str(), plan_id.as_str()] {
@@ -31,7 +30,8 @@ impl SuccessorCeremonyId {
         let digest = digest.finalize();
         let mut suffix = String::with_capacity(16);
         for byte in &digest[..8] {
-            suffix.push_str(&format!("{byte:02x}"));
+            suffix.push(DIGITS[usize::from(byte >> 4)] as char);
+            suffix.push(DIGITS[usize::from(byte & 0x0f)] as char);
         }
         CeremonyId::new(format!("{}.s.{suffix}", predecessor.as_str())).map(Self)
     }
@@ -64,10 +64,10 @@ mod tests {
 
         assert_eq!(first, again);
         assert_ne!(first, other);
-        assert!(first
-            .as_ceremony_id()
-            .as_str()
-            .starts_with("review-42.s."));
-        assert_eq!(first.as_ceremony_id().as_str().len(), "review-42.s.".len() + 16);
+        assert!(first.as_ceremony_id().as_str().starts_with("review-42.s."));
+        assert_eq!(
+            first.as_ceremony_id().as_str().len(),
+            "review-42.s.".len() + 16
+        );
     }
 }

@@ -18,6 +18,7 @@ mod session_memory_projection;
 mod session_memory_recorder;
 pub(crate) mod session_recall;
 mod session_stream;
+pub(crate) mod succession_evidence;
 
 pub(crate) use authorization_operation_scope::current_authorized_operation;
 pub use authorization_operation_scope::AuthorizationOperationScope;

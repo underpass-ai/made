@@ -383,8 +383,7 @@ impl InspectCeremonyResumeUseCase {
             .as_ref()
             .and_then(|deadline| (deadline.claim_fence() == &fence).then_some(deadline.at()));
         let deadline_overdue = absolute_deadline_overdue
-            || ((phase == CeremonyClaimPhase::Live
-                || phase == CeremonyClaimPhase::Expired)
+            || ((phase == CeremonyClaimPhase::Live || phase == CeremonyClaimPhase::Expired)
                 && step_deadline_at.is_some_and(|at| at <= now));
         let permitted_recovery_paths =
             permitted_paths(phase, instance.is_ended(), deadline_overdue, &execution);

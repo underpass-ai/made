@@ -16,7 +16,7 @@ use crate::value_objects::{CeremonyDefinitionDiff, SuccessionPlan};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlanSuccessor {
     pub plan: SuccessionPlan,
-    pub successor: PublishedCeremonyDefinition,
+    pub successor: Box<PublishedCeremonyDefinition>,
     pub diff: CeremonyDefinitionDiff,
     pub now: OffsetDateTime,
 }

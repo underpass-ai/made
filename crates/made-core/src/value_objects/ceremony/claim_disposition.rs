@@ -18,7 +18,11 @@ pub struct ClaimDisposition {
 
 impl ClaimDisposition {
     #[must_use]
-    pub const fn new(step_id: StepId, claim_fence: StepClaimFence, kind: ClaimDispositionKind) -> Self {
+    pub const fn new(
+        step_id: StepId,
+        claim_fence: StepClaimFence,
+        kind: ClaimDispositionKind,
+    ) -> Self {
         Self {
             step_id,
             claim_fence,

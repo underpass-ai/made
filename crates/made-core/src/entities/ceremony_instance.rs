@@ -168,13 +168,13 @@ pub struct CeremonyInstance {
     /// Which ceremony this one succeeds, when it was opened as a
     /// successor. Held on the successor.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    succession: Option<CeremonySuccession>,
+    succession: Option<Box<CeremonySuccession>>,
     /// The handoff this ceremony sealed. Held on the predecessor, and
     /// the reason it can no longer resume: a session that named its
     /// successor has said which definition it believes in, and it is
     /// not this one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    successor_plan: Option<SuccessionPlan>,
+    successor_plan: Option<Box<SuccessionPlan>>,
 }
 
 impl CeremonyInstance {
@@ -231,13 +231,13 @@ impl CeremonyInstance {
     /// Which ceremony this one succeeds, if it succeeds one.
     #[must_use]
     pub fn succession(&self) -> Option<&CeremonySuccession> {
-        self.succession.as_ref()
+        self.succession.as_deref()
     }
 
     /// The handoff this ceremony sealed, if it sealed one.
     #[must_use]
     pub fn successor_plan(&self) -> Option<&SuccessionPlan> {
-        self.successor_plan.as_ref()
+        self.successor_plan.as_deref()
     }
 
     /// Whether this ceremony has named the one that replaces it.

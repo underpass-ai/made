@@ -29,7 +29,7 @@ impl CeremonyInstance {
         self.require_definition(definition)?;
         let plan = &command.plan;
         if let Some(existing) = &self.successor_plan {
-            return if existing == plan {
+            return if existing.as_ref() == plan {
                 Ok(Vec::new())
             } else {
                 Err(DomainError::Conflict {
@@ -130,14 +130,14 @@ impl CeremonyInstance {
                 ),
             });
         }
-        let record = self
-            .step_record(source.step_id())
-            .ok_or_else(|| DomainError::InvalidDocument {
-                reason: format!(
-                    "carried evidence names step `{}`, which this ceremony has no record of",
-                    source.step_id().as_str()
-                ),
-            })?;
+        let record =
+            self.step_record(source.step_id())
+                .ok_or_else(|| DomainError::InvalidDocument {
+                    reason: format!(
+                        "carried evidence names step `{}`, which this ceremony has no record of",
+                        source.step_id().as_str()
+                    ),
+                })?;
         if record.status() != StepStatus::Completed {
             return Err(DomainError::InvalidDocument {
                 reason: format!(
@@ -228,9 +228,10 @@ fn require_step_carries(
     successor_step_id: &StepId,
 ) -> Result<(), DomainError> {
     let locus = CeremonyValidationLocus::step(successor_step_id.clone());
-    let strands = diff.changes().iter().any(|change| {
-        change.locus() == &locus && change.impact() == CeremonyChangeImpact::Strands
-    });
+    let strands = diff
+        .changes()
+        .iter()
+        .any(|change| change.locus() == &locus && change.impact() == CeremonyChangeImpact::Strands);
     if strands {
         return Err(DomainError::InvalidDocument {
             reason: format!(

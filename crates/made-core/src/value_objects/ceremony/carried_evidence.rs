@@ -18,7 +18,11 @@ pub struct CarriedEvidence {
 
 impl CarriedEvidence {
     #[must_use]
-    pub const fn new(successor_step_id: StepId, source: SourceRecordRef, output: StepOutput) -> Self {
+    pub const fn new(
+        successor_step_id: StepId,
+        source: SourceRecordRef,
+        output: StepOutput,
+    ) -> Self {
         Self {
             successor_step_id,
             source,

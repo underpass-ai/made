@@ -1007,7 +1007,7 @@ impl EventStoreFake {
                 context: instance.context().clone(),
                 bound_definition: instance.bound_definition(),
                 lineage: instance.lineage().cloned(),
-                succession: instance.succession().cloned(),
+                succession: instance.succession().cloned().map(Box::new),
                 budget_account_id: instance.budget_account_id().cloned(),
                 ceremony_deadline: instance.ceremony_deadline(),
                 state_deadline: instance.state_deadline().cloned(),

@@ -35,8 +35,12 @@ pub struct CeremonyInstanceStarted {
     /// before this opening was appended. Treated exactly as `lineage`:
     /// durable provenance, never read out of context, and skipped when
     /// absent so openings that predate successions keep their bytes.
+    ///
+    /// Boxed because an opening is already the widest fact a stream
+    /// holds and every other event of the enum pays for its size.
+    /// Nothing on the wire changes: a box serializes as what it holds.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub succession: Option<CeremonySuccession>,
+    pub succession: Option<Box<CeremonySuccession>>,
     /// Shared root ledger for this ceremony tree. Children inherit this exact account.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub budget_account_id: Option<BudgetAccountId>,

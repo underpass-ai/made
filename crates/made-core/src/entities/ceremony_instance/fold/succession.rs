@@ -11,7 +11,7 @@ impl CeremonyInstance {
     /// resume is decided rather than here.
     pub(super) fn apply_successor_planned(&mut self, planned: &SuccessorPlanned) {
         self.updated_at = planned.plan.planned_at();
-        self.successor_plan = Some(planned.plan.clone());
+        self.successor_plan = Some(Box::new(planned.plan.clone()));
     }
 
     /// The successor writes down what it was given.
@@ -24,10 +24,7 @@ impl CeremonyInstance {
         let state_iteration = self.current_state_iteration;
         let state_visit = self.current_state_visit;
         for evidence in &carried.carried {
-            if !self
-                .step_records
-                .contains_key(evidence.successor_step_id())
-            {
+            if !self.step_records.contains_key(evidence.successor_step_id()) {
                 continue;
             }
             self.step_records.insert(

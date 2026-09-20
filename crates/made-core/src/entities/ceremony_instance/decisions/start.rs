@@ -166,7 +166,7 @@ impl CeremonyInstance {
             None,
             None,
         )?;
-        opening.succession = Some(succession);
+        opening.succession = Some(Box::new(succession));
         let mut events = vec![CeremonyEvent::CeremonyInstanceStarted(opening)];
         if !plan.carried().is_empty() {
             events.push(CeremonyEvent::SuccessionCarried(SuccessionCarried {
