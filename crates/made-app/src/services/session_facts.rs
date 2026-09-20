@@ -191,6 +191,9 @@ fn event_id(
 ///   the same two ids, which is what makes a retried start land once.
 fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
     match event {
+        CeremonyEvent::HostHandoffRecorded(recorded) => {
+            format!("host-handoff:{}", recorded.declaration.id.as_str())
+        }
         CeremonyEvent::CeremonyInstanceStarted(_) | CeremonyEvent::InstanceImported(_) => {
             "session".to_owned()
         }

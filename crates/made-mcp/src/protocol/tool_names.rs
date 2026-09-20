@@ -16,6 +16,8 @@ pub(crate) const DEFER_CEREMONY_GUARD_TOOL: &str = "made_defer_ceremony_guard";
 pub(crate) const APPLY_CEREMONY_TRANSITION_TOOL: &str = "made_apply_ceremony_transition";
 pub(crate) const PAUSE_CEREMONY_TOOL: &str = "made_pause_ceremony";
 pub(crate) const RESUME_CEREMONY_TOOL: &str = "made_resume_ceremony";
+pub(crate) const RECORD_CEREMONY_HOST_HANDOFF_TOOL: &str = "made_record_ceremony_host_handoff";
+pub(crate) const INSPECT_CEREMONY_RESUME_TOOL: &str = "made_inspect_ceremony_resume";
 pub(crate) const CANCEL_CEREMONY_TOOL: &str = "made_cancel_ceremony";
 pub(crate) const ENFORCE_CEREMONY_DEADLINES_TOOL: &str = "made_enforce_ceremony_deadlines";
 pub(crate) const ASSERT_CEREMONY_REASON_TOOL: &str = "made_assert_ceremony_reason";
@@ -59,7 +61,7 @@ pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
 pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
 pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 80] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 82] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -92,6 +94,8 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 80] = [
     APPLY_CEREMONY_TRANSITION_TOOL,
     PAUSE_CEREMONY_TOOL,
     RESUME_CEREMONY_TOOL,
+    RECORD_CEREMONY_HOST_HANDOFF_TOOL,
+    INSPECT_CEREMONY_RESUME_TOOL,
     CANCEL_CEREMONY_TOOL,
     ENFORCE_CEREMONY_DEADLINES_TOOL,
     APPROVE_CEREMONY_GUARD_TOOL,

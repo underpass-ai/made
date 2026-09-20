@@ -187,6 +187,20 @@ macro_rules! ceremony_rpc_methods {
                 run_with_ceremony_trace(trace, self.handle_cancel_ceremony(request))
             )
         }
+        async fn record_ceremony_host_handoff(
+            &self, request: Request<pb::RecordCeremonyHostHandoffRequest>,
+        ) -> GrpcResult<pb::RecordCeremonyHostHandoffResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(self, request, RecordCeremonyHostHandoff,
+                run_with_ceremony_trace(trace, self.handle_record_ceremony_host_handoff(request)))
+        }
+        async fn inspect_ceremony_resume(
+            &self, request: Request<pb::InspectCeremonyResumeRequest>,
+        ) -> GrpcResult<pb::InspectCeremonyResumeResponse> {
+            let trace = trace_context_from_metadata(&request);
+            authorized_ceremony!(self, request, InspectCeremonyResume,
+                run_with_ceremony_trace(trace, self.handle_inspect_ceremony_resume(request)))
+        }
         async fn enforce_ceremony_deadlines(
             &self,
             request: Request<pb::EnforceCeremonyDeadlinesRequest>,

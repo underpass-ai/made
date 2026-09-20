@@ -34,6 +34,11 @@ impl CeremonyInstance {
     /// event's own timestamp.
     pub fn apply(&mut self, event: &CeremonyEvent) {
         match event {
+            CeremonyEvent::HostHandoffRecorded(recorded) => {
+                self.host_handoffs
+                    .insert(recorded.declaration.id.clone(), recorded.clone());
+                self.updated_at = recorded.recorded_at;
+            }
             // A stream opens once. Applying the opening to a session
             // that already exists is a programming error in the
             // caller, and the session is left exactly as it was: a

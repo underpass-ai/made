@@ -23,6 +23,7 @@ use council_fixtures::{
     deliberate_fixture, get_deliberation_fixture, orchestrate_fixture, stream_fixture,
 };
 mod execution_receipt_fixtures;
+mod host_handoff_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
@@ -94,6 +95,8 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_apply_ceremony_transition" => ceremony_instance_fixture(),
                 "made_pause_ceremony" => ceremony_instance_fixture(),
                 "made_resume_ceremony" => ceremony_instance_fixture(),
+                "made_record_ceremony_host_handoff" => host_handoff_fixtures::response(name),
+                "made_inspect_ceremony_resume" => host_handoff_fixtures::response(name),
                 "made_cancel_ceremony" => ceremony_instance_fixture(),
                 "made_enforce_ceremony_deadlines" => ceremony_instance_fixture(),
                 "made_approve_ceremony_guard" => ceremony_instance_fixture(),

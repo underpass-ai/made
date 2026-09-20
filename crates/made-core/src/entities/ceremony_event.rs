@@ -33,6 +33,7 @@ use super::ceremony_events::{
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum CeremonyEvent {
+    HostHandoffRecorded(super::ceremony_events::HostHandoffRecorded),
     CeremonyInstanceStarted(CeremonyInstanceStarted),
     ParticipantsBound(ParticipantsBound),
     StepStarted(StepStarted),
@@ -70,6 +71,7 @@ impl CeremonyEvent {
     #[must_use]
     pub fn event_type(&self) -> AuditEventType {
         match self {
+            Self::HostHandoffRecorded(_) => AuditEventType::HostHandoffRecorded,
             Self::CeremonyInstanceStarted(_) => AuditEventType::CeremonyInstanceStarted,
             Self::ParticipantsBound(_) => AuditEventType::ParticipantsBound,
             Self::StepStarted(_) => AuditEventType::StepStarted,
@@ -179,7 +181,8 @@ impl CeremonyEvent {
                 EventSchemaVersion::V2
             }
             Self::StepLeaseRenewed(event) if event.request.is_some() => EventSchemaVersion::V2,
-            Self::CeremonyInstanceStarted(_)
+            Self::HostHandoffRecorded(_)
+            | Self::CeremonyInstanceStarted(_)
             | Self::StepLeaseRenewed(_)
             | Self::ParticipantsBound(_)
             | Self::InterventionRequested(_)

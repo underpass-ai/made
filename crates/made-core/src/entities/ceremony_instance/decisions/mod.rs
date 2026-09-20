@@ -14,6 +14,7 @@ mod budget_admission;
 mod children;
 mod execution_receipts;
 mod guard_decisions;
+mod host_handoff;
 mod interventions;
 mod lease_renewal;
 mod lifecycle;
@@ -37,6 +38,9 @@ impl CeremonyInstance {
         definition: &CeremonyDefinition,
     ) -> Result<Vec<CeremonyEvent>, DomainError> {
         match command {
+            CeremonyCommand::RecordHostHandoff(command) => {
+                self.decide_record_host_handoff(command, definition)
+            }
             CeremonyCommand::BindParticipant(command) => {
                 self.decide_bind_participant(command, definition)
             }

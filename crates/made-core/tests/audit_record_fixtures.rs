@@ -69,7 +69,8 @@ fn version_three_fixture_keeps_its_envelope_evidence_and_digest() {
     assert_eq!(serde_json::to_value(record).unwrap(), expected);
 }
 
-const EVERY_EVENT_TYPE: [AuditEventType; 26] = [
+const EVERY_EVENT_TYPE: [AuditEventType; 27] = [
+    AuditEventType::HostHandoffRecorded,
     AuditEventType::CeremonyDefinitionValidated,
     AuditEventType::CeremonyDefinitionPublished,
     AuditEventType::CeremonyInstanceStarted,
@@ -104,6 +105,9 @@ const EVERY_EVENT_TYPE: [AuditEventType; 26] = [
 /// it either gets a golden or is named here as having no payload.
 fn golden(event_type: AuditEventType) -> Option<&'static str> {
     match event_type {
+        AuditEventType::HostHandoffRecorded => Some(include_str!(
+            "fixtures/ceremony_events/v1/host_handoff_recorded.json"
+        )),
         AuditEventType::CeremonyDefinitionValidated
         | AuditEventType::CeremonyDefinitionPublished
         | AuditEventType::CeremonyFailed
@@ -245,7 +249,7 @@ fn every_version_one_payload_reads_and_reserializes_unchanged() {
         );
         pinned += 1;
     }
-    assert_eq!(pinned, 22);
+    assert_eq!(pinned, 23);
 }
 
 #[test]

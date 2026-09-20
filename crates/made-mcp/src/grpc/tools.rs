@@ -30,6 +30,9 @@ mod design_ceremony_request;
 mod execution_receipt_dispatch;
 mod general_dispatch;
 mod general_requests;
+mod host_handoff_dispatch;
+mod host_handoff_presenter;
+mod host_handoff_requests;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
@@ -86,6 +89,9 @@ pub(crate) async fn dispatch(
     }
     if execution_receipt_dispatch::handles(name) {
         return execution_receipt_dispatch::dispatch(&mut client, name, arguments).await;
+    }
+    if host_handoff_dispatch::handles(name) {
+        return host_handoff_dispatch::dispatch(&mut client, name, arguments).await;
     }
 
     match name {

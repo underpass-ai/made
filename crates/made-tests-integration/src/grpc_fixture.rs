@@ -442,6 +442,21 @@ impl GrpcFixture {
             .unwrap_or_else(|| fixture_authorization.gate.clone());
         authorization.protect_session_stream(&ceremony_stream);
         let mut service_builder = MadeGrpcService::builder()
+            .record_ceremony_host_handoff(Arc::new(
+                made_app::workers::RecordCeremonyHostHandoffUseCase::new(
+                    ceremony_stream.clone(),
+                    resolve_ceremony_definition.clone(),
+                    clock.clone(),
+                )
+                .with_reauthorization(fixture_authorization.authorize.clone()),
+            ))
+            .inspect_ceremony_resume(Arc::new(
+                made_app::workers::InspectCeremonyResumeUseCase::new(
+                    ceremony_stream.clone(),
+                    wiring.execution_receipts(),
+                    clock.clone(),
+                ),
+            ))
             .authorization(authorization)
             .authorization_administration(fixture_authorization.administration)
             .read_authorization_policy(fixture_authorization.read_policy)
@@ -900,6 +915,21 @@ impl GrpcFixture {
             .gate
             .protect_session_stream(&ceremony_stream);
         let svc = MadeGrpcService::builder()
+            .record_ceremony_host_handoff(Arc::new(
+                made_app::workers::RecordCeremonyHostHandoffUseCase::new(
+                    ceremony_stream.clone(),
+                    resolve_ceremony_definition.clone(),
+                    clock.clone(),
+                )
+                .with_reauthorization(fixture_authorization.authorize.clone()),
+            ))
+            .inspect_ceremony_resume(Arc::new(
+                made_app::workers::InspectCeremonyResumeUseCase::new(
+                    ceremony_stream.clone(),
+                    Arc::new(made_adapters::memory::InMemoryExecutionReceiptStore::new()),
+                    clock.clone(),
+                ),
+            ))
             .authorization(fixture_authorization.gate)
             .authorization_administration(fixture_authorization.administration)
             .read_authorization_policy(fixture_authorization.read_policy)

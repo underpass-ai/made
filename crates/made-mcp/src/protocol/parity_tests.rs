@@ -357,7 +357,9 @@ fn each_row_names_the_cells_its_capability_implies() {
 /// is a verb phrase, plus the two reads named after what they answer with
 /// rather than after the call. Listed the way `FACADE_VARIANTS` is, with the
 /// reason each.
-const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 18] = [
+const FACADE_NAME_EXCEPTIONS: [(&str, &str, &str); 20] = [
+    ("record_ceremony_host_handoff", "record_ceremony_host_handoff", "distinguishes ceremony evidence from host process control"),
+    ("inspect_ceremony_resume", "inspect_ceremony_resume", "distinguishes a ceremony preflight from resuming a host process"),
     ("get_authorization_policy", "authorization_policy", "named after the configured policy snapshot it answers with"),
     ("list_authorization_decisions", "authorization_decisions", "named after the bounded decision page it answers with"),
     ("get_ceremony_instance", "instance", "named after what it answers with, not after the asking"),

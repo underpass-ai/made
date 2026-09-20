@@ -165,6 +165,7 @@ fn no_builder_demands_a_field_its_schema_never_declared() {
 ///
 /// Rendered rather than typed because every builder returns a
 /// different message and this gate holds them all the same way.
+#[allow(clippy::too_many_lines)] // exhaustive one-arm-per-builder coverage table
 fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
     let outcome = match name {
         "made_deliberate" => rendered(build_deliberate_request(arguments)),
@@ -211,6 +212,12 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         }
         "made_pause_ceremony" => rendered(build_pause_ceremony_request(arguments)),
         "made_resume_ceremony" => rendered(build_resume_ceremony_request(arguments)),
+        "made_record_ceremony_host_handoff" => {
+            rendered(super::host_handoff_requests::record(arguments))
+        }
+        "made_inspect_ceremony_resume" => {
+            rendered(super::host_handoff_requests::inspect(arguments))
+        }
         "made_cancel_ceremony" => rendered(build_cancel_ceremony_request(arguments)),
         "made_enforce_ceremony_deadlines" => {
             rendered(build_enforce_ceremony_deadlines_request(arguments))

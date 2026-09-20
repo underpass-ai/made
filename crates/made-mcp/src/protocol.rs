@@ -95,3 +95,4 @@ use catalog::grpc_tool_catalog;
 use general_schemas::{output_contract_schema, task_schema};
 #[cfg(test)]
 use tool_names::GRPC_TOOL_NAMES;
+pub(crate) use tool_names::{INSPECT_CEREMONY_RESUME_TOOL, RECORD_CEREMONY_HOST_HANDOFF_TOOL};

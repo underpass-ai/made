@@ -41,6 +41,7 @@ mod embedded_execution_receipt_request;
 mod embedded_extension_dispatch;
 mod embedded_generate_ceremony_report_request;
 mod embedded_get_status_request;
+mod embedded_host_handoff_dispatch;
 mod embedded_pause_ceremony_request;
 mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
@@ -213,6 +214,8 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | APPLY_CEREMONY_TRANSITION_TOOL
                 | PAUSE_CEREMONY_TOOL
                 | RESUME_CEREMONY_TOOL
+                | crate::protocol::RECORD_CEREMONY_HOST_HANDOFF_TOOL
+                | crate::protocol::INSPECT_CEREMONY_RESUME_TOOL
                 | CANCEL_CEREMONY_TOOL
                 | ENFORCE_CEREMONY_DEADLINES_TOOL
                 | GET_CEREMONY_INSTANCE_TOOL
@@ -437,6 +440,12 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
+                }
+                crate::protocol::RECORD_CEREMONY_HOST_HANDOFF_TOOL => {
+                    embedded_host_handoff_dispatch::record(&self.made, arguments).await
+                }
+                crate::protocol::INSPECT_CEREMONY_RESUME_TOOL => {
+                    embedded_host_handoff_dispatch::inspect(&self.made, arguments).await
                 }
                 CANCEL_CEREMONY_TOOL => {
                     let request = EmbeddedCancelCeremonyRequest::try_from(arguments)

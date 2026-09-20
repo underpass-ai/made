@@ -25,6 +25,7 @@ use super::ceremony_commands::{
 /// A request to change a ceremony, in the terms the aggregate decides.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CeremonyCommand {
+    RecordHostHandoff(super::ceremony_commands::RecordHostHandoff),
     BindParticipant(BindParticipant),
     StartStep(StartStep),
     RenewStepLease(RenewStepLease),

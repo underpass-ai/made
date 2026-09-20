@@ -68,6 +68,8 @@ mod council_journal;
 mod dynamic_roles;
 #[path = "mcp_parity_session/execution_receipts.rs"]
 mod execution_receipts;
+#[path = "mcp_parity_session/host_handoff.rs"]
+mod host_handoff;
 #[path = "mcp_parity_session/optionals.rs"]
 mod optionals;
 #[path = "mcp_parity_session/state_repeat.rs"]
@@ -901,6 +903,22 @@ impl ParityArms {
 
     /// Test-host cache of identities returned by successful claims. Never a store read.
     fn completing(&self, tool: &str, mut arguments: Value) -> Value {
+        if tool == "made_record_ceremony_host_handoff" {
+            let key = (
+                arguments["ceremony_id"].as_str().unwrap().to_owned(),
+                arguments["declaration"]["step_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+            );
+            arguments["declaration"]["claim_fence"] = self
+                .claims
+                .lock()
+                .unwrap()
+                .get(&key)
+                .expect("host saved the original claim")
+                .clone();
+        }
         let child_id = || {
             self.children
                 .lock()
@@ -2040,6 +2058,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
     ]);
     calls.extend(execution_receipts::script());
     calls.extend(renewal_script());
+    calls.extend(host_handoff::script());
     calls
 }
 

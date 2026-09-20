@@ -21,6 +21,35 @@ impl MadeClient {
             .map_err(MadeClientError::from_status)?
             .into_inner())
     }
+
+    pub async fn record_ceremony_host_handoff(
+        &self,
+        request: made_proto::v1::RecordCeremonyHostHandoffRequest,
+    ) -> Result<made_proto::v1::RecordCeremonyHostHandoffResponse, MadeClientError> {
+        self.rpc()
+            .record_ceremony_host_handoff(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/RecordCeremonyHostHandoff",
+                request,
+            ))
+            .await
+            .map(tonic::Response::into_inner)
+            .map_err(MadeClientError::from_status)
+    }
+    pub async fn inspect_ceremony_resume(
+        &self,
+        request: made_proto::v1::InspectCeremonyResumeRequest,
+    ) -> Result<made_proto::v1::InspectCeremonyResumeResponse, MadeClientError> {
+        self.rpc()
+            .inspect_ceremony_resume(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/InspectCeremonyResume",
+                request,
+            ))
+            .await
+            .map(tonic::Response::into_inner)
+            .map_err(MadeClientError::from_status)
+    }
     pub async fn pause(
         &self,
         request: PauseCeremonyRequest,

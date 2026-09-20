@@ -12,6 +12,12 @@ even though the new catalogue identity is `made`.
 - Make native Windows `made-setup` replace the bundled registration command
   atomically with the batch launcher, so clean Codex and Claude installs need
   no manual MCP edit and repeated setup keeps exactly one registration. (#185)
+- Add a bounded, read-only pause/resume preflight and durable host-handoff
+  evidence across embedded Rust, gRPC and both MCP backends. Host quiescence,
+  engine drain, receipt recovery and absolute deadlines remain separate facts;
+  the protocol neither infers liveness nor grants takeover or extends clocks.
+  Exact handoff retries return their durable receipt while changed payloads
+  conflict. (#188)
 
 ## 0.7.8 — 2026-09-19
 

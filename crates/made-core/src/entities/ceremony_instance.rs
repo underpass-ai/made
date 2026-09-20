@@ -55,6 +55,8 @@ mod transitions;
 pub struct CeremonyInstance {
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     lease_renewals: BTreeMap<IdempotencyKey, super::ceremony_events::StepLeaseRenewed>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    host_handoffs: BTreeMap<IdempotencyKey, super::ceremony_events::HostHandoffRecorded>,
     id: CeremonyId,
     definition_name: CeremonyName,
     definition_version: CeremonyVersion,
