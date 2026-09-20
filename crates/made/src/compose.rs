@@ -20,7 +20,6 @@ use made_app::usecases::{
 use made_core::ports::{
     AgentFactoryPort, CeremonyDefinitionRepositoryPort, CeremonyStepHandlerPort, ScoringPort,
 };
-use tracing::info;
 
 use crate::{Application, ComposeError};
 
@@ -47,6 +46,7 @@ mod messaging;
 mod persistence;
 mod persistence_handles;
 mod registry_operations;
+mod runtime_log;
 mod scoring;
 mod validators;
 
@@ -82,6 +82,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
     let authorization =
         authorization::wire(&service_config, postgres_pool.as_ref(), clock.clone()).await?;
     let authorization_continuation = authorization.continuation.clone();
+    let renewal_authorization = authorization.authorize.clone();
 
     let ceremony_definitions: Arc<dyn CeremonyDefinitionRepositoryPort> =
         Arc::new(InMemoryCeremonyDefinitionRepository::new());
@@ -357,6 +358,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         &ceremony_stream,
         &clock,
         authorization_continuation,
+        renewal_authorization,
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);
@@ -371,15 +373,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         env!("CARGO_PKG_VERSION"),
     );
 
-    info!(
-        grpc_port = service_config.grpc_port,
-        http_port = service_config.http_port,
-        nats_enabled = service_config.nats_enabled,
-        executor_backend = executor::backend_name(),
-        agent_kinds = supported_agent_kinds.as_str(),
-        trigger_subject = service_config.trigger_subject.as_str(),
-        "made wired"
-    );
+    runtime_log::wired(&service_config, &supported_agent_kinds);
 
     Ok(Application {
         service_config,

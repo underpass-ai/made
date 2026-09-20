@@ -41,6 +41,7 @@ impl ClockPort for Clock {
 }
 
 struct Fixture {
+    clock: Arc<Clock>,
     engine: EmbeddedMade,
     definition: CeremonyDefinition,
     events: Arc<InMemoryCeremonyEventStore>,
@@ -77,6 +78,7 @@ impl Fixture {
                         AuthorizationAction::RunCeremony,
                         AuthorizationAction::RunCeremonyStep,
                         AuthorizationAction::StartCeremony,
+                        AuthorizationAction::ClaimCeremonyStep,
                     ],
                     AuthorizationScope::Global,
                     (clock.now(), None),
@@ -87,6 +89,7 @@ impl Fixture {
             )
             .await
             .unwrap();
+        issue_renewal_grant(&admin, &principal, clock.now()).await;
         let authorize = Arc::new(AuthorizeOperationUseCase::new(
             policy_id.clone(),
             policies.clone(),
@@ -128,6 +131,7 @@ impl Fixture {
         let definition = engine.mount_yaml(DEFINITION).await.unwrap().definitions()[0].clone();
         let engine = engine.with_authorization_policy(policy_id.clone(), policies.clone());
         Self {
+            clock,
             engine,
             definition,
             events,
@@ -197,8 +201,189 @@ impl Fixture {
     }
 }
 
+#[tokio::test]
+async fn delegated_renewal_reauthorizes_after_admission_expiry_and_refuses_revoked_claims() {
+    for revoked_grant in ["run-grant", "renew-grant"] {
+        let fixture = Fixture::new(0, false).await;
+        let start = fixture
+            .operation(AuthorizationAction::StartCeremony, "renewal-start")
+            .await;
+        AuthorizationOperationScope::run(
+            start,
+            fixture.engine.start(StartCeremonyInput::new(
+                id(),
+                fixture.definition.name().clone(),
+                fixture.definition.version().clone(),
+                CeremonyContext::empty(),
+                "host",
+                AuditActorKind::Agent,
+            )),
+        )
+        .await
+        .unwrap();
+        let admitted = fixture
+            .operation(AuthorizationAction::ClaimCeremonyStep, "renewal-claim")
+            .await;
+        let claim = Box::pin(AuthorizationOperationScope::run(
+            admitted,
+            fixture
+                .engine
+                .start_step(made_app::usecases::StartCeremonyStepInput::new(
+                    id(),
+                    RoleId::new("WORKER").unwrap(),
+                    AuditActorKind::Agent,
+                    StepId::new("first").unwrap(),
+                    LeaseOwnerId::new("host").unwrap(),
+                    IdempotencyKey::new("claim").unwrap(),
+                    DurationMs::from_millis(300_000),
+                )),
+        ))
+        .await
+        .unwrap();
+        fixture.clock.0.store(120, Ordering::SeqCst);
+        let input = made_app::workers::RenewCeremonyStepLeaseInput {
+            ceremony_id: id(),
+            step_id: StepId::new("first").unwrap(),
+            claim_fence: claim.claim_fence().clone(),
+            owner: LeaseOwnerId::new("host").unwrap(),
+            request: StepLeaseRenewalRequest {
+                id: IdempotencyKey::new("heartbeat").unwrap(),
+                ttl: DurationMs::from_millis(300_000),
+            },
+        };
+        let authorized = fixture
+            .operation(AuthorizationAction::RenewCeremonyStepLease, "renewal-admit")
+            .await;
+        assert_foreign_renewal_principal_is_rejected(&fixture, input.clone()).await;
+        let receipt = AuthorizationOperationScope::run(
+            authorized.clone(),
+            fixture.engine.renew_step_lease(input.clone()),
+        )
+        .await
+        .unwrap();
+        assert!(
+            receipt.expires_at
+                > claim
+                    .instance()
+                    .step_record(&StepId::new("first").unwrap())
+                    .unwrap()
+                    .lease()
+                    .unwrap()
+                    .expires_at()
+        );
+        let administration = AuthorizationPolicyAdministrationService::new(
+            fixture.policy_id.clone(),
+            fixture.policies.clone(),
+            fixture.clock.clone(),
+        );
+        administration
+            .revoke(
+                fixture.gate.principal(),
+                &AuthorizationGrantId::new(revoked_grant).unwrap(),
+                AuthorizationRevocationReason::new("claim authority revoked").unwrap(),
+            )
+            .await
+            .unwrap();
+        let before = fixture.records().await;
+        // A still-live renewal admission is insufficient after revocation of claim authority.
+        let error =
+            AuthorizationOperationScope::run(authorized, fixture.engine.renew_step_lease(input))
+                .await
+                .unwrap_err();
+        assert!(
+            error
+                .to_string()
+                .contains("authorization refuses lease renewal"),
+            "{error}"
+        );
+        assert_eq!(fixture.records().await, before);
+    }
+}
+
 fn id() -> CeremonyId {
     CeremonyId::new("long-running").unwrap()
+}
+
+async fn issue_renewal_grant(
+    admin: &AuthorizationPolicyAdministrationService,
+    principal: &AuthenticatedPrincipal,
+    now: OffsetDateTime,
+) {
+    admin
+        .issue(
+            principal,
+            AuthorizationGrant::new(
+                AuthorizationGrantId::new("renew-grant").unwrap(),
+                principal.id().clone(),
+                [AuthorizationAction::RenewCeremonyStepLease],
+                AuthorizationScope::Global,
+                (now, None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(principal.clone()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+}
+
+async fn assert_foreign_renewal_principal_is_rejected(
+    fixture: &Fixture,
+    input: made_app::workers::RenewCeremonyStepLeaseInput,
+) {
+    let foreign = AuthenticatedPrincipal::new(
+        PrincipalId::new("foreign-host").unwrap(),
+        PrincipalKind::TrustedHost,
+        AuthenticationMethod::LocalHostPolicy,
+    )
+    .unwrap();
+    let administration = AuthorizationPolicyAdministrationService::new(
+        fixture.policy_id.clone(),
+        fixture.policies.clone(),
+        fixture.clock.clone(),
+    );
+    administration
+        .issue(
+            fixture.gate.principal(),
+            AuthorizationGrant::new(
+                AuthorizationGrantId::new("foreign-renewal-grant").unwrap(),
+                foreign.id().clone(),
+                [AuthorizationAction::RenewCeremonyStepLease],
+                AuthorizationScope::Global,
+                (fixture.clock.now(), None),
+                DelegationDepth::none(),
+                AuthorizationGrantIssuer::direct(fixture.gate.principal().clone()),
+            )
+            .unwrap(),
+        )
+        .await
+        .unwrap();
+    let authorizer = Arc::new(AuthorizeOperationUseCase::new(
+        fixture.policy_id.clone(),
+        fixture.policies.clone(),
+        fixture.clock.clone(),
+        AuthorizationDecisionTtl::from_seconds(60).unwrap(),
+    ));
+    let gate = TrustedHostAuthorizationGate::new(authorizer, foreign).unwrap();
+    let admitted = gate
+        .authorize(
+            AuthorizationRequestId::new("foreign-renewal").unwrap(),
+            AuthorizationAction::RenewCeremonyStepLease,
+            AuthorizationScope::Ceremony { ceremony_id: id() },
+            AuthorizationTargetDigest::for_bytes(b"foreign-renewal"),
+            None,
+        )
+        .await
+        .unwrap();
+    let before = fixture.records().await;
+    let error = AuthorizationOperationScope::run(admitted, fixture.engine.renew_step_lease(input))
+        .await
+        .unwrap_err();
+    assert!(
+        error.to_string().contains("principal does not own"),
+        "{error}"
+    );
+    assert_eq!(fixture.records().await, before);
 }
 
 #[tokio::test]

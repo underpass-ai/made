@@ -140,6 +140,18 @@ pub(crate) async fn dispatch(
                 .map(p2j::ceremony_instance_state_to_json)
                 .ok_or_else(|| ToolError::refused("made returned no ceremony instance"))
         }
+        "made_renew_ceremony_step_lease" => {
+            let request = ceremony_requests::build_renew_step_lease_request(arguments)
+                .map_err(bad_request)?;
+            let receipt = client
+                .renew_ceremony_step_lease(request)
+                .await?
+                .into_inner();
+            Ok(serde_json::json!({"renewal_id":receipt.renewal_id,
+                "claim_fence":receipt.claim_fence,
+                "effective_lease_expires_at":receipt.effective_lease_expires_at,
+                "renewed_at":receipt.renewed_at}))
+        }
 
         "made_apply_ceremony_transition" => {
             let request = ceremony_requests::build_apply_ceremony_transition_request(arguments)

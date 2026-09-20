@@ -138,6 +138,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_bind_ceremony_participants" => ceremony_instance_fixture(),
                 "made_claim_ceremony_step" => ceremony_instance_fixture(),
                 "made_complete_ceremony_step" => ceremony_instance_fixture(),
+                "made_renew_ceremony_step_lease" => renewal_fixture(),
                 "made_get_execution_receipt" => execution_receipt_fixtures::receipt(),
                 "made_inspect_execution_recovery" => execution_receipt_fixtures::recovery_page(),
                 "made_complete_execution_receipt" => ceremony_instance_fixture(),
@@ -580,6 +581,11 @@ fn authorization_policy_fixture() -> Value {
         "owner":{"principal_id":"fixture-host","kind":"trusted_host","authentication_method":"local_host_policy"},
         "grants":[],"revocations":[],"separation_rules":[]
     }})
+}
+
+fn renewal_fixture() -> Value {
+    json!({"renewal_id":"fixture-heartbeat", "claim_fence":"fixture-fence",
+        "effective_lease_expires_at":"2026-01-01T01:00:00Z", "renewed_at":"2026-01-01T00:30:00Z"})
 }
 
 #[cfg(test)]

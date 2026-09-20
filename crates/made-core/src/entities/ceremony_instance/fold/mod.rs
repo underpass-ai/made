@@ -44,6 +44,10 @@ impl CeremonyInstance {
             CeremonyEvent::ParticipantsBound(bound) => self.apply_participants_bound(bound),
             CeremonyEvent::StepStarted(started) => self.apply_step_started(started),
             CeremonyEvent::StepLeaseRenewed(renewed) => {
+                if let Some(request) = &renewed.request {
+                    self.lease_renewals
+                        .insert(request.id.clone(), renewed.clone());
+                }
                 if let Some(record) = self.step_records.get_mut(&renewed.step_id) {
                     record.renew_lease_until(renewed.expires_at);
                 }

@@ -6,11 +6,11 @@ use super::artifact_schemas::{
     tombstone_artifact_schema,
 };
 use super::ceremony_schemas::{
-    accept_child_completion_schema, apply_execution_receipt_schema, ceremony_definition_ref_schema,
-    ceremony_design_schema, ceremony_draft_schema, ceremony_guard_approval_schema,
-    ceremony_guard_deferral_schema, ceremony_instance_schema, ceremony_lifecycle_control_schema,
-    ceremony_reason_schema, ceremony_report_schema, ceremony_search_schema,
-    ceremony_transition_schema, claim_ceremony_step_schema, close_ceremony_intervention_schema,
+    accept_child_completion_schema, apply_execution_receipt_schema, ceremony_design_schema,
+    ceremony_draft_schema, ceremony_guard_approval_schema, ceremony_guard_deferral_schema,
+    ceremony_instance_schema, ceremony_lifecycle_control_schema, ceremony_reason_schema,
+    ceremony_report_schema, ceremony_search_schema, ceremony_transition_schema,
+    claim_ceremony_step_schema, close_ceremony_intervention_schema,
     collect_ceremony_evidence_schema, complete_ceremony_step_schema,
     enforce_ceremony_deadlines_schema, get_ceremony_transcript_schema,
     get_execution_receipt_schema, inspect_execution_recovery_schema,
@@ -32,24 +32,26 @@ use super::tool_names::{
     CANCEL_CEREMONY_TOOL, CLAIM_CEREMONY_STEP_TOOL, CLOSE_CEREMONY_INTERVENTION_TOOL,
     COLLECT_CEREMONY_EVIDENCE_TOOL, COMMIT_ARTIFACT_UPLOAD_TOOL, COMPLETE_CEREMONY_STEP_TOOL,
     COMPLETE_EXECUTION_RECEIPT_TOOL, DEFER_CEREMONY_GUARD_TOOL, DESIGN_CEREMONY_TOOL,
-    DIFF_CEREMONY_DEFINITIONS_TOOL, DISCOVER_CAPABILITIES_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL,
-    EXPLAIN_CEREMONY_DRAFT_TOOL, GENERATE_CEREMONY_REPORT_TOOL, GET_ARTIFACT_TOOL,
-    GET_CEREMONY_INSTANCE_TOOL, GET_CEREMONY_TRANSCRIPT_TOOL, GET_EXECUTION_RECEIPT_TOOL,
-    GET_HELP_TOOL, GET_METRICS_TOOL, GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL,
-    LIST_ARTIFACTS_TOOL, LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL,
-    PREPARE_CEREMONY_CHILDREN_TOOL, PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL,
-    PUT_ARTIFACT_CHUNK_TOOL, READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL,
-    RECOVER_CEREMONY_CHILDREN_TOOL, REQUEST_CEREMONY_INTERVENTION_TOOL,
-    RESPOND_TO_CEREMONY_INTERVENTION_TOOL, RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL,
-    RUN_CEREMONY_TOOL, SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL,
-    START_PUBLISHED_CEREMONY_TOOL, STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL,
-    VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
+    DISCOVER_CAPABILITIES_TOOL, ENFORCE_CEREMONY_DEADLINES_TOOL, EXPLAIN_CEREMONY_DRAFT_TOOL,
+    GENERATE_CEREMONY_REPORT_TOOL, GET_ARTIFACT_TOOL, GET_CEREMONY_INSTANCE_TOOL,
+    GET_CEREMONY_TRANSCRIPT_TOOL, GET_EXECUTION_RECEIPT_TOOL, GET_HELP_TOOL, GET_METRICS_TOOL,
+    GET_STATUS_TOOL, INSPECT_EXECUTION_RECOVERY_TOOL, LIST_ARTIFACTS_TOOL,
+    LIST_CEREMONY_INSTANCES_TOOL, PAUSE_CEREMONY_TOOL, PREPARE_CEREMONY_CHILDREN_TOOL,
+    PUBLISH_CEREMONY_DEFINITION_TOOL, PULL_CEREMONY_EVENTS_TOOL, PUT_ARTIFACT_CHUNK_TOOL,
+    READ_ARTIFACT_CHUNK_TOOL, READ_CEREMONY_EVENTS_TOOL, RECOVER_CEREMONY_CHILDREN_TOOL,
+    REQUEST_CEREMONY_INTERVENTION_TOOL, RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
+    RESUME_CEREMONY_TOOL, RUN_CEREMONY_STEP_TOOL, RUN_CEREMONY_TOOL,
+    SEARCH_CEREMONY_INSTANCES_TOOL, START_CEREMONY_TOOL, START_PUBLISHED_CEREMONY_TOOL,
+    STREAM_CEREMONY_TOOL, TOMBSTONE_ARTIFACT_TOOL, VALIDATE_CEREMONY_DRAFT_TOOL,
+    VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
 mod authorization_catalog;
 mod budget_catalog;
 mod council_catalog;
 mod council_journal_catalog;
+mod definition_diff_catalog;
+mod renewal_catalog;
 
 use council_catalog::council_tool_catalog;
 
@@ -225,19 +227,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             "Fix a validated draft to an immutable version identified by a content digest. Republishing identical content is a no-op; different content under a taken version is refused, never overwritten.",
             ceremony_draft_schema(),
         ),
-        tool_def(
-            DIFF_CEREMONY_DEFINITIONS_TOOL,
-            "Compare two ceremony definitions and say what changed — and, for each change, whether a session already running the earlier one could go on.",
-            json!({
-                "type": "object",
-                "additionalProperties": false,
-                "required": ["before", "after"],
-                "properties": {
-                    "before": ceremony_definition_ref_schema("The earlier definition."),
-                    "after": ceremony_definition_ref_schema("The later definition.")
-                }
-            }),
-        ),
+        definition_diff_catalog::diff_tool(),
         tool_def(
             BIND_CEREMONY_PARTICIPANTS_TOOL,
             "Seat this session's roles: which specialty — and so which council — does each role's work here. A role left unseated is played the way the definition says.",
@@ -272,6 +262,7 @@ pub(super) fn grpc_tool_catalog() -> Vec<Value> {
             "Record the observable result and structured output/evidence of one previously claimed host-executed ceremony step. Requires the claim_fence returned by that claim; missing or replaced identities are refused.",
             complete_ceremony_step_schema(),
         ),
+        renewal_catalog::renewal_tool(),
         tool_def(
             GET_EXECUTION_RECEIPT_TOOL,
             "Read one immutable terminal execution receipt by its stable operation identity.",

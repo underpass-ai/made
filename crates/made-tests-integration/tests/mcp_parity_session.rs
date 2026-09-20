@@ -923,6 +923,7 @@ impl ParityArms {
         if matches!(
             tool,
             "made_complete_ceremony_step"
+                | "made_renew_ceremony_step_lease"
                 | "made_complete_execution_receipt"
                 | "made_adopt_execution_receipt"
         ) && arguments.get("claim_fence").is_none()
@@ -1929,6 +1930,7 @@ fn session_script() -> Vec<(&'static str, Value)> {
         ("made_list_authorization_decisions", json!({"limit": 500})),
     ]);
     calls.extend(execution_receipts::script());
+    calls.extend(renewal_script());
     calls
 }
 
@@ -2027,6 +2029,27 @@ fn council_session_script() -> Vec<(&'static str, Value)> {
     ]
 }
 
+fn renewal_script() -> Vec<(&'static str, Value)> {
+    vec![
+        (
+            "made_renew_ceremony_step_lease",
+            json!({"ceremony_id":BUDGET_SESSION_ID,"step_id":"work",
+                "lease_owner_id":"parity-budget-host","renewal_id":"budget-heartbeat",
+                "lease_ttl_ms":120_000}),
+        ),
+        (
+            "made_renew_ceremony_step_lease",
+            json!({"ceremony_id":BUDGET_SESSION_ID,"step_id":"work",
+                "lease_owner_id":"parity-budget-host","renewal_id":"budget-heartbeat",
+                "lease_ttl_ms":120_000}),
+        ),
+        (
+            "made_get_budget_report",
+            json!({"ceremony_id":BUDGET_SESSION_ID}),
+        ),
+    ]
+}
+
 fn council_task(task_id: &str, description: &str) -> Value {
     json!({
         "task": {
@@ -2079,6 +2102,7 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
     let mut called: BTreeSet<String> = BTreeSet::new();
     let mut ceremony_call_id = 0_u64;
     let mut council_call_id = 10_000_u64;
+    let mut original_budget = None;
 
     for (tool, arguments) in session_script() {
         let arguments = arms.completing(tool, arguments);
@@ -2118,6 +2142,17 @@ async fn drive_session_script(arms: &ParityArms) -> BTreeSet<String> {
             assert_same_answer(tool, &over_the_wire, &in_process);
         }
         execution_receipts::assert_result(tool, &arguments, structured(&in_process));
+        if tool == "made_get_budget_report" && arguments["ceremony_id"] == BUDGET_SESSION_ID {
+            let report = structured(&in_process).clone();
+            if let Some(before) = &original_budget {
+                assert_eq!(
+                    &report, before,
+                    "heartbeat and replay must not reserve budget twice"
+                );
+            } else {
+                original_budget = Some(report);
+            }
+        }
         if tool == "made_design_ceremony" {
             let yaml = structured(&in_process)["definition_yaml"]
                 .as_str()

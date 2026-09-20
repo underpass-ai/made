@@ -18,6 +18,7 @@ pub(crate) struct EmbeddedAuthorizationServices {
     decisions: Arc<ReadAuthorizationDecisionsUseCase>,
     administration: Arc<AuthorizationPolicyAdministrationService>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    pub(crate) reauthorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
 }
 
 impl EmbeddedAuthorizationServices {
@@ -26,12 +27,14 @@ impl EmbeddedAuthorizationServices {
         decisions: ReadAuthorizationDecisionsUseCase,
         administration: AuthorizationPolicyAdministrationService,
         continuation: ContinueAcceptedCeremonyWorkUseCase,
+        reauthorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
     ) -> Self {
         Self {
             policy: Arc::new(policy),
             decisions: Arc::new(decisions),
             administration: Arc::new(administration),
             continuation: Arc::new(continuation),
+            reauthorize,
         }
     }
 

@@ -106,6 +106,7 @@ use self::embedded_claim_ceremony_step_request::EmbeddedClaimCeremonyStepRequest
 use self::embedded_close_ceremony_intervention_request::EmbeddedCloseCeremonyInterventionRequest;
 use self::embedded_collect_ceremony_evidence_request::EmbeddedCollectCeremonyEvidenceRequest;
 use self::embedded_complete_ceremony_step_request::EmbeddedCompleteCeremonyStepRequest;
+mod embedded_renew_step_lease_request;
 use self::embedded_defer_ceremony_guard_request::EmbeddedDeferCeremonyGuardRequest;
 use self::embedded_design_ceremony_request::EmbeddedDesignCeremonyRequest;
 use self::embedded_diff_ceremony_definitions_request::EmbeddedDiffCeremonyDefinitionsRequest;
@@ -133,6 +134,7 @@ use self::embedded_service_observability_presenter::{
 use self::embedded_start_ceremony_request::EmbeddedStartCeremonyRequest;
 use self::embedded_start_published_ceremony_request::EmbeddedStartPublishedCeremonyRequest;
 use self::embedded_stream_ceremony_request::EmbeddedStreamCeremonyRequest;
+use crate::protocol::RENEW_CEREMONY_STEP_LEASE_TOOL;
 
 pub(crate) const EMBEDDED_BACKEND_NAME: &str = "embedded";
 
@@ -199,6 +201,7 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                 | ACCEPT_CHILD_COMPLETION_TOOL
                 | RECOVER_CEREMONY_CHILDREN_TOOL
                 | CLAIM_CEREMONY_STEP_TOOL
+                | RENEW_CEREMONY_STEP_LEASE_TOOL
                 | COMPLETE_CEREMONY_STEP_TOOL
                 | GET_EXECUTION_RECEIPT_TOOL
                 | INSPECT_EXECUTION_RECOVERY_TOOL
@@ -363,6 +366,14 @@ impl MadeMcpToolBackend for EmbeddedMadeMcpBackend {
                         .map_err(ToolError::invalid_request)?;
                     let ceremony_id = request.execute(&self.made).await?;
                     self.present_instance(&ceremony_id).await
+                }
+                RENEW_CEREMONY_STEP_LEASE_TOOL => {
+                    let request = embedded_renew_step_lease_request::parse(arguments)
+                        .map_err(ToolError::invalid_request)?;
+                    let receipt = self.made.renew_step_lease(request).await?;
+                    Ok(tool_success_result(
+                        embedded_renew_step_lease_request::present(receipt),
+                    ))
                 }
                 GET_EXECUTION_RECEIPT_TOOL => {
                     let operation_id =

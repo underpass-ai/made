@@ -178,6 +178,7 @@ impl CeremonyEvent {
             Self::CeremonyInstanceStarted(event) if event.lineage.is_some() => {
                 EventSchemaVersion::V2
             }
+            Self::StepLeaseRenewed(event) if event.request.is_some() => EventSchemaVersion::V2,
             Self::CeremonyInstanceStarted(_)
             | Self::StepLeaseRenewed(_)
             | Self::ParticipantsBound(_)

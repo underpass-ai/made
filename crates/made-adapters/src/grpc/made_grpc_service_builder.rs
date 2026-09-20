@@ -71,6 +71,8 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) claim_ceremony_step: Option<Arc<StartCeremonyStepUseCase>>,
     pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
     pub(super) complete_ceremony_step: Option<Arc<CompleteCeremonyStepUseCase>>,
+    pub(super) renew_ceremony_step_lease:
+        Option<Arc<made_app::workers::RenewCeremonyStepLeaseUseCase>>,
     pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
     pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
     pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,
@@ -213,6 +215,11 @@ impl MadeGrpcServiceBuilder {
         start_published_ceremony
     );
     setter!(run_ceremony_step, RunCeremonyStepUseCase, run_ceremony_step);
+    setter!(
+        renew_ceremony_step_lease,
+        made_app::workers::RenewCeremonyStepLeaseUseCase,
+        renew_ceremony_step_lease
+    );
     setter!(
         accept_child_completion,
         AcceptChildCompletionUseCase,
@@ -485,6 +492,7 @@ impl MadeGrpcServiceBuilder {
             claim_ceremony_step: required!(self, claim_ceremony_step),
             budgeted_step_claim: self.budgeted_step_claim,
             complete_ceremony_step: required!(self, complete_ceremony_step),
+            renew_ceremony_step_lease: self.renew_ceremony_step_lease,
             get_execution_receipt: self.get_execution_receipt,
             inspect_execution_recovery: self.inspect_execution_recovery,
             complete_execution_receipt: self.complete_execution_receipt,

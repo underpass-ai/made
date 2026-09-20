@@ -106,7 +106,9 @@ pub use ceremony_worker_run_outcome::CeremonyWorkerRunOutcome;
 pub use ceremony_worker_scheduler::CeremonyWorkerScheduler;
 pub use ceremony_worker_stop_token::CeremonyWorkerStopToken;
 
+mod renew_ceremony_step_lease_input;
 mod renew_ceremony_step_lease_use_case;
+pub use renew_ceremony_step_lease_input::RenewCeremonyStepLeaseInput;
 pub use renew_ceremony_step_lease_use_case::RenewCeremonyStepLeaseUseCase;
 
 mod ceremony_work_candidate;

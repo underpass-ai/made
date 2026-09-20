@@ -146,6 +146,8 @@ pub struct MadeGrpcService {
     pub(super) claim_ceremony_step: Arc<StartCeremonyStepUseCase>,
     pub(super) budgeted_step_claim: Option<Arc<BudgetedStepClaimUseCase>>,
     pub(super) complete_ceremony_step: Arc<CompleteCeremonyStepUseCase>,
+    pub(super) renew_ceremony_step_lease:
+        Option<Arc<made_app::workers::RenewCeremonyStepLeaseUseCase>>,
     pub(super) get_execution_receipt: Option<Arc<GetExecutionReceiptUseCase>>,
     pub(super) inspect_execution_recovery: Option<Arc<InspectExecutionRecoveryUseCase>>,
     pub(super) complete_execution_receipt: Option<Arc<CompleteExecutionReceiptUseCase>>,

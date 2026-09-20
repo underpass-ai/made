@@ -65,6 +65,38 @@ Use the exact schema from `tools/list`. The fence requirement is a deliberate
 protocol change in 0.6.0; see [migrations](../migrations/README.md).
 Never fetch a replacement worker's current fence to attach an old result.
 
+### Renew long delegated work
+
+Source builds containing #202 expose `made_renew_ceremony_step_lease`; the
+released 0.7.8 catalog does not. Check the active `tools/list` and discovery
+version rather than assuming that a checkout upgrades the installed binary.
+The Rust facade uses `renew_step_lease`, the client uses the same method, and
+the RPC is `RenewCeremonyStepLease`.
+
+Before effective expiry, the original authenticated host sends:
+
+```json
+{"ceremony_id":"session-17","step_id":"work","claim_fence":"<accepted claim fence>","lease_owner_id":"host-1","renewal_id":"heartbeat-1","lease_ttl_ms":60000}
+```
+
+Use a new renewal id for each heartbeat. After a lost response, retry exactly
+the same id and payload: MADE returns the original receipt and does not extend
+again. Reusing the id with different payload is a conflict. The receipt's
+`effective_lease_expires_at` is the expiry accepted by that request; inspect
+the step's current field for later renewals. A replay after completion is
+historical evidence, never permission to resume work. The sealed
+`step_lease_renewed` event records the request, original owner/fence and time.
+
+Both the renewal action and original claim authority must remain authorized.
+The logical lease owner cannot substitute for authenticated identity. A new
+renewal rejects expired or replaced claims, cancellation, terminal state and
+overdue absolute deadlines. Pause closes admission but permits accepted work
+to renew and finish; it does not shift deadlines. Renewal is capped by the
+earliest step/state/ceremony deadline and retains the original lease, attempt,
+operation and budget reservation. It does not create a worker or prove that
+an external agent is alive. On refusal, stop further external work and use the
+explicit recovery path; never borrow a successor's fence.
+
 ## Concurrent states and host fan-out
 
 For a one-shot `made_run_ceremony`, the application driver automatically runs
@@ -85,7 +117,7 @@ a live lease blocks the transition until that work completes or expires.
 
 Separate hosts may share the durable SQLite store. Optimistic append and the
 state's effective capacity decide which distinct claims land. The MCP protocol
-exposes claim and completion operations; an MCP call does not create workers,
+exposes claim, renewal and completion operations; an MCP call does not create workers,
 processes or subagents. The service binary can separately install the explicit,
 opt-in [ceremony worker daemon](worker-daemon.md). When that daemon is disabled,
 the calling host owns worker lifecycle, authorization, tool access and external

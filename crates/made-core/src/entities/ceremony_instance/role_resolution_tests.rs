@@ -158,6 +158,7 @@ fn renewal_extends_effective_expiry_without_replacing_claim_identity() {
     let renewed = instance
         .decide(
             &CeremonyCommand::RenewStepLease(RenewStepLease {
+                request: None,
                 step_id: step_id.clone(),
                 claim_fence: fence.clone(),
                 lease_owner_id: LeaseOwnerId::new("runner").unwrap(),
@@ -198,6 +199,7 @@ fn renewal_at_existing_deadline_is_a_valid_authority_noop() {
     let renewed = instance
         .decide(
             &CeremonyCommand::RenewStepLease(RenewStepLease {
+                request: None,
                 step_id,
                 claim_fence: fence,
                 lease_owner_id: LeaseOwnerId::new("runner").unwrap(),
@@ -227,6 +229,7 @@ fn renewal_rejects_wrong_or_expired_owner() {
         .unwrap();
     let command = |owner: &str, now| {
         CeremonyCommand::RenewStepLease(RenewStepLease {
+            request: None,
             step_id: step_id.clone(),
             claim_fence: fence.clone(),
             lease_owner_id: LeaseOwnerId::new(owner).unwrap(),

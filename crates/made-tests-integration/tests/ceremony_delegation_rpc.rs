@@ -20,6 +20,64 @@ use tonic::Code;
 const EDITORIAL_MEETING_CEREMONY: &str =
     include_str!("../../../tests/e2e/ceremonies/editorial-planning-meeting.yaml");
 
+#[tokio::test]
+async fn delegated_renewal_replays_and_finishes_after_the_initial_ttl() {
+    let fixture = GrpcFixture::start().await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+    let ceremony_id = "delegated-renewal";
+    start(&mut client, ceremony_id).await;
+    let mut request = claim(ceremony_id, "open_room", "accepted-host-operation");
+    request.lease_ttl_ms = 500;
+    let claimed = client
+        .claim_ceremony_step(request)
+        .await
+        .unwrap()
+        .into_inner();
+    let heartbeat = made_proto::v1::RenewCeremonyStepLeaseRequest {
+        ceremony_id: ceremony_id.into(),
+        step_id: "open_room".into(),
+        claim_fence: claimed.claim_fence.clone(),
+        lease_owner_id: "integration-host".into(),
+        renewal_id: "host-heartbeat-1".into(),
+        lease_ttl_ms: 5000,
+    };
+    let accepted = client
+        .renew_ceremony_step_lease(heartbeat.clone())
+        .await
+        .unwrap()
+        .into_inner();
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    let replay = client
+        .renew_ceremony_step_lease(heartbeat.clone())
+        .await
+        .unwrap()
+        .into_inner();
+    assert_eq!(accepted, replay);
+    let mut changed = heartbeat.clone();
+    changed.lease_ttl_ms += 1;
+    assert!(client.renew_ceremony_step_lease(changed).await.is_err());
+    let state = read(&mut client, ceremony_id).await;
+    assert_eq!(
+        step(&state, "open_room").effective_lease_expires_at,
+        accepted.effective_lease_expires_at
+    );
+    let result = client
+        .complete_ceremony_step(CompleteCeremonyStepRequest {
+            ceremony_id: ceremony_id.into(),
+            step_id: "open_room".into(),
+            actor_kind: "agent".into(),
+            status: "completed".into(),
+            claim_fence: claimed.claim_fence,
+            ..Default::default()
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .instance
+        .unwrap();
+    assert_eq!(step(&result, "open_room").status, "completed");
+}
+
 async fn start(
     client: &mut MadeServiceClient<Channel>,
     ceremony_id: &str,

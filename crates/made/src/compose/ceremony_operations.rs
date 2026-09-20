@@ -22,6 +22,7 @@ pub(super) fn wire<C: ClockPort + 'static>(
     stream: &Arc<SessionStream>,
     clock: &Arc<C>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
+    authorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
 ) -> MadeGrpcServiceBuilder {
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
         definition.clone(),
@@ -70,11 +71,19 @@ pub(super) fn wire<C: ClockPort + 'static>(
         clock.clone(),
     ));
     let bind_ceremony_participants = Arc::new(BindCeremonyParticipantsUseCase::new(
-        definition,
+        definition.clone(),
         stream.clone(),
         clock.clone(),
     ));
     builder
+        .renew_ceremony_step_lease(Arc::new(
+            made_app::workers::RenewCeremonyStepLeaseUseCase::new(
+                stream.clone(),
+                definition,
+                clock.clone(),
+            )
+            .with_reauthorization(authorize),
+        ))
         .continue_accepted_step_claim(Arc::new(ContinueAcceptedStepClaimUseCase::new(
             stream.clone(),
             continuation,

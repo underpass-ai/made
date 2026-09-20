@@ -128,6 +128,26 @@ impl EmbeddedMade {
         .await
     }
 
+    /// Renew a delegated producer; replay returns its original durable receipt.
+    pub async fn renew_step_lease(
+        &self,
+        input: made_app::workers::RenewCeremonyStepLeaseInput,
+    ) -> Result<made_core::entities::ceremony_events::StepLeaseRenewed, DomainError> {
+        self.require_authorized_ceremony_action(
+            AuthorizationAction::RenewCeremonyStepLease,
+            &input.ceremony_id,
+        )?;
+        let mut renewal = made_app::workers::RenewCeremonyStepLeaseUseCase::new(
+            self.stream.clone(),
+            self.resolve_definition(),
+            self.clock.clone(),
+        );
+        if let Some(authorization) = &self.authorization {
+            renewal = renewal.with_reauthorization(authorization.reauthorize.clone());
+        }
+        Box::pin(renewal.execute_request(input)).await
+    }
+
     pub async fn start_budgeted_step(
         &self,
         input: BudgetedStepClaimInput,

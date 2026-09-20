@@ -6,6 +6,21 @@ use made_proto::v1::{
 use crate::{MadeClient, MadeClientError};
 
 impl MadeClient {
+    pub async fn renew_step_lease(
+        &self,
+        request: made_proto::v1::RenewCeremonyStepLeaseRequest,
+    ) -> Result<made_proto::v1::RenewCeremonyStepLeaseResponse, MadeClientError> {
+        Ok(self
+            .rpc()
+            .renew_ceremony_step_lease(Self::request(
+                &self.context(),
+                "/underpass.made.v1.MadeService/RenewCeremonyStepLease",
+                request,
+            ))
+            .await
+            .map_err(MadeClientError::from_status)?
+            .into_inner())
+    }
     pub async fn pause(
         &self,
         request: PauseCeremonyRequest,

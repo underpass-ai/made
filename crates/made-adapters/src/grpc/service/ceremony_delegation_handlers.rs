@@ -24,6 +24,49 @@ use super::{
 };
 
 impl MadeGrpcService {
+    pub(super) async fn handle_renew_ceremony_step_lease(
+        &self,
+        request: Request<pb::RenewCeremonyStepLeaseRequest>,
+    ) -> GrpcResult<pb::RenewCeremonyStepLeaseResponse> {
+        use made_core::value_objects::{
+            DurationMs, IdempotencyKey, LeaseOwnerId, StepClaimFence, StepId,
+            StepLeaseRenewalRequest,
+        };
+        let request = request.into_inner();
+        let input = made_app::workers::RenewCeremonyStepLeaseInput {
+            ceremony_id: CeremonyId::new(request.ceremony_id).map_err(domain_error_to_status)?,
+            step_id: StepId::new(request.step_id).map_err(domain_error_to_status)?,
+            claim_fence: StepClaimFence::new(request.claim_fence)
+                .map_err(domain_error_to_status)?,
+            owner: LeaseOwnerId::new(request.lease_owner_id).map_err(domain_error_to_status)?,
+            request: StepLeaseRenewalRequest {
+                id: IdempotencyKey::new(request.renewal_id).map_err(domain_error_to_status)?,
+                ttl: DurationMs::from_millis(request.lease_ttl_ms),
+            },
+        };
+        let receipt = self
+            .renew_ceremony_step_lease
+            .as_ref()
+            .ok_or_else(|| Status::unimplemented("delegated lease renewal is not configured"))?
+            .execute_request(input)
+            .await
+            .map_err(domain_error_to_status)?;
+        let moment = |at: time::OffsetDateTime| {
+            at.format(&time::format_description::well_known::Rfc3339)
+                .unwrap_or_default()
+        };
+        Ok(Response::new(pb::RenewCeremonyStepLeaseResponse {
+            renewal_id: receipt
+                .request
+                .expect("public renewal request")
+                .id
+                .as_str()
+                .to_owned(),
+            claim_fence: receipt.claim_fence.as_str().to_owned(),
+            effective_lease_expires_at: moment(receipt.expires_at),
+            renewed_at: moment(receipt.renewed_at),
+        }))
+    }
     #[tracing::instrument(name = "rpc.claim_ceremony_step", skip_all)]
     pub(super) async fn handle_claim_ceremony_step(
         &self,
