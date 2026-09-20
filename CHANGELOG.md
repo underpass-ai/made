@@ -9,6 +9,16 @@ even though the new catalogue identity is `made`.
 
 ## Unreleased
 
+- Read the global feed as attention, durably, one cursor per bound integrator.
+  A projector walks the feed for each binding, derives what that integrator can
+  act on, offers it to the delivery ledger under an identity that makes
+  replaying the feed free, and wakes the host when the destination is one that
+  can be woken. The cursor advances past records that produce nothing, because
+  most of a global feed belongs to somebody else. A binding's scope is resolved
+  into ceremonies each round, so an integrator driving a composed system is
+  woken for the runs its own execution opens later. A full queue sheds the
+  oldest thing nobody is waiting on, keeps every decision, block and ending,
+  and tells the host it fell behind. (#PR)
 - Let the delivery ledger hear back from an activation adapter. A delivery
   pushed to a host had nowhere to record that it arrived: the state and the
   receipt were modelled, but every write the ledger offered went through a

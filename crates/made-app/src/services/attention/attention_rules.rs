@@ -151,6 +151,22 @@ fn rejected_review(record: &AuditRecord) -> bool {
         .is_some_and(|accepted| !accepted)
 }
 
+/// The news that a full queue has cost this integrator something.
+///
+/// Derived from the record that arrived when the queue overflowed
+/// rather than from the one that was dropped: what a host needs to
+/// learn is that it is behind, and what was shed is already in the
+/// ledger with the cause on it. Blocking, so the signal that things
+/// are being lost is never itself the thing lost.
+pub fn queue_overflow(record: &PositionedRecord) -> Result<AttentionEvent, DomainError> {
+    build(
+        record,
+        AttentionKind::Blocked,
+        "this integrator's queue is full; older results were dropped",
+        ResultAcceptance::NotApplicable,
+    )
+}
+
 /// Everything an event needs that comes from the record itself.
 ///
 /// Evidence is not among it. What a host should go and read is a

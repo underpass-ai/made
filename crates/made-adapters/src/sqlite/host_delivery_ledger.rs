@@ -270,6 +270,28 @@ impl HostDeliveryLedgerPort for SqliteHostDeliveryLedger {
         .await
     }
 
+    async fn abandon(
+        &self,
+        delivery_id: &HostDeliveryId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Option<HostDeliveryRecord>, DomainError> {
+        let delivery_id = delivery_id.clone();
+        self.blocking("abandon a host delivery", move |engine| {
+            let mut tx = engine.begin_write()?;
+            let Some(next) =
+                read(tx.as_ref(), &delivery_id)?.and_then(|stored| stored.abandoned(cause, now))
+            else {
+                return Ok(None);
+            };
+            let record = next.record().clone();
+            write(tx.as_mut(), &next)?;
+            tx.commit()?;
+            Ok(Some(record))
+        })
+        .await
+    }
+
     async fn expire_ceremony(
         &self,
         ceremony_id: &CeremonyId,

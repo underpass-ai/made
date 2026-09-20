@@ -32,7 +32,7 @@ async fn sqlite_satisfies_the_host_delivery_ledger_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 17, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 18, "properties run: {passed:?}");
 }
 
 #[tokio::test]

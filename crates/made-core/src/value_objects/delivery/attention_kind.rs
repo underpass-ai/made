@@ -44,6 +44,18 @@ impl AttentionKind {
         Self::CeremonyEnded,
     ];
 
+    /// The kind a derived identity ends with, when it ends with one.
+    ///
+    /// [`AttentionEventId::derive`](super::AttentionEventId::derive)
+    /// spells the kind into the identity, and the ledger holds that
+    /// identity rather than the event. Reading it back is what lets a
+    /// queue be weighed — which of the things waiting may be dropped —
+    /// without keeping a second copy of what each delivery is about.
+    #[must_use]
+    pub fn from_label(label: &str) -> Option<Self> {
+        Self::ALL.into_iter().find(|kind| kind.as_str() == label)
+    }
+
     #[must_use]
     pub const fn as_str(self) -> &'static str {
         match self {

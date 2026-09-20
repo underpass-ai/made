@@ -12,6 +12,9 @@ pub enum DeliveryExpiryCause {
     CeremonyEnded,
     /// The destination stopped being one: the binding was revoked.
     TargetRevoked,
+    /// One binding's queue was full and this was the oldest thing
+    /// nobody was waiting on.
+    QueueOverflow,
 }
 
 impl DeliveryExpiryCause {
@@ -21,6 +24,7 @@ impl DeliveryExpiryCause {
             Self::Timeout => "timeout",
             Self::CeremonyEnded => "ceremony_ended",
             Self::TargetRevoked => "target_revoked",
+            Self::QueueOverflow => "queue_overflow",
         }
     }
 }
