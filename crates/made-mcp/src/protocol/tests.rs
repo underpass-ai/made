@@ -31,6 +31,7 @@ fn tools_catalog_is_derived_one_for_one_from_grpc_service() {
 fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
     let grpc_dispatch_source = [
         include_str!("../grpc/tools.rs"),
+        include_str!("../grpc/tools/ceremony_move_dispatch.rs"),
         include_str!("../grpc/tools/ceremony_read_dispatch.rs"),
         include_str!("../grpc/tools/children_dispatch.rs"),
         include_str!("../grpc/tools/general_dispatch.rs"),
