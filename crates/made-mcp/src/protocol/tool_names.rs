@@ -28,6 +28,12 @@ pub(crate) const REQUEST_CEREMONY_INTERVENTION_TOOL: &str = "made_request_ceremo
 pub(crate) const RESPOND_TO_CEREMONY_INTERVENTION_TOOL: &str =
     "made_respond_to_ceremony_intervention";
 pub(crate) const CLOSE_CEREMONY_INTERVENTION_TOOL: &str = "made_close_ceremony_intervention";
+pub(crate) const PULL_CEREMONY_AGENT_INTERVENTIONS_TOOL: &str =
+    "made_pull_ceremony_agent_interventions";
+pub(crate) const ACKNOWLEDGE_CEREMONY_AGENT_INTERVENTION_TOOL: &str =
+    "made_acknowledge_ceremony_agent_intervention";
+pub(crate) const GET_CEREMONY_INTERVENTION_TOOL: &str = "made_get_ceremony_intervention";
+pub(crate) const LIST_CEREMONY_INTERVENTIONS_TOOL: &str = "made_list_ceremony_interventions";
 pub(crate) const COLLECT_CEREMONY_EVIDENCE_TOOL: &str = "made_collect_ceremony_evidence";
 pub(crate) const DESIGN_CEREMONY_TOOL: &str = "made_design_ceremony";
 pub(crate) const READ_CEREMONY_EVENTS_TOOL: &str = "made_read_ceremony_events";
@@ -61,7 +67,7 @@ pub(crate) const LIST_CEREMONY_AGENTS_TOOL: &str = "made_list_ceremony_agents";
 pub(crate) const GET_CEREMONY_AGENT_TOOL: &str = "made_get_ceremony_agent";
 pub(crate) const REPORT_CEREMONY_AGENT_STATUS_TOOL: &str = "made_report_ceremony_agent_status";
 
-pub(super) const GRPC_TOOL_NAMES: [&str; 82] = [
+pub(super) const GRPC_TOOL_NAMES: [&str; 86] = [
     "made_deliberate",
     "made_stream_deliberation",
     "made_get_deliberation_result",
@@ -103,6 +109,10 @@ pub(super) const GRPC_TOOL_NAMES: [&str; 82] = [
     REQUEST_CEREMONY_INTERVENTION_TOOL,
     RESPOND_TO_CEREMONY_INTERVENTION_TOOL,
     CLOSE_CEREMONY_INTERVENTION_TOOL,
+    PULL_CEREMONY_AGENT_INTERVENTIONS_TOOL,
+    ACKNOWLEDGE_CEREMONY_AGENT_INTERVENTION_TOOL,
+    GET_CEREMONY_INTERVENTION_TOOL,
+    LIST_CEREMONY_INTERVENTIONS_TOOL,
     COLLECT_CEREMONY_EVIDENCE_TOOL,
     ASSERT_CEREMONY_REASON_TOOL,
     VALIDATE_CEREMONY_DRAFT_TOOL,

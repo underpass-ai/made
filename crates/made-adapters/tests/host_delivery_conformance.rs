@@ -11,7 +11,7 @@ async fn the_in_memory_ledger_satisfies_the_contract() {
         .await
         .unwrap_or_else(|failure| panic!("{failure}"));
 
-    assert_eq!(passed.len(), 12, "properties run: {passed:?}");
+    assert_eq!(passed.len(), 13, "properties run: {passed:?}");
     assert!(passed.contains(&"a_live_lease_excludes_another_host"));
     assert!(passed.contains(&"work_follows_a_replaced_role_when_asked_to"));
 }
