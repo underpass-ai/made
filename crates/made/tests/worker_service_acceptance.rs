@@ -68,6 +68,82 @@ retry_policies:
   default: { max_attempts: 3, backoff_seconds: 1 }
 "#;
 
+const FAIL_CLOSED_BUDGET_DEFINITION: &str = r#"
+version: "1.0"
+name: "http_worker_budget_fail_closed"
+description: "Installed worker budget policy acceptance"
+inputs: { required: [], optional: [] }
+outputs: {}
+states:
+  - { id: OPEN, initial: true, terminal: false }
+steps:
+  - id: valid
+    state: OPEN
+    handler: http
+    config:
+      connector: http
+      provider: acceptance
+      budget_policy_version: 1
+      estimated_duration_micros: 1000
+      estimated_tokens: 1
+      estimated_cost_micros: 0
+      estimated_tool_calls: 1
+      action: valid
+  - id: missing
+    state: OPEN
+    handler: http
+    config:
+      connector: http
+      provider: acceptance
+      budget_policy_version: 1
+      estimated_duration_micros: 1000
+      estimated_cost_micros: 0
+      estimated_tool_calls: 1
+      action: missing
+  - id: unknown
+    state: OPEN
+    handler: http
+    config:
+      connector: http
+      provider: acceptance
+      budget_policy_version: 1
+      estimated_duration_micros: 1000
+      estimated_tokens: unknown
+      estimated_cost_micros: 0
+      estimated_tool_calls: 1
+      action: unknown
+  - id: stale
+    state: OPEN
+    handler: http
+    config:
+      connector: http
+      provider: acceptance
+      budget_policy_version: 2
+      estimated_duration_micros: 1000
+      estimated_tokens: 1
+      estimated_cost_micros: 0
+      estimated_tool_calls: 1
+      action: stale
+  - id: over_ceiling
+    state: OPEN
+    handler: http
+    config:
+      connector: http
+      provider: acceptance
+      budget_policy_version: 1
+      estimated_duration_micros: 1001
+      estimated_tokens: 1
+      estimated_cost_micros: 0
+      estimated_tool_calls: 1
+      action: over_ceiling
+roles:
+  - id: WORKER
+    allowed_actions: [valid, missing, unknown, stale, over_ceiling]
+timeouts: { step_default: 30 }
+retry_policies:
+  default: { max_attempts: 3, backoff_seconds: 1 }
+"#;
+
 #[derive(Clone, Default)]
 struct AcceptanceState {
     operations: Arc<Mutex<HashMap<String, serde_json::Value>>>,
@@ -172,9 +248,26 @@ fn stream(store: &Arc<SqliteCeremonyStore>) -> Arc<SessionStream> {
 }
 
 async fn seed(root: &Path, database: &Path, ceremony: &CeremonyId) {
+    seed_with_definition(
+        root,
+        database,
+        ceremony,
+        DEFINITION,
+        "http_worker_acceptance",
+    )
+    .await;
+}
+
+async fn seed_with_definition(
+    root: &Path,
+    database: &Path,
+    ceremony: &CeremonyId,
+    definition: &str,
+    definition_name: &str,
+) {
     let definitions_path = root.join("definitions");
     std::fs::create_dir_all(&definitions_path).unwrap();
-    std::fs::write(definitions_path.join("worker.yaml"), DEFINITION).unwrap();
+    std::fs::write(definitions_path.join("worker.yaml"), definition).unwrap();
     let definitions = Arc::new(InMemoryCeremonyDefinitionRepository::new());
     MountCeremonyDefinitionsUseCase::new(
         Arc::new(FileSystemCeremonyDefinitionSource::from_directory(&definitions_path).unwrap()),
@@ -186,7 +279,7 @@ async fn seed(root: &Path, database: &Path, ceremony: &CeremonyId) {
     let store = Arc::new(SqliteCeremonyStore::open(database).unwrap());
     let definition = definitions
         .get(
-            &CeremonyName::new("http_worker_acceptance").unwrap(),
+            &CeremonyName::new(definition_name).unwrap(),
             &CeremonyVersion::v1(),
         )
         .await
@@ -209,7 +302,7 @@ async fn seed(root: &Path, database: &Path, ceremony: &CeremonyId) {
     .execute(StartBudgetedCeremonyInput::new(
         StartCeremonyInput::new(
             ceremony.clone(),
-            CeremonyName::new("http_worker_acceptance").unwrap(),
+            CeremonyName::new(definition_name).unwrap(),
             CeremonyVersion::v1(),
             CeremonyContext::empty(),
             "acceptance-owner",
@@ -589,6 +682,103 @@ async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
     // cancellation inside this test process.
     terminate(&mut draining).await;
     terminate(&mut recovering).await;
+    remote_task.abort();
+}
+
+#[tokio::test]
+#[allow(clippy::too_many_lines)] // One installed daemon must reject every untrusted estimate before intent/PUT.
+async fn installed_worker_lifecycle_and_budget_policy_fail_closed_together() {
+    std::fs::create_dir_all("tmp").unwrap();
+    let directory = tempfile::tempdir_in("tmp").unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let database = root.join("made.sqlite3");
+    let ceremony = CeremonyId::new("worker-budget-fail-closed").unwrap();
+    seed_with_definition(
+        &root,
+        &database,
+        &ceremony,
+        FAIL_CLOSED_BUDGET_DEFINITION,
+        "http_worker_budget_fail_closed",
+    )
+    .await;
+    let state = AcceptanceState::default();
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let remote = format!("http://{}", listener.local_addr().unwrap());
+    let app = Router::new()
+        .route("/operations/:key", get(get_operation).put(put_operation))
+        .with_state(state.clone());
+    let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let mut service = spawn_service(&root, &database, &remote, &mint_tls(), None);
+    let store = Arc::new(SqliteCeremonyStore::open(&database).unwrap());
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let receipt = loop {
+        let operation_id = state
+            .operations
+            .lock()
+            .unwrap()
+            .values()
+            .next()
+            .and_then(|response| response["operation_id"].as_str().map(str::to_owned))
+            .map(made_core::value_objects::ExecutionOperationId::new)
+            .transpose()
+            .unwrap();
+        if let Some(operation_id) = operation_id {
+            if let Some(receipt) = store.receipt(&operation_id).await.unwrap() {
+                break receipt;
+            }
+        }
+        assert!(
+            service.child.try_wait().unwrap().is_none(),
+            "installed worker exited before budget admission"
+        );
+        assert!(
+            Instant::now() < deadline,
+            "valid estimate did not reach receipt"
+        );
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    assert_eq!(
+        *state.puts.lock().unwrap(),
+        1,
+        "only one estimate may reach PUT"
+    );
+    assert!(
+        receipt.budget_measurement().is_unknown(),
+        "the terminal connector response must remain Unknown, not be relabelled Estimated"
+    );
+    let loaded = loop {
+        let loaded = stream(&store).load(&ceremony).await.unwrap();
+        if loaded
+            .instance
+            .step_record(&made_core::value_objects::StepId::new("valid").unwrap())
+            .is_some_and(|record| record.status().is_success())
+        {
+            break loaded;
+        }
+        assert!(Instant::now() < deadline, "valid receipt was not applied");
+        tokio::time::sleep(Duration::from_millis(20)).await;
+    };
+    for rejected in ["missing", "unknown", "stale", "over_ceiling"] {
+        assert!(
+            loaded
+                .instance
+                .step_record(&made_core::value_objects::StepId::new(rejected).unwrap())
+                .is_some_and(|record| {
+                    record.status() != made_core::value_objects::StepStatus::InProgress
+                }),
+            "{rejected} estimate was admitted into a step claim"
+        );
+    }
+    // Keep the daemon alive across one extra scheduler period: malformed,
+    // stale and over-ceiling metadata may retry admission but can never become
+    // an intent or a second external operation.
+    tokio::time::sleep(Duration::from_millis(1_200)).await;
+    assert_eq!(
+        *state.puts.lock().unwrap(),
+        1,
+        "invalid estimate bypassed ceiling"
+    );
+    terminate(&mut service).await;
     remote_task.abort();
 }
 
