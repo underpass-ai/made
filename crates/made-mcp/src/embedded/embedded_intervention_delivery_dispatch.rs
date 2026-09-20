@@ -1,12 +1,14 @@
 use made_app::usecases::{
     AcknowledgeCeremonyAgentInterventionInput, GetCeremonyInterventionInput,
-    ListCeremonyInterventionsInput, PullCeremonyAgentInterventionsInput,
+    InterventionResolutionFilter, ListCeremonyInterventionsInput,
+    PullCeremonyAgentInterventionsInput,
 };
 use made_core::ports::HostDeliveryPageLimit;
 use made_core::value_objects::{
-    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, DeliveryNote, DeliveryRecipient,
-    DurationMs, EvidenceReference, HostAgentIncarnation, HostDeliveryId, HostDeliveryLease,
-    HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryObservationKind, RoleId,
+    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, CeremonyInterventionPageLimit,
+    DeliveryNote, DeliveryRecipient, DurationMs, EvidenceReference, HostAgentIncarnation,
+    HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation,
+    HostDeliveryObservationKind, RoleId,
 };
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
@@ -39,8 +41,7 @@ pub(super) async fn dispatch(
     let ceremony = CeremonyId::new(required(object, "ceremony_id")?)?;
     let value = match name {
         "made_pull_ceremony_agent_interventions" => {
-            let mut input =
-                PullCeremonyAgentInterventionsInput::new(ceremony, recipient(object)?);
+            let mut input = PullCeremonyAgentInterventionsInput::new(ceremony, recipient(object)?);
             if let Some(millis) = object.get("lease_duration_ms").and_then(Value::as_u64) {
                 input = input.leased_for(DurationMs::from_millis(millis))?;
             }
@@ -93,7 +94,7 @@ pub(super) async fn dispatch(
         "made_list_ceremony_interventions" => {
             let mut input = ListCeremonyInterventionsInput::new(ceremony);
             if let Some(status) = optional(object, "status") {
-                input = input.in_status(status);
+                input = input.in_status(&status)?;
             }
             if let Some(role_id) = optional(object, "role_id") {
                 input = input.for_role(RoleId::new(role_id)?);
@@ -102,10 +103,12 @@ pub(super) async fn dispatch(
                 input = input.for_agent_execution(CeremonyAgentExecutionId::new(execution)?);
             }
             if let Some(unresolved) = object.get("unresolved_only").and_then(Value::as_bool) {
-                input = input.unresolved_only(unresolved);
+                input = input.resolved(InterventionResolutionFilter::from_unresolved_only(
+                    unresolved,
+                ));
             }
             if let Some(limit) = object.get("limit").and_then(Value::as_u64) {
-                input = input.of_size(limit as usize)?;
+                input = input.of_size(CeremonyInterventionPageLimit::new(limit as usize)?);
             }
             if let Some(cursor) = optional(object, "cursor") {
                 input = input.after(CeremonyInterventionId::new(cursor)?);
@@ -121,9 +124,7 @@ pub(super) async fn dispatch(
     Ok(tool_success_result(value))
 }
 
-fn recipient(
-    object: &serde_json::Map<String, Value>,
-) -> Result<DeliveryRecipient, ToolError> {
+fn recipient(object: &serde_json::Map<String, Value>) -> Result<DeliveryRecipient, ToolError> {
     Ok(DeliveryRecipient::new(
         CeremonyAgentExecutionId::new(required(object, "agent_execution_id")?)?,
         HostAgentIncarnation::new(required(object, "incarnation")?)?,

@@ -7,8 +7,23 @@ use serde_json::{json, Value};
 /// misread: `status_delivery` says `delivered`, which means a host was
 /// handed it, and the empty `deliveries` list is what says nobody has
 /// yet reported seeing it.
+pub(super) fn handles(name: &str) -> bool {
+    matches!(
+        name,
+        "made_pull_ceremony_agent_interventions"
+            | "made_acknowledge_ceremony_agent_intervention"
+            | "made_get_ceremony_intervention"
+            | "made_list_ceremony_interventions"
+    )
+}
+
 pub(super) fn response(name: &str) -> Value {
     match name {
+        // Answering with the whole session, as every other move does.
+        "made_acknowledge_ceremony_agent_intervention" => json!({
+            "ceremony_id": "ceremony-1",
+            "interventions": [intervention("acknowledged")],
+        }),
         "made_pull_ceremony_agent_interventions" => json!({
             "items": [{
                 "delivery_id": "ceremony-1:intervention:item-1:agent:exec-1:inc-1",

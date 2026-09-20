@@ -72,9 +72,12 @@ impl EmbeddedMade {
             AuthorizationAction::GetCeremonyIntervention,
             input.instance_id(),
         )?;
-        GetCeremonyInterventionUseCase::new(self.stream.clone(), self.host_delivery_ledger().clone())
-            .execute(input)
-            .await
+        GetCeremonyInterventionUseCase::new(
+            self.stream.clone(),
+            self.host_delivery_ledger().clone(),
+        )
+        .execute(input)
+        .await
     }
 
     /// What a ceremony has been asked, and what is still owed.

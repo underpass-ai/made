@@ -1,19 +1,21 @@
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, RoleId,
+    CeremonyAgentExecutionId, CeremonyId, CeremonyInterventionId, CeremonyInterventionPageLimit,
+    RoleId,
 };
 
-const MAX_LIMIT: usize = 100;
+use super::ceremony_intervention_delivery_status::CeremonyInterventionDeliveryStatus;
+use super::intervention_resolution_filter::InterventionResolutionFilter;
 
 /// A bounded, filtered look at one ceremony's interventions.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ListCeremonyInterventionsInput {
     pub(crate) instance_id: CeremonyId,
-    pub(crate) status: Option<String>,
+    pub(crate) status: Option<CeremonyInterventionDeliveryStatus>,
     pub(crate) role_id: Option<RoleId>,
     pub(crate) agent_execution_id: Option<CeremonyAgentExecutionId>,
-    pub(crate) unresolved_only: bool,
-    pub(crate) limit: usize,
+    pub(crate) resolution: InterventionResolutionFilter,
+    pub(crate) limit: CeremonyInterventionPageLimit,
     pub(crate) cursor: Option<CeremonyInterventionId>,
 }
 
@@ -25,17 +27,25 @@ impl ListCeremonyInterventionsInput {
             status: None,
             role_id: None,
             agent_execution_id: None,
-            unresolved_only: false,
-            limit: MAX_LIMIT,
+            resolution: InterventionResolutionFilter::Any,
+            limit: CeremonyInterventionPageLimit::default(),
             cursor: None,
         }
     }
 
     /// Only items whose projected delivery status has this name.
-    #[must_use]
-    pub fn in_status(mut self, status: impl Into<String>) -> Self {
-        self.status = Some(status.into());
-        self
+    ///
+    /// Parsed here rather than compared as a string later, so a caller
+    /// that asks for a status the projection cannot produce is told so
+    /// instead of quietly getting an empty page.
+    pub fn in_status(mut self, status: &str) -> Result<Self, DomainError> {
+        let named = CeremonyInterventionDeliveryStatus::named(status).ok_or(
+            DomainError::InvariantViolated {
+                reason: "unknown intervention delivery status filter",
+            },
+        )?;
+        self.status = Some(named);
+        Ok(self)
     }
 
     #[must_use]
@@ -51,22 +61,15 @@ impl ListCeremonyInterventionsInput {
     }
 
     #[must_use]
-    pub const fn unresolved_only(mut self, unresolved_only: bool) -> Self {
-        self.unresolved_only = unresolved_only;
+    pub const fn resolved(mut self, resolution: InterventionResolutionFilter) -> Self {
+        self.resolution = resolution;
         self
     }
 
-    pub fn of_size(mut self, limit: usize) -> Result<Self, DomainError> {
-        if limit == 0 || limit > MAX_LIMIT {
-            return Err(DomainError::OutOfRange {
-                field: "list_ceremony_interventions.limit",
-                value: limit as f64,
-                min: 1.0,
-                max: MAX_LIMIT as f64,
-            });
-        }
+    #[must_use]
+    pub const fn of_size(mut self, limit: CeremonyInterventionPageLimit) -> Self {
         self.limit = limit;
-        Ok(self)
+        self
     }
 
     #[must_use]

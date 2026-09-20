@@ -12,16 +12,20 @@ use made_app::usecases::{
 };
 use made_core::error::DomainError;
 use made_core::value_objects::{
-    CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
+    CeremonyAgentExecutionId, CeremonyEvidenceSourceId, CeremonyGuardDeferralContent, CeremonyId,
     CeremonyInterventionContent, CeremonyInterventionId, CeremonyInterventionKind,
     CeremonyInterventionProvenance, CeremonyInterventionTarget, CeremonyReasonKind,
-    CeremonyRecordRef, GuardName, MemoryConfidence, RoleId, Specialty, StepId,
+    CeremonyRecordRef, DeliveryRecipient, GuardName, HostAgentIncarnation, HostDeliveryId,
+    MemoryConfidence, RoleId, Specialty, StepId,
 };
 use made_proto::v1 as pb;
 use uuid::Uuid;
 
 use super::actor_kind::actor_kind_from_proto;
 use super::attributes::attributes_from_struct;
+use super::intervention_request_options::{
+    delivery_policy_from_proto, intent_from_proto, supervisor_from_proto,
+};
 
 pub fn approve_ceremony_guard_input_from_proto(
     request: pb::ApproveCeremonyGuardRequest,
@@ -141,10 +145,32 @@ pub fn request_ceremony_intervention_input_from_proto(
     } else {
         CeremonyInterventionId::new(request.intervention_id)?
     };
+    // Naming one live agent is the most specific thing a caller can
+    // say, so it wins over the seats. Both halves or neither: an
+    // execution without its generation names a name rather than a
+    // process, and the point of this route is to address a process.
+    let exact = match (
+        request.target_agent_execution_id.trim().is_empty(),
+        request.target_incarnation.trim().is_empty(),
+    ) {
+        (false, false) => Some(DeliveryRecipient::new(
+            CeremonyAgentExecutionId::new(request.target_agent_execution_id)?,
+            HostAgentIncarnation::new(request.target_incarnation)?,
+            RoleId::new(request.role_id.clone())?,
+        )),
+        (true, true) => None,
+        _ => {
+            return Err(DomainError::InvariantViolated {
+                reason: "an exact intervention target needs both an execution and an incarnation",
+            })
+        }
+    };
     // No target roles means the item is put to the table rather than
     // to nobody: an unanswerable agenda item is not a useful thing to
     // be able to express.
-    let target = if request.target_role_ids.is_empty() {
+    let target = if let Some(recipient) = exact {
+        CeremonyInterventionTarget::agent_execution(recipient)
+    } else if request.target_role_ids.is_empty() {
         CeremonyInterventionTarget::table()
     } else {
         CeremonyInterventionTarget::roles(
@@ -172,22 +198,58 @@ pub fn request_ceremony_intervention_input_from_proto(
     if let Some(provenance) = request.provenance {
         input = input.with_provenance(provenance_from_proto(provenance)?);
     }
+    if !request.intent.trim().is_empty() {
+        input = input.with_intent(intent_from_proto(&request.intent)?);
+    }
+    if let Some(delivery) = request.delivery {
+        input = input.with_delivery(delivery_policy_from_proto(delivery)?);
+    }
+    if let Some(supervisor) = request.supervisor {
+        input = input.asked_by_supervisor(supervisor_from_proto(supervisor)?)?;
+    }
     Ok(input)
 }
 
 pub fn respond_to_ceremony_intervention_input_from_proto(
     request: pb::RespondToCeremonyInterventionRequest,
 ) -> Result<RespondToCeremonyInterventionInput, DomainError> {
-    Ok(RespondToCeremonyInterventionInput::new(
+    let role = RoleId::new(request.role_id)?;
+    let input = RespondToCeremonyInterventionInput::new(
         CeremonyId::new(request.ceremony_id)?,
         CeremonyInterventionId::new(request.intervention_id)?,
-        RoleId::new(request.role_id)?,
+        role.clone(),
         actor_kind_from_proto(&request.role_kind, "role_kind")?,
         CeremonyInterventionContent::new(
             request.message,
             attributes_from_struct(request.details)?,
         )?,
-    ))
+    );
+    // All three or none. An answer that names its offer but not its
+    // agent cannot be checked against the item's target, and one that
+    // names its agent but not the offer cannot be checked against the
+    // ledger; either half alone is an unverifiable claim.
+    let named = [
+        request.delivery_id.trim(),
+        request.agent_execution_id.trim(),
+        request.incarnation.trim(),
+    ]
+    .iter()
+    .filter(|value| !value.is_empty())
+    .count();
+    match named {
+        0 => Ok(input),
+        3 => Ok(input.answering_delivery(
+            DeliveryRecipient::new(
+                CeremonyAgentExecutionId::new(request.agent_execution_id)?,
+                HostAgentIncarnation::new(request.incarnation)?,
+                role,
+            ),
+            HostDeliveryId::new(request.delivery_id)?,
+        )),
+        _ => Err(DomainError::InvariantViolated {
+            reason: "an answer from a delivery needs its id, its execution and its incarnation",
+        }),
+    }
 }
 
 pub fn close_ceremony_intervention_input_from_proto(

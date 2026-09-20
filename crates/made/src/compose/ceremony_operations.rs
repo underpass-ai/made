@@ -3,13 +3,15 @@ use made_adapters::grpc::MadeGrpcServiceBuilder;
 use made_adapters::noop::NoopCeremonyEvidenceSource;
 use made_app::services::SessionStream;
 use made_app::usecases::{
-    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
-    BindCeremonyParticipantsUseCase, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, DeferCeremonyGuardUseCase,
+    AcknowledgeCeremonyAgentInterventionUseCase, ApplyCeremonyTransitionUseCase,
+    ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase,
+    CeremonyAgentStatusService, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
+    CompleteCeremonyStepUseCase, DeferCeremonyGuardUseCase, GetCeremonyInterventionUseCase,
+    ListCeremonyInterventionsUseCase, PullCeremonyAgentInterventionsUseCase,
     RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase,
 };
-use made_core::ports::ClockPort;
+use made_core::ports::{ClockPort, HostDeliveryLedgerPort};
 use std::sync::Arc;
 
 use made_app::authorization::{
@@ -23,6 +25,8 @@ pub(super) fn wire<C: ClockPort + 'static>(
     clock: &Arc<C>,
     continuation: Arc<ContinueAcceptedCeremonyWorkUseCase>,
     authorize: Arc<made_app::authorization::AuthorizeOperationUseCase>,
+    deliveries: Arc<dyn HostDeliveryLedgerPort>,
+    agent_status: Arc<CeremonyAgentStatusService>,
 ) -> MadeGrpcServiceBuilder {
     let complete_ceremony_step = Arc::new(CompleteCeremonyStepUseCase::new(
         definition.clone(),
@@ -54,10 +58,38 @@ pub(super) fn wire<C: ClockPort + 'static>(
         stream.clone(),
         clock.clone(),
     ));
-    let respond_to_ceremony_intervention = Arc::new(RespondToCeremonyInterventionUseCase::new(
-        definition.clone(),
+    // The ledger is composed in, not optional, because an answer that
+    // names a delivery must be able to close it: leaving the route open
+    // would tell an operator a question is still outstanding after it
+    // has been answered.
+    let respond_to_ceremony_intervention = Arc::new(
+        RespondToCeremonyInterventionUseCase::new(
+            definition.clone(),
+            stream.clone(),
+            clock.clone(),
+        )
+        .with_delivery_ledger(deliveries.clone()),
+    );
+    let pull_ceremony_agent_interventions = Arc::new(PullCeremonyAgentInterventionsUseCase::new(
         stream.clone(),
+        agent_status,
+        deliveries.clone(),
         clock.clone(),
+    ));
+    let acknowledge_ceremony_agent_intervention =
+        Arc::new(AcknowledgeCeremonyAgentInterventionUseCase::new(
+            definition.clone(),
+            stream.clone(),
+            deliveries.clone(),
+            clock.clone(),
+        ));
+    let get_ceremony_intervention = Arc::new(GetCeremonyInterventionUseCase::new(
+        stream.clone(),
+        deliveries.clone(),
+    ));
+    let list_ceremony_interventions = Arc::new(ListCeremonyInterventionsUseCase::new(
+        stream.clone(),
+        deliveries,
     ));
     let close_ceremony_intervention = Arc::new(CloseCeremonyInterventionUseCase::new(
         definition.clone(),
@@ -97,6 +129,10 @@ pub(super) fn wire<C: ClockPort + 'static>(
         .request_ceremony_intervention(request_ceremony_intervention)
         .respond_to_ceremony_intervention(respond_to_ceremony_intervention)
         .close_ceremony_intervention(close_ceremony_intervention)
+        .pull_ceremony_agent_interventions(pull_ceremony_agent_interventions)
+        .acknowledge_ceremony_agent_intervention(acknowledge_ceremony_agent_intervention)
+        .get_ceremony_intervention(get_ceremony_intervention)
+        .list_ceremony_interventions(list_ceremony_interventions)
         .collect_ceremony_evidence(collect_ceremony_evidence)
         .bind_ceremony_participants(bind_ceremony_participants)
 }

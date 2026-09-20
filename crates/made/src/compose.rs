@@ -330,7 +330,7 @@ pub async fn compose() -> Result<Application, ComposeError> {
         .max_parallel_ceiling(service_config.max_parallel);
     let (ceremony_agent_status, ceremony_agent_status_port) =
         ceremony_agent_status::wire(clock.clone(), ceremony_stream.clone());
-    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status);
+    grpc_builder = grpc_builder.ceremony_agent_status(ceremony_agent_status.clone());
     grpc_builder = lifecycle.apply_to(grpc_builder);
     grpc_builder = registry_operations.wire(grpc_builder);
     grpc_builder = budget_operations.wire(grpc_builder);
@@ -361,6 +361,8 @@ pub async fn compose() -> Result<Application, ComposeError> {
         &clock,
         authorization_continuation,
         renewal_authorization,
+        host_delivery.ledger.clone(),
+        ceremony_agent_status,
     );
     if let Some(artifacts) = artifacts {
         grpc_builder = grpc_builder.artifacts(artifacts);

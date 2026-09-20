@@ -22,9 +22,9 @@ mod council_fixtures;
 use council_fixtures::{
     deliberate_fixture, get_deliberation_fixture, orchestrate_fixture, stream_fixture,
 };
+mod delivery_fixtures;
 mod execution_receipt_fixtures;
 mod host_handoff_fixtures;
-mod intervention_delivery_fixtures;
 
 use crate::renderers::{
     CeremonyInstanceListing, CeremonyInstanceListingEntry, CeremonyInstanceSearchPage,
@@ -105,16 +105,7 @@ impl MadeMcpToolBackend for FixtureMadeMcpBackend {
                 "made_request_ceremony_intervention" => ceremony_instance_fixture(),
                 "made_respond_to_ceremony_intervention" => ceremony_instance_fixture(),
                 "made_close_ceremony_intervention" => ceremony_instance_fixture(),
-                "made_acknowledge_ceremony_agent_intervention" => ceremony_instance_fixture(),
-                "made_pull_ceremony_agent_interventions" => {
-                    intervention_delivery_fixtures::response(name)
-                }
-                "made_get_ceremony_intervention" => {
-                    intervention_delivery_fixtures::response(name)
-                }
-                "made_list_ceremony_interventions" => {
-                    intervention_delivery_fixtures::response(name)
-                }
+                name if delivery_fixtures::handles(name) => delivery_fixtures::response(name),
                 "made_collect_ceremony_evidence" => ceremony_instance_fixture(),
                 "made_assert_ceremony_reason" => ceremony_instance_fixture(),
                 "made_list_ceremony_instances" => ceremony_listing_fixture(),

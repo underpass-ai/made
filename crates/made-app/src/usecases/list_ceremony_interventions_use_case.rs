@@ -63,7 +63,7 @@ impl ListCeremonyInterventionsUseCase {
             if !Self::admits(&input, &view) {
                 continue;
             }
-            if entries.len() == input.limit {
+            if entries.len() == input.limit.value() {
                 next_cursor = entries
                     .last()
                     .map(|last: &CeremonyInterventionView| last.intervention().id().clone());
@@ -75,11 +75,13 @@ impl ListCeremonyInterventionsUseCase {
     }
 
     fn admits(input: &ListCeremonyInterventionsInput, view: &CeremonyInterventionView) -> bool {
-        if input.unresolved_only && !view.is_unresolved() {
+        if !input.resolution.admits_resolved() && !view.is_unresolved() {
             return false;
         }
         if let Some(status) = &input.status {
-            if view.status().as_str() != status {
+            // By name, so asking for "failed" finds every failure
+            // rather than only one whose reason happens to match.
+            if view.status().as_str() != status.as_str() {
                 return false;
             }
         }

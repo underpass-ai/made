@@ -55,7 +55,9 @@ pub(super) async fn dispatch(
         return Some(embedded_agent_status_dispatch::dispatch(made, name, arguments).await);
     }
     if embedded_intervention_delivery_dispatch::handles(name) {
-        return Some(embedded_intervention_delivery_dispatch::dispatch(made, name, arguments).await);
+        return Some(
+            embedded_intervention_delivery_dispatch::dispatch(made, name, arguments).await,
+        );
     }
     None
 }

@@ -4,9 +4,7 @@
 //! both backends, and a presenter that lived inside one dispatcher
 //! would be copied into the next one and then drift from it.
 
-use made_app::usecases::{
-    CeremonyInterventionView, DeliveryRouteView, PulledCeremonyIntervention,
-};
+use made_app::usecases::{CeremonyInterventionView, DeliveryRouteView, PulledCeremonyIntervention};
 use made_core::entities::CeremonyIntervention;
 use made_core::value_objects::{
     CeremonyInterventionTarget, HostDeliveryLease, InterventionDeliveryAck,

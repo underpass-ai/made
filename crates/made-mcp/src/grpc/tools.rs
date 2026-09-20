@@ -36,6 +36,7 @@ mod host_handoff_requests;
 mod intervention_delivery_dispatch;
 mod intervention_delivery_presenter;
 mod intervention_delivery_requests;
+mod intervention_request_builders;
 mod lifecycle_dispatch;
 mod lifecycle_requests;
 mod request_error;
@@ -207,7 +208,10 @@ pub(crate) async fn dispatch(
         }
 
         "made_request_ceremony_intervention" => {
-            let request = ceremony_requests::build_request_ceremony_intervention_request(arguments)
+            let request =
+                intervention_request_builders::build_request_ceremony_intervention_request(
+                    arguments,
+                )
                 .map_err(bad_request)?;
             let response = client.request_ceremony_intervention(request).await?;
             let pb::RequestCeremonyInterventionResponse { instance } = response.into_inner();
@@ -218,8 +222,10 @@ pub(crate) async fn dispatch(
 
         "made_respond_to_ceremony_intervention" => {
             let request =
-                ceremony_requests::build_respond_to_ceremony_intervention_request(arguments)
-                    .map_err(bad_request)?;
+                intervention_request_builders::build_respond_to_ceremony_intervention_request(
+                    arguments,
+                )
+                .map_err(bad_request)?;
             let response = client.respond_to_ceremony_intervention(request).await?;
             let pb::RespondToCeremonyInterventionResponse { instance } = response.into_inner();
             instance

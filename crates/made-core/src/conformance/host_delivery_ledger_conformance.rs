@@ -1,8 +1,7 @@
-use time::{Duration, OffsetDateTime};
+use time::Duration;
 
 use crate::ports::{
-    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryFilter, HostDeliveryLedgerPort,
-    HostDeliveryPageLimit, HostDeliveryTargetFilter, ProcessedOutcome,
+    AckOutcome, DeliveryFailureOutcome, EnqueueOutcome, HostDeliveryLedgerPort, ProcessedOutcome,
 };
 use crate::value_objects::{
     DeliveryAttemptLimit, DeliveryExpiryCause, DeliveryFailureReason, DurationMs,
@@ -14,8 +13,11 @@ use crate::value_objects::{
 use super::host_delivery_fixtures::{
     call, ceremony, failure, forged_lease, incarnation, observation, origin, record, role,
 };
+use super::host_delivery_ledger_steps::{enqueue, lease_all, lease_one, require_lease, state_of};
 use super::ConformanceFailure;
 
+/// The same lease length the steps hand out, named here because the
+/// properties reason about what happens after it runs out.
 const LEASE_MS: u64 = 30_000;
 
 /// Storage-independent properties of a durable host-delivery ledger.
@@ -530,86 +532,4 @@ impl HostDeliveryLedgerConformance {
         }
         Ok(())
     }
-}
-
-async fn enqueue(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    item_suffix: &str,
-    target: HostDeliveryTarget,
-) -> Result<crate::value_objects::HostDeliveryId, ConformanceFailure> {
-    let offered = record(property, item_suffix, target, HostDeliveryPolicy::default())?;
-    let id = offered.id().clone();
-    call(property, ledger.enqueue(offered).await)?;
-    Ok(id)
-}
-
-async fn lease_all(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<Vec<crate::ports::LeasedDelivery>, ConformanceFailure> {
-    let filter = HostDeliveryFilter::to(
-        HostDeliveryTargetFilter::any_of([target.clone()])
-            .map_err(|error| failure(property, error.to_string()))?,
-    )
-    .in_ceremony(ceremony(property)?);
-    call(
-        property,
-        ledger
-            .lease(
-                &filter,
-                &incarnation(property, owner_suffix)?,
-                now,
-                DurationMs::from_millis(LEASE_MS),
-                HostDeliveryPageLimit::default(),
-            )
-            .await,
-    )
-}
-
-async fn lease_one(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<Option<crate::value_objects::HostDeliveryLease>, ConformanceFailure> {
-    Ok(lease_all(property, ledger, target, owner_suffix, now)
-        .await?
-        .into_iter()
-        .next()
-        .map(|leased| leased.into_parts().0))
-}
-
-/// Where one delivery has got to, looked up by what it is.
-async fn state_of(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    item_suffix: &str,
-) -> Result<HostDeliveryStateKind, ConformanceFailure> {
-    let offered = record(
-        property,
-        item_suffix,
-        target.clone(),
-        HostDeliveryPolicy::default(),
-    )?;
-    let found = call(property, ledger.get(offered.id()).await)?
-        .ok_or_else(|| failure(property, "a delivery that was enqueued cannot be read back"))?;
-    Ok(found.state().kind())
-}
-
-async fn require_lease(
-    property: &'static str,
-    ledger: &dyn HostDeliveryLedgerPort,
-    target: &HostDeliveryTarget,
-    owner_suffix: &str,
-    now: OffsetDateTime,
-) -> Result<crate::value_objects::HostDeliveryLease, ConformanceFailure> {
-    lease_one(property, ledger, target, owner_suffix, now)
-        .await?
-        .ok_or_else(|| failure(property, "a queued delivery could not be leased"))
 }

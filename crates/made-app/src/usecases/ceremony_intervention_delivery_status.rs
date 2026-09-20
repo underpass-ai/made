@@ -51,6 +51,27 @@ impl CeremonyInterventionDeliveryStatus {
         }
     }
 
+    /// The status a caller named, when it names one this can be.
+    ///
+    /// The two that carry a reason are matchable by name alone: a
+    /// filter asks "which of these stopped", not "which stopped for
+    /// exactly this reason", so the payload is left empty.
+    #[must_use]
+    pub fn named(name: &str) -> Option<Self> {
+        Some(match name {
+            "recorded" => Self::Recorded,
+            "queued" => Self::Queued,
+            "delivered" => Self::Delivered,
+            "acknowledged" => Self::Acknowledged,
+            "responded" => Self::Responded,
+            "closed" => Self::Closed,
+            "failed" => Self::Failed(DeliveryFailureReason::new("filter").ok()?),
+            "expired" => Self::Expired(DeliveryExpiryCause::Timeout),
+            "unsupported" => Self::Unsupported,
+            _ => return None,
+        })
+    }
+
     /// Why this item stopped, in the words the ledger recorded.
     #[must_use]
     pub fn reason(&self) -> Option<String> {
@@ -106,6 +127,16 @@ mod tests {
             !CeremonyInterventionDeliveryStatus::Expired(DeliveryExpiryCause::CeremonyEnded)
                 .is_unresolved()
         );
+    }
+
+    #[test]
+    fn a_filter_matches_a_stopped_status_by_name_and_not_by_reason() {
+        let filter = CeremonyInterventionDeliveryStatus::named("failed").unwrap();
+        let actual = CeremonyInterventionDeliveryStatus::Failed(
+            DeliveryFailureReason::new("host refused the item").unwrap(),
+        );
+        assert_eq!(filter.as_str(), actual.as_str());
+        assert!(CeremonyInterventionDeliveryStatus::named("nonsense").is_none());
     }
 
     #[test]

@@ -49,7 +49,7 @@ fn grpc_dispatch_and_fixture_cover_every_catalog_tool() {
         include_str!("../fixture/children_fixtures.rs"),
         include_str!("../fixture/ceremony_agent_fixtures.rs"),
         include_str!("../fixture/host_handoff_fixtures.rs"),
-        include_str!("../fixture/intervention_delivery_fixtures.rs"),
+        include_str!("../fixture/delivery_fixtures.rs"),
     ]
     .concat();
 

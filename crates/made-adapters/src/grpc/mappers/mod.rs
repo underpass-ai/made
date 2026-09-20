@@ -24,6 +24,7 @@ mod ceremony_history;
 mod ceremony_human_verbs;
 mod ceremony_instance;
 mod ceremony_instance_children;
+mod ceremony_instance_interventions;
 mod ceremony_instance_step;
 mod ceremony_lifecycle;
 pub(crate) mod ceremony_preflight;
@@ -35,6 +36,8 @@ mod deliberation;
 mod event;
 mod execution_receipt;
 pub(crate) mod host_handoff;
+mod intervention_delivery;
+mod intervention_request_options;
 mod output_contract;
 mod phase;
 mod proposal;
@@ -105,6 +108,12 @@ pub use execution_receipt::{
     adopt_execution_receipt_input_from_proto, complete_execution_receipt_input_from_proto,
     execution_receipt_to_proto, execution_recovery_cursor_from_proto,
     execution_recovery_limit_from_proto, execution_recovery_page_to_proto,
+};
+pub use intervention_delivery::{
+    acknowledge_ceremony_agent_intervention_input_from_proto,
+    get_ceremony_intervention_input_from_proto, intervention_delivery_state,
+    intervention_page_to_proto, list_ceremony_interventions_input_from_proto,
+    pull_ceremony_agent_interventions_input_from_proto, pulled_interventions_to_proto,
 };
 pub(super) use output_contract::{output_contract_from_proto, output_contract_to_proto};
 pub(super) use phase::proto_phase_from_domain;

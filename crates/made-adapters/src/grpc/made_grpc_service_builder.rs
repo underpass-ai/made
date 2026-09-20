@@ -11,15 +11,17 @@ use made_app::budgets::{
 use made_app::services::AutoDispatchService;
 use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
-    AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
-    AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CeremonyAgentStatusService, CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase,
-    CompleteCeremonyStepUseCase, CreateCouncilUseCase, DeferCeremonyGuardUseCase,
-    DeleteCouncilUseCase, DeliberateUseCase, DiffCeremonyDefinitionsUseCase,
-    EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase,
-    GetCeremonyTranscriptUseCase, GetDeliberationUseCase, GetServiceMetricsUseCase,
-    GetServiceStatusUseCase, ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase,
-    PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    AcceptChildCompletionUseCase, AcknowledgeCeremonyAgentInterventionUseCase,
+    ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase, AssertCeremonyReasonUseCase,
+    BindCeremonyParticipantsUseCase, CancelCeremonyUseCase, CeremonyAgentStatusService,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
+    GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
+    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
+    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
+    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
     PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
     RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
@@ -91,6 +93,12 @@ pub struct MadeGrpcServiceBuilder {
     pub(super) request_ceremony_intervention: Option<Arc<RequestCeremonyInterventionUseCase>>,
     pub(super) respond_to_ceremony_intervention: Option<Arc<RespondToCeremonyInterventionUseCase>>,
     pub(super) close_ceremony_intervention: Option<Arc<CloseCeremonyInterventionUseCase>>,
+    pub(super) pull_ceremony_agent_interventions:
+        Option<Arc<PullCeremonyAgentInterventionsUseCase>>,
+    pub(super) acknowledge_ceremony_agent_intervention:
+        Option<Arc<AcknowledgeCeremonyAgentInterventionUseCase>>,
+    pub(super) get_ceremony_intervention: Option<Arc<GetCeremonyInterventionUseCase>>,
+    pub(super) list_ceremony_interventions: Option<Arc<ListCeremonyInterventionsUseCase>>,
     pub(super) collect_ceremony_evidence: Option<Arc<CollectCeremonyEvidenceUseCase>>,
     pub(super) ceremony_agent_status: Option<Arc<CeremonyAgentStatusService>>,
     pub(super) read_ceremony_events: Option<Arc<ReadCeremonyEventsUseCase>>,
@@ -312,6 +320,26 @@ impl MadeGrpcServiceBuilder {
         close_ceremony_intervention,
         CloseCeremonyInterventionUseCase,
         close_ceremony_intervention
+    );
+    setter!(
+        pull_ceremony_agent_interventions,
+        PullCeremonyAgentInterventionsUseCase,
+        pull_ceremony_agent_interventions
+    );
+    setter!(
+        acknowledge_ceremony_agent_intervention,
+        AcknowledgeCeremonyAgentInterventionUseCase,
+        acknowledge_ceremony_agent_intervention
+    );
+    setter!(
+        get_ceremony_intervention,
+        GetCeremonyInterventionUseCase,
+        get_ceremony_intervention
+    );
+    setter!(
+        list_ceremony_interventions,
+        ListCeremonyInterventionsUseCase,
+        list_ceremony_interventions
     );
     setter!(
         collect_ceremony_evidence,
@@ -538,6 +566,13 @@ impl MadeGrpcServiceBuilder {
             request_ceremony_intervention: required!(self, request_ceremony_intervention),
             respond_to_ceremony_intervention: required!(self, respond_to_ceremony_intervention),
             close_ceremony_intervention: required!(self, close_ceremony_intervention),
+            pull_ceremony_agent_interventions: required!(self, pull_ceremony_agent_interventions),
+            acknowledge_ceremony_agent_intervention: required!(
+                self,
+                acknowledge_ceremony_agent_intervention
+            ),
+            get_ceremony_intervention: required!(self, get_ceremony_intervention),
+            list_ceremony_interventions: required!(self, list_ceremony_interventions),
             collect_ceremony_evidence: required!(self, collect_ceremony_evidence),
             ceremony_agent_status,
             read_ceremony_events: required!(self, read_ceremony_events),
