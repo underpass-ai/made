@@ -163,7 +163,7 @@ fn boolean_delete(result: Result<(), DomainError>) -> Result<bool, ToolError> {
 mod tests {
     use std::time::Duration;
 
-    use super::super::*;
+    use super::*;
     use crate::protocol::ToolErrorCode;
 
     #[tokio::test]

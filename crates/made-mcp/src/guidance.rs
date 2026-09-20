@@ -25,8 +25,8 @@ use crate::protocol::{
     VALIDATE_CEREMONY_DRAFT_TOOL, VERIFY_CEREMONY_JOURNAL_TOOL,
 };
 
-pub(crate) mod authority_boundaries;
-mod capability_group;
+mod authority_boundaries;
+pub(crate) mod capability_group;
 mod delegated_host_sequence;
 
 use capability_group::CAPABILITY_GROUPS;

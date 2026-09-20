@@ -25,23 +25,22 @@ use made_app::usecases::{
     CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyInterventionUseCase, GetCeremonyTranscriptUseCase,
-    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
-    ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase, ListCouncilsUseCase,
-    OrchestrateUseCase, PauseCeremonyUseCase, PrepareCeremonyParticipantsUseCase,
-    PublishCeremonyDefinitionUseCase, PullCeremonyAgentInterventionsUseCase,
-    PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
-    RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
-    RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase, RunCeremonyStepUseCase,
-    RunCeremonyUseCase, RunCouncilDecisionUseCase, StartCeremonyStepUseCase, StartCeremonyUseCase,
-    StartPublishedCeremonyUseCase, StreamCeremonyUseCase, UnregisterAgentUseCase,
-    VerifyCeremonyJournalUseCase,
+    GetDeliberationUseCase, ListCeremonyInstancesUseCase, ListCeremonyInterventionsUseCase,
+    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
+    PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
+    PullCeremonyAgentInterventionsUseCase, PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase,
+    RecoverCeremonyChildrenUseCase, RegisterAgentUseCase, RequestCeremonyInterventionUseCase,
+    ResolveCeremonyDefinitionUseCase, RespondToCeremonyInterventionUseCase, ResumeCeremonyUseCase,
+    RunCeremonyStepUseCase, RunCeremonyUseCase, RunCouncilDecisionUseCase,
+    StartCeremonyStepUseCase, StartCeremonyUseCase, StartPublishedCeremonyUseCase,
+    StreamCeremonyUseCase, UnregisterAgentUseCase, VerifyCeremonyJournalUseCase,
 };
 use made_app::workers::{
     CompleteExecutionReceiptUseCase, GetExecutionReceiptUseCase, InspectExecutionRecoveryUseCase,
 };
 use made_core::ports::{
     CeremonyDefinitionRepositoryPort, ClockPort, ContractRegistryPort, MetricsRecorderPort,
-    MetricsSnapshotPort, NoopMetricsRecorder, NoopMetricsSnapshot, StatisticsPort,
+    MetricsSnapshotPort, StatisticsPort,
 };
 use made_core::value_objects::MaxParallel;
 
