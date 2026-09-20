@@ -509,6 +509,90 @@ async fn composed_binary_executes_http_claim_persists_receipt_and_drains() {
 }
 
 #[tokio::test]
+#[allow(clippy::too_many_lines)] // Three installed daemons exercise durable recovery, not an in-process worker.
+async fn competing_binaries_recover_a_killed_put_via_get_and_drain() {
+    std::fs::create_dir_all("tmp").unwrap();
+    let directory = tempfile::tempdir_in("tmp").unwrap();
+    let root = directory.path().canonicalize().unwrap();
+    let database = root.join("made.sqlite3");
+    let ceremony = CeremonyId::new("worker-competing-recovery").unwrap();
+    seed(&root, &database, &ceremony).await;
+
+    let state = AcceptanceState::default();
+    // The connector records the operation before holding its response. Killing
+    // the first binary at this barrier makes the durable remote GET the only
+    // admissible recovery path for the other binaries.
+    *state.response_delay.lock().unwrap() = Duration::from_secs(5);
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let remote = format!("http://{}", listener.local_addr().unwrap());
+    let app = Router::new()
+        .route("/operations/:key", get(get_operation).put(put_operation))
+        .with_state(state.clone());
+    let remote_task = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+    let tls = mint_tls();
+    let mut killed = spawn_service(&root, &database, &remote, &tls, None);
+    let deadline = Instant::now() + Duration::from_secs(15);
+    while *state.puts.lock().unwrap() != 1 {
+        assert!(
+            killed.child.try_wait().unwrap().is_none(),
+            "first competing daemon exited before its PUT barrier"
+        );
+        assert!(Instant::now() < deadline, "first daemon did not issue PUT");
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    let gets_before_crash = *state.gets.lock().unwrap();
+    killed.child.kill().unwrap();
+    assert!(!killed.child.wait().unwrap().success());
+
+    // These are distinct installed binaries with their own listeners. They
+    // share only the durable journal, capacity directory and remote connector.
+    let mut recovering = spawn_service(&root, &database, &remote, &tls, None);
+    let mut draining = spawn_service(&root, &database, &remote, &tls, None);
+    let store = SqliteCeremonyStore::open(&database).unwrap();
+    let operation_id = loop {
+        let operation_id = state
+            .operations
+            .lock()
+            .unwrap()
+            .values()
+            .next()
+            .and_then(|response| response["operation_id"].as_str().map(str::to_owned))
+            .map(made_core::value_objects::ExecutionOperationId::new)
+            .transpose()
+            .unwrap();
+        if let Some(operation_id) = operation_id {
+            if store.receipt(&operation_id).await.unwrap().is_some() {
+                break operation_id;
+            }
+        }
+        assert!(
+            Instant::now() < deadline,
+            "surviving daemons did not recover the killed operation; gets={}, puts={}",
+            *state.gets.lock().unwrap(),
+            *state.puts.lock().unwrap()
+        );
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    };
+    assert_eq!(
+        *state.puts.lock().unwrap(),
+        1,
+        "recovery replayed the effect"
+    );
+    assert!(
+        *state.gets.lock().unwrap() > gets_before_crash,
+        "recovery did not query the durable remote operation"
+    );
+    assert!(store.receipt(&operation_id).await.unwrap().is_some());
+
+    // SIGTERM remains a drain protocol even while a peer stays alive. Both
+    // listeners must close, proving the binary lifecycle rather than a task
+    // cancellation inside this test process.
+    terminate(&mut draining).await;
+    terminate(&mut recovering).await;
+    remote_task.abort();
+}
+
+#[tokio::test]
 async fn revoking_claim_authority_stops_heartbeat_renewal_and_drains() {
     std::fs::create_dir_all("tmp").unwrap();
     let directory = tempfile::tempdir_in("tmp").unwrap();
