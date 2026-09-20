@@ -229,7 +229,7 @@ already render Mermaid.
 | Tool | What it does |
 |:--|:--|
 | `made_design_agentic_system` | Saves a design document as a new revision, against the revision the author read. |
-| `made_get_agentic_system` | Returns one system, at its current revision. |
+| `made_get_agentic_system` | Returns one system, at a named revision or at its head. Reading an earlier revision is how a run that pinned it stays explainable after the design has moved on. |
 | `made_list_agentic_systems` | Pages through the systems that exist. |
 | `made_validate_agentic_system` | Runs the whole analysis against the definitions the pins resolve to, and returns every located finding. |
 | `made_publish_agentic_system` | Seals a revision after resolving every pin and refusing any blocking finding. |
