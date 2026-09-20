@@ -94,3 +94,124 @@ fn attributes_json(value: &prost_types::Struct) -> serde_json::Map<String, serde
         .map(|attributes| attributes.as_map().clone().into_iter().collect())
         .unwrap_or_default()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use made_core::value_objects::{FollowReplacement, HostDeliveryMode};
+    use prost_types::{value::Kind, Struct, Value};
+
+    fn pb_struct(fields: &[(&str, Kind)]) -> Struct {
+        Struct {
+            fields: fields
+                .iter()
+                .map(|(key, kind)| {
+                    (
+                        (*key).to_owned(),
+                        Value {
+                            kind: Some(kind.clone()),
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn the_four_intents_are_read_and_anything_else_is_refused() {
+        for (raw, expected) in [
+            ("question", CeremonyInterventionIntent::Question),
+            ("feedback", CeremonyInterventionIntent::Feedback),
+            ("constraint", CeremonyInterventionIntent::Constraint),
+            ("checkpoint", CeremonyInterventionIntent::Checkpoint),
+            ("  question  ", CeremonyInterventionIntent::Question),
+        ] {
+            assert_eq!(intent_from_proto(raw).unwrap(), expected, "{raw}");
+        }
+        assert!(intent_from_proto("urgent").is_err());
+        assert!(intent_from_proto("").is_err());
+    }
+
+    /// Every field omitted means the engine's own terms, not a policy
+    /// of zeroes: a lease of no length excludes nobody, and an attempt
+    /// limit of none would offer an item forever.
+    #[test]
+    fn an_empty_policy_is_the_engines_defaults_and_not_a_policy_of_zeroes() {
+        let policy = delivery_policy_from_proto(&pb_struct(&[])).unwrap();
+        let host = policy.host_policy();
+        assert_eq!(host.mode(), HostDeliveryMode::PullLease);
+        assert_eq!(host.lease_duration().get(), 60_000);
+        assert_eq!(host.max_attempts().value(), 3);
+        assert!(host.ack_timeout().is_none());
+        assert_eq!(policy.follow_replacement(), FollowReplacement::Stay);
+    }
+
+    #[test]
+    fn a_stated_policy_is_read_field_for_field() {
+        let policy = delivery_policy_from_proto(&pb_struct(&[
+            ("mode", Kind::StringValue("activation".to_owned())),
+            ("lease_duration_ms", Kind::NumberValue(1_000.0)),
+            ("ack_timeout_ms", Kind::NumberValue(5_000.0)),
+            ("max_attempts", Kind::NumberValue(2.0)),
+            ("follow_replacement", Kind::BoolValue(true)),
+        ]))
+        .unwrap();
+        let host = policy.host_policy();
+        assert_eq!(host.mode(), HostDeliveryMode::Activation);
+        assert_eq!(host.lease_duration().get(), 1_000);
+        assert_eq!(host.ack_timeout().unwrap().get(), 5_000);
+        assert_eq!(host.max_attempts().value(), 2);
+        assert_eq!(policy.follow_replacement(), FollowReplacement::Follow);
+    }
+
+    #[test]
+    fn a_lease_outside_the_bounds_is_refused_rather_than_clamped() {
+        for millis in [0.0, 86_400_000.0] {
+            let refused = delivery_policy_from_proto(&pb_struct(&[(
+                "lease_duration_ms",
+                Kind::NumberValue(millis),
+            )]));
+            assert!(refused.is_err(), "{millis} was accepted");
+        }
+    }
+
+    /// An unknown mode reads as the default rather than as activation:
+    /// claiming a deployment can wake a host when it cannot is the one
+    /// mistake this field can make.
+    #[test]
+    fn an_unrecognised_mode_falls_back_to_pulling() {
+        let policy = delivery_policy_from_proto(&pb_struct(&[(
+            "mode",
+            Kind::StringValue("push".to_owned()),
+        )]))
+        .unwrap();
+        assert_eq!(policy.host_policy().mode(), HostDeliveryMode::PullLease);
+    }
+
+    #[test]
+    fn a_supervisor_needs_both_an_identity_and_a_name() {
+        let supervisor = supervisor_from_proto(&pb_struct(&[
+            ("principal_id", Kind::StringValue("alice".to_owned())),
+            ("display", Kind::StringValue("Release manager".to_owned())),
+        ]))
+        .unwrap();
+        assert_eq!(supervisor.principal_id().as_str(), "alice");
+        assert_eq!(supervisor.display().as_str(), "Release manager");
+        assert_eq!(
+            supervisor.requesting_role().unwrap().as_str(),
+            "supervisor:alice",
+            "the asking seat is derived, so it cannot be a declared role"
+        );
+
+        assert!(supervisor_from_proto(&pb_struct(&[(
+            "principal_id",
+            Kind::StringValue("alice".to_owned())
+        )]))
+        .is_err());
+        assert!(supervisor_from_proto(&pb_struct(&[(
+            "display",
+            Kind::StringValue("Release manager".to_owned())
+        )]))
+        .is_err());
+    }
+}

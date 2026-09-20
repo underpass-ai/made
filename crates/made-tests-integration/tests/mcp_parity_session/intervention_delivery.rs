@@ -117,6 +117,16 @@ fn one_question_to_a_live_agent() -> Vec<(&'static str, Value)> {
                 "target_incarnation": "parity-delivery-incarnation-1",
                 "target_role_id": "ENGINEER",
                 "message": "Is the work still on plan?",
+                // Stated rather than left to the defaults, so the two
+                // engines are compared on how they read terms a caller
+                // chose as well as on the terms they invent.
+                "delivery": {
+                    "mode": "pull_lease",
+                    "lease_duration_ms": 30_000,
+                    "ack_timeout_ms": 120_000,
+                    "max_attempts": 2,
+                    "follow_replacement": false,
+                },
             }),
         ),
         (
