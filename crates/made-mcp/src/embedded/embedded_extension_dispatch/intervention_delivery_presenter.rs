@@ -11,7 +11,7 @@ use made_core::value_objects::{
 };
 use serde_json::{json, Value};
 
-use super::embedded_intervention_delivery_dispatch::rfc3339;
+use super::intervention_delivery::rfc3339;
 
 /// One leased offer, with the ticket needed to acknowledge it.
 pub(super) fn present_lease(pulled: &PulledCeremonyIntervention) -> Value {

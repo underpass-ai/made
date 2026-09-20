@@ -42,8 +42,6 @@ mod embedded_extension_dispatch;
 mod embedded_generate_ceremony_report_request;
 mod embedded_get_status_request;
 mod embedded_host_handoff_dispatch;
-mod embedded_intervention_delivery_dispatch;
-mod embedded_intervention_delivery_presenter;
 mod embedded_pause_ceremony_request;
 mod embedded_publication_presenter;
 mod embedded_publish_ceremony_definition_request;
