@@ -66,6 +66,9 @@ impl RequestCeremonyInterventionUseCase {
             target: input.target,
             content: input.content,
             provenance: input.provenance,
+            intent: input.intent,
+            delivery: input.delivery,
+            supervisor: input.supervisor,
             now,
         });
         // An item asked of the table commutes with what other writers

@@ -267,6 +267,7 @@ fn about(instance: &CeremonyInstance, event: &CeremonyEvent) -> String {
         event @ (CeremonyEvent::InterventionRequested(_)
         | CeremonyEvent::InterventionResponded(_)
         | CeremonyEvent::InterventionClosed(_)
+        | CeremonyEvent::InterventionDeliveryAcknowledged(_)
         | CeremonyEvent::EvidenceCollected(_)) => intervention_about(event),
         CeremonyEvent::ReasonAsserted(_) => format!("reason:{}", instance.reasons().len() + 1),
         CeremonyEvent::HumanApprovalRecorded(recorded) => {
@@ -315,6 +316,17 @@ fn intervention_about(event: &CeremonyEvent) -> String {
         CeremonyEvent::InterventionClosed(closed) => {
             format!("intervention:{}", closed.intervention_id)
         }
+        // Every identifier that distinguishes a legitimate repeat is
+        // in here: the same item offered to the same destination twice
+        // is one delivery and one fact, while a replacement agent
+        // acknowledging the same item is a different fact and must not
+        // collide with its predecessor's.
+        CeremonyEvent::InterventionDeliveryAcknowledged(acknowledged) => format!(
+            "intervention:{}:delivery:{}:{}",
+            acknowledged.intervention_id,
+            acknowledged.ack.delivery_id(),
+            acknowledged.ack.recipient().incarnation()
+        ),
         CeremonyEvent::EvidenceCollected(collected) => format!(
             "intervention:{}:source:{}",
             collected.intervention_id, collected.source_id

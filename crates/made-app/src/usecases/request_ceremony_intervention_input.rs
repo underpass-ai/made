@@ -1,6 +1,8 @@
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
-    CeremonyInterventionKind, CeremonyInterventionProvenance, CeremonyInterventionTarget, RoleId,
+    CeremonyInterventionIntent, CeremonyInterventionKind, CeremonyInterventionProvenance,
+    CeremonyInterventionTarget, InterventionDeliveryPolicy, SupervisorPrincipal,
+    RoleId,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -17,6 +19,9 @@ pub struct RequestCeremonyInterventionInput {
     pub(crate) target: CeremonyInterventionTarget,
     pub(crate) content: CeremonyInterventionContent,
     pub(crate) provenance: Option<CeremonyInterventionProvenance>,
+    pub(crate) intent: Option<CeremonyInterventionIntent>,
+    pub(crate) delivery: Option<InterventionDeliveryPolicy>,
+    pub(crate) supervisor: Option<SupervisorPrincipal>,
 }
 
 impl RequestCeremonyInterventionInput {
@@ -40,7 +45,43 @@ impl RequestCeremonyInterventionInput {
             target,
             content,
             provenance: None,
+            intent: None,
+            delivery: None,
+            supervisor: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_intent(mut self, intent: CeremonyInterventionIntent) -> Self {
+        self.intent = Some(intent);
+        self
+    }
+
+    #[must_use]
+    pub fn with_delivery(mut self, delivery: InterventionDeliveryPolicy) -> Self {
+        self.delivery = Some(delivery);
+        self
+    }
+
+    /// Ask on behalf of somebody who holds no seat at the table.
+    ///
+    /// The seat is replaced by the one derived from the principal, so
+    /// a caller cannot pass a declared role here and inherit what that
+    /// role may do. The use case is what checks that the ambient
+    /// authorization actually names this principal.
+    pub fn asked_by_supervisor(
+        mut self,
+        supervisor: SupervisorPrincipal,
+    ) -> Result<Self, made_core::error::DomainError> {
+        self.role_id = supervisor.requesting_role()?;
+        self.role_kind = AuditActorKind::Human;
+        self.supervisor = Some(supervisor);
+        Ok(self)
+    }
+
+    #[must_use]
+    pub const fn supervisor(&self) -> Option<&SupervisorPrincipal> {
+        self.supervisor.as_ref()
     }
 
     #[must_use]
