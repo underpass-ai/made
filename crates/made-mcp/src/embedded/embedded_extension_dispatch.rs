@@ -3,15 +3,17 @@ use serde_json::Value;
 
 use crate::protocol::{tool_success_result, ToolError};
 
-use super::{
-    embedded_agent_status_dispatch, embedded_agentic_system_dispatch, embedded_artifact_dispatch,
-    embedded_authorization_dispatch, embedded_budget_dispatch, embedded_council_dispatch,
-    embedded_council_journal_dispatch, embedded_succession_dispatch,
-};
-
-// A child of the dispatcher that routes it, rather than another entry
-// in the parent's list: the file next door is already at its budget,
-// and a family of two belongs with the one thing that calls it.
+// Every extension dispatch is a child of the dispatcher that routes it.
+// The parent module is at its budget and grows with every capability,
+// and a family belongs with the one thing that calls it anyway.
+pub(super) mod embedded_agent_status_dispatch;
+pub(super) mod embedded_agentic_system_dispatch;
+pub(super) mod embedded_artifact_dispatch;
+pub(super) mod embedded_authorization_dispatch;
+pub(super) mod embedded_budget_dispatch;
+pub(super) mod embedded_council_dispatch;
+pub(super) mod embedded_council_journal_dispatch;
+pub(super) mod embedded_succession_dispatch;
 mod intervention_delivery;
 mod intervention_delivery_presenter;
 

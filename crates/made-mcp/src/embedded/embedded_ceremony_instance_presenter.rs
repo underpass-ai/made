@@ -145,7 +145,7 @@ impl EmbeddedCeremonyInstancePresenter {
             "succession": instance.succession().map(succession_value),
             "successor_plan": instance
                 .successor_plan()
-                .map(super::embedded_succession_dispatch::plan_value),
+                .map(super::embedded_extension_dispatch::embedded_succession_dispatch::plan_value),
             "child_groups": instance.child_groups().values().map(child_group_value).collect::<Vec<_>>(),
             "lifecycle": lifecycle.phase().as_label(),
             "end_reason": lifecycle.end_reason().map(CeremonyEndReason::as_label),
@@ -299,7 +299,7 @@ fn step_values(view: &CeremonyInstanceView<'_>) -> Vec<Value> {
                     .and_then(|profile| serde_json::to_value(profile).ok()),
                 "carried_from": step
                     .carried_from()
-                    .map(super::embedded_succession_dispatch::source),
+                    .map(super::embedded_extension_dispatch::embedded_succession_dispatch::source),
                 "repeat_condition_satisfied": step.repeat_condition_satisfied(),
                 "repeat_limit_reached": step.repeat_limit_reached(),
                 "effective_lease_expires_at": step.record().effective_lease_expires_at().map(|at| at.format(&time::format_description::well_known::Rfc3339).unwrap_or_default()),

@@ -2,7 +2,8 @@ use made_app::services::{AuthorizationOperationScope, CeremonyTraceScope};
 use made_core::value_objects::{AuthorizationRequestId, TraceContext};
 use serde_json::Value;
 
-use super::{embedded_authorization_dispatch, EmbeddedMadeMcpBackend};
+use super::embedded_extension_dispatch::embedded_authorization_dispatch;
+use super::EmbeddedMadeMcpBackend;
 use crate::backend::{MadeMcpToolBackend, MadeMcpToolFuture, ToolTraceContext};
 use crate::protocol::{tool_success_result, ToolError, SEARCH_CEREMONY_INSTANCES_TOOL};
 

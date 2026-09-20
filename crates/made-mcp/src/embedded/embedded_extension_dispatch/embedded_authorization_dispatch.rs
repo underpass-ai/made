@@ -5,7 +5,9 @@ use made_core::value_objects::{
 use made_embedded::EmbeddedMade;
 use serde_json::{json, Value};
 
-use super::{embedded_authorization_presenter as view, embedded_authorization_request as request};
+use super::super::{
+    embedded_authorization_presenter as view, embedded_authorization_request as request,
+};
 use crate::protocol::ToolError;
 
 pub(super) fn handles(name: &str) -> bool {
@@ -19,7 +21,7 @@ pub(super) fn handles(name: &str) -> bool {
     )
 }
 
-pub(super) fn present_approval(
+pub(in crate::embedded) fn present_approval(
     decision: &made_core::value_objects::AuthorizationDecision,
 ) -> Result<Value, ToolError> {
     Ok(json!({"decision":view::decision(decision)?}))

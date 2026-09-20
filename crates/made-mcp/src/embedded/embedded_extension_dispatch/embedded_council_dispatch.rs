@@ -7,9 +7,9 @@ use tokio::sync::mpsc;
 
 use crate::protocol::{tool_success_result, ToolError};
 
-use super::embedded_council_presenter as present;
-use super::embedded_council_requests as request;
-use super::embedded_deliberation_observer::EmbeddedDeliberationObserver;
+use super::super::embedded_council_presenter as present;
+use super::super::embedded_council_requests as request;
+use super::super::embedded_deliberation_observer::EmbeddedDeliberationObserver;
 
 pub(super) fn handles(name: &str) -> bool {
     matches!(
@@ -163,7 +163,7 @@ fn boolean_delete(result: Result<(), DomainError>) -> Result<bool, ToolError> {
 mod tests {
     use std::time::Duration;
 
-    use super::*;
+    use super::super::*;
     use crate::protocol::ToolErrorCode;
 
     #[tokio::test]
