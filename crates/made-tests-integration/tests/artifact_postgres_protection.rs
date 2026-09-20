@@ -664,7 +664,19 @@ async fn postgres_backup_service_verifies_archive_and_restores_only_to_empty_dat
     .await;
     let target_url = format!("{}/made_service_restore", url.rsplit_once('/').unwrap().0);
     let restore_started = std::time::Instant::now();
-    service.restore_to(&backup, &target_url).await.unwrap();
+    // Both invocations reach a newly-created destination at once. The
+    // destination-scoped advisory lock makes one complete and makes the
+    // waiter observe the now non-empty target as an idempotency conflict.
+    let (left, right) = tokio::join!(
+        service.restore_to(&backup, &target_url),
+        service.restore_to(&backup, &target_url),
+    );
+    assert_eq!(usize::from(left.is_ok()) + usize::from(right.is_ok()), 1);
+    assert!(matches!(
+        (left, right),
+        (Ok(()), Err(ArtifactStoreError::IdempotencyConflict))
+            | (Err(ArtifactStoreError::IdempotencyConflict), Ok(()))
+    ));
     let restore_duration = restore_started.elapsed();
     let target = PostgresArtifactStore::new(
         PostgresPool::connect(&PostgresConfig::from_url(target_url.clone()))
