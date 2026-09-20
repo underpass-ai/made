@@ -75,6 +75,7 @@ pub(crate) fn mutate(
             instance.close_intervention_as(definition, &c.intervention_id, &c.role_id, c.now)
         }
         CeremonyCommand::RecordHostHandoff(_)
+        | CeremonyCommand::AcknowledgeInterventionDelivery(_)
         | CeremonyCommand::RenewStepLease(_)
         | CeremonyCommand::PlanCeremonyChildren(_)
         | CeremonyCommand::ApplyExecutionReceiptResult(_)
@@ -208,6 +209,9 @@ fn drafting() -> Vec<CeremonyCommand> {
             now: at(5),
         }),
         CeremonyCommand::RequestIntervention(RequestIntervention {
+            intent: None,
+            delivery: None,
+            supervisor: None,
             intervention_id: item("item-1"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Investigation,
@@ -217,12 +221,17 @@ fn drafting() -> Vec<CeremonyCommand> {
             now: at(6),
         }),
         CeremonyCommand::RespondToIntervention(RespondToIntervention {
+            executor: None,
+            delivery_id: None,
             intervention_id: item("item-1"),
             role_id: role("observer"),
             content: content("It is empty."),
             now: at(7),
         }),
         CeremonyCommand::RequestIntervention(RequestIntervention {
+            intent: None,
+            delivery: None,
+            supervisor: None,
             intervention_id: item("item-2"),
             role_id: role("facilitator"),
             kind: CeremonyInterventionKind::Investigation,

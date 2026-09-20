@@ -6,9 +6,7 @@ use std::sync::Arc;
 use made_core::entities::ceremony_commands::AcknowledgeInterventionDelivery;
 use made_core::entities::{CeremonyCommand, CeremonyInstance};
 use made_core::error::DomainError;
-use made_core::ports::{
-    AckOutcome, ClockPort, DeliveryFailureOutcome, HostDeliveryLedgerPort,
-};
+use made_core::ports::{AckOutcome, ClockPort, DeliveryFailureOutcome, HostDeliveryLedgerPort};
 use made_core::value_objects::{AuditActorKind, DeliveryFailureReason, InterventionDeliveryAck};
 use time::OffsetDateTime;
 

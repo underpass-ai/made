@@ -1,8 +1,7 @@
 use made_core::value_objects::{
     AuditActorKind, CeremonyId, CeremonyInterventionContent, CeremonyInterventionId,
     CeremonyInterventionIntent, CeremonyInterventionKind, CeremonyInterventionProvenance,
-    CeremonyInterventionTarget, InterventionDeliveryPolicy, SupervisorPrincipal,
-    RoleId,
+    CeremonyInterventionTarget, InterventionDeliveryPolicy, RoleId, SupervisorPrincipal,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq)]

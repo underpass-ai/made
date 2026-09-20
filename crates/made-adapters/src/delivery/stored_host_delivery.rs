@@ -198,6 +198,22 @@ impl StoredHostDelivery {
         }
     }
 
+    /// Give up on a delivery that is still open, naming why.
+    ///
+    /// Distinct from the timeout sweep: nothing here has run out of
+    /// its own time, something outside has made the offer pointless.
+    /// A terminal record is left alone, because an offer that was
+    /// answered, refused or exhausted already has an ending and
+    /// overwriting it would erase what happened.
+    pub(crate) fn abandoned(
+        &self,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Option<Self> {
+        (!self.record.state().is_terminal())
+            .then(|| self.with_record(self.record.expired(cause, now)))
+    }
+
     /// Close this delivery because its destination was replaced.
     pub(crate) fn superseded(&self, by: Option<HostDeliveryId>, now: OffsetDateTime) -> Self {
         self.with_record(self.record.superseded(by, now))

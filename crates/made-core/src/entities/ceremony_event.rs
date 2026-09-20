@@ -14,9 +14,10 @@ use super::ceremony_events::{
     CeremonyPaused, CeremonyResumed, ChildCompletionAccepted, ChildSpawnPlanAdopted,
     ChildSpawnPlanned, ContextWritten, EvidenceCollected, ExecutionReceiptLinked,
     HumanApprovalRecorded, HumanDeferralRecorded, InstanceImported, InterventionClosed,
-    InterventionDeliveryAcknowledged, InterventionRequested, InterventionResponded, LateStepResultObserved, MemoryRecalled,
-    ParticipantsBound, ReasonAsserted, StateDeadlineExceeded, StateIterationStarted, StepCompleted,
-    StepDeadlineExceeded, StepFailed, StepLeaseRenewed, StepStarted, TransitionApplied,
+    InterventionDeliveryAcknowledged, InterventionRequested, InterventionResponded,
+    LateStepResultObserved, MemoryRecalled, ParticipantsBound, ReasonAsserted,
+    StateDeadlineExceeded, StateIterationStarted, StepCompleted, StepDeadlineExceeded, StepFailed,
+    StepLeaseRenewed, StepStarted, TransitionApplied,
 };
 
 /// A fact a ceremony's stream can hold, with its full payload.

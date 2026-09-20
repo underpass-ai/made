@@ -102,10 +102,10 @@ mod tests {
         assert!(CeremonyInterventionDeliveryStatus::Acknowledged.is_unresolved());
         assert!(!CeremonyInterventionDeliveryStatus::Responded.is_unresolved());
         assert!(!CeremonyInterventionDeliveryStatus::Closed.is_unresolved());
-        assert!(!CeremonyInterventionDeliveryStatus::Expired(
-            DeliveryExpiryCause::CeremonyEnded
-        )
-        .is_unresolved());
+        assert!(
+            !CeremonyInterventionDeliveryStatus::Expired(DeliveryExpiryCause::CeremonyEnded)
+                .is_unresolved()
+        );
     }
 
     #[test]
@@ -115,6 +115,8 @@ mod tests {
         );
         assert_eq!(failed.as_str(), "failed");
         assert_eq!(failed.reason().unwrap(), "host refused the item");
-        assert!(CeremonyInterventionDeliveryStatus::Queued.reason().is_none());
+        assert!(CeremonyInterventionDeliveryStatus::Queued
+            .reason()
+            .is_none());
     }
 }

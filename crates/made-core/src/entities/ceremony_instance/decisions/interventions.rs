@@ -1,6 +1,6 @@
 use crate::entities::ceremony_commands::{
-    AcknowledgeInterventionDelivery, CloseIntervention, RequestIntervention,
-    RespondToIntervention, RespondToInterventionWithEvidence,
+    AcknowledgeInterventionDelivery, CloseIntervention, RequestIntervention, RespondToIntervention,
+    RespondToInterventionWithEvidence,
 };
 use crate::entities::ceremony_events::{
     EvidenceCollected, InterventionClosed, InterventionDeliveryAcknowledged, InterventionRequested,

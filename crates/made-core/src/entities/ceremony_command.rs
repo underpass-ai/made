@@ -16,11 +16,10 @@
 
 use super::ceremony_commands::{
     AcceptChildCompletion, AcknowledgeInterventionDelivery, AdoptChildSpawnPlan,
-    ApplyExecutionReceiptResult, ApplyStepResult,
-    ApplyTransition, ApproveGuard, AssertReason, BindParticipant, CancelCeremony,
-    CloseIntervention, DeferGuard, EnforceCeremonyDeadlines, PauseCeremony, PlanCeremonyChildren,
-    RenewStepLease, RequestIntervention, RespondToIntervention, RespondToInterventionWithEvidence,
-    ResumeCeremony, StartStep,
+    ApplyExecutionReceiptResult, ApplyStepResult, ApplyTransition, ApproveGuard, AssertReason,
+    BindParticipant, CancelCeremony, CloseIntervention, DeferGuard, EnforceCeremonyDeadlines,
+    PauseCeremony, PlanCeremonyChildren, RenewStepLease, RequestIntervention,
+    RespondToIntervention, RespondToInterventionWithEvidence, ResumeCeremony, StartStep,
 };
 
 /// A request to change a ceremony, in the terms the aggregate decides.

@@ -28,10 +28,7 @@ impl std::fmt::Debug for ListCeremonyInterventionsUseCase {
 impl ListCeremonyInterventionsUseCase {
     #[must_use]
     pub fn new(stream: Arc<SessionStream>, deliveries: Arc<dyn HostDeliveryLedgerPort>) -> Self {
-        Self {
-            stream,
-            deliveries,
-        }
+        Self { stream, deliveries }
     }
 
     #[tracing::instrument(

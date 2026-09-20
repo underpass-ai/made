@@ -9,9 +9,10 @@ use made_core::ports::{
     SupersessionOutcome,
 };
 use made_core::value_objects::{
-    DeliveryFailureReason, DurationMs, FollowReplacement, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryRecord,
-    HostDeliveryTarget, IntegratorFence, ProcessedActionRef,
+    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
+    ProcessedActionRef,
 };
 use time::OffsetDateTime;
 use tokio::sync::RwLock;
@@ -154,6 +155,29 @@ impl HostDeliveryLedgerPort for InMemoryHostDeliveryLedger {
             .collect();
         let ids = expired.iter().map(|(id, _)| id.clone()).collect();
         for (id, next) in expired {
+            deliveries.insert(id, next);
+        }
+        Ok(ids)
+    }
+
+    async fn expire_ceremony(
+        &self,
+        ceremony_id: &CeremonyId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Vec<HostDeliveryId>, DomainError> {
+        let mut deliveries = self.inner.write().await;
+        let abandoned: Vec<(HostDeliveryId, StoredHostDelivery)> = deliveries
+            .values()
+            .filter(|stored| stored.record().item().ceremony_id() == ceremony_id)
+            .filter_map(|stored| {
+                stored
+                    .abandoned(cause, now)
+                    .map(|next| (stored.id().clone(), next))
+            })
+            .collect();
+        let ids = abandoned.iter().map(|(id, _)| id.clone()).collect();
+        for (id, next) in abandoned {
             deliveries.insert(id, next);
         }
         Ok(ids)

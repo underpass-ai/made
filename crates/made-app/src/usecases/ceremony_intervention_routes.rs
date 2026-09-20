@@ -3,7 +3,9 @@ use std::sync::Arc;
 
 use made_core::error::DomainError;
 use made_core::ports::{HostDeliveryLedgerPort, HostDeliveryQuery};
-use made_core::value_objects::{CeremonyId, CeremonyInterventionId, HostDeliveryItem, HostDeliveryRecord};
+use made_core::value_objects::{
+    CeremonyId, CeremonyInterventionId, HostDeliveryItem, HostDeliveryRecord,
+};
 
 /// Every route one ceremony's interventions have taken, by item.
 ///

@@ -1,11 +1,11 @@
 use std::sync::Arc;
 
 use made_core::entities::CeremonyAgentStatus;
+use made_core::entities::{AgentExecutionStatus, AgentLiveness, AgentStatusSource};
 use made_core::error::DomainError;
 use made_core::ports::{
     CeremonyAgentStatusPage, CeremonyAgentStatusPort, CeremonyAgentStatusQuery, ClockPort,
 };
-use made_core::entities::{AgentExecutionStatus, AgentLiveness, AgentStatusSource};
 use made_core::value_objects::{
     AuthorizationAction, AuthorizationEvidence, CeremonyId, DeliveryRecipient,
     ExecutionOperationId, StepStatus,
@@ -106,7 +106,10 @@ impl CeremonyAgentStatusService {
         recipient: &DeliveryRecipient,
     ) -> Result<CeremonyAgentStatus, DomainError> {
         let status = self
-            .get(ceremony_id.as_str(), recipient.agent_execution_id().as_str())
+            .get(
+                ceremony_id.as_str(),
+                recipient.agent_execution_id().as_str(),
+            )
             .await?;
         if status.host_agent_incarnation() != recipient.incarnation() {
             return Err(DomainError::Conflict {

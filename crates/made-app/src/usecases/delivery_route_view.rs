@@ -1,6 +1,6 @@
 use made_core::value_objects::{
-    DeliveryAttempt, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation, HostDeliveryRecord,
-    HostDeliveryStateKind, HostDeliveryTarget,
+    DeliveryAttempt, HostDeliveryId, HostDeliveryLease, HostDeliveryObservation,
+    HostDeliveryRecord, HostDeliveryStateKind, HostDeliveryTarget,
 };
 
 /// One route an intervention took towards a host, as the ledger holds it.

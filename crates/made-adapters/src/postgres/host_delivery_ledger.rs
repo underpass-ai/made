@@ -8,9 +8,10 @@ use made_core::ports::{
     SupersessionOutcome,
 };
 use made_core::value_objects::{
-    DeliveryFailureReason, DurationMs, FollowReplacement, HostAgentIncarnation, HostDeliveryId,
-    HostDeliveryLease, HostDeliveryLeaseId, HostDeliveryObservation, HostDeliveryRecord,
-    HostDeliveryTarget, IntegratorFence, ProcessedActionRef,
+    CeremonyId, DeliveryExpiryCause, DeliveryFailureReason, DurationMs, FollowReplacement,
+    HostAgentIncarnation, HostDeliveryId, HostDeliveryLease, HostDeliveryLeaseId,
+    HostDeliveryObservation, HostDeliveryRecord, HostDeliveryTarget, IntegratorFence,
+    ProcessedActionRef,
 };
 use sqlx::{PgPool, Postgres, Row, Transaction};
 use time::OffsetDateTime;
@@ -172,6 +173,28 @@ impl HostDeliveryLedgerPort for PostgresHostDeliveryLedger {
         }
         commit(transaction, "commit host delivery expiry").await?;
         Ok(expired)
+    }
+
+    async fn expire_ceremony(
+        &self,
+        ceremony_id: &CeremonyId,
+        cause: DeliveryExpiryCause,
+        now: OffsetDateTime,
+    ) -> Result<Vec<HostDeliveryId>, DomainError> {
+        let mut transaction = self.begin("begin ceremony host delivery expiry").await?;
+        let mut abandoned = Vec::new();
+        for stored in scan(&mut transaction, None).await? {
+            if stored.record().item().ceremony_id() != ceremony_id {
+                continue;
+            }
+            let Some(next) = stored.abandoned(cause, now) else {
+                continue;
+            };
+            abandoned.push(next.id().clone());
+            upsert(&mut transaction, &next).await?;
+        }
+        commit(transaction, "commit ceremony host delivery expiry").await?;
+        Ok(abandoned)
     }
 
     async fn supersede(

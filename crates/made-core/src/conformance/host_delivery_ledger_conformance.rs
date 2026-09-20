@@ -5,9 +5,10 @@ use crate::ports::{
     HostDeliveryPageLimit, HostDeliveryTargetFilter, ProcessedOutcome,
 };
 use crate::value_objects::{
-    DeliveryAttemptLimit, DeliveryFailureReason, DurationMs, FollowReplacement, HostDeliveryMode,
-    HostDeliveryObservationKind, HostDeliveryPolicy, HostDeliveryStateKind, HostDeliveryTarget,
-    IntegratorFence, ProcessedActionKind, ProcessedActionRef,
+    DeliveryAttemptLimit, DeliveryExpiryCause, DeliveryFailureReason, DurationMs,
+    FollowReplacement, HostDeliveryMode, HostDeliveryObservationKind, HostDeliveryPolicy,
+    HostDeliveryStateKind, HostDeliveryTarget, IntegratorFence, ProcessedActionKind,
+    ProcessedActionRef,
 };
 
 use super::host_delivery_fixtures::{
@@ -50,7 +51,74 @@ impl HostDeliveryLedgerConformance {
         passed.push("work_follows_a_replaced_role_when_asked_to");
         Self::expiry_frees_a_lease_and_times_out_an_unclosed_hand_off(ledger).await?;
         passed.push("expiry_frees_a_lease_and_times_out_an_unclosed_hand_off");
+        Self::a_ceremony_that_ended_leaves_no_offer_waiting(ledger).await?;
+        passed.push("a_ceremony_that_ended_leaves_no_offer_waiting");
         Ok(passed)
+    }
+
+    /// Nothing stays queued for a ceremony that is over, and nothing
+    /// that already ended is rewritten.
+    async fn a_ceremony_that_ended_leaves_no_offer_waiting(
+        ledger: &dyn HostDeliveryLedgerPort,
+    ) -> Result<(), ConformanceFailure> {
+        const PROPERTY: &str = "a_ceremony_that_ended_leaves_no_offer_waiting";
+        let waiting = HostDeliveryTarget::role(role(PROPERTY, "waiting")?);
+        let answered = HostDeliveryTarget::role(role(PROPERTY, "answered")?);
+        enqueue(PROPERTY, ledger, "waiting-item", waiting.clone()).await?;
+        enqueue(PROPERTY, ledger, "answered-item", answered.clone()).await?;
+
+        // One of the two is closed before the ceremony ends, so the
+        // property also says what must *not* move.
+        let held = lease_one(PROPERTY, ledger, &answered, "host", origin())
+            .await?
+            .ok_or_else(|| failure(PROPERTY, "a queued delivery could not be leased"))?;
+        let seen = observation(PROPERTY, HostDeliveryObservationKind::Received, "taken")?;
+        call(PROPERTY, ledger.acknowledge(&held, &seen, origin()).await)?;
+        call(
+            PROPERTY,
+            ledger
+                .mark_processed(
+                    held.delivery_id(),
+                    held.owner(),
+                    None,
+                    &ProcessedActionRef::of(ProcessedActionKind::Responded),
+                    origin(),
+                )
+                .await,
+        )?;
+
+        let ended = origin() + Duration::seconds(1);
+        let abandoned = call(
+            PROPERTY,
+            ledger
+                .expire_ceremony(
+                    &ceremony(PROPERTY)?,
+                    DeliveryExpiryCause::CeremonyEnded,
+                    ended,
+                )
+                .await,
+        )?;
+        if abandoned.len() != 1 {
+            return Err(failure(
+                PROPERTY,
+                "ending a ceremony did not abandon exactly the offer still open",
+            ));
+        }
+        let still_waiting = state_of(PROPERTY, ledger, &waiting, "waiting-item").await?;
+        if still_waiting != HostDeliveryStateKind::Expired {
+            return Err(failure(
+                PROPERTY,
+                "an offer nobody took stayed open after its ceremony ended",
+            ));
+        }
+        let closed = state_of(PROPERTY, ledger, &answered, "answered-item").await?;
+        if closed != HostDeliveryStateKind::Processed {
+            return Err(failure(
+                PROPERTY,
+                "a delivery that was already closed was overwritten by the ending",
+            ));
+        }
+        Ok(())
     }
 
     async fn enqueue_is_idempotent_by_identity(
@@ -514,6 +582,24 @@ async fn lease_one(
         .into_iter()
         .next()
         .map(|leased| leased.into_parts().0))
+}
+
+/// Where one delivery has got to, looked up by what it is.
+async fn state_of(
+    property: &'static str,
+    ledger: &dyn HostDeliveryLedgerPort,
+    target: &HostDeliveryTarget,
+    item_suffix: &str,
+) -> Result<HostDeliveryStateKind, ConformanceFailure> {
+    let offered = record(
+        property,
+        item_suffix,
+        target.clone(),
+        HostDeliveryPolicy::default(),
+    )?;
+    let found = call(property, ledger.get(offered.id()).await)?
+        .ok_or_else(|| failure(property, "a delivery that was enqueued cannot be read back"))?;
+    Ok(found.state().kind())
 }
 
 async fn require_lease(

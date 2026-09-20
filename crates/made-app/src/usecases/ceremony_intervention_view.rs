@@ -225,7 +225,10 @@ mod tests {
         let record = queued_record();
         let leased = record.leased(lease(&record), at());
         let view = CeremonyInterventionView::project(intervention(), &[leased]);
-        assert_eq!(view.status(), &CeremonyInterventionDeliveryStatus::Delivered);
+        assert_eq!(
+            view.status(),
+            &CeremonyInterventionDeliveryStatus::Delivered
+        );
     }
 
     #[test]

@@ -120,10 +120,11 @@ mod tests {
             CeremonyInterventionContent::new("Yes.", Attributes::empty()).unwrap(),
             datetime!(2026-07-29 09:05:00 UTC),
         );
-        let encoded = serde_json::to_value(&response).unwrap();
+        // Streamed rather than mapped, because the map a `Value`
+        // carries sorts its keys and would hide a field that moved.
         assert_eq!(
-            encoded.as_object().unwrap().keys().collect::<Vec<_>>(),
-            vec!["role_id", "content", "evidence_pack", "responded_at"]
+            serde_json::to_string(&response).unwrap(),
+            r#"{"role_id":"reviewer","content":{"message":"Yes.","details":{}},"evidence_pack":null,"responded_at":"2026-07-29T09:05:00Z"}"#
         );
     }
 
@@ -142,10 +143,7 @@ mod tests {
             ),
             HostDeliveryId::new("c-1:intervention:i-1:agent:exec-1:inc-1").unwrap(),
         );
-        assert_eq!(
-            response.executor().unwrap().incarnation().as_str(),
-            "inc-1"
-        );
+        assert_eq!(response.executor().unwrap().incarnation().as_str(), "inc-1");
         assert!(response.delivery_id().is_some());
     }
 }
