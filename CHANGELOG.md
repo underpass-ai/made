@@ -21,7 +21,7 @@ even though the new catalogue identity is `made`.
   recorded unavailable and the ceremonies needing it are skipped with the
   reason, never stood in for. Nine tools across proto, both MCP backends and
   the Rust facade, including a Mermaid diagram with its text equivalent — the
-  host renders the picture, and no renderer is vendored. (#PR)
+  host renders the picture, and no renderer is vendored. (#223)
 - Record the C7 architecture decisions before their implementation: an
   auditable successor sealed in its predecessor before the successor stream is
   opened, one shared durable host delivery ledger that keeps transport facts out
