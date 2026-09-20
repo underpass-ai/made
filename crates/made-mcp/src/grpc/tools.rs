@@ -20,6 +20,7 @@ mod authorization_dispatch;
 mod authorization_presenter;
 mod authorization_requests;
 mod budget_dispatch;
+mod ceremony_agent_status_requests;
 mod ceremony_history_requests;
 mod ceremony_read_dispatch;
 mod ceremony_requests;

@@ -7,12 +7,17 @@
 //! that reaches the session as the host described it, and a refusal
 //! for a step the session is not on.
 
+use made_core::value_objects::{
+    CeremonyId, ExecutionOperationId, StateIteration, StateVisit, StepId, StepIteration,
+};
 use made_proto::v1::made_service_client::MadeServiceClient;
 use made_proto::v1::{
-    CeremonyInstanceState, ClaimCeremonyStepRequest, CompleteCeremonyStepRequest,
-    GetCeremonyInstanceRequest, StartCeremonyRequest,
+    CeremonyAgentStatus, CeremonyInstanceState, ClaimCeremonyStepRequest,
+    CompleteCeremonyStepRequest, GetCeremonyAgentRequest, GetCeremonyInstanceRequest,
+    ListCeremonyAgentsRequest, ReportCeremonyAgentStatusRequest, StartCeremonyRequest,
 };
 use made_tests_integration::grpc_fixture::GrpcFixture;
+use prost_types::Timestamp;
 use prost_types::{value::Kind, Struct, Value};
 use tonic::transport::Channel;
 use tonic::Code;
@@ -37,7 +42,7 @@ async fn delegated_renewal_replays_and_finishes_after_the_initial_ttl() {
         ceremony_id: ceremony_id.into(),
         step_id: "open_room".into(),
         claim_fence: claimed.claim_fence.clone(),
-        lease_owner_id: "integration-host".into(),
+        lease_owner_id: "grpc-fixture-host".into(),
         renewal_id: "host-heartbeat-1".into(),
         lease_ttl_ms: 5000,
     };
@@ -125,12 +130,134 @@ fn claim(ceremony_id: &str, step_id: &str, key: &str) -> ClaimCeremonyStepReques
         ceremony_id: ceremony_id.to_owned(),
         step_id: step_id.to_owned(),
         actor_kind: "agent".to_owned(),
-        lease_owner_id: "integration-host".to_owned(),
+        lease_owner_id: "grpc-fixture-host".to_owned(),
         idempotency_key: key.to_owned(),
         lease_ttl_ms: 60_000,
         budget_reservation: None,
         execution_profile: None,
     }
+}
+
+fn reported_agent_status(
+    ceremony_id: &str,
+    operation: &ExecutionOperationId,
+    claim_fence: String,
+) -> CeremonyAgentStatus {
+    CeremonyAgentStatus {
+        ceremony_id: ceremony_id.into(),
+        agent_execution_id: "worker-execution".into(),
+        operation_id: operation.to_string(),
+        claim_owner_id: "grpc-fixture-host".into(),
+        logical_worker_id: "worker".into(),
+        host_agent_id: "grpc-fixture-host".into(),
+        host_agent_incarnation: "inc-1".into(),
+        previous_host_agent_id: None,
+        previous_host_agent_incarnation: None,
+        role_id: "facilitator".into(),
+        step_id: "open_room".into(),
+        attempt: 1,
+        execution_status: "running".into(),
+        liveness: "fresh".into(),
+        source: "host_report".into(),
+        requested_model: None,
+        requested_reasoning_effort: None,
+        actual_model: None,
+        actual_reasoning_effort: None,
+        activity: "working".into(),
+        blocker: None,
+        dependency: None,
+        task_summary: "bounded".into(),
+        evidence_references: vec![],
+        usage_kind: Some("unavailable".into()),
+        usage_value: None,
+        observed_at: Some(Timestamp {
+            seconds: 0,
+            nanos: 0,
+        }),
+        report_sequence: 1,
+        idempotency_key: "agent-status-report".into(),
+        claim_fence,
+    }
+}
+
+#[tokio::test]
+async fn public_agent_status_follows_a_real_claim_and_is_readable() {
+    let fixture = GrpcFixture::start().await;
+    let mut client = MadeServiceClient::new(fixture.channel);
+    let ceremony_id = "agent-status-public";
+    start(&mut client, ceremony_id).await;
+    let claimed = client
+        .claim_ceremony_step(claim(ceremony_id, "open_room", "agent-status-claim"))
+        .await
+        .unwrap()
+        .into_inner();
+    let operation = ExecutionOperationId::for_step(
+        &CeremonyId::new(ceremony_id).unwrap(),
+        &StepId::new("open_room").unwrap(),
+        StateVisit::FIRST,
+        StateIteration::FIRST,
+        StepIteration::FIRST,
+    );
+    let status = reported_agent_status(ceremony_id, &operation, claimed.claim_fence);
+    client
+        .report_ceremony_agent_status(ReportCeremonyAgentStatusRequest {
+            status: Some(status.clone()),
+        })
+        .await
+        .unwrap();
+    let observed = client
+        .get_ceremony_agent(GetCeremonyAgentRequest {
+            ceremony_id: ceremony_id.into(),
+            agent_execution_id: "worker-execution".into(),
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(observed.execution_status, "running");
+    assert_eq!(observed.liveness, "stale");
+    let original_fence = status.claim_fence.clone();
+    let mut foreign = status;
+    foreign.claim_owner_id = "foreign-host".into();
+    foreign.host_agent_id = "foreign-host".into();
+    foreign.claim_fence = "0".repeat(64);
+    foreign.report_sequence = 2;
+    foreign.idempotency_key = "foreign-status-report".into();
+    assert!(client
+        .report_ceremony_agent_status(ReportCeremonyAgentStatusRequest {
+            status: Some(foreign)
+        })
+        .await
+        .is_err());
+    let retained = client
+        .get_ceremony_agent(GetCeremonyAgentRequest {
+            ceremony_id: ceremony_id.into(),
+            agent_execution_id: "worker-execution".into(),
+        })
+        .await
+        .unwrap()
+        .into_inner()
+        .agent
+        .unwrap();
+    assert_eq!(retained.claim_owner_id, "grpc-fixture-host");
+    assert_eq!(retained.claim_fence, original_fence);
+    assert_eq!(retained.report_sequence, 1);
+    assert_eq!(
+        client
+            .list_ceremony_agents(ListCeremonyAgentsRequest {
+                ceremony_id: ceremony_id.into(),
+                execution_status: None,
+                cursor: None,
+                limit: 10
+            })
+            .await
+            .unwrap()
+            .into_inner()
+            .agents
+            .len(),
+        1
+    );
 }
 
 fn step<'a>(

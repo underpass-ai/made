@@ -262,6 +262,47 @@ macro_rules! resource_rpc_methods {
                 self.handle_get_ceremony_instance(request)
             )
         }
+        async fn list_ceremony_agents(
+            &self,
+            request: Request<pb::ListCeremonyAgentsRequest>,
+        ) -> GrpcResult<pb::ListCeremonyAgentsResponse> {
+            authorized_ceremony!(
+                self,
+                request,
+                ListCeremonyAgents,
+                self.handle_list_ceremony_agents(request)
+            )
+        }
+        async fn get_ceremony_agent(
+            &self,
+            request: Request<pb::GetCeremonyAgentRequest>,
+        ) -> GrpcResult<pb::GetCeremonyAgentResponse> {
+            authorized_ceremony!(
+                self,
+                request,
+                GetCeremonyAgent,
+                self.handle_get_ceremony_agent(request)
+            )
+        }
+        async fn report_ceremony_agent_status(
+            &self,
+            request: Request<pb::ReportCeremonyAgentStatusRequest>,
+        ) -> GrpcResult<pb::ReportCeremonyAgentStatusResponse> {
+            let ceremony_id = request
+                .get_ref()
+                .status
+                .as_ref()
+                .map(|status| status.ceremony_id.clone())
+                .unwrap_or_default();
+            let authorization = self
+                .authorize_ceremony(&request, AuthorizationAction::ReportCeremonyAgentStatus, &ceremony_id)
+                .await?;
+            AuthorizationOperationScope::run(
+                authorization,
+                self.handle_report_ceremony_agent_status(request),
+            )
+            .await
+        }
         async fn list_ceremony_instances(
             &self,
             request: Request<pb::ListCeremonyInstancesRequest>,

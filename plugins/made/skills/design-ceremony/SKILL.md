@@ -24,6 +24,14 @@ selection for future delegated work therefore does not require a new ceremony
 definition. Unsupported selections must be refused or resolved through the
 declared fallback before the claim is taken.
 
+Live agent visibility is a host/runtime concern, not ceremony authority. Keep
+logical worker identity separate from host executor and incarnation, and keep
+execution status separate from fresh/stale/unreachable liveness. Reports may
+contain bounded activity, blocker/dependency, evidence references and a
+timestamp, but never credentials or private chain-of-thought. Reporting is
+authorized to an accepted claim, ordered and idempotent; unsupported host
+discovery must be advertised rather than replaced with fabricated telemetry.
+
 Use peer `review_rounds` only with at least two agents. Use a bounded repeat
 only for successful work that must recur until a structured stop condition:
 provide `max_iterations` (1–1000), a top-level `output_field` and exact JSON

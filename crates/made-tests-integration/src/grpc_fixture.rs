@@ -26,10 +26,10 @@ use made_adapters::ceremony::{
 use made_adapters::clock::SystemClock;
 use made_adapters::grpc::MadeGrpcService;
 use made_adapters::memory::{
-    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryCeremonyDefinitionPublications,
-    InMemoryCeremonyDefinitionRepository, InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore,
-    InMemoryContractRegistry, InMemoryCouncilRegistry, InMemoryDeliberationRepository,
-    InMemoryStatistics,
+    InMemoryAgentRegistry, InMemoryBudgetLedgerStore, InMemoryCeremonyAgentStatus,
+    InMemoryCeremonyDefinitionPublications, InMemoryCeremonyDefinitionRepository,
+    InMemoryCeremonyEventCursor, InMemoryCeremonyEventStore, InMemoryContractRegistry,
+    InMemoryCouncilRegistry, InMemoryDeliberationRepository, InMemoryStatistics,
 };
 use made_adapters::metrics::PrometheusMetricsRecorder;
 use made_adapters::noop::{NoopCeremonyEvidenceSource, NoopExecutor, NoopMessaging};
@@ -50,9 +50,10 @@ use made_app::services::{
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CeremonySearchCursorCodec, CeremonySearchCursorKey, CeremonySearchCursorNamespace,
-    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
+    CeremonyAgentStatusService, CeremonySearchCursorCodec, CeremonySearchCursorKey,
+    CeremonySearchCursorNamespace, CloseCeremonyInterventionUseCase,
+    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilUseCase,
+    DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
     DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
     GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
     ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
@@ -544,6 +545,14 @@ impl GrpcFixture {
         }
         .with_budget_ledger(budgets);
         service_builder = service_builder
+            .ceremony_agent_status(Arc::new(
+                CeremonyAgentStatusService::new(
+                    Arc::new(InMemoryCeremonyAgentStatus::new()),
+                    wiring.clock(),
+                    time::Duration::seconds(60),
+                )
+                .with_journal_claims(ceremony_stream.clone()),
+            ))
             .get_execution_receipt(Arc::new(
                 made_app::workers::GetExecutionReceiptUseCase::new(receipts.clone()),
             ))

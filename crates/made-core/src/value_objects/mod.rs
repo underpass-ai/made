@@ -206,3 +206,9 @@ pub use council_journal_lease::CouncilJournalLease;
 
 mod council_snapshot_source;
 pub use council_snapshot_source::CouncilSnapshotSource;
+mod ceremony_agent_execution_id;
+mod host_agent_incarnation;
+mod logical_worker_id;
+pub use ceremony_agent_execution_id::CeremonyAgentExecutionId;
+pub use host_agent_incarnation::HostAgentIncarnation;
+pub use logical_worker_id::LogicalWorkerId;

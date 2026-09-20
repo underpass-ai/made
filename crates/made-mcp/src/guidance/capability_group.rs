@@ -108,6 +108,11 @@ pub(crate) const CAPABILITY_GROUPS: &[CapabilityGroup] = &[
         ],
     },
     CapabilityGroup {
+        id: "ceremony_agent_visibility",
+        description: "Read and report bounded live ceremony-agent status with separate execution and liveness provenance.",
+        tools: &["made_list_ceremony_agents", "made_get_ceremony_agent", "made_report_ceremony_agent_status"],
+    },
+    CapabilityGroup {
         id: "human_authorization",
         description: "Record explicit guard decisions without inferring human authority.",
         tools: &[APPROVE_CEREMONY_GUARD_TOOL, DEFER_CEREMONY_GUARD_TOOL],

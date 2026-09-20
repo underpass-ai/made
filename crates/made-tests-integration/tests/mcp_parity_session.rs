@@ -49,7 +49,8 @@ use made_core::ports::{
 use made_core::value_objects::{
     AuthenticatedPrincipal, AuthenticationMethod, AuthorizationAction, AuthorizationDecisionTtl,
     AuthorizationGrant, AuthorizationGrantId, AuthorizationGrantIssuer, AuthorizationPolicyId,
-    AuthorizationScope, DelegationDepth, PrincipalId, PrincipalKind, SeparationRule,
+    AuthorizationScope, CeremonyId, DelegationDepth, ExecutionOperationId, PrincipalId,
+    PrincipalKind, SeparationRule, StateIteration, StateVisit, StepId, StepIteration,
 };
 use made_embedded::EmbeddedMade;
 use made_mcp::backend::{MadeMcpGrpcTlsConfig, ToolTraceContext};
@@ -89,6 +90,9 @@ const SESSION_ID: &str = "parity-session";
 const PUBLISHED_SESSION_ID: &str = "parity-published-session";
 /// A distinct published session whose durable root budget the parity run exercises.
 const BUDGET_SESSION_ID: &str = "parity-budget-session";
+/// A post-report session that keeps the live-agent parity calls out of the
+/// committed report fixture while still exercising a real accepted claim.
+const AGENT_STATUS_SESSION_ID: &str = "parity-agent-status-session";
 /// The session `made_run_ceremony` opens and finishes in one call.
 const ONE_SHOT_ID: &str = "parity-one-shot";
 /// The session that decides something inside a shared memory scope.
@@ -940,6 +944,24 @@ impl ParityArms {
                 .expect("the scripted host captured a claim")
                 .clone();
         }
+        if tool == "made_report_ceremony_agent_status"
+            && arguments["status"].get("claim_fence").is_none()
+        {
+            let key = (
+                arguments["status"]["ceremony_id"]
+                    .as_str()
+                    .unwrap()
+                    .to_owned(),
+                arguments["status"]["step_id"].as_str().unwrap().to_owned(),
+            );
+            arguments["status"]["claim_fence"] = self
+                .claims
+                .lock()
+                .unwrap()
+                .get(&key)
+                .expect("the scripted status host captured a claim")
+                .clone();
+        }
         arguments
     }
 
@@ -1586,6 +1608,73 @@ fn session_script() -> Vec<(&'static str, Value)> {
             json!({
                 "ceremony_ids": [SESSION_ID, PUBLISHED_SESSION_ID],
                 "title": "  Parity review <both arms>  ",
+            }),
+        ),
+        // Live-agent status is driven by an actual accepted claim, after the
+        // committed report so the additional authorization decisions do not
+        // churn that report's stable fixture.
+        (
+            "made_start_ceremony",
+            json!({
+                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "definition_yaml": PUBLISHED_CEREMONY,
+                "actor_id": "parity-operator",
+                "actor_kind": "service"
+            }),
+        ),
+        (
+            "made_claim_ceremony_step",
+            json!({
+                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "step_id": "work",
+                "actor_kind": "agent",
+                "lease_owner_id": "grpc-fixture-host",
+                "idempotency_key": "parity-agent-status-claim",
+                "lease_ttl_ms": 60_000
+            }),
+        ),
+        (
+            "made_report_ceremony_agent_status",
+            json!({
+                "status": {
+                    "ceremony_id": AGENT_STATUS_SESSION_ID,
+                    "agent_execution_id": "parity-agent-execution",
+                    "operation_id": ExecutionOperationId::for_step(
+                        &CeremonyId::new(AGENT_STATUS_SESSION_ID).unwrap(),
+                        &StepId::new("work").unwrap(),
+                        StateVisit::FIRST,
+                        StateIteration::FIRST,
+                        StepIteration::FIRST,
+                    ).to_string(),
+                    "claim_owner_id": "grpc-fixture-host",
+                    "logical_worker_id": "parity-agent-worker",
+                    "host_agent_id": "grpc-fixture-host",
+                    "host_agent_incarnation": "parity-agent-incarnation-1",
+                    "role_id": "FACILITATOR",
+                    "step_id": "work",
+                    "attempt": 1,
+                    "execution_status": "running",
+                    "liveness": "fresh",
+                    "source": "host_report",
+                    "activity": "working",
+                    "task_summary": "Running the parity status claim.",
+                    "evidence_references": [],
+                    "usage_kind": "unavailable",
+                    "observed_at": "2026-09-16T09:00:00Z",
+                    "report_sequence": 1,
+                    "idempotency_key": "parity-agent-status-1"
+                }
+            }),
+        ),
+        (
+            "made_list_ceremony_agents",
+            json!({ "ceremony_id": AGENT_STATUS_SESSION_ID, "limit": 10 }),
+        ),
+        (
+            "made_get_ceremony_agent",
+            json!({
+                "ceremony_id": AGENT_STATUS_SESSION_ID,
+                "agent_execution_id": "parity-agent-execution"
             }),
         ),
         // Budget admission uses a separate published ceremony after the

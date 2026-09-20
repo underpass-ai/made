@@ -21,6 +21,10 @@ use super::artifact_requests::{
     build_put_artifact_chunk_request, build_read_artifact_chunk_request,
     build_tombstone_artifact_request,
 };
+use super::ceremony_agent_status_requests::{
+    get as build_get_ceremony_agent_request, list as build_list_ceremony_agents_request,
+    report as build_report_ceremony_agent_status_request,
+};
 use super::ceremony_history_requests::{
     build_generate_ceremony_report_request, build_get_ceremony_transcript_request,
     build_pull_ceremony_events_request, build_read_ceremony_events_request,
@@ -167,6 +171,11 @@ fn built(name: &str, arguments: &Value) -> Option<Result<String, String>> {
         "made_stream_deliberation" => rendered(build_stream_deliberation_request(arguments)),
         "made_get_deliberation_result" => {
             rendered(build_get_deliberation_result_request(arguments))
+        }
+        "made_list_ceremony_agents" => rendered(build_list_ceremony_agents_request(arguments)),
+        "made_get_ceremony_agent" => rendered(build_get_ceremony_agent_request(arguments)),
+        "made_report_ceremony_agent_status" => {
+            rendered(build_report_ceremony_agent_status_request(arguments))
         }
         "made_orchestrate" => rendered(build_orchestrate_request(arguments)),
         "made_create_council" => rendered(build_create_council_request(arguments)),

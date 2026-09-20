@@ -4,6 +4,9 @@
 //! roots own invariants spanning multiple objects; state transitions
 //! happen through their methods, not by mutating fields directly.
 
+mod agent_execution_status;
+mod agent_liveness;
+mod agent_status_source;
 mod audit_chain;
 mod audit_fact;
 mod audit_record;
@@ -13,6 +16,7 @@ mod authorization_policy_helpers;
 mod authorized_audit_fact;
 mod budget_ledger;
 mod budget_ledger_event;
+mod ceremony_agent_status;
 mod ceremony_command;
 pub mod ceremony_commands;
 mod ceremony_definition;
@@ -51,6 +55,9 @@ mod authorization_policy_tests;
 #[cfg(test)]
 mod budget_ledger_tests;
 
+pub use agent_execution_status::AgentExecutionStatus;
+pub use agent_liveness::AgentLiveness;
+pub use agent_status_source::AgentStatusSource;
 pub use audit_chain::AuditChain;
 pub use audit_fact::AuditFact;
 pub use audit_record::{AuditRecord, AUDIT_RECORD_SCHEMA_VERSION};
@@ -59,6 +66,7 @@ pub use authorization_policy_event::AuthorizationPolicyEvent;
 pub use authorized_audit_fact::AuthorizedAuditFact;
 pub use budget_ledger::BudgetLedger;
 pub use budget_ledger_event::BudgetLedgerEvent;
+pub use ceremony_agent_status::CeremonyAgentStatus;
 pub use ceremony_command::CeremonyCommand;
 pub use ceremony_definition::CeremonyDefinition;
 pub use ceremony_definition_draft::CeremonyDefinitionDraft;
@@ -95,3 +103,5 @@ pub use council_journal_record::CouncilJournalRecord;
 
 mod council_snapshot_provenance;
 pub use council_snapshot_provenance::CouncilSnapshotProvenance;
+mod agent_usage_kind;
+pub use agent_usage_kind::AgentUsageKind;

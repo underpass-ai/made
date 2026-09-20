@@ -12,6 +12,7 @@ use crate::renderers::StatisticsView;
 mod artifact;
 mod authorization;
 mod budget;
+mod ceremony_agent_status;
 mod ceremony_history;
 mod ceremony_instance;
 mod execution_receipt;
@@ -29,6 +30,7 @@ pub(crate) use budget::{
     admission_to_json as budget_admission_to_json, budget_report_to_json,
     pending_budget_reservations_to_json,
 };
+pub(crate) use ceremony_agent_status::status_to_json as ceremony_agent_status_to_json;
 pub(crate) use ceremony_history::{
     ceremony_event_record_view, ceremony_report_to_json, ceremony_transcript_to_json,
     pull_ceremony_events_to_json, read_ceremony_events_to_json, verify_ceremony_journal_to_json,

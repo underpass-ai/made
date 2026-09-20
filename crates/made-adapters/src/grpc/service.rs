@@ -17,13 +17,13 @@ use made_app::usecases::SearchCeremonyInstancesUseCase;
 use made_app::usecases::{
     AcceptChildCompletionUseCase, ApplyCeremonyTransitionUseCase, ApproveCeremonyGuardUseCase,
     AssertCeremonyReasonUseCase, BindCeremonyParticipantsUseCase, CancelCeremonyUseCase,
-    CeremonyDraftView, CeremonyInstanceView, CloseCeremonyInterventionUseCase,
-    CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase, CreateCouncilInput,
-    CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase, DeliberateUseCase,
-    DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase, GenerateCeremonyReportUseCase,
-    GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase, GetDeliberationUseCase,
-    GetServiceMetricsUseCase, GetServiceStatusUseCase, ListCeremonyInstancesUseCase,
-    ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
+    CeremonyAgentStatusService, CeremonyDraftView, CeremonyInstanceView,
+    CloseCeremonyInterventionUseCase, CollectCeremonyEvidenceUseCase, CompleteCeremonyStepUseCase,
+    CreateCouncilInput, CreateCouncilUseCase, DeferCeremonyGuardUseCase, DeleteCouncilUseCase,
+    DeliberateUseCase, DiffCeremonyDefinitionsUseCase, EnforceCeremonyDeadlinesUseCase,
+    GenerateCeremonyReportUseCase, GetCeremonyInstanceUseCase, GetCeremonyTranscriptUseCase,
+    GetDeliberationUseCase, GetServiceMetricsUseCase, GetServiceStatusUseCase,
+    ListCeremonyInstancesUseCase, ListCouncilsUseCase, OrchestrateUseCase, PauseCeremonyUseCase,
     PrepareCeremonyParticipantsUseCase, PublishCeremonyDefinitionUseCase,
     PullCeremonyEventsUseCase, ReadCeremonyEventsUseCase, RecoverCeremonyChildrenUseCase,
     RegisterAgentUseCase, RequestCeremonyInterventionUseCase, ResolveCeremonyDefinitionUseCase,
@@ -56,7 +56,9 @@ use super::mappers::{
     assert_ceremony_reason_input_from_proto, begin_artifact_upload_from_proto,
     bind_ceremony_participants_input_from_proto, budget_balance_to_proto, budget_limits_from_proto,
     budget_reservation_estimate_from_proto, budget_reservation_to_proto,
-    cancel_ceremony_input_from_proto, ceremony_definition_source_from_proto,
+    cancel_ceremony_input_from_proto, ceremony_agent_status_from_proto,
+    ceremony_agent_status_page_to_proto, ceremony_agent_status_query_from_proto,
+    ceremony_agent_status_to_proto, ceremony_definition_source_from_proto,
     ceremony_design_document_from_proto, ceremony_instance_state_from, child_completion_state_from,
     claim_ceremony_step_input_from_proto, close_ceremony_intervention_input_from_proto,
     collect_ceremony_evidence_input_from_proto, complete_ceremony_step_input_from_proto,
@@ -97,6 +99,7 @@ mod artifact_handlers;
 mod authoring_handlers;
 mod authorization_handlers;
 mod budget_handlers;
+mod ceremony_agent_status_handlers;
 mod ceremony_delegation_handlers;
 mod ceremony_handlers;
 mod ceremony_history_handlers;
@@ -163,6 +166,7 @@ pub struct MadeGrpcService {
     pub(super) respond_to_ceremony_intervention: Arc<RespondToCeremonyInterventionUseCase>,
     pub(super) close_ceremony_intervention: Arc<CloseCeremonyInterventionUseCase>,
     pub(super) collect_ceremony_evidence: Arc<CollectCeremonyEvidenceUseCase>,
+    pub(super) ceremony_agent_status: Arc<CeremonyAgentStatusService>,
     pub(super) read_ceremony_events: Arc<ReadCeremonyEventsUseCase>,
     pub(super) stream_ceremony: Arc<StreamCeremonyUseCase>,
     pub(super) pull_ceremony_events: Arc<PullCeremonyEventsUseCase>,
